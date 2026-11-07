@@ -190,3 +190,41 @@ test('[S2.2] tempEnv gives a child the owned folder as TMPDIR, TEMP and TMP and 
   const env = JSON.parse(/ENV=(.*)/.exec(done.out)?.[1] ?? 'null') as Record<string, string> | null;
   assert.deepEqual(env, { KEEP: 'yes', TMPDIR: '/owned/dir', TEMP: '/owned/dir', TMP: '/owned/dir' });
 });
+
+test('[S2.2] an uncaught exception from a callback is exit 1, the error is written, and the folder is gone', async (t) => {
+  const root = privateRootOf(t);
+  const body = "console.log('READY'); setTimeout(() => { throw new Error('late'); }, 50); await new Promise(() => setInterval(() => {}, 1000));";
+
+  const done = await runChild(fixture(root, body));
+
+  assertExisted(done.out);
+  assert.equal(done.signal, null);
+  assert.equal(done.code, 1);
+  assert.ok(gone(dirOf(done.out)), 'the folder and its claim are gone');
+});
+
+test('[S2.2] an unhandled rejection from a callback is exit 1, and the folder is gone', async (t) => {
+  const root = privateRootOf(t);
+  const body = "console.log('READY'); setTimeout(() => { Promise.reject(new Error('lost')); }, 50); await new Promise(() => setInterval(() => {}, 1000));";
+
+  const done = await runChild(fixture(root, body));
+
+  assert.equal(done.code, 1);
+  assert.ok(gone(dirOf(done.out)));
+});
+
+test('[S2.2] closeOnce: two calls at once close the scope once, and both wait for the close', async (t) => {
+  const root = privateRootOf(t);
+  const body = [
+    'let closes = 0;',
+    "scope.after(async () => { closes += 1; await new Promise((r) => setTimeout(r, 200)); });",
+    'await Promise.all([harnessScope.closeOnce(), harnessScope.closeOnce()]);',
+    "console.log('AFTER closes=' + closes + ' gone=' + !fs.existsSync(dir));",
+    'return 0;',
+  ].join('\n');
+
+  const done = await runChild(fixture(root, body));
+
+  assert.match(done.out, /AFTER closes=1 gone=true/);
+  assert.equal(done.code, 0);
+});

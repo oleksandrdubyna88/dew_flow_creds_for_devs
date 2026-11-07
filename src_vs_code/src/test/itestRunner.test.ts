@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -30,6 +31,7 @@ interface RunResult {
   overflow: boolean;
   spawnFailed: boolean;
   spawnError?: string;
+  cancelled?: boolean;
 }
 interface RunCall {
   command: string;
@@ -44,6 +46,8 @@ interface ItestSeams {
   timeoutMs?: number;
   harnesses?: Harness[];
   compile?: boolean;
+  compileArgs?: string[];
+  closeBoundMs?: number;
   sweep?: (options: { repo: string; tmp: string }) => object;
   sweepOptions?: Record<string, unknown>;
   roots?: string[];
@@ -131,6 +135,12 @@ test('[S1.1] every harness child gets the runner\'s record, whatever the ambient
   assert.equal(recordOf(set), RECORD, '(b) a foreign live record in the ambient environment is not passed on');
 });
 
+/** The runner's `run` seam (Windows) as a counter: it logs `start` into `events` and answers a pass. */
+const countingRun = (events: string[]) => async (): Promise<RunResult> => {
+  events.push('start');
+  return { code: 0, out: '', err: '', timedOut: false, overflow: false, spawnFailed: false };
+};
+
 test('[S1.2] the sweep is called once per canonical root, and all calls come before the first harness starts', async (t) => {
   const { runHarnesses } = await itests();
   const dir = ownedDir(t, 'itest');
@@ -143,6 +153,7 @@ test('[S1.2] the sweep is called once per canonical root, and all calls come bef
     ...base(t, []),
     harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
     roots: [first, second, first],
+    platform: 'linux', // the `spawn` seam is the POSIX branch; the Windows branch is the twin below
     sweep: ({ tmp }) => {
       events.push(`sweep ${tmp}`);
       return { removed: [], preserved: [], listed: [], errors: [] };
@@ -151,6 +162,28 @@ test('[S1.2] the sweep is called once per canonical root, and all calls come bef
       events.push('start');
       return spawn(command, args, options as object);
     },
+  });
+
+  assert.deepEqual(events, [`sweep ${first}`, `sweep ${second}`, 'start']);
+});
+
+test('[S1.2] the same on the Windows branch: the sweep calls come before the first `run`', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const first = fs.realpathSync(privateRoot(t));
+  const second = fs.realpathSync(privateRoot(t));
+  const events: string[] = [];
+
+  await runHarnesses([], {
+    ...base(t, []),
+    harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
+    roots: [first, second],
+    platform: 'win32',
+    sweep: ({ tmp }) => {
+      events.push(`sweep ${tmp}`);
+      return { removed: [], preserved: [], listed: [], errors: [] };
+    },
+    run: countingRun(events),
   });
 
   assert.deepEqual(events, [`sweep ${first}`, `sweep ${second}`, 'start']);
@@ -310,7 +343,7 @@ test('[S1.6] a timeout ends the harness\'s WHOLE tree: the grandchild is dead an
   };
 
   try {
-    await runHarnesses([], { ...seams, harnesses: [harness(dir, 'hang', HANGS_WITH_GRANDCHILD)], timeoutMs: process.platform === 'win32' ? 20_000 : 2000 });
+    await runHarnesses([], { ...seams, harnesses: [harness(dir, 'hang', HANGS_WITH_GRANDCHILD)], timeoutMs: process.platform === 'win32' ? 20_000 : 5000 }); // time to start the grandchild first
 
     assert.ok(seen.pid > 0, `premise: the harness printed its grandchild's pid (${text.join('')})`);
     assert.ok(seen.aliveAtPrint, 'premise: the grandchild was alive when its pid was printed');
@@ -346,6 +379,7 @@ test('[S1.8] helpers that cannot be loaded: one line naming the submodule comman
   const code = await runHarnesses([], {
     ...base(t, text),
     harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
+    platform: 'linux',
     loadHelpers: async () => {
       throw new Error('leftovers: the shared rules are not mounted (x/owned.mjs is missing) — run: git submodule update --init .claude/rules/shared');
     },
@@ -398,6 +432,25 @@ test('[S1.10] a SIGTERM while the first harness runs: it reaches the harness, th
   assert.equal(code, 143);
 });
 
+test('[S1.8] the same on the Windows branch: no `run` is made when the helpers cannot be loaded', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const events: string[] = [];
+
+  const code = await runHarnesses([], {
+    ...base(t, []),
+    harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
+    platform: 'win32',
+    loadHelpers: async () => {
+      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .claude/rules/shared');
+    },
+    run: countingRun(events),
+  });
+
+  assert.equal(code, 1);
+  assert.deepEqual(events, [], 'no harness was started');
+});
+
 /** What a Windows `run` returns when nothing is special. */
 const ran = (over: Partial<RunResult> = {}): RunResult => ({ code: 0, out: '', err: '', timedOut: false, overflow: false, spawnFailed: false, ...over });
 
@@ -415,6 +468,7 @@ test('[S1.11] the Windows branch through the `run` seam: budget and timeout reac
   };
   const calls: RunCall[] = [];
   const text: string[] = [];
+  let beforeFirstRun = '';
 
   const code = await runHarnesses([], {
     ...base(t, text),
@@ -422,6 +476,7 @@ test('[S1.11] the Windows branch through the `run` seam: budget and timeout reac
     platform: 'win32',
     timeoutMs: 12_345,
     run: async (command, args, options) => {
+      if (calls.length === 0) beforeFirstRun = text.join('');
       calls.push({ command, args, options });
       return answers[path.basename(args[0], '.cjs')];
     },
@@ -436,7 +491,8 @@ test('[S1.11] the Windows branch through the `run` seam: budget and timeout reac
   const out = text.join('');
   assert.match(out, /^skipped\s+itest:skips\s+no WSL here/m);
   assert.match(out, /^FAIL\s+itest:floods\s+floods: wrote more than 33554432 bytes — the tree was ended/m);
-  assert.match(out, /^FAIL\s+itest:cannot\s+could not start node: ENOENT/m);
+  assert.match(beforeFirstRun, /itest:skips started — .*held under the job until it ends/, 'one line says the harness started and that its output is held until it ends [G6]');
+  assert.match(out, /^FAIL\s+itest:cannot\s+could not start the harness \(ENOENT\)/m);
   assert.match(out, /^FAIL\s+itest:slow\s+slow: no exit within 12.345 seconds — killed/m);
   assert.match(out, /^pass\s+itest:fine/m);
   assert.ok(out.includes('all good') && out.includes('a warning'), 'the output is written when the harness ends');
@@ -467,4 +523,131 @@ test('[S1.13] a tree that is not confirmed ended after the timeout is one more l
   });
 
   assert.match(text.join(''), /^FAIL\s+itest:hang\s+hang: no exit within .* — killed; the end of its process tree is not confirmed \(2 still alive\)/m);
+});
+
+test('[S1.14] a Windows harness stopped by a signal reads `stopped by <signal>`, and the run leaves with 128 + n', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const signals = new EventEmitter();
+  const text: string[] = [];
+
+  const code = await runHarnesses([], {
+    ...base(t, text),
+    harnesses: [harness(dir, 'first', 'process.exit(0);'), harness(dir, 'second', 'process.exit(0);')],
+    platform: 'win32',
+    signals,
+    run: async () => {
+      signals.emit('SIGTERM');
+      return ran({ cancelled: true, code: -1 });
+    },
+  });
+
+  assert.match(text.join(''), /^FAIL\s+itest:first\s+first: stopped by SIGTERM/m);
+  assert.doesNotMatch(text.join(''), /itest:second/, 'the second harness never started');
+  assert.equal(code, 143);
+});
+
+test('[S1.15] a harness that cannot be started reads `could not start the harness (<reason>)` on the POSIX branch too', posixOnly, async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const text: string[] = [];
+
+  await runHarnesses([], {
+    ...base(t, text),
+    harnesses: [harness(dir, 'nostart', 'process.exit(0);')],
+    platform: 'linux',
+    spawn: () => {
+      const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough };
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      setImmediate(() => child.emit('error', new Error('spawn node ENOENT')));
+      return child;
+    },
+  });
+
+  assert.match(text.join(''), /^FAIL\s+itest:nostart\s+could not start the harness \(spawn node ENOENT\)/m);
+});
+
+/** A fixture whose grandchild leaves the group (`detached`) and keeps the harness's stdout and stderr open. */
+const HOLDS_THE_PIPE = [
+  "const { spawn } = require('node:child_process');",
+  "const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'inherit' });",
+  "console.log('GRANDCHILD=' + grandchild.pid);",
+  'setInterval(() => {}, 1000);',
+].join('\n');
+
+test('[S1.16] a grandchild outside the group that holds the output pipe does not hold the runner: it returns within the bound', posixOnly, async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const text: string[] = [];
+  const seen = { pid: 0, aliveAtPrint: false };
+  const seams = base(t, text);
+  seams.write = (chunk) => {
+    text.push(chunk);
+    noteGrandchild(chunk, seen);
+  };
+  const began = Date.now();
+  let stuck: NodeJS.Timeout | undefined;
+  const gaveUp = new Promise<string>((resolve) => {
+    stuck = setTimeout(() => resolve('the runner did not return within 15 s'), 15_000);
+  });
+
+  try {
+    const outcome = await Promise.race([
+      runHarnesses([], { ...seams, harnesses: [harness(dir, 'holds', HOLDS_THE_PIPE)], timeoutMs: 1000, closeBoundMs: 500, platform: 'linux' }),
+      gaveUp,
+    ]);
+
+    assert.equal(outcome, 1, String(outcome));
+    assert.ok(seen.pid > 0 && seen.aliveAtPrint, 'premise: the grandchild was started and alive');
+    assert.ok(Date.now() - began < 10_000, `the runner took ${Date.now() - began} ms`);
+    assert.match(text.join(''), /^FAIL\s+itest:holds\s+holds: no exit within .* — killed/m);
+    assert.match(text.join(''), /output was still open 500 ms after it exited/);
+  } finally {
+    clearTimeout(stuck);
+    killQuietly(seen.pid);
+  }
+});
+
+test('[S1.17] a signal that comes during the sweep starts no harness: exit 128 + n', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const marks = ownedDir(t, 'marks');
+  const signals = new EventEmitter();
+  const started = `require('node:fs').writeFileSync(${JSON.stringify(marks)} + '/started', '1');`;
+
+  const code = await runHarnesses([], {
+    ...base(t, []),
+    harnesses: [harness(dir, 'never', started)],
+    platform: 'linux',
+    signals,
+    sweep: () => {
+      signals.emit('SIGTERM');
+      return { removed: [], preserved: [], listed: [], errors: [] };
+    },
+  });
+
+  assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'no harness started after the signal');
+  assert.equal(code, 143);
+});
+
+test('[S1.18] a signal that comes during the compile still prints the summary, with no harness run, and keeps 128 + n [G10]', posixOnly, async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const marks = ownedDir(t, 'marks');
+  const signals = new EventEmitter();
+  const text: string[] = [];
+  const compiler = harness(dir, 'compiler', "console.log('READY'); setInterval(() => {}, 1000);");
+  const started = `require('node:fs').writeFileSync(${JSON.stringify(marks)} + '/started', '1');`;
+  const seams = base(t, text);
+  seams.write = (chunk) => {
+    text.push(chunk);
+    if (chunk.includes('READY')) signals.emit('SIGTERM');
+  };
+
+  const code = await runHarnesses([], { ...seams, compile: true, compileArgs: [compiler.script], harnesses: [harness(dir, 'never', started)], platform: 'linux', signals });
+
+  assert.match(text.join(''), /===== summary =====/);
+  assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'no harness ran');
+  assert.equal(code, 143);
 });
