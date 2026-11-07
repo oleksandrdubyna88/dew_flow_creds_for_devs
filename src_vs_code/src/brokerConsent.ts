@@ -195,7 +195,7 @@ export class ConsentGate {
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(grant)}\n\n${summary}\n\n` +
+      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(question)}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
       `${coverageTail(question, everything)} ` +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
@@ -203,9 +203,9 @@ export class ConsentGate {
   }
 }
 
-/** Through a Remote Bridge, the line after the request time says which server, where the command runs and what goes back; the context's words, never the caller's. */
-function bridgeLine(grant: Grant): string {
-  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, bridgeRunSite())}`;
+/** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
+function bridgeLine({ grant, action }: ConsentQuestion): string {
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, bridgeRunSite(action), grant.entityName)}`;
 }
 
 /**

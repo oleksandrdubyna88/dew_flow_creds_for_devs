@@ -10,26 +10,42 @@ import { cleanCallerField } from './brokerCaller';
  * handed over by the door; nothing is read from a request body.</p>
  */
 
-/** Where a bridged command starts: on this computer, or on the server that asked. */
-export type RunSite = 'laptop' | 'server';
+/**
+ * Where a bridged action's work is done, said to the person who authorises it: at the DESTINATION a stored entry names, after a
+ * connection that starts on this computer (`exec`); on this computer, with only its output sent on (`query`); or on the server
+ * that asked (E3's `run`, not built).
+ */
+export type RunSite = 'destination' | 'laptop' | 'server';
+
+/** The served actions and where each does its work. A bridge serves `exec` and `query` only (the allow-list, `bridgeAllowList.ts`). */
+const RUN_SITES: ReadonlyMap<string, RunSite> = new Map<string, RunSite>([
+  ['exec', 'destination'],
+  ['query', 'laptop'],
+]);
 
 /**
- * E1 serves `exec` and `query` only, and both start on this computer, so the answer is a constant. E3.1 replaces the call
- * with `decideRunSite` and keeps both sentences.
+ * The site of one action, or `undefined` for an action that has none. A line is true per action, because the modal is the
+ * authorisation (parent §4.2): `exec` is not `query`, and a sentence that guessed for a third action would be a guess a person
+ * authorises. Nothing but `exec` and `query` reaches a bridge's dialog; E3.1 replaces this with `decideRunSite` and keeps every sentence.
  */
-export function bridgeRunSite(): RunSite {
-  return 'laptop';
+export function bridgeRunSite(action: string): RunSite | undefined {
+  return RUN_SITES.get(action);
 }
 
+/** What each site says. The entry's name is a person's text inside a security dialog and passes the sanitiser of a caller label. */
+const SITE_SENTENCES: Readonly<Record<RunSite, (entryName: string) => string>> = {
+  destination: (entryName) => `The connection starts on this computer; the command runs on "${cleanCallerField(entryName)}", and its output goes back to that server.`,
+  laptop: () => 'It runs on this computer, and only its output goes to that server.',
+  server: () => 'It runs on that server.',
+};
+
 /**
- * The line after the request time: through which server, where it runs, and what goes back. The name passes the
- * sanitiser of a caller label, because an entry's name is a person's text inside a security dialog.
+ * The line after the request time: through which server, and, true for the action, where it runs and what goes back. Both names
+ * pass the sanitiser of a caller label. An action with no site names the bridge and claims no place.
  */
-export function bridgeModalLine(bridge: BridgeContext, site: RunSite): string {
+export function bridgeModalLine(bridge: BridgeContext, site: RunSite | undefined, entryName: string): string {
   const through = `Through the Remote Bridge of "${cleanCallerField(bridge.serverName)}".`;
-  return site === 'laptop'
-    ? `${through} It runs on this computer, and only its output goes to that server.`
-    : `${through} It runs on that server.`;
+  return site === undefined ? through : `${through} ${SITE_SENTENCES[site](entryName)}`;
 }
 
 /**
