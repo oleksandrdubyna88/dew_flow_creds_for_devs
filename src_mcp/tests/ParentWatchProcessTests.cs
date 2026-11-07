@@ -25,10 +25,30 @@ public sealed class ParentWatchProcessTests : IDisposable
     private readonly string _root = HostProcess.TempDirectory("mcp-e2s4");
     private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
+    private string? _childTemp;
+    private int _serverPid;
+
     public void Dispose()
     {
+        // The host was started here, not through HostProcess.Start, so nothing ties it to its folders: while it has not ended, its log folder and its temp folder are NOT
+        // removed under it. They stay claimed and registered, and the end-of-run audit names them.
+        if (ServerRunning()) return;
         HostProcess.Remove(_root);
         _owned.Dispose();
+    }
+
+    private bool ServerRunning()
+    {
+        if (_serverPid == 0) return false;
+        try
+        {
+            using var server = Process.GetProcessById(_serverPid);
+            return !server.HasExited;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     [Fact]
@@ -80,10 +100,10 @@ public sealed class ParentWatchProcessTests : IDisposable
         start.Environment[Endpoints.DirectoryOverrideVariable] = Path.Combine(_root, "no-windows");
         // This test starts its host by itself (not through HostProcess.Start), so it hands the runtime an owned temp folder itself: a killed host leaves its
         // diagnostic socket and debug pipes in TMPDIR (rule 2). The scope removes the folder after the test's `using`s have ended the host.
-        var childTemp = _owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot);
+        _childTemp = _owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot);
         foreach (var name in new[] { "TMPDIR", "TEMP", "TMP" })
         {
-            start.Environment[name] = childTemp;
+            start.Environment[name] = _childTemp;
         }
         foreach (var (name, value) in extra)
         {
@@ -104,13 +124,30 @@ public sealed class ParentWatchProcessTests : IDisposable
             var files = Directory.GetFiles(_root, $"{Program.AppName}-*.log", SearchOption.AllDirectories);
             if (files.Length == 1 && HostProcess.Read(files[0]).Contains("started:", StringComparison.Ordinal))
             {
-                await WatchDecidedAsync(files[0], ct);
                 var name = Path.GetFileNameWithoutExtension(files[0]);
-                return Process.GetProcessById(int.Parse(name[(name.LastIndexOf('-') + 1)..], System.Globalization.CultureInfo.InvariantCulture));
+                var pid = int.Parse(name[(name.LastIndexOf('-') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+                _serverPid = pid;
+                AssertTempWasHandedOver(pid);
+                await WatchDecidedAsync(files[0], ct);
+                return Process.GetProcessById(pid);
             }
             await Task.Delay(100, ct);
         }
         throw new TimeoutException("the server never wrote its log file");
+    }
+
+    /// <summary>
+    /// The hand-over is CHECKED, not assumed: a live .NET host keeps <c>clr-debug-pipe-&lt;pid&gt;-*</c> in the temp folder it was given, so they are in the owned folder and not in the
+    /// shared temp root. A host that already ended took its pipes with it, which says nothing either way (the Windows pipes are not files).
+    /// </summary>
+    private void AssertTempWasHandedOver(int pid)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var pipes = Directory.GetFileSystemEntries(_childTemp!, $"clr-debug-pipe-{pid}-*");
+        if (pipes.Length == 0 && ServerRunning())
+        {
+            pipes.Should().NotBeEmpty("the live host's debug pipes are in the owned folder it was handed as TMPDIR, not in the shared temp root");
+        }
     }
 
     /// <summary>
