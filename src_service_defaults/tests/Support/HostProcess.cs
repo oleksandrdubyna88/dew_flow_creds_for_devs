@@ -24,9 +24,13 @@ internal static class HostProcess
         Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? assemblyName + ".exe" : assemblyName);
 
     /// <summary>Start it with every stream redirected.</summary>
-    internal static Process Start(string assemblyName, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
+    internal static Process Start(string assemblyName, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env) =>
+        StartFile(Binary(assemblyName), args, env);
+
+    /// <summary>The same for any executable file (a host binary, or a fixture child a test wrote).</summary>
+    internal static Process StartFile(string file, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
     {
-        var start = new ProcessStartInfo(Binary(assemblyName))
+        var start = new ProcessStartInfo(file)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -43,7 +47,7 @@ internal static class HostProcess
             start.Environment[name] = value;
         }
         Native(start.Environment, env, InsideWsl(ReadProcVersion()));
-        return Process.Start(start) ?? throw new InvalidOperationException($"{assemblyName} did not start");
+        return Process.Start(start) ?? throw new InvalidOperationException($"{file} did not start");
     }
 
     /// <summary>Set by WSL in every distribution — <c>WslInterop</c>'s first signal for the pump path.</summary>
@@ -99,7 +103,7 @@ internal static class HostProcess
     /// out while waiting never leaves the binary it started running. Only the process this test started, by
     /// its own handle; never anything found by name.
     /// </summary>
-    internal static IDisposable KillOnDispose(Process process) => new Reaper(process);
+    internal static IDisposable KillOnDispose(Process process, Func<Process, TimeSpan, bool>? waitForExit = null) => new Reaper(process);
 
     private sealed class Reaper(Process process) : IDisposable
     {
@@ -146,7 +150,7 @@ internal static class HostProcess
     }
 
     /// <summary>A fresh, empty temporary directory.</summary>
-    internal static string TempDirectory(string prefix)
+    internal static string TempDirectory(string prefix, Action<string>? warn = null)
     {
         var path = Path.Combine(Path.GetTempPath(), $"{prefix}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
@@ -154,8 +158,9 @@ internal static class HostProcess
     }
 
     /// <summary>Delete a temporary directory, best effort — a child that is still exiting may hold a file.</summary>
-    internal static void Remove(string path)
+    internal static void Remove(string path, Action<string>? warn = null, Action<string>? onDispose = null)
     {
+        onDispose?.Invoke(path);
         try
         {
             Directory.Delete(path, recursive: true);
