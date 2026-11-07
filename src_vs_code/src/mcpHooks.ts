@@ -12,7 +12,7 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent } from './mcpEntries';
+import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent, remembersFor } from './mcpEntries';
 import { ConsentStampStore, ConsentStamps, consentStampsFor } from './mcpConsentPolicy';
 import type { BrokerHooks } from './brokerHooks';
 import { ladderKey } from './mcpAccess';
@@ -172,6 +172,9 @@ export function mcpUseLookup(
     // Without a store there is nothing remembered, so every call asks — which is what a window
     // with no writable storage should do, and what every existing caller of this function gets.
     preConsented: preConsentedFor(found, stamps, now),
+    // Whether an Allow on this entry will write a stamp — what the dialog's last paragraph says
+    // it covers. Read from the same expression `rememberMcpConsent` writes by.
+    remembers: remembersFor(found.access),
   };
 }
 
