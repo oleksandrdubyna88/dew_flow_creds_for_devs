@@ -1,13 +1,24 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **plan only, nothing implemented yet, 2026-11-08.** On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
+> Status: **plan approved, nothing implemented yet, 2026-11-08 (epoch 1).** The `coai` plan round on `c655038` answered
+> `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
+> one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
+> delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
 > `src_vs_code/src/brokerConsent.ts`, `brokerRequests.ts`, `brokerMcpDoor.ts`, `mcpHooks.ts`, `mcpEntries.ts`,
 > `credsAgentServer.ts` (a parameter and one field, no behaviour), one new test file, `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `todo/README.md`. Extension only. Words only: no admission, grant, stamp or policy
 > behaviour changes. Security fix for a false statement in a consent dialog, live on `main` and in every release
 > since the alias route (0.61.0) and the MCP door (0.69.0) shipped. This text is the spec: a Sonnet coder builds from it alone,
-> an Opus reviewer reads the result against it. The change ledger (`## Plan changes`) opens with the first approving
-> round, under this block.
+> an Opus reviewer reads the result against it.
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-08 · by reviewers · state: open
+
+  (The approving round was one round: `review_plan` on `c655038` reached `proceed` with 2 of 2 reviewers. Its four
+  accepted findings — the `never` row and C5 made explicit, the `every12h` tail made conditional with a race case,
+  the hours derived from `ASK_WINDOW_MS`, the module document cited by heading — are the baseline this epoch is
+  approved on, so the epoch opens with no entries.)
 
 ## 1. The defect
 
@@ -63,11 +74,13 @@ decided by `worthRemembering` (`mcpEntries.ts:533-535`) from the policy read at 
 |---|---|---|
 | `always` | nothing: `remembersConsent('always')` is false (`mcpConsentPolicy.ts:323-325`) | `consentDue` is true (`mcpConsentPolicy.ts:105-107`) → asks again |
 | `every12h` | a stamp `{ at: now, rungs }` under `stampKey(account, entry)` in this machine's `globalState` (`mcpConsentPolicy.ts:186-193`; local by design, `:9-18`), if the ladder still reads as it did when shown | for twelve hours (`ASK_WINDOW_MS`, `:31`), a use call on this entry with the same ladder is pre-consented (`mcpEntries.ts:435-441`): no dialog, one journal line *allowed without a prompt* (`brokerMcpDoor.ts:245-251`). Deleting still asks (`mayBeQuiet`, `mcpEntries.ts:443-445`). A changed switch, the Forget command (`commands/agentCommands.ts:502`) or a clock set back ends it early, never later |
-| `never` | nothing | a use call never asked in the first place (`consentDue` false, `:102-104`); the dialog shows under `never` only on the delete, create and folder routes, which always ask, and in a window with no stamp store (`mcpEntries.ts:436-438`), which asks every call. In all of those the next such call asks again |
+| `never` | nothing — there is no Allow: **a USE call under `never` never shows a dialog** (`consentDue` is false, `:102-104`, so `preConsented` is true and `quietly` settles the grant). The dialog shows under `never` only on the delete, create and folder routes, which always ask, and in a window with no stamp store (`mcpEntries.ts:436-438`), which asks every call; those write nothing | after a delete, create or folder dialog: that route asks again; after a use call: nothing was asked and nothing changes |
 
 So an Allow on the MCP door covers this call only — except under `every12h`, where it also opens the twelve-hour
 window. The dialog must say which, and it can: the lookup that decides `preConsented` holds the policy
-(`mcpHooks.ts:160-175`).
+(`mcpHooks.ts:160-175`). `coverage` is computed only for an ask that can occur: a use call under `never` reaches no
+dialog, so no sentence is chosen for it, and C5 asserts exactly that — no dialog for the use call, a dialog with the
+`call` tail for each delete.
 
 **MCP delete, create, folder.** `'call'` grants, `consent` direct, nothing remembered. This call only.
 
@@ -80,23 +93,31 @@ The modal's last paragraph becomes one of three, chosen by a `coverage` the aski
 |---|---|---|
 | `token` | `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${name}" ${describeLimits(grantLimits())}. ` — today's bytes (`brokerConsent.ts:153-154`) | §2.1 token |
 | `call` | `Allowing covers this call only, not any later one. ` | the grant is one request's; nothing is written (§2.1 alias, MCP `always`, MCP `never`, delete/create/folder). It deliberately does not promise *the next call asks again*: under `never` the next USE call is quiet by policy, not by this Allow |
-| `every12h` | `Allowing covers this call and, for the next 12 hours on this machine, every later call on "${name}" without asking — this entry is set to "Ask once every 12 hours". Deleting still asks. ` | §2.1 `every12h`. "12 hours" is `ASK_WINDOW_MS`, pinned to twelve by `mcpConsentPolicy.test.ts:73-76`; "Ask once every 12 hours" is the switch's own label (`mcpSwitches.ts:179`), so the person can find the setting; "on this machine" is the stamp's locality; "Deleting still asks" is `mayBeQuiet` |
+| `every12h` | `Allowing covers this call and, for up to ${hours} hours on this machine, every later call on "${name}" without asking — while this entry stays set to "Ask once every ${hours} hours" and its agent switches are not changed. Deleting still asks. ` | §2.1 `every12h`. `${hours}` is `ASK_WINDOW_MS / 3_600_000` (§2.3), never a literal; "Ask once every 12 hours" is the switch's own label (`mcpSwitches.ts:179`), so the person can find the setting; "on this machine" is the stamp's locality; "up to" and "while … not changed" are the window's bounds below; "Deleting still asks" is `mayBeQuiet` |
 
-The window can end earlier than twelve hours (a switch turned on, Forget, a clock set back) — the sentence names the
-longest it can be, never a longer one. A policy changed between the dialog and the click is re-read at the write
-(`mcpEntries.ts:527`): a flip to `always` or `never` in that instant writes nothing, so the `every12h` sentence would
-have said more than happened — the same residue as a token sentence when the vault locks a second later, and not a
-grant of anything.
+**The tail is conditional because the dialog's text cannot change after it is shown, and the write can still refuse.**
+`rememberMcpConsent` re-reads the entry at the click (`mcpEntries.ts:527`) and writes nothing when the policy is no
+longer `every12h` or the ladder no longer reads as it did when the dialog was raised (`worthRemembering`,
+`:533-535`). So a policy flipped, or a switch turned on, while the modal is open means no window opens — and the
+sentence said *while this entry stays set to … and its agent switches are not changed*, which is the condition that
+failed. The same clause covers the window's early ends after it opened: a switch turned on (the stamp's `rungs` no
+longer match), the Forget command, a clock set back. "Up to" says the window is never longer than
+`ASK_WINDOW_MS` and may be shorter. C4b drives the race and asserts both halves.
 
-Rejected: computing the hours from `ASK_WINDOW_MS` in the sentence (one more import into the gate for a number a test
-already pins); a fourth tail for `never` (the Allow itself covers this call only, and the policy is not this dialog's
-to explain); naming the next call's behaviour in the `call` tail (false under `never`, see above).
+Rejected: a fourth tail for `never` (a use call under `never` reaches no dialog, §2.1, and on the routes that do ask
+the Allow covers this call only); naming the next call's behaviour in the `call` tail (false under `never` for a use
+call that follows a delete dialog); dropping *Deleting still asks* (gate finding, rejected: `mayBeQuiet` excludes a
+delete under every policy, C4 asserts it).
 
 ### 2.3 Where the coverage is decided — one function, every call site explicit
 
 - `brokerConsent.ts` exports `type ConsentCoverage = 'token' | 'call' | 'every12h'` and
   `coverageOf(scope: GrantScope, remembers: boolean): ConsentCoverage` — `'token'` when `scope === 'token'`
   (a token grant never remembers; the flag cannot widen it), else `remembers ? 'every12h' : 'call'`.
+- The hours in the `every12h` tail are derived, not typed: `brokerConsent.ts` imports `ASK_WINDOW_MS` from
+  `mcpConsentPolicy.ts` (pure, `vscode`-free, `:27`) and the tail reads `${ASK_WINDOW_MS / 3_600_000}` in both
+  places the number appears. The switch label it quotes (`mcpSwitches.ts:179`) still carries the literal twelve, so
+  C8 pins the two to one another: if the constant moves, the dialog follows and the test names the label that did not.
 - `ConsentQuestion` gains `readonly coverage: ConsentCoverage` — REQUIRED, like `caller` (`brokerConsent.ts:43`),
   so a door added later does not compile until it says what its Allow covers.
 - `remembers` comes from the lookup, beside `preConsented`: the usable arm of `McpUseLookup` gains
@@ -131,8 +152,8 @@ the fact each one states, not as strings alone (§4).
    result. `brokerRequests.ts`: the two type fields and `usableRead`. Typecheck: green, nothing reads them yet.
 2. `brokerConsent.ts`: `ConsentCoverage`, `coverageOf`, the required field, `coverageTail(question)` as a record
    lookup `{ token, call, every12h }[question.coverage]` (complexity 1; the token builder keeps `everything` and
-   `describeLimits(grantLimits())` exactly as at `:144-154`); `wording()` ends with the chosen tail plus the logging
-   sentence. The docblock of §2.4. Typecheck now fails at the two call sites — that is the field doing its job.
+   `describeLimits(grantLimits())` exactly as at `:144-154`; the `every12h` builder reads its hours from
+   `ASK_WINDOW_MS`); `wording()` ends with the chosen tail plus the logging sentence. The docblock of §2.4. Typecheck now fails at the two call sites — that is the field doing its job.
 3. `brokerMcpDoor.ts` and `credsAgentServer.ts` as §2.3. Typecheck green.
 4. The tests of §4, RED first on `main`'s wording (step 2 may be written after the tests; the order of 2 and 4 is the
    coder's, the record of the red is not optional).
@@ -150,7 +171,9 @@ survived (§1).
 Constants (the three tails of §2.2, as literals, so a changed word is a red and not a drift):
 `TOKEN_TAIL = 'Allowing covers every later call on this token, not just this one: with it the agent can '`,
 `CALL_TAIL = 'Allowing covers this call only, not any later one.'`,
-`WINDOW_TAIL = 'Allowing covers this call and, for the next 12 hours on this machine, every later call on "prod" without asking — this entry is set to "Ask once every 12 hours". Deleting still asks.'`.
+`WINDOW_TAIL = 'Allowing covers this call and, for up to 12 hours on this machine, every later call on "prod" without asking — while this entry stays set to "Ask once every 12 hours" and its agent switches are not changed. Deleting still asks.'`,
+`WINDOW_CONDITION = 'while this entry stays set to "Ask once every 12 hours" and its agent switches are not changed'`.
+The test's literals say twelve on purpose — the dialog derives its number, and C8 is what keeps the two equal.
 
 The MCP cases build production's own lookup and write — `mcpUseHooks(source, state, () => FROZEN_NOW)` over a
 two-node tree (folder `f1` with `mcp: { use: true, ask }`, entity `e1` "prod") and a `Map`-backed memento — exactly
@@ -166,9 +189,11 @@ stamp is read back with `new ConsentStamps(state).get(stampKey('a1', 'e1'), FROZ
 | C2 | alias | world with `alias: { … entityName: 'prod', kind: 'ssh' }`, two `/v1/alias/exec`, `answers: ['Allow', 'Allow']` | `ran.length === 2`, `dialogs.length === 2` (asked again), `w.consents` empty (nothing remembered) | both dialogs include `CALL_TAIL`; neither contains `every later call` |
 | C3 | MCP use, `always` — and once more with `ask` absent | real hooks; two `/v1/mcp/use/exec`, `answers: ['Allow', 'Allow']` | `dialogs.length === 2`, `ran.length === 2`, `state` holds no key after both | both dialogs include `CALL_TAIL`; neither says `12 hours` |
 | C4 | MCP use, `every12h` | real hooks; `/v1/mcp/use/exec`, then again, then `/v1/mcp/delete` (`trash: true`), `answers: ['Allow', 'Allow']` | after call 1 the stamp is present and its `rungs` equals the lookup's `rungs` for `e1`; call 2: `dialogs.length` still 1, `ran.length === 2`, an audit line contains `allowed without a prompt`; the delete: `dialogs.length === 2`, `trashed` is `['e1']` | `dialogs[0]` includes `WINDOW_TAIL`; `dialogs[1]` (the delete) includes `CALL_TAIL` |
-| C5 | MCP, `never` | real hooks; `/v1/mcp/use/exec`, then `/v1/mcp/delete` twice, `answers: ['Allow', 'Allow']` | the use: `dialogs.length === 0`, ran; after it `state` holds no key; each delete asks: `dialogs.length` 1 then 2; `state` still empty | both delete dialogs include `CALL_TAIL` |
+| C4b | MCP use, `every12h`, the race of §2.2 — two runs | real hooks over a mutable `nodes` array, `holdDialogs: true` (`brokerWorld.ts:158-159`); `/v1/mcp/use/exec` in flight; `until(() => w.openDialogs.length === 1)` (as `brokerAbandoned.test.ts:96`); then run (a) the folder's `mcp.ask` set to `'always'`, run (b) the folder's `mcp.edit` set to `true` (the ladder widens); then `w.openDialogs.shift()?.('Allow')` and await the call | status 200 and `ran.length === 1` (the person's Allow still runs THIS call); the stamp is `undefined` and `state` holds no key (the write refused); a second `/v1/mcp/use/exec` raises a dialog (`dialogs.length === 2`): no window opened | `dialogs[0]` includes `WINDOW_TAIL` — the sentence shown before the change — and includes `WINDOW_CONDITION`, the clause that failed: in run (a) the entry no longer *stays set to "Ask once every 12 hours"*; in run (b) its *agent switches* were *changed*. The test names which half in its message |
+| C5 | MCP, `never` | real hooks; `/v1/mcp/use/exec`, then `/v1/mcp/delete` twice, `answers: ['Allow', 'Allow']` | **the use call shows no dialog at all**: `dialogs.length === 0`, `ran.length === 1`, an audit line contains `allowed without a prompt`; after it `state` holds no key; each delete asks: `dialogs.length` 1 then 2; `state` still empty | no sentence exists for the use call (none was shown, §2.1); both delete dialogs include `CALL_TAIL` |
 | C6 | every door but token, stubbed | the `DOORS` table of `brokerConsentText.test.ts:91-118` without its token row (alias; `mcpUse: 'usable'`; delete; create; folder verb) | status 200, `dialogs.length === 1` | the dialog includes `CALL_TAIL` and not `every later call` — a stubbed lookup carries no `remembers`, and that must read as `call` |
 | C7 | `coverageOf`, pure | `('token', true)`, `('token', false)`, `('call', false)`, `('call', true)` | — | `'token'`, `'token'`, `'call'`, `'every12h'` |
+| C8 | the number, structural | read `ASK_WINDOW_MS`; read the `every12h` switch label (`mcpSwitches.ts:179`) | `ASK_WINDOW_MS / 3_600_000 === 12` — the hours `WINDOW_TAIL` and `WINDOW_CONDITION` state; and the label `Ask once every 12 hours` contains that same number | the message names the three places that must agree: the constant, the switch label, this file's literals |
 
 The existing assertions stay as they are: `credsAgentServer.test.ts:95` and `brokerConsentText.test.ts:64` drive the
 token door, where the sentence is unchanged; the comment at `credsAgentServer.test.ts:69-70` is true of that door.
@@ -186,6 +211,11 @@ old tail — keep those messages in the build record. Then, on the finished tree
 - M4 `usableRead` reads `remembers` as `!== false` → C3 (absent `ask`) and C6 (stubbed lookup) red.
 - M5 `remembersFor` returns `true` for `always` → C3 red on words; and `mcpHooks.test.ts:212-221` red on the fact,
   because `worthRemembering` reads the same function.
+- M6 `ASK_WINDOW_MS` set to eleven hours → C8 red (the constant left the label), C4 and C4b red (the dialog now says
+  eleven and the test's literal says twelve); `mcpConsentPolicy.test.ts:73-76` red too. The build keeps twelve; M6
+  only shows the number is derived, not typed.
+- M7 the `every12h` tail loses its condition clause → C4b red on `WINDOW_CONDITION` while its stamp assertion stays
+  green, which is the words-versus-fact split C4b exists for.
 
 ### 4.3 What the tests prove and what they do not
 
@@ -204,11 +234,14 @@ recorded in §7. They do not run the `.cjs` harnesses, which show no dialog text
   says the twelve-hour window it opens on this machine and that deleting still asks; nothing about what an Allow DOES
   changed. Every release since the alias route and the MCP door carries the old sentence; update to the release that
   follows.
-- `research/module_extension.md`, § *The agent broker* (`:4039`): after the sentence *Allow covers every later call
-  on that token; Deny is sticky for its life* (`:4345`), one paragraph: the dialog's last paragraph is chosen per door
-  by `coverage` (the three tails of §2.2, quoted), computed by `coverageOf(grant.scope, remembers)` where `remembers`
-  rides beside `preConsented` from the lookup; and in the policy paragraph (`:4362-4372`) one sentence that the alias
-  dialog now says *this call only*. The help articles are not changed: none of the five quotes the sentence (grep over
+- `research/module_extension.md`, section *The agent broker — using a credential without handing it over*: in the
+  paragraph that opens **Whose session registry, and the rule the code round added**, after its sentence *Allow
+  covers every later call on that token; Deny is sticky for its life*, one paragraph: the dialog's last paragraph is
+  chosen per door by `coverage` (the three tails of §2.2, quoted, the hours from `ASK_WINDOW_MS`), computed by
+  `coverageOf(grant.scope, remembers)` where `remembers` rides beside `preConsented` from the lookup, and why the
+  `every12h` tail is conditional; and in the paragraph that opens **The entry's ask policy does not reach this door,
+  and that is a decision**, one sentence that the alias dialog now says *this call only*. Found by heading and by
+  those opening phrases, never by line number: the file is 7,352 lines and moves. The help articles are not changed: none of the five quotes the sentence (grep over
   `helpEn.ts`, `helpDe.ts`, `helpEs.ts`, `helpRu.ts`, `helpUk.ts` for *covers every*, *later call*, *not just this one*:
   no hit).
 - `todo/README.md`: this plan's row, committed with the plan.
@@ -230,8 +263,11 @@ recorded in §7. They do not run the `.cjs` harnesses, which show no dialog text
 
 ## 6. Definition of Done
 
-- [ ] C1–C7 in `consentCoverage.test.ts`; C2–C6 were watched red on `main`'s wording and the failure messages are in
-      the summary; M1–M5 each turned the named case red on the finished tree and were reverted.
+- [ ] C1–C8 in `consentCoverage.test.ts`, C4b in both runs; C2–C6 and C4b were watched red on `main`'s wording and
+      the failure messages are in the summary; M1–M7 each turned the named case red on the finished tree and were
+      reverted.
+- [ ] The `every12h` tail's hours come from `ASK_WINDOW_MS`: `grep -n "12" src_vs_code/src/brokerConsent.ts` finds no
+      literal twelve.
 - [ ] `coverage` is a required field of `ConsentQuestion`; both call sites in `credsAgentServer.ts` state it; `grep -n
       "coverage" src_vs_code/src/credsAgentServer.ts` shows exactly the two.
 - [ ] The token tail is byte-identical to `main`'s (`git diff main -- src_vs_code/src/brokerConsent.ts` shows the old
