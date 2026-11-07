@@ -1918,7 +1918,7 @@ touched); not a result.
 **Differences from the brief.**
 1. **The expected list has three lines, not four.** `CallerIdentityTests.cs:196` holds `/tmp` inside a RAW string literal (`"""..."""`); the copied guard's folded reading does not see raw strings, so it is not a finding. The
    brief allows correcting the list to the guard's reading when the RED shows it (said on the PR). Not a plan change.
-2. **The list is keyed on file and a fragment of the line, not on the line number.** The migration adds lines above the literals (`AgentRelayTests.cs:33, :34, :278` became `:38, :39, :283`); a number would be red for no reason.
+2. **The list is keyed on file and a fragment of the line, not on the line number.** The migration adds lines above the literals (`AgentRelayTests.cs:33` and `:34` became `:38` and `:39`; `:278` held by chance); a number would be red for no reason.
 3. **The scan reads a scratch copy** of the trees, not the trees: the guard's `Scan(root)` keys on relative paths, and a copy starts no script classifier (no `node`). Both helper folders are left out, as the brief says "helper
    folder excluded"; their own `/tmp` strings (`SocketRootSweepTests`) are E2.5's to judge.
 4. **`SocketSites` is one small helper for the four sites** (the brief writes the `Path.Combine` inline four times); S3.2 then tests the helper and its worst case, and the sites share one line.
