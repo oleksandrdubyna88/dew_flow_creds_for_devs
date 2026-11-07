@@ -1710,6 +1710,86 @@ Commits: the REDs (tests), then one fix commit, then the docs. Each fix was watc
 - **`CREDS_ITEST_GIT` missing file:** the SKIP names the variable and the path; the fixed-directory message stays for the unset case (by hand).
 - **Comment** about running harnesses one after another removed from `run-itests.mjs`.
 
+### E2.3 build record, part 1 — S1 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.1, test first. Commits, oldest
+first: `a6938ad` S1.5 RED (`workflowMount.test.ts`); `aa86b90` S1.1 and S1.2 RED (the manifest, `TheAdaptedCopyTests`, `.gitattributes`,
+`RepositoryRoot.cs`); `68fd74a` the copy, the links, `SweepRanTests`; `f96bfb1` the Sonar exclusions; `069446a` the CI changes;
+`96a6204` `module_tests.md`; `df61446` one manifest op for the barrier scan (difference 3); this record. Builds: each of the five test
+projects by name, `nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`, 0 warnings, 0 errors, every time.
+
+**What was built.**
+- **The copy.** 52 files of `dew_flow_mcp` `tests/Mcp.Tests` at `197cc76`, each the template's raw bytes plus the manifest's ops: 33 helper files + `DirectoryLinks.cs`
+  + `RepositoryRoot.cs` in `src_service_defaults/tests/Support/Leftovers/`, 17 test files in `src_service_defaults/tests/Leftovers/`. A generator (kept out of the
+  repository) read each file with `git show 197cc76:<path>`, applied the ops, checked each count and the upstream blob SHA, and wrote the manifest.
+  `template-manifest.json`: **52 entries, 76 ops** (52 namespace lines and 24 more, each with a `reason`): `OwnedToken.cs` (token, row), `LeftoversAuditException.cs`
+  (doc comment), `LeftoversAuditTests.cs` (`mcp tests:` x6, `--token mcp`), `OwnedTests.cs`, `LeftoversSelfTest.cs` (`CREDS_LEFTOVERS_SELFTEST` x2), `LeftoversSweepFixture.cs` (`typeof`),
+  `Owned.cs` (one doc line), `LeftoversGuard.cs` (`HelperFile`, the helper folders, the four folding allowances), `LeftoversGuardFiles.cs` (script folders, test and source roots), `LeftoversGuardTokens.cs`
+  (`TokenFile`), `LeftoversGuardTests.cs` (eight path and identity ops, the pin). No op touches ownership, liveness or deletion code. `about` carries the F29 and F31 sentences.
+- **Links.** One wildcard `Compile Include` per other project; `AllowUnsafeBlocks` in `BrokerClient.Tests` and `CredVaultServer.Tests`. F16 measured: the template's `using Xunit;` against the
+  global `<Using Include="Xunit" />` gives **no warning** in any of the five, so no `NoWarn` was added.
+- **`SweepRanTests`** (in `Support/Leftovers`, so linked into all five): the class asks for `LeftoversSweepFixture` in its constructor and asserts `LastRun` is not null.
+- **`TheAdaptedCopyTests`** (coai's form): well-formed manifest (commit, 52 entries, unique targets); every op beyond the namespace line has a reason; the `about` text names F29 and F31; the theory over 52
+  targets; every `.cs` file of the two folders is a target or on `CredsOwn` (premise: more than 50 files found); `sonar.exclusions` names exactly the targets; the count-below case; a one-byte case.
+  `CREDS_TEMPLATE_REPO` names the first differing line.
+- **`.gitattributes`:** 52 `-text` lines, no glob. **Sonar:** the 52 targets added to `sonar.exclusions` by name.
+- **CI.** `ci-clients.yml`: mount fetch and `setup-node` 22.x (+ `node --version`) after `setup-dotnet`; three macOS-only steps (Arm64 check with uid and system printed, layout self-test with its three
+  greps, `--filter-namespace "CredsForDevs.Tests.Leftovers"`) before the four executables; the teeth in one bash step (ubuntu, macOS) and one pwsh step (Windows) that loop over the four client executables.
+  `ci-server.yml`: the teeth (bash) for `CredVaultServer.Tests`. `release.yml` `cli-binaries` and `mcp-binaries`: mount fetch and Node 22. `sonarcloud.yml`: Node 22 (the mount was there).
+  `workflowMount.test.ts`: S1.5. `research/module_tests.md`: the .NET row and the commands.
+
+**The RED list** (the failing assertion; each seen before its code):
+1. S1.5 (a), `workflowMount.test.ts`: actual `[ 'ci-clients.yml:build-test', 'release.yml:cli-binaries', 'release.yml:mcp-binaries' ]`, expected `[]`. (b): the same three and `'sonarcloud.yml:sonar'`.
+2. S1.1, 51 of 52 theory rows (the 52nd is `RepositoryRoot.cs`, which the RED commit already holds because the check reads the root through it): `System.IO.FileNotFoundException : Could not find file '.../Support/Leftovers/OwnedDir.cs'`.
+3. S1.2: `Expected value to be greater than 50 because the premise: the scan sees the folders ..., but found 2 (difference of -48)`; Sonar: `Expected named to be a collection with 52 item(s) because the exclusion names exactly the copied files ..., but found an empty collection`.
+4. S1.4, the `[assembly: AssemblyFixture]` line removed: at compile time `error xUnit1041: Fixture argument 'sweep' does not have a fixture source` (the analyzer is earlier than the brief's text); with that one id silenced (`-p:NoWarn=xUnit1041`)
+   at run time `The following constructor parameters did not have matching fixture data: LeftoversSweepFixture sweep`. File restored (blob checked by the theory).
+5. S1.3, by hand, each reverted: one byte in `Errno.cs` -> `Errno.cs: with the listed replaces undone, the git blob is 6b18974741ad...; the manifest says 7e489851e47b...`; one count lowered (`mcp tests:` 6 to 5) ->
+   `LeftoversAuditTests.cs: operation 2 of 3 ('mcp tests:' -> 'creds tests:') expected 5 occurrence(s) of the new text, found 6 at line(s) 220, 229, 230, 247, 268, 273`. S1.2 by hand: a new `Stray.cs` ->
+   `... found at least one item {"src_service_defaults/tests/Leftovers/Stray.cs"}`.
+6. S1.6 on Linux: with `_audit();` commented out in the fixture, the bash script of the `ci-clients.yml` step ended `the end-of-run audit did not fail the run (./src_cli/tests/bin/Release/net10.0/CredsCli.Tests, 1)`, exit 1
+   (its leaked self-test folder was removed by hand). File restored; the same script with the fixture whole: exit 0 for the four executables, both cases. The `ci-server.yml` script: exit 0 for the server executable.
+7. Found by the first full run of the copy (not in the brief): `LeftoversGuardTests.No_file_is_excluded_and_the_guards_own_tests_are_scanned_clean` red with `owner-blind` and `raw-temp` findings at `LeftoversGuardTests.cs:128-131, 136, 178-180` (difference 1).
+8. Found by `sweeper-scan.mjs --root .`: `Owned.cs:84 — owner-blind` (difference 3).
+
+**Test totals** (Release, `nice -n 19`, one executable at a time, after the last commit's rebuild; "base" is `bf59e4f` built in a scratch worktree):
+
+| Executable | total | failed | succeeded | skipped | base |
+|---|---|---|---|---|---|
+| `CredsForDevs.ServiceDefaults.Tests` | 569 | 0 | 551 | 18 | 82 total |
+| `CredsForDevs.ServiceDefaults.Tests --filter-namespace CredsForDevs.Tests.Leftovers` | 487 | 0 | 470 | 17 | — |
+| `CredVaultServer.Tests` | 824 | 0 | 821 | 3 | 820 |
+| `CredsCli.Tests` | 150 | 0 | 147 | 3 | 146 |
+| `CredsMcp.Tests` | 173 | 2 | 168 | 3 | 169 (2 failed) |
+| `CredsBroker.Tests` | 163 | 0 | 160 | 3 | 159 |
+
+The 2 `CredsMcp.Tests` failures (`ParentWatchProcessTests.The_server_ends_when_its_parent_is_killed_while_stdin_stays_open`, `...The_server_keeps_serving_when_the_watch_is_off`) fail the same way on `bf59e4f`: this WSL
+machine "looks like WSL" and `creds-mcp.exe` cannot start (`windowsHalfMissing`). One run of `CredsMcp.Tests` showed 167 passed and 4 skipped, the next two 168 and 3: a skip of an existing test that flickers. `npm test`: 6486 tests, 6478 passed, 0 failed, 8 skipped (the real runner, so it also swept both roots).
+Filtered runs build the fixture: `--filter-class "*SweepRanTests"` and `--filter-class "*LeftoversSelfTest"` (whose audit failed the run) and `--filter-namespace` all ran the sweep and the audit (brief § 2's measurement).
+`sweeper-scan.mjs --root .` at the head: `none found (1595 file(s) read)`. `dotnet format whitespace` and `style --verify-no-changes --no-restore`: exit 0.
+
+**Not run, and why.**
+- **No CI.** The macOS steps, the pwsh teeth, the Windows leg, `release.yml` (runs on a tag only) and `sonarcloud.yml` have not run. The bash teeth script was run by hand on Linux only. `actionlint` and `pwsh` are not installed here: the four workflows were parsed with PyYAML, nothing more.
+- **`dotnet format dew_flow_creds_for_devs.slnx --verify-no-changes --no-restore` as one command** prints 113 `IL2026`/`IL3050` errors in `src_minimalapi_server/src` once the projects have been built. The same 113 appear on `bf59e4f` after a build, so this is the machine and the AOT analyzers, not the copy. The two subcommands that read the copy are clean (above).
+- **Rows 2, 5, 10, 16, 24 and S2–S5's tests** are other stories' (the hand clean-up, the leak counts, sc. 4, the hand-run C# guard, the shipped Node guard run). `leftovers-check.mjs` needs a scratch copy with `yaml@2` and was not run.
+- S1.4's Windows and macOS runs, and the helper's Windows- and Darwin-only tests (the 17 skips above are those, on Linux).
+
+**Differences from the brief.**
+1. **The guard's helper folder is two folders (two ops in `LeftoversGuard.cs`), which the brief puts in E2.5.** The copied `LeftoversGuardTests.No_file_is_excluded_and_the_guards_own_tests_are_scanned_clean`
+   scans `LeftoversGuardTests.cs` as it lies; the file names `Owned.Prefix` and `Owned.TempRoot` in its fixtures, which the guard allows inside the helper folder only. With one folder (`Support/Leftovers/`) that copied test is red.
+   The two ops are coai's form (`HelperFolders` array, `Any`) and change no ownership code. E2.5.S1's own list in this document (§ *E2.5*) does not name a second helper folder, so the brief's "E2.5.S1's own list" does not hold
+   for it. **For the coordinator:** keep the two ops, or take them out and decide how that one test is made true; either way creds' own tests in `tests/Leftovers` (S2) will name `Owned.*` and meet the same rule.
+2. **Fewer token ops than the brief expects.** The 58 `mcp` words in `LeftoversGuardTests.cs` are fixture tokens passed to the guard as arguments (`McpRow`, `"mcp"`, `-mcp-x-`); they are self-consistent, the tests pass with them, so no op was made. `MCP_DARWIN_FIFO_CHILD` stays, as the brief said. The doc comments in `Owned.cs`
+   (`:77`) and `OwnedDir.cs` (`:6`) that say `mcp` are untouched.
+3. **One op on a doc line of `Owned.cs` (`:84`).** `tools/sweeper-scan.mjs` reads `&lt;owner&gt;` as no owner segment and reports the line as owner-blind, which breaks row 1 on the PR head (coai's copy has the same finding). The op writes
+   `{owner}` and `creds`; its old text leaves the prefix word out, so the manifest is no finding either. It is a comment, but it is in the ownership file: a reviewer should read it. The template owner could fix it upstream instead.
+4. **`LeftoversGuardFiles.cs` ops:** `ScriptFolders` gains `src_vs_code/scripts/` and `src_minimalapi_server/scripts/`; two new arrays `TestRoots` and `SourceRoots` (the template's `tests/` and `src/` stay, because the guard's own fixtures use them, plus the five projects' roots). The `.ts` helpers of `src_vs_code/src/test/` are not read by the guard (no `.ts` kind): E2.5.
+5. **Reasons:** every op beyond the namespace line has one (the brief asked it beyond namespace and token). The tests check that.
+6. **CI shape:** one teeth step loops over the executables (bash for ubuntu and macOS, pwsh for Windows) instead of a step per executable; the macOS-only steps are three, the fourth of row 11 is the shared bash teeth step. The macOS steps have no `if: !cancelled()` (a `bash -e` step stops the job).
+   `ci-clients.yml` sets up Node on all three legs; `sonarcloud.yml`'s extension coverage now runs under Node 22 too.
+7. **Order and builds:** `RepositoryRoot.cs` is in the RED commit (the check needs it to compile). Release, not Debug, and `nice -n 19` in place of `low-priority.mjs`, as the coder's instructions said; § 9's stale-binary check shows no STALE line after the final rebuild.
+8. **`CLAUDE.md`'s command lines and `.vscode/tasks.json`** were not touched (not in § 3.1's file list); they still build the solution and name the `.exe` form.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
