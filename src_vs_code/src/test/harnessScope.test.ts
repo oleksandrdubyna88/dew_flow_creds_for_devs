@@ -35,7 +35,7 @@ interface Fixture {
 }
 
 /** A fixture harness: owns one folder under `root`, prints it, then runs `body`. It reads the wrapper, the exit module and the root from its environment. */
-function fixture(root: string, body: string): Fixture {
+function fixture(root: string, body: string, extra: NodeJS.ProcessEnv = {}): Fixture {
   const script = [
     "const fs = require('node:fs');",
     "const { ownedDir } = require(process.env.FIXTURE_WRAPPER);",
@@ -46,7 +46,7 @@ function fixture(root: string, body: string): Fixture {
     body,
     '});',
   ].join('\n');
-  return { script, env: { ...process.env, FIXTURE_WRAPPER: WRAPPER, FIXTURE_HARNESS_SCOPE: HARNESS_SCOPE, FIXTURE_SSHD: SSHD_HELPERS, FIXTURE_ROOT: root } };
+  return { script, env: { ...process.env, FIXTURE_WRAPPER: WRAPPER, FIXTURE_HARNESS_SCOPE: HARNESS_SCOPE, FIXTURE_SSHD: SSHD_HELPERS, FIXTURE_ROOT: root, ...extra } };
 }
 
 /** Run `code` in a child, send each step's signal when its output appears, and say how the child ended. */
@@ -250,6 +250,7 @@ const readOr = (file: string, fallback: string): string => (fs.existsSync(file) 
 const pidIn = (out: string): number => Number(/CHILDPID=(\d+)/.exec(out)?.[1] ?? 0);
 
 function killQuietly(pid: number): void {
+  if (pid <= 0) return; // signal 0 would reach this test's own process group
   try {
     process.kill(pid, 'SIGKILL');
   } catch {
@@ -265,14 +266,13 @@ test('[S2.2] a SIGTERM during a section stops the section\'s process BEFORE its 
     "const sshd = require(process.env.FIXTURE_SSHD);",
     'const section = harnessScope.sectionScope();',
     "const inner = ownedDir(section, 'sec', { parent: process.env.FIXTURE_ROOT });",
-    'section.after(() => sshd.endRunning());', // registered AFTER the folder: it runs first on close
-    `const started = sshd.launch(process.execPath, ['-e', ${JSON.stringify(SECTION_CHILD)}], { env: { ...process.env, CHILD_FOLDER: inner, CHILD_OUT: path.join(process.env.FIXTURE_ROOT, 'child-out.txt') } });`,
+    "const started = sshd.launch(section, process.execPath, ['-e', process.env.FIXTURE_CHILD_CODE], { env: { ...process.env, CHILD_FOLDER: inner, CHILD_OUT: path.join(process.env.FIXTURE_ROOT, 'child-out.txt') } });",
     "console.log('SECTION=' + inner + ' CHILDPID=' + started.child.pid);",
-    "while (!fs.existsSync(inner + '/alive')) await new Promise((r) => setTimeout(r, 20));",
+    "for (let waited = 0; waited < 250 && !fs.existsSync(inner + '/alive'); waited += 1) await new Promise((r) => setTimeout(r, 20));",
     "console.log('READY'); await new Promise(() => setInterval(() => {}, 1000));",
   ].join('\n');
 
-  const done = await runChild(fixture(root, body), [{ when: /READY/, send: 'SIGTERM' }]);
+  const done = await runChild(fixture(root, body, { FIXTURE_CHILD_CODE: SECTION_CHILD }), [{ when: /READY/, send: 'SIGTERM' }]);
 
   const pid = pidIn(done.out);
   try {
@@ -281,6 +281,32 @@ test('[S2.2] a SIGTERM during a section stops the section\'s process BEFORE its 
     assert.equal(readOr(out, 'the process was never told to stop'), 'ok', 'it was told to stop while the folder was still there');
     assert.equal(isAlive(pid), false, 'the process is dead');
     assert.ok(gone(/SECTION=(\S+)/.exec(done.out)?.[1] ?? '<none>'), 'and then the folder and its claim are gone');
+  } finally {
+    killQuietly(pid);
+  }
+});
+
+test('[S2.2] closing one section ends only its own processes, not a process launched in another scope', posixOnly, async (t) => {
+  const root = privateRootOf(t);
+  const body = [
+    "const sshd = require(process.env.FIXTURE_SSHD);",
+    'const first = harnessScope.sectionScope();',
+    'const second = harnessScope.sectionScope();',
+    "const a = sshd.launch(first, process.execPath, ['-e', process.env.FIXTURE_CHILD_CODE]);",
+    "const b = sshd.launch(second, process.execPath, ['-e', process.env.FIXTURE_CHILD_CODE]);",
+    "const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };",
+    'await first.close();',
+    "console.log('A-ALIVE=' + alive(a.child.pid) + ' B-ALIVE=' + alive(b.child.pid) + ' CHILDPID=' + b.child.pid);",
+    'return 0;',
+  ].join('\n');
+
+  const done = await runChild(fixture(root, body, { FIXTURE_CHILD_CODE: 'setInterval(() => {}, 1000)' }));
+
+  const pid = pidIn(done.out);
+  try {
+    assert.match(done.out, /A-ALIVE=false B-ALIVE=true/, 'closing the first section ended its own process and left the other one running');
+    assert.equal(done.code, 0);
+    assert.equal(isAlive(pid), false, 'the other process is ended when ITS scope closes (here: at the exit)');
   } finally {
     killQuietly(pid);
   }
