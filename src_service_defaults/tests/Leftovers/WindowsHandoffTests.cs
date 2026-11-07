@@ -120,8 +120,11 @@ public sealed class WindowsHandoffTests : IDisposable
 
         // (a) the Node sweep: it changes nothing on Windows until F16 closes, and it names THIS folder, so it read it as its own token's (F9)
         var node = await NodeAsync(["--input-type=module", "-e", NodeSweep], NodeEnv(root), ct);
-        node.Should().Contain("unverified: ", "(a) the Node sweep lists what it would have removed");
-        node.Should().Contain(Path.GetFileName(dir), "(a) and the line names this folder, not another token's");
+        using var report = System.Text.Json.JsonDocument.Parse(node);
+        var listed = report.RootElement.GetProperty("listed").EnumerateArray().Select(line => line.GetString()!).ToList();
+        listed.Should().ContainSingle(line => line.StartsWith("unverified: ", StringComparison.Ordinal) && line.Contains(Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase),
+            "(a) exactly one `unverified: <path>` line, and it names THIS folder, not another token's");
+        report.RootElement.GetProperty("removed").GetArrayLength().Should().Be(0, "(a) the Node sweep removes nothing on Windows");
         Directory.Exists(dir).Should().BeTrue("(a) the Node sweep removed nothing");
         File.Exists(dir + ".owner").Should().BeTrue();
 

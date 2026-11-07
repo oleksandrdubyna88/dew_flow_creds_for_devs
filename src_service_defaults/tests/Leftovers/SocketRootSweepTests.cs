@@ -130,10 +130,17 @@ public sealed class SocketRootSweepTests : IDisposable
         var (temp, socket) = PrivatePair();
         var handshake = Path.Combine(_owned.Dir("handshake"), "folder.txt");
         var env = new Dictionary<string, string> { [ProducerRoot] = socket, [ProducerHandshake] = handshake };
+        // The producer is a whole test run of its own. Its run record must be ITS pid: an ambient TESTSTODELETE_RUN (an npm runner exports one) would make its claim
+        // the parent's record, and the folder would read as the parent's. An empty value is "none".
+        env["TESTSTODELETE_RUN"] = string.Empty;
         // The host id of a claim carries the WSL distribution (Owner.HostId); HostProcess takes that variable out of a child's environment unless the test names it.
         if (Environment.GetEnvironmentVariable(HostProcess.DistroVariable) is { Length: > 0 } distro) env[HostProcess.DistroVariable] = distro;
         using var producer = HostProcess.StartFile(Environment.ProcessPath!, ["--filter-method", "*The_producer_side_of_the_live_folder_test*"], env);
         var reaper = HostProcess.KillOnDispose(producer);
+        // Its reports are read to the end, so a long one cannot fill a pipe and block it. NOTE: the producer is handed an owned temp folder (HostProcess), so its roots DIFFER
+        // and its socket-root fixture sweeps the real /tmp: only dead, aged, claimed folders of this user and token, as every run of this suite does.
+        _ = producer.StandardOutput.ReadToEndAsync(ct);
+        _ = producer.StandardError.ReadToEndAsync(ct);
         try
         {
             await WaitForFileAsync(handshake, ct);

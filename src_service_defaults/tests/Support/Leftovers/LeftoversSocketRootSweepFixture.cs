@@ -29,6 +29,8 @@ public sealed class LeftoversSocketRootSweepFixture : IAsyncDisposable
     internal LeftoversSocketRootSweepFixture(
         string socketRoot, string tempRoot, Action requireLayout, Func<string, SweepResult> sweepOf, Action<string> report, Action<string>? auditOf = null)
     {
+        TempRootSeen = OwnedCreds.Canonical(tempRoot);
+        SocketRootSeen = OwnedCreds.Canonical(socketRoot);
         if (!OwnedCreds.RootsDiffer(socketRoot, tempRoot)) return;
         SweptRoot = socketRoot;
         auditOf ??= root => LeftoversSweepFixture.RealAudit(root, OwnedDir.Unreclaimed());
@@ -41,11 +43,11 @@ public sealed class LeftoversSocketRootSweepFixture : IAsyncDisposable
     /// <summary>The roots differ, so this fixture's run IS the sweep of the short root. False: the main fixture swept it.</summary>
     public bool OwnsASweep => _run is not null;
 
-    /// <summary>RED stub: the canonical temp root this fixture was given.</summary>
-    public string TempRootSeen => string.Empty;
+    /// <summary>The temp root this fixture was told the main fixture sweeps, as a canonical path (the roots it compared, kept as a record of its decision).</summary>
+    public string TempRootSeen { get; }
 
-    /// <summary>RED stub: the canonical short root this fixture was given.</summary>
-    public string SocketRootSeen => string.Empty;
+    /// <summary>The short socket root this fixture was given, as a canonical path.</summary>
+    public string SocketRootSeen { get; }
 
     /// <summary>The root this fixture swept; null where it swept none.</summary>
     public string? SweptRoot { get; }
