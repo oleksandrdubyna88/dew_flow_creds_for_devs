@@ -5,7 +5,6 @@ import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { RotateDeps, rotateAction } from '../rotateAction';
 import { NEW_SECRET_PLACEHOLDER } from '../secretRotation';
 import { stored } from '../storedSecret';
-import type { EntityMetadata } from '../types';
 import type { UseAction } from '../useActions';
 import { message, pause } from './bridgeDoorHarness';
 import { Ask, Door, answeredAtOnce, send, sendAbortable, until } from './bridgeWallWorld';
@@ -76,7 +75,7 @@ for (const verb of ['up', 'down'] as const) {
       './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
     };
     const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
-    const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } as EntityMetadata }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
+    const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
     const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, act, gate) => open(accountId, 'vpn', act, gate) };
     const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: [verb], realActions: { [verb]: vpnAction(deps, verb) }, aliasMap: { one: TARGET('vpn') }, mcpUse: 'usable' });
     try {
@@ -117,9 +116,9 @@ function rotating(prompts: ReturnType<typeof heldPrompt>[]): UseAction {
   };
   const deps: RotateDeps = {
     generate: () => ({ ok: true, value: 'NEW-secret-4b7e', kind: 'password' }),
-    entity: () => ({ id: 'e1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }) as EntityMetadata,
+    entity: () => ({ id: 'e1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }),
     current: () => Promise.resolve(stored('mysql://app:old-password-9f2c@db-01.example.internal:3306/orders')),
-    snapshot: () => Promise.resolve({ at: 1, name: 'orders-db', details: {} as EntityMetadata, secrets: {} }),
+    snapshot: () => Promise.resolve({ at: 1, name: 'orders-db', details: { id: 'e1', name: 'orders-db', isSshEnabled: false }, secrets: {} }),
     record: () => Promise.resolve(),
     store: async () => {
       for (const prompt of prompts) {

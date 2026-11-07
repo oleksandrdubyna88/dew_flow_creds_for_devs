@@ -246,7 +246,7 @@ test('X1: a credential read that THROWS gives the slot back and fails the call â
 });
 
 test('C.3: asksAfterConsent is true on the terminal action (a remote window\'s refusal modal can follow the Allow); on exec it is per entity â€” only a forwarding entry with the agent socket up', async () => {
-  const forwarding = { ...ENTITY, agentForward: true } as unknown as EntityMetadata;
+  const forwarding: EntityMetadata = { ...ENTITY, agentForward: true };
   const asked = async (entity: EntityMetadata, socket: string | undefined): Promise<unknown> => {
     const parts: Parts = { source: KEY_SOURCE, entity };
     const w = await world(parts);

@@ -98,7 +98,10 @@ test('more ways to hide a prompt fail BY NAME too: a spread call, a cast require
   const forms: Array<[WindowRead['form'], string]> = [
     ['spread-call', "import * as vscode from 'vscode';\nconst args: [string] = ['x'];\nvoid vscode.window.showWarningMessage(...args);"],
     ['require-cast', "import type * as vscode from 'vscode';\nconst editor = require('vscode') as typeof vscode;\nvoid editor.window.showQuickPick([]);"],
-    ['global-hop', "void (globalThis as { vscode?: { window: { showQuickPick(items: string[]): void } } }).vscode?.window.showQuickPick([]);\nvoid globalThis.window;"],
+    ['global-hop', "void globalThis.window;"],
+    ['global-hop', "void (globalThis as { vscode?: { window: { showQuickPick(items: string[]): void } } }).vscode?.window.showQuickPick([]);"],
+    ['global-hop', "void (globalThis).vscode;"],
+    ['global-hop', "void (<{ window?: unknown }>globalThis).window;"],
     ['dynamic-import', "async function ask(): Promise<void> {\n  const editor = await import('vscode');\n  void editor.window.showQuickPick([]);\n}\nvoid ask;"],
   ];
   for (const [form, source] of forms) {

@@ -245,7 +245,11 @@ const spreadsAMessage = (node: ts.Node, editor: Editor): boolean => ts.isCallExp
 
 const castsRequire = (node: ts.Node): boolean => (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && isRequireVscode(node.expression);
 
-const isGlobalThis = (node: ts.Node): boolean => ts.isIdentifier(node) && node.text === 'globalThis';
+/** `globalThis`, however it is wrapped: `(globalThis)`, `globalThis as T`, `<T>globalThis`, `globalThis!`. */
+const isGlobalThis = (node: ts.Node): boolean => {
+  const inner = unwrapped(node);
+  return ts.isIdentifier(inner) && inner.text === 'globalThis';
+};
 
 const hopsThroughGlobal = (node: ts.Node): boolean => ts.isPropertyAccessExpression(node) && isGlobalThis(node.expression) && ['window', 'vscode'].includes(node.name.text);
 

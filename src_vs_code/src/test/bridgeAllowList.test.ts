@@ -196,6 +196,8 @@ interface ServedWorld {
   readonly setSocket: (socket: string | undefined) => void;
 }
 
+const PLAIN_ENTITY: EntityMetadata = { id: 'plain', name: 'plain', kind: 'ssh', host: 'plain.example.test', isSshEnabled: true };
+const FORWARDING_ENTITY: EntityMetadata = { id: 'forwarding', name: 'forwarding', kind: 'ssh', host: 'forwarding.example.test', isSshEnabled: true, agentForward: true };
 const PLAIN = { accountId: 'a1', entityId: 'plain', entityName: 'plain' };
 const FORWARDING = { accountId: 'a1', entityId: 'forwarding', entityName: 'forwarding' };
 
@@ -203,8 +205,8 @@ const FORWARDING = { accountId: 'a1', entityId: 'forwarding', entityName: 'forwa
 async function realServedActions(): Promise<ServedWorld> {
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const storage = memoryStorage(stub);
-  await seedEntry(storage, { id: 'plain', name: 'plain', kind: 'ssh', host: 'plain.example.test', isSshEnabled: true } as EntityMetadata, {});
-  await seedEntry(storage, { id: 'forwarding', name: 'forwarding', kind: 'ssh', host: 'forwarding.example.test', isSshEnabled: true, agentForward: true } as EntityMetadata, {});
+  await seedEntry(storage, PLAIN_ENTITY, {});
+  await seedEntry(storage, FORWARDING_ENTITY, {});
   const signal = new AbortController().signal;
   let socket: string | undefined;
   const sshDeps: SshUseDeps = { storage, storageDir: '/unused', signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => socket };
@@ -251,8 +253,8 @@ test('S1: the one target whose flag is true — a forwarding entry with the sock
   const exec = actions.find((action) => action.action === 'exec') as UseAction;
   setSocket('/run/agent.sock');
   assert.equal(asksAfter(exec, FORWARDING), true, 'control: the evaluation sees a forwarding entry');
-  assert.notEqual(agentForwardRefusal({ id: 'forwarding', name: 'forwarding', kind: 'ssh', isSshEnabled: true, agentForward: true } as EntityMetadata), undefined, 'the wall refuses it, before any dialog (bridgeLinks L4: "refused before anybody is asked")');
-  assert.equal(agentForwardRefusal({ id: 'plain', name: 'plain', kind: 'ssh', isSshEnabled: true } as EntityMetadata), undefined);
+  assert.notEqual(agentForwardRefusal(FORWARDING_ENTITY), undefined, 'the wall refuses it, before any dialog (bridgeLinks L4: "refused before anybody is asked")');
+  assert.equal(agentForwardRefusal(PLAIN_ENTITY), undefined);
 });
 
 test('routeNameOf: the name of a route of the table, as method and path, and `other` for anything else — a real route outside the table included, a raw path never', () => {
