@@ -148,7 +148,7 @@ public class BackupArchiveCommandTests : IDisposable
         var mine = Environment.GetEnvironmentVariable("CREDS_AOT_KIT_DIR");
         var kit = string.IsNullOrWhiteSpace(mine) ? _owned.Dir("aot-kit") : Directory.CreateDirectory(mine).FullName;
         TestContext.Current.AddWarning($"aot-kit folder: {kit}");
-        TestContext.Current.AddWarning($"aot-kit commands: CredVaultServer --verify-archive {Path.Combine(kit, "archive.cvbk")} {Path.Combine(kit, "key.b64")} | CredVaultServer --decrypt-archive {Path.Combine(kit, "archive.cvbk")} <out> {Path.Combine(kit, "key.b64")}");
+        TestContext.Current.AddWarning($"aot-kit commands: CredVaultServer --verify-archive {Path.Combine(kit, "archive.cvbk")} {Path.Combine(kit, "key.b64")} | CredVaultServer --decrypt-archive {Path.Combine(kit, "archive.cvbk")} <out> {Path.Combine(kit, "key.b64")} (removed when the test ends; set CREDS_AOT_KIT_DIR to keep a kit)");
         var key = NewKey();
         var archive = Path.Combine(kit, "archive.cvbk");
         File.Delete(archive);

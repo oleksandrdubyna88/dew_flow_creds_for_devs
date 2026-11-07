@@ -19,7 +19,7 @@ namespace CredVaultServer.Tests;
 [Collection(ServerCollection.Name)]
 public sealed class AotKitFolderTests : IDisposable
 {
-    private static readonly Regex Printed = new(@"aot-kit folder: (?<path>\S+)", RegexOptions.CultureInvariant);
+    private static readonly Regex Printed = new(@"aot-kit folder: (?<path>.+?)\s*$", RegexOptions.CultureInvariant | RegexOptions.Multiline);
 
     private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
@@ -54,7 +54,7 @@ public sealed class AotKitFolderTests : IDisposable
             File.Exists(path + ".owner").Should().BeFalse("and its claim");
         }
 
-        Directory.EnumerateFileSystemEntries(tmp).Where(entry => Path.GetFileName(entry).Contains("aot-kit", StringComparison.Ordinal)).Should().BeEmpty("nothing of a kit is left in the temp root");
+        Directory.EnumerateFileSystemEntries(tmp).Should().BeEmpty("the children's temp root is empty: nothing of a kit, and nothing else, is left");
     }
 
     private static async Task<string> OutputOf(System.Diagnostics.Process process, CancellationToken ct)

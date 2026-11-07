@@ -72,29 +72,27 @@ public sealed class VaultServerFolderTests
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "the stand-in is a folder without its write bit");
         Assert.SkipWhen(Environment.UserName == "root", "root ignores the write bit");
-        var server = new VaultServer();
-        var dir = server.DataDir;
-        var locked = Path.Combine(dir, "locked");
-        Directory.CreateDirectory(locked);
-        File.WriteAllText(Path.Combine(locked, "held"), "x");
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        string? dir = null;
+        string? locked = null;
         try
         {
-            server.Dispose();
-        }
-        finally
-        {
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
+            var server = new VaultServer();
+            dir = server.DataDir;
+            locked = Path.Combine(dir, "locked");
+            Directory.CreateDirectory(locked);
+            File.WriteAllText(Path.Combine(locked, "held"), "x");
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserExecute);
 
-        try
-        {
+            server.Dispose();
+
             var warnings = (TestContext.Current.Warnings ?? []).Where(warning => warning.Contains(dir, StringComparison.Ordinal)).ToList();
             warnings.Should().ContainSingle("one removal that gave up is one warning, not one per run of the dispose body");
         }
         finally
         {
-            OwnedDir.Unreclaimed().Single(unreclaimed => unreclaimed.Path == dir).Dispose(); // the cleanup the failed removal left for this test: the lock is gone, the folder goes
+            if (locked is not null && !OperatingSystem.IsWindows() && Directory.Exists(locked)) File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            // the cleanup the failed removal left for this test: the lock is gone, the folder goes. A missing item must not hide the assertion above.
+            OwnedDir.Unreclaimed().SingleOrDefault(unreclaimed => unreclaimed.Path == dir)?.Dispose();
         }
     }
 
