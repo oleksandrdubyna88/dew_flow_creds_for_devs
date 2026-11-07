@@ -18,6 +18,9 @@ function setChildTemp(dir) {
   childTemp = dir;
 }
 
+/** The children `launch` started that have not exited yet, oldest first: what `endRunning` stops. */
+const running = new Set();
+
 /** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */
 function launch(exe, args, options = {}) {
   const child = spawn(exe, args, {
@@ -26,6 +29,7 @@ function launch(exe, args, options = {}) {
     ...(childTemp === undefined ? {} : { env: harnessScope.tempEnv(childTemp, options.env) }),
   });
   const result = { child, stdout: '', stderr: '', exited: false };
+  running.add(result);
   child.stdout.on('data', (chunk) => {
     result.stdout += chunk;
   });
@@ -35,11 +39,13 @@ function launch(exe, args, options = {}) {
   result.done = new Promise((resolve) => {
     child.once('exit', (code) => {
       result.exited = true;
+      running.delete(result);
       resolve(code);
     });
     child.once('error', (error) => {
       result.stderr += String(error);
       result.exited = true;
+      running.delete(result);
       resolve(-1);
     });
   });
@@ -139,6 +145,14 @@ async function endChild(result) {
   }
 }
 
+/**
+ * End every child still running, newest first (the client before `sshd`), and wait for each to exit. A section registers this in its
+ * scope AFTER its folder, so a close ends the processes before it removes the folder they hold files in — also on a signal.
+ */
+async function endRunning() {
+  for (const result of [...running].reverse()) await endChild(result);
+}
+
 /** The last `count` lines of a child's output — what it said just before the failure. */
 function lastLines(text, count) {
   return text.trim().split(/\r?\n/).slice(-count).join('\n');
@@ -192,4 +206,4 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login };
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, endRunning, lastLines, login };

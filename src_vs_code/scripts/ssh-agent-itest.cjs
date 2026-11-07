@@ -34,7 +34,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, setChildTemp, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
+const { SSHD, setChildTemp, startSshd, launch, endChild, endRunning, lastLines, login } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -485,6 +485,7 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
   // Its own scope, registered in the module scope at once (a signal in this section closes it too), closed in the `finally` below.
   const section = harnessScope.sectionScope();
   const sshdDir = ownedDir(section, 'sshd');
+  section.after(endRunning); // after the folder: a close ends the client and sshd first, then removes the folder they hold files in
   let sshd;
   let client;
   let manager;
@@ -594,6 +595,7 @@ async function liveLoginWindow(pem, dir) {
   }
   const section = harnessScope.sectionScope();
   const sshdDir = ownedDir(section, 'sshd');
+  section.after(endRunning);
   const began = Date.now();
   try {
     await loginLegs(pem, dir, sshdDir);

@@ -185,7 +185,7 @@ function runInGroup(args, label, run) {
       }
       if (openAfterMs !== undefined) run.write(`${label}: its output was still open ${openAfterMs} ms after it exited — not waited for\n`);
       const note = openAfterMs === undefined ? '' : `; its output was still open ${openAfterMs} ms after it exited`;
-      const failure = killedAt === '' ? (code === 0 ? '' : `exit ${code}`) : killedAt + note + (await treeNote(child, run));
+      const failure = killedAt === '' ? exitFailure(code) : killedAt + note + (await treeNote(child, run));
       resolve({ text, failure });
     };
     child.once('error', (error) => {
@@ -204,11 +204,23 @@ function runInGroup(args, label, run) {
   });
 }
 
+/** The failure of a harness that ended by itself: nothing for exit 0, else its code. */
+function exitFailure(code) {
+  if (code === 0) return '';
+  return `exit ${code}`;
+}
+
+/** What is known of the processes left after a tree end that could not be confirmed: how many are alive, else the reason. */
+function leftOf(ended) {
+  if (ended.alive > 0) return `${ended.alive} still alive`;
+  return ended.reason ?? 'unknown';
+}
+
 /** After a timeout: ask whether the whole tree ended. A tree not confirmed ended is one more phrase for the FAIL detail; nothing is removed, because there is no audit. */
 async function treeNote(child, run) {
   const ended = await run.tree.endTree(child, { confirm: run.confirm, survivors: run.survivors, record: run.record, platform: run.platform });
   if (ended.ended) return '';
-  return `; the end of its process tree is not confirmed (${ended.alive > 0 ? `${ended.alive} still alive` : (ended.reason ?? 'unknown')})`;
+  return `; the end of its process tree is not confirmed (${leftOf(ended)})`;
 }
 
 /** The failure line of a contained run that did not end well: a start that failed, a stop by a signal, an overflow, the timeout, or the exit code. */
@@ -291,6 +303,7 @@ async function runOne(harness, run) {
   if (harness.probe !== undefined && !(await run.reachable(harness.probe))) {
     return { ...harness, state: 'skipped', detail: `nothing on ${harness.probe.port} — ${harness.needs}` };
   }
+  if (run.signal !== undefined) return undefined; // a signal came while the probe waited: nothing is started
   run.write(`\n===== itest:${harness.name} =====\n`);
   if (run.platform === 'win32') run.write(`itest:${harness.name} started — on Windows its output is held under the job until it ends\n`);
   const { text, failure } = await runNode([pathResolve(HERE, harness.script)], harness.name, run);
@@ -359,7 +372,9 @@ async function runAll(harnesses, args, run, seams) {
   const results = [];
   for (const harness of wantedOf(harnesses, args)) {
     if (run.signal !== undefined) break;
-    results.push(await runOne(harness, run));
+    // One harness after another on purpose: they share the machine's ports and files, so they must not overlap.
+    const row = await runOne(harness, run);
+    if (row !== undefined) results.push(row);
   }
   return { results };
 }
@@ -408,7 +423,8 @@ async function runWith(harnesses, args, run, seams) {
     helpers = await (seams.loadHelpers ?? loadHelpers)();
   } catch (error) {
     run.write(`run-itests: ${String(error?.message ?? error).split('\n')[0]}\n`);
-    return 1;
+    if (run.signal !== undefined) summarize([], run.write); // a stopped run says what it did (nothing), as every other stop does
+    return codeOf(run, 1);
   }
   await sweepRoots(seams, helpers.helper, run.write);
   run.tree = helpers.tree;

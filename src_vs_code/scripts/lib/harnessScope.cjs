@@ -113,7 +113,7 @@ function run(main) {
       code = 1;
     }
     await finish(code);
-  })();
+  })().catch(() => process.exit(1)); // `finish` never rejects; this is the last resort, so a stuck harness cannot outlive an unexpected error
 }
 
 module.exports = { scope, run, finish, closeOnce, handleSignals, sectionScope, tempEnv };

@@ -32,6 +32,20 @@ const check = (what, ok, extra) => {
   if (!ok) fails += 1;
 };
 
+/**
+ * Where `git` is looked for: FIXED directories only, never the `PATH` of the caller (a writeable directory early on `PATH` could hand this
+ * harness another program). `CREDS_ITEST_GIT` names the binary outright (a person's choice; a missing file there is the SKIP).
+ */
+const GIT_DIRS = process.platform === 'win32' ? ['C:\\Program Files\\Git\\cmd', 'C:\\Program Files\\Git\\bin'] : ['/usr/bin', '/usr/local/bin', '/bin', '/opt/homebrew/bin'];
+function findGit() {
+  const named = process.env.CREDS_ITEST_GIT;
+  if (named !== undefined && named !== '') return fs.existsSync(named) ? named : undefined;
+  const file = process.platform === 'win32' ? 'git.exe' : 'git';
+  return GIT_DIRS.map((dir) => path.join(dir, file)).find((candidate) => fs.existsSync(candidate));
+}
+/** The git this run uses; set in `main`. */
+let GIT;
+
 // Set in `main`: the owned folder that holds the bare origin and the clones. Every `git` child gets it as its temp folder.
 let root;
 let bare;
@@ -42,7 +56,7 @@ const ACCOUNT = { accountId: 'acct-11112222', email: 'alice@example.com', provid
 
 const run = (args, options) =>
   new Promise((resolve) => {
-    execFile('git', args, { cwd: options.cwd, env: harnessScope.tempEnv(root, options.env) }, (error, stdout, stderr) => {
+    execFile(GIT, args, { cwd: options.cwd, env: harnessScope.tempEnv(root, options.env) }, (error, stdout, stderr) => {
       resolve({
         exitCode: error && typeof error.code === 'number' ? error.code : error ? 1 : 0,
         stdout: String(stdout),
@@ -82,10 +96,9 @@ function envelope(marker) {
 
 harnessScope.run(async (scope) => {
   // The SKIP comes before any folder or stub: a machine without git leaves nothing.
-  try {
-    execFileSync('git', ['--version'], { stdio: 'ignore' });
-  } catch {
-    console.log('SKIP  git is not on PATH — this transport requires it, so nothing was tested.');
+  GIT = findGit();
+  if (GIT === undefined) {
+    console.log(`SKIP  git was not found in ${GIT_DIRS.join(', ')} (or CREDS_ITEST_GIT) — this transport requires it, so nothing was tested.`);
     return 0;
   }
   const stub = writeStub(scope, 'git-stub', STUB_SOURCE);
@@ -94,7 +107,7 @@ harnessScope.run(async (scope) => {
   ({ VAULT_BRANCH } = require(path.join(OUT, 'gitRemote.js')));
   root = ownedDir(scope, 'git');
   bare = path.join(root, 'origin.git');
-  execFileSync('git', ['init', '--bare', '--initial-branch', VAULT_BRANCH, bare], { stdio: 'ignore', env: harnessScope.tempEnv(root) });
+  execFileSync(GIT, ['init', '--bare', '--initial-branch', VAULT_BRANCH, bare], { stdio: 'ignore', env: harnessScope.tempEnv(root) });
 
   const a = machine('machine-a');
   const b = machine('machine-b');
@@ -134,6 +147,6 @@ harnessScope.run(async (scope) => {
 
 function commitCount() {
   return Number(
-    execFileSync('git', ['rev-list', '--count', VAULT_BRANCH], { cwd: bare, encoding: 'utf8', env: harnessScope.tempEnv(root) }).trim(),
+    execFileSync(GIT, ['rev-list', '--count', VAULT_BRANCH], { cwd: bare, encoding: 'utf8', env: harnessScope.tempEnv(root) }).trim(),
   );
 }
