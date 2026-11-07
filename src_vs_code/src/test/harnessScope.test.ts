@@ -216,15 +216,17 @@ test('[S2.2] an unhandled rejection from a callback is exit 1, and the folder is
 test('[S2.2] closeOnce: two calls at once close the scope once, and both wait for the close', async (t) => {
   const root = privateRootOf(t);
   const body = [
-    'let closes = 0;',
-    "scope.after(async () => { closes += 1; await new Promise((r) => setTimeout(r, 200)); });",
-    'await Promise.all([harnessScope.closeOnce(), harnessScope.closeOnce()]);',
-    "console.log('AFTER closes=' + closes + ' gone=' + !fs.existsSync(dir));",
+    'let closes = 0; let slowDone = false;',
+    "scope.after(async () => { closes += 1; await new Promise((r) => setTimeout(r, 200)); slowDone = true; });",
+    'const first = harnessScope.closeOnce();',
+    'await harnessScope.closeOnce();', // only the SECOND call is awaited: it must wait for the close the first one started
+    "console.log('SECOND-RETURNED closes=' + closes + ' slowDone=' + slowDone + ' gone=' + !fs.existsSync(dir));",
+    'await first;',
     'return 0;',
   ].join('\n');
 
   const done = await runChild(fixture(root, body));
 
-  assert.match(done.out, /AFTER closes=1 gone=true/);
+  assert.match(done.out, /SECOND-RETURNED closes=1 slowDone=true gone=true/);
   assert.equal(done.code, 0);
 });

@@ -499,6 +499,6 @@ runAndSweep({
   main,
   strays: () => watches,
   failures: () => failures,
-  finish: () => harnessScope.scope.close(),
+  finish: () => harnessScope.closeOnce(),
   label: 'WSL MCP',
 });

@@ -9,6 +9,8 @@
 //   - a signal ends the process at once unless a listener is registered for it;
 //   - a listener added with `once` is gone after its first call, so a SECOND signal gets Node's default and ends the process in the
 //     middle of the close.
+//   - an error nobody caught (a throw or a rejection inside a timer or an event callback) ends the process at once. The module listens
+//     for `uncaughtException` (an unhandled rejection arrives there too), writes the error, closes the scope and leaves with 1.
 //
 // So a harness hands its body to `run(main)` and never calls `process.exit` itself:
 //
@@ -31,7 +33,10 @@ const { cleanupScope } = require('./leftovers.cjs');
 const scope = cleanupScope();
 
 /** Set by the first `finish`. A later call does nothing, and a signal that comes now is ignored. */
-let closing = false;
+let finishing = false;
+
+/** The one close of the scope: every caller of `closeOnce` and of `finish` waits for the same promise. */
+let closed;
 
 /** The signals that stop a harness. Handled with `process.on`, never `once`: the listeners stay until the process exits. */
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -41,10 +46,19 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
  * `main` after a signal) returns at once, so the close is never started twice or cut short.
  */
 async function finish(code) {
-  if (closing) return;
-  closing = true;
-  await scope.close(); // never rejects (the reference's contract)
+  if (finishing) return;
+  finishing = true;
+  await closeOnce();
   process.exit(code);
+}
+
+/**
+ * Close the scope, at most once: a second call (a harness with its own exit, such as the WSL one, and a signal at the same moment)
+ * gets the SAME promise, so it waits for the close that is running and never starts or cuts short another. Never rejects.
+ */
+function closeOnce() {
+  closed ??= scope.close();
+  return closed;
 }
 
 /**
@@ -64,9 +78,16 @@ function onSignal(name) {
   };
 }
 
-/** Listen for the three signals. `run` does it; a harness that has its own exit (the WSL one) calls it once at the start. */
+/** An error nobody caught (a throw or a rejection inside a callback) would end the process at once, with every folder left: write it, close, leave with 1. */
+function onUncaught(error) {
+  process.stderr.write(`${error?.stack ?? error}\n`);
+  finish(1).catch(() => process.exit(1));
+}
+
+/** Listen for the three signals and for an uncaught error. `run` does it; a harness that has its own exit (the WSL one) calls it once at the start. */
 function handleSignals() {
   for (const name of SIGNALS) process.on(name, onSignal(name));
+  process.on('uncaughtException', onUncaught);
 }
 
 /**
@@ -95,4 +116,4 @@ function run(main) {
   })();
 }
 
-module.exports = { scope, run, finish, handleSignals, sectionScope, tempEnv };
+module.exports = { scope, run, finish, closeOnce, handleSignals, sectionScope, tempEnv };
