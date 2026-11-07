@@ -1686,6 +1686,8 @@ watched red, then green, then taken out again (a temporary edit of the one line)
 | G6 | on Windows one line before each harness: `itest:<name> started — on Windows its output is held under the job until it ends` | S1.11: `one line says the harness started and that its output is held until it ends [G6]` | line disabled: red |
 | G9 | `research/architecture.md` says the backup harness requires the extension's wrapper and `harnessScope.cjs`, so `ci · server` fetches the mount and sets up Node 22 and its path filter lists `src_vs_code/scripts/lib/**` and `.claude/rules/shared`. No Mermaid diagram there shows this edge (the one pipeline drawing is plain text), so none was re-rendered | — | — |
 
+CodeQL `js/bad-code-sanitization` on PR #310: the fixture sources of `itestRunner.test.ts` and `harnessScope.test.ts` are constants now; the wrapper, exit module, root and marks folder reach them as `FIXTURE_WRAPPER`, `FIXTURE_HARNESS_SCOPE`, `FIXTURE_ROOT` and `FIXTURE_MARKS` in the child's environment (`withEnv` for the runner tests, the spawn's `env` for the others), and no value is spliced into fixture code. The guards S1.10, S1.5 and the S2.2 section case were taken out again and are still red.
+
 Also corrected: part 1 said `node-compile-cache` is "made by `npm` itself"; it appears in `TMPDIR` whenever Node runs the compile (it showed in a direct
 `node scripts/run-itests.mjs masked-run` run too). It is not a harness entry, and the counts leave it out. A by-hand re-run of
 `run-itests.mjs masked-run` after the fixes passed and left only that entry. Not run: the Windows job and the `win32` branch against a real job (no push).

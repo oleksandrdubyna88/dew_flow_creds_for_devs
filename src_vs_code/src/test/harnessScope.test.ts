@@ -26,23 +26,31 @@ interface Step {
   send: NodeJS.Signals;
 }
 
-/** A fixture harness: owns one folder under `root`, prints it, then runs `body`. */
-function fixture(root: string, body: string): string {
-  return [
+interface Fixture {
+  /** The fixture's source: a constant text apart from `body`. No value is spliced into it. */
+  script: string;
+  /** The values it reads at run time, from its environment. */
+  env: NodeJS.ProcessEnv;
+}
+
+/** A fixture harness: owns one folder under `root`, prints it, then runs `body`. It reads the wrapper, the exit module and the root from its environment. */
+function fixture(root: string, body: string): Fixture {
+  const script = [
     "const fs = require('node:fs');",
-    `const { ownedDir } = require(${JSON.stringify(WRAPPER)});`,
-    `const harnessScope = require(${JSON.stringify(HARNESS_SCOPE)});`,
+    "const { ownedDir } = require(process.env.FIXTURE_WRAPPER);",
+    "const harnessScope = require(process.env.FIXTURE_HARNESS_SCOPE);",
     'harnessScope.run(async (scope) => {',
-    `  const dir = ownedDir(scope, 'fx', { parent: ${JSON.stringify(root)} });`,
+    "  const dir = ownedDir(scope, 'fx', { parent: process.env.FIXTURE_ROOT });",
     "  console.log('DIR=' + dir + ' EXISTS=' + fs.existsSync(dir) + ' CLAIM=' + fs.existsSync(dir + '.owner'));",
     body,
     '});',
   ].join('\n');
+  return { script, env: { ...process.env, FIXTURE_WRAPPER: WRAPPER, FIXTURE_HARNESS_SCOPE: HARNESS_SCOPE, FIXTURE_ROOT: root } };
 }
 
 /** Run `code` in a child, send each step's signal when its output appears, and say how the child ended. */
-function runChild(script: string, steps: Step[] = []): Promise<Outcome> {
-  const child = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+function runChild(fx: Fixture, steps: Step[] = []): Promise<Outcome> {
+  const child = spawn(process.execPath, ['-e', fx.script], { env: fx.env, stdio: ['ignore', 'pipe', 'inherit'] });
   let out = '';
   const pending = [...steps];
   child.stdout.setEncoding('utf8');
@@ -156,7 +164,7 @@ test('[S2.2] a section scope registered in the module scope is closed by a SIGTE
   const root = privateRootOf(t);
   const body = [
     'const section = harnessScope.sectionScope();',
-    `const inner = ownedDir(section, 'sec', { parent: ${JSON.stringify(root)} });`,
+    "const inner = ownedDir(section, 'sec', { parent: process.env.FIXTURE_ROOT });",
     "console.log('SECTION=' + inner);",
     HANG,
   ].join('\n');

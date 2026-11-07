@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import type { Scope } from '../../scripts/lib/leftovers.cjs';
 import { formatOwner, isMine, ownedDir, thisOwner } from '../../scripts/lib/leftovers.cjs';
-import { RECORD, SRC_VS_CODE, WRAPPER, isAlive, lines, ownerWith, privateRoot, runner } from './runnerWorld';
+import { RECORD, SRC_VS_CODE, WRAPPER, isAlive, lines, ownerWith, privateRoot, runner, withEnv } from './runnerWorld';
 
 interface Harness {
   name: string;
@@ -268,8 +268,9 @@ type ReferenceSweep = (options: Record<string, unknown>) => SweepResult;
 
 /** A real `node -e` child makes an owned folder the natural way: it loads the wrapper, with the run's record in its environment. */
 function naturalFolder(root: string, record: string): Promise<{ dir: string; stop: () => void }> {
-  const code = `const l = require(${JSON.stringify(WRAPPER)}); const s = l.cleanupScope(); console.log(l.ownedDir(s, 'trace', { parent: ${JSON.stringify(root)} })); setInterval(() => {}, 1000);`;
-  const child = spawn(process.execPath, ['-e', code], { env: { ...process.env, TESTSTODELETE_RUN: record }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const code = "const l = require(process.env.FIXTURE_WRAPPER); const s = l.cleanupScope(); console.log(l.ownedDir(s, 'trace', { parent: process.env.FIXTURE_ROOT })); setInterval(() => {}, 1000);";
+  const env = { ...process.env, TESTSTODELETE_RUN: record, FIXTURE_WRAPPER: WRAPPER, FIXTURE_ROOT: root };
+  const child = spawn(process.execPath, ['-e', code], { env, stdio: ['ignore', 'pipe', 'inherit'] });
   return new Promise((resolve, reject) => {
     child.once('error', reject);
     child.stdout.once('data', (chunk: Buffer) => resolve({ dir: chunk.toString().trim(), stop: () => child.kill('SIGKILL') }));
@@ -358,10 +359,10 @@ test('[S1.7] pin: a harness that leaves a folder claimed with the run\'s record 
   const { runHarnesses } = await itests();
   const dir = ownedDir(t, 'itest');
   const root = fs.realpathSync(privateRoot(t));
-  const leaves = `const l = require(${JSON.stringify(WRAPPER)}); console.log(l.ownedDir(l.cleanupScope(), 'left', { parent: ${JSON.stringify(root)} }));`;
+  const leaves = "const l = require(process.env.FIXTURE_WRAPPER); console.log(l.ownedDir(l.cleanupScope(), 'left', { parent: process.env.FIXTURE_ROOT }));";
   const text: string[] = [];
 
-  const code = await runHarnesses([], { ...base(t, text), harnesses: [harness(dir, 'leaves', leaves)] });
+  const code = await withEnv({ FIXTURE_WRAPPER: WRAPPER, FIXTURE_ROOT: root }, () => runHarnesses([], { ...base(t, text), harnesses: [harness(dir, 'leaves', leaves)] }));
 
   const left = text.join('').split('\n').find((line) => line.startsWith(root)) ?? '<none>';
   assert.equal(fs.readFileSync(`${left}.owner`, 'utf8').trim(), RECORD, 'premise: the claim text equals the record');
@@ -406,16 +407,16 @@ test('[S1.10] a SIGTERM while the first harness runs: it reaches the harness, th
   const dir = ownedDir(t, 'itest');
   const marks = ownedDir(t, 'marks');
   const first = [
-    `const fs = require('node:fs'); const mark = (n) => fs.writeFileSync(${JSON.stringify(marks)} + '/' + n, '1');`,
+    "const fs = require('node:fs'); const mark = (n) => fs.writeFileSync(process.env.FIXTURE_MARKS + '/' + n, '1');",
     "process.on('SIGTERM', () => { mark('first-got-term'); process.exit(0); });",
     "console.log('READY');",
     'setTimeout(() => process.exit(0), 1500);',
   ].join('\n');
-  const second = `require('node:fs').writeFileSync(${JSON.stringify(marks)} + '/second-started', '1');`;
+  const second = "require('node:fs').writeFileSync(process.env.FIXTURE_MARKS + '/second-started', '1');";
   const both = [harness(dir, 'first', first), harness(dir, 'second', second)];
 
   const without: string[] = [];
-  await runHarnesses([], { ...base(t, without), harnesses: both, signals: new EventEmitter() });
+  await withEnv({ FIXTURE_MARKS: marks }, () => runHarnesses([], { ...base(t, without), harnesses: both, signals: new EventEmitter() }));
   assert.ok(fs.existsSync(path.join(marks, 'second-started')), 'premise: without a signal the second harness starts');
   fs.rmSync(path.join(marks, 'second-started'));
   fs.rmSync(path.join(marks, 'first-got-term'), { force: true });
@@ -425,7 +426,7 @@ test('[S1.10] a SIGTERM while the first harness runs: it reaches the harness, th
   seams.write = (chunk) => {
     if (chunk.includes('READY')) signals.emit('SIGTERM');
   };
-  const code = await runHarnesses([], { ...seams, harnesses: both, signals });
+  const code = await withEnv({ FIXTURE_MARKS: marks }, () => runHarnesses([], { ...seams, harnesses: both, signals }));
 
   assert.ok(fs.existsSync(path.join(marks, 'first-got-term')), 'the running harness got the SIGTERM');
   assert.equal(fs.existsSync(path.join(marks, 'second-started')), false, 'the second harness never started');
@@ -613,18 +614,20 @@ test('[S1.17] a signal that comes during the sweep starts no harness: exit 128 +
   const dir = ownedDir(t, 'itest');
   const marks = ownedDir(t, 'marks');
   const signals = new EventEmitter();
-  const started = `require('node:fs').writeFileSync(${JSON.stringify(marks)} + '/started', '1');`;
+  const started = "require('node:fs').writeFileSync(process.env.FIXTURE_MARKS + '/started', '1');";
 
-  const code = await runHarnesses([], {
-    ...base(t, []),
-    harnesses: [harness(dir, 'never', started)],
-    platform: 'linux',
-    signals,
-    sweep: () => {
-      signals.emit('SIGTERM');
-      return { removed: [], preserved: [], listed: [], errors: [] };
-    },
-  });
+  const code = await withEnv({ FIXTURE_MARKS: marks }, () =>
+    runHarnesses([], {
+      ...base(t, []),
+      harnesses: [harness(dir, 'never', started)],
+      platform: 'linux',
+      signals,
+      sweep: () => {
+        signals.emit('SIGTERM');
+        return { removed: [], preserved: [], listed: [], errors: [] };
+      },
+    }),
+  );
 
   assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'no harness started after the signal');
   assert.equal(code, 143);
@@ -637,14 +640,16 @@ test('[S1.18] a signal that comes during the compile still prints the summary, w
   const signals = new EventEmitter();
   const text: string[] = [];
   const compiler = harness(dir, 'compiler', "console.log('READY'); setInterval(() => {}, 1000);");
-  const started = `require('node:fs').writeFileSync(${JSON.stringify(marks)} + '/started', '1');`;
+  const started = "require('node:fs').writeFileSync(process.env.FIXTURE_MARKS + '/started', '1');";
   const seams = base(t, text);
   seams.write = (chunk) => {
     text.push(chunk);
     if (chunk.includes('READY')) signals.emit('SIGTERM');
   };
 
-  const code = await runHarnesses([], { ...seams, compile: true, compileArgs: [compiler.script], harnesses: [harness(dir, 'never', started)], platform: 'linux', signals });
+  const code = await withEnv({ FIXTURE_MARKS: marks }, () =>
+    runHarnesses([], { ...seams, compile: true, compileArgs: [compiler.script], harnesses: [harness(dir, 'never', started)], platform: 'linux', signals }),
+  );
 
   assert.match(text.join(''), /===== summary =====/);
   assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'no harness ran');
