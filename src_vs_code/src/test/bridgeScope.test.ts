@@ -16,7 +16,7 @@ import { NO_SUPPLIERS, SCOPES_TEST_DIR, loadBridgeModules, memoryScopeFs, memory
  */
 
 const M = loadBridgeModules();
-const { MAX_SCOPES, MAX_SCOPE_ENTRIES, NO_SCOPE, SCOPE_STALE, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
+const { MAX_SCOPES, MAX_SCOPE_ENTRIES, NO_SCOPE, SCOPE_STALE, SCOPE_UNREADABLE, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
 
 const A1 = 'a1';
 const S1 = 'server1';
@@ -126,8 +126,11 @@ test('S17: NO_SCOPE is never written to a file, and the revision on disk is the 
   assert.equal(M.scope.NO_SCOPE, 'absent');
 });
 
-test('S17: a corrupt file at the name is replaced by a set that expects NO_SCOPE', async () => {
+test('S17: a corrupt file at the name is NOT replaced by `set` (the strict read, parent §4.2) — it reads as no scope, `set` refuses it, and Close then lets a set through', async () => {
   const scopes = holding('{ not json');
+  await assert.rejects(scopes.set(A1, S1, ['e1'], false, NO_SCOPE), { message: SCOPE_UNREADABLE });
+  assert.equal(scopes.read(A1, S1).revision, NO_SCOPE);
+  await scopes.forget(A1, S1);
   const revision = await scopes.set(A1, S1, ['e1'], false, NO_SCOPE);
   assert.equal(scopes.read(A1, S1).revision, revision);
   assert.deepEqual([...scopes.read(A1, S1).entries], ['e1']);
@@ -524,4 +527,74 @@ test('accountOnlyVault: the whole source with one account listed, every other me
     'getAccounts vault', 'getAccounts vault', 'getNodes a1 vault', 'getNode a1 e1 vault',
     'getPassword a1 e1', 'getPrivateKey a1 e1', 'getNotes a1 e1', 'getTotp a1 e1', 'getDbConnection a1 e1',
   ], 'every method reached the source, with its own `this`');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The strict read (parent §4.2, the re-review for epoch 6): only ENOENT is an absent file, and `set` alone is strict
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const SCOPE_PATH = `${SCOPES_TEST_DIR}/${M.scope.scopeFileName(A1, S1)}`;
+const denied = (): never => {
+  throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+};
+
+/** A fake disk that counts what is written and removed, and whose reads of `unreadable` paths throw EACCES. */
+function countingFs(held: Map<string, string> = new Map(), unreadable: readonly string[] = []): ReturnType<typeof memoryScopeFs> & { writes: number } {
+  const base = memoryScopeFs(false, held);
+  const io = {
+    ...base,
+    writes: 0,
+    readSync: (file: string) => (unreadable.includes(file) ? denied() : base.readSync(file)),
+    write: (file: string, text: string) => {
+      io.writes += 1;
+      return base.write(file, text);
+    },
+  };
+  return io;
+}
+
+test('S17 strict: a file that cannot be read (EACCES) is no scope for `read`, and `set` refuses it with zero writes', async () => {
+  const io = countingFs(new Map([[SCOPE_PATH, JSON.stringify(GOOD)]]), [SCOPE_PATH]);
+  const scopes = memoryScopes(M, () => 1, io);
+  assert.equal(scopes.read(A1, S1).revision, NO_SCOPE, 'read fails closed: nothing is admitted');
+  assert.equal(scopes.read(A1, S1).entries.size, 0);
+  await assert.rejects(scopes.set(A1, S1, ['e1'], false, NO_SCOPE), { message: SCOPE_UNREADABLE });
+  assert.equal(io.writes, 0, 'nothing was written over a record that was not read');
+});
+
+test('S17 strict: only ENOENT is an absent file — `set` creates it with a fresh revision', async () => {
+  const io = countingFs();
+  const scopes = memoryScopes(M, () => 1, io);
+  const revision = await scopes.set(A1, S1, ['e1'], false, NO_SCOPE);
+  assert.match(revision, /^[0-9a-f-]{36}$/);
+  assert.equal(io.writes, 1);
+});
+
+test('S17 strict: a file that exists but is not this server\'s record — corrupt, or another account\'s — is refused by `set` with zero writes, and Close is the road that removes it', async () => {
+  for (const [what, text] of [['a half file', '{ half a file'], ['another account\'s record', JSON.stringify({ ...GOOD, accountId: 'a2' })], ['an empty file', '']] as const) {
+    const io = countingFs(new Map([[SCOPE_PATH, text]]));
+    const scopes = memoryScopes(M, () => 1, io);
+    assert.equal(scopes.read(A1, S1).revision, NO_SCOPE, `${what}: read answers no scope`);
+    await assert.rejects(scopes.set(A1, S1, ['e1'], false, NO_SCOPE), { message: SCOPE_UNREADABLE }, what);
+    assert.equal(io.writes, 0, `${what}: nothing was written`);
+    assert.equal(io.held.get(SCOPE_PATH), text, `${what}: the file is as it was`);
+    await scopes.forget(A1, S1);
+    assert.equal(await scopes.set(A1, S1, ['e1'], false, NO_SCOPE) !== undefined, true, `${what}: after Close the set goes through`);
+  }
+});
+
+test('S17 strict: prune skips a neighbour it cannot read instead of ranking it first, and still removes the oldest it can read', async () => {
+  const held = new Map<string, string>();
+  const record = (n: number): string => JSON.stringify({ v: 1, accountId: `a${n}`, serverEntityId: 's', entries: [], quiet: false, revision: `r${n}`, at: 100 + n });
+  for (let n = 0; n < MAX_SCOPES; n += 1) {
+    held.set(`${SCOPES_TEST_DIR}/n${n}.json`, record(n));
+  }
+  held.set(`${SCOPES_TEST_DIR}/unreadable.json`, '{}');
+  const io = countingFs(held, [`${SCOPES_TEST_DIR}/unreadable.json`]);
+  await memoryScopes(M, () => 1, io).set(A1, S1, ['e1'], false, NO_SCOPE);
+  assert.ok(held.has(`${SCOPES_TEST_DIR}/unreadable.json`), 'the file it could not read was not removed');
+  assert.equal(held.has(`${SCOPES_TEST_DIR}/n0.json`), false, 'the oldest readable one went');
+  assert.equal(held.has(`${SCOPES_TEST_DIR}/n1.json`), false, 'and the next, since the cap is over by two');
+  assert.ok(held.has(`${SCOPES_TEST_DIR}/n2.json`));
+  assert.ok(held.has(SCOPE_PATH), 'and never the file just written');
 });

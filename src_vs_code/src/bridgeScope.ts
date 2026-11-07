@@ -33,6 +33,7 @@ export {
   SCOPES_DIR,
   SCOPES_LOCK_DIR,
   SCOPE_STALE,
+  SCOPE_UNREADABLE,
   nodeScopeFs,
   scopeFileName,
   scopeKey,

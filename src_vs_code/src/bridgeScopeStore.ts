@@ -25,6 +25,8 @@ export const MAX_SCOPES = 64;
 /** Entries in one scope. No picker offers that many, so `set` refuses past it. */
 export const MAX_SCOPE_ENTRIES = 256;
 /** What a write made from an old copy is told. */
+/** `set` met a file it could not read, or one that is not this server's record: nothing was written (parent §4.2). */
+export const SCOPE_UNREADABLE = 'The scope of this Remote Bridge could not be read, so nothing was changed. Look at it again; if it stays unreadable, close the bridge and open it again.';
 export const SCOPE_STALE = 'The scope of this Remote Bridge changed in another window. Look at it again, then save.';
 
 /**
@@ -58,7 +60,7 @@ export function scopeFileName(accountId: string, serverEntityId: string): string
 
 /** The filesystem as a port, like `LockFs` (`windowLock.ts`). */
 export interface ScopeFs {
-  /** `undefined` on ANY error: a file that cannot be read is no scope. */
+  /** `undefined` only when the file is ABSENT (ENOENT); any other error is thrown, so a file that cannot be read is told from one that is not there. */
   readSync(file: string): string | undefined;
   /** Names ending in `.json`; `[]` when the directory is absent. */
   list(dir: string): Promise<readonly string[]>;
@@ -140,10 +142,13 @@ export class BridgeScopes {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** Synchronous and fresh: the file is read on every call. */
+  /** Synchronous and fresh: the file is read on every call. A read that fails is no scope: a check fails closed. */
   read(accountId: string, serverEntityId: string): Scope {
-    const file = this.fileOf(accountId, serverEntityId);
-    return scopeOf(file, accountId);
+    try {
+      return scopeOf(this.fileOf(accountId, serverEntityId), accountId);
+    } catch {
+      return scopeOf(undefined, accountId);
+    }
   }
 
   /**
@@ -155,8 +160,7 @@ export class BridgeScopes {
       return Promise.reject(new Error(`A Remote Bridge scope holds at most ${MAX_SCOPE_ENTRIES} entries.`));
     }
     return this.writes.run(async () => {
-      const current = this.read(accountId, serverEntityId);
-      if (current.revision !== expectedRevision) {
+      if (this.revisionForSet(accountId, serverEntityId) !== expectedRevision) {
         throw new Error(SCOPE_STALE);
       }
       const written: ScopeFile = { v: 1, accountId, serverEntityId, entries: [...new Set(entries)], quiet, revision: crypto.randomUUID(), at: this.now() };
@@ -176,21 +180,54 @@ export class BridgeScopes {
     return nodePath.join(this.dir, scopeFileName(accountId, serverEntityId));
   }
 
+  /**
+   * The revision `set` compares, read STRICTLY: ENOENT is {@link NO_SCOPE}; a read that fails, or a file that exists and is not this
+   * server's record, is refused, because `read` answers no scope for both and a write would go over a record that was not read.
+   */
+  private revisionForSet(accountId: string, serverEntityId: string): string {
+    let text: string | undefined;
+    try {
+      text = this.io.readSync(this.pathOf(accountId, serverEntityId));
+    } catch {
+      throw new Error(SCOPE_UNREADABLE);
+    }
+    if (text === undefined) {
+      return NO_SCOPE;
+    }
+    const file = parseScopeFile(text);
+    if (file?.accountId !== accountId || file.serverEntityId !== serverEntityId) {
+      throw new Error(SCOPE_UNREADABLE);
+    }
+    return file.revision;
+  }
+
   private fileOf(accountId: string, serverEntityId: string): ScopeFile | undefined {
     const file = parseScopeFile(this.io.readSync(this.pathOf(accountId, serverEntityId)));
     return file?.accountId === accountId && file.serverEntityId === serverEntityId ? file : undefined;
   }
 
-  /** Inside the lock: past the cap the oldest `at` goes, a file that does not parse oldest of all, and never the file just written. */
+  /**
+   * Inside the lock: past the cap the oldest `at` goes, a file that reads but does not parse oldest of all, a file that cannot be
+   * READ is skipped (it is left alone, not ranked first), and never the file just written.
+   */
   private async prune(written: string): Promise<void> {
     const names = await this.io.list(this.dir);
     const others = names
       .map((name) => nodePath.join(this.dir, name))
       .filter((file) => file !== written)
-      .map((file) => [file, parseScopeFile(this.io.readSync(file))?.at ?? 0] as const)
+      .flatMap((file) => this.ranked(file))
       .sort((a, b) => a[1] - b[1]);
     for (const [file] of others.slice(0, Math.max(0, names.length - MAX_SCOPES))) {
       await this.io.remove(file);
+    }
+  }
+
+  /** A neighbour and its `at`; nothing for one that cannot be read. */
+  private ranked(file: string): ReadonlyArray<readonly [string, number]> {
+    try {
+      return [[file, parseScopeFile(this.io.readSync(file))?.at ?? 0]];
+    } catch {
+      return [];
     }
   }
 }
@@ -223,8 +260,11 @@ export function nodeScopeFs(): ScopeFs {
     readSync: (file) => {
       try {
         return fs.readFileSync(file, 'utf8');
-      } catch {
-        return undefined;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return undefined;
+        }
+        throw error;
       }
     },
     list: async (dir) => {

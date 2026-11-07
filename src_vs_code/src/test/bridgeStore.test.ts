@@ -93,15 +93,28 @@ test('S25: two sets racing for one server from two windows — exactly one lands
   });
 });
 
-test('S25: a corrupt file written beside the store is an empty scope, and the next set expecting NO_SCOPE replaces it', async () => {
+test('S25: a corrupt file written beside the store is an empty scope, `set` refuses it and leaves it, and Close removes it so the next set creates the file', async () => {
   await twoWindows(async ({ a, b, fileOf, scopesDir }) => {
     fs.mkdirSync(scopesDir, { recursive: true });
     fs.writeFileSync(fileOf(A1, S1), '{ half a file');
     assert.equal(b.read(A1, S1).entries.size, 0);
     assert.equal(b.read(A1, S1).revision, NO_SCOPE);
+    await assert.rejects(a.set(A1, S1, ['e1'], false, NO_SCOPE), { message: M.scope.SCOPE_UNREADABLE });
+    assert.equal(fs.readFileSync(fileOf(A1, S1), 'utf8'), '{ half a file', 'the file is as it was');
+    await a.forget(A1, S1);
     assert.equal(await a.set(A1, S1, ['e1'], false, NO_SCOPE), a.read(A1, S1).revision);
     assert.deepEqual([...b.read(A1, S1).entries], ['e1']);
     assert.equal(JSON.parse(fs.readFileSync(fileOf(A1, S1), 'utf8')).v, 1, 'what is on disk is a ScopeFile again');
+  });
+});
+
+test('S25: nodeScopeFs.readSync says undefined only for a file that is absent — any other failure is thrown, so `set` can tell them apart', async () => {
+  await twoWindows(async ({ scopesDir }) => {
+    fs.mkdirSync(scopesDir, { recursive: true });
+    const unreadable = nodePath.join(scopesDir, 'a-directory-named-like-a-scope.json');
+    fs.mkdirSync(unreadable);
+    assert.equal(nodeScopeFs().readSync(nodePath.join(scopesDir, 'absent.json')), undefined);
+    assert.throws(() => nodeScopeFs().readSync(unreadable), { code: 'EISDIR' });
   });
 });
 
