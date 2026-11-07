@@ -81,6 +81,8 @@ export interface BrokerDoor {
     caller: CallerLabel | undefined,
     /** The ladder the lookup resolved, so a remembered consent names the grant that was shown. */
     rungs?: string,
+    /** Whether the entry's policy will remember an Allow — what the dialog says the Allow covers. */
+    remembers?: boolean,
   ): Promise<void>;
   /**
    * Ask the human. `caller` is REQUIRED — `undefined` must be written, never omitted — so that a
@@ -214,7 +216,7 @@ export async function handleMcpUse(
   const grant = minted(door, read.target, 'mcp', caller);
   quietly(door, grant, read.target, caller, prompts);
   try {
-    await door.perform(res, grant, action, read.body, caller, read.rungs);
+    await door.perform(res, grant, action, read.body, caller, read.rungs, read.remembers);
   } finally {
     slot.release();
   }

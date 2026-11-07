@@ -4,7 +4,8 @@ import type { AuditEntry } from './agentAuditLog';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
-import { Grant, GrantRegistry } from './grantRegistry';
+import { Grant, GrantRegistry, GrantScope } from './grantRegistry';
+import { ASK_WINDOW_MS } from './mcpConsentPolicy';
 import { localRequestTimeLine } from './requestTime';
 import { ABANDONED, SharedPrompts } from './sharedPrompt';
 import type { UseActionRegistry } from './useActions';
@@ -34,6 +35,28 @@ export interface ConsentGateDeps {
   log(entry: Omit<AuditEntry, 'at' | 'caller'> & { caller?: CallerLabel }): void;
 }
 
+/**
+ * What an Allow on this question covers — which of the dialog's three last paragraphs is true.
+ *
+ * <p>`token`: every later call on the token. `call`: this call only. `every12h`: this call, and the
+ * entry's policy opens a bounded window on this machine. Decided by the door that asks, from facts it
+ * holds, and never by the wording: see {@link coverageOf}.</p>
+ */
+export type ConsentCoverage = 'token' | 'call' | 'every12h';
+
+/**
+ * The coverage of an Allow, from the grant's scope and whether the entry's policy remembers answers.
+ *
+ * <p>A token grant never remembers — it already covers the token's life, and the flag cannot widen it.
+ * A call grant covers one request, unless the MCP door's policy writes a stamp for it.</p>
+ */
+export function coverageOf(scope: GrantScope, remembers: boolean): ConsentCoverage {
+  if (scope === 'token') {
+    return 'token';
+  }
+  return remembers ? 'every12h' : 'call';
+}
+
 /** One consent question, as the broker asks it. */
 export interface ConsentQuestion {
   readonly grant: Grant;
@@ -41,6 +64,26 @@ export interface ConsentQuestion {
   readonly verb: string;
   readonly summary: string;
   readonly caller: CallerLabel | undefined;
+  /** REQUIRED, like `caller`: a door added later does not compile until it says what its Allow covers. */
+  readonly coverage: ConsentCoverage;
+}
+
+/** Hours in the remembered window — derived from the policy's own constant, never typed twice. */
+const WINDOW_HOURS = ASK_WINDOW_MS / 3_600_000;
+
+/** One request's grant: nothing is written, nothing later is covered. */
+const CALL_TAIL = 'Allowing covers this call only, not any later one. ';
+
+/**
+ * The `every12h` sentence. Conditional on purpose: the text cannot change after the dialog is shown,
+ * and the write re-reads the entry at the click — a policy flipped or a switch turned on meanwhile
+ * means no window opens, which is the condition the sentence names.
+ */
+function windowTail(entityName: string): string {
+  return (
+    `Allowing covers this call and, for up to ${WINDOW_HOURS} hours on this machine, every later call on "${entityName}" without asking — ` +
+    `while this entry stays set to "Ask once every ${WINDOW_HOURS} hours" and its agent switches are not changed. Deleting still asks. `
+  );
 }
 
 export class ConsentGate {
@@ -138,21 +181,43 @@ export class ConsentGate {
    * — "An agent" when it says nothing, never a product name by default — and is a label, not a check;
    * the next sentence tells the person so, because a name mistaken for a verification is worse than no
    * name.</p>
+   *
+   * <p>How far an Allow reaches is not the same on every door: a token grant lives for the token's
+   * life, a call grant for one request, and on the MCP door the entry's policy may remember the
+   * answer. So the last paragraph is chosen per door by `coverage`, and each of the three is tested
+   * beside the fact it states, not as a string alone (`consentCoverage.test.ts`).</p>
    */
   private wording(question: ConsentQuestion): string {
     const { grant, verb, summary, caller } = question;
-    const everything = this.deps.actions
-      .actionsFor(grant.kind)
-      .map((a) => a.verb)
-      .join(', or ');
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
       `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
-      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
-      `${describeLimits(grantLimits())}. ` +
+      this.coverageTail(question) +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
+    );
+  }
+
+  /** The sentence for this door: a record lookup, so adding a coverage is a compile error here. */
+  private coverageTail(question: ConsentQuestion): string {
+    const { grant } = question;
+    return {
+      token: () => this.tokenTail(grant),
+      call: () => CALL_TAIL,
+      every12h: () => windowTail(grant.entityName),
+    }[question.coverage]();
+  }
+
+  /** A token grant: today's words, byte for byte. */
+  private tokenTail(grant: Grant): string {
+    const everything = this.deps.actions
+      .actionsFor(grant.kind)
+      .map((a) => a.verb)
+      .join(', or ');
+    return (
+      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
+      `${describeLimits(grantLimits())}. `
     );
   }
 }

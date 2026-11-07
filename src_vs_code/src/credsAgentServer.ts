@@ -20,7 +20,7 @@ import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
 import { BrokerDoor, ConsentOutcome, DURING_CONSENT, mcpDoor } from './brokerMcpDoor';
-import { ConsentGate } from './brokerConsent';
+import { ConsentGate, coverageOf } from './brokerConsent';
 import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
@@ -286,10 +286,11 @@ export class CredsAgentServer implements vscode.Disposable {
       mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call'),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
-      perform: (res, grant, action, body, caller, rungs) =>
-        this.perform(res, grant as Grant, action, body, { via: 'mcp', caller, signal }, rungs),
+      perform: (res, grant, action, body, caller, rungs, remembers) =>
+        this.perform(res, grant as Grant, action, body, { via: 'mcp', caller, signal }, rungs, remembers),
+      // Always `'call'`: this door's grants are per request and delete, create and folder remember nothing.
       consent: (grant, action, verb, summary, caller) =>
-        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller }, signal),
+        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, coverage: 'call' }, signal),
       respond: (res, status, body) => this.respond(res, status, body),
       signal,
       abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via: 'mcp', caller }),
@@ -511,6 +512,8 @@ export class CredsAgentServer implements vscode.Disposable {
      * consent is recorded under. Absent on every other door, which remembers nothing.
      */
     rungs?: string,
+    /** Whether the entry's policy will remember an Allow, from the MCP lookup — it widens the dialog's last paragraph. */
+    remembers?: boolean,
   ): Promise<void> {
     const useAction = this.usable(res, grant, action, body, who);
     if (useAction === undefined) {
@@ -521,7 +524,8 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller }, who.signal);
+    const question = { grant, action, verb: useAction.verb, summary, caller: who.caller, coverage: coverageOf(grant.scope, remembers === true) };
+    const consent = await this.gate.consent(question, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;
