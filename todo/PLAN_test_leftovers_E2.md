@@ -2032,6 +2032,73 @@ tests that hold a folder of their own (`ShareMaintenanceTests`: the host is a `u
 3. **`what` values are closer than `tests`** (the brief allows it): one per class, short, so a leftover names its class.
 4. **The scan test keeps the name `ClientSitesScanTests`** (the manifest-copy test lists the file by name); its doc, method name and trees say the server is in it.
 
+### E2.3 build record, part 5 — S5 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.5, test first, after the S4 commits (not rewritten). Commits, oldest first: S5 RED (the scan expects only the three E2.5 lines, `AotKitFolderTests`, the
+kit test prints its folder); GREEN, the kit and the CLI test paths; GREEN, the archive, key-file, runner and store tests; the three minors of the S4 review (one commit, below); this record. Builds: each of the five test projects by name,
+`nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`, 0 warnings, 0 errors. `dotnet format whitespace` and `style --verify-no-changes` on the server and service-defaults test projects: clean; `sweeper-scan`: none found.
+**Correction to part 4:** it lists FOUR differences from the brief (the coordinator's report said five; the record is right).
+
+**What was built.**
+- **S5.0 — the scan.** `OwnedByS5` is gone; the expected list is the three lines of S3 (`AgentRelayTests`: the default socket path twice, the refused-path literal) and nothing else, over the five test trees.
+- **S5.1 — `AotKitFolderTests`** (server project, in the server collection; **POSIX and WSL only**, skipped on Windows saying why: the server executable runs on Linux only, F14, and two executables at once on Windows meet F29). It starts THIS executable twice at once
+  through `HostProcess.Start`, each running only `BackupArchiveCommandTests.ItLeavesAKit...`, both with one private `TMPDIR` that the test holds (so what they leave is still there to be read), and `CREDS_AOT_KIT_DIR` set empty. It asserts both exit 0, each printed an
+  `aot-kit folder:` line, the two folders differ, each is an owned name in the given `TMPDIR`, each is gone with its claim after both have ended, and no `aot-kit` entry is left in the `TMPDIR`.
+- **The kit test** now prints `aot-kit folder: <path>` and one line with the two commands. By default the folder is `_owned.Dir("aot-kit")` (per run, removed with the test). `CREDS_AOT_KIT_DIR` names a folder of the person's own: made if missing, overwritten, never removed (never set in CI).
+  The test is renamed `ItLeavesAKitInAFolderOfItsOwnSoTheNativeBinaryCanBeCheckedByHand` (nothing else names it but the new test's filter).
+- **Sites moved:** `BackupArchiveCommandTests` (`backup-cli`, parent of `item`), `BackupArchiveTests` (`backup`: the owned folder IS the unique parent, so the listing assertions of the staging folder still read only this test's entries; the claim is a sibling), `BackupKeyFileTests`
+  (`key-file`; `:92` is `Owned.TempRoot()` under a marker: a path nothing creates), `BackupRunnerTests` (`backup-run`), `BackupStoreTests` (`backup-store`). Helpers that call the factories became instance methods; the classes are `IDisposable` over an `OwnedScope`.
+
+**The RED list** (failing text, each seen before its code):
+1. Scan: `... contains 7 item(s) too many.` with `UNEXPECTED` for `BackupArchiveCommandTests.cs:143` and `:277`, `BackupArchiveTests.cs:484`, `BackupKeyFileTests.cs:92` and `:148`, `BackupRunnerTests.cs:784`, `BackupStoreTests.cs:482`.
+2. S5.1, said honestly: on the pre-S5 code, with only the print line added, the two overlapping runs BOTH PASSED (as the brief says: two runs write one fixed folder). What fails is what they printed: `Expected paths[0] not to be
+   "/tmp/c23s5/testsToDelete-u1000-creds-kit-tmp-tknGWe/cred-vault-aot-kit" because two runs at once do not share a folder.` (the same path twice; it is not an owned name; it is still there afterwards).
+3. By hand, after GREEN: the kit class's `Dispose` made empty -> `Expected first.ExitCode to be 0 because the kit test passes: WARNING: [...] aot-kit folder: ...` (the child's own end-of-run audit names the leftover). Put back.
+
+**Counts, sc. 2 (a private short `TMPDIR` per executable, whole suite, top-level entries / all entries below)**, measured on a worktree of `main` (`b1cf565`, built Release the same way) and on this branch after S5:
+
+| Executable | `main` | after S5 |
+|---|---|---|
+| `CredVaultServer.Tests` | 7 / 920 (`cred-vault-tests` and the six backup parents) | **0 / 0** |
+| `CredsCli.Tests` | 6 / 6 (`clr-debug-pipe-*` x4, `dotnet-diagnostic-*` x2: a killed host's) | **0 / 0** |
+| `CredsMcp.Tests` | 6 / 6 (the same shapes) | **0 / 0** |
+| `CredsBroker.Tests` | 7 / 24 (`creds-endpoints-*`) | **0 / 0** |
+| `CredsForDevs.ServiceDefaults.Tests` | 0 / 0 (82 tests then) | **0 / 0** |
+
+Total on `main`: 26 top-level entries, 956 below them; after: 0 old-form and 0 owner-form. The brief's "about 190 folders" is not what this machine shows: the server's 920 is mostly the contents of the backup parents (the parents hold the 31 + 56 + 37 + 36 + 25 + 17 + 2 folders, many with files).
+The socket folders were counted in `/tmp` itself (the real root): nothing new there after a full pass of the five.
+
+**Counts, sc. 4 and the hand clean-up (row 2, E2 (d)), this WSL machine, over `/tmp`, `/var/tmp`, `/dev/shm` and `$XDG_RUNTIME_DIR` (`/run/user/1000`), by `find <root> -mindepth 1 -maxdepth 1 -name <pattern>`, for the brief's twenty names:**
+- Before: **42** entries, all in `/tmp`, none in the other three roots: `cred-vault-tests`, `cred-vault-backup-run`, `-backup-store`, `-backup`, `-backup-cli`, `-key-file`, `-aot-kit` (one each: 7) and 35 `creds-endpoints-*`; 0 owner-form. All owned by this user, made on 2026-11-07
+  (by test runs of earlier builds of this branch and of `main`; the brief's author found 0 at 13:57), and 9,119 entries including their contents. Checked immediately before removing: no process had any of them as its working directory or an open file, and none was newer than two minutes.
+- Removed: those 42 (by those names, this user's, older than two minutes, held by nobody), and nothing else. After: **0**, and after the full pass of the five executables with the real temp root: **0** old-name and **0** owner-form entries in all four roots.
+- A search by name at one moment, not a proof; it does not see a root another `TMPDIR` named (the private runs above cover that). `dotnet-diagnostic-*` sockets are not on the list (F13).
+
+**Done-when 2, the C# guard by hand (Q11 (a); NOT committed).** The template's `LeftoversRepositoryGuardTests` at `dew_flow_mcp` `197cc76`, with the manifest's one operation (the namespace line), as a scratch file in `src_service_defaults/tests/Leftovers/`, run against this tree with
+`LeftoversGuard.Scan(repoRoot, repoRoot)`; then deleted. It read the classes `raw-temp`, `raw-worktree`, `docker-name`, `docker-run`, `shared-store`, `ryuk-off`, `owner-blind`, `legacy-name` (and the exemption and token checks). **18 findings, in three groups:**
+- shell, `raw-temp` `mktemp` (9, E2.4's): `.github/scripts/mcp-listen-smoke.test.sh:19`, `start-server-and-wait.sh:107`, `start-server-and-wait.test.sh:28`, `version-smoke.test.sh:14`; `deploy/restore-archive-itest.sh:45`, `restore-archive.sh:61`, `restore.sh:102`; `install.sh:63`, `:76`.
+- docker (6, E2.4's): `.github/workflows/docker.yml:78` (`docker-name` for `cv`, and `docker-run` without the remove flag), `:101` and `:102` (`docker-name` for the volumes `cv-refused-data`, `cv-refused-logs`), `:105` (`docker-name` for `cv-refused`, and `docker-run`).
+- C# (3, E2.5's): `src_cli/tests/AgentRelayTests.cs:38`, `:39`, `:278` (`raw-temp`, the `/tmp` literals that create nothing; the same three the scan test lists). No other C# file. `CallerIdentityTests.cs:196` is not a finding (a `/tmp` inside a raw string that holds a quote; the guard misses it, S3's follow-up).
+
+**The three minors of the S4 review** (one commit). (1) `VaultServer.Dispose(bool)`: `WebApplicationFactory.Dispose(true)` reaches `DisposeAsync`, which reaches `Dispose(true)` again, so the body ran twice and a removal that gave up warned twice (rule 2: one). A `_ended` flag after
+`base.Dispose` makes the rest run once. RED first, a locked subfolder standing in for a removal that gives up: `Expected collection to contain a single item because one removal that gave up is one warning, not one per run of the dispose body, but found {"owned: could not remove ... ", "owned: could not remove ...` (two). GREEN: one.
+(2) `OrgRegistrationTests.HookWorld`'s `what` is `org-reg-hook`. (3) The dead `Directory.CreateDirectory(_root)` in `StartupGuardsTests` is gone.
+
+**Follow-up (todo, not built):** `VaultServer` sets no `Logging__Directory`, so each test host writes a per-run log under `tests/bin/Release/net10.0/logs/` (gitignored, pruned by the product's 14-day retention); an owned log folder per server is a todo.
+
+**Totals** (Release, one at a time, after the last code commit; the private-`TMPDIR` pass, the real-root pass gave the same but `CredsMcp.Tests` 174 / 2 / 168 / 4): `CredVaultServer.Tests` 830 / 0 failed / 827 passed / 3 skipped (828 after S4; +1 `AotKitFolderTests`, +1 the dispose-once test);
+`CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL `ParentWatchProcessTests`); `CredsBroker.Tests` 164 / 0 / 161 / 3; `CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,930.
+
+**Not run / unproven.** Windows and macOS legs: `AotKitFolderTests` is skipped on Windows by design (F29); the macOS run of the moved backup classes; the Windows "not cleaned, not needed" machine. sc. 4 on Windows is Q10's. The row-24 Node guard and the barrier rescan (row 1) are not this story's by-hand
+list and were not run here. The skip-count of `CredsMcp.Tests` varies by one between runs (3 or 4), as in part 3b.
+
+**Differences from the brief.**
+1. **S5.1's RED is the printed path, as the brief says**, and in this build it also fails on "two runs print one path" (the fixed folder is the same string), which the brief did not expect; the overlap itself still passes on `main`.
+2. **The children get a `TMPDIR` the test holds**, not `HostProcess`'s hand-over (which removes its folder when the child ends and would hide the leftover): the test names all three variables, so the hand-over does not apply.
+3. **The kit test also prints the two commands** in one warning line (the test output has no other channel that survives a passing test); the person who wants the kit sets `CREDS_AOT_KIT_DIR`.
+4. **"about 190 folders"** (the brief's row 5) is 956 entries on `main` here, as above.
+5. **Done-when 2's list is recorded here, not on a PR**; the scratch test file was deleted.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
