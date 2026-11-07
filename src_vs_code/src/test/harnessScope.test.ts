@@ -9,9 +9,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import type { Scope } from '../../scripts/lib/leftovers.cjs';
-import { SRC_VS_CODE, WRAPPER, privateRoot } from './runnerWorld';
+import { SRC_VS_CODE, WRAPPER, isAlive, privateRoot } from './runnerWorld';
 
 const HARNESS_SCOPE = path.join(SRC_VS_CODE, 'scripts', 'lib', 'harnessScope.cjs');
+const SSHD_HELPERS = path.join(SRC_VS_CODE, 'scripts', 'itestSshd.cjs');
 const posixOnly = process.platform === 'win32' ? { skip: 'a signal is delivered to a process on POSIX; Windows ends it' } : {};
 
 interface Outcome {
@@ -45,7 +46,7 @@ function fixture(root: string, body: string): Fixture {
     body,
     '});',
   ].join('\n');
-  return { script, env: { ...process.env, FIXTURE_WRAPPER: WRAPPER, FIXTURE_HARNESS_SCOPE: HARNESS_SCOPE, FIXTURE_ROOT: root } };
+  return { script, env: { ...process.env, FIXTURE_WRAPPER: WRAPPER, FIXTURE_HARNESS_SCOPE: HARNESS_SCOPE, FIXTURE_SSHD: SSHD_HELPERS, FIXTURE_ROOT: root } };
 }
 
 /** Run `code` in a child, send each step's signal when its output appears, and say how the child ended. */
@@ -237,4 +238,50 @@ test('[S2.2] closeOnce: two calls at once close the scope once, and both wait fo
 
   assert.match(done.out, /SECOND-RETURNED closes=1 slowDone=true gone=true/);
   assert.equal(done.code, 0);
+});
+
+// A section's process writes into the section folder and records, OUTSIDE it, whether the folder was still there when it was told to stop.
+const SECTION_CHILD =
+  "const fs = require('node:fs'); fs.writeFileSync(process.env.CHILD_FOLDER + '/alive', '1');" +
+  " process.on('SIGTERM', () => { let seen = 'ok'; try { fs.writeFileSync(process.env.CHILD_FOLDER + '/stopped', '1'); } catch { seen = 'folder-gone'; }" +
+  " fs.writeFileSync(process.env.CHILD_OUT, seen); process.exit(0); }); setInterval(() => {}, 1000);";
+
+const readOr = (file: string, fallback: string): string => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : fallback);
+const pidIn = (out: string): number => Number(/CHILDPID=(\d+)/.exec(out)?.[1] ?? 0);
+
+function killQuietly(pid: number): void {
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // gone already
+  }
+}
+
+test('[S2.2] a SIGTERM during a section stops the section\'s process BEFORE its folder is removed (never a folder in use)', posixOnly, async (t) => {
+  const root = privateRootOf(t);
+  const out = path.join(root, 'child-out.txt');
+  const body = [
+    "const path = require('node:path');",
+    "const sshd = require(process.env.FIXTURE_SSHD);",
+    'const section = harnessScope.sectionScope();',
+    "const inner = ownedDir(section, 'sec', { parent: process.env.FIXTURE_ROOT });",
+    'section.after(() => sshd.endRunning());', // registered AFTER the folder: it runs first on close
+    `const started = sshd.launch(process.execPath, ['-e', ${JSON.stringify(SECTION_CHILD)}], { env: { ...process.env, CHILD_FOLDER: inner, CHILD_OUT: path.join(process.env.FIXTURE_ROOT, 'child-out.txt') } });`,
+    "console.log('SECTION=' + inner + ' CHILDPID=' + started.child.pid);",
+    "while (!fs.existsSync(inner + '/alive')) await new Promise((r) => setTimeout(r, 20));",
+    "console.log('READY'); await new Promise(() => setInterval(() => {}, 1000));",
+  ].join('\n');
+
+  const done = await runChild(fixture(root, body), [{ when: /READY/, send: 'SIGTERM' }]);
+
+  const pid = pidIn(done.out);
+  try {
+    assert.ok(pid > 0, 'premise: the section started its process');
+    assert.equal(done.code, 143);
+    assert.equal(readOr(out, 'the process was never told to stop'), 'ok', 'it was told to stop while the folder was still there');
+    assert.equal(isAlive(pid), false, 'the process is dead');
+    assert.ok(gone(/SECTION=(\S+)/.exec(done.out)?.[1] ?? '<none>'), 'and then the folder and its claim are gone');
+  } finally {
+    killQuietly(pid);
+  }
 });

@@ -22,6 +22,7 @@ interface Harness {
   script: string;
   needs: string;
   windows: boolean;
+  probe?: { host: string; port: number };
 }
 interface RunResult {
   code: number;
@@ -48,6 +49,7 @@ interface ItestSeams {
   compile?: boolean;
   compileArgs?: string[];
   closeBoundMs?: number;
+  reachable?: (probe: { host: string; port: number }) => Promise<boolean>;
   sweep?: (options: { repo: string; tmp: string }) => object;
   sweepOptions?: Record<string, unknown>;
   roots?: string[];
@@ -653,5 +655,54 @@ test('[S1.18] a signal that comes during the compile still prints the summary, w
 
   assert.match(text.join(''), /===== summary =====/);
   assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'no harness ran');
+  assert.equal(code, 143);
+});
+
+test('[S1.19] a signal that comes during the server probe starts no server harness: exit 128 + n', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const marks = ownedDir(t, 'marks');
+  const signals = new EventEmitter();
+  const started = "require('node:fs').writeFileSync(process.env.FIXTURE_MARKS + '/started', '1');";
+  const server: Harness = { ...harness(dir, 'server', started), probe: { host: '127.0.0.1', port: 1 } };
+  const text: string[] = [];
+
+  const code = await withEnv({ FIXTURE_MARKS: marks }, () =>
+    runHarnesses(['server'], {
+      ...base(t, text),
+      harnesses: [server],
+      platform: 'linux',
+      signals,
+      reachable: async () => {
+        signals.emit('SIGTERM');
+        return true; // something IS listening, so without the check the harness would start
+      },
+    }),
+  );
+
+  assert.equal(fs.existsSync(path.join(marks, 'started')), false, 'the server harness never started');
+  assert.doesNotMatch(text.join(''), /===== itest:server =====/);
+  assert.equal(code, 143);
+});
+
+test('[S1.20] a signal during a helper load that then fails still prints the summary and leaves with 128 + n', async (t) => {
+  const { runHarnesses } = await itests();
+  const dir = ownedDir(t, 'itest');
+  const signals = new EventEmitter();
+  const text: string[] = [];
+
+  const code = await runHarnesses([], {
+    ...base(t, text),
+    harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
+    platform: 'linux',
+    signals,
+    loadHelpers: async () => {
+      signals.emit('SIGTERM');
+      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .claude/rules/shared');
+    },
+  });
+
+  assert.match(text.join(''), /^run-itests: .*git submodule update --init/m, 'the refusal line is still written');
+  assert.match(text.join(''), /===== summary =====/);
   assert.equal(code, 143);
 });
