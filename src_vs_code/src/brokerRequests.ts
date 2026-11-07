@@ -1,7 +1,8 @@
 import * as http from 'node:http';
-import { ErrorCode, parseBearer, parseJsonObject } from './brokerProtocol';
+import * as os from 'node:os';
+import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
-import { expiredMessage } from './grantLimits';
+import { expiredMessage } from './grantWords';
 import { MCP_SWITCHES } from './mcpSwitches';
 import { McpRung } from './mcpAccess';
 
@@ -17,6 +18,20 @@ import { McpRung } from './mcpAccess';
  * <p>Out of `credsAgentServer.ts` because that file lives at its 800-line ceiling and none of
  * this needs anything on it.</p>
  */
+
+/** The code and the sentence of a refusal, before a door decides how to write it. */
+export type Refusal = { readonly code: ErrorCode; readonly message: string };
+
+/** What an agent is told about a token that is not live and is not its business: unknown, missing, or out of scope. */
+export const UNKNOWN_TOKEN = 'Unknown or missing grant token.';
+
+/** What an agent is told when the person answered Deny, on this call or earlier on this token. */
+export const GRANT_NOT_ALLOWED = 'The human did not allow this grant.';
+
+/** A failed validation as a refusal: the action's own code, or the plain `invalid_request`. */
+export function validationRefusal(failed: { readonly code?: ErrorCode; readonly message: string }): Refusal {
+  return { code: failed.code ?? 'invalid_request', message: failed.message };
+}
 
 /** A parsed body, or the refusal to send instead. */
 export type BodyOutcome =
@@ -173,7 +188,7 @@ export function aliasTarget(
  * person chose, guessable one try at a time, while an entry id is a uuid nobody enumerates. So
  * the alias route answers "no such entry" to both questions on purpose, and this one does not.</p>
  */
-export function refusalFor(found: McpUseLookup): { code: ErrorCode; message: string } {
+export function refusalFor(found: McpUseLookup): Refusal {
   if (found?.kind === 'closed') {
     return {
       code: 'denied',
@@ -235,7 +250,7 @@ export function grantForToken(
   }
   return {
     ok: false,
-    message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
+    message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : UNKNOWN_TOKEN,
   };
 }
 
@@ -249,5 +264,88 @@ export function grantForToken(
 export function reservationRefused(refused: GrantLookup, limits: GrantLimits): string {
   return refused.kind === 'expired'
     ? expiredMessage(refused.reason, limits)
-    : 'Unknown or missing grant token.';
+    : UNKNOWN_TOKEN;
+}
+
+/** The path no route matches, which a request target `new URL` cannot parse (`//`, `///`, `http://[`, `/\`) is read as. A bare host such as `example.com` parses, as a path. */
+const UNPARSEABLE_TARGET = '/unparseable-request-target';
+
+/**
+ * The URL of a request, or one that no route matches when its target does not parse: `new URL('//', base)` throws, and a
+ * throw before any route or throttle would write one journal line per request with no ceiling (Amendment 6 review).
+ */
+export function requestUrl(target: string | undefined): URL {
+  const base = 'http://127.0.0.1';
+  try {
+    return new URL(target ?? '/', base);
+  } catch {
+    return new URL(UNPARSEABLE_TARGET, base);
+  }
+}
+
+export function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_REQUEST_BODY_BYTES) {
+        reject(new Error('body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+/** The built-in error classes a journal line may name; any other class (one of our own, a thrown string) reads `Error`. */
+const BUILT_IN_CLASSES: ReadonlySet<string> = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'URIError', 'ReferenceError', 'EvalError', 'AggregateError']);
+
+function errorClassOf(error: unknown): string {
+  const name = error instanceof Error ? error.constructor.name : '';
+  return BUILT_IN_CLASSES.has(name) ? name : 'Error';
+}
+
+/**
+ * A `code` is named only when it is a system errno name of this platform (`ENOENT`, `ECONNRESET`: the table the runtime itself exposes).
+ * Nothing else: an `ERR_` word is a shape a request can fill with its own text, and a journal line never carries a word a request chose.
+ */
+const SYSTEM_ERRNO_NAMES: ReadonlySet<string> = new Set(Object.keys(os.constants.errno));
+
+const isNodeCode = (code: unknown): code is string => typeof code === 'string' && SYSTEM_ERRNO_NAMES.has(code);
+
+/** The code an `Error` carries, if it is a system errno; a thrown plain object or string has none to read. */
+function errorCodeOf(error: unknown): string {
+  const code: unknown = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+  return isNodeCode(code) ? ` ${code}` : '';
+}
+
+/**
+ * A handler threw: answer 500 with its own sentence if nothing has been sent, THEN write one journal line in a `try`, so a journal that
+ * throws on every line still answers (Amendment 6, D.8 and its review).
+ *
+ * <p>The line is a classification and never the error: the built-in class name, a system errno name or none, the route (the
+ * name of the table's route or `other`, handed in: `brokerRequests` cannot import the table, which imports it back) and whether the
+ * headers had already gone out, read BEFORE the answer is written. Never `message`, never a stack, a path, a header or a body: a Node
+ * `JSON.parse` message quotes its input (parent §4.1).</p>
+ */
+export function unanswered(
+  res: http.ServerResponse,
+  error: unknown,
+  route: string,
+  respondError: (code: ErrorCode, message: string) => void,
+  log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void,
+): void {
+  const sent = res.headersSent;
+  if (!sent) {
+    respondError('internal', UNANSWERED_FAILURE);
+  }
+  try {
+    log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler failed: ${errorClassOf(error)}${errorCodeOf(error)} on ${route}; headers ${sent ? 'sent' : 'not sent'}` });
+  } catch {
+    /* a journal that will not take the line has already cost the caller nothing: the answer went first */
+  }
 }

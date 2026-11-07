@@ -16,12 +16,14 @@ import {
   isMcpFoldersRoute,
   isMcpKindHelpRoute,
   isMcpKindsRoute,
+  ALIAS_ROUTE_PREFIX,
   parseAliasRoute,
   parseMcpUseRoute,
   parseUseRoute,
   isMcpConfigSnippetRoute,
   statusForErrorCode,
 } from '../brokerProtocol';
+import { BRIDGE_KEY_HEADER, BRIDGE_NOTE_DIR, BRIDGE_NOTE_FIELDS, BRIDGE_NOTE_SUFFIX } from '../bridgeNote';
 import { readRouteBody } from '../brokerReadRoutes';
 import { EXIT } from '../agentCliOutcome';
 import { agentKinds } from '../agentKindFields';
@@ -65,6 +67,8 @@ interface Contract {
   mcpDeleteRoute: string;
   mcpCreateRoute: string;
   mcpFolderPrefix: string;
+  aliasPrefix: string;
+  bridge: { keyHeader: string; noteDir: string; noteSuffix: string; noteFields: Record<string, string> };
   caller: { field: string; fields: string[]; flatPrefix: string; maxFieldChars: number; maxLabelChars: number };
   entityKinds: string[];
   agentCreatableKinds: string[];
@@ -347,4 +351,30 @@ test('every MCP action asks for a switch, and rotate asks for a higher one than 
   }
   // A verb added to the broker and forgotten in the table must fail closed, not open.
   assert.equal(switchForAction('somethingNew'), 'delete');
+});
+
+test('S18: the alias prefix travels, and it is the one parseAliasRoute accepts', () => {
+  // A third prefix, held as a literal by the C# client at `Program.cs:197`; the contract is where it is written once.
+  const { aliasPrefix, routes } = load();
+
+  assert.equal(aliasPrefix, ALIAS_ROUTE_PREFIX);
+  for (const verb of Object.keys(routes)) {
+    const action = routes[verb].replace('/v1/use/', '');
+    assert.equal(parseAliasRoute(`${aliasPrefix}${action}`), action, verb);
+  }
+  for (const appended of ['', '/', 'Exec', 'exec/more', '1exec', '../use/exec', 'a b']) {
+    assert.equal(parseAliasRoute(`${aliasPrefix}${appended}`), undefined, `"${appended}" is not an action name`);
+  }
+});
+
+test('S18: the bridge block is the constants of bridgeNote.ts, and its fields are the interface\'s', () => {
+  // Additive: `version` stays 1, and a reader that does not know the block ignores it.
+  const { bridge, version } = load();
+
+  assert.equal(version, 1);
+  assert.equal(bridge.keyHeader, BRIDGE_KEY_HEADER);
+  assert.equal(bridge.noteDir, BRIDGE_NOTE_DIR);
+  assert.equal(bridge.noteSuffix, BRIDGE_NOTE_SUFFIX);
+  assert.deepEqual(Object.keys(bridge.noteFields), Object.keys(BRIDGE_NOTE_FIELDS));
+  assert.deepEqual(bridge.noteFields, { ...BRIDGE_NOTE_FIELDS });
 });

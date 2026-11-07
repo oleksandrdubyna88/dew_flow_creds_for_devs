@@ -356,6 +356,21 @@ export function findUsableEntry(
 }
 
 /**
+ * The same source with `getAccounts` answering one row, or none: how a Remote Bridge's lookup is kept to the
+ * account of its context. `findUsableEntry` searches every account because an id is unique to a vault, and a
+ * bridge has no business in an account that is not its own.
+ */
+export function accountOnly(
+  source: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
+  accountId: string,
+): Pick<McpVaultSource, 'getAccounts' | 'getNode'> {
+  return {
+    getAccounts: () => source.getAccounts().filter((account) => account.accountId === accountId),
+    getNode: (account, id) => source.getNode(account, id),
+  };
+}
+
+/**
  * One account's answer.
  *
  * <p>A protected entry answers `undefined` — the same answer a made-up id gets — rather than

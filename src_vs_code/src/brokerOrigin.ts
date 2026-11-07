@@ -1,4 +1,7 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
+import type { BridgeContext } from './bridgeContext';
+import { BRIDGE_KEY_HEADER } from './bridgeNote';
 import { errorBody, statusForErrorCode } from './brokerProtocol';
 
 /**
@@ -33,61 +36,85 @@ import { errorBody, statusForErrorCode } from './brokerProtocol';
  * construction rather than by every listener happening to route through one method. Both the
  * loopback port and the pipe are handed this.</p>
  *
- * <p>Two of them are built, by `doorsFor` below: the port's door checks `Host`, the socket's cannot
- * (see {@link NOT_ON_THE_NETWORK}). They share one `note`, so a person is told once per window and
- * not once per listener.</p>
+ * <p>Three kinds are built, by `doorsFor` below: the port's door checks `Host`, the socket's cannot
+ * (see {@link NOT_ON_THE_NETWORK}), and a Remote Bridge listener's also requires a key and hands the router
+ * its `BridgeContext`. They share the notes, so a person is told once per window and not once per
+ * listener.</p>
  *
- * <p>NOT exported, deliberately — a reviewer pointed out that a third listener added later would
+ * <p>NOT exported, deliberately — a reviewer pointed out that another listener added later would
  * reach for this and get its own `said` flag, turning "once per window" back into once per
  * listener. `doorsFor` is the only way to obtain a door, so that invariant is structural.</p>
  */
 function behindTheDoor(
-  handle: (req: IncomingMessage, res: ServerResponse) => void,
-  at: () => DoorFacing,
+  handle: Handle,
+  decide: (headers: IncomingHttpHeaders) => DoorRefusal | undefined,
   respond: (res: ServerResponse, status: number, body: unknown) => void,
-  note: () => void,
+  note: (refusal: DoorRefusal) => void,
+  bridge: BridgeContext | undefined,
 ): Served {
   return (req, res) => {
-    if (!turnAwayAtTheDoor(req.headers, at(), (status, body) => respond(res, status, body), res)) {
-      handle(req, res);
+    const refusal = decide(req.headers);
+    if (refusal === undefined) {
+      handle(req, res, bridge);
       return;
     }
-    note();
+    turnAwayAtTheDoor(refusal, (status, body) => respond(res, status, body), res);
+    note(refusal);
   };
 }
 
 /** A node request handler — the shape both listeners take. */
 export type Served = (req: IncomingMessage, res: ServerResponse) => void;
 
-/** One router, two listeners, two doors — because only one of them has a port. */
+/**
+ * The router, as a door hands it a request: the bridge it arrived by, or `undefined` for the port and the
+ * socket. WRITTEN at every call site and never defaulted (the doctrine of `brokerMcpDoor.ts`), because
+ * a default is how a request with no bridge would come to look like one with a bridge, or the reverse.
+ */
+export type Handle = (req: IncomingMessage, res: ServerResponse, bridge: BridgeContext | undefined) => void;
+
+/** One router, three kinds of listener, three doors — because only some of them have a port, and one a key. */
 export interface Doors {
   readonly onThePort: Served;
   readonly onTheSocket: Served;
+  /** The door of one Remote Bridge listener: the main door's checks, and the key, and the context it hands the router. */
+  forBridge(port: number, key: string, context: BridgeContext): Served;
 }
 
 /**
- * Both doors onto one router.
+ * Every door onto one router.
  *
  * <p>Built together so the note is said at most ONCE per window rather than once per listener: the
  * first browser-shaped request is worth telling a person about, and the thousandth would flood the
- * journal that exists to show what an agent did.</p>
+ * journal that exists to show what an agent did. A key refusal has its own note, once per window too,
+ * because the browser one says "browser-shaped" and that would be false for an old `creds`.</p>
  */
 export function doorsFor(
-  handle: Served,
+  handle: Handle,
   port: () => number,
   respond: (res: ServerResponse, status: number, body: unknown) => void,
   note: (message: string) => void,
 ): Doors {
   let said = false;
+  let saidKey = false;
   const once = (): void => {
     if (!said) {
       said = true;
       note(REFUSAL_NOTE);
     }
   };
+  const onceKey = (): void => {
+    if (!saidKey) {
+      saidKey = true;
+      note(KEY_REFUSAL_NOTE);
+    }
+  };
+  const noteFor = (refusal: DoorRefusal): void => (refusal.kind === 'key' ? onceKey() : once());
   return {
-    onThePort: behindTheDoor(handle, () => ({ port: port() }), respond, once),
-    onTheSocket: behindTheDoor(handle, () => NOT_ON_THE_NETWORK, respond, once),
+    onThePort: behindTheDoor(handle, (h) => admitsRequest(h, { port: port() }), respond, once, undefined),
+    onTheSocket: behindTheDoor(handle, (h) => admitsRequest(h, NOT_ON_THE_NETWORK), respond, once, undefined),
+    forBridge: (bridgePort, key, context) =>
+      behindTheDoor(handle, (h) => admitsBridgeRequest(h, { port: bridgePort, key }), respond, noteFor, context),
   };
 }
 
@@ -96,8 +123,12 @@ const REFUSAL_NOTE =
   + 'ran and nothing was asked of you. If you did not expect that, a page you have open is talking '
   + 'to localhost.';
 
+const KEY_REFUSAL_NOTE =
+  'Something on this machine called a Remote Bridge listener without its key, and it was refused. Nothing '
+  + 'ran and nothing was asked of you. An older creds on that server does this too; updating it stops this line.';
+
 /**
- * Answer a request the door refuses, and say whether it did.
+ * Answer a request the door refuses.
  *
  * <p>Here rather than on the server because `credsAgentServer.ts` lives at its 800-line ceiling and
  * this needs nothing from it: a header bag, a port, and somewhere to write.</p>
@@ -106,18 +137,12 @@ const REFUSAL_NOTE =
  * body is a socket doing nothing for anybody.</p>
  */
 function turnAwayAtTheDoor(
-  headers: IncomingHttpHeaders,
-  at: DoorFacing,
+  refusal: DoorRefusal,
   respond: (status: number, body: unknown) => void,
   res: { setHeader(name: string, value: string): void },
-): boolean {
-  const refusal = admitsRequest(headers, at);
-  if (refusal === undefined) {
-    return false;
-  }
+): void {
   res.setHeader('Connection', 'close');
   respond(statusForErrorCode('forbidden'), errorBody('forbidden', refusal.message));
-  return true;
 }
 
 /** Where this window listens, as a `Host` header must name it. */
@@ -146,6 +171,8 @@ export type DoorFacing = Loopback | typeof NOT_ON_THE_NETWORK;
 
 export interface DoorRefusal {
   readonly message: string;
+  /** `'key'` for a bridge key refusal, which has a note of its own; absent for the browser and `Host` refusal. */
+  readonly kind?: 'key';
 }
 
 const REFUSED =
@@ -160,6 +187,58 @@ const REFUSED =
  */
 export function admitsRequest(headers: IncomingHttpHeaders, at: DoorFacing): DoorRefusal | undefined {
   return browserMarked(headers) || !addressedToUs(headers.host, at) ? { message: REFUSED } : undefined;
+}
+
+export const BRIDGE_NO_KEY =
+  'This is a Remote Bridge listener, and this request carries no bridge key. Update creds on this host: this '
+  + 'version cannot use it. Nothing ran.';
+
+export const BRIDGE_WRONG_KEY =
+  'This Remote Bridge listener did not accept that key. The bridge has reconnected or closed. Nothing ran.';
+
+/**
+ * The bridge door's decision — `undefined` admits. In this order, and the order is the design:
+ *
+ * <ol>
+ * <li>a browser mark → `REFUSED`, before the key is looked at: a page is refused as a page;</li>
+ * <li>no key header → `BRIDGE_NO_KEY`;</li>
+ * <li>a key that differs (or is not one string) → `BRIDGE_WRONG_KEY`;</li>
+ * <li>`Host` → `REFUSED`.</li>
+ * </ol>
+ *
+ * <p>The key is decided BEFORE `Host` on purpose: an old `creds` sends `Host: 127.0.0.1:1` or the main
+ * port and no key, and it must be told to update rather than that it looks like a browser. Nothing leaks
+ * by the order — every answer is a 403 carrying one fixed sentence.</p>
+ */
+export function admitsBridgeRequest(
+  headers: IncomingHttpHeaders,
+  at: { readonly port: number; readonly key: string },
+): DoorRefusal | undefined {
+  if (browserMarked(headers)) {
+    return { message: REFUSED };
+  }
+  return keyRefusal(headers[BRIDGE_KEY_HEADER.toLowerCase()], at.key) ?? (loopbackHost(headers.host, at) ? undefined : { message: REFUSED });
+}
+
+/** No header is `BRIDGE_NO_KEY`; anything but one string equal to the key is `BRIDGE_WRONG_KEY`. */
+function keyRefusal(given: string | string[] | undefined, key: string): DoorRefusal | undefined {
+  if (given === undefined) {
+    return { message: BRIDGE_NO_KEY, kind: 'key' };
+  }
+  return typeof given === 'string' && sameKey(given, key) ? undefined : { message: BRIDGE_WRONG_KEY, kind: 'key' };
+}
+
+/**
+ * Equal keys, in constant time and without a length oracle: both sides are hashed first, so
+ * `timingSafeEqual` always sees two 32-byte digests. It throws on buffers of different length, and
+ * comparing the raw strings would either throw or answer early.
+ */
+function sameKey(given: string, key: string): boolean {
+  return timingSafeEqual(sha256(given), sha256(key));
+}
+
+function sha256(text: string): Buffer {
+  return createHash('sha256').update(text, 'utf8').digest();
 }
 
 /** A socket has no address a `Host` could get wrong; a port has exactly one. */

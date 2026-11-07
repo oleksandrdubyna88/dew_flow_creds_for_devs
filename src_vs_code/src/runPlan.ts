@@ -1,4 +1,5 @@
 import { CommandParts } from './commandLine';
+import { EntityMetadata } from './types';
 import { SecretRefField, findSecretRefs, parseSecretRef } from './secretRef';
 import { shellFamily } from './hostShell';
 
@@ -56,6 +57,25 @@ export function planRefs(texts: readonly string[]): RefPlan {
     names[ref] = refVarName(index);
   });
   return { refs, names };
+}
+
+/**
+ * Where a reference may be written: the texts `commands/runCommands.ts` searches for one — the script body and
+ * every variable, or the command and every argument. Every row, disabled ones too: a person can switch one back on,
+ * and a check that skipped it would pass a call the next edit makes unsafe.
+ */
+export function referenceTextsOf(
+  details: Pick<EntityMetadata, 'isScript' | 'script' | 'scriptVars' | 'command' | 'commandArgs'>,
+): string[] {
+  return details.isScript === true ? scriptTexts(details) : commandTexts(details);
+}
+
+function scriptTexts(details: Pick<EntityMetadata, 'script' | 'scriptVars'>): string[] {
+  return [details.script ?? '', ...(details.scriptVars ?? []).map((row) => row.value)];
+}
+
+function commandTexts(details: Pick<EntityMetadata, 'command' | 'commandArgs'>): string[] {
+  return [details.command ?? '', ...(details.commandArgs ?? []).map((row) => row.value)];
 }
 
 /** The field a reference names, for a summary a person reads before allowing a run. */

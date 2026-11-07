@@ -10,6 +10,21 @@
  * registry neither knows nor cares.
  */
 
+import type { BridgeContext } from './bridgeContext';
+import type { ErrorCode } from './brokerProtocol';
+
+/** What a call is aimed at, as a grant names it: enough to read the live entity. */
+export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
+
+/** Whether an action may prompt after the Allow: always, never, or by the call's target. */
+export type FollowUp = boolean | ((target: CallTarget) => boolean);
+
+/** The flag read for one call: a boolean as it is, a function asked with the target. */
+export function asksAfter(action: Pick<UseAction, 'asksAfterConsent'>, target: CallTarget): boolean {
+  const flag = action.asksAfterConsent;
+  return typeof flag === 'function' ? flag(target) : flag === true;
+}
+
 /** Where in the vault the grant points; the live entity is re-read per call. */
 export interface UseActionContext {
   readonly accountId: string;
@@ -30,6 +45,12 @@ export interface UseActionContext {
    * refused once the request has gone; only an already-started run is left to finish.
    */
   readonly finishOnceStarted?: boolean;
+  /**
+   * Set when the call came in through a Remote Bridge: which one, and for which server. Never the key, and
+   * never `quiet` or a spent token, which the grant's nested `BridgeGrant` keeps out of it. An action that
+   * resolves a `creds://` reference reads values through `scopedRefSource` whenever this is set (E3.3).
+   */
+  readonly bridge?: BridgeContext;
 }
 
 /**
@@ -86,8 +107,24 @@ export interface UseAction {
    * same object as the response body, which is the one place this design keeps it out of.</p>
    */
   readonly mutatesSecrets: boolean;
+  /**
+   * This action may put a prompt of its own on screen after the person's Allow (a PIN box, a trust modal, an install offer, a
+   * signing modal). Absent = no. The broker then keeps the one dialog place until the call ends, so no second modal opens over that
+   * prompt (Amendment 3, C.3; the parent's §4.10, the follow-up contract). A boolean for an action that always may
+   * (`create`, `terminal`, `up`, `down`, `rotate`); a function of the call's target for one that may on some entries only: `exec`,
+   * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket), read when the dialog
+   * closes on an Allow (`ConsentQuestion.followUp`), not before it opens: the socket may come up or go down while the dialog is on screen.
+   * `query`, `run` and a non-forwarding `exec` keep nothing once the dialog closes.
+   */
+  readonly asksAfterConsent?: FollowUp;
 
-  validate(body: unknown): { ok: true } | { ok: false; message: string };
+  /**
+   * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
+   * body. A well-formed request this window refuses on purpose (an export into another computer's
+   * terminals) names `denied`: a client does not read it as its own mistake, and, unlike a 404, does
+   * not read it as "this window does not have the entry" and go looking in the next one.
+   */
+  validate(body: unknown): { ok: true } | { ok: false; message: string; code?: ErrorCode };
   /** One line for the first-use consent dialog (e.g. the command about to run). */
   summarize(body: unknown): string;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */

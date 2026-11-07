@@ -193,7 +193,7 @@ export const DE_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "Eine native Binärdatei, die eine Zugangsdatei aus dem Tresor in jedem Terminal benutzt — `creds ssh prod-db -- uname -a` — ohne sie je zu erhalten. Das Fenster, dem der Eintrag gehört, führt die Handlung aus und gibt allein die Ausgabe zurück.",
     why: "Nicht alles passiert in VS Code, und Tokens in Shells zu kleben ist genau das, wozu es dieses Produkt gibt: um damit Schluss zu machen.",
     setup: "Install… → Install `creds`. An einem Eintrag: „Enable CLI Access…\" prägt den Namen, den Sie tippen werden.",
-    usage: "Verben: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — und `creds relay` innerhalb von WSL für den SSH-Agenten. Der Betrachter des Eintrags listet seine Namen mit dem genauen Befehl zum Kopieren.",
+    usage: "Verben: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — und `creds relay` innerhalb von WSL für den SSH-Agenten. Der Betrachter des Eintrags listet seine Namen mit dem genauen Befehl zum Kopieren. `creds env <token>` wird in einem Remote-SSH- oder Container-Fenster abgelehnt: Der Wert würde auf einem anderen Rechner landen. (`creds env <name>` wird von keinem Fenster bedient, wie bisher.) Nutzen Sie stattdessen einen gespeicherten Befehl (`run`, `script`).",
     whatCanGoWrong: "Der erste Aufruf fragt den Menschen in VS Code — das ist der Entwurf, kein Hänger. „No open window\": VS Code starten, oder den CLI-Zugriff des Eintrags prüfen. Auf einem Remote-SSH-Host brauchen Sie zusätzlich die Brücke (siehe Remote Bridge).",
   },
   'remote-bridge': {

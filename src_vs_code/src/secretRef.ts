@@ -155,6 +155,35 @@ function locate(
   return { ok: true, accountId: account.accountId, entityId: matches[0].id, path: matches[0].path };
 }
 
+/**
+ * `locate` for a caller that must not see its messages: the reference parsed and located, or `ok: false` and no
+ * reason. Never throws.
+ *
+ * <p>`locate`'s own sentences tell a dangling reference from a real one and list candidate paths when two entries
+ * share a name. That is right for the person at their own keyboard and an oracle over a whole vault for anybody
+ * else, so a Remote Bridge asks this instead. The value is never read: the `RefSource` handed to `locate` has a
+ * `fieldReading` that rejects, and nothing here calls it.</p>
+ */
+export function locateRef(
+  raw: string,
+  source: Pick<RefSource, 'accounts' | 'entities'>,
+): { ok: true; accountId: string; entityId: string } | { ok: false } {
+  try {
+    return located(raw, source);
+  } catch {
+    return { ok: false };
+  }
+}
+
+function located(raw: string, source: Pick<RefSource, 'accounts' | 'entities'>): { ok: true; accountId: string; entityId: string } | { ok: false } {
+  const ref = parseSecretRef(raw);
+  if (ref === undefined) {
+    return { ok: false };
+  }
+  const found = locate(raw, ref, { ...source, fieldReading: () => Promise.reject(new Error('locateRef reads no value')) });
+  return found.ok ? { ok: true, accountId: found.accountId, entityId: found.entityId } : { ok: false };
+}
+
 type OneResolution = { ok: true; value: string } | { ok: false; error: string };
 
 /** Read the field off the located entity — empty is an error, with the entity named. */

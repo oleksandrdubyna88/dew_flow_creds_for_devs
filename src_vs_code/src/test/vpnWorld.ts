@@ -75,6 +75,8 @@ export interface World {
   /** The `preopened` terminals and the ones a flow created, by name: the newest of each. */
   live: Record<string, LiveTerminal>;
   shell: ShellEvents;
+  /** How many times the start or stop told the vault the person is at the keyboard (`noteUserActivity`): the idle clock's one input from here. */
+  userActivity: number;
 }
 
 type Listener = (e: unknown) => void;
@@ -219,7 +221,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     [...closed].forEach((l) => l(terminal));
   };
   const open = (name: string, shellPath?: string): LiveTerminal => makeTerminal({ name, shellPath });
-  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell };
+  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell, userActivity: 0 };
 }
 
 function reply(opts: WorldOptions, buttons: string[], modal: boolean): string | undefined {
@@ -366,7 +368,7 @@ export async function startVpn(scope: Scope, w: World, nodes: Record<string, Ent
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   const storage = o.storage ?? storageOf(nodes);
   try {
-    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => undefined }, trustOf(o), o.startGate), dir };
+    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), o.startGate), dir };
   } catch (error) {
     return { started: false, dir, ended: requestsEnd(error) };
   }

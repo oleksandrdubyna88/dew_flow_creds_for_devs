@@ -2591,7 +2591,32 @@ positions, so the import is elided and the module is pure at run time — `woven
 imports `automaticRefusal` from it with no stub, and one `vscode.window` call there failed that file at
 load. The agent's `exportEnv` verb keeps answering `{ written }` — `EnvExportResponseBody` is a broker
 contract the CLI and the MCP read — so a binding the policy withheld is not in that answer; widening
-it is a contract change across three codebases and is recorded here as the open tail. The form's row
+it is a contract change across three codebases and is recorded here as the open tail.
+
+*A window whose terminals run on another computer (E1.1 of the scoped remote bridge, 2026-11-04).* In a
+Remote-SSH, container or Codespaces window the collection feeds terminals that run on the REMOTE side,
+so the value lands on another computer. The person's own binding is still written (owner decision 5)
+and is now said: `envAppliedNotice(result, remoteName?)` adds, after any withheld sentences, *"$X
+reaches another computer: the new terminals of this window run there (ssh-remote) … where any process
+running under your login can read it. The value stays until you remove the binding through Edit in this
+window; deleting the entry does not remove it."* (the plural for several names: "them"). Deleting an
+entry applies no bindings, so the value stays; that is recorded for E4. It is in the notice and not at the `ENV` button because the notice is the one
+sentence every surface that writes the collection says. The remote name rides `envCollectionRef` as a
+module variable set beside the collection (`setEnvCollection(collection, remoteName)`), so stubs without
+an `env` read as local; `windowKind` decides (`local`, `wsl` and an empty name say nothing). An AGENT's
+`exportEnv` is refused outright in such a window: `credentialExportEnvAction({ …, remoteName })` answers
+from `validate` — before the consent modal — `denied` (403) with the one stable `EXPORT_REFUSED`
+sentence (`brokerProtocol.ts`), through the `code` a `validate` result may now name (absent, it is still
+`invalid_request`). `denied` and neither `not_supported` nor `invalid_request`: `not_supported` is a 404,
+which the CLI reads as "not this window" and, with no other window, as exit 93 for an entry that exists;
+`invalid_request` tells the agent its own request was wrong. A 403 stops both clients' walks. The sentence
+claims only that the value would land in another computer's terminals, and points at a stored command the
+person already has; it does not say no secret leaves the vault's computer (a person may put a value on the
+server) and does not promise a `creds://` reference works before E3. `exportRefused.test.ts` drives
+it through the real broker on `/v1/use/exec`, `/v1/alias/exec` and the real `exportEnv` routes, and
+`exportWiring.test.ts` reads `extension.ts` to hold that the window passes `vscode.env.remoteName` to both. Whether the persisted collection reaches
+new remote terminals at all is the M4 measurement in `todo/PLAN_remote_bridge_scoped_E1.md`, taken by a
+person and not yet recorded. The form's row
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
 row: written into every integrated terminal opened after saving, in this window only, never to a file,
 never to a shell outside VS Code. `envSaveNotice.test.ts` drives the REAL create and edit handlers over
@@ -2667,7 +2692,7 @@ needed **no change** — the seam worked as designed. `runBounded` was extracted
 | `script` | `run` | child env (`resolveScriptEnv`) | body ignored; content-trust required |
 | `terminal` | `run` | none — no secret field | body ignored; the ONE `shell: true` caller, safe because no agent text is in the line |
 | `db` | `query` | `PGPASSWORD` / `MYSQL_PWD` / `SQLCMDPASSWORD` | only host/port/db on the command line — argv is world-readable in the process list |
-| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so |
+| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so. Refused in `validate` (403 `denied`, `EXPORT_REFUSED`) in a window whose terminals run on another computer (Remote-SSH, container) |
 | `vpn` | `up`/`down` | materialized config | opens the human's terminal — no headless child can answer a UAC prompt |
 
 **MongoDB is refused, deliberately.** `mongosh` has no password environment variable and
@@ -3417,7 +3442,7 @@ The TRANSPORT is guarded by the operating system: mode 0600 on POSIX, so another
 before a byte of ours runs — the one real boundary the loopback port never had. On Windows the pipe
 takes the default DACL, which `brokerListeners.ts` documents as a convenience rather than a
 boundary. Behind that, each route authorises as it always did: the token door requires a grant
-token; the **alias door requires none** — its authorisation is `AliasThrottle` plus the consent
+token; the **alias door requires none** — its authorisation is the dialog rate (`TokenlessCeilings`) plus the consent
 modal, and it mints its own grant; the MCP door, the other tokenless one, answers to the same modal
 budget when it prompts and to a separate ceiling of sixty silent calls a minute when a policy has
 answered for the modal (#95) — and the **read routes authenticate nothing**, which is why the
@@ -3428,6 +3453,229 @@ It reached `main` because the only thing exercising the path was a POSIX-only ca
 integration suite. `brokerOriginDoor.test.ts` now drives the real second listener on **both**
 platforms, which is also the first unit test that ever opened it. Record:
 [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
+
+**A third door, for a Remote Bridge listener, that needs a key** (E1.2 of the scoped remote bridge,
+[PLAN_remote_bridge_scoped_E1_S2_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
+the extension calls it yet* — `openBridgeListener` has no caller until E2.2, and a test reads
+every non-test source but the broker's own to keep it so). `BridgeListeners` (`brokerBridgeListeners.ts`) opens one
+loopback listener per open bridge, each with its own port and a key of 32 random bytes minted at that open,
+and `doorsFor(...).forBridge(port, key, context)` is the only way to a door for it. The door decides in this
+order: a browser mark, then **no `X-Creds-Bridge` header** (`BRIDGE_NO_KEY`), then **a key that differs**
+(`BRIDGE_WRONG_KEY`), then `Host`. The key is compared as `timingSafeEqual` over two SHA-256 digests, so a key
+of another length neither throws nor returns early, and a repeated or non-string header is a wrong key. The key
+is decided before `Host` so an old `creds` (no key, `Host: 127.0.0.1:1`) is told to update and not that it
+looks like a browser; every answer is a `403 forbidden` carrying one fixed sentence, and the key refusal has its
+own note, once per window, because the browser note says "browser-shaped". The router receives a frozen
+`BridgeContext` from the door (`bridgeContext.ts`) as a third argument, `undefined` on the port and the socket
+and written at each call site; nothing in a request can set it, and the key is not in it. Behind the door the
+bridge serves an allow-list (`bridgeAllowList.ts`; E1.2 shipped it with one route, `GET /v1/health`, and E1.3
+filled it, below); everything else is `404 not_supported` with `Connection: close`, before any body is read. Opens for one `bridgeId` are chained, so a
+reconnect cannot leave the earlier port and key usable, `close()` ends kept-alive connections too, and
+`dispose()` closes every bridge listener and refuses later opens, before the broker starts anything for them.
+
+**The allow-list, the note schema and the scope wall of a Remote Bridge** (E1.3 of the scoped remote bridge,
+[PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
+extension opens a bridge* — `extension.ts` passes no `bridgeWall`, and without one `openBridgeListener` rejects, so
+a door with no wall cannot exist). Three things stand behind the third door.
+
+*Purity is transitive.* R2 of `bridgeBoundary.test.ts` walks `import … from './x'` (not `import type`) from the bridge's modules
+(`bridgeContext`, `bridgeNote`, `bridgeAllowList`, `bridgeScope`, `brokerBridgeToken`, `brokerBridgeListeners`, `brokerOrigin`,
+`grantWords`) and fails naming the chain when any module they load imports `vscode`; `expiredMessage` therefore lives in the pure
+`grantWords.ts`, not in `grantLimits.ts`, which reads a setting.
+
+*What it serves.* `BRIDGE_ROUTES` (`bridgeAllowList.ts`) names every route of `contract/broker-v1.json` and
+`/v1/alias/<action>`, served or refused with its reason, and a request is looked up by method and pathname exactly,
+so a route that is in neither table is refused at run time and turns `bridgeAllowList.test.ts` red until somebody
+decides about it. Served: the reads (`health`, `kinds`, `kind-help` as they are; `aliases`, `entries`,
+`config-snippet`, `folders` through the wall), and `exec` and `query` on the token, alias and MCP prefixes. Refused
+`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with the bridge's sentence: `run`
+(until E3 decides where a stored command runs), `terminal`, `up`, `down`, `rotate`, delete, create, the folder verbs
+and the config read. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
+carries them (`bridge.noteFields`) with the header and the directory, and the alias prefix (`aliasPrefix`), all
+additive, `version` still 1.
+
+*Which entries it reaches.* `BridgeScopes` (`bridgeScopeStore.ts`, re-exported by `bridgeScope.ts`) keeps, per account and
+server entry, the ids a server's agent may reach and whether it is asked each time, **in a file per record**,
+`<globalStorageUri>/bridges/scopes/<sha256 of the key>.json`, never in the vault and (epoch 3 of the plan) **not in
+`globalState`**: each window holds its own copy of that and the last write wins, so a narrow made in one window could
+fail to reach the window that owns the bridge, and a stale write could bring back what the owner removed. The file is read
+fresh and synchronously on every check; it carries `v`, `accountId`, `serverEntityId`, the ids, the switch, a `revision` and
+`at`, and a file that is absent, unparseable, not that shape, or names another account or server than the one asked for is an
+empty scope at the revision `NO_SCOPE` (`'absent'`). **The revision is a fresh random id (`crypto.randomUUID()`) at every
+write, never a counter** (Amendment 2, B.5): a counter that starts again at 1 after a Close lets a picker holding a copy from
+before the Close save over the scope picked after it. `NO_SCOPE` is never written to a file (a file that carries it is not a
+scope), and a `set` that expects it lands only while the file is still absent. A write goes through the cross-window lock (`writes`, a `LeasedQueue` over a `WindowLock` at
+`bridges/scopes.lock`; E2.2 builds it), re-reads inside it, is refused with `SCOPE_STALE` when the revision it was made from
+is no longer the file's, and is written temp-and-rename (the rename retried 3 times on EPERM/EBUSY, as on Windows when a
+reader holds the file); 64 files at most, the oldest `at` pruned inside the lock, and `forget` removes one on Close.
+`doorView(bridge, wall)` wraps every way the router looks
+something up, so an entry out of scope answers through the route's own not-found function exactly as an entry that is
+not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed),
+the snippet and the folders say nothing of it, the MCP lookup runs for every id narrowed to the context's account and
+the scope decides afterwards (so the time it takes is not an answer), and a token out of scope is unknown whether it is
+live or expired. **The listing and the snippet are per account**: `McpEntry` carries no account and an envelope may repeat
+an id across accounts, so a wall by id alone over the whole vault's listing would also list the other account's row. The
+bridged view reads them from `wall.listEntriesOf(accountId)` and `wall.visibleConfigOf(accountId, id)` (the real
+`visibleMcpEntries` / `visibleConfigDetails` over `accountOnlyVault(storage, accountId)`, in `mcpAccountVault.ts`, a carrier in
+`pinReaderBoundary.test.ts`: it hands the secret getters on and reads nothing). **Those four suppliers of the vault side of
+the wall (`storedTexts`, `listEntriesOf`, `visibleConfigOf`, `entryRefusal`) are one production function,
+`wallSuppliersOf(vault)` in `bridgeWallSource.ts`** (Amendment 2, B.6): E2 wires `{ scopes, refSource, ...wallSuppliersOf(storage) }`
+and the scenarios' wall world builds its wall from the same function, spying on it and defining none of the four, so a scenario
+about the listing or the snippet runs through what production runs. It reads the scope AFTER the
+listing's `await`, so a narrow that lands while the rows are being read is the scope they are cut by. The existing doors get
+`OPEN_VIEW`, which hands back the functions it was given. A token on a bridge
+only authenticates (`brokerBridgeToken.ts`): the call is minted as a grant of its own and asked every time, a Deny
+refuses that call and not the token, and the token's use count moves at the action boundary, before the call grant's.
+The token's status is read **after** the body (`bridgedTokenCall` is handed `() => status`, not a snapshot), so a Deny that
+lands between the token's lookup and the body's arrival is seen at once and not only at the launch gate. **That check runs
+inside the slot, after `admit`** (Amendment 3, C.5): a token the person denied is an asking call like any other, so a loop of
+posts with it is counted (sixty a minute answer `403 denied` with a line each, the rest `429` with one line per window, and
+`busy` while another dialog is open) and not one journal line and one queued append per request with nothing counting them. A
+token that is gone by then (evicted, or run out by idle time or call count while its body arrived; `status()` is `tokenStatusNow`, which
+is `undefined` for it) is answered `401 unauthorized` with the unknown-token sentence and no line, instead of being asked about and refused at `spentToken`. Neither mints a grant.
+
+*What using an entry reaches, and what a bridge is told.* An ssh entry's linked key and jump chain are part of using it,
+not scope targets (`sshkey` can never be opened to MCP, the value stays on the laptop, the edit verbs are off the list), so
+they work through a bridge; a `creds://` reference puts a value into a command and stays strictly scoped. But the sentences
+of `sshExecAuth.ts` and `sshOptions.ts` name the key entry or the jump host, and `Could not write the stored key` and `Could
+not run ssh` carry a path or argv, so on a bridge (`ctx.bridge` set) `sshUseActions.ts` answers them through
+`bridgedRefusal`: the code of the refusal it replaces and `BRIDGE_USE_REFUSED(name)` as the body, the real sentence to the
+agent journal. `ssh`'s own stderr is returned as it is and may carry a jump host's address (the plan's decision). An entry
+with `agentForward` is refused on a bridge, twice with one sentence (`AGENT_FORWARD_REFUSED`): before the dialog through
+`wall.entryRefusal` (inside `referenceRefusal`, so it is also the launch gate's word), and in the action against the live
+entity, before a key is written to disk. **A bridged call is ONE fresh connection that carries the command and nothing else**, whatever the entry or the laptop's own
+`ssh_config` says (Amendment 2, B.3; Amendment 3, C.1-C.2): the action passes `bridged` to `buildSshExecArgv`, which hands the
+composer the entry with its `-A` and its port forwards taken away (ssh lets `-A` win over `-o ForwardAgent=no` in either order, so the
+flag is removed, not out-voted) and pushes `BRIDGED_SSH_OPTIONS` after it: `ForwardAgent=no`, `ControlPath=none`,
+`ControlMaster=no`, `ClearAllForwardings=yes`, `ForwardX11=no`, `Tunnel=no`. `ForwardAgent=no` alone was not enough: with
+`Host * / ForwardAgent yes` and `ControlMaster auto` in the laptop's config the person's own Connect is the master, a bridged exec to
+the same `user@host:port` joined it as a second session, and OpenSSH exports the connection's forwarded agent socket to every session of
+the connection while authenticating nothing for the mux client (the pinned key, `StrictHostKeyChecking=yes` and the pinned
+`UserKnownHostsFile` are not applied, and the port it was given is not the one it reaches). An in-scope entry's `portForwards`
+are stripped rather than refused (an exec needs no forward, and a forward is a road from the server through the laptop); **plan
+change 3.1**. `-J` (the jump chain) is not a forwarding and stays as the wall decided. `SSH_AUTH_SOCK` is not cleared from the
+child's environment, because that would also change how the in-scope entry authenticates; what is removed is the server's view of
+it. `ProxyCommand`, `LocalCommand` and `SendEnv` in the laptop's config are the person's own words for every connection they make
+and stay. The agent is told nothing per call (the strip is unconditional, and a sentence would disclose the shape of the entry); the
+sentence belongs in the E4 help ("a bridged command runs on one fresh connection that forwards nothing"). Off a bridge the argv is
+byte for byte what it was. The argv is pinned by tests; that it really stops forwarding and joining is measured by section 8 of
+`scripts/ssh-agent-itest.cjs` (`itestForwardAgent.cjs`: the agent legs, and a mux pair, two `sshd -d`, a master on one and the
+production argv aimed at the other) on a runner with `sshd`, and on Windows OpenSSH it is the owner's M8. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
+takes no reference. A throw out of the credential read (`prepareAuth`) gives the exec slot back (it used to leak it), and so does a
+key file that cannot be removed (Amendment 3, C.6: `removeKeyFile` catches the `EPERM`/`EBUSY` a Windows lock gives, writes
+`ssh:exec — the key file could not be removed: …` to the journal, and the exec slot comes back in the same `finally`; the finished
+result stands, and the leftover file is the person's own, in a folder only they can read).
+
+*When it is decided.* Once at the door, and again at the last synchronous step before an action starts
+(`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
+the call grant are reserved, then the action starts), because a modal can be open for a minute while the person narrows
+the scope or edits the line. **And once more before anything an Allow triggers**: `prepared` builds the gate
+(`launchGate`) once and asks it (`stopped`) before `releaseWaiting`, so a narrow made during the modal promotes no waiting
+rotation onto an entry the scope no longer admits; the same closure is handed to `performCall`. It also reads the status of
+the token a bridged token call spends, so a token the person denied while its call waited is refused `403 denied` at that
+point and spends nothing. A stored command or script that names a `creds://` reference the scope does not serve is
+refused `403 denied` with one sentence for every failure (no such account, no such entity, ambiguous, out of scope),
+before any dialog and again at launch. `scopedRefSource` is the seam an executor must resolve through (E3.3); nothing
+uses it yet.
+
+*Prompts per bridge.* Each bridge has its own sliding windows, keyed by its `bridgeId` in `TokenlessCeilings`
+(`aliasThrottle.ts`: `SlidingWindow` the count, `OneInFlight` the single dialog, the coordinator the doors); the local door is
+the key `local`. Per door: five **dialogs** a minute, sixty silent calls a minute, and (Amendment 2, B.1) sixty **asking
+calls** a minute, **calls refused for their content or by the wall included** (a call is counted once it is admitted; an unknown alias, a missing field or a `busy` answer comes before that and is not). The dialog window counts dialogs raised, stamped by the consent
+gate (`prompted`, called in `ConsentGate.ask` immediately before the dialog is shown), not calls admitted: a call refused before
+its dialog spends no dialog. The asking window is the other half: such a call used to be admitted every time (a grant minted,
+two journal lines, no bound at all), so it is stamped at admission and at every refusal for the count (`a refusal is a call`;
+a `busy` answer, which did nothing, is not), refused with `Too many requests: <who> may ask at most 60 times a minute, calls
+refused before any dialog included.` (`<who>` is `a caller without a token` on the local door, `this Remote Bridge` on a
+bridge), written to the journal once a window per door without naming a door, and a window keeps its newest sixty stamps only,
+which decides everything it can. **What the local alias and MCP doors gain, exactly:** the same sixty-asking-calls bound
+(legitimate use is a person in a terminal or an agent that thinks between calls), and a call they refuse before its dialog no
+longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
+`'call'` grant that is still `pending`, and nothing else). Below the ceiling no call is answered differently, with two
+exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog now leaves the
+place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `query`, `run` or
+`exec` on an entry that does not forward the agent, or while the agent socket is down at the Allow, no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
+where the call used to reach `usable`. The registry's cap evicts in the order
+of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
+yet reserved** (`allowed`, `uses 0`: live while the call waits in the one-use lane, `remember`, `releaseWaiting` or the mask read, and
+dead for good when a pre-consented call was refused in `usable` or abandoned before it was reserved, because `drop` deletes pending
+grants only), and last of the calls **pending ones** (a dialog is open now, or the client left during it; Amendment 3, C.4 and
+Amendment 6, D.5: a loop of dead pre-consented calls used to reach the pending call first), denied tombstones, a token whose first dialog is open, and the oldest token last,
+so an idle shared token, a tombstone or a token with an open dialog is never evicted while a call grant exists (today each of them
+could be), and a quiet loop at sixty calls a minute can no longer evict the call grant of a dialog on screen (it used to at the 256th
+mint, inside the dialog's five minutes: the person's answer was lost and the journal said `ALLOWED` for a grant that no longer existed). **One dialog at a time stays global** because the person is one person with
+one screen, and **the place belongs to the dialog, not to the call**: `OneInFlight` hands out a `Holding` per admission; once a
+dialog of a throttled door is on screen (`prompted`) the call ending frees nothing, and the place is freed when the dialog
+closes (`ConsentGate.ask` calls `dialogClosed` from a `finally`: the person's click, or the five-minute timeout, although VS
+Code cannot take the modal down), so a client that hangs up during its dialog does not let the next call raise a second modal on
+top of it, and a long action does not make every other door `busy`. A stale release or close (a different holding) frees nothing
+of a later holder's place. **The one exception is the call that may ask again** (Amendment 3, C.3): an Allow keeps the place, past
+the dialog's close, until the call's own `release` when the call declares that it may put a prompt of its own on screen after the
+Allow — `UseAction.asksAfterConsent`: `terminal`, `up` and `down` of the VPN (the install offer), `rotate` (the PIN and copy prompts of
+`rotationStore.ts`), and `exec` **per entity**, a function `(target) => boolean` true for an entry with `agentForward` while the agent
+socket is up (the signing modal arrives through the socket, `sshSignPrompt.ts`, by no static path; `asksAfter` in `useActions.ts` reads
+either form, when the dialog closes on an Allow), and `create` at the door (the folder PIN box and the "count taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
+carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed` — a `followUp` that is a function (`exec`'s) is asked THERE, when the dialog closes on an Allow, not before it opens (change 6.1: a socket that comes up while the dialog is on screen is seen; one that went down is too) — and `OneInFlight` remembers (`endedId`) a holding
+whose call ended while its dialog was up, so a kept place dies with its call. A Deny, a timeout, a dialog nobody waits for any
+more, and every Allow of an action without the flag (`query`, `run`, and an `exec` on an entry that does not forward the agent, or
+while the socket is down; a bridge serves `exec` and `query` and refuses a forwarding entry, so no bridged action keeps one) free the
+place at the dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
+a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
+(`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
+
+**The partial-E1 closing commit** (E1.3's last, `88befcd`, and its fix commit `a04ca33`; Amendment 6 of the E1.3 spec). What it
+builds, and what a person can and cannot reach with it today.
+
+*Reachable now, on the local doors* (no bridge needed): the four-tier eviction order above; **a throw inside a handler is answered
+`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, not why;
+`INTERNAL_FAILURE` stays for the handlers that do journal a reason) on every door, where the request used to hang until the client
+gave up (`unanswered`, `brokerRequests.ts`: it reads `res.headersSent` first, **answers first** if nothing has gone out, and then
+writes its one journal line inside a `try`, so a journal that throws on every line still answers. **The line is a classification, never
+the error:** the built-in class name, a code only when it is a system errno name of the platform (`os.constants.errno`; an `ERR_` word is not named, since a request can fill that shape with its own text), the route's name from `BRIDGE_ROUTES` or
+`other` (`routeNameOf`, `bridgeAllowList.ts`, handed in as an argument because `brokerRequests` cannot import the table) and whether the
+headers had gone out; no message, since a `JSON.parse` message quotes its input. **That line has no ceiling** — one per throwing request — until E2.2b's failure reporter bounds it); **a request target `new URL`
+cannot parse** (`//`, `///`, `http://[`, `/\`; `example.com` parses, as a path) is read as a path no route matches
+(`requestUrl`, `brokerRequests.ts`) and is answered `not_found` on the main port and `not_supported` on a bridge, with no 500 and
+no journal line, where before D.8 it threw before any route or throttle; **a key file whose removal fails and whose journal note
+then throws** no longer replaces a finished exec's `200` or leaks the exec slot (`removeKeyFile`, `sshUseActions.ts`, an inner
+`try` around the note); **a keychain read that throws** during an exec (`prepareAuth`) is answered `500 internal` with the reason in
+the journal and gives the exec slot back (`main` kept it); and **an agent's `up` or `down` is not a person's act** (`notePersonsAct`, `vpnRun.ts`): only a call with
+no start gate, which is the person's own Start or Stop, tells the vault a person is at the keyboard, so an agent's `up` or
+`down` no longer postpones auto-lock (an Allow or Deny click, and the other commands that already counted, still do).
+
+*Built, and reachable only through a bridge door, which no production code opens until E2* (R1, R4): the **read shape**. A
+bridged listing row is a `BridgeEntry` built field by field by `narrowed` (`bridgeScope.ts`), never a spread of the stored row:
+`connectionString` and `command` become the booleans `hasConnectionString` and `hasCommand`, `folder` is `''`, `can` is `use` as
+resolved and `false` for the rest, and `dependsOn` names listed rows only. The type, `BRIDGE_ENTRY_FIELDS` and the literal must
+agree, and `BRIDGE_READ_SHAPES` (every key at every depth of every walled read) and `BRIDGE_BYTE_EQUAL_READS` (the three reads
+that carry the product's own text) together must name exactly the served GET routes, which `bridgeReadShape.test.ts` walks over
+the served JSON. The alias listing is built by `aliasesIn`: the scope is read **once per listing** and each row is `{ name, kind }`
+only. The local doors keep `visibleMcpEntries` and `OPEN_VIEW` as they were. **The `exec` guard** (`unguardedBridge`,
+`sshUseActions.ts`): a bridged `exec` with no `bridgedSshConfig` writer is refused `403 denied` with `BRIDGE_USE_REFUSED` and the
+journal reason `no per-call ssh_config yet: E1.6`, before any slot, key or spawn; production's `sshDepsFor` sets no writer, so every
+bridged exec is refused until E1.6 removes the guard in the commit that writes the file. **`tokenStatusNow`**
+(`brokerBridgeToken.ts`) runs on the bridged branch of the token route alone: a token that ran out between its header and its
+body is answered `401 unauthorized` with the unknown-token sentence and no line (D22), while the header-time `lookup` still names
+which expiry it was; the main port is unchanged. D.7 is therefore unreachable before E2, and so is every bridged-only item
+above: none of them has a release note before the flip entry of E4.1.
+
+*Also built in the epoch 6 fix-forward, reachable only through a bridge door* (R1, R4): the scope store reads **strictly in `set`
+alone** (`bridgeScopeStore.ts`): only ENOENT is an absent file, a read that fails (EACCES, EIO) or a file that exists and is not this
+server's record is refused with `SCOPE_UNREADABLE` and zero writes, so a record that was not read is never written over, and *Close*
+(`forget`) is the road that removes such a file; public `read` keeps its catch and answers no scope (a check fails closed), and `prune`
+skips a neighbour it cannot read instead of ranking it first for removal. `BridgeListeners.turns` drops an id's chain entry when its
+last turn settles (it kept one per distinct bridge id for ever); a newer open of the same id keeps the entry it owns.
+
+*The prompt ledger.* `src/test/promptSiteLedger.ts` classes every place the extension can ask a person something (172 sites, found
+by a syntactic scan, `file#TopSymbol#kind#ordinal`), `promptSites.test.ts` holds it exact in both directions, fails a `person-only` row
+that a reference walk from the broker's roots (derived from `extension.ts`) can reach, and requires every action an `after-allow` row
+names to carry the follow-up flag on its real factory. It proves that a new site gets classed, not that its class is right: the walk
+sees no IPC (the signing modal arrives through the agent socket), no `executeCommand` by string and no timer or event hop.
+
+*Known gap, local and older than this work.* `POST /v1/config/read` writes one journal line per refused request, with no
+authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for any bearer, the empty one included, and
+`credsAgentServer.ts` logs every outcome). Found by the re-review by reading, and confirmed by a probe: 50 requests, 50 lines. A
+bridge refuses the route. The plan records it as a todo (§8 of the scoped remote bridge plan), not as part of E1.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
@@ -4705,8 +4953,8 @@ opt-in per entry, why the modal names the entry and the action, and why the rout
 token**: the caller gets the action, never a capability it could pass on. An unknown name and a
 name that exists but is not enabled get the same 404, so the route cannot be used to enumerate
 what a vault holds. The modal's RATE is load-bearing for the same reason — `aliasThrottle.ts`: five
-prompts a minute, one in flight — and where the MCP door lets a consent policy answer for the modal
-(#95), the same file's second construction, a ceiling of sixty silent calls a minute with no
+dialogs a minute, one in flight — and where the MCP door lets a consent policy answer for the modal
+(#95), the same file's second window, a ceiling of sixty silent calls a minute with no
 in-flight rule, is what bounds the path in the modal's absence.
 
 Alias calls join the token path at `perform()` — capability check, validation, consent, masking,
@@ -5791,10 +6039,10 @@ the modal. Nothing after that changes: the same mask, the same audit, the same o
 properties hold around it, and each is a test. **The throttle counts modals, not calls**: a quiet
 call takes no slot, because the budget is five *prompts* a minute and spending one would refuse a
 later call for a dialog nobody was going to see — and it releases none either, since releasing a
-slot never taken frees another call's. **What bounds the quiet path instead is its own ceiling**
-(S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second construction of the same
-`AliasThrottle` with no in-flight rule, because that rule protects a human from a stack of dialogs
-and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
+slot never taken frees another call's. Since E1.3's epoch 3 this is true of the stamp as well as the slot: the window
+is stamped where a dialog is shown, not where a call is admitted. **What bounds the quiet path instead is its own ceiling**
+(S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second `SlidingWindow` with no in-flight rule,
+because that rule protects a human from a stack of dialogs and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
 to is whether it will ask — decided **once**: `admit` hands back the slot itself (`Slot`), so a
 route cannot name a ceiling twice and name it differently the second time, which would leave the
 modal budget holding an in-flight slot for a call that ended minutes ago. A refusal hands back a

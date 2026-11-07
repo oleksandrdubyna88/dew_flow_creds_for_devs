@@ -6,7 +6,26 @@ import { sshOptionArgv } from './sshOptions';
 export interface SshExecOptions {
   jump?: string;
   knownHostsFile?: string;
+  /** A bridged call: ONE fresh connection that carries the command and nothing else, whatever the entry or a config file says (Amendment 3, C.1-C.2). */
+  bridged?: boolean;
 }
+
+/**
+ * The options of a bridged call, in this order. `ForwardAgent=no` alone is not enough: a multiplexed session inherits the
+ * master's forwarded agent and authenticates nothing itself, so connection sharing is off (`ControlPath=none` disables it;
+ * `ControlMaster=no` is belt and braces). `ClearAllForwardings=yes` drops every port forwarding a config file names;
+ * `ForwardX11=no` and `Tunnel=no` the two other channels a config can open. Checked with `ssh -G -F none` on OpenSSH 10.2:
+ * controlmaster false, clearallforwardings yes, forwardx11 no, tunnel false, forwardagent no, and no localforward/remoteforward
+ * line even with -L and -R on the command line.
+ */
+export const BRIDGED_SSH_OPTIONS: readonly string[] = [
+  '-o', 'ForwardAgent=no',
+  '-o', 'ControlPath=none',
+  '-o', 'ControlMaster=no',
+  '-o', 'ClearAllForwardings=yes',
+  '-o', 'ForwardX11=no',
+  '-o', 'Tunnel=no',
+];
 
 /**
  * Assemble the argv for a non-interactive agent `ssh` exec — an ARRAY, never
@@ -95,8 +114,14 @@ export function buildSshExecArgv(
       : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`]),
     '-o', 'ConnectTimeout=10',
   );
-  // The same shared composer the human path uses — see `sshOptions.ts`.
-  argv.push(...sshOptionArgv(entity, options.jump));
+  // The same shared composer the human path uses — see `sshOptions.ts`. A bridged call is one fresh connection: the composer gets the
+  // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
+  // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.
+  const bridged = options.bridged === true;
+  argv.push(...sshOptionArgv(bridged ? { ...entity, agentForward: false, portForwards: [] } : entity, options.jump));
+  if (bridged) {
+    argv.push(...BRIDGED_SSH_OPTIONS);
+  }
   if (keyPath !== undefined && keyPath.length > 0) {
     argv.push('-i', keyPath);
   }

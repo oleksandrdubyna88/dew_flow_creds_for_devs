@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  BRIDGED_SSH_OPTIONS,
   MAX_REMOTE_COMMAND_CHARS,
+  type SshExecOptions,
   buildSshExecArgv,
   validateRemoteCommand,
 } from '../sshExecCommand';
@@ -107,4 +109,69 @@ test('a host that reads as an option is refused outright, whatever -- would do',
   assert.equal(buildSshExecArgv(entity({ host: '-oProxyCommand=sh -c id' }), undefined, 'true', 'askpass'), undefined);
   assert.equal(buildSshExecArgv(entity({ host: 'a.com; id' }), undefined, 'true', 'askpass'), undefined);
   assert.equal(buildSshExecArgv(entity({ user: 'root; id' }), undefined, 'true', 'askpass'), undefined);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 3, C.1-C.2 (F1, F2) — a bridged call is ONE fresh connection that forwards nothing
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const argvWith = (e: EntityMetadata, options: SshExecOptions, auth: 'key' | 'askpass' = 'key', keyPath?: string): string[] => {
+  const argv = buildSshExecArgv(e, keyPath, 'id', auth, options);
+  assert.notEqual(argv, undefined);
+  return argv as string[];
+};
+
+/** The six options of a bridged call, spelled out once more here on purpose: the constant is pinned to this, not to itself. */
+const SIX = ['-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no'];
+
+/** Where the six options stand together, in order, or -1. */
+const sixAt = (argv: readonly string[]): number => argv.findIndex((_, i) => SIX.every((arg, k) => argv[i + k] === arg));
+
+const everything = entity({
+  agentForward: true,
+  portForwards: [
+    { kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432 },
+    { kind: 'remote', bindPort: 9000, host: 'intranet.example', hostPort: 443 },
+  ],
+});
+
+test('C.1: BRIDGED_SSH_OPTIONS is the six options, in this order, and nothing else', () => {
+  assert.deepEqual([...BRIDGED_SSH_OPTIONS], SIX);
+});
+
+test('F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination', () => {
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', '/tmp/k.key');
+  const joined = argv.join(' ');
+  for (const forbidden of ['-A', '-L', '-R', '-D']) {
+    assert.ok(!argv.includes(forbidden), `${forbidden} is not sent on a bridge: ${joined}`);
+  }
+  assert.ok(!argv.some((arg) => arg.startsWith('8080') || arg.includes('intranet.example')), `no forward leaks in another spelling: ${joined}`);
+  const at = sixAt(argv);
+  assert.notEqual(at, -1, `the six options stand together, in order: ${joined}`);
+  assert.ok(argv.indexOf('-J') !== -1 && argv.indexOf('-J') < at, 'the jump the composer made comes first');
+  assert.equal(argv[argv.indexOf('-J') + 1], 'hop@jump.example.com', 'and stays: -J is not a forwarding');
+  assert.ok(at + SIX.length <= argv.indexOf('-i'), 'then the key');
+  assert.ok(argv.indexOf('-i') < argv.indexOf('--'), 'and the destination last');
+});
+
+test('F1: off a bridge the same entry is byte for byte today\'s — -J -A -L … -R … and none of the six options', () => {
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com' });
+  assert.deepEqual(argv.slice(argv.indexOf('-J'), argv.indexOf('--')), ['-J', 'hop@jump.example.com', '-A', '-L', '8080:db:5432', '-R', '9000:intranet.example:443']);
+  for (const word of ['ForwardAgent=no', 'ControlPath=none', 'ControlMaster=no', 'ClearAllForwardings=yes', 'ForwardX11=no', 'Tunnel=no']) {
+    assert.ok(!argv.includes(word), `${word} is not sent off a bridge: ${argv.join(' ')}`);
+  }
+});
+
+test('F1: the six options ride both authentication branches of a bridged call', () => {
+  for (const auth of ['key', 'askpass'] as const) {
+    assert.notEqual(sixAt(argvWith(entity(), { bridged: true }, auth)), -1, auth);
+  }
+});
+
+test('F2: { bridged: false } and {} send none of the six, and an entry that forwards keeps its own -A', () => {
+  for (const options of [{ jump: 'hop@jump.example.com', bridged: false }, {}]) {
+    const argv = argvWith(entity({ agentForward: true }), options);
+    assert.deepEqual(SIX.filter((arg) => arg !== '-o' && argv.includes(arg)), [], `nothing of the six: ${argv.join(' ')}`);
+    assert.ok(argv.includes('-A'), 'control: the entry\'s own flag still gives -A');
+  }
 });
