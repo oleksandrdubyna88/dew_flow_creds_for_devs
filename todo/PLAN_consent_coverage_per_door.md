@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **epoch 2 open since 2026-11-08, by reviewers (the document gate answered `proceed` twice, 4 of 4 reviewers each; nothing narrowed); the (code) items are next.** Change 1.2 stopped epoch 1 the same day. The build stands at `d02d050` on `fix/consent-coverage-per-door`; the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do. The `coai` plan round on `c655038` answered
+> Status: **epoch 2 open since 2026-11-08, by reviewers (the document gate answered `proceed` twice, 4 of 4 reviewers each; nothing narrowed); the (code) items are built (steps 7–12 on `fix/consent-coverage-per-door`, after `d02d050`); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** Change 1.2 stopped epoch 1 the same day. The epoch-1 build stood at `d02d050`. The `coai` plan round on `c655038` answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -386,21 +386,22 @@ a startup pairing check is a follow-up (§5.1), not built here.
 
 - [x] C1–C8 in `consentCoverage.test.ts`, C4b in both runs; C2–C6 and C4b watched red on `main`'s wording with the
       messages in the build record; M1–M7 each turned the named case red (targets as §4.2 now reads) and were reverted.
-- [ ] **(epoch 2)** C4c, C4d, C4e, C7b, C9, C10 added and watched red first; M8–M11 each turned the named case red
-      and were reverted; C4, C4b, C8 green against the new literals.
+- [x] **(epoch 2)** C4c, C4d, C4e, C7b, C9, C10 added; C4c, C4d, C7b, C9 watched red first (C4e and C10 pin behaviour that
+      already held and were green on first run, §7); M8–M11 each turned the named case red and were reverted; C4, C4b, C8
+      green against the new literals.
 - [ ] **(epoch 2)** `brokerWorld`'s `mcpRemembers` is set `true` in exactly the three tests §2.3 names and nowhere
       else (`grep -rn "mcpRemembers" src_vs_code/src/test` finds the option, its use in `mcpUseFor`, and three
       callers); C6 still runs without it. `brokerMcpRoutes.test.ts:510` is green with the gate.
 - [x] `coverage` is a required field of `ConsentQuestion`; `grep -n "coverage" src_vs_code/src/credsAgentServer.ts`
       finds three lines — the `import` of `coverageOf` and the two question sites (as found, 1.3).
-- [ ] **(epoch 2)** `grep -n "opensWindow" src_vs_code/src/credsAgentServer.ts` finds two lines — the import and
+- [x] **(epoch 2)** `grep -n "opensWindow" src_vs_code/src/credsAgentServer.ts` finds two lines — the import and
       `:535`; `grep -n "stamps !== undefined" src_vs_code/src/mcpHooks.ts` finds the `remembers` line.
 - [x] The token tail is byte-identical to `main`'s (`tokenTail`; C1 pins it).
 - [x] The `every12h` tail's hours come from `ASK_WINDOW_MS`: `grep -n "12" src_vs_code/src/brokerConsent.ts` finds no
       numeric twelve — only the identifier `every12h` and a doc comment (as found, 1.3).
 - [ ] `npm run typecheck`, `npm run lint`, `npm run ratchet`, `npm test` green at lowered priority
       (`common/local-cpu-budget.md`) on the finished branch; no file over 800 lines; `extension.ts` baseline unchanged.
-- [ ] **(epoch 2)** CHANGELOG, `module_extension.md` and the README row corrected as §4.4; the CHANGELOG names the one
+- [x] **(epoch 2)** CHANGELOG, `module_extension.md` and the README row corrected as §4.4; the CHANGELOG names the one
       behaviour change.
 - [x] No real host name, login or key path in any test or document (the fixtures are `prod`, `a1`, `e1`, `f1`).
 - [ ] `coai`: a `review_plan` round reached `proceed` before the build (done, epoch 1); the re-review re-approved epoch
@@ -434,6 +435,22 @@ a startup pairing check is a follow-up (§5.1), not built here.
   guards that), so no dialog can say it today; a future caller of the store-less form would show the window tail for an
   Allow that opens none. Not changed here: §2.3 says `remembers` is `remembersFor(found.access)`. (Taken up by the
   re-review as F5a: §2.3 step 7, C9.)
+- **Epoch 2 build notes (the coder's, steps 7–12).**
+  - *`mcpRemembers` at `brokerMcpRoutes.test.ts` "a lookup that carries no fingerprint…" is set as §2.3 says and does
+    nothing.* That test passes its own `mcpResolve`, and the option is read only by the stubbed `mcpUseFor`, so its
+    lookup literal still carries no `remembers`. After the gate it passes because the gate refuses the write, not
+    because of the missing fingerprint — the case §2.3 wanted to avoid. Putting `remembers: true` into that literal
+    would fix it; not done, because the plan names the option and not the literal. Also, the quiet half of "a call the
+    person ANSWERED is remembered; a quiet one is not" needs the flag as well (M10 turns it red only then), so
+    `grep -rn "mcpRemembers"` shows the option, its use, and four callers on three tests, not three lines.
+  - *C4e and C10 were green on first run*: they pin behaviour that already held (a quiet call does not slide the
+    window; two stores are independent), as guards for M10 and for the per-machine claim. C4c, C4d, C7b and C9 were
+    red first, with the messages kept (C4c: the stamp written after a *this call only* dialog).
+  - *C8 reads this file's literals, not the dialog*, so it is not red when the sentence changes; it is red under M6.
+  - *`remembers` is computed in a one-line `remembersIn(stamps, access)` helper in `mcpHooks.ts`*, because
+    `mcpUseLookup` is at the complexity ceiling; `grep -n "stamps !== undefined"` finds the helper's line.
+  - *Mutation reds beyond the plan's list*: M11 also turns C4b, C4c and C10 red (they quote `WINDOW_TAIL`); M3 and M2
+    also turn C4c, C4d, C4e and C10 red (no stamp is written without `remembers`/`every12h`); M7 also C4c and C10.
 
 ## Epics
 

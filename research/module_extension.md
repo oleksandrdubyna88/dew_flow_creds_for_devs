@@ -4366,20 +4366,38 @@ not compile until it says what its Allow covers, and `brokerConsent.ts` picks th
 sentence, byte for byte. `call` is *Allowing covers this call only, not any later one.* — the alias route, the MCP
 delete, create and folder routes, and an MCP use call under *Ask every time*, where each request is its own `'call'`
 grant and nothing is written. It does not promise that the next call asks, because under *Never ask* the next USE call
-is quiet by policy and not by this Allow. `every12h` is *Allowing covers this call and, for up to 12 hours on this
-machine, every later call on "<entry>" without asking — while this entry stays set to "Ask once every 12 hours" and its
-agent switches are not changed. Deleting still asks.* — the 12 is `ASK_WINDOW_MS / 3_600_000`, never typed, and the
-`consentCoverage.test.ts` case C8 pins it to the switch label. The choice is `coverageOf(grant.scope, remembers)`:
-a token grant is always `token`, and a call grant is `every12h` only when `remembers` is true. `remembers` rides beside
-`preConsented` from the MCP lookup (`mcpUseLookup`, from `remembersFor(access)`, the same expression
-`worthRemembering` writes a stamp by), through `readMcpUse` and `BrokerDoor.perform` to `perform`; a lookup that does
-not say reads as `call`, the narrower sentence. The `every12h` tail is conditional on purpose: the text cannot change
-after the dialog is shown, and `rememberMcpConsent` re-reads the entry at the click, so a policy flipped or a switch
-turned on while the modal is open writes no stamp — the clause *while this entry stays set to … and its agent switches
-are not changed* is the condition that failed, and the same clause covers the window's other early ends (a switch turned
-on afterwards, the Forget command, a clock set back). "Up to" says the window is never longer than twelve hours. Words
-only: no admission, grant, stamp or policy changed (security fix, 2026-11-08). The tests stand each tail beside the
-fact it states — whether the next call asked, whether a stamp was written.
+is quiet by policy and not by this Allow. `every12h` is *Allowing covers this call. For up to 12 hours on this
+machine, later MCP calls from any agent to <the entry's verbs> "<entry>" may also skip asking because of this Allow —
+only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are now. Deleting still
+asks.* The 12 is `ASK_WINDOW_MS / 3_600_000`, never typed, and `consentCoverage.test.ts` case C8 pins it to the switch
+label. The choice is `coverageOf(grant.scope, remembers)`: a token grant is always `token`, and a call grant is
+`every12h` only when `remembers` is true. `remembers` rides beside `preConsented` from the MCP lookup
+(`mcpUseLookup`, from `remembersFor(access)` — the expression `worthRemembering` writes a stamp by — and false when
+the lookup has no stamp store), through `readMcpUse` and `BrokerDoor.perform` to `perform`; a lookup that does not say
+reads as `call`, the narrower sentence.
+
+Each clause of the window sentence is a fact of the code. A stamp is read by the MCP lookup alone (`preConsentedFor`),
+so it quiets *MCP calls*, never an alias or token call. It is per entry and per store, not per caller, so *from any
+agent*. It is per ENTRY, not per action — `preConsentedFor` takes no action and `mayBeQuiet` excludes delete alone —
+so one Allow on *run a command* also quiets `rotate` and `exportEnv`, and the sentence lists every verb the kind
+offers (the same `verbsOf` list the token tail shows, which over-lists in the safe direction when a switch would
+refuse one). *May … because of this Allow*: the write can still refuse at the click, and under *Never ask* a call is
+quiet by policy and not by this answer. *Only while*: `consentDue` and `covers` read the CURRENT policy and ladder, and
+nothing clears a stamp when they change — a policy or switch change suspends the window and changing back resumes it
+inside the twelve hours. *Up to*: the window is never longer than `ASK_WINDOW_MS`, and the Forget command or a clock
+set back make it shorter; that is the clause's job, not *only while*'s. *On this machine*: the stamp lives in
+`globalState`, per profile and per host, so the words over-claim in the safe direction and agree with the setting's
+own text.
+
+The stamp write is gated on the sentence that was shown. `opensWindow(question, asked)` is `asked && coverage ===
+'every12h'`, and `perform` hands it to `remember`: a dialog that said *this call only* writes nothing whatever the
+policy says at the click (the reverse race: the policy turned to `every12h` while the modal was open, and the `ask`
+policy is not in the ladder fingerprint, so the rungs check saw no change), and a call that raised no dialog writes
+nothing, so a quiet call cannot slide the window. The forward race stays covered by the write's own re-read of the
+policy and ladder. This is the one behaviour change of the fix; admission, minting, the stamp's shape and reading,
+and the policies are as they were. The tests stand each tail beside the fact it states — whether the next call
+asked, whether a stamp was written, in both races, with and without a store, and across two stores.
+
 
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never

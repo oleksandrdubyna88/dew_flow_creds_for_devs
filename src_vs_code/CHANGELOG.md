@@ -38,14 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — security — the consent dialog no longer claims an Allow covers more than it does
 
 - **The dialog said *Allowing covers every later call on this token* on every door, and that is true on one.** On the
-  token route one Allow does cover every later call. On the alias route and the MCP routes each call is its own grant, so
-  an Allow covers that call only, and the next call asks again. The dialog now says *Allowing covers this call only, not
-  any later one* there. Under *Ask once every 12 hours* an Allow also opens a twelve-hour window on this machine, and the
-  dialog now says so: for up to 12 hours, every later call on that entry without asking, while the entry stays set to
-  that choice and its agent switches are not changed, and deleting still asks. The hours in that sentence come from the
-  window's own constant. Nothing about what an Allow DOES changed: the grants, the stamp and the policies are as they
-  were, and the token door's sentence is as it was, word for word. Every release since the alias route (0.61.0) and the
-  MCP door (0.69.0) carries the old sentence; update to the release that follows.
+  token route one Allow does cover every later call. On the alias route and the MCP routes each call is its own grant,
+  so an Allow covers that call only. The dialog now says *Allowing covers this call only, not any later one* there.
+  Under *Ask once every 12 hours* an Allow can also quiet later MCP use calls on this machine, and the dialog now says
+  so in words that match the code: *For up to 12 hours on this machine, later MCP calls from any agent to* the verbs
+  of the entry *may also skip asking because of this Allow — only while this entry is set to "Ask once every 12 hours"
+  and its agent switches are as they are now. Deleting still asks.* Read it plainly: the window belongs to the entry,
+  not to the action, so one Allow on *run a command* also quiets *change the stored secret of* and the export for the
+  window, from any MCP client that reaches this window's broker; that is why the sentence lists every verb. A policy or
+  switch change suspends the window and changing it back resumes it, so the sentence says *only while*. The alias route
+  and the token route are not quieted by it. The hours in the sentence come from the window's own constant. The token
+  door's sentence is as it was, word for word.
+- **One thing an Allow does changed.** An Allow on a dialog that said *this call only* no longer writes the twelve-hour
+  stamp, even when the entry's policy turned to *Ask once every 12 hours* while the dialog was open (a sync, or another
+  window of the same profile): the stamp is now written only after a dialog that announced the window. The grants, the
+  way a stamp is read, and the policies are as they were. A lookup built without a stamp store now says *this call
+  only*, as it should. Every release since the alias route (0.61.0) and the MCP door (0.69.0) carries the old sentence;
+  update to the release that follows.
 
 ## [1.17.0] — 2026-11-05 — One arrow brings back a whole Terminal folder, and the green arrow no longer types into a busy terminal
 
