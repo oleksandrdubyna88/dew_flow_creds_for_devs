@@ -87,14 +87,20 @@ const WINDOW_HOURS = ASK_WINDOW_MS / 3_600_000;
 const CALL_TAIL = 'Allowing covers this call only, not any later one. ';
 
 /**
- * The `every12h` sentence. Conditional on purpose: the text cannot change after the dialog is shown,
- * and the write re-reads the entry at the click — a policy flipped or a switch turned on meanwhile
- * means no window opens, which is the condition the sentence names.
+ * The `every12h` sentence, with the verbs it can quiet. Written to be true of what the code does:
+ *
+ * <p>*Later MCP calls* because only that door reads a stamp; *from any agent* because the stamp is per
+ * entry and per store, not per caller; the verb list because the stamp is per ENTRY, not per action, so
+ * an Allow on one verb quiets every verb the switches allow (rotating the stored secret among them);
+ * *may … because of this Allow* because the write can still refuse at the click, and under `never` a
+ * call is quiet by policy rather than by this answer; *only while* because a policy or switch change
+ * suspends a stamp and changing back resumes it, it does not end it.</p>
  */
-function windowTail(entityName: string): string {
+function windowTail(entityName: string, everything: string): string {
   return (
-    `Allowing covers this call and, for up to ${WINDOW_HOURS} hours on this machine, every later call on "${entityName}" without asking — ` +
-    `while this entry stays set to "Ask once every ${WINDOW_HOURS} hours" and its agent switches are not changed. Deleting still asks. `
+    `Allowing covers this call. For up to ${WINDOW_HOURS} hours on this machine, later MCP calls from any agent to ${everything} "${entityName}" ` +
+    `may also skip asking because of this Allow — only while this entry is set to "Ask once every ${WINDOW_HOURS} hours" ` +
+    'and its agent switches are as they are now. Deleting still asks. '
   );
 }
 
@@ -198,6 +204,10 @@ export class ConsentGate {
    * life, a call grant for one request, and on the MCP door the entry's policy may remember the
    * answer. So the last paragraph is chosen per door by `coverage`, and each of the three is tested
    * beside the fact it states, not as a string alone (`consentCoverage.test.ts`).</p>
+   *
+   * <p>The write is gated on `coverage` too ({@link opensWindow}), so a stamp can never be wider than
+   * the sentence shown. The window sentence says *may* and *only while* because a policy or switch
+   * change suspends a stamp rather than ending it.</p>
    */
   private wording(question: ConsentQuestion): string {
     const { grant, verb, summary, caller } = question;
@@ -217,20 +227,24 @@ export class ConsentGate {
     return {
       token: () => this.tokenTail(grant),
       call: () => CALL_TAIL,
-      every12h: () => windowTail(grant.entityName),
+      every12h: () => windowTail(grant.entityName, this.verbsOf(grant)),
     }[question.coverage]();
   }
 
   /** A token grant: today's words, byte for byte. */
   private tokenTail(grant: Grant): string {
-    const everything = this.deps.actions
+    return (
+      `Allowing covers every later call on this token, not just this one: with it the agent can ${this.verbsOf(grant)} "${grant.entityName}" ` +
+      `${describeLimits(grantLimits())}. `
+    );
+  }
+
+  /** What this kind of entry can be asked to do, in the actions' own words — one list for both wide tails. */
+  private verbsOf(grant: Grant): string {
+    return this.deps.actions
       .actionsFor(grant.kind)
       .map((a) => a.verb)
       .join(', or ');
-    return (
-      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
-      `${describeLimits(grantLimits())}. `
-    );
   }
 }
 

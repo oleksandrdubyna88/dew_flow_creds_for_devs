@@ -25,9 +25,10 @@ const FROZEN_NOW = 1_700_000_000_000;
 const TOKEN_TAIL = 'Allowing covers every later call on this token, not just this one: with it the agent can ';
 const CALL_TAIL = 'Allowing covers this call only, not any later one.';
 const WINDOW_TAIL =
-  'Allowing covers this call and, for up to 12 hours on this machine, every later call on "prod" without asking — ' +
-  'while this entry stays set to "Ask once every 12 hours" and its agent switches are not changed. Deleting still asks.';
-const WINDOW_CONDITION = 'while this entry stays set to "Ask once every 12 hours" and its agent switches are not changed';
+  'Allowing covers this call. For up to 12 hours on this machine, later MCP calls from any agent to run a command on "prod" ' +
+  'may also skip asking because of this Allow — only while this entry is set to "Ask once every 12 hours" and its agent ' +
+  'switches are as they are now. Deleting still asks.';
+const WINDOW_CONDITION = 'only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are now';
 
 /** The state a window keeps on this machine, as a plain map. */
 function memento(): { held: Map<string, unknown>; get<T>(key: string): T | undefined; update(key: string, value: unknown): Thenable<void> } {
@@ -240,10 +241,33 @@ test('C4c MCP use, always, the reverse race: a dialog that said "this call only"
 
     const second = call(port, '/v1/mcp/use/exec', { body: USE });
     await until(() => w.openDialogs.length === 1, 'the second consent modal');
-    assert.equal(w.dialogs.length, 2, 'the second call asked: no window opened');
-    assert.ok(w.dialogs[1].includes(WINDOW_TAIL), `the policy is read fresh per call: ${w.dialogs[1]}`);
+    const asked = [...w.dialogs];
     w.openDialogs.shift()?.('Deny');
     await second;
+    assert.equal(asked.length, 2, 'the second call asked: no window opened');
+    assert.ok(asked[1].includes(WINDOW_TAIL), `the policy is read fresh per call: ${asked[1]}`);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('C4d MCP use, every12h, the actions one Allow quiets: the dialog names the rotate verb the person never clicked for', async () => {
+  const { w } = mcpWorld(
+    { use: true, edit: true, ask: 'every12h' },
+    { answers: ['Allow'], supports: ['exec', 'rotate'], verbs: { rotate: 'change the stored secret of' } },
+  );
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+    const rotated = await call(port, '/v1/mcp/use/rotate', { body: { entry: 'e1' } });
+
+    assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
+    assert.equal(w.dialogs.length, 1, 'one Allow on "run a command" quieted the rotate call: no second dialog');
+    assert.deepEqual(w.ran.map((r) => r.action), ['exec', 'rotate']);
+    assert.ok(w.audit.some((line) => line.includes('allowed without a prompt')), w.audit.join(' | '));
+    assert.ok(w.dialogs[0].includes('run a command on, or change the stored secret of "prod"'), w.dialogs[0]);
+    assert.ok(w.dialogs[0].includes('from any agent'), w.dialogs[0]);
   } finally {
     w.server.dispose();
   }
@@ -376,5 +400,5 @@ test('C8 the number: the constant, the switch label and this file\'s literals sa
 
   assert.equal(hours, 12, where);
   assert.ok(label.includes(`${hours} hours`), `${where}; the label reads "${label}"`);
-  assert.ok(WINDOW_TAIL.includes(`for up to ${hours} hours`) && WINDOW_CONDITION.includes(`every ${hours} hours`), where);
+  assert.ok(WINDOW_TAIL.includes(`up to ${hours} hours`) && WINDOW_CONDITION.includes(`every ${hours} hours`), where);
 });
