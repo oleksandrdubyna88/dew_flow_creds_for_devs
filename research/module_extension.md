@@ -3721,11 +3721,13 @@ where only the database client runs here and the SQL runs on the database the st
 action and site (`SENTENCES` in `bridgeConsentText.ts`: `exec:destination`, `query:laptop`, E3's `run:server`), and each is tested beside the launch it describes (`bridgeRunSites.test.ts`: the
 database client spawned here with the entry's connection, the body its output alone; ssh spawned here for the entry's host, the output going back as the body). A `run` sentence is E3's, chosen from each
 `decideRunSite` result and never from the action's name: `It runs on that server.`, is for E3.1, and an action with no site (nothing but `exec` and `query` reaches a bridge's
-dialog) names the bridge and claims no place. The token sentence (`Allowing covers every later call on this token…`), which is false on
-a bridge, is replaced there by `Allowing covers this call only.`, or, with `quiet` on and only on the MCP door,
-`Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`; off a
-bridge the dialog is byte for byte what it was, and a test spells the local text out and the bridged one as its two differences
-(`bridgeConsent.test.ts`, C11). The server's name is the context's and the entry's is the grant's, both through the sanitiser of a caller
+dialog) names the bridge and claims no place. The dialog's last paragraph is `main`'s per door off a bridge (the token sentence on the token
+door, *this call only, not any later one* on the alias door and on an MCP door whose entry asks every time, the 12-hour window sentence on an MCP door whose
+entry asks once every twelve hours; `coverage`, `brokerConsent.ts`). **On a bridged grant it is the bridge's coverage line whatever `coverage` says**: `Allowing covers this call only.`, or,
+with `quiet` on and only on the MCP door, `Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`
+The window sentence says *any agent* and *this machine*, and a server-keyed stamp is neither. `coverage` still gates the WRITE for a bridged call (`opensWindow`: a stamp is
+written only from a dialog that was asked and opened the window), and with `quiet` off the lookup says `remembers: false`. Off a bridge the dialog is byte for byte what `main` says for its door; a test
+spells out the local text for each of the four cases and the bridged one as its two differences (`bridgeConsent.test.ts`, C11). The server's name is the context's and the entry's is the grant's, both through the sanitiser of a caller
 label with every `"` made `'` (`bridgeQuotedName`), in the bridge line and, on a bridged grant, in the dialog's first line too, so a name cannot paint a line of its own or close its quotes; a local dialog shows the entry's name as it always did; the caller's label stays a label. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
 grant group, where `bridgeAuditName` (`bridgeContext.ts`) has taken out whitespace, parentheses, `→` and control and format
 characters (one `_` for a run, forty code points at most), so every line about a bridged call says which server it was for and

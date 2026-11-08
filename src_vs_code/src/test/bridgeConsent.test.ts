@@ -483,45 +483,59 @@ test('C10: every door says where each action runs — an exec starts the connect
   }
 });
 
-test('C11: the coverage line — quiet off and quiet on say their exact sentences, and the token sentence is gone from a bridged dialog', async () => {
-  const c = await consenting('always', false);
-  try {
-    await ok(A(c));
-    await setQuiet(c.ww, true);
-    await ok(A(c));
-    const [off, on] = c.ww.w.dialogs;
-    assert.ok(off.includes(`${OFF} Each call is logged in the "CredsForDevs: Agent Access" output panel.`), off);
-    assert.ok(on.includes(`${ON} Each call is logged in the "CredsForDevs: Agent Access" output panel.`), on);
-    for (const dialog of [off, on]) {
-      assert.equal(dialog.includes(TOKEN_TAIL), false, 'the token sentence would be false here');
-      assert.equal(dialog.includes('using its stored credential'), true, 'the rest of the dialog is as it was');
+const LOG = ' Each call is logged in the "CredsForDevs: Agent Access" output panel.';
+const REQUEST_TIME = /\nRequested [^\n]*/;
+const HEAD = 'An agent wants to run a command on "prod" using its stored credential.\nREQUESTED';
+const BODY = '\n\nid\n\nIdentity as reported by the caller \u2014 a label, not a check.\n\n';
+/** The local dialog's last paragraph on each door, as `main` words it per door (PR #314). ("run a command on, or run a command on": the fake registry of `brokerWorld.ts:245` gives every action the same verb.) */
+const LOCAL_TOKEN = 'Allowing covers every later call on this token, not just this one: with it the agent can run a command on, or run a command on "prod" until it goes unused for 60 minutes, and never past this window closing. ';
+const LOCAL_CALL = 'Allowing covers this call only, not any later one. ';
+const LOCAL_WINDOW = 'Allowing covers this call. For up to 12 hours on this machine, later MCP calls from any agent to run a command on, or run a command on "prod" may also skip asking because of this Allow \u2014 only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are now. Deleting still asks. ';
+const quiet = (dialog: string): string => dialog.replace(REQUEST_TIME, '\nREQUESTED');
+
+test('C11 (follows main\'s per-door text, PR #314): the local dialog says what its door covers, byte for byte — token, call, window — and a bridged dialog differs from it only by the bridge line and the bridge\'s own coverage line, never main\'s window sentence', async () => {
+  // [what, the local ask, the local entry policy, the bridged ask, the local tail]
+  const cases = [
+    ['token door', 'always', (token: string): Ask => ({ path: '/v1/use/exec', token, body: { command: 'id' } }), LOCAL_TOKEN],
+    ['alias door', 'always', (): Ask => alias(), LOCAL_CALL],
+    ['MCP door, entry asks every time', 'always', (): Ask => mcp(), LOCAL_CALL],
+    ['MCP door, entry asks every 12 hours', 'every12h', (): Ask => mcp(), LOCAL_WINDOW],
+  ] as const;
+  for (const [what, policy, ask, localTail] of cases) {
+    const c = await consenting(policy, false);
+    try {
+      const token = await c.ww.tokenFor(ACCOUNT, 'e1', 'prod');
+      await ok(LOCAL(c), ask(token));
+      await ok(A(c), ask(token));
+      const [local, bridged] = c.ww.w.dialogs.map(quiet);
+      // The local text, spelled out: nothing a bridge adds may reach it.
+      assert.equal(local, `${HEAD}${BODY}${localTail}${LOG.trimStart()}`, `${what}: the local dialog`);
+      // The bridged text: the bridge line after the request time, and the bridge's coverage line in the place of the door's tail.
+      assert.equal(bridged, `${HEAD}\n${EXEC_LINE}${BODY}${OFF}${LOG}`, `${what}: the bridged dialog`);
+      assert.equal(bridged.includes('For up to 12 hours'), false, `${what}: main's window sentence is never a bridged dialog's (it says "any agent" and "this machine")`);
+      assert.equal(bridged.includes(TOKEN_TAIL), false, `${what}: nor the token sentence`);
+    } finally {
+      c.ww.dispose();
     }
-    await ok(LOCAL(c));
-    assert.ok(c.ww.w.dialogs[2].includes(TOKEN_TAIL), 'off a bridge the dialog still says what it always did');
-    assert.equal(c.ww.w.dialogs[2].includes('Remote Bridge'), false, 'and nothing about a bridge');
-  } finally {
-    c.ww.dispose();
   }
 });
 
-test('C11: the two texts differ in exactly two places — a bridged dialog adds the bridge line and swaps the token sentence for the coverage line, and the local dialog is byte for byte what it was', async () => {
-  const c = await consenting('always', false);
-  try {
-    await ok(LOCAL(c));
-    await ok(A(c));
-    const [local, bridged] = c.ww.w.dialogs.map((dialog) => dialog.replace(/\nRequested [^\n]*/, '\nREQUESTED'));
-    const head = 'An agent wants to run a command on "prod" using its stored credential.\nREQUESTED';
-    const body = '\n\nid\n\nIdentity as reported by the caller \u2014 a label, not a check.\n\n';
-    const log = ' Each call is logged in the "CredsForDevs: Agent Access" output panel.';
-    // The local text, spelled out: nothing a bridge adds may reach it. ("run a command on, or run a command on": the fake registry of `brokerWorld.ts:245` gives every action the same verb.)
-    assert.equal(
-      local,
-      `${head}${body}Allowing covers every later call on this token, not just this one: with it the agent can run a command on, or run a command on "prod" until it goes unused for 60 minutes, and never past this window closing.${log}`,
-    );
-    assert.equal(bridged, `${head}\n${EXEC_LINE}${body}${OFF}${log}`);
-    assert.notEqual(local, bridged);
-  } finally {
-    c.ww.dispose();
+test('C11: a bridged dialog with quiet on says its own sentence, and the stamp is written exactly when that sentence promised it (main\'s gate: a stamp only from a dialog that opened the window)', async () => {
+  for (const [policy, quietOn, sentence, stamps] of [
+    ['every12h', true, ON, 1],
+    ['every12h', false, OFF, 0],
+    ['always', true, ON, 0],
+  ] as const) {
+    const c = await consenting(policy, quietOn);
+    try {
+      await ok(A(c));
+      const [dialog] = c.ww.w.dialogs;
+      assert.ok(dialog.includes(`${sentence} Each call is logged`), `${policy}, quiet ${quietOn}: ${dialog}`);
+      assert.equal(dialog.includes('For up to 12 hours'), false, `${policy}, quiet ${quietOn}: never main's window sentence`);
+      assert.equal(c.keys().length, stamps, `${policy}, quiet ${quietOn}: ${stamps} stamp(s)`);
+    } finally {
+      c.ww.dispose();
+    }
   }
 });
 

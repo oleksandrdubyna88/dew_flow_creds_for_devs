@@ -343,7 +343,13 @@ describes (`bridgeRunSites.test.ts`, the parent's §7 *Destination and recipient
 shows one spawn on this computer of `psql`, `mysql` and `sqlcmd` (never a shell), pointed at the entry's own connection (the stored URI without its password after `--`; `-h`/`-P`; `-S`), the
 agent's SQL as an argument, no password in any argument, and a body equal to the client's output; and C10's `exec` runs the REAL `sshExecAction` of `bridgeLinksWorld` and records that the
 destination after `--` is the entry's (its stored user and host) and that the output comes back as the body. The F4 test now demands a sentence, not just a site, for every served action.
-**C11's local literal is untouched** (item 4 of the coordinator's brief): `main`'s per-door fix of the token-wide sentence has not landed, and C11 follows it when it does.
+**C11 follows `main`'s per-door text (merged 2026-11-08, PR #314; item 4).** `main`'s `coverage` (`token`, `call`, `every12h`) chooses the local dialog's last paragraph and gates the stamp
+(`opensWindow`: only a dialog that was asked and said the window writes one). The two designs do not collide, and the plans settle how they meet: a bridged grant's last paragraph is **E1.4's
+coverage line whatever `coverage` says** (`coverageTail`: the bridged branch comes first), so it never reads `main`'s window sentence, which says *any agent* and *this machine* of a stamp that is
+keyed to one server; `coverage` still gates the write on a bridge, and with `quiet` off `usableIn` answers `remembers: false` (so `coverage` is `call`; the empty `rungs` already stopped the write, this makes the
+dialog state agree). The C11 tests now spell out the local dialog for the token door, the alias door, an MCP door whose entry asks every time and one that asks every 12 hours (each `main`'s own sentence, byte for byte),
+and the bridged dialog for each as its two differences, with a second test that the stamp is written exactly when the bridged sentence promised it (quiet on and `every12h`: one stamp; quiet off: none; quiet on and `always`: none).
+The local literal's tail therefore changed from the token sentence to the per-door sentences: that is `main`'s change, not E1.4's, and E1.4's bridged text is unchanged.
 
 **Gaps filled (not in the plan or the spec; for a reader to confirm).** (a) An action that has no site (nothing but `exec` and `query` reaches a bridge's dialog) names the bridge and claims
 no place, rather than guessing or throwing: a throw inside `wording` would leave the place taken. (b) The exec sentence names the entry (`grant.entityName`), which is what the E1 document's

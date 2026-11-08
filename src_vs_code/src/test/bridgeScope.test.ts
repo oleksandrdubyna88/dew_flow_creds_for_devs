@@ -348,7 +348,7 @@ test('resolveUse: a usable answer is never quiet on a bridge, whatever the vault
   const view = doorView(CTX, await wallWith(['in']));
   const found = present(view.resolveUse(scriptedLookup().real), 'a resolver')('in', 'exec');
   assert.equal(found?.kind, 'usable');
-  assert.deepEqual(found, { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', quiet: false });
+  assert.deepEqual(found, { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', remembers: false, quiet: false });
 });
 
 test('E1.4 resolveUse: with the server\'s quiet switch on the real answer stands — the policy\'s verdict and the fingerprint a stamp is recorded under', async () => {
@@ -365,7 +365,7 @@ test('E1.4 resolveUse: quiet is read from the scope at each call — turning it 
   const quietOf = (): unknown => (resolve('in', 'exec') as { preConsented?: boolean; rungs?: string } | undefined);
   assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
   await put(wall.scopes, A1, S1, ['in'], false);
-  assert.deepEqual(quietOf(), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', quiet: false }, 'off: not pre-consented and no fingerprint to record a stamp under');
+  assert.deepEqual(quietOf(), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', remembers: false, quiet: false }, 'off: not pre-consented and no fingerprint to record a stamp under');
   await put(wall.scopes, A1, S1, ['in'], true);
   assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
 });

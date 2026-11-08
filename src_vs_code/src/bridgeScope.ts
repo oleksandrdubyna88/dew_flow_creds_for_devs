@@ -190,7 +190,7 @@ function usableIn(scope: Scope, found: Extract<McpUseLookup, { kind: 'usable' }>
   if (admitted(scope, found.target) === undefined) {
     return undefined;
   }
-  return { ...(scope.quiet ? found : { ...found, preConsented: false, rungs: '' }), quiet: scope.quiet };
+  return { ...(scope.quiet ? found : { ...found, preConsented: false, rungs: '', remembers: false }), quiet: scope.quiet };
 }
 
 function bridgedView(bridge: BridgeContext, wall: BridgeWallSource): DoorView {
