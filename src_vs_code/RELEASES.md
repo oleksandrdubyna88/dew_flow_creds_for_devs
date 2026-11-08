@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.18.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.17.0...extension-v1.18.0) (2026-11-08)
+
+
+### Features
+
+* **bridge:** partial E1 of the scoped Remote Bridge — no door is reachable yet, and what changes on the local doors ([#307](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/307)) ([c433820](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/c4338202b976b80cd9ce0ad8d23c9d606de99af6))
+* **leftovers:** E2.2 — every Node harness owns, claims and removes its folders on every exit path; itest:all exports the record and sweeps ([#310](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/310)) ([bf59e4f](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/bf59e4f2ce6c62ee8ac96bba2881604bcd6d4652))
+* **leftovers:** E2.3 — the C# helper as an adapted copy in all five executables; every C# test site owned, swept and audited ([#311](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/311)) ([0ae0211](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0ae0211fbe74db9c427315e509495b34f1f2e852))
+
+
+### Bug Fixes
+
+* **consent:** the agent consent dialog says what an Allow covers on each door, and a stamp is written only when it said so ([#314](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/314)) ([c26d9da](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/c26d9dabf0cb35d0fcd2d79fc065b847c5debe95))
+* **query:** an agent's SQL cannot reach the database client's own commands ([#303](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/303)) ([08da93d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/08da93d59f8e1a0afd24c2e6c557152bed5ac9be))
+
 ## [1.17.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.16.0...extension-v1.17.0) (2026-11-05)
 
 
