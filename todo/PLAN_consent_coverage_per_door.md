@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **built on `fix/consent-coverage-per-door`, 2026-11-08 (epoch 1 open, 0 changes); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** The `coai` plan round on `c655038` answered
+> Status: **stopped for re-review, 2026-11-08: change 1.2 is epoch 1's second change.** **built on `fix/consent-coverage-per-door`, 2026-11-08 (epoch 1 open, 0 changes); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** The `coai` plan round on `c655038` answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -13,7 +13,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-08 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-08 · by reviewers · state: stopped
 
   (The approving round was one round: `review_plan` on `c655038` reached `proceed` with 2 of 2 reviewers. Its four
   accepted findings — the `never` row and C5 made explicit, the `every12h` tail made conditional with a race case,
@@ -21,6 +21,10 @@
   approved on, so the epoch opens with no entries.)
 - 1.1 · 2026-11-08 · agent · approach — the plan's verification sketch was written from reading: M1 cannot turn C5 red (its dialogs are delete dialogs, whose coverage is a literal `call` at `credsAgentServer.ts:293`, so M1b was added), M4 cannot turn C3 red (the real lookup always sets `remembers`), and C4 and C5 need `delete: 'any'` on the test folder (`mcpAccess.ts:539-541`); recorded in §7 by the coder, behaviour as §2 states
   (The first change of epoch 1; the plan goes on.)
+- 1.2 · 2026-11-08 · reviewer · approach — the Opus review of `e769bc0`: the reverse race makes the `call` sentence false in the unsafe direction: a dialog shown under `always` or no policy says *covers this call only*, the policy turns to `every12h` while it is open (a sync or another window), and the Allow writes a stamp that quiets later calls; the write must refuse unless the dialog showed the window sentence (`remember` given `remembers`, `asked && remembers === true`), a behaviour change
+  (This second change stopped the plan. No merge until epoch 2 opens.)
+- 1.3 · 2026-11-08 · reviewer · contract — the same review: §2.3's seam was built as `remembers?: boolean` read as `=== true` where the plan wrote `remembers = false`, and §6's greps count three lines where the plan wrote two; recorded in §7 only, and a spec line built otherwise counts
+  (An independent cause, so its own entry.)
 
 ## 1. The defect
 
