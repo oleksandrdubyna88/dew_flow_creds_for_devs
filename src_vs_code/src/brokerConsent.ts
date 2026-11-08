@@ -57,6 +57,18 @@ export function coverageOf(scope: GrantScope, remembers: boolean): ConsentCovera
   return remembers ? 'every12h' : 'call';
 }
 
+/**
+ * Whether an answered dialog may write the remembered window: only one that was ASKED and that said so.
+ *
+ * <p>The stamp must never be wider than the sentence the person read. A dialog that said *this call
+ * only* writes nothing whatever the entry's policy says at the click — the policy can turn to
+ * `every12h` while the modal is open, and the write re-reads it. A call that raised no dialog
+ * (`asked` false) writes nothing either, so a quiet call cannot slide the window forward.</p>
+ */
+export function opensWindow(question: ConsentQuestion, asked: boolean): boolean {
+  return asked && question.coverage === 'every12h';
+}
+
 /** One consent question, as the broker asks it. */
 export interface ConsentQuestion {
   readonly grant: Grant;

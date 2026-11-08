@@ -49,13 +49,17 @@ function vault(mcp: McpAccess): { nodes: TreeNode[]; source: { getAccounts(): { 
 }
 
 /** The broker over production's own lookup and write — `mcpUseHooks` — the way `brokerMcpRoutes.test.ts` builds it. */
-function mcpWorld(mcp: McpAccess, options: { answers?: (string | undefined)[]; holdDialogs?: boolean } = {}) {
+function mcpWorld(
+  mcp: McpAccess,
+  options: { answers?: (string | undefined)[]; holdDialogs?: boolean; supports?: string[]; verbs?: Record<string, string>; clock?: { now: number } } = {},
+) {
   const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
   const state = memento();
   const { nodes, source } = vault(mcp);
-  const both = hooks.mcpUseHooks(source, state, () => FROZEN_NOW);
-  const w = world({ mcpResolve: both.resolveMcpUse, mcpRemember: both.rememberMcpConsent, trash: true, ...options });
-  return { w, state, nodes, lookup: both.resolveMcpUse, stamp: () => new ConsentStamps(state).get(stampKey('a1', 'e1'), FROZEN_NOW) };
+  const { clock = { now: FROZEN_NOW }, ...rest } = options;
+  const both = hooks.mcpUseHooks(source, state, () => clock.now);
+  const w = world({ mcpResolve: both.resolveMcpUse, mcpRemember: both.rememberMcpConsent, trash: true, ...rest });
+  return { w, state, nodes, lookup: both.resolveMcpUse, stamp: (at: number = clock.now) => new ConsentStamps(state).get(stampKey('a1', 'e1'), at) };
 }
 
 const USE = { entry: 'e1', command: 'uptime' };
@@ -216,6 +220,58 @@ test('C9 MCP use, every12h, no stamp store: a lookup that reads nothing says not
   }
 });
 
+test('C4c MCP use, always, the reverse race: a dialog that said "this call only" writes no stamp, even if the policy turned to every12h meanwhile', async () => {
+  const { w, state, nodes, stamp } = mcpWorld({ use: true, ask: 'always' }, { holdDialogs: true });
+  try {
+    const { port } = await share(w);
+    const first = call(port, '/v1/mcp/use/exec', { body: USE });
+    await until(() => w.openDialogs.length === 1, 'the consent modal');
+
+    nodes[0].mcp = { use: true, ask: 'every12h' };
+    w.openDialogs.shift()?.('Allow');
+    const answer = await first;
+
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.equal(w.ran.length, 1, 'the person\'s Allow still runs THIS call');
+    assert.equal(JSON.stringify(stamp()), undefined, `a stamp was written after a dialog that said "this call only": ${JSON.stringify([...state.held])}`);
+    assert.equal(state.held.size, 0, 'nothing was stored');
+    assert.ok(w.dialogs[0].includes(CALL_TAIL), w.dialogs[0]);
+    assert.equal(w.dialogs[0].includes('12 hours'), false, w.dialogs[0]);
+
+    const second = call(port, '/v1/mcp/use/exec', { body: USE });
+    await until(() => w.openDialogs.length === 1, 'the second consent modal');
+    assert.equal(w.dialogs.length, 2, 'the second call asked: no window opened');
+    assert.ok(w.dialogs[1].includes(WINDOW_TAIL), `the policy is read fresh per call: ${w.dialogs[1]}`);
+    w.openDialogs.shift()?.('Deny');
+    await second;
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('C4e MCP use, every12h, the moving clock: a quiet call does not slide the window, and the window ends', async () => {
+  const clock = { now: FROZEN_NOW };
+  const { w, stamp } = mcpWorld({ use: true, ask: 'every12h' }, { answers: ['Allow', 'Allow'], clock });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+    assert.equal(stamp()?.at, FROZEN_NOW, 'the Allow stamped t0');
+
+    clock.now = FROZEN_NOW + 3_600_000;
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+    assert.equal(w.dialogs.length, 1, 'an hour later the call is quiet');
+    assert.equal(w.ran.length, 2);
+    assert.equal(stamp()?.at, FROZEN_NOW, 'a quiet call did not slide the window: the stamp is still t0');
+
+    clock.now = FROZEN_NOW + ASK_WINDOW_MS + 1;
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+    assert.equal(w.dialogs.length, 2, 'past the window the call asks again');
+  } finally {
+    w.server.dispose();
+  }
+});
+
 test('C5 MCP never: a use call shows no dialog at all, and each delete asks with the call tail', async () => {
   const { w, state } = mcpWorld({ use: true, delete: 'any', ask: 'never' }, { answers: ['Allow', 'Allow'] });
   try {
@@ -301,6 +357,16 @@ test('C7 coverageOf: a token grant never widens, a call grant widens only when i
   assert.equal(gate.coverageOf('token', false), 'token');
   assert.equal(gate.coverageOf('call', false), 'call');
   assert.equal(gate.coverageOf('call', true), 'every12h');
+});
+
+test('C7b opensWindow: only a dialog that announced the window, and was asked, writes a stamp', () => {
+  const gate = loadWithVscode<typeof import('../brokerConsent')>('../brokerConsent', { window: {} });
+  const question = (coverage: 'token' | 'call' | 'every12h') => ({ coverage }) as import('../brokerConsent').ConsentQuestion;
+
+  assert.equal(gate.opensWindow(question('every12h'), true), true);
+  assert.equal(gate.opensWindow(question('every12h'), false), false);
+  assert.equal(gate.opensWindow(question('call'), true), false);
+  assert.equal(gate.opensWindow(question('token'), true), false);
 });
 
 test('C8 the number: the constant, the switch label and this file\'s literals say one and the same twelve', () => {

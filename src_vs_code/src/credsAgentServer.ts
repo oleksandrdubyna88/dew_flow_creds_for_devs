@@ -20,7 +20,7 @@ import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
 import { BrokerDoor, ConsentOutcome, DURING_CONSENT, mcpDoor } from './brokerMcpDoor';
-import { ConsentGate, coverageOf } from './brokerConsent';
+import { ConsentGate, coverageOf, opensWindow } from './brokerConsent';
 import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
@@ -532,7 +532,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     // Only an `allowed` from a request still there reaches this line — the gate checked after its own
     // wait — so a consent nobody is waiting for is never remembered.
-    await this.remember(who.via, grant, asked, rungs);
+    await this.remember(who.via, grant, opensWindow(question, asked), rungs);
     await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal });
   }
 
