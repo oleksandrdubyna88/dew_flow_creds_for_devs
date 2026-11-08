@@ -4398,7 +4398,6 @@ policy and ladder. This is the one behaviour change of the fix; admission, minti
 and the policies are as they were. The tests stand each tail beside the fact it states — whether the next call
 asked, whether a stamp was written, in both races, with and without a store, and across two stores.
 
-
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never
 ask* — governs `/v1/mcp/use/*` and nothing else, because `preConsent` is wired into `mcpDoor` and

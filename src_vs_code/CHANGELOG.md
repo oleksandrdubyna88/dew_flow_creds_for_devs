@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the entry *may also skip asking because of this Allow — only while this entry is set to "Ask once every 12 hours"
   and its agent switches are as they are now. Deleting still asks.* Read it plainly: the window belongs to the entry,
   not to the action, so one Allow on *run a command* also quiets *change the stored secret of* and the export for the
-  window, from any MCP client that reaches this window's broker; that is why the sentence lists every verb. A policy or
+  window, from any MCP client that reaches a broker on this machine; that is why the sentence lists every verb. A policy or
   switch change suspends the window and changing it back resumes it, so the sentence says *only while*. The alias route
   and the token route are not quieted by it. The hours in the sentence come from the window's own constant. The token
   door's sentence is as it was, word for word.

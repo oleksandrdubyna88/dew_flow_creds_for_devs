@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **epoch 2 open since 2026-11-08, by reviewers (the document gate answered `proceed` twice, 4 of 4 reviewers each; nothing narrowed); the (code) items are built (steps 7–12 on `fix/consent-coverage-per-door`, after `d02d050`); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** Change 1.2 stopped epoch 1 the same day. The epoch-1 build stood at `d02d050`. The `coai` plan round on `c655038` answered
+> Status: **epoch 2 open since 2026-11-08, by reviewers (the document gate answered `proceed` twice, 4 of 4 reviewers each; nothing narrowed); the (code) items are built (steps 7–12 on `fix/consent-coverage-per-door`, after `d02d050`); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** Change 1.2 stopped epoch 1 the same day. The epoch-1 build stood at `d02d050`. The epoch-1 `coai` plan round, on `c655038`, answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -381,6 +381,12 @@ a startup pairing check is a follow-up (§5.1), not built here.
   leaves `every12h` or its ladder changes would let the dialog say *while … not changed* truthfully. It is a stamp
   behaviour change with its own questions (who clears it — the write site, the lookup, or a sync hook; what two windows
   do) and belongs in its own plan when picked up. The window sentence of §2.2 is true without it.
+- **A change of the entry's type keeps the window.** The stamp's fingerprint (`rungs`, from `ladderKey`) covers the
+  switches and not the entry's kind, so an entry whose type changes inside the twelve hours (say an ssh entry that
+  becomes a database one) stays quiet for the new kind, and the dialog's verb list — built from the kind at the time
+  the dialog was shown — can name fewer verbs than the stamp now quiets. The fix is to put the kind into the
+  fingerprint the lookup hands out and the write compares, so a changed kind makes the stamp not match. It was
+  already so on `main`: the stamp has never read the kind. A stamp behaviour change, so its own plan; not built here.
 - **A pairing check for the two MCP hooks.** `checkedHooks` could refuse a `resolveMcpUse` without a
   `rememberMcpConsent` (or the reverse). A startup throw is a behaviour change; the production host is covered by the
   scan of §4.3 today.

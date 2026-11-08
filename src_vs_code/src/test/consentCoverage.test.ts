@@ -1,6 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import type { ConsentCoverage, ConsentQuestion } from '../brokerConsent';
 import type { McpFolderHooks } from '../brokerFolderDoor';
+import type { Grant } from '../grantRegistry';
 import { ASK_WINDOW_MS, ConsentStamps, stampKey } from '../mcpConsentPolicy';
 import { MCP_ASK_CHOICES } from '../mcpSwitches';
 import type { McpAccess } from '../mcpAccess';
@@ -406,14 +408,30 @@ test('C7 coverageOf: a token grant never widens, a call grant widens only when i
   assert.equal(gate.coverageOf('call', true), 'every12h');
 });
 
+/** A whole, typed consent question — real defaults, only the coverage varies, no cast. */
+function consentQuestion(coverage: ConsentCoverage): ConsentQuestion {
+  const grant: Grant = {
+    secret: 'secret-1',
+    accountId: 'a1',
+    entityId: 'e1',
+    entityName: 'prod',
+    kind: 'ssh',
+    status: 'pending',
+    mintedAt: FROZEN_NOW,
+    lastUsedAt: FROZEN_NOW,
+    uses: 0,
+    scope: coverage === 'token' ? 'token' : 'call',
+  };
+  return { grant, action: 'exec', verb: 'run a command on', summary: 'uptime', caller: undefined, coverage };
+}
+
 test('C7b opensWindow: only a dialog that announced the window, and was asked, writes a stamp', () => {
   const gate = loadWithVscode<typeof import('../brokerConsent')>('../brokerConsent', { window: {} });
-  const question = (coverage: 'token' | 'call' | 'every12h') => ({ coverage }) as import('../brokerConsent').ConsentQuestion;
 
-  assert.equal(gate.opensWindow(question('every12h'), true), true);
-  assert.equal(gate.opensWindow(question('every12h'), false), false);
-  assert.equal(gate.opensWindow(question('call'), true), false);
-  assert.equal(gate.opensWindow(question('token'), true), false);
+  assert.equal(gate.opensWindow(consentQuestion('every12h'), true), true);
+  assert.equal(gate.opensWindow(consentQuestion('every12h'), false), false);
+  assert.equal(gate.opensWindow(consentQuestion('call'), true), false);
+  assert.equal(gate.opensWindow(consentQuestion('token'), true), false);
 });
 
 test('C8 the number: the constant, the switch label and this file\'s literals say one and the same twelve', () => {
