@@ -409,7 +409,7 @@ function mcpEntriesFor(
 function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
   preConsented = false,
-  remembers = false,
+  remembers?: boolean,
 ): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;

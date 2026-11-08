@@ -52,12 +52,12 @@ function vault(mcp: McpAccess): { nodes: TreeNode[]; source: { getAccounts(): { 
 /** The broker over production's own lookup and write — `mcpUseHooks` — the way `brokerMcpRoutes.test.ts` builds it. */
 function mcpWorld(
   mcp: McpAccess,
-  options: { answers?: (string | undefined)[]; holdDialogs?: boolean; supports?: string[]; verbs?: Record<string, string>; clock?: { now: number } } = {},
+  options: { answers?: (string | undefined)[]; holdDialogs?: boolean; supports?: string[]; verbs?: Record<string, string>; clock?: { now: number }; tree?: ReturnType<typeof vault> } = {},
 ) {
   const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
   const state = memento();
-  const { nodes, source } = vault(mcp);
-  const { clock = { now: FROZEN_NOW }, ...rest } = options;
+  const { clock = { now: FROZEN_NOW }, tree = vault(mcp), ...rest } = options;
+  const { nodes, source } = tree;
   const both = hooks.mcpUseHooks(source, state, () => clock.now);
   const w = world({ mcpResolve: both.resolveMcpUse, mcpRemember: both.rememberMcpConsent, trash: true, ...rest });
   return { w, state, nodes, lookup: both.resolveMcpUse, stamp: (at: number = clock.now) => new ConsentStamps(state).get(stampKey('a1', 'e1'), at) };
@@ -293,6 +293,29 @@ test('C4e MCP use, every12h, the moving clock: a quiet call does not slide the w
     assert.equal(w.dialogs.length, 2, 'past the window the call asks again');
   } finally {
     w.server.dispose();
+  }
+});
+
+test('C10 MCP use, every12h, two stores: an Allow on one machine opens nothing on another', async () => {
+  const tree = vault({ use: true, ask: 'every12h' });
+  const a = mcpWorld({ use: true, ask: 'every12h' }, { answers: ['Allow'], tree });
+  const b = mcpWorld({ use: true, ask: 'every12h' }, { answers: ['Allow'], tree });
+  try {
+    await call((await share(a.w)).port, '/v1/mcp/use/exec', { body: USE });
+    const aStamp = a.stamp();
+    assert.notEqual(aStamp, undefined, 'A\'s Allow wrote A\'s stamp');
+
+    assert.equal(b.stamp(), undefined, 'B\'s store is empty before its call');
+    assert.equal(b.state.held.size, 0);
+    await call((await share(b.w)).port, '/v1/mcp/use/exec', { body: USE });
+
+    assert.equal(b.w.dialogs.length, 1, 'B\'s call raised a dialog: A\'s Allow did not travel');
+    assert.ok(b.w.dialogs[0].includes(WINDOW_TAIL), b.w.dialogs[0]);
+    assert.notEqual(b.stamp(), undefined, 'after B\'s Allow, B holds its own stamp');
+    assert.deepEqual(a.stamp(), aStamp, 'and A\'s is unchanged');
+  } finally {
+    a.w.server.dispose();
+    b.w.server.dispose();
   }
 });
 
