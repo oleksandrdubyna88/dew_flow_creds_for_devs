@@ -39,6 +39,24 @@
 - 1.3 · 2026-11-08 · reviewer · contract — the same review: §2.3's seam was built as `remembers?: boolean` read as `=== true` where the plan wrote `remembers = false`, and §6's greps count three lines where the plan wrote two; recorded in §7 only, and a spec line built otherwise counts
   (An independent cause, so its own entry.)
 
+### Re-review for epoch 2
+
+Narrowed: no — epoch 2 adds one behaviour (the stamp write gated on the sentence shown), F5a and the cases C4c, C4d, C4e, C7b, C9, C10, and makes the Definition of Done stricter; the two mutation targets it drops (M1 to C5, M4 to C3) could not be reached under §2.3 as approved, and M1b now covers C5 (recorded as 1.1)
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| plan draft, c655038 | pushed, unmerged | fits | kept; the revision supersedes its text |
+| epoch 1 opened on the gate's proceed, 099ea1c | pushed, unmerged | fits | kept |
+| S1 seam: `remembersFor`, `remembers` on the lookup, `UseRead`, `usableRead`, a98c98c | pushed, unmerged | fits | kept; step 7 (F5a) changes `mcpHooks.ts:177` forward |
+| S1 `coverage` field, `coverageOf`, token and call tails, the two call sites, a215142 | pushed, unmerged | fits | kept |
+| S1 `every12h` sentence and the test literals `WINDOW_TAIL` and `WINDOW_CONDITION`, a215142 | pushed, unmerged | cut | fix forward in step 9: §2.2's new sentence, with the verb list, and its literals |
+| C4b clause-first assertion, f9f4dfb | pushed, unmerged | fits | kept; its literals follow in step 9 |
+| S2 CHANGELOG entry, d02d050 | pushed, unmerged | cut | fix forward in step 12 |
+| S2 `module_extension.md` paragraph, d02d050 | pushed, unmerged | cut | fix forward in step 12 |
+| S2 plan §7 notes and README row, d02d050 | pushed, unmerged | fits | kept; the revision supersedes them |
+| ledger 1.1, e769bc0; ledger 1.2 and 1.3, 44abe0d | pushed, unmerged | fits | kept |
+| the whole-plan revision f2ca05a and its sort fixes 119ea80 | pushed, unmerged | fits | kept; step 4, no entry |
+
 ## 1. The defect
 
 The local agent-consent modal — the Allow/Deny dialog the broker raises before an agent uses a credential — ended, on
