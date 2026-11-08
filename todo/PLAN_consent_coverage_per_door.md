@@ -59,6 +59,9 @@ Narrowed: no — epoch 2 adds one behaviour (the stamp write gated on the senten
 
 > Epoch 2 · approved 2026-11-08 · by reviewers · state: open
 
+- 2.1 · 2026-11-08 · agent · approach — the test sketch of §2.3 and §6 does not fit two tests: `brokerMcpRoutes.test.ts:658` passes its own `mcpResolve`, so the `mcpRemembers` option never reaches it and its lookup literal must carry `remembers: true`; and the `:510` test needs the flag on both of its worlds, so `mcpRemembers` has four callers in three tests, not three
+  (The first change of epoch 2; the plan goes on.)
+
 ## 1. The defect
 
 The local agent-consent modal — the Allow/Deny dialog the broker raises before an agent uses a credential — ended, on
