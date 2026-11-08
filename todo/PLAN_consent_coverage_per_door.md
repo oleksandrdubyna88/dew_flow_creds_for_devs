@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **stopped for re-review, 2026-11-08: change 1.2 is epoch 1's second change.** The build stands at `d02d050` on `fix/consent-coverage-per-door`; the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do. The `coai` plan round on `c655038` answered
+> Status: **epoch 2 open since 2026-11-08, by reviewers (the document gate answered `proceed` twice, 4 of 4 reviewers each; nothing narrowed); the (code) items are next.** Change 1.2 stopped epoch 1 the same day. The build stands at `d02d050` on `fix/consent-coverage-per-door`; the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do. The `coai` plan round on `c655038` answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -26,7 +26,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-08 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-08 · by reviewers · state: closed
 
   (The approving round was one round: `review_plan` on `c655038` reached `proceed` with 2 of 2 reviewers. Its four
   accepted findings — the `never` row and C5 made explicit, the `every12h` tail made conditional with a race case,
@@ -56,6 +56,8 @@ Narrowed: no — epoch 2 adds one behaviour (the stamp write gated on the senten
 | S2 plan §7 notes and README row, d02d050 | pushed, unmerged | fits | kept; the revision supersedes them |
 | ledger 1.1, e769bc0; ledger 1.2 and 1.3, 44abe0d | pushed, unmerged | fits | kept |
 | the whole-plan revision f2ca05a and its sort fixes 119ea80 | pushed, unmerged | fits | kept; step 4, no entry |
+
+> Epoch 2 · approved 2026-11-08 · by reviewers · state: open
 
 ## 1. The defect
 
