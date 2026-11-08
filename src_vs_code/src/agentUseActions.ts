@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  EXPORT_REFUSED,
   EnvExportResponseBody,
   ErrorCode,
   ExecResponseBody,
@@ -17,7 +18,7 @@ import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { resolveCommand } from './commandLine';
-import { capturedRun, hostShell, osMismatch } from './hostShell';
+import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
@@ -245,8 +246,13 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
  * <p>Honest limitation, and it is in the consent text rather than only here: this reaches
  * integrated terminals opened afterwards in THIS window. An agent whose shell lives
  * outside VS Code gets nothing from it.</p>
+ *
+ * <p>Refused in `validate` — before the consent modal — in a window whose terminals run on another
+ * computer (Remote-SSH, a container): there the value would land on that computer. `denied`, with the
+ * stable `EXPORT_REFUSED` sentence. Not `not_supported`: that is a 404, which the CLI reads as "this
+ * window does not have the entry" and walks on from, and as exit 93 for an entry that exists.</p>
  */
-export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
+export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: string | undefined }): UseAction {
   return {
     kind: 'credential',
     action: 'exportEnv',
@@ -256,7 +262,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
       const body = result.body as EnvExportResponseBody;
       return `${body.written.length} variable(s)`;
     },
-    validate: () => ({ ok: true }),
+    validate: () => (windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'denied', message: EXPORT_REFUSED } : { ok: true }),
     summarize: () =>
       'into integrated terminals opened after this, in this VS Code window only — a shell outside VS Code is unaffected',
     async run(ctx): Promise<UseActionResult> {
@@ -396,6 +402,7 @@ export function vpnAction(deps: VpnUseDeps, action: 'up' | 'down'): UseAction {
     kind: 'vpn',
     action,
     mutatesSecrets: false,
+    asksAfterConsent: true, // `up`: the launcher's trust modal, a PIN, an install offer, OpenVPN Connect's question; `down`: the install offer when no client is on the PATH
     verb: action === 'up' ? 'start the VPN tunnel of' : 'stop the VPN tunnel of',
     describeOutcome(result) {
       return (result.body as { opened?: boolean }).opened === true ? 'opened' : 'refused';

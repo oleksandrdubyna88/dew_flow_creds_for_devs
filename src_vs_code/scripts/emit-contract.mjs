@@ -23,6 +23,7 @@ const repoRoot = resolve(extensionRoot, '..');
 const protocol = await import(pathToFileURL(join(extensionRoot, 'out', 'brokerProtocol.js')).href);
 const outcome = await import(pathToFileURL(join(extensionRoot, 'out', 'agentCliOutcome.js')).href);
 const callerModule = await import(pathToFileURL(join(extensionRoot, 'out', 'brokerCaller.js')).href);
+const bridgeNote = await import(pathToFileURL(join(extensionRoot, 'out', 'bridgeNote.js')).href);
 // The kinds an entry can be, and the ones an agent may create — read off the window's own table so the
 // relay's descriptions name them from ONE place. Both of its kind lists had drifted from `ENTITY_KINDS`
 // (each omitted payment) while they were literals a human kept in step.
@@ -192,6 +193,17 @@ const contract = {
   // Additive, so `version` stays 1: no route moves, no status changes, no verb changes, and a
   // window that does not know the field ignores it as it ignores every unknown body field.
   caller,
+  // Additive, so `version` stays 1: a reader that does not know these two keys skips them. The alias prefix is
+  // the third of the route prefixes and the only one a client held as a literal of its own; `bridge` is the
+  // Remote Bridge's header and the schema of the note it publishes (E1.3), read off the module so a field added
+  // there cannot be missing here.
+  aliasPrefix: protocol.ALIAS_ROUTE_PREFIX,
+  bridge: {
+    keyHeader: bridgeNote.BRIDGE_KEY_HEADER,
+    noteDir: bridgeNote.BRIDGE_NOTE_DIR,
+    noteSuffix: bridgeNote.BRIDGE_NOTE_SUFFIX,
+    noteFields: { ...bridgeNote.BRIDGE_NOTE_FIELDS },
+  },
   // Every kind an entry can be, and the ones an agent may ask `creds_create` to make — so the
   // relay's descriptions name them from here rather than from literals of their own. Additive,
   // for `caller`'s reason: a reader that does not know the fields ignores them.

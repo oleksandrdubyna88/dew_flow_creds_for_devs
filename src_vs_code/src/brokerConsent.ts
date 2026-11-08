@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
-import type { AuditEntry } from './agentAuditLog';
+import type { AuditDoor, AuditEntry } from './agentAuditLog';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -33,6 +33,18 @@ export interface ConsentGateDeps {
   /** The one moment a person is provably present. */
   onUserPresent(): void;
   log(entry: Omit<AuditEntry, 'at' | 'caller'> & { caller?: CallerLabel }): void;
+  /**
+   * A dialog is about to be shown for this question: the one moment a prompt is SPENT (`aliasThrottle.ts`). A call refused
+   * before it got here showed nobody anything and costs nothing; one that joins a dialog already open shows nothing new.
+   */
+  prompted?(question: ConsentQuestion): void;
+  /**
+   * The dialog raised for this question is gone: answered, or given up on at the timeout. The one place a dialog holds is
+   * given back here (`aliasThrottle.ts`), not when the call that raised it ends — a client that leaves does not take the
+   * modal off the screen. `keep`: the person Allowed and the call may put a prompt of its own on screen next
+   * (`ConsentQuestion.followUp`), so the place stays the call's until the call ends (Amendment 3, C.3).
+   */
+  dialogClosed?(question: ConsentQuestion, keep: boolean): void;
 }
 
 /**
@@ -76,8 +88,25 @@ export interface ConsentQuestion {
   readonly verb: string;
   readonly summary: string;
   readonly caller: CallerLabel | undefined;
+  /** The door the call came in by: a local token call raises dialogs that are not throttled, a bridged one is counted on its bridge. */
+  readonly via: AuditDoor;
+  /**
+   * The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. A function is
+   * asked WHEN THE DIALOG CLOSES on an Allow, not before it opens (change 6.1): what decides it may change while the dialog is open
+   * (the agent's socket coming up).
+   */
+  readonly followUp?: boolean | (() => boolean);
   /** REQUIRED, like `caller`: a door added later does not compile until it says what its Allow covers. */
   readonly coverage: ConsentCoverage;
+}
+
+/** Whether the question's call may prompt again, read now. A flag that cannot be read keeps nothing: the place is not held on a guess. */
+function followsUp(question: ConsentQuestion): boolean {
+  try {
+    return typeof question.followUp === 'function' ? question.followUp() : question.followUp === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Hours in the remembered window — derived from the policy's own constant, never typed twice. */
@@ -140,12 +169,8 @@ export class ConsentGate {
   }
 
   private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<boolean> {
-    const choice = await withTimeout(
-      Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
-      CONSENT_TIMEOUT_MS,
-      // The HTTP server keeps this process alive; the timer need not.
-      { unref: true },
-    );
+    this.deps.prompted?.(question);
+    const choice = await this.shown(question);
     // The defused modal (§3.3): it could not be closed when its requests left, so the answer it gives
     // after that is read here and applied to nothing.
     if (!stillWanted()) {
@@ -153,6 +178,27 @@ export class ConsentGate {
       return false;
     }
     return this.apply(question, choice);
+  }
+
+  /**
+   * The dialog, awaited for at most the timeout. In a `finally` that tells the throttle the dialog is gone before anything is
+   * decided from the answer, so a defused modal (its requests left) frees the place at its click, and a timeout frees it
+   * although VS Code cannot take the modal down.
+   */
+  private async shown(question: ConsentQuestion): Promise<string | undefined> {
+    let choice: string | undefined;
+    try {
+      choice = await withTimeout(
+        Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
+        CONSENT_TIMEOUT_MS,
+        // The HTTP server keeps this process alive; the timer need not.
+        { unref: true },
+      );
+      return choice;
+    } finally {
+      // A timeout leaves `choice` undefined: freed. Only an Allow of a call that may ask again keeps the place.
+      this.deps.dialogClosed?.(question, choice === 'Allow' && followsUp(question));
+    }
   }
 
   /** Allow or Deny, applied to the grant; anything else refuses this call and leaves it re-promptable. */

@@ -9,8 +9,15 @@ import { EnvApplyResult, envAppliedNotice } from './envApplyNotice';
  */
 let collection: vscode.GlobalEnvironmentVariableCollection | undefined;
 
-export function setEnvCollection(value: vscode.GlobalEnvironmentVariableCollection): void {
+/**
+ * `vscode.env.remoteName`, kept beside the collection and not read at the call: the test stubs of the
+ * save surfaces have no `env` and reach `showEnvNotice` through real code, so they read as local.
+ */
+let windowRemoteName: string | undefined;
+
+export function setEnvCollection(value: vscode.GlobalEnvironmentVariableCollection, remoteName?: string): void {
   collection = value;
+  windowRemoteName = remoteName;
 }
 
 export function envCollection(): vscode.GlobalEnvironmentVariableCollection {
@@ -32,7 +39,7 @@ export function envCollection(): vscode.GlobalEnvironmentVariableCollection {
  * sentences themselves are `envApplyNotice.ts`, pure and tested; this is only the edge.</p>
  */
 export function showEnvNotice(result: EnvApplyResult): void {
-  const notice = envAppliedNotice(result);
+  const notice = envAppliedNotice(result, windowRemoteName);
   if (notice.info !== undefined) {
     void vscode.window.showInformationMessage(notice.info);
   }

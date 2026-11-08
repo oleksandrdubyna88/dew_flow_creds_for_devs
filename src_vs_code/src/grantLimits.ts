@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GrantExpiry, GrantLimits } from './grantRegistry';
+import type { GrantLimits } from './grantRegistry';
 
 /**
  * How long a grant lives, and how a person is told it did not.
@@ -29,16 +29,4 @@ export function describeLimits(limits: GrantLimits): string {
   }
   parts.push('and never past this window closing');
   return parts.join(', ');
-}
-
-/**
- * Why a token stopped working, in the words that name the fix.
- *
- * <p>An expired token says which kind of expiry it was. "Unknown" would send an agent hunting
- * for a typo in a token that was correct an hour ago.</p>
- */
-export function expiredMessage(reason: GrantExpiry, limits: GrantLimits): string {
-  return reason === 'idle'
-    ? `This grant expired: it went unused for more than ${Math.round(limits.idleMs / 60_000)} minutes. Ask the person for a fresh Share with Claude Code.`
-    : `This grant expired: it reached its limit of ${limits.maxUses} calls. Ask the person for a fresh Share with Claude Code.`;
 }

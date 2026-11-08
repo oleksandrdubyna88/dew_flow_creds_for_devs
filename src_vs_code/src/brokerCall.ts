@@ -2,7 +2,7 @@ import { AuditDoor } from './agentAuditLog';
 import type { CallerLabel } from './brokerCaller';
 import { ErrorCode, INTERNAL_FAILURE } from './brokerProtocol';
 import { runAndDeliver } from './brokerResponse';
-import { reservationRefused } from './brokerRequests';
+import { Refusal, reservationRefused } from './brokerRequests';
 import { Grant, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
 import { grantLimits } from './grantLimits';
 import { OneUseLane, laneKeyFor } from './oneUseLane';
@@ -46,6 +46,13 @@ export interface CallDeps {
    * nothing answered, because nobody is there. `stage` says where.
    */
   abandon(stage: string): void;
+  /**
+   * The scope wall's gate at the action boundary (E1.3): `undefined` admits, a refusal is answered and spends
+   * nothing. Asked after the abort check and before anything is reserved, in the same synchronous step as the
+   * start, so a scope narrowed or a line edited while a person was being asked is read at the last moment there
+   * is to read it. Absent on a build with no bridge.
+   */
+  atLaunch?(): Refusal | undefined;
 }
 
 export interface CallSubject {
@@ -60,6 +67,14 @@ export interface CallSubject {
   readonly table: MaskTable;
   /** The request's life: fires when its client hung up (`requestLife.ts`). Handed to the action it starts. */
   readonly signal: AbortSignal;
+  /**
+   * The token a bridged token call spends: reserved first, in the same step as the call grant.
+   *
+   * <p>On a bridge a token only authenticates (the call rides a grant of its own), but it is still a token with
+   * a use count and an idle clock, and a call through it must count against both. Here and not on the grant, so
+   * a token's secret is never stored in another grant's record.</p>
+   */
+  readonly spend?: string;
 }
 
 export async function performCall(deps: CallDeps, call: CallSubject): Promise<void> {
@@ -126,11 +141,21 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
     deps.abandon('before the action started');
     return Promise.resolve();
   }
-  if (!reservedNow(deps, call)) {
+  if (launchRefused(deps) || !reservedNow(deps, call)) {
     return Promise.resolve();
   }
   const started = startNow(call);
   return deliver(deps, call, started);
+}
+
+/** Whether the scope wall's gate refused this call at launch — already answered, with nothing reserved or started. */
+function launchRefused(deps: CallDeps): boolean {
+  const refused = deps.atLaunch?.();
+  if (refused === undefined) {
+    return false;
+  }
+  deps.refuse(refused.code, refused.message);
+  return true;
 }
 
 /**
@@ -145,12 +170,23 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
  */
 function reservedNow(deps: CallDeps, call: CallSubject): boolean {
   const limits = grantLimits();
-  const reserved = deps.grants.reserve(call.grant.secret, Date.now(), limits);
+  const now = Date.now();
+  // The token first, so one that has run out costs the call grant nothing.
+  const reserved = spentToken(deps, call, now, limits) ?? deps.grants.reserve(call.grant.secret, now, limits);
   if (reserved.kind !== 'live') {
     deps.refuse('unauthorized', reservationRefused(reserved, limits));
     return false;
   }
   return true;
+}
+
+/** The token behind a bridged call, reserved — or the non-live answer that refuses the call. `undefined` when there is none or it is live. */
+function spentToken(deps: CallDeps, call: CallSubject, now: number, limits: GrantLimits): GrantLookup | undefined {
+  if (call.spend === undefined) {
+    return undefined;
+  }
+  const reserved = deps.grants.reserve(call.spend, now, limits);
+  return reserved.kind === 'live' ? undefined : reserved;
 }
 
 /**
@@ -162,7 +198,7 @@ function reservedNow(deps: CallDeps, call: CallSubject): boolean {
 function startNow(call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
   return new Promise<UseActionResult>((resolve) => {
-    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal }, body));
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context }, body));
   });
 }
 

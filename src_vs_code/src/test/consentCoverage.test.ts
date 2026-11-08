@@ -422,7 +422,7 @@ function consentQuestion(coverage: ConsentCoverage): ConsentQuestion {
     uses: 0,
     scope: coverage === 'token' ? 'token' : 'call',
   };
-  return { grant, action: 'exec', verb: 'run a command on', summary: 'uptime', caller: undefined, coverage };
+  return { grant, action: 'exec', verb: 'run a command on', summary: 'uptime', caller: undefined, via: 'mcp', coverage };
 }
 
 test('C7b opensWindow: only a dialog that announced the window, and was asked, writes a stamp', () => {

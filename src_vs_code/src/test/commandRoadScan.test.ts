@@ -82,6 +82,12 @@ const ALLOWED_READS: Record<string, { line: string; because: string }[]> = {
   'entityViewPage.ts': [
     { line: '...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),', because: "the stored rows, the parent table's raw row" },
   ],
+  'runPlan.ts': [
+    {
+      line: "return [details.command ?? '', ...(details.commandArgs ?? []).map((row) => row.value)];",
+      because: "the bridge wall's reference scan reads the stored rows, disabled ones too: a search text, never a line a terminal receives",
+    },
+  ],
   'typeGuards.ts': [{ line: '(v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&', because: 'the validator at the door' }],
 };
 

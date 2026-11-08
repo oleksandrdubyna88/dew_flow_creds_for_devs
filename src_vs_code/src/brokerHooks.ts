@@ -1,6 +1,6 @@
+import type { BridgeWallSource, ResolveUse } from './bridgeScope';
 import { ConfigRouteSources } from './brokerConfigRoute';
 import { McpCreateHooks } from './brokerMcpDoor';
-import { McpUseLookup } from './brokerRequests';
 import { McpEntry } from './mcpEntries';
 import { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
@@ -126,7 +126,7 @@ export interface BrokerHooks {
    * have one answer and splitting them is how a path ends up asking the first and forgetting the
    * second.</p>
    */
-  readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup;
+  readonly resolveMcpUse?: ResolveUse;
 
   /**
    * A person answered a dialog for this entry: remember WHEN, on this machine only.
@@ -159,6 +159,15 @@ export interface BrokerHooks {
    * holds grants, and a config key is not one. Absent serves no config to anything.
    */
   readonly configRoute?: ConfigRouteSources;
+
+  /**
+   * What a Remote Bridge's wall needs from the vault side: the scope of each server, the texts a stored command
+   * or script would be searched in, and the references' source (E1.3).
+   *
+   * <p>Absent means this build can open no bridge: `openBridgeListener` refuses, because a door with no wall
+   * would serve a server the whole vault. `extension.ts` wires it in E2.2, and nothing does before then.</p>
+   */
+  readonly bridgeWall?: BridgeWallSource;
 }
 
 /**
@@ -196,6 +205,7 @@ const HOOK_KINDS = {
   moveToTrash: 'function',
   mcpCreate: 'object',
   configRoute: 'object',
+  bridgeWall: 'object',
 } as const;
 
 /** The names {@link checkedHooks} accepts. Exported so the test can assert the guard's own list. */

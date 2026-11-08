@@ -3,7 +3,9 @@ import { after, test } from 'node:test';
 import { NAME_REFUSAL } from '../commandName';
 import { commandFingerprint } from '../commandTrust';
 import { lockSecret } from '../secretEnvelope';
+import { EXPORT_REFUSED } from '../brokerProtocol';
 import {
+  credentialExportEnvAction,
   dbQueryAction,
   scriptRunAction,
   terminalRunAction,
@@ -287,6 +289,71 @@ test('vpnAction: a start that was sent before the client left answers as it alwa
   const result = await vpnAction(vpnDeps(true, [], () => request.abort()), 'down').run({ ...ctx, signal: request.signal }, {});
 
   assert.deepEqual(result, { status: 200, body: { opened: true } });
+});
+
+/**
+ * E1.1 — an agent cannot export a secret into the terminals of another computer
+ * (`PLAN_remote_bridge_scoped_E1.md`, X1 and X2).
+ *
+ * <p>Validation and not `run`, because validation runs before the consent modal: a person is never
+ * asked to allow something that will be refused.</p>
+ */
+
+function exportDeps(remoteName: string | undefined, applied: string[] = []) {
+  return fakeDeps({
+    remoteName,
+    storage: {
+      getNode: () => ({ details: { id: 'e1', name: 'prod-db', envBindings: { password: 'PROD_PW' } } }),
+    },
+    applyEnv: async () => {
+      applied.push('applied');
+      return { written: ['PROD_PW'], withheld: [] };
+    },
+  });
+}
+
+test('X1: exportEnv in an ssh-remote window is refused by validate, with a stable code and sentence, and applies nothing', () => {
+  const applied: string[] = [];
+  const action = credentialExportEnvAction(exportDeps('ssh-remote', applied));
+
+  assert.deepEqual(action.validate({}), { ok: false, code: 'denied', message: EXPORT_REFUSED });
+});
+
+test('X1: in a local window the same entry is exported as before', async () => {
+  const applied: string[] = [];
+  const action = credentialExportEnvAction(exportDeps(undefined, applied));
+
+  assert.deepEqual(action.validate({}), { ok: true });
+  const result = await action.run(ctx, {});
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { written: ['PROD_PW'] });
+  assert.equal(applied.length, 1);
+});
+
+test('X2: undefined, empty and wsl admit; every other window refuses with exactly EXPORT_REFUSED', () => {
+  for (const admitted of [undefined, '', 'wsl']) {
+    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}), { ok: true }, `remoteName ${String(admitted)}`);
+  }
+  for (const refused of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces', 'tunnel']) {
+    assert.deepEqual(
+      credentialExportEnvAction(exportDeps(refused)).validate({}),
+      { ok: false, code: 'denied', message: EXPORT_REFUSED },
+      `remoteName ${refused}`,
+    );
+  }
+});
+
+test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow) and on no other action of this module', () => {
+  const flags = {
+    'vpn up': vpnAction(fakeDeps(), 'up').asksAfterConsent,
+    'vpn down': vpnAction(fakeDeps(), 'down').asksAfterConsent,
+    scriptRun: scriptRunAction(fakeDeps()).asksAfterConsent,
+    terminalRun: terminalRunAction(fakeDeps()).asksAfterConsent,
+    exportEnv: credentialExportEnvAction(fakeDeps()).asksAfterConsent,
+    dbQuery: dbQueryAction(fakeDeps()).asksAfterConsent,
+  };
+  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: undefined, exportEnv: undefined, dbQuery: undefined });
 });
 
 // `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): the agent runs the line the Run button would type.

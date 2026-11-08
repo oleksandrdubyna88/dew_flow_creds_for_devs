@@ -70,6 +70,7 @@ const READERS: Readonly<Record<string, ReaderKind | readonly ReaderKind[]>> = {
   'historyPin.ts': 'door', // seals and opens kept versions under the PIN
   'hygieneScan.ts': 'automatic', // the password-hygiene scan skips sealed values
   'maskEntries.ts': 'automatic', // output masking skips sealed values
+  'mcpAccountVault.ts': 'carrier', // a bridge's one-account view of the vault: hands the getters on to the reader, reads nothing itself
   'mcpEntries.ts': 'automatic', // agents: a protected entry is hidden by its mark
   'openSite.ts': 'door', // Open Site in Browser
   'pinAdmission.ts': 'door', // the door itself

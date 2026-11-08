@@ -12,7 +12,7 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent, remembersFor } from './mcpEntries';
+import { McpVaultSource, accountOnly, findUsableEntry, preConsentedFor, rememberMcpConsent, remembersFor } from './mcpEntries';
 import { ConsentStampStore, ConsentStamps, consentStampsFor } from './mcpConsentPolicy';
 import type { BrokerHooks } from './brokerHooks';
 import { McpAccess, ladderKey } from './mcpAccess';
@@ -150,8 +150,11 @@ export function mcpUseLookup(
   action: string,
   stamps?: ConsentStamps,
   now: number = Date.now(),
+  // Given by a Remote Bridge's view, from its context: the lookup then searches that account and no other. Absent
+  // for the existing doors, which search every account as they always did.
+  server?: { accountId: string; serverEntityId: string },
 ): McpUseLookup {
-  const found = findUsableEntry(storage, entryId, action);
+  const found = findUsableEntry(server === undefined ? storage : accountOnly(storage, server.accountId), entryId, action);
   if (found === undefined) {
     return undefined;
   }
@@ -204,7 +207,7 @@ export function mcpUseHooks(
 ): Required<Pick<BrokerHooks, 'resolveMcpUse' | 'rememberMcpConsent'>> {
   const stamps = consentStampsFor(state);
   return {
-    resolveMcpUse: (entryId, action) => mcpUseLookup(storage, entryId, action, stamps, now()),
+    resolveMcpUse: (entryId, action, server) => mcpUseLookup(storage, entryId, action, stamps, now(), server),
     rememberMcpConsent: (accountId, entityId, rungs) =>
       rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now()),
   };

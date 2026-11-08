@@ -95,6 +95,8 @@ export interface BrokerDoor {
     verb: string,
     summary: string,
     caller: CallerLabel | undefined,
+    /** The call may show a prompt of its own after an Allow (create's PIN box): the dialog place is kept until the call ends. */
+    followUp?: boolean,
   ): Promise<ConsentOutcome>;
   respond(res: http.ServerResponse, status: number, body: unknown): void;
   /**
@@ -212,10 +214,11 @@ export async function handleMcpUse(
   if (slot === undefined) {
     return;
   }
-  const caller = callerFrom(read.body);
-  const grant = minted(door, read.target, 'mcp', caller);
-  quietly(door, grant, read.target, caller, prompts);
+  // Everything after `admit` is inside the `try`: a throw from a journal append must still give the place back (Amendment 3, C.7).
   try {
+    const caller = callerFrom(read.body);
+    const grant = minted(door, read.target, 'mcp', caller);
+    quietly(door, grant, read.target, caller, prompts);
     await door.perform(res, grant, action, read.body, caller, read.rungs, read.remembers);
   } finally {
     slot.release();
@@ -477,7 +480,7 @@ async function confirmAndCreate(
   const grant = minted(door, decision.target, 'mcp-create', caller);
   // The consent step's deadline, taken before the modal: the PIN a folder asks for is part of the step.
   const deadline = Date.now() + CONSENT_TIMEOUT_MS;
-  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller);
+  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller, true);
   if (consent !== 'allowed') {
     consentNotGiven(door, res, consent, { grant, action: 'create', summary: decision.summary, caller }, 'The human did not allow this.');
     return;

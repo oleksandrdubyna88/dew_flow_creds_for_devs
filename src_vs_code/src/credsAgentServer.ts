@@ -5,7 +5,6 @@ import {
   INTERNAL_FAILURE,
   MASKING_UNAVAILABLE,
   MAX_CONCURRENT_EXECS,
-  MAX_REQUEST_BODY_BYTES,
   errorBody,
   isConfigReadRoute,
   parseAliasRoute,
@@ -14,6 +13,11 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { BrokerHooks, checkedHooks } from './brokerHooks';
+import type { BridgeContext } from './bridgeContext';
+import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
+import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
+import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
+import { bridgedTokenCall, tokenStatusNow } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
 import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
@@ -25,12 +29,12 @@ import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
-import { UseAction, UseActionRegistry } from './useActions';
+import { UseAction, UseActionRegistry, asksAfter } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -38,6 +42,7 @@ import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, sweepStaleEndpoints, writeEndpoint } from './cliEndpoint';
 import { type Slot, TokenlessCeilings } from './aliasThrottle';
+import { ExecSlots } from './execSlots';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
 
@@ -78,7 +83,6 @@ export class CredsAgentServer implements vscode.Disposable {
    * one unloaded. It tells us; we re-announce.</p>
    */
   private agentSocket: string | undefined;
-  private running = 0;
 
   /**
    * Where this window's audit is written, and how many calls it has recorded.
@@ -111,7 +115,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
-    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry) });
+    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()), dialogClosed: (q, keep) => this.ceilings.dialogClosed(q.grant, q.via, keep) });
     // Built once, in `activate`: the moment to retire the announcements of windows that crashed — only those whose
     // process is provably gone, never this window's own or a live one (PLAN_stale_endpoint_files_slow_every_refusal.md).
     if (this.hooks.storageDir !== undefined) {
@@ -144,19 +148,7 @@ export class CredsAgentServer implements vscode.Disposable {
   };
 
   /** Bounded concurrency; `undefined` means "at the ceiling, refuse". */
-  acquireExecSlot = (): (() => void) | undefined => {
-    if (this.running >= MAX_CONCURRENT_EXECS) {
-      return undefined;
-    }
-    this.running += 1;
-    let released = false;
-    return () => {
-      if (!released) {
-        released = true;
-        this.running -= 1;
-      }
-    };
-  };
+  acquireExecSlot = new ExecSlots(MAX_CONCURRENT_EXECS).acquire;
 
   /**
    * Mint a grant for one entity and return the token the snippet shows.
@@ -221,8 +213,8 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse, prompts: boolean): Slot | undefined {
-    const admission = this.ceilings.admit(prompts, Date.now());
+  private admitAliasCall(res: http.ServerResponse, prompts: boolean, bridge?: BridgeContext): Slot | undefined {
+    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId);
     const refused = admission.refusal;
     if (refused === undefined) {
       return admission;
@@ -231,9 +223,9 @@ export class CredsAgentServer implements vscode.Disposable {
       // `respondError` logs nothing without a grant — an unknown token is probed legitimately, and a
       // line per probe would drown the real calls — but this is no probe: it is the one sign that a
       // runaway loop, or a process working through the entries a policy opened, exists, and a rate
-      // limit nobody can see having fired is one nobody can diagnose. `via: 'mcp'` is a fact, not a
-      // guess: the alias route always prompts; only the MCP door has a policy to answer for a person.
-      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: 'mcp' });
+      // limit nobody can see having fired is one nobody can diagnose. The door is the refusal's own (`aliasThrottle.ts`):
+      // `mcp` is a fact for the silent ceiling, which only the MCP door has a policy to reach, and an asking call names none.
+      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
     }
     this.respondError(res, 'too_many_requests', refused.message);
     return undefined;
@@ -245,12 +237,13 @@ export class CredsAgentServer implements vscode.Disposable {
     res: http.ServerResponse,
     pathname: string,
     signal: AbortSignal,
+    view: DoorView,
   ): Promise<boolean> {
     return answerMcpRoute(
       {
-        door: this.doorFor(signal),
+        door: this.doorFor(signal, view),
         readBody,
-        resolveUse: this.hooks.resolveMcpUse,
+        resolveUse: view.resolveUse(this.hooks.resolveMcpUse),
         moveToTrash: this.hooks.moveToTrash,
         create: this.hooks.mcpCreate,
         folders: this.folderHooks,
@@ -272,28 +265,28 @@ export class CredsAgentServer implements vscode.Disposable {
    * The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. Built per request, because
    * it carries that request's life: `consent` and `perform` hand `signal` to the broker.
    */
-  private doorFor(signal: AbortSignal): BrokerDoor {
+  private doorFor(signal: AbortSignal, view: DoorView, via: AuditDoor = 'mcp', spend?: string): BrokerDoor {
     return mcpDoor({
       refuse: (res, code, message, grant, action, detail, caller) =>
-        this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp', caller),
-      admit: (res, prompts) => this.admitAliasCall(res, prompts),
+        this.respondError(res, code, message, grant as Grant | undefined, action, detail, via, caller),
+      admit: (res, prompts) => this.admitAliasCall(res, prompts, view.bridge),
       // The grant a policy already answered for. `consent` short-circuits on an allowed grant, so
       // the modal is skipped by machinery that was already there rather than by a second path —
       // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
       preConsent: (grant) => this.grants.allow((grant as Grant).secret),
       // `'call'`: this door mints per REQUEST and the secret is in no response body, so the cap
       // must reclaim these before any token somebody is holding — see `Grant.scope`.
-      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call'),
+      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call', view.grantFor()),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs, remembers) =>
-        this.perform(res, grant as Grant, action, body, { via: 'mcp', caller, signal }, rungs, remembers),
+        this.perform(res, grant as Grant, action, body, { via, caller, signal, spend }, rungs, remembers),
       // Always `'call'`: this door's grants are per request and delete, create and folder remember nothing.
-      consent: (grant, action, verb, summary, caller) =>
-        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, coverage: 'call' }, signal),
+      consent: (grant, action, verb, summary, caller, followUp) =>
+        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, via, followUp, coverage: 'call' }, signal),
       respond: (res, status, body) => this.respond(res, status, body),
       signal,
-      abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via: 'mcp', caller }),
+      abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via, caller }),
     });
   }
 
@@ -315,6 +308,7 @@ export class CredsAgentServer implements vscode.Disposable {
     res: http.ServerResponse,
     action: string,
     signal: AbortSignal,
+    view: DoorView,
   ): Promise<void> {
     const read = await readNamedBody(readBody, req, 'alias', 'an "alias"');
     if (!read.ok) {
@@ -325,7 +319,7 @@ export class CredsAgentServer implements vscode.Disposable {
     const name = body.alias as string;
     const caller = callerFrom(body);
 
-    const found = aliasTarget(this.hooks.resolveAlias, name);
+    const found = aliasTarget(view.resolveAlias(this.hooks.resolveAlias), name);
     if (!found.ok) {
       this.respondError(res, found.code, found.message);
       return;
@@ -336,22 +330,22 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked after the name resolves so a refusal still cannot be used to learn what exists,
     // and before minting so a refused call spends nothing.
     // `true`: the alias route's authorisation IS the modal, so it always raises one.
-    const slot = this.admitAliasCall(res, true);
+    const slot = this.admitAliasCall(res, true, view.bridge);
     if (slot === undefined) {
       return;
     }
 
-    // `'call'` for the same reason as the MCP door: one request's capability, never handed out.
-    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind, Date.now(), 'call');
-    this.log({
-      grant: GrantRegistry.describe(grant),
-      entityName: target.entityName,
-      action: 'alias',
-      outcome: 'minted',
-      detail: `${name} · ${target.kind}`,
-      caller,
-    });
     try {
+      // `'call'` for the same reason as the MCP door: one request's capability, never handed out.
+      const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind, Date.now(), 'call', view.grantFor());
+      this.log({
+        grant: GrantRegistry.describe(grant),
+        entityName: target.entityName,
+        action: 'alias',
+        outcome: 'minted',
+        detail: `${name} · ${target.kind}`,
+        caller,
+      });
       await this.perform(res, grant, action, body, { via: 'alias', caller, signal });
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
@@ -421,6 +415,14 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
+  /** A listener for one bridge. E2.2 is its first caller; nothing in this build calls it (R1). */
+  readonly openBridgeListener = (context: BridgeContext): Promise<BridgeListener> => {
+    if (this.hooks.bridgeWall === undefined) {
+      return Promise.reject(new Error('A Remote Bridge cannot open without its scope wall.'));
+    }
+    return this.bridgeListeners.open(context, () => this.ensureStarted());
+  };
+
   /** The GET routes' suppliers — every read route answers from these three. */
   private readSources(): ReadRouteSources {
     return {
@@ -433,26 +435,30 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   // eslint-disable-next-line complexity
-  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+  private async handle(req: http.IncomingMessage, res: http.ServerResponse, bridge: BridgeContext | undefined): Promise<void> {
+    const url = requestUrl(req.url);
     // First, before anything awaits: a listener attached later could miss the client leaving.
     const signal = abandonedWhenClosed(res);
+    if (refusedOnBridge(bridge, req.method, url.pathname, res, (code, message) => this.respondError(res, code, message))) {
+      return;
+    }
 
     // Health, aliases, the entries an agent may see and the folders opened to it — one kind of
     // route, described once in `brokerReadRoutes.ts`: none authenticates, none performs
     // anything, none is throttled. Everything below needs a token or raises a modal.
-    const read = req.method === 'GET' ? await readRouteBody(url.pathname, this.readSources(), url.searchParams) : undefined;
+    const view = doorView(bridge, this.hooks.bridgeWall);
+    const read = req.method === 'GET' ? await readRouteBody(url.pathname, view.sources(this.readSources(), this.hooks.resolveAlias), url.searchParams) : undefined;
     if (read !== undefined) {
       this.respond(res, 200, read);
       return;
     }
 
-    if (req.method === 'POST' && (await this.answerMcp(req, res, url.pathname, signal))) {
+    if (req.method === 'POST' && (await this.answerMcp(req, res, url.pathname, signal, view))) {
       return;
     }
 
     if (req.method === 'POST' && parseAliasRoute(url.pathname) !== undefined) {
-      await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string, signal);
+      await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string, signal, view);
       return;
     }
 
@@ -466,7 +472,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    const authorised = grantForToken(req.headers.authorization, this.grants, grantLimits());
+    const authorised = view.grantForToken(req.headers.authorization, this.grants, grantLimits());
     if (!authorised.ok) {
       this.respondError(res, 'unauthorized', authorised.message);
       return;
@@ -486,7 +492,8 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    await this.perform(res, grant, action, body, { via: 'token', caller: callerFrom(body), signal });
+    const who: RequestWho = { via: 'token', caller: callerFrom(body), signal };
+    await (view.bridge === undefined ? this.perform(res, grant, action, body, who) : bridgedTokenCall(this.doorFor(signal, view, 'token', grant.secret), res, grant, action, body, who.caller, () => tokenStatusNow(this.grants, grant.secret, Date.now(), grantLimits())));
   }
 
   /**
@@ -524,7 +531,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const question = { grant, action, verb: useAction.verb, summary, caller: who.caller, coverage: coverageOf(grant.scope, remembers === true) };
+    const question = { grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: () => asksAfter(useAction, grant), coverage: coverageOf(grant.scope, remembers === true) };
     const consent = await this.gate.consent(question, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
@@ -533,7 +540,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Only an `allowed` from a request still there reaches this line — the gate checked after its own
     // wait — so a consent nobody is waiting for is never remembered.
     await this.remember(who.via, grant, opensWindow(question, asked), rungs);
-    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal });
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend });
   }
 
   /** The capability check and the body's validation — both before anybody is asked anything. */
@@ -546,12 +553,16 @@ export class CredsAgentServer implements vscode.Disposable {
   ): UseAction | undefined {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
+      this.grants.drop(grant.secret);
       this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
     const validated = useAction.validate(body);
-    if (!validated.ok) {
-      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, who.via, who.caller);
+    // A bridged call's stored command is checked once more before anybody is asked: a reference the scope does not serve.
+    const refused = validated.ok ? referenceRefusal(grant, this.hooks.bridgeWall) : validationRefusal(validated);
+    if (refused !== undefined) {
+      this.grants.drop(grant.secret);
+      this.respondError(res, refused.code, refused.message, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
     return useAction;
@@ -563,7 +574,8 @@ export class CredsAgentServer implements vscode.Disposable {
    */
   private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
-    if (this.gone(call, 'after consent')) {
+    const atLaunch = launchGate(this.grants, this.hooks.bridgeWall, call);
+    if (this.stopped(res, call, 'after consent', atLaunch)) {
       return;
     }
     await this.releaseWaiting(grant);
@@ -578,7 +590,17 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     // The check after THIS await is `brokerCall.ts`'s, made in the same step that starts the action.
-    await this.runAndDeliver(res, { ...call, table });
+    await this.runAndDeliver(res, { ...call, table }, atLaunch);
+  }
+
+  /** Whether this call goes no further, asked before anything an Allow triggers (`releaseWaiting`): its client has gone, or the scope wall refuses it now. */
+  private stopped(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, stage: string, atLaunch: () => Refusal | undefined): boolean {
+    const left = this.gone(call, stage);
+    const refused = left ? undefined : atLaunch();
+    if (refused !== undefined) {
+      this.respondError(res, refused.code, refused.message, call.grant, call.action, call.summary, call.via, call.caller);
+    }
+    return left || refused !== undefined;
   }
 
   /** A waiting rotated value goes in FIRST, so the mask table holds the value the action will use (`brokerHooks.ts`). */
@@ -626,7 +648,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    this.respondError(res, code, 'The human did not allow this grant.', where.grant, where.action, where.summary, who.via, who.caller);
+    this.respondError(res, code, GRANT_NOT_ALLOWED, where.grant, where.action, where.summary, who.via, who.caller);
   }
 
   /**
@@ -650,7 +672,7 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
-  private async runAndDeliver(res: http.ServerResponse, call: CallSubject): Promise<void> {
+  private async runAndDeliver(res: http.ServerResponse, call: CallSubject, atLaunch: () => Refusal | undefined): Promise<void> {
     const { grant, action, summary, via, caller } = call;
     await performCall(
       {
@@ -665,14 +687,18 @@ export class CredsAgentServer implements vscode.Disposable {
         refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
+        atLaunch,
       },
       call,
     );
   }
 
+  /** One listener per open bridge, each behind its own door (brokerBridgeListeners.ts). */
+  private readonly bridgeListeners = new BridgeListeners((port, key, context) => this.doors.forBridge(port, key, context));
+
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res) => void this.handle(req, res),
+    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),
@@ -750,6 +776,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   dispose(): void {
     this.abort.abort();
+    this.bridgeListeners.closeAll();
     this.server?.close();
     this.server = undefined;
     this.removeLocalTraces();
@@ -757,27 +784,10 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_REQUEST_BODY_BYTES) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
-}
-
 /** Which door a request came in by, who its body says is calling, and its life (`requestLife.ts`). */
 interface RequestWho {
   readonly via: AuditDoor;
   readonly caller: CallerLabel | undefined;
   readonly signal: AbortSignal;
+  readonly spend?: string;
 }
