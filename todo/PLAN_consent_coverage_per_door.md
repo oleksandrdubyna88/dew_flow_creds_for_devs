@@ -392,9 +392,12 @@ a startup pairing check is a follow-up (§5.1), not built here.
 - [x] **(epoch 2)** C4c, C4d, C4e, C7b, C9, C10 added; C4c, C4d, C7b, C9 watched red first (C4e and C10 pin behaviour that
       already held and were green on first run, §7); M8–M11 each turned the named case red and were reverted; C4, C4b, C8
       green against the new literals.
-- [ ] **(epoch 2)** `brokerWorld`'s `mcpRemembers` is set `true` in exactly the three tests §2.3 names and nowhere
-      else (`grep -rn "mcpRemembers" src_vs_code/src/test` finds the option, its use in `mcpUseFor`, and three
-      callers); C6 still runs without it. `brokerMcpRoutes.test.ts:510` is green with the gate.
+- [x] **(epoch 2, as built under change 2.1)** `brokerWorld`'s `mcpRemembers` is set `true` in the three tests §2.3 names
+      and nowhere else (`grep -rn "mcpRemembers" src_vs_code/src/test` finds the option, its use in `mcpUseFor`, and
+      four callers in three tests: both worlds of `brokerMcpRoutes.test.ts` *a call the person ANSWERED is remembered;
+      a quiet one is not*, the *no fingerprint* test, and `brokerAbandoned.test.ts`); the *no fingerprint* test also
+      carries `remembers: true` in its own lookup literal, because its own `mcpResolve` bypasses the option; C6 still
+      runs without it. `brokerMcpRoutes.test.ts:510` is green with the gate.
 - [x] `coverage` is a required field of `ConsentQuestion`; `grep -n "coverage" src_vs_code/src/credsAgentServer.ts`
       finds three lines — the `import` of `coverageOf` and the two question sites (as found, 1.3).
 - [x] **(epoch 2)** `grep -n "opensWindow" src_vs_code/src/credsAgentServer.ts` finds two lines — the import and
@@ -439,13 +442,16 @@ a startup pairing check is a follow-up (§5.1), not built here.
   Allow that opens none. Not changed here: §2.3 says `remembers` is `remembersFor(found.access)`. (Taken up by the
   re-review as F5a: §2.3 step 7, C9.)
 - **Epoch 2 build notes (the coder's, steps 7–12).**
-  - *`mcpRemembers` at `brokerMcpRoutes.test.ts` "a lookup that carries no fingerprint…" is set as §2.3 says and does
-    nothing.* That test passes its own `mcpResolve`, and the option is read only by the stubbed `mcpUseFor`, so its
-    lookup literal still carries no `remembers`. After the gate it passes because the gate refuses the write, not
-    because of the missing fingerprint — the case §2.3 wanted to avoid. Putting `remembers: true` into that literal
-    would fix it; not done, because the plan names the option and not the literal. Also, the quiet half of "a call the
-    person ANSWERED is remembered; a quiet one is not" needs the flag as well (M10 turns it red only then), so
-    `grep -rn "mcpRemembers"` shows the option, its use, and four callers on three tests, not three lines.
+  - *`mcpRemembers` at `brokerMcpRoutes.test.ts` "a lookup that carries no fingerprint…" was set as §2.3 says and did
+    nothing* — that test passes its own `mcpResolve`, which only the stubbed `mcpUseFor` ignores the option for. After
+    the gate it passed because the gate refused the write, not because of the missing fingerprint. Recorded as change
+    2.1 and fixed: the test's own lookup literal now says `remembers: true`, so the dialog announces the window and the
+    gate lets the write through. Shown by two mutations: with `rungs: STUB_RUNGS` added to the literal (fingerprint
+    present, gate in place) the test is red (*a stamp was written under a fingerprint nothing can match*); with
+    `answeredHere`'s `rungs.length > 0` check removed it is red too. The `mcpRemembers: true` on that world is now
+    redundant beside the literal and kept only so the grep counts four callers in three tests, as 2.1 states. The quiet
+    half of "a call the person ANSWERED is remembered; a quiet one is not" carries the flag as well (M10 turns it red
+    only then).
   - *C4e and C10 were green on first run*: they pin behaviour that already held (a quiet call does not slide the
     window; two stores are independent), as guards for M10 and for the per-machine claim. C4c, C4d, C7b and C9 were
     red first, with the messages kept (C4c: the stamp written after a *this call only* dialog).

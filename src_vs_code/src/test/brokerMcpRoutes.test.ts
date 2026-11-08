@@ -655,7 +655,9 @@ test('a lookup that carries no fingerprint is not remembered, however it was ans
   // The empty string is what a lookup that does not know about the field reads as, and it matches
   // no resolved ladder — recording it would write a stamp nothing can ever match, so the person
   // would answer once and be asked forever. Better to remember nothing and ask again next time.
-  const w = world({ mcpRemembers: true, mcpResolve: () => ({ kind: 'usable', target: NAMELESS }) });
+  // The lookup SAYS it remembers (`remembers: true`), so the dialog announces the window and the write
+  // gate lets it through: what refuses the write here is the missing fingerprint, and nothing else.
+  const w = world({ mcpRemembers: true, mcpResolve: () => ({ kind: 'usable', target: NAMELESS, remembers: true }) });
   try {
     const { port } = await share(w);
 
