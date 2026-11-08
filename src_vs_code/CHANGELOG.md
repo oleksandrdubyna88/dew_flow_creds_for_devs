@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
+
 ### Changed — an agent cannot export a secret into another computer's terminals
 
 - **`creds env <token>` and the MCP door's `exportEnv` (an agent's export) are refused in a Remote-SSH or container
