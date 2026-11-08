@@ -3682,8 +3682,8 @@ bridge refuses the route. The plan records it as a todo (§8 of the scoped remot
 bridge). **A call through a bridge asks every time unless that server's `quiet` switch is on, and the switch speaks for the MCP door
 only.** `quiet` is a field of the server's scope file (`bridgeScopeStore.ts`), read from a fresh `Scope` by `DoorView.resolveUse`
 (`bridgeScope.ts`, `usableIn`) at the lookup and copied onto the grant by `grantFor()` at mint for the dialog's coverage line;
-nothing in a body, a header or a query can set it. With it **off** the lookup is answered `preConsented: false, rungs: ''`: no stamp
-is read, and none can be written, because `answeredHere` refuses an empty fingerprint, so an answer given while it was off cannot
+nothing in a body, a header or a query can set it. With it **off** the lookup is answered `preConsented: false, rungs: ''`: the real lookup may read a
+stamp first, but `usableIn` discards its answer, so no stamp counts, and none can be written, because `answeredHere` refuses an empty fingerprint, so an answer given while it was off cannot
 reach forward when it is turned on. With it **on** the answer is the real lookup's: the entry's own policy (`never`, `every12h`,
 `always`) decided against a stamp under **this server's key**, and the real `rungs` a stamp is recorded under. The alias and token
 routes never read a consent policy and ask every call whatever `quiet` says; a quiet call is pre-allowed at the door (the
