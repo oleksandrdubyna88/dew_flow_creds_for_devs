@@ -152,6 +152,10 @@ test('C10 (change 6.2): every client through every door — the sentence says th
   }
 });
 
+/** The user and host `bridgeLinksWorld` stores on `e1`. */
+const ENTRY_USER = 'deploy';
+const ENTRY_HOST = 'prod.corp.com';
+
 /** The destination `ssh` is given after `--`: the last word of the argv the real action composed for the entry. */
 const destinationOf = (argv: string[]): string | undefined => after(argv, '--');
 
@@ -165,7 +169,7 @@ test('C10 (change 6.2): a bridged exec says the connection starts here and the c
     assert.equal(ww.w.dialogs[0].split('\n')[2], `Through the Remote Bridge of "prod server". ${EXEC_SENTENCE}`, 'the words');
     // The observation beside the words: one ssh, started on this computer, whose destination is the host of the entry the dialog names.
     assert.equal(lw.runs.length, 1, 'one connection was started, here');
-    assert.equal(destinationOf(lw.runs[0].argv), 'deploy@prod.corp.com', `the destination after "--" is the entry's: ${lw.runs[0].argv.join(' ')}`);
+    assert.equal(destinationOf(lw.runs[0].argv), `${ENTRY_USER}@${ENTRY_HOST}`, `the destination after "--" is the entry's: ${lw.runs[0].argv.join(' ')}`);
     assert.equal(lw.runs[0].argv.includes('id'), true, 'and the agent\'s command is what runs there');
     // The recipient: the command's output goes back to the agent as the body.
     const body = JSON.parse(reply.body) as { exitCode: number; stdout: string; stderr: string };
