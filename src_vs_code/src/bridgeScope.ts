@@ -177,8 +177,8 @@ function closedIn(scope: Scope, id: string, found: McpUseLookup): McpUseLookup {
 }
 
 /**
- * The quiet switch (E1.4). With `quiet` off a bridged lookup is never pre-consented and carries no fingerprint, so no
- * stamp is read for it (`preConsented: false`) and none can be written for it (`answeredHere` refuses an empty `rungs`):
+ * The quiet switch (E1.4). With `quiet` off a bridged lookup is never pre-consented and carries no fingerprint, so a
+ * stamp the real lookup may have read counts for nothing (`preConsented: false`) and none can be written for it (`answeredHere` refuses an empty `rungs`):
  * an answer given while it was off cannot reach forward. With it on the answer is the real lookup's — the entry's own
  * policy, decided against the stamp under THIS server's key — and the `rungs` a stamp is recorded under.
  *
