@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **stopped for re-review, 2026-11-08: change 1.2 is epoch 1's second change.** **built on `fix/consent-coverage-per-door`, 2026-11-08 (epoch 1 open, 0 changes); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** The `coai` plan round on `c655038` answered
+> Status: **stopped for re-review, 2026-11-08: change 1.2 is epoch 1's second change.** The build stands at `d02d050` on `fix/consent-coverage-per-door`; the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do. The `coai` plan round on `c655038` answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -17,7 +17,12 @@
 > stamp write is gated on the sentence that was shown (the reverse race, 1.2); the store-less lookup no longer says it
 > remembers (F5a); the seam, the greps and the mutation targets are written as built (1.3, F6); C4c, C9 and C10 are
 > added; the CHANGELOG loses *the next call asks again* (F3); the module document's early-ends sentence is corrected
-> (F6). Items marked **(code)** in §3 are built only after epoch 2 opens. Nothing is narrowed.
+> (F6). Items marked **(code)** in §3 are built only after epoch 2 opens. Nothing is narrowed. **The Opus sort's four
+> findings folded in the same day, still step 4:** R1 the window sentence names the actions it quiets through
+> `${everything}` and says *from any agent* (one Allow on *run a command* quiets `rotate` and `exportEnv` too — probe P8),
+> with C4d and M11; R2 `brokerWorld`'s stub gains `mcpRemembers`, three tests set it, M8 and M10 corrected, C4e with a
+> moving clock; R3 the sentence says *because of this Allow*; R4 the stale build clause removed. *On this machine* is
+> kept, with the reason in §2.2.
 
 ## Plan changes
 
@@ -128,12 +133,15 @@ when, the summary, the caller disclaimer) and the logging sentence after it are 
 |---|---|---|
 | `token` | `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${name}" ${describeLimits(grantLimits())}. ` — `main`'s bytes (built, `tokenTail`) | §2.1 token |
 | `call` | `Allowing covers this call only, not any later one. ` (built, `CALL_TAIL`) | the grant is one request's; nothing is written (§2.1 alias, MCP `always`, MCP `never`, delete/create/folder) — and from epoch 2 nothing is written even if the policy turned to `every12h` meanwhile (§2.3). It deliberately does not promise *the next call asks again*: under `never` the next USE call is quiet by policy, not by this Allow |
-| `every12h` | **(code, epoch 2)** `Allowing covers this call. For up to ${h} hours on this machine, later MCP use calls on "${name}" may also skip asking — only while this entry is set to "Ask once every ${h} hours" and its agent switches are as they are now. Deleting still asks. ` | §2.1 `every12h`. *MCP use calls*: the stamp is read by that door alone (F2). *May*: the write can still refuse at the click (§2.3's forward race), and a refused write means the calls ask — asking more than announced is the safe direction. *Only while*: quiet implies the policy is `every12h` and the ladder equals the one in force now; it says nothing about permanence, so a suspended-then-resumed window (F4) is covered. *Up to*: never longer than `ASK_WINDOW_MS`, and Forget or a clock set back make it shorter. *On this machine*: the stamp's locality. *Deleting still asks*: `mayBeQuiet` (gate finding to drop it rejected, reason recorded) |
+| `every12h` | **(code, epoch 2)** `Allowing covers this call. For up to ${h} hours on this machine, later MCP calls from any agent to ${everything} "${name}" may also skip asking because of this Allow — only while this entry is set to "Ask once every ${h} hours" and its agent switches are as they are now. Deleting still asks. ` | §2.1 `every12h`. *MCP calls*: the stamp is read by that door alone (F2). *From any agent*: the stamp is per entry and per store, not per caller — any MCP client reaching this window's broker gets it (R1). *To ${everything}*: the stamp is per ENTRY, not per action — `preConsentedFor` (`mcpEntries.ts:435-441`) takes no action and `mayBeQuiet` excludes delete alone — so an Allow whose head says *run a command on "prod"* quiets `rotate` (*change the stored secret of*, `rotateAction.ts:102`, registered at `extension.ts:659-660`) and `exportEnv` too (probe P8: both answered 200 with no dialog after one Allow on `exec`); `${everything}` is `actionsFor(grant.kind)`'s verbs, the same list the token tail shows, so the person reads every verb the Allow can quiet. It lists verbs a switch may refuse (a refused call is refused, not quiet), which over-lists in the safe direction exactly as the token tail does. *May … because of this Allow*: the write can still refuse at the click (§2.3's forward race) and a refused write means the calls ask; and under `never` later calls skip asking by policy, not by this Allow, so the clause ties the claim to this answer (R3) — the same over-claim §2.2 rejects in the `call` tail. *Only while*: quiet because of this Allow implies the policy is `every12h` and the ladder equals the one in force now; it says nothing about permanence, so a suspended-then-resumed window (F4) is covered. *Up to*: never longer than `ASK_WINDOW_MS`, and Forget or a clock set back make it shorter. *On this machine*: the stamp lives in `globalState`, which VS Code keeps per profile and per host, so the words over-claim in the safe direction (quiet is narrower than said); kept, because the setting's own text says *on this machine only* (`mcpSwitches.ts:180`) and a dialog that disagreed with the setting would cost more than it tells. *Deleting still asks*: `mayBeQuiet` (gate finding to drop it rejected, reason recorded) |
 
 What the epoch-1 sentence got wrong, said once: *while this entry stays set to … and its agent switches are not
-changed* claimed that a change ends the window, and *every later call on "prod"* claimed alias and token calls. Both
-are false by `consentDue` and `preConsentedFor` (§1). The new sentence makes the weaker claims the code supports: a
-later MCP use call *may* skip asking, and *only while* the conditions hold at that call.
+changed* claimed that a change ends the window; *every later call on "prod"* claimed alias and token calls; and it
+dropped `main`'s verb list, which the gate's own docblock exists for — *"open a terminal" is what the person reads
+while "run any command" is what they grant* — so a person allowing *run a command* was not told the window also
+covers *change the stored secret of* (R1). All three are false or silent by `consentDue` and `preConsentedFor` (§1).
+The new sentence makes the claims the code supports: later MCP calls to any of the listed verbs, from any agent, *may*
+skip asking *because of this Allow*, and *only while* the conditions hold at that call.
 
 Rejected: a fourth tail for `never` (a use call under `never` reaches no dialog, §2.1, and on the routes that do ask
 the Allow covers this call only); naming the next call's behaviour in the `call` tail (false under `never` for a use
@@ -171,6 +179,19 @@ As built (`a98c98c`, `a215142`), with the two epoch-2 changes marked:
   its `consent` states `coverage: 'call'` (`:293`), because every grant that door mints is `'call'` (`:286`) and the
   delete, create and folder routes remember nothing. The alias route reaches `perform` with no `rungs` and no
   `remembers` → `'call'`; the token route → `'token'` from the grant's own scope. The file is at 783 of 800 lines.
+- **(code, epoch 2 — R1)** `windowTail` takes the verb list: `coverageTail`'s `every12h` arm passes the same
+  `actionsFor(grant.kind)` verbs `tokenTail` joins (one private `verbsOf(grant)` for both, so the two tails cannot list
+  differently), and `windowTail(entityName, everything)` writes them after *from any agent to*.
+- **(code, epoch 2 — R2)** `brokerWorld.ts`: `mcpUseFor(verdict, preConsented, remembers?)` gains an option
+  `mcpRemembers?: boolean` on `world()` that sets `remembers` on the stubbed usable result; absent by default, so C6
+  keeps testing the fail-closed reading. The three tests whose stubbed lookup must be remembered set it `true`:
+  `brokerMcpRoutes.test.ts` *a call the person ANSWERED is remembered; a quiet one is not* (`:510`, which the gate
+  turns red otherwise: the stub reads as `call` and the write is refused) and *a lookup that carries no fingerprint is
+  not remembered* (`:654`), and `brokerAbandoned.test.ts` *the MCP door: a late Allow after the client left runs
+  nothing and remembers nothing* (`:119`) — the latter two pass today without the gate being the reason, and with the
+  flag their *remembers nothing* assertions test the fingerprint and the abandonment again rather than the gate. The
+  stub also gains a verb per action for C4d: `world({ verbs: { rotate: 'change the stored secret of' } })`, default
+  *run a command on* as today (`brokerWorld.ts:209-213`).
 - **(code, epoch 2 — the reverse race, 1.2.)** The stamp write is gated on the sentence that was shown. The
   consultant's smallest fix is at `credsAgentServer.ts:535`: `this.remember(who.via, grant, asked && question.coverage
   === 'every12h', rungs)` — no new parameter, the policy and ladder re-checks at the click stay. Built as a pure helper
@@ -197,11 +218,13 @@ Steps 1–6 are built (epoch 1): `a98c98c` the seam, `a215142` the three tails a
 C4b's clause-first assertion, `d02d050` the record. The re-review's work, after epoch 2 opens, in this order:
 
 7. **(code)** `mcpHooks.ts`: `remembers: stamps !== undefined && remembersFor(found.access)` (F5a). C9 RED first.
+   `brokerWorld.ts`: `mcpRemembers` and `verbs` (R2, R1); the three tests of §2.3 set `mcpRemembers: true` — before
+   step 8, so the gate turns nothing red that the stub caused.
 8. **(code)** `brokerConsent.ts`: `opensWindow`; `credsAgentServer.ts:535` reads it (1.2). C4c RED first — its
-   failure message must show the stamp that was written after a *this call only* dialog.
-9. **(code)** `brokerConsent.ts`: the `every12h` sentence of §2.2 (F2, F4); the docblock of §2.4. The test literals
-   `WINDOW_TAIL` and `WINDOW_CONDITION` follow; C4, C4b, C8 RED until the words match.
-10. **(code)** C10, the two stores. M8 and M9 run and reverted.
+   failure message must show the stamp that was written after a *this call only* dialog. C4e (the moving clock).
+9. **(code)** `brokerConsent.ts`: the `every12h` sentence of §2.2 with the verb list (F2, F4, R1, R3); the docblock
+   of §2.4. The test literals `WINDOW_TAIL` and `WINDOW_CONDITION` follow; C4, C4b, C8 RED until the words match. C4d.
+10. **(code)** C10, the two stores. M8–M11 run and reverted.
 11. `npm run lint` (complexity ≤ 4, no file over 800 lines, `eslint.config.mjs:30-32`), `npm run ratchet`
     (`extension.ts` is not touched), `npm test`.
 12. The two documents corrected (§4.4), §7 of this plan, the README row's status; then the `coai` code round on the
@@ -218,9 +241,11 @@ tail states.** An exact-string test alone is how the false sentence survived (§
 
 Constants, as literals so a changed word is a red and not a drift (the dialog derives its number; C8 keeps the two
 equal): `TOKEN_TAIL`, `CALL_TAIL` as built; **(code)** `WINDOW_TAIL = 'Allowing covers this call. For up to 12 hours on
-this machine, later MCP use calls on "prod" may also skip asking — only while this entry is set to "Ask once every 12
-hours" and its agent switches are as they are now. Deleting still asks.'`, `WINDOW_CONDITION = 'only while this entry is
-set to "Ask once every 12 hours" and its agent switches are as they are now'`.
+this machine, later MCP calls from any agent to run a command on "prod" may also skip asking because of this Allow —
+only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are now. Deleting still
+asks.'` (the world's default action list is `exec` alone, so `${everything}` is *run a command on*),
+`WINDOW_CONDITION = 'only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are
+now'`.
 
 ### 4.1 Cases
 
@@ -232,6 +257,8 @@ set to "Ask once every 12 hours" and its agent switches are as they are now'`.
 | C4 | MCP use, `every12h` | real hooks; use, use, delete | stamp present with the lookup's `rungs`; call 2 quiet (`dialogs.length` 1, `ran.length` 2, *allowed without a prompt* in the audit); the delete asks and trashes | `dialogs[0]` `WINDOW_TAIL`; `dialogs[1]` `CALL_TAIL` | built; literals change in step 9 |
 | C4b | MCP use, `every12h`, the forward race, two runs | real hooks over a mutable `nodes`, `holdDialogs: true`; the dialog open; run (a) `mcp.ask` → `'always'`, run (b) `mcp.edit` → `true`; Allow | status 200, `ran.length === 1`; stamp `undefined`, store empty; the second use call asks | `dialogs[0]` includes `WINDOW_CONDITION` (asserted first, so a tail that loses the clause names it) and `WINDOW_TAIL` — the sentence said *may* and *only while*, and at the click the condition did not hold, so nothing may skip | built; literals change in step 9 |
 | C4c | **(code)** MCP use, `always`, the reverse race | real hooks, `holdDialogs: true`; `/v1/mcp/use/exec` in flight, the dialog open; set `nodes[0].mcp = { use: true, ask: 'every12h' }`; Allow; then a second `/v1/mcp/use/exec` | status 200, `ran.length === 1`; **stamp `undefined` and the store empty** (the gate refused what the policy would now allow); the second call raises a dialog (`dialogs.length === 2`), and that second dialog's lookup now says `every12h` | `dialogs[0]` includes `CALL_TAIL` and not `12 hours` — the sentence that was answered; `dialogs[1]` includes `WINDOW_TAIL` — the policy is read fresh per call | step 8 |
+| C4d | **(code)** MCP use, `every12h`, **the actions one Allow quiets** (R1, probe P8) | `mcpWorld({ use: true, edit: true, ask: 'every12h' })` with `supports: ['exec', 'rotate']` and `verbs: { rotate: 'change the stored secret of' }`; `/v1/mcp/use/exec`, Allow; then `/v1/mcp/use/rotate` | the rotate call answers 200 and runs with **no dialog** (`dialogs.length === 1`, `ran` has `exec` then `rotate`, *allowed without a prompt* in the audit): one Allow on *run a command* quieted a change of the stored secret | `dialogs[0]` includes `run a command on, or change the stored secret of "prod"` — the verb list names the rotate verb the person never clicked for — and `from any agent` | step 9 |
+| C4e | **(code)** MCP use, `every12h`, **the moving clock** (R2, M10's target) | real hooks with `now` as a mutable function: Allow at `t0`; set `now` to `t0 + 1h`; `/v1/mcp/use/exec` | the second call is quiet; **the stamp's `at` is still `t0`** — a quiet call did not slide the window; then set `now` to `t0 + ASK_WINDOW_MS + 1`: the next call asks | — (the fact alone; the words are C4's) | step 8 |
 | C5 | MCP, `never` | real hooks; use, delete, delete | the use shows no dialog, ran, *allowed without a prompt*; the store empty throughout; each delete asks | no sentence for the use call; both delete dialogs `CALL_TAIL` | built |
 | C6 | every door but token, stubbed lookup | the five `OTHER_DOORS` rows | status 200, `dialogs.length === 1` | `CALL_TAIL`, not `every later call` — a stubbed lookup carries no `remembers` and reads as `call` | built |
 | C7 | `coverageOf`, pure | the four pairs | — | `'token'`, `'token'`, `'call'`, `'every12h'` | built |
@@ -262,11 +289,15 @@ targets corrected to what the build measured (ledger 1.1, §7):
 - M7 the `every12h` tail loses its `only while` clause → C4b red on `WINDOW_CONDITION` (asserted first) while its
   stamp assertion stays green.
 - **(code)** M8 `:535` reads `asked` again instead of `opensWindow(question, asked)` → C4c red (a stamp after a *this
-  call only* dialog), C7b red; C4 and C4b stay green — the gate is only visible in the reverse race.
+  call only* dialog); C4 and C4b stay green — the gate is only visible in the reverse race. Not C7b: M8 changes the
+  call site, not `opensWindow`.
 - **(code)** M9 `mcpHooks.ts` drops `stamps !== undefined &&` → C9 red; nothing else moves, because every other MCP
   case has a store.
-- **(code)** M10 `opensWindow` ignores `asked` → C4's quiet second call stays quiet, but `brokerMcpRoutes.test.ts`'s
-  *a call the person ANSWERED is remembered; a quiet one is not* goes red: a quiet call would slide the window.
+- **(code)** M10 `opensWindow` ignores `asked` → C7b red; the quiet half of `brokerMcpRoutes.test.ts` *a call the
+  person ANSWERED is remembered; a quiet one is not* (`:510`, now with `mcpRemembers: true`, so the stub reaches the
+  gate) red: a quiet call writes a stamp; and C4e red: the stamp's `at` moved to `t0 + 1h`.
+- **(code)** M11 `windowTail` drops `${everything}` → C4d red (the rotate verb is not in the dialog), C4 and C8 red on
+  the literal.
 
 ### 4.3 What the tests prove and what they do not
 
@@ -287,14 +318,17 @@ a startup pairing check is a follow-up (§5.1), not built here.
 - `src_vs_code/CHANGELOG.md`, the `## [Unreleased]` entry *Fixed — security — the consent dialog no longer claims an
   Allow covers more than it does* (built in `d02d050`). **(code, step 12)** Remove *and the next call asks again*
   (F3: false under `never` and `every12h`). Say *later MCP use calls* where it says *every later call on that entry*
-  (F2). Quote the new window sentence's claims: *may skip asking*, *only while* the setting and switches are as at
-  the call (F4). Replace *Nothing about what an Allow DOES changed* with the truth: one thing did — an Allow on a
+  (F2). Quote the new window sentence's claims: *from any agent*, the listed verbs (an Allow on *run a command* also
+  quiets *change the stored secret of* and the export for the window — R1, say it plainly), *may skip asking because
+  of this Allow*, *only while* the setting and switches are as at the call (F4). Replace *Nothing about what an Allow
+  DOES changed* with the truth: one thing did — an Allow on a
   dialog that said *this call only* no longer writes a stamp, even when the entry's policy turned to *Ask once every 12
   hours* while the dialog was open; the grants, the stamp's reading and the policies are as they were.
 - `research/module_extension.md`, section *The agent broker — using a credential without handing it over*, the
   paragraph that opens **The dialog's last paragraph is chosen per door, because an Allow does not reach as far on every
-  door** (built). **(code, step 12)** Quote the new `every12h` sentence; say the stamp quiets MCP use calls only; say
-  the write is gated by `opensWindow` on the sentence that was shown; correct the early-ends sentence — the clause does
+  door** (built). **(code, step 12)** Quote the new `every12h` sentence; say the stamp quiets MCP calls only, for
+  every action of the kind the switches allow and from any agent, and that the sentence lists the verbs for that
+  reason (R1); say the write is gated by `opensWindow` on the sentence that was shown; correct the early-ends sentence — the clause does
   **not** cover the Forget command or a clock set back, *up to* does, and a policy or switch change suspends the window
   rather than ending it (F4, F6); keep the sentence in the **The entry's ask policy does not reach this door** paragraph
   that the alias dialog says *this call only*. By heading and opening phrase, never by line number. The help articles
@@ -308,7 +342,9 @@ a startup pairing check is a follow-up (§5.1), not built here.
   reading, the policies and their defaults, the one-use burn, the journal: all as they are. The one change is the
   gate of §2.3 on the stamp WRITE — a stamp is never written after a dialog that did not announce it. A reviewer who
   finds any other line that changes what an Allow does has found a defect in the build.
-- **The `everything` list** stays on the token tail and only there.
+- **The `everything` list** is on the token tail and, from epoch 2, on the window tail — the two tails that cover more
+  than this call — and never on the `call` tail, whose head already names the one verb (corrected by R1; the epoch-1
+  text said the token tail only).
 - **No setting**, no new text constant module, no change to `agentConsent.ts` or the SSH agent's dialogs.
 - **The remote bridge.** `feat/remote-bridge-e14` carries a test (C11) that pins the old local text byte for byte. A
   later merge of `main` into that branch will update it; nothing on that branch is changed here.
@@ -330,8 +366,11 @@ a startup pairing check is a follow-up (§5.1), not built here.
 
 - [x] C1–C8 in `consentCoverage.test.ts`, C4b in both runs; C2–C6 and C4b watched red on `main`'s wording with the
       messages in the build record; M1–M7 each turned the named case red (targets as §4.2 now reads) and were reverted.
-- [ ] **(epoch 2)** C4c, C7b, C9, C10 added and watched red first; M8–M10 each turned the named case red and were
-      reverted; C4, C4b, C8 green against the new literals.
+- [ ] **(epoch 2)** C4c, C4d, C4e, C7b, C9, C10 added and watched red first; M8–M11 each turned the named case red
+      and were reverted; C4, C4b, C8 green against the new literals.
+- [ ] **(epoch 2)** `brokerWorld`'s `mcpRemembers` is set `true` in exactly the three tests §2.3 names and nowhere
+      else (`grep -rn "mcpRemembers" src_vs_code/src/test` finds the option, its use in `mcpUseFor`, and three
+      callers); C6 still runs without it. `brokerMcpRoutes.test.ts:510` is green with the gate.
 - [x] `coverage` is a required field of `ConsentQuestion`; `grep -n "coverage" src_vs_code/src/credsAgentServer.ts`
       finds three lines — the `import` of `coverageOf` and the two question sites (as found, 1.3).
 - [ ] **(epoch 2)** `grep -n "opensWindow" src_vs_code/src/credsAgentServer.ts` finds two lines — the import and
@@ -406,7 +445,9 @@ Cornerstones: 2 of 2 — S1 (built), S3
   `module_extension.md` paragraph and sentence, §7 and the README row.
 - **S3 · The gate, the store-less lookup, the true window sentence, and the corrected record** (cornerstone,
   `model: fable` for the spec, which is §2.2's `every12h` row, §2.3's two marked items and §4.1's C4c, C9, C10 as
-  written). Steps 7–12 of §3: F5a, `opensWindow` at `:535`, the new sentence and literals, C4c/C7b/C9/C10 RED first,
-  M8–M10, lint and ratchet, the two documents corrected (F2, F3, F4, F6) and the CHANGELOG naming the one behaviour
-  change; then the code round and the PR. Complete on its own: S1's cases stay green throughout except where their
-  literals follow the sentence, and that red is the words catching up.
+  written). Steps 7–12 of §3: F5a, `brokerWorld`'s `mcpRemembers` and `verbs` with the three tests set, `opensWindow`
+  at `:535`, the new sentence with its verb list and the literals, C4c/C4d/C4e/C7b/C9/C10 RED first, M8–M11, lint and
+  ratchet, the two documents corrected (F2, F3, F4, F6, R1) and the CHANGELOG naming the one behaviour change; then
+  the code round and the PR. What goes red on the way, and why: C4, C4b and C8 until their literals follow the new
+  sentence (the words catching up); `brokerMcpRoutes.test.ts:510` if step 8 lands before step 7's `mcpRemembers`
+  (the stub reading as `call`), which the order forbids. S1's other cases stay green.
