@@ -19,6 +19,8 @@
   accepted findings — the `never` row and C5 made explicit, the `every12h` tail made conditional with a race case,
   the hours derived from `ASK_WINDOW_MS`, the module document cited by heading — are the baseline this epoch is
   approved on, so the epoch opens with no entries.)
+- 1.1 · 2026-11-08 · agent · approach — the plan's verification sketch was written from reading: M1 cannot turn C5 red (its dialogs are delete dialogs, whose coverage is a literal `call` at `credsAgentServer.ts:293`, so M1b was added), M4 cannot turn C3 red (the real lookup always sets `remembers`), and C4 and C5 need `delete: 'any'` on the test folder (`mcpAccess.ts:539-541`); recorded in §7 by the coder, behaviour as §2 states
+  (The first change of epoch 1; the plan goes on.)
 
 ## 1. The defect
 
