@@ -443,7 +443,7 @@ a startup pairing check is a follow-up (§5.1), not built here.
   re-review as F5a: §2.3 step 7, C9.)
 - **Epoch 2 build notes (the coder's, steps 7–12).**
   - *`mcpRemembers` at `brokerMcpRoutes.test.ts` "a lookup that carries no fingerprint…" was set as §2.3 says and did
-    nothing* — that test passes its own `mcpResolve`, which only the stubbed `mcpUseFor` ignores the option for. After
+    nothing* — that test passes its own `mcpResolve`, and only the stubbed `mcpUseFor` reads the option. After
     the gate it passed because the gate refused the write, not because of the missing fingerprint. Recorded as change
     2.1 and fixed: the test's own lookup literal now says `remembers: true`, so the dialog announces the window and the
     gate lets the write through. Shown by two mutations: with `rungs: STUB_RUNGS` added to the literal (fingerprint
