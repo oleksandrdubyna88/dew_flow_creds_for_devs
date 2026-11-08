@@ -15,7 +15,7 @@ import { McpUseLookup } from './brokerRequests';
 import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent, remembersFor } from './mcpEntries';
 import { ConsentStampStore, ConsentStamps, consentStampsFor } from './mcpConsentPolicy';
 import type { BrokerHooks } from './brokerHooks';
-import { ladderKey } from './mcpAccess';
+import { McpAccess, ladderKey } from './mcpAccess';
 import { resolveKind } from './entityKind';
 import { CreateRequest } from './mcpCreate';
 import { readSecretOptions } from './mcpSecretOptions';
@@ -173,9 +173,15 @@ export function mcpUseLookup(
     // with no writable storage should do, and what every existing caller of this function gets.
     preConsented: preConsentedFor(found, stamps, now),
     // Whether an Allow on this entry will write a stamp — what the dialog's last paragraph says
-    // it covers. Read from the same expression `rememberMcpConsent` writes by.
-    remembers: remembersFor(found.access),
+    // it covers. Read from the same expression `rememberMcpConsent` writes by, and false without a
+    // store: a lookup that reads nothing writes nothing, so its dialog must not say otherwise.
+    remembers: remembersIn(stamps, found.access),
   };
+}
+
+/** Will an Allow be written down? Only with a store to write to, and only under a policy that consults one. */
+function remembersIn(stamps: ConsentStamps | undefined, access: McpAccess): boolean {
+  return stamps !== undefined && remembersFor(access);
 }
 
 /**

@@ -510,7 +510,7 @@ test('a pre-consented entry is still created only after a dialog', async () => {
 test('a call the person ANSWERED is remembered; a quiet one is not', async () => {
   // The sliding window: refreshing the stamp on a call that raised no modal turns "once every
   // twelve hours" into "once, ever".
-  const asked = world({ mcpUse: 'usable' });
+  const asked = world({ mcpUse: 'usable', mcpRemembers: true });
   try {
     const { port } = await share(asked);
     await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
@@ -524,7 +524,7 @@ test('a call the person ANSWERED is remembered; a quiet one is not', async () =>
     asked.server.dispose();
   }
 
-  const quiet = world({ mcpUse: 'usable', mcpPreConsented: true });
+  const quiet = world({ mcpUse: 'usable', mcpPreConsented: true, mcpRemembers: true });
   try {
     const { port } = await share(quiet);
     await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
@@ -655,7 +655,7 @@ test('a lookup that carries no fingerprint is not remembered, however it was ans
   // The empty string is what a lookup that does not know about the field reads as, and it matches
   // no resolved ladder — recording it would write a stamp nothing can ever match, so the person
   // would answer once and be asked forever. Better to remember nothing and ask again next time.
-  const w = world({ mcpResolve: () => ({ kind: 'usable', target: NAMELESS }) });
+  const w = world({ mcpRemembers: true, mcpResolve: () => ({ kind: 'usable', target: NAMELESS }) });
   try {
     const { port } = await share(w);
 

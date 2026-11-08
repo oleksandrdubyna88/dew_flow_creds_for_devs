@@ -195,6 +195,27 @@ for (const run of [
   });
 }
 
+test('C9 MCP use, every12h, no stamp store: a lookup that reads nothing says nothing is remembered', async () => {
+  const hooks = loadWithVscode<typeof import('../mcpHooks')>('../mcpHooks', { window: {} });
+  const { source } = vault({ use: true, ask: 'every12h' });
+  const w = world({ mcpResolve: (entryId: string, action: string) => hooks.mcpUseLookup(source, entryId, action), answers: ['Allow', 'Allow'] });
+  try {
+    const { port } = await share(w);
+
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+    await call(port, '/v1/mcp/use/exec', { body: USE });
+
+    assert.equal(w.dialogs.length, 2, 'both calls asked: the store-less lookup is never quiet');
+    assert.equal(w.ran.length, 2);
+    for (const dialog of w.dialogs) {
+      assert.ok(dialog.includes(CALL_TAIL), dialog);
+      assert.equal(dialog.includes('12 hours'), false, dialog);
+    }
+  } finally {
+    w.server.dispose();
+  }
+});
+
 test('C5 MCP never: a use call shows no dialog at all, and each delete asks with the call tail', async () => {
   const { w, state } = mcpWorld({ use: true, delete: 'any', ask: 'never' }, { answers: ['Allow', 'Allow'] });
   try {
