@@ -544,7 +544,15 @@ export function rememberMcpConsent(
   return stamps.remember(stampKey(accountId, entityId), expected, now);
 }
 
+/**
+ * Does an Allow on this entry write a stamp? The one expression the side that WRITES a stamp
+ * (`worthRemembering`) and the side that SAYS one will be written (the dialog's coverage) both read.
+ */
+export function remembersFor(access: McpAccess): boolean {
+  return remembersConsent(access.ask ?? 'always');
+}
+
 /** A policy that consults a stamp, on a grant that still reads the way it did when it was shown. */
 function worthRemembering(access: McpAccess | undefined, expected: string): boolean {
-  return access !== undefined && remembersConsent(access.ask ?? 'always') && ladderKey(access) === expected;
+  return access !== undefined && remembersFor(access) && ladderKey(access) === expected;
 }

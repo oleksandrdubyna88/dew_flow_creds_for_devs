@@ -125,6 +125,17 @@ function world(options: {
   /** Whether the vault says this call's dialog has already been answered (issue #95). */
   mcpPreConsented?: boolean;
   /**
+   * Whether the stubbed lookup says an Allow on this entry will be remembered (a stamp written).
+   *
+   * <p>Absent by default, so a stubbed lookup reads as `call` — the fail-closed reading — and a test
+   * about the dialog's sentence for a door with no policy keeps testing exactly that. A test whose
+   * subject is the stamp WRITE sets it, because the write is gated on the sentence that was shown
+   * (`opensWindow`) and a stub that says nothing announces nothing.</p>
+   */
+  mcpRemembers?: boolean;
+  /** The verb each action's dialog head uses, by action name. Absent actions read `run a command on`. */
+  verbs?: Record<string, string>;
+  /**
    * The REAL lookup, for a test that wants production's own answer rather than a scripted verdict.
    *
    * <p>Its own option rather than `hooks`, because that one is spread FIRST and then overwritten by
@@ -242,7 +253,7 @@ function world(options: {
     action: name,
     mutatesSecrets: options.rotatesTo !== undefined,
     ...(options.asksAfterConsent === true ? { asksAfterConsent: true } : {}),
-    verb: `run a command on`,
+    verb: options.verbs?.[name] ?? `run a command on`,
     describeOutcome: (): string => 'exit 0',
     validate: (body: Record<string, unknown>): unknown =>
       body.command === '' ? { ok: false, message: 'no command given' } : { ok: true },
@@ -298,7 +309,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
-    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind),
+    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind, options.mcpRemembers),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create, options.settle),
     rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
@@ -436,6 +447,7 @@ function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
   preConsented = false,
   kind = 'ssh',
+  remembers?: boolean,
 ): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;
@@ -450,6 +462,7 @@ function mcpUseFor(
           kind: 'usable',
           target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind },
           preConsented,
+          remembers,
           // The ladder this verdict was reached under. A lookup that omits it reads as the empty
           // string, which matches no resolved ladder and so refuses the write — fail-closed, and
           // what the five `.cjs` harnesses get.

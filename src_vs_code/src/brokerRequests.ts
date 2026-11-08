@@ -76,7 +76,7 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  * exactly the moment it is working as designed.</p>
  */
 export type McpUseLookup =
-  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string }
+  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean }
   | { kind: 'closed'; entityName: string; needed: NeededSwitch }
   | undefined;
 
@@ -129,7 +129,7 @@ export async function readMcpUse(
  * which calls the same `readMcpUse`, simply never does.</p>
  */
 export type UseRead =
-  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string }
+  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string; remembers: boolean }
   | { ok: false; code: ErrorCode; message: string };
 
 function usable(
@@ -147,11 +147,12 @@ function usable(
  * <p>`=== true` rather than a coalesce: a lookup that does not know about this field at all — one of
  * the five `.cjs` harnesses, or a build older than it — reads as "ask", never as "already answered".
  * An absent fingerprint reads as the empty string for the same reason: it matches no resolved
- * ladder, so a write guarded by it refuses rather than guesses.</p>
+ * ladder, so a write guarded by it refuses rather than guesses. `remembers` reads the same way: a
+ * lookup that does not say reads as "this Allow writes nothing", the narrower sentence in the dialog.</p>
  */
 function usableRead(
   body: Record<string, unknown>,
-  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string },
+  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean },
 ): UseRead {
   return {
     ok: true,
@@ -159,6 +160,7 @@ function usableRead(
     target: found.target,
     preConsented: found.preConsented === true,
     rungs: found.rungs ?? '',
+    remembers: found.remembers === true,
   };
 }
 
