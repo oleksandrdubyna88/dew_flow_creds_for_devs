@@ -47,11 +47,11 @@ export function bridgeQuotedName(name: string): string {
  * actions: `exec` at `destination` spawns `ssh` here for the entry's host; `query` at `laptop` spawns the database client here, and what
  * the client talks to is the database the stored connection names, which the sentence deliberately does not name (mysql's `use` and
  * sqlcmd's context switch can leave it behind). Neither says "only its output": the destination, or the database, may be the bridge's own
- * server (Q4, Q11). E3 adds `run`'s `laptop` sentence beside its spawn observation. The entry's name is shown through `bridgeQuotedName`.
+ * server (Q4, Q11). E3 adds `run`'s `laptop` sentence beside its spawn observation. Each sentence is handed the entry's name ALREADY cleaned (`bridgeModalLine` does it once, for all of them), so a sentence added later cannot forget to.
  */
 const SENTENCES: ReadonlyMap<string, (entryName: string) => string> = new Map<string, (entryName: string) => string>([
-  ['exec:destination', (entry) => `The connection starts on this computer; the command runs on "${bridgeQuotedName(entry)}", and its output goes back to that server.`],
-  ['query:laptop', (entry) => `The database client runs on this computer, using the connection stored in "${bridgeQuotedName(entry)}". Its output goes back to the agent on that server.`],
+  ['exec:destination', (entry) => `The connection starts on this computer; the command runs on "${entry}", and its output goes back to that server.`],
+  ['query:laptop', (entry) => `The database client runs on this computer, using the connection stored in "${entry}". Its output goes back to the agent on that server.`],
   ['run:server', () => 'It runs on that server.'],
 ]);
 
@@ -62,7 +62,7 @@ const SENTENCES: ReadonlyMap<string, (entryName: string) => string> = new Map<st
 export function bridgeModalLine(bridge: BridgeContext, action: string, site: RunSite | undefined, entryName: string): string {
   const through = `Through the Remote Bridge of "${bridgeQuotedName(bridge.serverName)}".`;
   const sentence = site === undefined ? undefined : SENTENCES.get(`${action}:${site}`);
-  return sentence === undefined ? through : `${through} ${sentence(entryName)}`;
+  return sentence === undefined ? through : `${through} ${sentence(bridgeQuotedName(entryName))}`;
 }
 
 /**

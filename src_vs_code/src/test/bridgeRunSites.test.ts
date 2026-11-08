@@ -1,8 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { dbQueryAction as DbQueryAction } from '../agentUseActions';
-import type { DbType } from '../types';
+import type { AgentUseDeps, dbQueryAction as DbQueryAction } from '../agentUseActions';
+import type { DbType, EntityMetadata } from '../types';
 import { LinksWorld, linksWorld } from './bridgeLinksWorld';
+import { memoryStorage, seedEntry } from './pinWorld';
 import { Ask, Door, WallWorld, send, viaBridge, wallWorld } from './bridgeWallWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -30,8 +31,11 @@ interface QueryWorld {
   readonly spawns: Spawn[];
 }
 
-/** The real `dbQueryAction` for one stored connection; the spawner is a recorder that answers `OUTPUT`. */
-function queryWorld(dbType: DbType, connection: string): QueryWorld {
+/**
+ * The real `dbQueryAction` over the REAL `StorageManager` holding one stored connection (a real `database connection` slot, in the clear); the
+ * spawner is a recorder that answers `OUTPUT`. The deps are a typed `AgentUseDeps` built from real defaults: nothing is cast.
+ */
+async function queryWorld(dbType: DbType, connection: string): Promise<QueryWorld> {
   const spawns: Spawn[] = [];
   const real = require('../sshExecRunner') as Record<string, unknown>;
   const mocks = {
@@ -43,19 +47,21 @@ function queryWorld(dbType: DbType, connection: string): QueryWorld {
       },
     },
   };
-  const { dbQueryAction } = loadWithVscode<{ dbQueryAction: typeof DbQueryAction }>('../agentUseActions', { window: {} }, mocks);
-  const deps = {
-    storage: {
-      getNode: () => ({ details: { id: 'e1', name: 'prod', kind: 'db', dbType } }),
-      getDbConnection: () => Promise.resolve(connection),
-    },
+  const stub = { window: {} };
+  const { dbQueryAction } = loadWithVscode<{ dbQueryAction: typeof DbQueryAction }>('../agentUseActions', stub, mocks);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, { id: 'e1', name: 'prod', kind: 'db', dbType } as EntityMetadata, { 'database connection': connection });
+  const deps: AgentUseDeps & { onPath: (exe: string) => boolean } = {
+    storage,
     storageDir: '/unused',
     signal: new AbortController().signal,
     acquireExecSlot: () => () => undefined,
     note: () => undefined,
+    trustStore: { get: () => [], update: () => Promise.resolve() },
+    applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
     onPath: () => true,
   };
-  return { action: dbQueryAction(deps as never), spawns };
+  return { action: dbQueryAction(deps), spawns };
 }
 
 const QUERY_SENTENCE = 'The database client runs on this computer, using the connection stored in "prod". Its output goes back to the agent on that server.';
@@ -64,59 +70,90 @@ const SAVED_FALSE = 'only its output goes to that server';
 
 const query = (path: string): Ask => ({ path, body: { entry: 'e1', alias: 'one', query: 'select 1' } });
 
-/** The stored connections of the three clients: what each puts on its own argv, the part that names the database the SQL runs on. */
-const CLIENTS: readonly { readonly dbType: DbType; readonly connection: string; readonly command: string; readonly names: (args: string[]) => boolean }[] = [
-  { dbType: 'postgres', connection: 'postgresql://app:pw-one@db.example.test:5433/orders', command: 'psql', names: (args) => args[args.indexOf('--') + 1] === 'postgresql://app@db.example.test:5433/orders' },
-  { dbType: 'mysql', connection: 'mysql://app:pw-two@db.example.test:3307/orders', command: 'mysql', names: (args) => args[args.indexOf('-h') + 1] === 'db.example.test' && args[args.indexOf('-P') + 1] === '3307' },
-  { dbType: 'mssql', connection: 'Server=db.example.test,1444;Database=orders;User Id=app;Password=pw-three', command: 'sqlcmd', names: (args) => args[args.indexOf('-S') + 1] === 'db.example.test,1444' },
+/** The word after a flag on an argv. */
+const after = (args: string[], flag: string): string | undefined => args[args.indexOf(flag) + 1];
+
+/**
+ * The three clients: the stored connection, the program, and what each puts where. The launcher's own places (`dbCliLauncher.ts`):
+ * postgres takes the whole URI, user and database in it, minus its password, after `--`; mysql `-h`, `-P`, `-u`, `-D`; sqlcmd `-S host,port` and
+ * `-d`, with the USER in the environment (`SQLCMDUSER`); and every password in the client's own environment variable, never in an argument.
+ */
+const CLIENTS: readonly {
+  readonly dbType: DbType;
+  readonly connection: string;
+  readonly command: string;
+  readonly passwordEnv: string;
+  readonly password: string;
+  /** Whether the argv (and env) point the client at `app` on `db.example.test` and the `orders` database. */
+  readonly pointsAtTheEntry: (spawn: Spawn) => boolean;
+}[] = [
+  {
+    dbType: 'postgres',
+    connection: 'postgresql://app:pw-one@db.example.test:5433/orders',
+    command: 'psql',
+    passwordEnv: 'PGPASSWORD',
+    password: 'pw-one',
+    pointsAtTheEntry: ({ args }) => after(args, '--') === 'postgresql://app@db.example.test:5433/orders',
+  },
+  {
+    dbType: 'mysql',
+    connection: 'mysql://app:pw-two@db.example.test:3307/orders',
+    command: 'mysql',
+    passwordEnv: 'MYSQL_PWD',
+    password: 'pw-two',
+    pointsAtTheEntry: ({ args }) => after(args, '-h') === 'db.example.test' && after(args, '-P') === '3307' && after(args, '-u') === 'app' && after(args, '-D') === 'orders',
+  },
+  {
+    dbType: 'mssql',
+    connection: 'Server=db.example.test,1444;Database=orders;User Id=app;Password=pw-three',
+    command: 'sqlcmd',
+    passwordEnv: 'SQLCMDPASSWORD',
+    password: 'pw-three',
+    pointsAtTheEntry: ({ args, env }) => after(args, '-S') === 'db.example.test,1444' && after(args, '-d') === 'orders' && env.SQLCMDUSER === 'app',
+  },
 ];
 
-test('C10 (change 6.2): a bridged query says the database client runs here with the connection stored in the entry — and the client IS spawned here, with that connection, and the body is its output alone', async () => {
-  for (const client of CLIENTS) {
-    const qw = queryWorld(client.dbType, client.connection);
-    const ww = await wallWorld({ query: qw.action });
-    try {
-      const reply = await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'));
-      assert.equal(reply.status, 200, `${client.dbType}: ${reply.body}`);
-      const dialog = ww.w.dialogs[0];
-      assert.equal(dialog.split('\n')[2], `Through the Remote Bridge of "prod server". ${QUERY_SENTENCE}`, `${client.dbType}: the words`);
-      assert.equal(dialog.includes(SAVED_FALSE), false, `${client.dbType}: the saved sentence is gone`);
-      // The observation beside the words: one spawn, on this computer, of the database client, never of a shell, naming the entry's own database.
-      assert.equal(qw.spawns.length, 1, `${client.dbType}: exactly one process was spawned, here`);
-      const [spawn] = qw.spawns;
-      assert.equal(spawn.command, client.command, `${client.dbType}: the spawned program is the database client`);
-      assert.equal(spawn.shell, false, `${client.dbType}: no shell`);
-      assert.ok(client.names(spawn.args), `${client.dbType}: the client is pointed at the entry's own connection: ${spawn.args.join(' ')}`);
-      assert.ok(spawn.args.includes('select 1') || spawn.args.includes(' select 1'), `${client.dbType}: the agent's SQL is an argument to the client, run by the database`);
-      assert.equal(spawn.args.some((arg) => arg.includes('pw-')), false, `${client.dbType}: the stored password is in no argument`);
-      // The recipient: the body is the client's output and nothing else.
-      assert.deepEqual(JSON.parse(reply.body), OUTPUT, `${client.dbType}: the body holds the client's output alone`);
-    } finally {
-      ww.dispose();
-    }
-  }
-});
+const DOORS = ['mcp', 'alias', 'token'] as const;
 
-test('C10 (change 6.2): the same words and the same launch through the alias and token doors', async () => {
-  for (const door of ['alias', 'token'] as const) {
-    const qw = queryWorld('postgres', CLIENTS[0].connection);
-    const ww = await wallWorld({ query: qw.action });
-    try {
-      const token = await ww.tokenFor('a1', 'e1', 'prod');
-      const ask: Ask = door === 'alias' ? query('/v1/alias/query') : { path: '/v1/use/query', token, body: { query: 'select 1' } };
-      const reply = await send(viaBridge(ww.bridge), ask);
-      assert.equal(reply.status, 200, `${door}: ${reply.body}`);
-      assert.equal(ww.w.dialogs[0].split('\n')[2], `Through the Remote Bridge of "prod server". ${QUERY_SENTENCE}`, `${door}: the words`);
-      assert.deepEqual(qw.spawns.map((spawn) => spawn.command), ['psql'], `${door}: the client, here`);
-      assert.deepEqual(JSON.parse(reply.body), OUTPUT, `${door}: its output alone`);
-    } finally {
-      ww.dispose();
+test('C10 (change 6.2): every client through every door — the sentence says the database client runs here with the entry\'s connection, and the client IS spawned here, pointed at it, and the body is its output alone', async () => {
+  for (const client of CLIENTS) {
+    for (const door of DOORS) {
+      const what = `${client.dbType} through ${door}`;
+      const qw = await queryWorld(client.dbType, client.connection);
+      const ww = await wallWorld({ query: qw.action });
+      try {
+        const token = await ww.tokenFor('a1', 'e1', 'prod');
+        const ask: Ask = {
+          mcp: query('/v1/mcp/use/query'),
+          alias: query('/v1/alias/query'),
+          token: { path: '/v1/use/query', token, body: { query: 'select 1' } },
+        }[door];
+        const reply = await send(viaBridge(ww.bridge), ask);
+        assert.equal(reply.status, 200, `${what}: ${reply.body}`);
+        // The words.
+        assert.equal(ww.w.dialogs[0].split('\n')[2], `Through the Remote Bridge of "prod server". ${QUERY_SENTENCE}`, `${what}: the words`);
+        assert.equal(ww.w.dialogs[0].includes(SAVED_FALSE), false, `${what}: the saved sentence is gone`);
+        // The observation beside them: one spawn, on this computer, of the client, never of a shell, pointed at the entry's own connection.
+        assert.equal(qw.spawns.length, 1, `${what}: exactly one process was spawned, here`);
+        const [spawn] = qw.spawns;
+        assert.equal(spawn.command, client.command, `${what}: the spawned program is the database client`);
+        assert.equal(spawn.shell, false, `${what}: no shell`);
+        assert.ok(client.pointsAtTheEntry(spawn), `${what}: pointed at the entry's own host, port, user and database: ${spawn.args.join(' ')} ${spawn.env.SQLCMDUSER ?? ''}`);
+        assert.equal(spawn.args.filter((arg) => arg.includes('select 1')).length, 1, `${what}: the agent's SQL is one argument to the client, run by the database`);
+        assert.equal(spawn.args.some((arg) => arg.includes('pw-')), false, `${what}: the stored password is in no argument`);
+        assert.equal(spawn.env[client.passwordEnv], client.password, `${what}: it travels in the client's own environment variable`);
+        // The recipient: the body is the client's output and nothing else.
+        assert.deepEqual(JSON.parse(reply.body), OUTPUT, `${what}: the body holds the client's output alone`);
+        assert.equal(reply.body.includes('pw-'), false, `${what}: and no password`);
+      } finally {
+        ww.dispose();
+      }
     }
   }
 });
 
 /** The destination `ssh` is given after `--`: the last word of the argv the real action composed for the entry. */
-const destinationOf = (argv: string[]): string => argv[argv.indexOf('--') + 1];
+const destinationOf = (argv: string[]): string | undefined => after(argv, '--');
 
 test('C10 (change 6.2): a bridged exec says the connection starts here and the command runs on the entry — and ssh is spawned here for the ENTRY\'s own destination, and the output goes back as the body', async () => {
   const lw: LinksWorld = await linksWorld({});
