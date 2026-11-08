@@ -96,9 +96,9 @@ export const INTERNAL_FAILURE = 'The action failed inside this window. See the a
 
 /**
  * What a request is told when a handler threw before it could answer (`unanswered`). Its own sentence: `INTERNAL_FAILURE` promises a reason
- * in the journal, and the journal line of this failure is a classification that never carries the message (parent §4.1).
+ * in the journal, and the journal line of this failure is a classification (the error's class, a system errno name when it has one, the route) that never carries the message (parent §4.1).
  */
-export const UNANSWERED_FAILURE = 'The request failed inside this window. The agent journal records that it failed and where, not why.';
+export const UNANSWERED_FAILURE = 'The request failed inside this window. The agent journal records that it failed and where, with the kind of error but never its message.';
 
 /**
  * What an agent is told when it asks to export a secret into the terminals of another computer.

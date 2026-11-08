@@ -18,7 +18,11 @@ import type { Refusal } from './brokerRequests';
  * verbs and the config read are the person's alone (parent plan §4.2).</p>
  */
 
+/** A route the table NAMES and refuses (run, terminal, rotate, delete, create, the folder verbs, the config read): a person can do these in the window. */
 export const BRIDGE_NOT_SERVED = 'A Remote Bridge does not serve this request. A person can do it in the VS Code window.';
+
+/** A path the table does not know at all: nothing exists for a person to do, so the sentence promises nothing (parent §4.2). */
+export const BRIDGE_UNKNOWN_PATH = 'A Remote Bridge does not serve this request.';
 
 export type BridgeRouteDecision =
   | { readonly served: true; readonly walled: boolean; readonly why: string }
@@ -89,12 +93,13 @@ export const BRIDGE_ROUTES: readonly BridgeRoute[] = Object.freeze([
 
 /**
  * `undefined` admits. Exact method and pathname (the query string is not part of a pathname); anything not in the
- * table is `not_supported` with the bridge's sentence.
+ * table is `not_supported` with the sentence that promises nothing ({@link BRIDGE_UNKNOWN_PATH}); a route the table names and refuses keeps
+ * the person sentence ({@link BRIDGE_NOT_SERVED}).
  */
 export function bridgeRouteRefusal(method: string | undefined, pathname: string): Refusal | undefined {
   const decision = BRIDGE_ROUTES.find((route) => route.method === method && route.path === pathname)?.decision;
   if (decision === undefined) {
-    return { code: 'not_supported', message: BRIDGE_NOT_SERVED };
+    return { code: 'not_supported', message: BRIDGE_UNKNOWN_PATH };
   }
   return decision.served ? undefined : { code: decision.code, message: decision.message };
 }

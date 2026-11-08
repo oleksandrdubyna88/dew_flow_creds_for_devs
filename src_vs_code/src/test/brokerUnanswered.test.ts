@@ -105,6 +105,16 @@ test('unanswered: a `code` is named only when it is a system errno of this platf
   }
 });
 
+test('the body promises what the line keeps: it names the kind of error and never the message — and does not say "not why", since an errno name is a fragment of why', () => {
+  const coded = Object.assign(new Error('zq-message'), { code: 'ENOENT' });
+  const { answers, lines } = unanswer(coded, 'other');
+  assert.ok(lines[0].includes('ENOENT'), 'the observation: the line carries an errno name, which tells part of why');
+  assert.doesNotMatch(UNANSWERED_FAILURE, /not why/i);
+  assert.match(UNANSWERED_FAILURE, /kind of error/);
+  assert.match(UNANSWERED_FAILURE, /never its message/);
+  assert.equal(answers[0].includes('zq-message'), false);
+});
+
 test('the sentinel: neither a thrown message nor the fragment a JSON.parse SyntaxError quotes reaches the body or the journal line', () => {
   for (const [what, error, word] of [['a handler\'s message', new Error(SENTINEL), SENTINEL], ['a JSON.parse SyntaxError', jsonSyntaxError(), SENTINEL_JSON]] as const) {
     assert.ok(error instanceof Error, `${what}: the injected throw is a real error`);

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES } from '../bridgeAllowList';
+import { BRIDGE_ROUTES, BRIDGE_UNKNOWN_PATH } from '../bridgeAllowList';
 import { BRIDGE_WRONG_KEY } from '../brokerOrigin';
 import { configSnippetResult } from '../mcpSnippetRoute';
 import { Reply, code, message } from './bridgeDoorHarness';
@@ -279,7 +279,7 @@ test('S6: every route a bridge does not serve is refused with its sentence, Conn
     );
     const unnamed = [
       { method: 'GET', path: '/v1/use/exec' }, { method: 'POST', path: '/v1/health' }, { method: 'GET', path: '/v1/nope' }, { method: 'GET', path: '/v1/mcp/future' },
-    ].map((route) => ({ ...route, code: 'not_supported', message: BRIDGE_NOT_SERVED }));
+    ].map((route) => ({ ...route, code: 'not_supported', message: BRIDGE_UNKNOWN_PATH }));
     assert.ok(named.length >= 20, `the table names ${named.length} refused routes`);
     for (const route of [...named, ...unnamed]) {
       const label = `${route.method} ${route.path}`;

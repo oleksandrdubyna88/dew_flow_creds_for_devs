@@ -3488,9 +3488,11 @@ a door with no wall cannot exist). Three things stand behind the third door.
 so a route that is in neither table is refused at run time and turns `bridgeAllowList.test.ts` red until somebody
 decides about it. Served: the reads (`health`, `kinds`, `kind-help` as they are; `aliases`, `entries`,
 `config-snippet`, `folders` through the wall), and `exec` and `query` on the token, alias and MCP prefixes. Refused
-`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with the bridge's sentence: `run`
+`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with `BRIDGE_NOT_SERVED` (*A person can do it in the VS Code window.*, kept for the rows that exist): `run`
 (until E3 decides where a stored command runs), `terminal`, `up`, `down`, `rotate`, delete, create, the folder verbs
-and the config read. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
+and the config read. A path the table does not know at all (an unlisted method and path, `rotate` on the token or alias prefix, a route added later)
+answers `404 not_supported` with `BRIDGE_UNKNOWN_PATH`, *A Remote Bridge does not serve this request.*, which promises nothing: there is no
+row for a person to do it from. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
 carries them (`bridge.noteFields`) with the header and the directory, and the alias prefix (`aliasPrefix`), all
 additive, `version` still 1.
 
@@ -3627,7 +3629,7 @@ a bridge a token call is bridged and counted on its bridge, with the bridge's se
 builds, and what a person can and cannot reach with it today.
 
 *Reachable now, on the local doors* (no bridge needed): the four-tier eviction order above; **a throw inside a handler is answered
-`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, not why;
+`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, with the kind of error but never its message;
 `INTERNAL_FAILURE` stays for the handlers that do journal a reason) on every door, where the request used to hang until the client
 gave up (`unanswered`, `brokerRequests.ts`: it reads `res.headersSent` first, **answers first** if nothing has gone out, and then
 writes its one journal line inside a `try`, so a journal that throws on every line still answers. **The line is a classification, never
@@ -4662,6 +4664,45 @@ renders the SAME label for the Agent Access journal, title included. That is the
 AI title summarises a private conversation and the journal is durable): the journal is where "which
 session did this" is asked afterwards, and the tab title is the name the person knows it by.
 
+**The dialog's last paragraph is chosen per door, because an Allow does not reach as far on every door.** The
+sentence *Allowing covers every later call on this token* was once fixed text, and it is true on the token door
+only. `ConsentQuestion` now carries a REQUIRED `coverage` (`token`, `call` or `every12h`), so a door added later does
+not compile until it says what its Allow covers, and `brokerConsent.ts` picks the tail from it. `token` is the old
+sentence, byte for byte. `call` is *Allowing covers this call only, not any later one.* — the alias route, the MCP
+delete, create and folder routes, and an MCP use call under *Ask every time*, where each request is its own `'call'`
+grant and nothing is written. It does not promise that the next call asks, because under *Never ask* the next USE call
+is quiet by policy and not by this Allow. `every12h` is *Allowing covers this call. For up to 12 hours on this
+machine, later MCP calls from any agent to <the entry's verbs> "<entry>" may also skip asking because of this Allow —
+only while this entry is set to "Ask once every 12 hours" and its agent switches are as they are now. Deleting still
+asks.* The 12 is `ASK_WINDOW_MS / 3_600_000`, never typed, and `consentCoverage.test.ts` case C8 pins it to the switch
+label. The choice is `coverageOf(grant.scope, remembers)`: a token grant is always `token`, and a call grant is
+`every12h` only when `remembers` is true. `remembers` rides beside `preConsented` from the MCP lookup
+(`mcpUseLookup`, from `remembersFor(access)` — the expression `worthRemembering` writes a stamp by — and false when
+the lookup has no stamp store), through `readMcpUse` and `BrokerDoor.perform` to `perform`; a lookup that does not say
+reads as `call`, the narrower sentence.
+
+Each clause of the window sentence is a fact of the code. A stamp is read by the MCP lookup alone (`preConsentedFor`),
+so it quiets *MCP calls*, never an alias or token call. It is per entry and per store, not per caller, so *from any
+agent*. It is per ENTRY, not per action — `preConsentedFor` takes no action and `mayBeQuiet` excludes delete alone —
+so one Allow on *run a command* also quiets `rotate` and `exportEnv`, and the sentence lists every verb the kind
+offers (the same `verbsOf` list the token tail shows, which over-lists in the safe direction when a switch would
+refuse one). *May … because of this Allow*: the write can still refuse at the click, and under *Never ask* a call is
+quiet by policy and not by this answer. *Only while*: `consentDue` and `covers` read the CURRENT policy and ladder, and
+nothing clears a stamp when they change — a policy or switch change suspends the window and changing back resumes it
+inside the twelve hours. *Up to*: the window is never longer than `ASK_WINDOW_MS`, and the Forget command or a clock
+set back make it shorter; that is the clause's job, not *only while*'s. *On this machine*: the stamp lives in
+`globalState`, per profile and per host, so the words over-claim in the safe direction and agree with the setting's
+own text.
+
+The stamp write is gated on the sentence that was shown. `opensWindow(question, asked)` is `asked && coverage ===
+'every12h'`, and `perform` hands it to `remember`: a dialog that said *this call only* writes nothing whatever the
+policy says at the click (the reverse race: the policy turned to `every12h` while the modal was open, and the `ask`
+policy is not in the ladder fingerprint, so the rungs check saw no change), and a call that raised no dialog writes
+nothing, so a quiet call cannot slide the window. The forward race stays covered by the write's own re-read of the
+policy and ladder. This is the one behaviour change of the fix; admission, minting, the stamp's shape and reading,
+and the policies are as they were. The tests stand each tail beside the fact it states — whether the next call
+asked, whether a stamp was written, in both races, with and without a store, and across two stores.
+
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never
 ask* — governs `/v1/mcp/use/*` and nothing else, because `preConsent` is wired into `mcpDoor` and
@@ -4674,7 +4715,8 @@ route `handleAlias` mints a *fresh* grant per call and hands it to `perform`, so
 it allowed and `consent` asks — every time, for every entry, whatever its policy says. A never-ask
 entry is therefore still asked on `creds ssh <alias>`, which is exactly what the doors footer's CLI
 row now says, sitting as it does under a row telling the same person an agent may use this entry
-without being asked.
+without being asked. The alias dialog says so
+in its own words: *Allowing covers this call only, not any later one.*
 
 **Auto-lock sees the human, not the agent.** Only the Allow click calls `noteUserActivity()`. A long
 unattended run of agent calls is exactly what the idle window exists to catch, so agent traffic must

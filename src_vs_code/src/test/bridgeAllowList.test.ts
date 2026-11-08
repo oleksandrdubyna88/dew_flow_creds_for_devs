@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal, refusedOnBridge, routeNameOf } from '../bridgeAllowList';
+import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, BRIDGE_UNKNOWN_PATH, bridgeRouteRefusal, refusedOnBridge, routeNameOf } from '../bridgeAllowList';
 import { AgentUseDeps, dbQueryAction } from '../agentUseActions';
 import { BridgeContext } from '../bridgeContext';
 import { EXPORT_REFUSED, ErrorCode } from '../brokerProtocol';
@@ -60,6 +60,17 @@ const SERVED: readonly string[] = [
 const WALLED: readonly string[] = SERVED.filter((route) => !['GET /v1/health', 'GET /v1/mcp/kinds', 'GET /v1/mcp/kind-help'].includes(route));
 
 const named = (route: { method: string; path: string }): string => `${route.method} ${route.path}`;
+
+test('the two sentences: a route the table refuses keeps the person sentence; a path it does not know promises nothing a person can do', () => {
+  assert.equal(BRIDGE_UNKNOWN_PATH, 'A Remote Bridge does not serve this request.');
+  assert.doesNotMatch(BRIDGE_UNKNOWN_PATH, /person|VS Code|window/i, 'nothing exists for a person to do about a path nobody named');
+  assert.match(BRIDGE_NOT_SERVED, /A person can do it in the VS Code window\./, 'the rows that exist keep it');
+  // The fact each sentence stands beside: the table knows the first kind (a named, refused row) and not the second.
+  assert.deepEqual(bridgeRouteRefusal('POST', '/v1/use/run'), { code: 'not_supported', message: BRIDGE_NOT_SERVED });
+  assert.equal(BRIDGE_ROUTES.some((route) => route.method === 'POST' && route.path === '/v1/use/run'), true, 'run is a named, refused row');
+  assert.deepEqual(bridgeRouteRefusal('POST', '/v1/use/future'), { code: 'not_supported', message: BRIDGE_UNKNOWN_PATH });
+  assert.equal(BRIDGE_ROUTES.some((route) => route.path === '/v1/use/future'), false, 'future is no row at all');
+});
 
 test('the sentence is the E1 one', () => {
   assert.equal(BRIDGE_NOT_SERVED, 'A Remote Bridge does not serve this request. A person can do it in the VS Code window.');
@@ -132,7 +143,7 @@ test('S6: exportEnv is refused with the export sentence on all three prefixes, a
 test('row 11 and 12: run, terminal, up, down, rotate, delete, create, the folder verbs and the config read are not served', () => {
   const refused = [
     '/v1/use/run', '/v1/use/terminal', '/v1/use/up', '/v1/use/down', '/v1/alias/run', '/v1/alias/terminal', '/v1/alias/up', '/v1/alias/down',
-    '/v1/mcp/use/run', '/v1/mcp/use/terminal', '/v1/mcp/use/up', '/v1/mcp/use/down', '/v1/mcp/use/rotate', '/v1/use/rotate', '/v1/alias/rotate',
+    '/v1/mcp/use/run', '/v1/mcp/use/terminal', '/v1/mcp/use/up', '/v1/mcp/use/down', '/v1/mcp/use/rotate',
     '/v1/config/read', '/v1/mcp/create', '/v1/mcp/delete', '/v1/mcp/folder/create', '/v1/mcp/folder/edit', '/v1/mcp/folder/delete',
   ];
   for (const route of refused) {
@@ -140,7 +151,14 @@ test('row 11 and 12: run, terminal, up, down, rotate, delete, create, the folder
   }
 });
 
-test('row 13: any other method or path is refused, whether or not such a route exists', () => {
+test('rotate is a route of the MCP prefix only: on the token and alias prefixes it is no row at all, so it answers the sentence that promises nothing', () => {
+  for (const route of ['/v1/use/rotate', '/v1/alias/rotate']) {
+    assert.equal(BRIDGE_ROUTES.some((row) => row.path === route), false, `${route} is not in the table`);
+    assert.deepEqual(bridgeRouteRefusal('POST', route), { code: 'not_supported', message: BRIDGE_UNKNOWN_PATH }, route);
+  }
+});
+
+test('row 13: any other method or path is refused with the sentence that promises nothing, whether or not such a route exists', () => {
   const refused: [string | undefined, string][] = [
     ['POST', '/v1/health'], ['HEAD', '/v1/health'], ['get', '/v1/health'], [undefined, '/v1/health'], ['GET', '/v1/health/'], ['GET', '/v1/health/x'],
     ['GET', '/v1/use/exec'], ['GET', '/v1/alias/exec'], ['GET', '/v1/mcp/use/exec'], ['GET', '/v1/use/exportEnv'], ['PUT', '/v1/use/exec'],
@@ -150,7 +168,7 @@ test('row 13: any other method or path is refused, whether or not such a route e
     ['GET', '/v1/nope'], ['GET', '/'], ['GET', ''], ['DELETE', '/v1/mcp/delete'],
   ];
   for (const [method, route] of refused) {
-    assert.deepEqual(bridgeRouteRefusal(method, route), { code: 'not_supported', message: BRIDGE_NOT_SERVED }, `${String(method)} ${route}`);
+    assert.deepEqual(bridgeRouteRefusal(method, route), { code: 'not_supported', message: BRIDGE_UNKNOWN_PATH }, `${String(method)} ${route}`);
   }
 });
 

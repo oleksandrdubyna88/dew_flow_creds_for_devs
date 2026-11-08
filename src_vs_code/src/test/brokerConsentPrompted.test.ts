@@ -57,7 +57,7 @@ function registry(status: string): { get(secret: string): { status: string } | u
 }
 
 const grant = { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'prod server', target: '', remoteOs: undefined }, quiet: false } };
-const question = (via: ConsentQuestion['via']): ConsentQuestion => ({ grant: grant as never, action: 'exec', verb: 'run a command on', summary: 'id', caller: undefined, via });
+const question = (via: ConsentQuestion['via']): ConsentQuestion => ({ grant: grant as never, action: 'exec', verb: 'run a command on', summary: 'id', caller: undefined, via, coverage: 'call' });
 const never = new AbortController().signal;
 
 test('prompted is called once, with the question and its door, BEFORE the dialog is shown', async () => {
