@@ -366,10 +366,10 @@ quotes in both names of the bridge line. RED first (the first line showed the fo
 **Not edited, by the stop rule.** The S4 spec's C10, C12 and §S4.10 item 5, and the E1 document's §E1.4 item 6, still quote the saved `laptop` sentence; item 9 of the epoch 4 amendment says
 they change in E1.4's finishing commit. They are left as written, and this section is the record of the sentences as built.
 
-**How "with quiet off … none is read" (§S4.2) is met (CodeRabbit on #312, 2026-11-08).** The real lookup (`mcpUseLookup`) may read a stamp before `usableIn` sees
+**"With quiet off … none is read" (§S4.2) is not literally true as built: a stamp may be read, but it never affects consent (CodeRabbit on #312, 2026-11-08).** The real lookup (`mcpUseLookup`) may read a stamp before `usableIn` sees
 the switch; `usableIn` then answers `preConsented: false` with an empty `rungs`, so the stamp it read decides nothing, and `answeredHere` refuses to write under an empty
 `rungs`. In effect no stamp counts and none is written, which C4 (`bridgeConsent.test.ts`) and `bridgeScope.test.ts`'s quiet-off cases observe. The sentence in §S4.2 is
-left as written; this is the record of how it holds.
+left as written; this is the record of what is true instead.
 
 **What this changes for a local user, from the diff (parent §9).** Nothing observable off a bridge: the local dialog is byte for byte what it was (C11 spells it out), a local stamp has the key
 it always had, the local journal lines are the ones they were (`—` in the grant field of `unanswered`'s line), and the second gate check restores `main`'s own order of effects around the write.
