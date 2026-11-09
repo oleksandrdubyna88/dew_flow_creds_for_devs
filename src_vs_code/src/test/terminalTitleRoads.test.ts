@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import { EntityMetadata, TreeNode } from '../types';
 import { arrowWorld } from './arrowWorld';
-import { FOLDER_NODE, L, named, session, T, folderWorld, folderModals } from './folderWorld';
-import { noteOurSend, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
+import { FOLDER_NODE, L, named, session, folderWorld, folderModals } from './folderWorld';
+import { noteOurSend, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, titleIn, world } from './vpnWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -29,8 +28,6 @@ const LINE = 'tmux attach -t alert';
 function alert(): EntityMetadata {
   return { id: 'alert', name: 'alert', isSshEnabled: false, isTerminal: true, command: 'tmux attach', commandArgs: [{ value: '-t alert' }] };
 }
-
-const titleIn = (parent: TreeNode, name: string): string => entryTerminalTitle(entryTerminalKey(name, parent));
 
 // ---------- A: the green arrow ----------
 
@@ -122,7 +119,6 @@ test('rows_run_under_the_folders_title', async () => {
 
   assert.deepEqual(named(w, 'a').map((t) => t.sent), [[L('a')]]);
   assert.deepEqual(named(w, 'b').map((t) => t.sent), [[L('b')]]);
-  assert.equal(T('a'), titleIn(FOLDER_NODE, 'a'));
   assert.match(w.infos[0], /^Typed 2 of 2 /);
 });
 
@@ -157,7 +153,7 @@ test('a_folder_name_with_a_tab_is_escaped_in_the_title', async () => {
 
   await w.click();
 
-  assert.deepEqual(w.terminals.map((t) => t.name), [entryTerminalTitle(entryTerminalKey('a', { ...FOLDER_NODE, name: 'a\tb' }))]);
+  assert.deepEqual(w.terminals.map((t) => t.name), [titleIn({ ...FOLDER_NODE, name: 'a\tb' }, 'a')]);
   assert.match(w.infos[0], /^Typed 1 of 1 /);
 });
 

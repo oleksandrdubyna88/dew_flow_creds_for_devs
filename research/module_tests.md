@@ -1441,16 +1441,17 @@ value `folderContextValue` produces. The evaluator reads the five forms the mani
 read against VS Code's parser and evaluated by this suite's own, not VS Code's, so the arrow's place beside `+` is the parent plan's hand
 check 8. Translations are checked for facts, not for quality.
 
-## Terminal titles name the folder (2026-11-09, S1-S3 of PLAN_terminal_titles_folder.md)
+## Terminal titles name the folder (2026-11-09, S1-S3 and S5 of PLAN_terminal_titles_folder.md)
 
 A terminal's title is both its creation name and the key it is found by, so every Creds title is built by the pure module
 `terminalTitles.ts` and the tests build their expected titles with its functions (`entryTerminalTitle`, `chainTerminalTitle`,
 `maskedRunTitle`, `vpnTerminalTitle`), never with a literal. The shared worlds changed to carry a parent: `arrowWorld` takes
 `parent` (the stored folder), `elementParentId` (what the menu's element still says) and `storageDir`, and answers `runScript`;
-`vpnWorld`'s `storageOf` takes `placed` (the folder of each entry) and exports `rootTitle(name)`; `folderWorld` exports
-`FOLDER_NODE`, and `T(name)` is the real title of a direct child of it. Run from `src_vs_code`: `npm run compile`, then
-`node --import ./scripts/lower-priority.mjs --test out/test/terminalTitles.test.js out/test/terminalTitleRoads.test.js out/test/terminalTitleScan.test.js`
-(9 + 12 + 3 tests).
+`vpnWorld`'s `storageOf` takes `placed` (the folder of each entry) and exports `titleIn(parent, name)`, the one place under
+`src/test` that composes `entryTerminalTitle(entryTerminalKey(…))` (`rootTitle(name)` is `titleIn(undefined, name)`); `folderWorld`
+exports `FOLDER_NODE`, and `T(name)` is `titleIn(FOLDER_NODE, name)`, the real title of a direct child of it. Run from `src_vs_code`: `npm run compile`, then
+`node --import ./scripts/lower-priority.mjs --test out/test/terminalTitles.test.js out/test/terminalTitleRoads.test.js out/test/terminalTitleScan.test.js out/test/folderRunTitlesDuringTheWait.test.js`
+(9 + 12 + 4 + 10 tests).
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -1460,15 +1461,23 @@ A terminal's title is both its creation name and the key it is found by, so ever
 | The folder run | `terminalTitleRoads.test.ts` | rows run under `Creds: <folder> / <entry>`; a terminal the arrow opened is closed by `Close Open Terminals and Run`; a terminal with the OLD title is not counted as open (the pinned one-time effect); a tab in a folder name is escaped in the title with no refusal |
 | The script run | `terminalTitleRoads.test.ts` | the script terminal carries the folder, and `fresh` disposes the one of the same title |
 | The other titles | `dependencyChain.test.ts`, `commandNameRoads.test.ts`, `vpnGoneRequest.test.ts`, `folderRunHelp.test.ts` | `Creds: before <owner>`, `Creds run: <node name>`, `Creds VPN: <name>`, and the help's `Creds: before <folder>` verbatim in five languages |
-| The scan | `terminalTitleScan.test.ts` | no source builds a title outside `terminalTitles.ts`, and no test asserts an old title literal, with an allow-list keyed by file and exact trimmed line, each with a reason; a stale entry fails; the scan still finds its own shapes (a fixture, and at least three sites in `terminalTitles.ts`) |
+| The folder run, during the wait | `folderRunTitlesDuringTheWait.test.ts` | every change happens while the modal (or the chain's dialog) is held, and a rename or move REPLACES the node object in `w.nodes` (an edit in place also edits the captured node and cannot go red). A folder renamed is typed under its new name; a terminal the arrow opened under the new name is left alone, one terminal, under `Run` and under `Close Open Terminals and Run`; an old-title terminal the modal listed is closed by object and the line goes to a new terminal under the new title; under `Run` that old terminal, still live, is left alone and reported `Left alone, terminal already open`, never "closed while the question was open"; an entry moved out is typed under its new parent; trashed, under `Creds: Trash / a`; a trashed folder keeps its title and runs (a guard); a folder or an entry removed for good is typed under the bare title |
+| The scan | `terminalTitleScan.test.ts` | no source builds a title outside `terminalTitles.ts`, and no test asserts an old entry-title literal with ANY name — one matcher per quote delimiter (so `"CredsForDevs: O'Brien"` is caught) and the regex form; a notification prefix such as `` `CredsForDevs: ${message}` `` is not a site; an allow-list keyed by file and exact trimmed line, each with a reason; a stale entry fails; the scan still finds its own shapes (fixtures for every quote style, and at least three sites in `terminalTitles.ts`) |
 
 **Teeth.** Written first and watched red on the tree before each story's production edit. S1: the test file did not compile
-(`Cannot find module '../terminalTitles'`), then against a stub returning `''` every case failed with `actual '' expected
-'Creds: ops / x'`. S2: with the fakes and the new suite on S1's tree, `terminalTitleRoads` failed 12 of 12
+(`Cannot find module '../terminalTitles'`), then against a stub returning `''` six of the nine cases failed with `actual ''
+expected 'Creds: ops / x'` and the like (`no_parent_gives_the_bare_title`, `an_entry_not_in_storage_has_no_folder` and
+`the_module_imports_no_vscode` did not: they hold with an empty module body too). S2: with the fakes and the new suite on S1's tree, `terminalTitleRoads` failed 12 of 12
 (`no terminal "Creds: ops / alert" — opened: CredsForDevs: alert`; `no terminal "Creds: X / start openvpn" — opened: CredsForDevs:
 before ops relay stage, CredsForDevs: start openvpn`; the arrow's second terminal, 2 against 1), and the suites that go through
 `T` and `rootTitle` failed with it. S3: the scan named the three sites (`runCommands.ts:374`, `dependencyRunHost.ts:169`,
-`vpnRun.ts:240`), the masked run answered `'CredsForDevs run: node-alert'`, and the chain title was missing. One lesson: a
+`vpnRun.ts:240`), the masked run answered `'CredsForDevs run: node-alert'`, and the chain title was missing. S5: nine of the ten
+`folderRunTitlesDuringTheWait` tests were red on the tree before the production edit and red again with only
+`folderRunCommand.ts` reverted (the arrow's second terminal under the old title; `actual 'Creds: claude sessions / a'` against
+`'Creds: g / a'`, `'Creds: Trash / a'`, `'Creds: a'`); the tenth, the trashed folder, is a guard. With the key change alone the
+`Run` case answered `Not run: a — its terminal closed while the question was open`, which pins the snapshot reading. The scan's
+per-delimiter matchers were red on the four quoted lines of other suites until they were allow-listed, and the `O'Brien`
+fixture goes red against one shared matcher. One lesson: a
 regex over a terminal name such as `/: b$/` in `failCreate` no longer matches once the folder stands between the colon and the
 name; those became `/ \/ b$/`.
 

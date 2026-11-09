@@ -546,8 +546,8 @@ its §S2.4 folder-run brief and pitfalls 1-2 are superseded by S5 for the post-w
 
 ## As built
 
-Four commits on `feat/terminal-titles-folder`, one per story, then the stop (ecc0466). Suite after each story: 6998, 7010,
-7015 tests, 0 failed, 8 skipped. S5 is not built (the stop).
+Four commits on `feat/terminal-titles-folder`, one per story, then the stop (ecc0466), then S5. Suite after each story: 6998,
+7010, 7015, then 7026 after S5 (7018 passed, 0 failed, 8 skipped).
 
 RED seen first, by story (messages in the commit bodies):
 
@@ -558,6 +558,20 @@ RED seen first, by story (messages in the commit bodies):
   plus the suites that go through `T` / `rootTitle`.
 - S3: the scan named `runCommands.ts:374`, `dependencyRunHost.ts:169`, `vpnRun.ts:240`; `'CredsForDevs run: node-alert'` against
   `'Creds run: node-alert'`; the chain title missing; the help's VERBATIM absent in English.
+
+- S5: the nine red `folderRunTitlesDuringTheWait` tests on ecc0466's production code (`folderRunCommand.ts` unchanged; test-side
+  edits only), with the trashed-folder guard green. RED 1 (before the fix): `a_folder_renamed_…` `actual: [] expected [['tmux attach
+  -t a']]` (opened: `Creds: before claude sessions, Creds: claude sessions / a`); the two arrow tests (under `Run`, under Close) `one
+  terminal for a: the arrow's`, actual `[['Creds: renamed sessions / a', …], ['Creds: claude sessions / a', …]]` (the second terminal
+  of change 1.2); `an_old_title_terminal_the_modal_listed_…` `actual [[[],1],[[…],0]] expected [[[],1]]` (the new terminal sits under
+  the old title); `under_run_an_old_title_…` `actual: [] expected [['tmux attach -t b']]`; `an_entry_moved_out_…` actual `'Creds:
+  claude sessions / a'` expected `'Creds: g / a'`; `an_entry_trashed_…` expected `'Creds: Trash / a'`; the two removed-for-good tests
+  expected `'Creds: a'`. With only the key change (no `stillLive` clause): `under_run_…` answered `Not run: a — its terminal closed
+  while the question was open, …` against `Left alone, terminal already open: a`, which pins the snapshot decision. GREEN: 10 of 10
+  after the fix. RED 2 (only `folderRunCommand.ts` reverted): the same nine red. The scan: the per-delimiter matchers listed the four
+  quoted lines of other suites as offenders until they were allow-listed; against one shared matcher with a back-reference the
+  `"CredsForDevs: O'Brien"` fixture is red (`actual: 0, expected: 1`). Guards green before and after: the notification negative, the
+  exact chain title at dependencyChain, `titleIn`, `elementParentId`.
 
 Deviations from the plan and the S2 spec:
 
@@ -575,3 +589,14 @@ Deviations from the plan and the S2 spec:
 7. S4's research/module_tests.md wrote "every case failed" for S1's stub run; the S1 commit records 6 of 9. S5 corrects the document.
 8. The folder run carried the folder node captured before the modal into the post-wait re-check and creation (the spec's §S2.4 and
    pitfall 1 prescribed it); the code gate found the rename case. Change 1.2; S5 builds the timing contract.
+9. S5 put its folder-run tests in a new file, `src/test/folderRunTitlesDuringTheWait.test.ts` (the plan allowed either), with a local
+   `replace(w, id, patch)` helper that always replaces the node object. The two arrow tests are one loop over the two buttons.
+10. S5 hands `runChosen` and `typeAll` one small `Chosen { snapshot, closing }` object instead of the plan's separate `snapshot` and
+    `closing` parameters, to stay inside the complexity and parameter limits; `appeared(row, chosen, keyOfRow)` is the plan's
+    `appeared(row, snapshot, closing, keyOfRow)`. `NOTHING_AUTHORISED` is gone (nothing reads it).
+11. The plan's Done grep `grep -rn 'entryTerminalTitle(entryTerminalKey' src/test` finds `titleIn` and also the pure module's own
+    test, `terminalTitles.test.ts`, which asserts the module's functions directly; it is left as it is. Under the four title
+    compositions of the plan (`rootTitle`, `T`, the roads file's `titleIn`, `terminalActivity`) only `titleIn` composes now.
+12. The scan's `CredsForDevs: ${` pattern and its seven allow-list lines are gone, and `'CredsForDevs: a'` as a pattern with them;
+    the four quoted lines of other suites got allow-list lines with their reasons (an output panel's name; the env collection
+    description). The scan has four tests now (the fourth holds the per-delimiter and negative fixtures), the new suite ten.

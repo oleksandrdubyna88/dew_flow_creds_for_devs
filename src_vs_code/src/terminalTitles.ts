@@ -15,10 +15,8 @@ export interface EntryTerminalKey {
   readonly folderName: string | undefined;
 }
 
-/** The shape of storage this module reads: one node by id. */
-export interface NodeSource {
-  getNode(accountId: string, id: string): TreeNode | undefined;
-}
+/** The shape of storage this module reads: what `parentFolderOf` takes (one node by id). */
+export type NodeSource = Parameters<typeof parentFolderOf>[0];
 
 /** The ONE constructor: the entry's `details.name` and its direct parent folder node (`undefined` at the root). */
 export function entryTerminalKey(entryName: string, folder: TreeNode | undefined): EntryTerminalKey {

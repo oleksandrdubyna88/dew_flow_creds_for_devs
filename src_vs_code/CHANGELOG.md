@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or move an entry to another folder (the title follows the current folder). There is no search for old titles.
 - **Two entries that make the same title share one terminal**, as two same-named entries in one folder already did: for example
   a root entry named `x / y` and the entry `y` in a folder `x`.
+- **Run All in Folder reads each entry's folder again when it types**, after its dependencies ran, so a folder renamed or an
+  entry moved while the question or the dependencies were waiting is found under its current title, and no second terminal
+  opens beside one the arrow opened meanwhile. Under *Run*, a terminal the question listed that is still open counts as open:
+  its entry is left alone and reported so, never as "closed while the question was open".
 
 ## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
 

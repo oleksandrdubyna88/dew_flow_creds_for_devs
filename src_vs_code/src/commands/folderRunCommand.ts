@@ -26,7 +26,7 @@ import {
 } from '../folderRun';
 import { entryOpenRefusal, liveTerminalsOfEntry } from '../pinnedTerminal';
 import { typeIntoNew } from '../terminalGuard';
-import { EntryTerminalKey, entryTerminalKey } from '../terminalTitles';
+import { EntryTerminalKey, entryTerminalKey, entryTerminalKeyOf } from '../terminalTitles';
 import type { TreeNode } from '../types';
 import type { RunCommandsHost } from './runCommands';
 
@@ -38,8 +38,15 @@ import type { RunCommandsHost } from './runCommands';
  * From the chain's end to the last send nothing is awaited, so the one re-check is as fresh as one per line, and nothing
  * reads the terminal list after a `dispose` (a disposed terminal may still be listed).</p>
  *
- * <p>Every title of a row is `keyOf(folder, row.name)`: the folder node re-read in `folderAt`, one key for the classification,
- * the modal's snapshot, the re-check and the creation. Every row is a DIRECT child of the folder, so the folder is its parent.</p>
+ * <p>A row's key is read at two points, and nothing in between is a key (`PLAN_terminal_titles_folder.md` §Design, the timing
+ * contract). BEFORE the modal, synchronously from `folderAt` to the snapshot: the classification and the modal's snapshot use
+ * `keyOf(folder, row.name)` over the folder node `folderAt` re-read; nothing is awaited since, and every row is a DIRECT child
+ * of that node, so it is every row's parent. AFTER the last await, in the synchronous step that types: the re-check
+ * (`appeared`) and the creation use `entryTerminalKeyOf(storage, account, row.id, row.name)`, the arrow's own function, so a
+ * folder renamed, an entry moved or a node removed during the wait is keyed as storage holds it then. The captured node is
+ * NEVER read after the wait. What the person approved stays by object: the snapshot's terminals, closed under `Close Open
+ * Terminals and Run` only. Under `Run` the snapshot is read, never acted on: a terminal it listed that is still live counts
+ * as `appeared` (its row is left alone, not "closed meanwhile"), whatever title it carries now.</p>
  */
 
 interface Folder {
@@ -52,8 +59,6 @@ interface Folder {
 
 /** The terminals the modal listed, by row id: what `Close Open Terminals and Run` authorises, and nothing else. */
 type Authorised = ReadonlyMap<string, readonly vscode.Terminal[]>;
-
-const NOTHING_AUTHORISED: Authorised = new Map();
 
 function keyOf(folder: Folder, name: string): EntryTerminalKey {
   return entryTerminalKey(name, folder.node);
@@ -128,7 +133,7 @@ async function ask(host: RunCommandsHost, folder: Folder, plan: FolderPlan, isNe
     ...folderButtons(plan),
   );
   if (choice !== undefined) {
-    await runChosen(host, folder, plan, choice === CLOSE_AND_RUN ? snapshot : undefined);
+    await runChosen(host, folder, plan, { snapshot, closing: choice === CLOSE_AND_RUN });
   }
 }
 
@@ -137,39 +142,59 @@ function openTerminals(plan: FolderPlan, folder: Folder): Authorised {
   return new Map(lineRows(plan).filter((row) => row.kind === 'open').map((row) => [row.id, liveTerminalsOfEntry(keyOf(folder, row.name))]));
 }
 
-/** `authorised` is present only for the closing button. */
-async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan, authorised: Authorised | undefined): Promise<void> {
+/** What the modal listed, and whether the button chosen authorises closing it: the snapshot is read under both, acted on under one. */
+interface Chosen {
+  readonly snapshot: Authorised;
+  readonly closing: boolean;
+}
+
+/** A row's key as storage holds it NOW: read only after the last await. */
+type KeyOfRow = (row: LineRow) => EntryTerminalKey;
+
+async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan, chosen: Chosen): Promise<void> {
   const trust = host.context.globalState;
-  const closing = authorised !== undefined;
+  const { closing } = chosen;
   const lines = linesToType(plan, closing);
   await trustAll(trust, lines);
   const request = dependencyRequest(host.storage, folder.accountId, lines.map((row) => row.details), folder.name, trust, plan.directIds);
   const chain = await runDependenciesFirst({ ...request, ownerIsFolder: true });
   if (chain.ready) {
-    say(reportNotice(folder.name, typeAll(plan, closing, authorised ?? NOTHING_AUTHORISED, folder)));
+    const keyOfRow: KeyOfRow = (row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name);
+    say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow)));
   } else {
     warned(chainStopped(folder.name));
   }
 }
 
 /** The re-check over every row first, then the closes and the sends: synchronous from here to the last send. */
-function typeAll(plan: FolderPlan, closing: boolean, authorised: Authorised, folder: Folder): readonly FolderOutcome[] {
-  const settled = plan.rows.map((row) => settleRow(row, closing, (r) => appeared(r, authorised, folder)));
-  return settled.map((step) => (step.kind === 'type' ? typeLine(step.row, authorised.get(step.row.id) ?? [], folder) : step));
+function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow): readonly FolderOutcome[] {
+  const settled = plan.rows.map((row) => settleRow(row, chosen.closing, (r) => appeared(r, chosen, keyOfRow)));
+  return settled.map((step) => (step.kind === 'type' ? typeLine(step.row, authorisedFor(step.row, chosen), keyOfRow) : step));
 }
 
-/** A live terminal of the row's name that the person did not authorise closing. */
-function appeared(row: LineRow, authorised: Authorised, folder: Folder): boolean {
-  const known = authorised.get(row.id) ?? [];
-  return liveTerminalsOfEntry(keyOf(folder, row.name)).some((terminal) => !known.includes(terminal));
+/** What the person authorised closing for this row: the snapshot's terminals under the closing button, nothing under `Run`. */
+function authorisedFor(row: LineRow, chosen: Chosen): readonly vscode.Terminal[] {
+  return chosen.closing ? (chosen.snapshot.get(row.id) ?? []) : [];
+}
+
+const stillLive = (terminals: readonly vscode.Terminal[]): boolean => terminals.some((terminal) => terminal.exitStatus === undefined);
+
+/**
+ * A live terminal of the row's CURRENT key that the person did not authorise closing, or (under `Run` only) a terminal the
+ * modal listed for the row that is still live, whatever title it carries now: it is open, so the row is left alone.
+ */
+function appeared(row: LineRow, chosen: Chosen, keyOfRow: KeyOfRow): boolean {
+  const listed = chosen.snapshot.get(row.id) ?? [];
+  const unlisted = liveTerminalsOfEntry(keyOfRow(row)).some((terminal) => !listed.includes(terminal));
+  return unlisted || (!chosen.closing && stillLive(listed));
 }
 
 /** Close what was authorised for this row, by object; then a NEW terminal, never found. A failure is this row's alone. No rollback. */
-function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], folder: Folder): FolderOutcome {
+function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: KeyOfRow): FolderOutcome {
   const live = toClose.filter((terminal) => terminal.exitStatus === undefined);
   try {
     live.forEach((terminal) => terminal.dispose());
-    const sent = typeIntoNew(keyOf(folder, row.name), row.details.terminalOs, () => row.line);
+    const sent = typeIntoNew(keyOfRow(row), row.details.terminalOs, () => row.line);
     return sent.kind === 'typed' ? { kind: 'typed', name: row.name } : failed(row, failedAfterClosing(sent.reason, live.length));
   } catch (error) {
     return failed(row, failedAfterClosing(describeError(error), live.length));

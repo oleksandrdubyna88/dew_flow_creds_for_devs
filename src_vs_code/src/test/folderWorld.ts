@@ -1,8 +1,7 @@
 import { siblingOrder } from '../stateKeys';
-import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import { EntityMetadata, TreeNode } from '../types';
 import { registerRunWorld } from './arrowWorld';
-import { FakeTerminal, HeldDialog, World, WorldOptions, hostOs, memoryTrust, seedTrusted, until, world } from './vpnWorld';
+import { FakeTerminal, HeldDialog, World, WorldOptions, hostOs, memoryTrust, seedTrusted, titleIn, until, world } from './vpnWorld';
 
 /**
  * The folder run under the `vscode` stub: the REAL `credSshManager.runFolder` handler of `registerRunCommands`, registered
@@ -15,7 +14,7 @@ export const FOLDER = 'claude sessions';
 export const FOLDER_NODE: TreeNode = { id: 'f', name: FOLDER, type: 'folder', folderType: 'terminal', parentId: null };
 
 /** The terminal an entry named `name` runs in: the real title of a direct child of the folder. */
-export const T = (name: string): string => entryTerminalTitle(entryTerminalKey(name, FOLDER_NODE));
+export const T = (name: string): string => titleIn(FOLDER_NODE, name);
 
 /** A Terminal entry whose line is `tmux attach -t <name>`, its id being its name. */
 export function session(name: string, extra: Partial<EntityMetadata> = {}): EntityMetadata {

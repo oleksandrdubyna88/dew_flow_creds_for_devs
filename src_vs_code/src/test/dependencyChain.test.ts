@@ -115,7 +115,7 @@ test('without the execute mark nothing runs first — the launcher alone is type
   const w = world({});
   const { started } = await startVpn(scope, w, nodes);
   assert.equal(started, true);
-  assert.equal(w.terminals.find((t) => t.name.startsWith(chainTerminalTitle(''))), undefined);
+  assert.equal(w.terminals.find((t) => t.name === chainTerminalTitle('ops relay stage')), undefined);
   assert.equal(w.terminals.find((t) => t.name === rootTitle('start openvpn'))?.sent.length, 1);
 });
 

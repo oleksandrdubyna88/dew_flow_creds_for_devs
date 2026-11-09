@@ -68,25 +68,26 @@ export function registerRunWorld(w: World, host: RunWorldHost): Record<string, H
   return handlers;
 }
 
-/**
- * The world with `runCommands` registered against a fake host; `trusted` are [entityId, line] pairs already vouched for,
- * and `refSource` is what `creds://` references are read from (nothing, unless a test gives one).
- */
+/** What an arrow world is built from: where the entry is stored, what the element claims, where a script is written. */
 export interface ArrowOptions extends WorldOptions {
   /** The tree folder the entry is stored in. Absent: the entry is at the root. */
   parent?: TreeNode;
   /** The `parentId` the ELEMENT handed to the handler carries (a menu draws it before a move); default: the stored one. */
-  elementParentId?: string | null;
+  elementParentId?: string;
   /** Where a script run writes its file. */
   storageDir?: string;
 }
 
 /** The tree element a click hands over: the node as the menu drew it, its `parentId` possibly old. */
 function elementOf(opts: ArrowOptions, entry: EntityMetadata, nodeName: string): Record<string, unknown> {
-  const parentId = 'elementParentId' in opts ? opts.elementParentId : opts.parent?.id;
+  const parentId = opts.elementParentId ?? opts.parent?.id;
   return { id: entry.id, name: nodeName, details: entry, parentId };
 }
 
+/**
+ * The world with `runCommands` registered against a fake host; `trusted` are [entityId, line] pairs already vouched for,
+ * and `refSource` is what `creds://` references are read from (nothing, unless a test gives one).
+ */
 export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly [string, string])[] = [], refSource: unknown = {}): ArrowWorld {
   const w = world({}, opts);
   const masked: ArrowWorld['masked'] = [];

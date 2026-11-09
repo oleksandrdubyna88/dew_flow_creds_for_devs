@@ -2217,9 +2217,18 @@ with no parent folder; the key is `EntryTerminalKey { entryName, folderName }`, 
 folder is the DIRECT parent tree folder (Trash is a normal parent), and `entryTerminalTitle` is the one place that writes its name
 through `escapeControl`. Each road builds its key once and in one way: the arrow in `entryAt` from the CURRENT stored node
 (`entryTerminalKeyOf(storage, accountId, node.id, details.name)`, never the menu element's old `parentId`); *Run Script* from the
-same key; a VPN launcher from its OWN node (it may sit in another folder than the VPN); and the folder run through `keyOf(folder,
-name)` over the folder node `folderAt` re-read, used for the classification (`factsOf`), the modal's snapshot, the post-await
-re-check and the creation, so find and create cannot part. `folderRun.ts` still knows only `isOpen(name)`. The other three titles
+same key; a VPN launcher from its OWN node (it may sit in another folder than the VPN); and the folder run at two reading points
+(S5, the timing contract). BEFORE the modal, synchronously from `folderAt` to the snapshot, `entryTerminalKey(name, folder.node)`
+over the folder node `folderAt` re-read serves the classification (`factsOf`) and the modal's snapshot: nothing is awaited since,
+and every row is a direct child of that node. AFTER the last await (`chain.ready`), the re-check (`appeared`) and the creation
+(`typeIntoNew`) take each row's key from `entryTerminalKeyOf(storage, accountId, row.id, row.name)`, the arrow's own function, so
+find and create cannot part; the captured node is never read after the wait. A folder renamed during the wait is typed under its
+new name and finds a terminal the arrow opened under it (no second terminal); an entry moved out is typed under its new parent;
+an entry deleted meanwhile is a move to the Trash and is typed under `Creds: Trash / <name>`; a trashed folder keeps its name and
+its rows still run; a folder or entry removed for good gives the bare `Creds: <name>`; the line is typed in every case, as
+`settleRow` re-reads nothing of the entry. An entry renamed during the wait is typed under the name the person approved. Under
+`Run` the modal's snapshot is read, never acted on: a snapshot terminal still live counts as `appeared`, so its row is left alone
+(not "closed meanwhile"). `folderRun.ts` still knows only `isOpen(name)`. The other three titles
 are fixed shapes of the same module with no folder: `Creds: before <owner>`, `Creds run: <name>` (the node's name) and
 `Creds VPN: <name>`. A terminal opened under an old title, or before a folder rename or an entry move, is not found: the arrow
 opens a second one once (accepted, no search for old titles).

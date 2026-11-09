@@ -290,8 +290,11 @@ export function ownerChain(): Record<string, EntityMetadata> {
   return { install, start, vpn };
 }
 
-/** The title of the terminal of a ROOT entry (no parent folder) named `name`, built by the real functions. */
-export const rootTitle = (name: string): string => entryTerminalTitle(entryTerminalKey(name, undefined));
+/** The title of the terminal of the entry `name` inside `parent` (none: a root entry), built by the real functions. The one composition under `src/test`. */
+export const titleIn = (parent: TreeNode | undefined, name: string): string => entryTerminalTitle(entryTerminalKey(name, parent));
+
+/** The title of the terminal of a ROOT entry (no parent folder) named `name`. */
+export const rootTitle = (name: string): string => titleIn(undefined, name);
 
 export const STORED_CONFIG = 'client\nremote vpn.example 1194\n';
 
