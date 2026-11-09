@@ -1,8 +1,25 @@
 # PLAN — Terminal titles name the folder, and "CredsForDevs" becomes "Creds"
 
-> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (S1-S4 committed; the code review gate and the promotion to `research/` are still to do).** Scope: the VS Code extension's terminal titles
-> (src_vs_code/src), five help languages, the changelog and the extension module doc. Plan gate: coai `proceed`
-> 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
+> Status: **stopped for re-review, 2026-11-09.** S1-S4 are built on `feat/terminal-titles-folder` (local commits,
+> not merged); the code gate passed (session d1d8e222, 8 of 8 reviewers) and its accepted finding is change 1.2, the
+> plan's second change since approval. No new code until the whole plan is reviewed again. Scope: the VS Code
+> extension's terminal titles (src_vs_code/src), five help languages, the changelog and the extension module doc.
+> Plan gate: coai `proceed` 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-09 · by reviewers · state: stopped
+
+- 1.1 · 2026-11-09 · reviewer · approach — a folder name's control characters are escaped in the title instead of a new folder-run refusal
+  (plan gate findings 0 and 4, and the own Opus review, accepted after the plan's proceed. The same round's other
+  edits were judged fixes that satisfy the plan as written: one key constructor for every road, the arrow's key from
+  the current stored node, the rebuilt absence checks, the source scan; "script and arrow share one title" was
+  dropped because one entry is never both. Gate findings 1, 2 and 3 were rejected with reasons in the gate.)
+- 1.2 · 2026-11-09 · reviewer · approach — the folder run re-reads its folder node after the dependency chain, for the re-check and the creation
+  (code gate finding 2 and the own Opus bug review: a folder renamed while the chain waits makes the re-check miss a
+  terminal the arrow opened under the new name, so a second terminal opens. The consultants split on whether this
+  only satisfies the plan as written (consult e5cc1cdc); it needs a new decision for a folder deleted during the wait,
+  so it is counted. This second change stopped the plan.)
 
 ## Goal
 
@@ -138,14 +155,6 @@ Stories at the bottom. Each commit is green on typecheck, lint and the extension
 - [ ] Help in five languages, CHANGELOG and research/module_extension.md updated.
 - [ ] coai code gate run over the whole diff, every finding resolved; own review run at the same time.
 - [ ] This plan promoted to research/ with `git mv` as the last step.
-
-## Change ledger
-
-1. 2026-11-09, after the plan gate's `proceed`: accepted gate findings 0 and 4 and the own review (Opus) — the folder
-   name is escaped instead of refused (no new folder-run refusal); one key constructor taking a name and a folder
-   node, used by the folder run too; the arrow's key reads the current stored node, not the menu's element; the
-   absence checks in dependencyChain are rebuilt; a source scan test is added; "script and arrow share one title" is
-   dropped (one entry is never both). Rejected gate findings 1, 2, 3 with reasons recorded in the gate.
 
 ## Stories
 
