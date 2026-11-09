@@ -116,7 +116,6 @@ await_file() { local n=0; while [ ! -e "$1" ] && [ "$n" -lt 150 ]; do sleep 0.1;
 lines_of() { echo $(($(wc -l < "$1"))); }
 first_line() { local l=""; IFS= read -r l < "$1" || true; printf '%s' "$l"; }
 alive() { kill -0 "$1" 2>/dev/null; }
-name_re() { printf '^testsToDelete-%s-creds-%s-[0-9a-f]{8}$' "$TOK" "$1"; }
 
 # The scope of the janitor and the Node sweep (spec section 6): nothing of the owner form with the creds token outside the private roots.
 scope_premise() {
@@ -161,7 +160,7 @@ EOF
   base="${d##*/}"
   [[ "$base" =~ ^testsToDelete-[uw][0-9]{1,10}-creds-x-[0-9a-f]{8}$ ]] && ok "T1 the name matches the pattern ($base)" || bad "T1 the name" "$base"
   eq "T1 the folder is under the case root" "${d%/*}" "$CR"
-  local seg="${base#testsToDelete-}"; seg="${seg%%-*}"
+  local seg="${base:14}"; seg="${seg%%-*}"  # 14 characters are the prefix
   eq "T1 the owner segment equals the mounted thisOwnerToken()" "$seg" "$node_token"
   eq "T1 the case root is empty after the exit" "$(count "$CR")" 0
 }
