@@ -584,12 +584,61 @@ takes with `['Deny', 'Allow']`, whether Escape resolves the promise, whether a m
 8. The §S5.11 CHANGELOG entry omits `create` from the quiet calls (see the question below) and names the folder verbs with `create`/`delete`: `consentNotGiven` serves `brokerFolderDoor.ts` too, and that door is admitted on the place (`:142`). No test of its own for the folder timeout.
 9. `brokerConsent.ts`'s doc comments at the file head and on `ConsentGateDeps.dialogClosed` were rewritten; `aliasThrottle.ts`'s two comments naming "the 5-minute timeout"/"timed out" too; `module_extension.md`'s three places named in H15 and two new paragraphs (D.3, D14) are written from the diff.
 
+### S5.12 (epoch 8) — the fix-forward as built
+
+*(Written by the coder, 2026-11-09. Commits: `385c324` (F2, F3, F4, F6, F7, F8b, F8c and their test infrastructure), `b9afa3c` (F1, F8a), `9c2d60a` (the ledger site kept in `openVpnConnect`), `20dff43` (F5, F9: the CHANGELOG entry and `module_extension.md`), and the commit that holds this section.)*
+
+**What was built.** F1: `TokenlessCeilings.followUpStands` (marks the holder's dialog as on screen and closes it with `keep = true` when the question's promise settles, by any road; nothing for a local token call), the seam `CallDeps.standing` / `UseActionContext.standingPrompt` (one line in `credsAgentServer.ts`), threaded exactly as `lateAnswer` is (`VpnUseDeps.open`'s sixth parameter, `agentVpnOpener`, `runVpn`'s ninth, `VpnRunContext`, `vpnDependencies`, `DependencyRunRequest`), and called before the race at both question sites; `executed` (the running step) calls nothing. F2: the two sentences of §4.10, byte for byte, pinned as literals in three test files. F3: `shown` wraps the call in the promise executor. F4: `BUSY_PLACE` as A8.2 writes it. F5: the CHANGELOG entry re-derived from the diff `455567a..HEAD -- src_vs_code/src`, each bullet citing the file and line it names (checked with `grep -n` at the last source commit), nothing bridged named. F6: the Enter comment. F7: F7a, a guard. F8: `executed` reads the gate before it types and answers `'untyped'`, `ran` ends the step as `runStep`'s own check does; `timedOut`'s continuation and `untilGone`'s `onLate` drop a throw. F9: the `module_extension.md` paragraphs (the place, the late answer, `busy`, D.3, D14). `extension.ts` is unchanged (1003); the clients, `brokerFolderDoor.ts`, `toolEnsure.ts` and `consentTurns.ts` are untouched.
+
+**Scenarios.** F1a (both callers, and `Stop`), F1b, F1c, F1e, F1f (i)-(iv), F2a (C3, C4, K6, `brokerAbandoned` updated), F2b (inside F1a (iii)), F2c, F2d, F3a, F4a (C8's words), F4b (C9, C9b with their facts), F7a, F8a, F8b, F8c. RED was watched before the code for F1a, F1b, F1c (the exec and the MCP `up` were let in over the question), F1f (`followUpStands is not a function`), F2c and F2d (the old words), F3a, F8a (the chain threw `after a dependency step had been typed`), F8b and F8c (an unhandled rejection). F2a (C3, C4, K6, `brokerAbandoned`) and F4a were updated together with the code and were watched red through M41, M43, M45 and M46. Guards, green when written, with their mutations' red outputs: F1d (C10, C10b: M52), F1e (M36), F7a (M47).
+
+**Mutations: M34-M52, 19 of 19 caught** (each applied, the named test files compiled and run, restored; the file's sha-256 equal before and after in every row; the harness is `mutate8.cjs` in the session scratchpad, not committed). M52 makes the unsettled question keep the test process alive; the run was ended by hand after C10 and C10b had printed red.
+
+| # | Mutation | Red cases | Restored |
+|---|---|---|---|
+| M34 | `openVpnConnect` does not call `standingPrompt` | F1b | yes |
+| M35 | `askToContinue` does not call `standingPrompt` | F1a (runStep), F1a (settle), F1c | yes |
+| M36 | `followUpStands` closes with `keep = false` | F1e, F1f (iv) | yes |
+| M37 | `followUpStands` attaches no close | F1a (runStep), F1a (settle), F1c, F1b, F1e, F1f (i), F1f (iii), F1f (iv) | yes |
+| M38 | `followUpStands` skips the `doorOfDialog` check | F1f (ii) | yes |
+| M39 | the close is attached for fulfilment only | F1f (iii) | yes |
+| M40 | `credsAgentServer.ts` omits `standing` from the literal | F1a (runStep), F1a (settle), F1c, F1b | yes |
+| M41 | `brokerConsent.ts`'s detail keeps *nothing ran* | C3, C3b, C4, F2c, F2d, a client that leaves while the modal is open: a la | yes |
+| M42 | `brokerCall.ts`'s detail keeps *nothing ran* | F1a (runStep), F1a (settle), F1b | yes |
+| M43 | `LATE_ANSWER_NOTICE` keeps the old words | C3, C3b, C4, F2c, F2d | yes |
+| M44 | `shown` evaluates `showWarningMessage` outside the promise | F3a | yes |
+| M45 | `BUSY_PLACE` loses the quiet clause | S5, C8 (the words) | yes |
+| M46 | `BUSY_PLACE` ends with *the next request is then asked.* | S5, C8 (the words) | yes |
+| M47 | `consentNotGiven` passes `onPlace = false` | C15, F7a | yes |
+| M48 | `executed` types before it reads the gate | F8a | yes |
+| M49 | `ran` maps `'untyped'` like `'gone'` | F8a | yes |
+| M50 | `timedOut`'s continuation without its guard | F8b | yes |
+| M51 | `untilGone`'s `onLate` without its guard | F8c | yes |
+| M52 | `executed` (the running step) calls `standingPrompt` | C10, C10b | yes |
+
+**Tests.** Full suite on the default Node (v26.12.1): 7049 tests, 7041 pass, 0 fail, 8 skipped. Node 22 (v22.23.4, through `npx -y node@22`): 7049 tests, 7041 pass, 0 fail, 8 skipped. Lint (complexity 4, 800 lines), typecheck, ratchet (`extension.ts` 1003, at baseline), `public-hygiene` and its selftest, and `plan-lifecycle` are clean.
+
+**Line counts (against A8.5).** `credsAgentServer.ts` 793 (plan 793, ≤ 795), `aliasThrottle.ts` 506 (≤ 510), `brokerConsent.ts` 374 (≤ 378), `brokerCall.ts` 249 (≤ 252), `useActions.ts` 176 (≤ 178), `requestLife.ts` 150 (≤ 150), `vpnRun.ts` 284 (≤ 288), `vpnLauncherRun.ts` 180 (≤ 182), `dependencyRunHost.ts` 384 (≤ 388), `agentUseActions.ts` 436 (≤ 442), `bridgeConsentText.ts` 88, `extension.ts` 1003. Tests: `consentContractVpn.test.ts` 477 (≤ 650), `consentContractEpoch8.test.ts` 269 (≤ 450), `consentContract.test.ts` 737 (≤ 760), `brokerWorld.ts` 663 (≤ 670). No file over 800; `consentPlace.ts` not created.
+
+**Where the code or the tests differ from A8, and why.**
+
+1. `openVpnConnect` calls a small `untilSettled(ctx, question)` for the standing-prompt call and the race, and asks the question itself inline: the first shape (a helper that also asked) changed the prompt-site ledger id, and `promptSites.test.ts` caught it. The call is made before the race, with the question's own promise, as A8.2 says; the ledger ids are unchanged.
+2. `ran` is now the helper that returns a `StepEnd` (A8.2 says `ran` "holds the new branch"); `runStep` returns `ran(…)`.
+3. F1f and F8c are in `consentContractEpoch8.test.ts`, not `consentContract.test.ts`: with them that file passed the 800-line lint ceiling (830). F8b is in `brokerConsentPrompted.test.ts`, not the new file: `gateOver` lives there and is not exported.
+4. F4b asserts the facts (`w.dialogs.length === 0`, the quiet call still held) beside the constant, through the imported `BUSY_PLACE`, so it is not red under M45; the words are F4a's (C8's words and the S5.3 literal), which M45 and M46 turn red.
+5. F3a runs through the wall world, which gained the option `throwDialogs` (passed to `brokerWorld`'s).
+6. F1c's never-ask rig is `rig(…, quiet = true)` (`mcpPreConsented`), and the shared helpers (`answeredNow`, `leaveAndSettleLate`) use the event loop's immediates because the *Continue* roads need a mocked `setTimeout`.
+
+**Reading Q8-1 as A8.6 does:** "one dialog on screen" is `r.vw.held.length === 1` with `r.bw.openDialogs.length` and `r.bw.buttons.length` unchanged; no scenario needed the broker world's `dialogs` for it.
+
 ## S5.13 — Questions for the coordinator
 
 - **Q1. §S5.11's "a quiet local MCP call of `create`, …" is false for `create`.** A create is never quiet: `confirmAndCreate` admits with `door.admit(res, true)` (`brokerMcpDoor.ts:385`), and only `handleMcpUse` reads the flag (`:223`). The calls that hold the place quietly are `terminal`, `up`, `down`, `rotate`, and `exec` on a forwarding entry with the agent up (the five flags of H9). The CHANGELOG says so; the spec sentence was not changed.
 - **Q2. §S5.4 does not list `bridgeLinks.test.ts:403`**, a test that pins today's "a quiet forwarding exec holds nothing" and turns red under D.3 by design. It was inverted into C9b (difference 6). Please confirm that is the intended owner of C9b.
 - **Q3. The folder verbs hear the place clause on a timeout** (difference 8): `consentNotGiven`'s one `true` serves them, because they are admitted on the place. §S5.2 names only `create` and `delete`. Built as the chooser's rule says; say so if the parent wanted the folder's old sentence.
 - **Q4. §S5.6 M26 "by review only"** is now caught by a test (C17's reasons check). It reads three words of three rows, so it proves the words and not their truth: the review checklist item 9 still stands.
+
+**Epoch 8, from the fix-forward's build.** No question changes the contract. Three things for the coordinator's eye, all in *Where the code or the tests differ from A8* above: the place of F1f, F8b and F8c in the test files (difference 3), F4b observing facts through the imported constant (4), and the helper `untilSettled` that keeps the import question's ledger site where it was (1). M52 leaves the unsettled question holding the test process; it was ended by hand after the two named cases printed red.
 
 **Answers (coordinator, 2026-11-09).** Q1: the code is right and §S5.11's sentence was wrong; `create` is struck from it above. The parent's D.3 row names no action, so this repairs the spec and is not a plan change. Q2: yes, `bridgeLinks.test.ts` owns C9b. Q3: the folder verbs hearing the place clause is the per-door rule of §4.10 applied to a door counted on the place, the same reading as Q-B, which two of two consultants judged not a change; it stays, and the CHANGELOG names the folder verbs. Q4: accepted; review item 9 stands.
 
