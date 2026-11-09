@@ -22,25 +22,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window's shared dialog place until you answer it; a local call that carries a token holds no place and hears the shorter sentence. Both replace
   *The human did not allow this grant.* (*…did not allow this.* and *…this deletion.* for `create` and `delete`) on a timeout (`credsAgentServer.ts:664`;
   `brokerMcpDoor.ts:165`; the one chooser is `brokerRequests.ts:39`, `consentRefusal`). A Deny is answered as before.
-- **A click on a dialog whose call had already ended is written down, and the notice says only that it changed nothing** (`brokerConsent.ts:249-290`,
-  `lateAnswer` and `ignored`; `brokerCall.ts:206-210` for the questions of an agent's `up`). An Allow or Deny on a dialog whose call timed out, or
+- **A click on a dialog whose call had already ended is written down, and the notice says only that it changed nothing** (`brokerConsent.ts:249-252` and `:285-291`,
+  `lateAnswer` and `ignored`; `brokerCall.ts:206-212` for the questions of an agent's `up`). An Allow or Deny on a dialog whose call timed out, or
   whose client had left, writes one journal line, `"Allow" answered after its call had ended; the answer changed nothing` (it used to read `answered
   after the request had gone — nothing decided`, and only for a client that had left), shows *That request had already ended, so this answer changed
   nothing.*, and decides nothing, as before. It does not say whether the call ran, or whether the next call will ask: neither is known there. An Escape on
   such a dialog gives the place back and says nothing.
-- **An Escape on a live dialog is answered as before, and so is a dialog that cannot open** (`brokerConsent.ts:237-247` and `:258-268`, `shown` and
+- **An Escape on a live dialog is answered as before, and so is a dialog that cannot open** (`brokerConsent.ts:237-243` and `:258-267`, `shown` and
   `apply`): the call is refused with *The human did not allow this grant.*, nothing is remembered, and the place goes back at once; the new timeout
   sentence is never said for it. A dialog that fails under the call (the window going down under it), and one that throws before it opens, are read the
   same way, where they used to be an unhandled error with the place left taken.
 - **A quiet local MCP call that may prompt again holds the place while it runs, and is itself refused *busy* while the place is held**
-  (`aliasThrottle.ts:353`, `admitSilentPlace`; `credsAgentServer.ts:273`, `doorFor`). When an entry's consent setting lets an MCP call through with no
+  (`aliasThrottle.ts:353-363`, `admitSilentPlace`; `credsAgentServer.ts:273`, `doorFor`). When an entry's consent setting lets an MCP call through with no
   dialog, the call now takes the one dialog place until it ends if its action may put a prompt of its own on screen next: `terminal`, `up`, `down`,
   `rotate`, and an `exec` on an entry that forwards your SSH agent while the agent is running. Before, no quiet call took a place or heard *busy*, and a
   prompt such a call raised could open over another call's dialog. An asking call that arrives meanwhile hears *busy*; so does a second such quiet call.
   Any other quiet call is unchanged.
-- **An agent's `up`: its request ends when its client leaves, and a question left standing keeps the place until you answer it** (`vpnRun.ts:218-230`,
-  `openVpnConnect`; `dependencyRunHost.ts:373-380`, `askToContinue`; `aliasThrottle.ts:428`, `followUpStands`; `dependencyRunHost.ts:337-368`,
-  `executed`). The OpenVPN Connect import question and the dependency chain's *Continue* question are now modals when an agent asked for the `up`. A client
+- **An agent's `up`: its request ends when its client leaves, and a question left standing keeps the place until you answer it** (`vpnRun.ts:218-231`,
+  `untilSettled` and `openVpnConnect`; `dependencyRunHost.ts:373-379`, `askToContinue`; `aliasThrottle.ts:428-436`, `followUpStands`;
+  `dependencyRunHost.ts:337-370`, `executed`). The OpenVPN Connect import question and the dependency chain's *Continue* question are now modals when an agent asked for the `up`. A client
   that leaves while one stands ends the request at once: its journal line is written then, not at your click, and nothing more is typed or written for it. The
   question stays on screen and keeps the place until you click it or dismiss it, as before; the alias and MCP doors hear *busy* meanwhile, and a click that lands
   afterwards imports nothing, types nothing and leaves the late-answer line above. A client that leaves while a dependency step is running and no question is up
