@@ -38,6 +38,8 @@ interface World {
   buttons: string[][];
   /** Texts of the one-argument notices the broker showed (`showInformationMessage`), in order (E1.5, C3). */
   notices: string[];
+  /** How many dialogs `throwDialogs` has made throw so far (they record nothing in `dialogs`). */
+  dialogsThrown: number;
   /** Consent answers, in order; undefined means the dialog was dismissed. */
   answers: (string | undefined)[];
   ran: Ran[];
@@ -184,6 +186,8 @@ function world(options: {
   supports?: string[];
   /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
   holdDialogs?: boolean;
+  /** The first n `showWarningMessage` calls throw synchronously, as a modal that cannot open does, and record nothing in `dialogs` (E1.5 F3). */
+  throwDialogs?: number;
   /** The scripted actions declare `asksAfterConsent: true`: they may put a prompt of their own on screen after the Allow (Amendment 3, K8). */
   asksAfterConsent?: boolean;
   /**
@@ -212,6 +216,7 @@ function world(options: {
     mod: undefined as never,
     server: undefined as never,
     dialogs: [],
+    dialogsThrown: 0,
     buttons: [],
     notices: [],
     answers: [...(options.answers ?? ['Allow'])],
@@ -232,7 +237,7 @@ function world(options: {
   };
   w.mod = loadWithVscode<Broker>('../credsAgentServer', {
     window: {
-      showWarningMessage: (m: string, _options?: unknown, ...buttons: string[]) => shown(w, options.holdDialogs === true, m, buttons),
+      showWarningMessage: (m: string, _options?: unknown, ...buttons: string[]) => shown(w, options, m, buttons),
       showInformationMessage: (m: string): Promise<undefined> => noticed(w, m),
       createOutputChannel: (): unknown => {
         w.outputChannels += 1;
@@ -294,10 +299,14 @@ function noticed(w: World, text: string): Promise<undefined> {
 }
 
 /** One consent dialog: recorded with its buttons, then answered from the script, or held (with a way to fail it) until the test answers. */
-function shown(w: World, hold: boolean, text: string, buttons: string[]): Promise<string | undefined> {
+function shown(w: World, options: { holdDialogs?: boolean; throwDialogs?: number }, text: string, buttons: string[]): Promise<string | undefined> {
+  if (w.dialogsThrown < (options.throwDialogs ?? 0)) {
+    w.dialogsThrown += 1;
+    throw new Error('the modal could not open');
+  }
   w.dialogs.push(text);
   w.buttons.push(buttons);
-  if (!hold) {
+  if (options.holdDialogs !== true) {
     return Promise.resolve(w.answers.shift());
   }
   return new Promise((resolve, reject) => {

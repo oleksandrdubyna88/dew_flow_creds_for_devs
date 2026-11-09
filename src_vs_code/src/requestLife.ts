@@ -72,7 +72,7 @@ export function untilGone<T>(promise: Thenable<T>, startGate: AbortSignal | unde
     Promise.resolve(promise).then(
       (value) => {
         done();
-        return gateWon ? onLate?.(value) : resolve(value);
+        return gateWon ? lateValue(onLate, value) : resolve(value);
       },
       () => {
         done();
@@ -80,6 +80,15 @@ export function untilGone<T>(promise: Thenable<T>, startGate: AbortSignal | unde
       },
     );
   });
+}
+
+/** A late value handed to `onLate`: what it does decides nothing, so a throw (a journal that cannot be written) is dropped, never left unhandled. */
+function lateValue<T>(onLate: ((value: T) => void) | undefined, value: T): void {
+  try {
+    onLate?.(value);
+  } catch {
+    // Dropped on purpose: the call has ended and nothing waits for this.
+  }
 }
 
 /** The journal's words for a request whose action had not been launched when its client left. */

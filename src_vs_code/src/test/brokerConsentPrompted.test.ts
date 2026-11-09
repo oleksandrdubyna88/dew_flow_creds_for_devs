@@ -31,6 +31,15 @@ interface GateOptions {
   readonly lines?: object[];
   /** Calls to `onUserPresent`. */
   readonly presence?: { count: number };
+  /** `log` and `dialogClosed` throw, as a journal that cannot be written does. */
+  readonly throwing?: boolean;
+}
+
+/** A collaborator that fails when the test says the journal cannot be written. */
+function mayThrow(throwing: boolean | undefined): void {
+  if (throwing === true) {
+    throw new Error('the journal could not be written');
+  }
 }
 
 /** One person-present call, counted when the test asked to count them. */
@@ -68,9 +77,15 @@ function gateOver(grants: object, options: GateOptions = {}): { gate: InstanceTy
     grants: grants as never,
     actions: { actionsFor: () => [{ verb: 'run a command on' }] } as never,
     onUserPresent: () => countPresence(options.presence),
-    log: (entry) => void options.lines?.push(entry),
+    log: (entry) => {
+      mayThrow(options.throwing);
+      options.lines?.push(entry);
+    },
     prompted: (question) => void seen.prompted.push(question),
-    dialogClosed: (_question, keep) => void seen.closed.push(keep),
+    dialogClosed: (_question, keep) => {
+      mayThrow(options.throwing);
+      seen.closed.push(keep);
+    },
   });
   return { gate, seen, answer: (choice) => answer(choice), fail: (error) => fail(error), notices };
 }
@@ -217,7 +232,7 @@ test('K7 (E1.5): an unanswered dialog (the call\'s timeout) frees NOTHING althou
  * E1.5 — a late answer is read by one road, and the arbitration between the timer and the answer is explicit
  * ------------------------------------------------------------------------------------------------------------- */
 
-const LATE_NOTICE = 'That request had already ended; nothing ran. The next one will ask again.';
+const LATE_NOTICE = 'That request had already ended, so this answer changed nothing.';
 const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /** One late case of C16: a click after the call timed out (`leaving` false), or after the only waiter left (`leaving` true). */
@@ -239,7 +254,7 @@ async function lateClick(leaving: boolean): Promise<void> {
   answer('Allow');
   await settle();
   assert.deepEqual(seen.closed, [false], 'the click frees the place and never keeps it');
-  assert.deepEqual(lines.map((line) => (line as { outcome: string; detail: string }).detail), ['"Allow" answered after its call had ended; nothing ran']);
+  assert.deepEqual(lines.map((line) => (line as { outcome: string; detail: string }).detail), ['"Allow" answered after its call had ended; the answer changed nothing']);
   assert.deepEqual(lines.map((line) => (line as { outcome: string }).outcome), ['ignored']);
   assert.deepEqual(notices, [LATE_NOTICE]);
   assert.equal(presence.count, 0, 'onUserPresent was not called');
@@ -310,5 +325,28 @@ test('C21: arbitration, both orders — the timer and the answer, the waiter and
     }
   } finally {
     mock.timers.reset();
+  }
+});
+
+test('F8b: a journal that throws on the late road is not an unhandled rejection — the call was answered `timeout`, and the late answer decided nothing', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => void escaped.push(reason);
+  process.on('unhandledRejection', spy);
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const g = gateOver(registry('pending'), { timeoutMs: 30, throwing: true });
+    const outcome = g.gate.consent({ ...question('mcp'), followUp: true }, never);
+    await settle();
+    mock.timers.tick(30);
+    assert.equal(await outcome, 'timeout');
+    g.answer('Allow');
+    mock.timers.reset();
+    for (let turn = 0; turn < 20; turn += 1) {
+      await settle();
+    }
+    assert.deepEqual(escaped, [], 'the throw from the late road was dropped, not left unhandled');
+  } finally {
+    mock.timers.reset();
+    process.off('unhandledRejection', spy);
   }
 });

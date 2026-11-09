@@ -272,11 +272,11 @@ export interface Admission extends Slot {
 export const LOCAL_DOOR = 'local';
 
 /**
- * The `busy` answer, with the help a caller can act on: the four things that may hold the place (§4.10), and where to answer them. Tests import it, never retype it.
+ * The `busy` answer, with the help a caller can act on: the things that may hold the place (§4.10; every clause a *may*, so it is true whichever holder stands), and what to do about it. Tests import it, never retype it.
  * Its wording for the local-token exception waits for M10 (parent §7).
  */
 export const BUSY_PLACE =
-  "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), or a dependency step may still be running in a terminal, in the VS Code window that owns the place. Answer or finish it there; the next request is then asked.";
+  "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again.";
 
 /** Whether a dialog raised for this call is counted on the place: its bridge's door, or the local door; none for a local token call. */
 export function countedOnPlace(bridgeId: string | undefined, via: AuditDoor): boolean {

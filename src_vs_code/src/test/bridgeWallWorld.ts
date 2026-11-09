@@ -259,6 +259,8 @@ export interface WallOptions {
   oneUse?: boolean;
   maxCalls?: number;
   holdDialogs?: boolean;
+  /** The first n modals throw synchronously and record nothing (E1.5 F3). */
+  throwDialogs?: number;
   /**
    * The REAL consent hooks, over the real vault: the folder's policy is `ask`, the stamps live in `state`, and the stamp
    * clock is `now` (E1.4). The local MCP door and every bridge read and write the same store, as in a window. Without it the
@@ -384,6 +386,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     oneUse: options.oneUse,
     maxCalls: options.maxCalls,
     holdDialogs: options.holdDialogs,
+    throwDialogs: options.throwDialogs,
     asksAfterConsent: options.asksAfterConsent,
     consentTimeoutMs: options.consentTimeoutMs,
     trash: true,

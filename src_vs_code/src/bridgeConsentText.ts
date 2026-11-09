@@ -79,7 +79,7 @@ export function bridgeCoverageLine(bridge: BridgeGrant): string {
 /** The consent modal's buttons, in the order VS Code shows them. A local modal is unchanged. */
 export const LOCAL_BUTTONS = ['Allow', 'Deny'] as const;
 
-/** A bridged modal puts Deny first (parent Q5), so a stray Enter lands on Deny. */
+/** A bridged modal puts Deny first (parent Q5), intended to put Deny under a stray Enter; M10 measures which button Enter takes. */
 export const BRIDGED_BUTTONS = ['Deny', 'Allow'] as const;
 
 /** The buttons of one modal: the bridged order through a Remote Bridge, today's order everywhere else. Pure data, so a test reads the lists. */

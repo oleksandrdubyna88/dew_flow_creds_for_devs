@@ -163,8 +163,8 @@ test('K6: a late Allow on a create whose client had gone frees the place — a k
     await until(() => ww.w.audit.some((line) => line.includes('ABANDONED')), 'the broker to learn the client left');
     ww.w.openDialogs[0]('Allow');
     await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the late click to be read and applied to nothing');
-    assert.ok(ww.w.audit.some((line) => line.includes('ignored') && line.includes('"Allow" answered after its call had ended; nothing ran')), 'the line says so in the contract\'s words');
-    assert.deepEqual(ww.w.notices, ['That request had already ended; nothing ran. The next one will ask again.'], 'and the person is told once');
+    assert.ok(ww.w.audit.some((line) => line.includes('ignored') && line.includes('"Allow" answered after its call had ended; the answer changed nothing')), 'the line says so in the contract\'s words');
+    assert.deepEqual(ww.w.notices, ['That request had already ended, so this answer changed nothing.'], 'and the person is told once');
     assert.equal(ww.w.audit.some((line) => line.includes('ALLOWED')), false, 'it decided nothing');
     assert.deepEqual(ww.w.created, []);
     const next = send(viaBridge(ww.bridge), alias());

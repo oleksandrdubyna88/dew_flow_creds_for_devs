@@ -205,7 +205,7 @@ function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
 /** The seam for a late click on a prompt an action raised itself (E1.5): the journal says so, with the grant, action and door only `log` knows. */
 function lateAnswerOf(deps: CallDeps, call: CallSubject): (what: string) => void {
   const { grant, action, via, caller } = call;
-  const detail = (what: string): string => `"${what}" answered after its call had ended; nothing ran`;
+  const detail = (what: string): string => `"${what}" answered after its call had ended; the answer changed nothing`;
   return (what) => deps.log({ grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, outcome: 'ignored', detail: detail(what), caller });
 }
 

@@ -34,7 +34,7 @@ test('C2: both timeout sentences say "within five minutes", and the constant the
 test('S5.3: the sentences of the contract, byte for byte', () => {
   assert.equal(
     BUSY_PLACE,
-    "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), or a dependency step may still be running in a terminal, in the VS Code window that owns the place. Answer or finish it there; the next request is then asked.",
+    "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again.",
   );
   assert.equal(
     CONSENT_TIMED_OUT_ON_PLACE,
@@ -48,7 +48,8 @@ test('S5.3: the sentences of the contract, byte for byte', () => {
 
 test('C8 (the words): BUSY_PLACE opens with the parent\'s sentence and names the four things the place can be held by', () => {
   assert.ok(BUSY_PLACE.startsWith("Another request holds this window's dialog place."), 'the parent\'s first sentence');
-  for (const named of ['consent dialog may be standing unanswered', 'a prompt that followed an Allow may be open', 'a dependency step may still be running', 'the VS Code window that owns the place']) {
+  assert.ok(BUSY_PLACE.includes('nothing on screen yet') && !BUSY_PLACE.includes('is then asked'), 'F4a: the quiet holder is named, and no claim about what the next call will do');
+  for (const named of ['consent dialog may be standing unanswered', 'a prompt that followed an Allow may be open', 'a dependency step may still be running', 'a request that may prompt again may still be running', 'the VS Code window that owns the place']) {
     assert.ok(BUSY_PLACE.includes(named), `the help names: ${named}`);
   }
 });
@@ -152,7 +153,7 @@ test('C7: no shipped source holds a fixed-time place (KEPT_PLACE_MS), and the sc
  * ============================================================================================================= */
 
 /** The notice of S5.3 (4), pinned as a literal: `brokerConsent.ts` imports the editor, a test of the words does not. */
-const NOTICE = 'That request had already ended; nothing ran. The next one will ask again.';
+const NOTICE = 'That request had already ended, so this answer changed nothing.';
 
 const alias = (command = 'id'): Ask => ({ path: '/v1/alias/exec', body: { alias: 'one', command } });
 const mcp = (command = 'id'): Ask => ({ path: '/v1/mcp/use/exec', body: { entry: 'e1', command } });
@@ -293,7 +294,7 @@ test('C2r: the real five-minute path — nobody answered at 299 s, 504 with the 
  * C3 — a late answer authorises nothing, and says so
  * ------------------------------------------------------------------------------------------------------------- */
 
-const LATE_ALLOW = '"Allow" answered after its call had ended; nothing ran';
+const LATE_ALLOW = '"Allow" answered after its call had ended; the answer changed nothing';
 
 test('C3: a late Allow on an expired dialog authorises nothing — one ignored line, no ALLOWED, nothing ran, the notice once, and the next bridged call is asked and runs', async () => {
   const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 100 });
@@ -304,6 +305,7 @@ test('C3: a late Allow on an expired dialog authorises nothing — one ignored l
     await until(() => ignoredLines(ww).length === 1, 'the late click to be written');
     const [line] = ignoredLines(ww);
     assert.ok(line.includes(LATE_ALLOW), line);
+    assert.equal(line.includes('nothing ran'), false, 'F2a: the old words claimed more than the speaker knows');
     assert.ok(line.includes('bridge=prod_server') || line.includes('bridge='), `the grant field names the bridge: ${line}`);
     assert.equal(lines(ww, 'ALLOWED').length, 0);
     assert.deepEqual(ww.w.ran, []);
@@ -338,7 +340,7 @@ test('C3b: a late Deny tombstones nothing — one ignored line, no DENIED, the n
     timedOut(await send(viaMain(ww), token), CONSENT_TIMED_OUT);
     ww.w.openDialogs[0]('Deny');
     await until(() => ignoredLines(ww).length === 1, 'the late click to be written');
-    assert.ok(ignoredLines(ww)[0].includes('"Deny" answered after its call had ended; nothing ran'));
+    assert.ok(ignoredLines(ww)[0].includes('"Deny" answered after its call had ended; the answer changed nothing'));
     assert.equal(lines(ww, 'DENIED').length, 0);
     assert.deepEqual(ww.w.notices, [NOTICE]);
     await assertAskedThenRuns(ww, viaMain(ww), token, 'the next call on the same token');
@@ -731,5 +733,25 @@ test('C17: the prompt-site ledger\'s three reasons say the place is a person\'s,
   for (const id of ['dependencyRunHost.ts#askToContinue#showInformationMessage#1', 'vpnRun.ts#openVpnConnect#showInformationMessage#1']) {
     assert.ok(reasonOf(id).includes('a modal on an agent call'), `${id}: ${reasonOf(id)}`);
     assert.equal(reasonOf(id).includes('not a modal'), false, `${id} still says it is not a modal`);
+  }
+});
+
+test('F8c: an `onLate` that throws is not an unhandled rejection — untilGone resolved undefined at the gate and the throw is dropped', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => void escaped.push(reason);
+  process.on('unhandledRejection', spy);
+  try {
+    const gate = new AbortController();
+    let resolveLate: (value: string) => void = () => undefined;
+    const pending = untilGone(new Promise<string>((resolve) => void (resolveLate = resolve)), gate.signal, () => {
+      throw new Error('the journal could not be written');
+    });
+    gate.abort();
+    assert.equal(await pending, undefined);
+    resolveLate('Continue');
+    await pause(30);
+    assert.deepEqual(escaped, []);
+  } finally {
+    process.off('unhandledRejection', spy);
   }
 });

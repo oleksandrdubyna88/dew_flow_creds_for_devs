@@ -186,7 +186,7 @@ test('C10c (runStep): the Continue question is a modal on an agent call and a cl
     await assertPlaceFree(r, 'before any click on the question');
     r.vw.held[0].answer('Continue');
     await until(() => lines(r, 'ignored').length === 1, 'the late click to be journalled');
-    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; nothing ran'), lines(r, 'ignored')[0]);
+    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; the answer changed nothing'), lines(r, 'ignored')[0]);
     assert.deepEqual(r.vw.terminals.find((t) => t.name === CHAIN_TERMINAL)?.sent, ['a-step'], 'no second step was typed');
     assert.equal(r.vw.held.length, 1, 'and no second question was raised');
   } finally {
@@ -206,7 +206,7 @@ test('C10c (settle): the Continue question after a failed step is a modal on an 
     await assertPlaceFree(r, 'before any click on the question');
     r.vw.held[0].answer('Continue');
     await until(() => lines(r, 'ignored').length === 1, 'the late click to be journalled');
-    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; nothing ran'));
+    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; the answer changed nothing'));
     assert.deepEqual(r.vw.terminals.flatMap((t) => t.executed), ['a-step'], 'no second step ran');
   } finally {
     settle(r);
@@ -243,7 +243,7 @@ function assertLateLine(late: string, abandoned: string, button: string): void {
   const entry = parseAuditLine(late);
   const first = parseAuditLine(abandoned);
   assert.ok(entry !== undefined && first !== undefined, 'both lines parse');
-  assert.deepEqual([entry.outcome, entry.action, entry.detail], ['ignored', 'up', `"${button}" answered after its call had ended; nothing ran`]);
+  assert.deepEqual([entry.outcome, entry.action, entry.detail], ['ignored', 'up', `"${button}" answered after its call had ended; the answer changed nothing`]);
   assert.equal(entry.grant, first.grant, 'the line carries the call\'s own grant');
   assert.notEqual(entry.grant, '\u2014', 'and not a dash');
 }

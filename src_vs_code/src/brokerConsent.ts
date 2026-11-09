@@ -157,7 +157,7 @@ function keepsPlace(question: ConsentQuestion, end: DialogEnd): boolean {
 }
 
 /** The notice a person sees when they click a dialog whose call had already ended: said once, in words, because the click did nothing. */
-export const LATE_ANSWER_NOTICE = 'That request had already ended; nothing ran. The next one will ask again.';
+export const LATE_ANSWER_NOTICE = 'That request had already ended, so this answer changed nothing.';
 
 export class ConsentGate {
   private readonly prompts = new SharedPrompts<ConsentOutcome>();
@@ -210,7 +210,8 @@ export class ConsentGate {
 
   /** The timer won: the call is answered, the dialog stands. The continuation is attached HERE, after the timer, so an answer landing in the same tick still takes the late road. */
   private timedOut(question: ConsentQuestion, dialog: Promise<DialogEnd>): ConsentOutcome {
-    void dialog.then((late) => this.lateAnswer(question, late));
+    // The late road decides nothing, so a throw from it (a journal that cannot be written) must not become an unhandled rejection.
+    void dialog.then((late) => this.lateAnswer(question, late)).catch(() => undefined);
     return 'timeout';
   }
 
@@ -234,7 +235,8 @@ export class ConsentGate {
    * its name so the prompt-site ledger row keeps its id.
    */
   private shown(question: ConsentQuestion): Promise<DialogEnd> {
-    return Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, ...consentButtons(question.grant.bridge !== undefined))).then(
+    // The executor runs synchronously, so a modal that throws before it opens becomes the rejection the handler below reads as a failed end.
+    return new Promise<string | undefined>((resolve) => resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, ...consentButtons(question.grant.bridge !== undefined)))).then(
       (choice): DialogEnd => ({ kind: 'answered', choice }),
       (error: unknown): DialogEnd => ({ kind: 'failed', error }),
     );
@@ -283,7 +285,7 @@ export class ConsentGate {
   private ignored(question: ConsentQuestion, end: DialogEnd): void {
     const choice = choiceOf(end);
     if (choice === 'Allow' || choice === 'Deny') {
-      this.line(question, 'ignored', `"${choice}" answered after its call had ended; nothing ran`);
+      this.line(question, 'ignored', `"${choice}" answered after its call had ended; the answer changed nothing`);
       void vscode.window.showInformationMessage(LATE_ANSWER_NOTICE);
     }
   }
