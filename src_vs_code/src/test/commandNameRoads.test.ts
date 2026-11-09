@@ -6,6 +6,7 @@ import { NAME_REFUSAL, nameRefusal } from '../commandName';
 import { isCommandTrusted } from '../commandTrust';
 import { FieldReading } from '../fieldReading';
 import { shellRead } from '../runPlan';
+import { chainTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { CommandArg, EntityMetadata } from '../types';
 import { arrowWorld } from './arrowWorld';
 import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
@@ -116,6 +117,13 @@ function vaultOf(names: readonly string[], reading: () => FieldReading = () => (
 
 const TOKEN_REF: CommandArg[] = [{ value: 'creds://me/{name}/password' }];
 
+test('the_masked_run_is_titled_creds_run', async () => {
+  const aw = arrowWorld({}, [], vaultOf(['alert']).source);
+  await aw.runWithSecrets(E('alert', 'tool', TOKEN_REF), 'node-alert');
+  assert.equal(aw.masked.length, 1, aw.warnings.join('\n'));
+  assert.equal(aw.masked[0].name, maskedRunTitle('node-alert'), "the title keeps the NODE's name, as before; only the prefix changed");
+});
+
 test('a_reference_holding_the_token_resolves', async () => {
   const vault = vaultOf(['alert']);
   const aw = arrowWorld({}, [], vault.source);
@@ -187,7 +195,7 @@ test('a_chain_step_runs_its_resolved_line', async () => {
   const { dir } = await startVpn(scope, w, nodes, { trust });
   try {
     assert.ok(w.warnings.some((t) => t.includes('install-openvpn: installer install-openvpn')), w.warnings.join('\n'));
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['installer install-openvpn']);
+    assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['installer install-openvpn']);
     assert.equal(isCommandTrusted(trust, 'install', 'installer install-openvpn'), true);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

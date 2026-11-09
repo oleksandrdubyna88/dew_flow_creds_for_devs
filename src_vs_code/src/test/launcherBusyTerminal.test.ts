@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { after, test } from 'node:test';
+import { chainTerminalTitle } from '../terminalTitles';
 import { World, noteOurSend, ownerChain, rootTitle, startVpn, terminalNamed, until, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -42,7 +43,7 @@ test('the_launcher_never_types_into_its_terminal_while_a_command_runs_there', as
   try {
     assert.equal(started, false);
     assert.deepEqual(terminalNamed(w, S).sent, []);
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['install-openvpn'], 'the installer ran before the launcher, as today');
+    assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['install-openvpn'], 'the installer ran before the launcher, as today');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

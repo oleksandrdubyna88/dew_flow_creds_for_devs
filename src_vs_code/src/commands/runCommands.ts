@@ -15,7 +15,7 @@ import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
 import { pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
 import { sendGuarded } from '../terminalGuard';
-import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle } from '../terminalTitles';
+import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { registerFolderRun } from './folderRunCommand';
 import { trackTerminalActivity } from '../terminalActivityTracker';
 import { confirmTrusted } from '../trustPrompt';
@@ -371,7 +371,7 @@ function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): 
     .map((ref) => `${refs.plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
     .join('; ');
   runInMaskedTerminal({
-    name: `CredsForDevs run: ${job.entry.name}`,
+    name: maskedRunTitle(job.entry.name),
     commandLine: maskedCommandLine(host, job, refs),
     env: refs.env,
     secrets: refs.secrets,

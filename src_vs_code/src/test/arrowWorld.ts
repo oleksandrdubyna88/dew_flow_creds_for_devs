@@ -19,7 +19,7 @@ export interface ArrowWorld extends World {
   /** The trust store the handlers read and write, so a test can ask `isCommandTrusted`. */
   trust: ReturnType<typeof memoryTrust>;
   /** What `runInMaskedTerminal` was asked to run: the line and the environment of each child. */
-  masked: { commandLine: string; env: Record<string, string> }[];
+  masked: { name: string; commandLine: string; env: Record<string, string> }[];
   /** What `registerRunCommands` pushed into `context.subscriptions`. */
   subscriptions: unknown[];
   /** Invoke the green arrow's handler on version `index` of `entry`, as a click on a history row does. */
@@ -98,7 +98,7 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
   const handlers = registerRunWorld(w, {
     store,
     storage: { getNode: (_account: string, id: string) => nodes[id], getHistory: () => Promise.resolve(history) },
-    mocks: { '../maskedTerminal': { runInMaskedTerminal: (o: { commandLine: string; env: Record<string, string> }) => void masked.push(o) } },
+    mocks: { '../maskedTerminal': { runInMaskedTerminal: (o: { name: string; commandLine: string; env: Record<string, string> }) => void masked.push(o) } },
     refSource,
     subscriptions,
     storageDir: opts.storageDir,

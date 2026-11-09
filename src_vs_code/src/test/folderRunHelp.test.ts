@@ -46,7 +46,7 @@ const VERBATIM: readonly string[] = [
   'Windows PowerShell 5.1',
   'Command Prompt',
   'OpenSSH for Windows 9.5',
-  'CredsForDevs: before <folder>',
+  'Creds: before <folder>',
   '32',
   '4000',
 ];

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
+import { chainTerminalTitle } from '../terminalTitles';
 import { CLOSE_AND_RUN, MAX_QUESTION_CHARACTERS } from '../folderRun';
 import { FOLDER, FolderWorld, L, T, choose, clickAndWait, everyText, folderModals, folderWorld, held, modalNumber, named, needing, session, step } from './folderWorld';
 import { hostOs } from './vpnWorld';
@@ -11,7 +12,7 @@ import { hostOs } from './vpnWorld';
  * `folderWorld.ts`, as for `folderRunCommand.test.ts`, which this file was split from at the 800-line limit.
  */
 
-const BEFORE = `CredsForDevs: before ${FOLDER}`;
+const BEFORE = chainTerminalTitle(FOLDER);
 const BUSY_QUESTION = /was not typed/;
 
 // ---- Names that try to draw rows --------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { chainTerminalTitle } from '../terminalTitles';
 import { EntityMetadata } from '../types';
 import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, rootTitle, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
@@ -24,7 +25,7 @@ test('the owner\'s chain: the installer runs and is AWAITED, then the launcher i
   const w = world({});
   const { started } = await startVpn(scope, w, ownerChain());
   assert.equal(started, true, w.warnings.join('\n'));
-  const chain = terminalNamed(w, 'CredsForDevs: before ops relay stage');
+  const chain = terminalNamed(w, chainTerminalTitle('ops relay stage'));
   assert.deepEqual(chain.executed, ['install-openvpn'], 'the installer ran; the launcher did NOT run twice');
   const launcher = terminalNamed(w, rootTitle('start openvpn'));
   assert.equal(launcher.sent.length, 1);
@@ -32,6 +33,12 @@ test('the owner\'s chain: the installer runs and is AWAITED, then the launcher i
   assert.equal(fs.readFileSync(quotedPath(launcher.sent[0]), 'utf8'), 'client\nremote vpn.example 1194\n', 'the config the line names was written');
   // Both lines were confirmed once — the chain in one modal, the launcher's template in its own.
   assert.ok(w.warnings.some((t) => /Before "ops relay stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
+});
+
+test('the_chain_terminal_is_titled_creds_before_owner', async () => {
+  const w = world({});
+  await startVpn(scope, w, ownerChain());
+  assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['install-openvpn']);
 });
 
 test('a failed installer ASKS, and Stop stops — the launcher is never typed, and the caller hears FALSE', async () => {
@@ -108,7 +115,7 @@ test('without the execute mark nothing runs first — the launcher alone is type
   const w = world({});
   const { started } = await startVpn(scope, w, nodes);
   assert.equal(started, true);
-  assert.equal(w.terminals.find((t) => t.name.startsWith('CredsForDevs: before')), undefined);
+  assert.equal(w.terminals.find((t) => t.name.startsWith(chainTerminalTitle(''))), undefined);
   assert.equal(w.terminals.find((t) => t.name === rootTitle('start openvpn'))?.sent.length, 1);
 });
 
@@ -129,6 +136,6 @@ test('the chain terminal closed between two steps: the second is refused, never 
   const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
 
   assert.equal(started, false);
-  assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['first-step']);
+  assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['first-step']);
   assert.ok(w.warnings.some((t) => /closed before "second" could run/.test(t)), w.warnings.join('\n'));
 });
