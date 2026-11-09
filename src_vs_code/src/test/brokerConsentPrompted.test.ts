@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ConsentQuestion } from '../brokerConsent';
+import type { Grant } from '../grantRegistry';
 import { loadWithVscode } from './vscodeStub';
 
 /**
@@ -56,8 +57,21 @@ function registry(status: string): { get(secret: string): { status: string } | u
   return { get: () => state, allow: () => void (state.status = 'allowed'), deny: () => void (state.status = 'denied') };
 }
 
-const grant = { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', bridge: { context: { bridgeId: 'b1' }, quiet: false } };
-const question = (via: ConsentQuestion['via']): ConsentQuestion => ({ grant: grant as never, action: 'exec', verb: 'run a command on', summary: 'id', caller: undefined, via, coverage: 'call' });
+/** A whole bridged call grant, the shape `GrantRegistry.mint` makes; the gate reads its status from the registry fake, not from here. */
+const grant: Grant = {
+  secret: 's',
+  accountId: 'a1',
+  entityId: 'e1',
+  entityName: 'prod',
+  kind: 'ssh',
+  status: 'pending',
+  mintedAt: 0,
+  lastUsedAt: 0,
+  uses: 0,
+  scope: 'call',
+  bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'prod server', target: '', remoteOs: undefined }, quiet: false },
+};
+const question = (via: ConsentQuestion['via']): ConsentQuestion => ({ grant, action: 'exec', verb: 'run a command on', summary: 'id', caller: undefined, via, coverage: 'call' });
 const never = new AbortController().signal;
 
 test('prompted is called once, with the question and its door, BEFORE the dialog is shown', async () => {

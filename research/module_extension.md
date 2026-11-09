@@ -3679,6 +3679,63 @@ authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for an
 `credsAgentServer.ts` logs every outcome). Found by the re-review by reading, and confirmed by a probe: 50 requests, 50 lines. A
 bridge refuses the route. The plan records it as a todo (§8 of the scoped remote bridge plan), not as part of E1.
 
+*What silences a prompt on a bridge* (E1.4 of the scoped remote bridge,
+[PLAN_remote_bridge_scoped_E1_S4_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S4_spec.md); still nothing in the extension opens a
+bridge). **A call through a bridge asks every time unless that server's `quiet` switch is on, and the switch speaks for the MCP door
+only.** `quiet` is a field of the server's scope file (`bridgeScopeStore.ts`), read from a fresh `Scope` by `DoorView.resolveUse`
+(`bridgeScope.ts`, `usableIn`) at the lookup and copied onto the grant by `grantFor()` at mint for the dialog's coverage line;
+nothing in a body, a header or a query can set it. With it **off** the lookup is answered `preConsented: false, rungs: ''`: the real lookup may read a
+stamp first, but `usableIn` discards its answer, so no stamp counts, and none can be written, because `answeredHere` refuses an empty fingerprint, so an answer given while it was off cannot
+reach forward when it is turned on. With it **on** the answer is the real lookup's: the entry's own policy (`never`, `every12h`,
+`always`) decided against a stamp under **this server's key**, and the real `rungs` a stamp is recorded under. The alias and token
+routes never read a consent policy and ask every call whatever `quiet` says; a quiet call is pre-allowed at the door (the
+`allowed without a prompt` line, written as built) and takes the bridge's own silent window, sixty a minute per bridge, whose
+sixty-first answers the bridge's silent sentence.
+
+*The key.* `stampKey(accountId, entityId, serverEntityId?)` (`mcpConsentPolicy.ts`): without a server it is the two-segment string it
+always was (`<n>:<account>:<entity>`, byte for byte, so nobody is asked again on upgrade); with one it is
+`s<n>:<account>:<m>:<entity>:<server>`. A local key always starts with a digit and a server key with `s`, so a local entry whose id
+arrives by sync as `<m>:<entity>:<server>` cannot make the same key, and the entity is length-prefixed so a server key is injective too.
+An empty server id throws. Server stamps share the one map and `MAX_STAMPS` with the local ones, `forgetAll` clears both and its
+tombstone drops a late write of either, and a downgrade ignores `s…` keys, which expire by arithmetic. The id reaches
+`preConsentedFor` from the lookup's `server` argument (E1.3's) and `rememberMcpConsent` from `grant.bridge?.context.serverEntityId`
+through `recordConsent`'s record and the hook's fourth parameter, and from nowhere in a request. So an answer given through server A
+silences A's later calls on that entry and neither server B's nor local use; a local answer silences no bridge; a Deny, a timeout and
+an abandoned dialog write nothing. **The write happens behind the launch gate** (`prepared` takes it as `remember()` and runs it
+after `stopped` answers false, and the gate is asked **again** right after the write, before `releaseWaiting`, since the write is an
+await): an Allow given while the scope was being narrowed, or the line edited, persists no stamp for an entry the gate then refuses,
+and a client that leaves, or a scope narrowed or a token denied while the stamp is being written, promotes no waiting rotation and runs
+nothing (the second check reads `after consent`, as the one check of `main` did; `launchGate` refuses only a `denied` token today, and E2.2b makes it refuse a gone one).
+The stamp is already written when the second check refuses: a stamp written during a narrow stays under the server key, inert while the entry is out of scope, and it speaks again if the entry
+is put back within twelve hours with `quiet` on. `quiet` is read once per bridged MCP call: the lookup carries the switch it read and the grant is snapshotted from it, so the coverage line
+and what an Allow writes cannot come from two reads. A stamp given with quiet on survives quiet being turned off, inert (the view
+forces `preConsented: false`), and speaks again if it is turned on inside the twelve hours: the answer was given through that very
+server with it on.
+
+*What the person reads and what the journal says.* On a bridged grant the dialog has one more line, directly after the request time,
+and **it is true for the action** (`bridgeRunSite(action)`, `bridgeModalLine`, `bridgeConsentText.ts`, pure). For an `exec`:
+`Through the Remote Bridge of "<server>". The connection starts on this computer; the command runs on "<entry>", and its output goes back to that server.`
+For a `query` (since change 6.2): `Through the Remote Bridge of "<server>". The database client runs on this computer, using the connection stored in "<entry>". Its output goes back to the agent on that server.`
+The saved first draft said *It runs on this computer, and only its output goes to that server.* for both actions: false for an `exec`, whose command runs on the entry's host, and for a `query`,
+where only the database client runs here and the SQL runs on the database the stored connection names (which may be the bridge's own server, so "only" is false too). The sentences are keyed by
+action and site (`SENTENCES` in `bridgeConsentText.ts`: `exec:destination`, `query:laptop`, E3's `run:server`), and each is tested beside the launch it describes (`bridgeRunSites.test.ts`: the
+database client spawned here with the entry's connection, the body its output alone; ssh spawned here for the entry's host, the output going back as the body). A `run` sentence is E3's, chosen from each
+`decideRunSite` result and never from the action's name: `It runs on that server.`, is for E3.1, and an action with no site (nothing but `exec` and `query` reaches a bridge's
+dialog) names the bridge and claims no place. The dialog's last paragraph is `main`'s per door off a bridge (the token sentence on the token
+door, *this call only, not any later one* on the alias door and on an MCP door whose entry asks every time, the 12-hour window sentence on an MCP door whose
+entry asks once every twelve hours; `coverage`, `brokerConsent.ts`). **On a bridged grant it is the bridge's coverage line whatever `coverage` says**: `Allowing covers this call only.`, or,
+with `quiet` on and only on the MCP door, `Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`
+The window sentence says *any agent* and *this machine*, and a server-keyed stamp is neither. `coverage` still gates the WRITE for a bridged call (`opensWindow`: a stamp is
+written only from a dialog that was asked and opened the window), and with `quiet` off the lookup says `remembers: false`. Off a bridge the dialog is byte for byte what `main` says for its door; a test
+spells out the local text for each of the four cases and the bridged one as its two differences (`bridgeConsent.test.ts`, C11). The server's name is the context's and the entry's is the grant's, both through the sanitiser of a caller
+label with every `"` made `'` (`bridgeQuotedName`), in the bridge line and, on a bridged grant, in the dialog's first line too, so a name cannot paint a line of its own or close its quotes; a local dialog shows the entry's name as it always did; the caller's label stays a label. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
+grant group, where `bridgeAuditName` (`bridgeContext.ts`) has taken out whitespace, parentheses, `→` and control and format
+characters (one `_` for a run, forty code points at most), so every line about a bridged call says which server it was for and
+`LINE`, `formatAuditLine` and `parseAuditLine` are unchanged; the two lines written with no grant, the `too_many_requests` of a
+ceiling that means a loop (`asking` and `silent`; a `busy` answer and the dialog budget write no line) and the handler-failure line of
+`unanswered`, read `— bridge=<name>` from `auditGrantMark(bridge)` with the context the door handed `handle` (the one that keys the
+window the first was refused in), and `—` off a bridge; the handler-failure line's classification does not move.
+
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
 shared-folder transport a write-capable attacker can forge the owner account or **delete unlock

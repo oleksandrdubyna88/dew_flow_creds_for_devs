@@ -308,3 +308,64 @@ test('one store gets one ConsentStamps, and a different store gets its own', asy
   assert.equal(consentStampsFor(store), consentStampsFor(store), 'a second caller built its own store');
   assert.notEqual(consentStampsFor(store), consentStampsFor(fakeStore()), 'and two stores are two stores');
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.4 — a stamp per server (C1, C2, C3, C8, C18)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('C1: the on-disk form is today\'s, byte for byte, and a store seeded with it is still read', async () => {
+  // Pinned BEFORE the third parameter exists: every machine that has answered a dialog has keys of this shape, and a
+  // change here is a silent forget for all of them.
+  assert.equal(stampKey('acct', 'e1'), '4:acct:e1');
+  assert.equal(stampKey('acct', 'e1', undefined), '4:acct:e1', 'an absent server id is the two-segment key');
+  const store = fakeStore({ '4:acct:e1': { at: NOW, rungs: RUNGS } });
+  const stamps = new ConsentStamps(store);
+
+  assert.deepEqual(stamps.get('4:acct:e1', NOW), { at: NOW, rungs: RUNGS });
+  assert.equal(consentDue('every12h', stamps.get(stampKey('acct', 'e1'), NOW), RUNGS, NOW), false, 'the entry stays quiet for local use');
+});
+
+test('C2: a server id makes a key of its own, and the key is injective in all three positions', () => {
+  assert.notEqual(stampKey('a', 'e', 's'), stampKey('a', 'e'));
+  assert.notEqual(stampKey('a', 'e', 's'), stampKey('a', 'e', 't'));
+  assert.equal(stampKey('a', 'e', 's'), stampKey('a', 'e', 's'), 'and it is stable');
+  // The account/entity split, the entity/server split and the account/server split each move a `:` across a boundary.
+  assert.notEqual(stampKey('a:b', 'c', 's'), stampKey('a', 'b:c', 's'));
+  assert.notEqual(stampKey('a', 'e:x', 'y'), stampKey('a', 'e', 'x:y'));
+  assert.notEqual(stampKey('a', 'b', 'c:d'), stampKey('a:b', 'c', 'd'));
+  assert.notEqual(stampKey('a', '', 'x'), stampKey('a', 'x', 'x'), 'an empty entity id is still its own key');
+});
+
+test('C3: no id that arrives by sync can make a local key equal a server key', () => {
+  // `<n>:<a>:<m>:<e>:<s>` would collide with a local entry whose id is `<m>:<e>:<s>`; the leading `s` is what it takes.
+  assert.notEqual(stampKey('a', '1:e:s'), stampKey('a', 'e', 's'));
+  assert.notEqual(stampKey('a', '1:e:s'), `s${stampKey('a', 'e', 's').slice(1)}`);
+  for (const [account, entity] of [['a', 'e'], ['', ''], ['s', 's'], ['1:e', 's'], ['a:b', 's1:x:y']] as const) {
+    assert.match(stampKey(account, entity), /^\d/, `a local key starts with a digit (${account}/${entity})`);
+    assert.match(stampKey(account, entity, 'srv'), /^s\d/, `a server key starts with an s and a digit (${account}/${entity})`);
+  }
+});
+
+test('C18: an empty server id cannot make a key', () => {
+  assert.throws(() => stampKey('a', 'e', ''), { message: 'A server stamp needs a server entity id.' });
+  assert.equal(stampKey('a', 'e'), '1:a:e');
+  assert.equal(stampKey('a', 'e', undefined), '1:a:e');
+});
+
+test('C8: forgetting clears the server stamps with the local ones, and a late write of an old server stamp is dropped', async () => {
+  const store = fakeStore();
+  const stamps = new ConsentStamps(store);
+  const viaA = stampKey('a', 'e1', 'server-A');
+  await stamps.remember(viaA, RUNGS, NOW);
+  await stamps.remember(E1, RUNGS, NOW);
+  assert.notEqual(stamps.get(viaA, NOW), undefined, 'the fixture starts with a server stamp to forget');
+  const alreadyComposed = { ...store.stamps() };
+
+  await stamps.forgetAll(NOW);
+  await store.update(STAMPS_KEY, alreadyComposed);
+
+  assert.equal(stamps.get(viaA, NOW), undefined, 'a forgotten server stamp was resurrected by a window that composed it earlier');
+  assert.equal(stamps.get(E1, NOW), undefined, 'and so was the local one');
+  await stamps.remember(viaA, RUNGS, NOW + 1);
+  assert.notEqual(stamps.get(viaA, NOW + 1), undefined, 'a server consent given after the Forget is honoured');
+});

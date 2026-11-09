@@ -81,9 +81,22 @@ export interface ConsentStampStore {
  * the same joined string, and the consequence of a collision here is that consent for one account's
  * entry silences another's. Ids are uuids today and the collision is unreachable today; an
  * injective encoding costs one number and does not depend on that staying true.</p>
+ *
+ * <p><b>A Remote Bridge's stamp is a key of its own</b> (E1.4): with a server id it is `s<n>:<account>:<m>:<entity>:<server>`.
+ * The leading `s` is the part that keeps the promise. A plain third segment would collide with a local entry whose id
+ * is `<m>:<entity>:<server>`, and an entry's id arrives by sync; a local key always starts with a digit and a server
+ * key never does, so the two cannot meet whatever the ids hold. The entity is length-prefixed and the rest is the
+ * server, so a server key is injective too. An empty server id throws: a context with none would make a key that is
+ * nearly a local one, and `freezeBridgeContext` has already refused such a context.</p>
  */
-export function stampKey(accountId: string, entityId: string): string {
-  return `${accountId.length}:${accountId}:${entityId}`;
+export function stampKey(accountId: string, entityId: string, serverEntityId?: string): string {
+  if (serverEntityId === undefined) {
+    return `${accountId.length}:${accountId}:${entityId}`;
+  }
+  if (serverEntityId === '') {
+    throw new Error('A server stamp needs a server entity id.');
+  }
+  return `s${accountId.length}:${accountId}:${entityId.length}:${entityId}:${serverEntityId}`;
 }
 
 /**

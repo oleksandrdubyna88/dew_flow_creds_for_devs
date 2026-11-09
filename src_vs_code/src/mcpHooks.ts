@@ -174,7 +174,9 @@ export function mcpUseLookup(
     rungs: ladderKey(found.access),
     // Without a store there is nothing remembered, so every call asks — which is what a window
     // with no writable storage should do, and what every existing caller of this function gets.
-    preConsented: preConsentedFor(found, stamps, now),
+    // Under the bridge's own key when the lookup came through one (E1.4): a stamp given through server A is read here
+    // for A and for nobody else.
+    preConsented: preConsentedFor(found, stamps, now, server?.serverEntityId),
     // Whether an Allow on this entry will write a stamp — what the dialog's last paragraph says
     // it covers. Read from the same expression `rememberMcpConsent` writes by, and false without a
     // store: a lookup that reads nothing writes nothing, so its dialog must not say otherwise.
@@ -208,8 +210,8 @@ export function mcpUseHooks(
   const stamps = consentStampsFor(state);
   return {
     resolveMcpUse: (entryId, action, server) => mcpUseLookup(storage, entryId, action, stamps, now(), server),
-    rememberMcpConsent: (accountId, entityId, rungs) =>
-      rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now()),
+    rememberMcpConsent: (accountId, entityId, rungs, serverEntityId) =>
+      rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now(), serverEntityId),
   };
 }
 

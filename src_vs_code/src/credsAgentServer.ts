@@ -13,7 +13,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { BrokerHooks, checkedHooks } from './brokerHooks';
-import type { BridgeContext } from './bridgeContext';
+import { auditGrantMark, type BridgeContext } from './bridgeContext';
 import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
 import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
@@ -26,7 +26,7 @@ import { describeError } from './describeError';
 import { BrokerDoor, ConsentOutcome, DURING_CONSENT, mcpDoor } from './brokerMcpDoor';
 import { ConsentGate, coverageOf, opensWindow } from './brokerConsent';
 import { abandonedWhenClosed } from './requestLife';
-import { recordConsent } from './brokerConsentMemory';
+import { consentRecordOf, recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
@@ -225,7 +225,7 @@ export class CredsAgentServer implements vscode.Disposable {
       // runaway loop, or a process working through the entries a policy opened, exists, and a rate
       // limit nobody can see having fired is one nobody can diagnose. The door is the refusal's own (`aliasThrottle.ts`):
       // `mcp` is a fact for the silent ceiling, which only the MCP door has a policy to reach, and an asking call names none.
-      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
+      this.log({ grant: auditGrantMark(bridge), entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
     }
     this.respondError(res, 'too_many_requests', refused.message);
     return undefined;
@@ -276,7 +276,7 @@ export class CredsAgentServer implements vscode.Disposable {
       preConsent: (grant) => this.grants.allow((grant as Grant).secret),
       // `'call'`: this door mints per REQUEST and the secret is in no response body, so the cap
       // must reclaim these before any token somebody is holding — see `Grant.scope`.
-      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call', view.grantFor()),
+      mint: (t, quiet) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call', view.grantFor(quiet)),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs, remembers) =>
@@ -537,10 +537,10 @@ export class CredsAgentServer implements vscode.Disposable {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;
     }
-    // Only an `allowed` from a request still there reaches this line — the gate checked after its own
-    // wait — so a consent nobody is waiting for is never remembered.
-    await this.remember(who.via, grant, opensWindow(question, asked), rungs);
-    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend });
+    // Only an `allowed` from a request still there gets here; `prepared` writes the answer down after the launch gate has
+    // let the call through, so an Allow the gate then refuses (a scope narrowed meanwhile) stamps nothing; and only a dialog that
+    // said it opened the window writes one (`opensWindow`).
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, opensWindow(question, asked), rungs));
   }
 
   /** The capability check and the body's validation — both before anybody is asked anything. */
@@ -569,13 +569,14 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /**
-   * After consent: the waiting rotation released and the mask table read — each only for a client still
-   * there to be answered — and then the call. Every await on this path is followed by a check.
+   * After consent: the launch gate, the answer remembered (behind the gate, so a call it refuses leaves no stamp), the gate again (the
+   * write is an await), the waiting rotation released and the mask table read, each only for a client still there to be answered,
+   * then the call. Every await is followed by a check.
    */
-  private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>): Promise<void> {
+  private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, remember: () => Promise<void>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
     const atLaunch = launchGate(this.grants, this.hooks.bridgeWall, call);
-    if (this.stopped(res, call, 'after consent', atLaunch)) {
+    if (!(await this.stamped(res, call, atLaunch, remember))) {
       return;
     }
     await this.releaseWaiting(grant);
@@ -591,6 +592,18 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     // The check after THIS await is `brokerCall.ts`'s, made in the same step that starts the action.
     await this.runAndDeliver(res, { ...call, table }, atLaunch);
+  }
+
+  /**
+   * The gate, the stamp, the gate again; whether the call may go on. The write is an await: the client can leave, and the scope or the
+   * token can change, inside it, so the gate is asked again, as `main` asked once after its own write. Both read `after consent`.
+   */
+  private async stamped(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, atLaunch: () => Refusal | undefined, remember: () => Promise<void>): Promise<boolean> {
+    if (this.stopped(res, call, 'after consent', atLaunch)) {
+      return false;
+    }
+    await remember();
+    return !this.stopped(res, call, 'after consent', atLaunch);
   }
 
   /** Whether this call goes no further, asked before anything an Allow triggers (`releaseWaiting`): its client has gone, or the scope wall refuses it now. */
@@ -651,24 +664,9 @@ export class CredsAgentServer implements vscode.Disposable {
     this.respondError(res, code, GRANT_NOT_ALLOWED, where.grant, where.action, where.summary, who.via, who.caller);
   }
 
-  /**
-   * A person answered a dialog for an MCP use call: let the vault remember it.
-   *
-   * <p>Which answers count, what a failed or slow write costs, and why neither may cost somebody
-   * their call are all in `brokerConsentMemory.ts`. This hands it the four facts only the broker
-   * holds.</p>
-   */
+  /** A person answered a dialog for an MCP use call: let the vault remember it. Which answers count, and what a slow or failed write costs, are `brokerConsentMemory.ts`'s. */
   private remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
-    return recordConsent({
-      remember: this.hooks.rememberMcpConsent,
-      accountId: grant.accountId,
-      entityId: grant.entityId,
-      entityName: grant.entityName,
-      via,
-      asked,
-      rungs,
-      note: (entry) => this.log({ ...entry, grant: GrantRegistry.describe(grant) }),
-    });
+    return recordConsent(consentRecordOf(grant, { via, asked, rungs }, this.hooks.rememberMcpConsent, (entry) => this.log({ ...entry, grant: GrantRegistry.describe(grant) })));
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
@@ -698,7 +696,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
+    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), bridge, (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),

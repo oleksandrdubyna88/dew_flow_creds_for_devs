@@ -42,8 +42,8 @@ const USE_PREFIXES = [USE_PREFIX, ALIAS_ROUTE_PREFIX, MCP_USE_PREFIX] as const;
 
 /** The CLI's verbs as route words, the vocabulary `emit-contract.mjs` writes under `routes`. */
 const USE_ACTIONS = ['exec', 'terminal', 'query', 'run', 'exportEnv', 'up', 'down'] as const;
-/** What a bridge serves of them. */
-const SERVED_ACTIONS: ReadonlySet<string> = new Set(['exec', 'query']);
+/** What a bridge serves of them (exported so a test can hold the consent text to it: every served action needs a run site, `bridgeConsentText.ts`). */
+export const SERVED_ACTIONS: ReadonlySet<string> = new Set(['exec', 'query']);
 const EXPORT_ACTION = 'exportEnv';
 const FOLDER_VERBS = ['create', 'edit', 'delete'] as const;
 

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BridgeContext, freezeBridgeContext } from '../bridgeContext';
+import { BridgeContext, auditGrantMark, bridgeAuditName, freezeBridgeContext } from '../bridgeContext';
 
 /** D15: a context with an empty identity cannot be built, because E1.3 and E1.4 compare these strings. */
 
@@ -88,4 +88,39 @@ test('D15: it is a copy — the caller keeps an object it can still change, the 
   mine.serverEntityId = 'someone-else';
   assert.notEqual(frozen, mine);
   assert.equal(frozen.serverEntityId, 'e1');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.4 — the server's name on the audit line (C14, C13's mark, Q7, Q13)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('C14: the audit name has no whitespace, parenthesis or arrow — a run of them is one underscore', () => {
+  assert.equal(bridgeAuditName('prod (eu) → db'), 'prod_eu_db');
+  assert.equal(bridgeAuditName('build-server'), 'build-server', 'a plain name is untouched');
+  assert.equal(bridgeAuditName('a\tb\nc  d'), 'a_b_c_d');
+  assert.equal(bridgeAuditName('x)(y'), 'x_y', 'the two parentheses are one run');
+  assert.equal(bridgeAuditName('→→'), '_', 'a name of nothing but separators is still a name, and not empty');
+  assert.equal(bridgeAuditName(''), '_', 'and an empty one reads as one');
+  assert.match(bridgeAuditName('a ( b ) → c\u00a0d\u2003e'), /^[^\s()→]+$/u, 'Unicode spaces count as whitespace');
+});
+
+test('C14: control and format characters cannot ride into the journal in a name', () => {
+  // The caller label's sanitiser strips both classes (`brokerCaller.ts`); a bidi override in a server name would
+  // re-order the line a person reads, and a control character would end it.
+  assert.equal(bridgeAuditName('a\u202eb\u0007c\u200bd'), 'a_b_c_d');
+  assert.doesNotMatch(bridgeAuditName('evil\u202e\u0000'), /[\p{Cc}\p{Cf}]/u);
+});
+
+test('C14: the audit name is at most 40 code points, cut by code point', () => {
+  assert.equal(bridgeAuditName('x'.repeat(40)), 'x'.repeat(40));
+  assert.equal(bridgeAuditName('x'.repeat(41)), 'x'.repeat(40), 'the 41st is cut');
+  const astral = '\u{1F600}'.repeat(41);
+  assert.equal(Array.from(bridgeAuditName(astral)).length, 40, 'counted in code points, so no half of a surrogate pair is left');
+  assert.equal(bridgeAuditName(astral), '\u{1F600}'.repeat(40));
+});
+
+test('C13: the grant mark is a dash off a bridge and a dash and the name on one', () => {
+  assert.equal(auditGrantMark(undefined), '—');
+  assert.equal(auditGrantMark({ ...FULL, serverName: 'build-server' }), '— bridge=build-server');
+  assert.equal(auditGrantMark({ ...FULL, serverName: 'prod (eu)' }), '— bridge=prod_eu_');
 });

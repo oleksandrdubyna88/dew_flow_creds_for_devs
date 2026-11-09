@@ -134,8 +134,11 @@ export interface BrokerHooks {
    * <p>Never in the vault, never in a share, never synced — see `mcpConsentPolicy.ts` for why a
    * remembered answer that travels is not a check. Absent means this window remembers nothing, so
    * every call asks, which is what a build with no storage should do.</p>
+   *
+   * <p>`serverEntityId` is given when the answer came through a Remote Bridge (E1.4), and the stamp is then that
+   * server's own: it silences that server's later calls on this entry and nothing else.</p>
    */
-  readonly rememberMcpConsent?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  readonly rememberMcpConsent?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
 
   /**
    * Move an entry to the Trash, answering whether it was still there to move.

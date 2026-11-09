@@ -1,5 +1,6 @@
 import * as http from 'node:http';
 import * as os from 'node:os';
+import { auditGrantMark, type BridgeContext } from './bridgeContext';
 import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantWords';
@@ -76,7 +77,7 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  * exactly the moment it is working as designed.</p>
  */
 export type McpUseLookup =
-  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean }
+  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean; quiet?: boolean }
   | { kind: 'closed'; entityName: string; needed: NeededSwitch }
   | undefined;
 
@@ -129,7 +130,7 @@ export async function readMcpUse(
  * which calls the same `readMcpUse`, simply never does.</p>
  */
 export type UseRead =
-  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string; remembers: boolean }
+  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string; remembers: boolean; quiet?: boolean }
   | { ok: false; code: ErrorCode; message: string };
 
 function usable(
@@ -152,7 +153,7 @@ function usable(
  */
 function usableRead(
   body: Record<string, unknown>,
-  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean },
+  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean; quiet?: boolean },
 ): UseRead {
   return {
     ok: true,
@@ -161,6 +162,7 @@ function usableRead(
     preConsented: found.preConsented === true,
     rungs: found.rungs ?? '',
     remembers: found.remembers === true,
+    ...(found.quiet === undefined ? {} : { quiet: found.quiet }),
   };
 }
 
@@ -333,11 +335,15 @@ function errorCodeOf(error: unknown): string {
  * name of the table's route or `other`, handed in: `brokerRequests` cannot import the table, which imports it back) and whether the
  * headers had already gone out, read BEFORE the answer is written. Never `message`, never a stack, a path, a header or a body: a Node
  * `JSON.parse` message quotes its input (parent §4.1).</p>
+ *
+ * <p>The line has no grant, so its grant field is `auditGrantMark(bridge)`: the context the door handed `handle`, the same one that
+ * keys the throttle's window, beside the classification and not inside it (E1.4).</p>
  */
 export function unanswered(
   res: http.ServerResponse,
   error: unknown,
   route: string,
+  bridge: BridgeContext | undefined,
   respondError: (code: ErrorCode, message: string) => void,
   log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void,
 ): void {
@@ -346,7 +352,7 @@ export function unanswered(
     respondError('internal', UNANSWERED_FAILURE);
   }
   try {
-    log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler failed: ${errorClassOf(error)}${errorCodeOf(error)} on ${route}; headers ${sent ? 'sent' : 'not sent'}` });
+    log({ grant: auditGrantMark(bridge), entityName: '', action: 'request', outcome: 'failed', detail: `a handler failed: ${errorClassOf(error)}${errorCodeOf(error)} on ${route}; headers ${sent ? 'sent' : 'not sent'}` });
   } catch {
     /* a journal that will not take the line has already cost the caller nothing: the answer went first */
   }

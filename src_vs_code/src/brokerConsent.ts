@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import type { AuditDoor, AuditEntry } from './agentAuditLog';
+import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -260,16 +261,26 @@ export class ConsentGate {
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
+      `"${shownName(grant)}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(question)}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
       this.coverageTail(question) +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
     );
   }
 
-  /** The sentence for this door: a record lookup, so adding a coverage is a compile error here. */
+  /**
+   * The sentence for this door: a record lookup, so adding a coverage is a compile error here.
+   *
+   * <p>Through a Remote Bridge it is the bridge's coverage line instead, whatever `coverage` says (E1.4): a bridged call is one request's
+   * capability, never a token, and the window sentence is `main`'s words about a local stamp and says *any agent* and *this machine*, which a
+   * server-keyed stamp is neither. The bridge's line follows the entry's own setting ("quiet") only on the MCP door, the one door a consent
+   * policy speaks for. `coverage` still gates the WRITE ({@link opensWindow}), bridged or not.</p>
+   */
   private coverageTail(question: ConsentQuestion): string {
-    const { grant } = question;
+    const { grant, via } = question;
+    if (grant.bridge !== undefined) {
+      return `${bridgeCoverageLine({ ...grant.bridge, quiet: grant.bridge.quiet && via === 'mcp' })} `;
+    }
     return {
       token: () => this.tokenTail(grant),
       call: () => CALL_TAIL,
@@ -292,6 +303,16 @@ export class ConsentGate {
       .map((a) => a.verb)
       .join(', or ');
   }
+}
+
+/** The entry's name in the dialog's first line: as it always was off a bridge, one cleaned line without quotes of its own through one. */
+function shownName(grant: Grant): string {
+  return grant.bridge === undefined ? grant.entityName : bridgeQuotedName(grant.entityName);
+}
+
+/** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
+function bridgeLine({ grant, action }: ConsentQuestion): string {
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, bridgeRunSite(action), grant.entityName)}`;
 }
 
 /** An answer that settled nothing on the grant: Allow that was not recorded reads as allowed, the rest as a timeout. */

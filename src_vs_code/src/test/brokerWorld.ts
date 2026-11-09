@@ -49,7 +49,7 @@ interface World {
   settleDeadlines: number[];
   presence: number;
   /** Consents the vault was asked to remember: accountId, entityId and the ladder shown (#95). */
-  consents: { entityId: string; rungs: string }[];
+  consents: { entityId: string; rungs: string; serverEntityId?: string }[];
   /** Called by the run stub: a rotation writing its new value into storage mid-run. */
   rotate?: () => void;
   /**
@@ -150,7 +150,7 @@ function world(options: {
    * than instead of it: `w.consents` stays the thing every other test reads, and this one also puts
    * the stamp where production puts it.</p>
    */
-  mcpRemember?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  mcpRemember?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
   /**
    * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
    * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
@@ -312,9 +312,9 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind, options.mcpRemembers),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create, options.settle),
-    rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
-      w.consents = [...w.consents, { entityId, rungs }];
-      return options.mcpRemember?.(accountId, entityId, rungs) ?? Promise.resolve();
+    rememberMcpConsent: (accountId: string, entityId: string, rungs: string, serverEntityId?: string): Promise<void> => {
+      w.consents = [...w.consents, { entityId, rungs, ...(serverEntityId === undefined ? {} : { serverEntityId }) }];
+      return options.mcpRemember?.(accountId, entityId, rungs, serverEntityId) ?? Promise.resolve();
     },
   };
 }

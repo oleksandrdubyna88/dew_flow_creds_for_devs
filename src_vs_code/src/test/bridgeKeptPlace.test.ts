@@ -370,6 +370,7 @@ test('C.7: a journal append that throws right after admission is answered 500 an
       assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', UNANSWERED_FAILURE], `${door}: the failed request was answered, with the generic sentence`);
       assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
       assert.ok(journal.some((line) => CLASSIFIED.test(line)), `${door}: the failure is in the journal as a classification: ${JSON.stringify(journal)}`);
+      assert.ok(journal.some((line) => CLASSIFIED.test(line) && line.includes('(\u2014 bridge=prod_server)')), `${door}: and the line says which bridge it came in by (E1.4)`);
       assert.equal(journal.some((line) => line.includes(JOURNAL_FAULT)), false, `${door}: the message is in no journal line`);
       assert.equal(next.status, 200, `${door}: the next call was asked and ran, not told busy: ${next.body}`);
     }
@@ -451,6 +452,7 @@ test('C.7 through the main port: a journal that throws on its first line is answ
         assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', UNANSWERED_FAILURE], `${door}: ${failed.body}`);
         assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
         assert.ok(ww.w.audit.some((line) => CLASSIFIED.test(line)), `${door}: the failure is in the journal as a classification`);
+        assert.ok(ww.w.audit.some((line) => CLASSIFIED.test(line) && line.includes('(\u2014)')), `${door}: and, off a bridge, with no bridge in its grant field`);
         assert.equal(ww.w.audit.some((line) => line.includes(JOURNAL_FAULT)), false, `${door}: the message is in no journal line`);
         const next = await answeredAtOnce(send(viaMain(ww), ask), `${door}: the next call did not answer`);
         assert.equal(next.status, 200, `${door}: the next local call was asked and ran: ${next.body}`);

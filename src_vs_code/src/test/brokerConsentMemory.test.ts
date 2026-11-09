@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
-import { REMEMBER_TIMEOUT_MS, answeredHere, recordConsent } from '../brokerConsentMemory';
+import type { Grant } from '../grantRegistry';
+import { REMEMBER_TIMEOUT_MS, answeredHere, consentRecordOf, recordConsent } from '../brokerConsentMemory';
 
 /**
  * What happens to a person's answer after they give it — and what must not happen to their call.
@@ -163,4 +164,31 @@ test('a window with no vault to remember into is not a failure', async () => {
   await recordConsent(args);
 
   assert.deepEqual(notes, [], 'there was nothing to write and nothing went wrong');
+});
+
+test('E1.4: the server an answer was given through is handed to the write, and an answer given off a bridge hands none', async () => {
+  const seen: (string | undefined)[][] = [];
+  const remember = (_a: string, entityId: string, _rungs: string, serverEntityId?: string): Promise<void> => Promise.resolve(void seen.push([entityId, serverEntityId]));
+
+  await recordConsent(record({ remember, serverEntityId: 'server-A' }).args);
+  await recordConsent(record({ remember }).args);
+
+  assert.deepEqual(seen, [['e1', 'server-A'], ['e1', undefined]]);
+});
+
+/** A whole grant with real defaults, the shape `GrantRegistry.mint` makes; a test overrides what it is about. */
+function grantOf(over: Partial<Grant> = {}): Grant {
+  return { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', mintedAt: 0, lastUsedAt: 0, uses: 0, scope: 'call', ...over };
+}
+
+test('E1.4: the record names the server from the grant\'s context alone, and off a bridge it carries no server key at all', () => {
+  const base = grantOf();
+  const bridged = grantOf({ bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 'srv-1', serverName: 'x', target: '', remoteOs: undefined }, quiet: true } });
+  const answer = { via: 'mcp' as const, asked: true, rungs: RUNGS };
+  const noted = (): void => undefined;
+  const written = consentRecordOf(bridged, answer, undefined, noted);
+  assert.equal(written.serverEntityId, 'srv-1');
+  assert.deepEqual([written.accountId, written.entityId, written.entityName, written.via, written.asked, written.rungs], ['a1', 'e1', 'prod', 'mcp', true, RUNGS]);
+  const local = consentRecordOf(base, answer, undefined, noted);
+  assert.equal('serverEntityId' in local, false, 'a local answer writes the key it always did');
 });
