@@ -72,13 +72,13 @@ for mode in domain ip custom none; do
 
     # The case being tested must really be the one rendered: 443 only when a certificate exists
     # and TLS is ours. Without this a seam typo would test the plain config three times over.
-    listens_443="$(count "$conf" 'listen 443')"
+    listens_443="$(count "$conf" 'listen 443 ssl')"
     want_443=0
     [[ "$cert" == yes && "$mode" != none ]] && want_443=1
     if [[ ( "$listens_443" -ge 1 && "$want_443" == 1 ) || ( "$listens_443" == 0 && "$want_443" == 0 ) ]]; then
-      pass "${label}: the rendered config is the intended state (443 listeners: ${listens_443})"
+      pass "${label}: premise holds, the intended state was rendered (TLS server blocks: ${listens_443})"
     else
-      fail "${label}: wrong state rendered" "443 listeners: ${listens_443}, wanted a TLS server: ${want_443}"
+      fail "${label}: premise broken, the wrong state was rendered; the checks below prove nothing" "TLS server blocks (listen 443 ssl): ${listens_443}, wanted a TLS server: ${want_443}"
     fi
 
     for d in real_ip_header real_ip_recursive; do

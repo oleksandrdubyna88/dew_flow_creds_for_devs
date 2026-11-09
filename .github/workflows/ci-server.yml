@@ -332,6 +332,8 @@ jobs:
           # --add-host: `nginx -t` resolves the `vault` upstream, which only exists in the compose network.
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
+          # Where each mode looks (entrypoint.sh: CERT_NAME): domain and ip read
+          # live/<SERVER_NAME>/{fullchain,privkey}.pem, the Let's Encrypt layout; custom reads live/custom/.
           for name in vault.example.test custom; do
             mkdir -p "$work/live/$name"
             openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=vault.example.test" \
@@ -339,14 +341,21 @@ jobs:
           done
           for mode in domain ip custom none; do
             echo "-- TLS_MODE=$mode"
+            # The premise: a nginx-owned TLS mode must render the TLS server, `none` must not. Without
+            # this a mode that fell back to plain HTTP would pass `nginx -t` and prove nothing.
+            if [ "$mode" = none ]; then
+              premise='! grep -q "listen 443" /etc/nginx/conf.d/vault.conf'
+            else
+              premise='grep -q "listen 443 ssl" /etc/nginx/conf.d/vault.conf'
+            fi
             docker run --rm --add-host vault:127.0.0.1 \
               -v "$PWD/deploy/nginx/entrypoint.sh:/entry.sh:ro" \
               -v "$PWD/deploy/nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro" \
               -v "$work/live:/etc/letsencrypt/live:ro" \
               -e TLS_MODE="$mode" -e SERVER_NAME=vault.example.test -e MAX_BODY_MB=16 \
               -e HSTS_MAX_AGE=31536000 -e CRED_VAULT_RENDER_ONLY=1 \
-              --entrypoint sh nginx:1.27-alpine -c 'sh /entry.sh && nginx -t' \
-              || { echo "nginx refused the config rendered for TLS_MODE=$mode"; exit 1; }
+              --entrypoint sh nginx:1.27-alpine -c "sh /entry.sh && ${premise} && nginx -t" \
+              || { echo "TLS_MODE=$mode: the premise failed (TLS server not rendered as expected) or nginx refused the config"; exit 1; }
           done
 
 
