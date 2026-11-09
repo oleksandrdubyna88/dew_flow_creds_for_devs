@@ -1,3 +1,6 @@
+# shellcheck shell=bash
+# SC2329: the functions of a sourced library are used by the scripts that source it.
+# shellcheck disable=SC2329
 # owned.sh - the claim-first bash helper of this repository (rule common/test-leftovers.md, sections 1 to 4).
 #
 # Source it, never run it:   source "$here/lib/owned.sh"
@@ -62,7 +65,7 @@ owned_token() {
   owned_uname
   case "$OWNED_UNAME" in
     MINGW* | MSYS* | CYGWIN*)
-      local mjs dir why="" token="" re='^w[0-9]{1,10}$'
+      local dir why="" token="" re='^w[0-9]{1,10}$'
       if ! command -v node > /dev/null 2>&1; then
         why="node is not on PATH"
       else
@@ -129,7 +132,8 @@ owned_owner() {
     # Field 22 of /proc/<pid>/stat is the 20th word AFTER THE LAST ')' (a command name may hold spaces and ')').
     if IFS= read -r line < "/proc/$$/stat" 2> /dev/null; then
       rest="${line##*)}"
-      words=($rest)
+      # shellcheck disable=SC2206
+      words=($rest) # word splitting is wanted: the stat fields are separated by one space
       btime=""
       while IFS=' ' read -r k v; do
         if [ "$k" = btime ]; then btime="$v"; break; fi

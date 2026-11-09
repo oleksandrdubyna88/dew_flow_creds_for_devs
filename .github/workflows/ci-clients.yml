@@ -89,6 +89,15 @@ jobs:
       # that say the wrong version, a longer one, CRLF, nothing at all, or never end.
       - name: Self-test the version smoke script
         run: .github/scripts/version-smoke.test.sh
+      # E2.4.S1: the bash helper of common/test-leftovers.md section 2 (claim, register, create; no temp-path API) in real
+      # child processes on this leg's bash: Linux, macOS 3.2 (/bin/bash: Homebrew's bash 5 is first on PATH there), Git for
+      # Windows. The kill between the two steps leaves an orphan claim that the janitor collects on Linux and macOS; on
+      # Windows the Node sweep lists it `unverified:` (F16) and the janitor runs as a dry run (its contract). The janitor
+      # also reads this checkout's worktrees and branches and the runner's Docker objects in the `creds` scope: the test
+      # asserts first that none of them is prefixed, so its only removals are inside the private roots it made.
+      - name: Self-test the shell helper
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then /bin/bash .github/scripts/lib/owned.test.sh; else bash .github/scripts/lib/owned.test.sh; fi
       # The three test projects are built by name: the solution file does not carry all of them, and
       # a project the solution never built is a runner executable that does not exist — which is how
       # this job's first run failed on `No such file or directory`.

@@ -14,6 +14,9 @@
 # The janitor and the Node sweep of the shared rules also read this checkout's worktrees and branches and, where docker
 # answers, its containers, volumes and networks. Before each run the test asserts that none of them has a name of the
 # owner form with the creds token, so the only entries they can act on are in the private roots made here.
+# SC2329: test_cleanup runs through owned_trap. SC2016: the child scripts are in single quotes on purpose. SC2015: ok never fails.
+# SC2012: ls -A only counts names of folders this test made.
+# shellcheck disable=SC2329,SC2016,SC2015,SC2012
 set -o pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -303,6 +303,8 @@ jobs:
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
           $SHELLCHECK .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
+          # E2.4.S1: the bash helper and its self-test. -x follows the one `source` of the self-test.
+          $SHELLCHECK -x .github/scripts/lib/owned.sh .github/scripts/lib/owned.test.sh
 
       - name: Drive restore-archive.sh as a program
         run: |
