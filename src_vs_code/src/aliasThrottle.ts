@@ -272,10 +272,8 @@ export interface Admission extends Slot {
 export const LOCAL_DOOR = 'local';
 
 /**
- * The `busy` answer, with the help a caller can act on: what may hold the place, and where to answer it. Exported: tests import it and never retype it.
- *
- * <p>The help names the four things the parent's §4.10 names: the standing dialog, a prompt that followed an Allow, a running dependency step, and the
- * window that owns the place. Its wording for the local-token exception waits for M10 (the parent's §7).</p>
+ * The `busy` answer, with the help a caller can act on: the four things that may hold the place (§4.10), and where to answer them. Tests import it, never retype it.
+ * Its wording for the local-token exception waits for M10 (parent §7).
  */
 export const BUSY_PLACE =
   "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), or a dependency step may still be running in a terminal, in the VS Code window that owns the place. Answer or finish it there; the next request is then asked.";
@@ -339,8 +337,7 @@ export class TokenlessCeilings {
    * `too-many`; else the place is held and the call allowed. Neither refusal holds the place, and both count as a call in
    * the asking window. Silent: this door's silent window admits (and stamps) or refuses; no place is taken, because that
    * rule protects a human from a pile-up and this path has no human to protect — except a quiet call whose action may prompt again
-   * (`followUp`, D.3): it holds the place from admission to its release, with no dialog, because the prompt it may raise next would otherwise
-   * open over a standing dialog or beside another call's.</p>
+   * (`followUp`, D.3): it holds the place from admission to its release, with no dialog, so its next prompt opens over nothing.</p>
    */
   admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR, followUp: boolean = false): Admission {
     const counts = this.countsOf(door, nowMs);

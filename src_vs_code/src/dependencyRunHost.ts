@@ -17,9 +17,9 @@ import { endedAfter, requestGone, untilGone } from './requestLife';
  * because the step may be sitting at a sudo prompt or a UAC dialog they need to answer first.
  * Dismissing the question stops the chain; it never continues on its own.</p>
  *
- * <p>The notification is the person's own Start. On an AGENT's call (`startGate` set) the question is a modal and is raced against the request's life
- * (D14, E1.5): a modal cannot be taken down, but the call ends when its client leaves and so frees the one dialog place, and a click that lands later
- * is journalled through `lateAnswer` and does nothing. The same race ends a step that is running when the client leaves.</p>
+ * <p>The notification is the person's own Start. On an AGENT's call (`startGate` set) the question is a modal raced against the request's life, and so
+ * is a running step (D14, E1.5): the call ends when its client leaves and frees the one dialog place; a click that lands later is journalled through
+ * `lateAnswer` and does nothing.</p>
  */
 
 /** How long a fresh terminal gets to report shell integration. Bounds ACTIVATION only, never a step. */
@@ -297,7 +297,7 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
   return { next: await settle(stepVerdict(step.name, await ran(terminal, integration, step.line, request.startGate)), request), typed: true };
 }
 
-/** The step's exit code; `'gone'` (the client left while it ran) reads as no exit code, and `settle` then ends the call before any question. */
+/** The step's exit code; `'gone'` reads as none, and `settle` then ends the call before any question. */
 async function ran(terminal: vscode.Terminal, integration: vscode.TerminalShellIntegration, line: string, startGate: AbortSignal | undefined): Promise<number | undefined | 'closed'> {
   const end = await executed(terminal, integration, line, startGate);
   return end === 'gone' ? undefined : end;
@@ -318,12 +318,10 @@ function settle(verdict: StepVerdict, request: Pick<DependencyRunRequest, 'start
 }
 
 /**
- * Run one line and resolve with its exit code — `undefined` when unknown, `'closed'` if the terminal
- * went, `'gone'` if the request this chain runs for ended first. All listeners are attached BEFORE the command is sent, so no event can be missed; the
- * execution is compared by identity, so an event from an earlier execution is ignored.
- *
- * <p>The gate is a THIRD way to finish, inside this function, so `finish` disposes everything: an abandoned run leaves no listener on a terminal that
- * stays open, and a stale execution that ends later reaches nothing — no question, no next step.</p>
+ * Run one line and resolve with its exit code — `undefined` when unknown, `'closed'` if the terminal went, `'gone'` if the request ended first. All
+ * listeners are attached BEFORE the command is sent, so no event can be missed; the execution is compared by identity, so an earlier one's is ignored.
+ * The gate is a THIRD way to finish and `finish` disposes everything: an abandoned run leaves no listener on a terminal that stays open, and a stale
+ * execution that ends later reaches no question and no next step.
  */
 function executed(
   terminal: vscode.Terminal,
@@ -358,10 +356,7 @@ function executed(
   });
 }
 
-/**
- * The *Continue* question. A notification on the person's own Start: the step may be waiting at a prompt the person has to answer. A modal on an agent
- * call, raced against its request, so a client that leaves frees the place; a click that lands afterwards is journalled and decides nothing.
- */
+/** The *Continue* question: a notification on the person's own Start (the step may wait at a prompt), a modal raced against the request on an agent call. */
 async function askToContinue(question: string, request: Pick<DependencyRunRequest, 'startGate' | 'lateAnswer'>): Promise<boolean> {
   const { startGate, lateAnswer } = request;
   const choice = await untilGone(

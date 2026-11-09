@@ -335,3 +335,42 @@ test('C20: a run that ends by itself on a live gate leaves no listener on it eit
   assert.equal(started, true, w.warnings.join('\n'));
   assert.equal(abortListeners(gate.signal), 0, 'the gate is clean after a chain that ran to its end');
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * C8 (b) and C12 — a local `down` held in its install offer: busy beyond any former timer, free at the click
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('C8 (b) and C12: a local down whose install offer stands for 400 ms with the wait at 100 ms — busy at 150 ms and at 350 ms on both local doors, one modal, the offer held; free at the click on it', async () => {
+  const vw = vpnWorld({}, { holdDialogs: /is not installed\. Install it\?/ });
+  const mocks = {
+    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'missing', looked: [] }) },
+    './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
+  };
+  const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
+  const nodes = { vpn: vpn() };
+  const open = agentVpnOpener(storageOf(nodes), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
+  const entity = { id: 'e1', name: 'prod', type: 'entity' as const, details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' as const } };
+  const deps: VpnUseDeps = { storage: { getNode: () => entity }, open: (accountId, _entityId, action, gate, late) => open(accountId, 'vpn', action, gate, late) };
+  const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, consentTimeoutMs: 100, supports: ['down', 'exec'], realActions: { down: vpnAction(deps, 'down') }, aliasMap: { one: TARGET }, mcpUse: 'usable' });
+  const r: Rig = { bw, vw, port: (await share(bw)).port, dir: '', gates: [] };
+  try {
+    const first = send(door(r.port), { path: '/v1/alias/down', body: { alias: 'one' } });
+    first.catch(() => undefined);
+    await until(() => bw.openDialogs.length === 1, 'the consent dialog of the down');
+    bw.openDialogs[0]('Allow');
+    await until(() => vw.held.length === 1, 'the install offer, after the Allow');
+    for (const [wait, at] of [[150, '150 ms'], [200, '350 ms']] as const) {
+      await pause(wait);
+      await assertBusy(r, `${at}: a local alias call`);
+      const mcpBusy = await answeredAtOnce(send(door(r.port), { path: '/v1/mcp/use/exec', body: { entry: 'e1', command: 'id' } }), 'a local MCP call was let in');
+      assert.deepEqual([mcpBusy.status, message(mcpBusy)], [429, BUSY_PLACE], 'a local MCP call');
+    }
+    assert.equal(bw.dialogs.length, 1, 'one modal in all');
+    assert.equal(vw.held.length, 1, 'the offer is held (C8 b)');
+    vw.held[0].answer(undefined);
+    await first;
+    await assertPlaceFree(r, 'at the click on the offer');
+  } finally {
+    settle(r);
+  }
+});

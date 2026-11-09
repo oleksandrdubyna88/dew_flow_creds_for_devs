@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the broker's one consent dialog: the place is the dialog's until you answer it, never a timer's
+
+- **An unanswered dialog keeps the place until you click or dismiss it.** After five minutes the agent is still told `consent_timeout`
+  (504) and the call is over, but the dialog stays on screen and the place stays taken (`brokerConsent.ts`, `ask` and `timedOut`: nothing is
+  told to the throttle at the timer). The next alias or MCP call that would ask hears *busy*, where 1.18.0 raised a second modal over the
+  first. 1.18.0's "until you click it or five minutes pass" no longer holds: only your click or an Escape gives the place back.
+- **The *busy* answer says what may hold the place** (`aliasThrottle.ts`, `BUSY_PLACE`): *Another request holds this window's dialog place.*,
+  then a dialog standing unanswered, a prompt that followed an Allow (a PIN box, an install offer, a trust modal), a dependency step still
+  running in a terminal, and the VS Code window that owns the place, where to answer or finish it. It replaces *Another request is already
+  waiting for the person to answer. Try again once they have.*
+- **The timeout answer says the question is still on your screen** (`brokerProtocol.ts`, `CONSENT_TIMED_OUT_ON_PLACE` and
+  `CONSENT_TIMED_OUT`). On the local alias and MCP doors, and for an agent's `create` and `delete` and the folder verbs, it adds that the
+  question keeps this window's shared dialog place until you answer it; a local call that carries a token holds no place and hears the shorter
+  sentence. Both replace *The human did not allow this grant.* (*…did not allow this.* and *…this deletion.* for `create` and `delete`) on a
+  timeout (`credsAgentServer.ts`, `notAllowed`; `brokerMcpDoor.ts`, `consentNotGiven`; the one chooser is `brokerRequests.ts`, `consentRefusal`).
+  A Deny is answered as before.
+- **A click on a dialog whose call had already ended is written down and told to you** (`brokerConsent.ts`, `ignored` and `lateAnswer`). An
+  Allow or Deny on a dialog whose call timed out, or whose client had left, writes one journal line, `"Allow" answered after its call had
+  ended; nothing ran` (it used to read `answered after the request had gone — nothing decided`, and only for a client that had left), shows
+  a notice that nothing ran, and decides nothing, as before. An Escape on such a dialog gives the place back and says nothing.
+- **An Escape on a live dialog is answered as before** (`brokerConsent.ts`, `apply`): the call is refused with *The human did not allow this
+  grant.*, nothing is remembered, and the place goes back at once; the new timeout sentence is never said for it. A dialog that fails under
+  the call (the window going down under it) is read the same way, where it used to be an unhandled error with the place left taken.
+- **A quiet local MCP call that may prompt again holds the place while it runs** (`aliasThrottle.ts`, `admitSilentPlace`;
+  `credsAgentServer.ts`, `doorFor`). When an entry's consent setting lets an MCP call through with no dialog, the call now keeps the one dialog
+  place until it ends if its action may put a prompt of its own on screen next: `terminal`, `up`, `down`, `rotate`, and an `exec` on an entry
+  that forwards your SSH agent while the agent is running. Before, such a call took no place and a prompt it raised could open over another
+  call's dialog. An asking call that arrives meanwhile hears *busy*; any other quiet call is unchanged.
+- **An agent's `up` is no longer held by a question nobody is waiting for** (`vpnRun.ts`, `openVpnConnect`; `dependencyRunHost.ts`,
+  `askToContinue` and `executed`). The OpenVPN Connect import question and the dependency chain's *Continue* question are now modals when an
+  agent asked for the `up`, and a client that leaves while one stands, or while a dependency step is still running in the chain's terminal,
+  ends the call and gives the place back at once (it was held until you clicked, or for ever when the step never ended). A click that
+  lands afterwards imports nothing and types nothing, and leaves the same journal line as above. Your own Start and Stop are unchanged: the
+  same toasts, and no request behind them.
+
 ## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
 
 ### Changed — an agent cannot export a secret into another computer's terminals

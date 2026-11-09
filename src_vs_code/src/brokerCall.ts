@@ -202,14 +202,11 @@ function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
   });
 }
 
-/**
- * The seam for a late click on a prompt an action raised itself (E1.5): its call had ended, so the click decides nothing, and the journal says so with the
- * grant, the call's own action and its door — which only the broker's `log` knows.
- */
+/** The seam for a late click on a prompt an action raised itself (E1.5): the journal says so, with the grant, action and door only `log` knows. */
 function lateAnswerOf(deps: CallDeps, call: CallSubject): (what: string) => void {
   const { grant, action, via, caller } = call;
-  return (what) =>
-    deps.log({ grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, outcome: 'ignored', detail: `"${what}" answered after its call had ended; nothing ran`, caller });
+  const detail = (what: string): string => `"${what}" answered after its call had ended; nothing ran`;
+  return (what) => deps.log({ grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, outcome: 'ignored', detail: detail(what), caller });
 }
 
 function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionResult>): Promise<void> {
