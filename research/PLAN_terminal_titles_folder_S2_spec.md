@@ -1,9 +1,9 @@
 # PLAN — S2 spec: one key for every entry terminal (CORNERSTONE)
 
-> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (commit 01a8a41; deviations in the parent's `## As built`).**
-> The parent is stopped for re-review (change 1.2): the folder run's keys AFTER the dependency wait are revised by the
-> parent's story S5 and its §Design "The folder run's timing contract" — F6, §S2.4 (`folderRunCommand.ts`) and pitfalls
-> 1-2 below are marked where S5 supersedes them. This spec keeps no ledger; its changes are the parent's entries.
+> Status: **IMPLEMENTED, 2026-11-09.** Built on `feat/terminal-titles-folder` (commit 01a8a41; PR to be opened) and kept with its
+> parent, which is IMPLEMENTED too; deviations are in the parent's `## As built`. The folder run's keys AFTER the dependency wait
+> were revised by the parent's story S5 and its §Design "The folder run's timing contract": F6, §S2.4 (`folderRunCommand.ts`) and
+> pitfalls 1-2 below are marked where S5 supersedes them. This spec keeps no ledger; its changes are the parent's entries.
 > Scope: `src_vs_code/src/pinnedTerminal.ts`, `terminalGuard.ts`,
 > `commands/runCommands.ts`, `commands/folderRunCommand.ts`, `vpnLauncherRun.ts`; the fakes `test/arrowWorld.ts`,
 > `test/vpnWorld.ts`, `test/folderWorld.ts`; the new `test/terminalTitleRoads.test.ts`; expectation updates in seven suites.

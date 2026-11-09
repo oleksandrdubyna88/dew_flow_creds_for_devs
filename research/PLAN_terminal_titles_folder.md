@@ -1,14 +1,11 @@
 # PLAN — Terminal titles name the folder, and "CredsForDevs" becomes "Creds"
 
-> Status: **epoch 2 open, 2026-11-09; S5 to build.** S1-S4 are built on `feat/terminal-titles-folder` (pushed, not
-> merged); the code gate passed (session d1d8e222, 8 of 8 reviewers) and its accepted finding was change 1.2, the
-> plan's second change since approval, which stopped the plan. The re-review is done: the revision below (the whole
-> plan read again against the built code; story S5 added for change 1.2 and the accepted review clean-ups) went
-> through the coai document review (`proceed`, 4 of 4, its one finding accepted) and the own Opus review, and the Opus
-> judge marked every commit `fits` in the record's table; their accepted findings are folded in below as the epoch-2
-> baseline. Scope: the VS Code extension's
-> terminal titles (src_vs_code/src), five help languages, the changelog and the extension and test module docs.
-> Plan gate: coai `proceed` 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
+> Status: **IMPLEMENTED, 2026-11-09.** S1-S5 are built on `feat/terminal-titles-folder` (PR to be opened). The coai code gate
+> ran twice and both rounds proceeded, 8 of 8 reviewers each; round 1's accepted finding was change 1.2, which stopped the plan,
+> and the plan was re-reviewed whole after it (epoch 2: the coai document review `proceed`, 4 of 4, and the own Opus review).
+> No version bump: the change ships with the next extension release (CHANGELOG `## [Unreleased]`). Deviations: `## As built`.
+> Scope: the VS Code extension's terminal titles (src_vs_code/src), five help languages, the changelog and the extension
+> and test module docs. Plan gate: coai `proceed` 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
 
 ## Plan changes
 
@@ -234,6 +231,10 @@ What follows from 2, each pinned by a test in S5:
   current `details.name`; after such a rename the arrow opens its own terminal once. The same one-time effect the
   owner accepted for a rename or a move; not re-read on purpose.
 - Authorisation stays by terminal object from the snapshot; nothing is authorised by name after the modal.
+- **A folder renamed AFTER the person clicked an entry's arrow — accepted as it is** (the own Opus review of S5, below its
+  threshold): if the person clicks an entry's arrow during the dependency chain and only THEN renames the folder, the arrow's
+  terminal keeps the old title, the post-wait key does not find it, and the row is typed into a second terminal — the same
+  accepted one-time effect as any terminal opened before a folder rename (owner decision); not fixed.
 
 Signature changes (S2, built): pinnedTerminal.ts `findEntryTerminal(key, terminalOs)`, `openEntryTerminal(key, terminalOs)`,
 `liveTerminalsOfEntry(key)`, `liveEntryTerminal(key, choice)`; `entryTerminalName` deleted; terminalGuard.ts
@@ -600,3 +601,7 @@ Deviations from the plan and the S2 spec:
 12. The scan's `CredsForDevs: ${` pattern and its seven allow-list lines are gone, and `'CredsForDevs: a'` as a pattern with them;
     the four quoted lines of other suites got allow-list lines with their reasons (an output panel's name; the env collection
     description). The scan has four tests now (the fourth holds the per-delimiter and negative fixtures), the new suite ten.
+13. The own Opus review of S5 (below its threshold) found one more case and it is accepted, not fixed: an arrow click during the
+    dependency chain followed by a folder rename leaves the arrow's terminal under the old title, so the folder run's post-wait key
+    misses it and the row is typed into a second terminal. Recorded in §Design "The folder run's timing contract"; the same
+    one-time effect as any terminal opened before a folder rename (owner decision).
