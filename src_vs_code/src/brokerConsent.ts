@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
-import type { AuditEntry } from './agentAuditLog';
+import type { AuditDoor, AuditEntry } from './agentAuditLog';
+import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
-import { Grant, GrantRegistry } from './grantRegistry';
+import { Grant, GrantRegistry, GrantScope } from './grantRegistry';
+import { ASK_WINDOW_MS } from './mcpConsentPolicy';
 import { localRequestTimeLine } from './requestTime';
 import { ABANDONED, SharedPrompts } from './sharedPrompt';
 import type { UseActionRegistry } from './useActions';
@@ -32,6 +34,52 @@ export interface ConsentGateDeps {
   /** The one moment a person is provably present. */
   onUserPresent(): void;
   log(entry: Omit<AuditEntry, 'at' | 'caller'> & { caller?: CallerLabel }): void;
+  /**
+   * A dialog is about to be shown for this question: the one moment a prompt is SPENT (`aliasThrottle.ts`). A call refused
+   * before it got here showed nobody anything and costs nothing; one that joins a dialog already open shows nothing new.
+   */
+  prompted?(question: ConsentQuestion): void;
+  /**
+   * The dialog raised for this question is gone: answered, or given up on at the timeout. The one place a dialog holds is
+   * given back here (`aliasThrottle.ts`), not when the call that raised it ends — a client that leaves does not take the
+   * modal off the screen. `keep`: the person Allowed and the call may put a prompt of its own on screen next
+   * (`ConsentQuestion.followUp`), so the place stays the call's until the call ends (Amendment 3, C.3).
+   */
+  dialogClosed?(question: ConsentQuestion, keep: boolean): void;
+}
+
+/**
+ * What an Allow on this question covers — which of the dialog's three last paragraphs is true.
+ *
+ * <p>`token`: every later call on the token. `call`: this call only. `every12h`: this call, and the
+ * entry's policy opens a bounded window on this machine. Decided by the door that asks, from facts it
+ * holds, and never by the wording: see {@link coverageOf}.</p>
+ */
+export type ConsentCoverage = 'token' | 'call' | 'every12h';
+
+/**
+ * The coverage of an Allow, from the grant's scope and whether the entry's policy remembers answers.
+ *
+ * <p>A token grant never remembers — it already covers the token's life, and the flag cannot widen it.
+ * A call grant covers one request, unless the MCP door's policy writes a stamp for it.</p>
+ */
+export function coverageOf(scope: GrantScope, remembers: boolean): ConsentCoverage {
+  if (scope === 'token') {
+    return 'token';
+  }
+  return remembers ? 'every12h' : 'call';
+}
+
+/**
+ * Whether an answered dialog may write the remembered window: only one that was ASKED and that said so.
+ *
+ * <p>The stamp must never be wider than the sentence the person read. A dialog that said *this call
+ * only* writes nothing whatever the entry's policy says at the click — the policy can turn to
+ * `every12h` while the modal is open, and the write re-reads it. A call that raised no dialog
+ * (`asked` false) writes nothing either, so a quiet call cannot slide the window forward.</p>
+ */
+export function opensWindow(question: ConsentQuestion, asked: boolean): boolean {
+  return asked && question.coverage === 'every12h';
 }
 
 /** One consent question, as the broker asks it. */
@@ -41,6 +89,49 @@ export interface ConsentQuestion {
   readonly verb: string;
   readonly summary: string;
   readonly caller: CallerLabel | undefined;
+  /** The door the call came in by: a local token call raises dialogs that are not throttled, a bridged one is counted on its bridge. */
+  readonly via: AuditDoor;
+  /**
+   * The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. A function is
+   * asked WHEN THE DIALOG CLOSES on an Allow, not before it opens (change 6.1): what decides it may change while the dialog is open
+   * (the agent's socket coming up).
+   */
+  readonly followUp?: boolean | (() => boolean);
+  /** REQUIRED, like `caller`: a door added later does not compile until it says what its Allow covers. */
+  readonly coverage: ConsentCoverage;
+}
+
+/** Whether the question's call may prompt again, read now. A flag that cannot be read keeps nothing: the place is not held on a guess. */
+function followsUp(question: ConsentQuestion): boolean {
+  try {
+    return typeof question.followUp === 'function' ? question.followUp() : question.followUp === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Hours in the remembered window — derived from the policy's own constant, never typed twice. */
+const WINDOW_HOURS = ASK_WINDOW_MS / 3_600_000;
+
+/** One request's grant: nothing is written, nothing later is covered. */
+const CALL_TAIL = 'Allowing covers this call only, not any later one. ';
+
+/**
+ * The `every12h` sentence, with the verbs it can quiet. Written to be true of what the code does:
+ *
+ * <p>*Later MCP calls* because only that door reads a stamp; *from any agent* because the stamp is per
+ * entry and per store, not per caller; the verb list because the stamp is per ENTRY, not per action, so
+ * an Allow on one verb quiets every verb the switches allow (rotating the stored secret among them);
+ * *may … because of this Allow* because the write can still refuse at the click, and under `never` a
+ * call is quiet by policy rather than by this answer; *only while* because a policy or switch change
+ * suspends a stamp and changing back resumes it, it does not end it.</p>
+ */
+function windowTail(entityName: string, everything: string): string {
+  return (
+    `Allowing covers this call. For up to ${WINDOW_HOURS} hours on this machine, later MCP calls from any agent to ${everything} "${entityName}" ` +
+    `may also skip asking because of this Allow — only while this entry is set to "Ask once every ${WINDOW_HOURS} hours" ` +
+    'and its agent switches are as they are now. Deleting still asks. '
+  );
 }
 
 export class ConsentGate {
@@ -79,12 +170,8 @@ export class ConsentGate {
   }
 
   private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<boolean> {
-    const choice = await withTimeout(
-      Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
-      CONSENT_TIMEOUT_MS,
-      // The HTTP server keeps this process alive; the timer need not.
-      { unref: true },
-    );
+    this.deps.prompted?.(question);
+    const choice = await this.shown(question);
     // The defused modal (§3.3): it could not be closed when its requests left, so the answer it gives
     // after that is read here and applied to nothing.
     if (!stillWanted()) {
@@ -92,6 +179,27 @@ export class ConsentGate {
       return false;
     }
     return this.apply(question, choice);
+  }
+
+  /**
+   * The dialog, awaited for at most the timeout. In a `finally` that tells the throttle the dialog is gone before anything is
+   * decided from the answer, so a defused modal (its requests left) frees the place at its click, and a timeout frees it
+   * although VS Code cannot take the modal down.
+   */
+  private async shown(question: ConsentQuestion): Promise<string | undefined> {
+    let choice: string | undefined;
+    try {
+      choice = await withTimeout(
+        Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
+        CONSENT_TIMEOUT_MS,
+        // The HTTP server keeps this process alive; the timer need not.
+        { unref: true },
+      );
+      return choice;
+    } finally {
+      // A timeout leaves `choice` undefined: freed. Only an Allow of a call that may ask again keeps the place.
+      this.deps.dialogClosed?.(question, choice === 'Allow' && followsUp(question));
+    }
   }
 
   /** Allow or Deny, applied to the grant; anything else refuses this call and leaves it re-promptable. */
@@ -138,23 +246,73 @@ export class ConsentGate {
    * — "An agent" when it says nothing, never a product name by default — and is a label, not a check;
    * the next sentence tells the person so, because a name mistaken for a verification is worse than no
    * name.</p>
+   *
+   * <p>How far an Allow reaches is not the same on every door: a token grant lives for the token's
+   * life, a call grant for one request, and on the MCP door the entry's policy may remember the
+   * answer. So the last paragraph is chosen per door by `coverage`, and each of the three is tested
+   * beside the fact it states, not as a string alone (`consentCoverage.test.ts`).</p>
+   *
+   * <p>The write is gated on `coverage` too ({@link opensWindow}), so a stamp can never be wider than
+   * the sentence shown. The window sentence says *may* and *only while* because a policy or switch
+   * change suspends a stamp rather than ending it.</p>
    */
   private wording(question: ConsentQuestion): string {
     const { grant, verb, summary, caller } = question;
-    const everything = this.deps.actions
-      .actionsFor(grant.kind)
-      .map((a) => a.verb)
-      .join(', or ');
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
+      `"${shownName(grant)}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(question)}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
-      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
-      `${describeLimits(grantLimits())}. ` +
+      this.coverageTail(question) +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
     );
   }
+
+  /**
+   * The sentence for this door: a record lookup, so adding a coverage is a compile error here.
+   *
+   * <p>Through a Remote Bridge it is the bridge's coverage line instead, whatever `coverage` says (E1.4): a bridged call is one request's
+   * capability, never a token, and the window sentence is `main`'s words about a local stamp and says *any agent* and *this machine*, which a
+   * server-keyed stamp is neither. The bridge's line follows the entry's own setting ("quiet") only on the MCP door, the one door a consent
+   * policy speaks for. `coverage` still gates the WRITE ({@link opensWindow}), bridged or not.</p>
+   */
+  private coverageTail(question: ConsentQuestion): string {
+    const { grant, via } = question;
+    if (grant.bridge !== undefined) {
+      return `${bridgeCoverageLine({ ...grant.bridge, quiet: grant.bridge.quiet && via === 'mcp' })} `;
+    }
+    return {
+      token: () => this.tokenTail(grant),
+      call: () => CALL_TAIL,
+      every12h: () => windowTail(grant.entityName, this.verbsOf(grant)),
+    }[question.coverage]();
+  }
+
+  /** A token grant: today's words, byte for byte. */
+  private tokenTail(grant: Grant): string {
+    return (
+      `Allowing covers every later call on this token, not just this one: with it the agent can ${this.verbsOf(grant)} "${grant.entityName}" ` +
+      `${describeLimits(grantLimits())}. `
+    );
+  }
+
+  /** What this kind of entry can be asked to do, in the actions' own words — one list for both wide tails. */
+  private verbsOf(grant: Grant): string {
+    return this.deps.actions
+      .actionsFor(grant.kind)
+      .map((a) => a.verb)
+      .join(', or ');
+  }
+}
+
+/** The entry's name in the dialog's first line: as it always was off a bridge, one cleaned line without quotes of its own through one. */
+function shownName(grant: Grant): string {
+  return grant.bridge === undefined ? grant.entityName : bridgeQuotedName(grant.entityName);
+}
+
+/** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
+function bridgeLine({ grant, action }: ConsentQuestion): string {
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, bridgeRunSite(action), grant.entityName)}`;
 }
 
 /** An answer that settled nothing on the grant: Allow that was not recorded reads as allowed, the rest as a timeout. */

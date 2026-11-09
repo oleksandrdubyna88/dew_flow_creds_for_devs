@@ -12,10 +12,10 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent } from './mcpEntries';
+import { McpVaultSource, accountOnly, findUsableEntry, preConsentedFor, rememberMcpConsent, remembersFor } from './mcpEntries';
 import { ConsentStampStore, ConsentStamps, consentStampsFor } from './mcpConsentPolicy';
 import type { BrokerHooks } from './brokerHooks';
-import { ladderKey } from './mcpAccess';
+import { McpAccess, ladderKey } from './mcpAccess';
 import { resolveKind } from './entityKind';
 import { CreateRequest } from './mcpCreate';
 import { readSecretOptions } from './mcpSecretOptions';
@@ -150,8 +150,11 @@ export function mcpUseLookup(
   action: string,
   stamps?: ConsentStamps,
   now: number = Date.now(),
+  // Given by a Remote Bridge's view, from its context: the lookup then searches that account and no other. Absent
+  // for the existing doors, which search every account as they always did.
+  server?: { accountId: string; serverEntityId: string },
 ): McpUseLookup {
-  const found = findUsableEntry(storage, entryId, action);
+  const found = findUsableEntry(server === undefined ? storage : accountOnly(storage, server.accountId), entryId, action);
   if (found === undefined) {
     return undefined;
   }
@@ -171,8 +174,19 @@ export function mcpUseLookup(
     rungs: ladderKey(found.access),
     // Without a store there is nothing remembered, so every call asks — which is what a window
     // with no writable storage should do, and what every existing caller of this function gets.
-    preConsented: preConsentedFor(found, stamps, now),
+    // Under the bridge's own key when the lookup came through one (E1.4): a stamp given through server A is read here
+    // for A and for nobody else.
+    preConsented: preConsentedFor(found, stamps, now, server?.serverEntityId),
+    // Whether an Allow on this entry will write a stamp — what the dialog's last paragraph says
+    // it covers. Read from the same expression `rememberMcpConsent` writes by, and false without a
+    // store: a lookup that reads nothing writes nothing, so its dialog must not say otherwise.
+    remembers: remembersIn(stamps, found.access),
   };
+}
+
+/** Will an Allow be written down? Only with a store to write to, and only under a policy that consults one. */
+function remembersIn(stamps: ConsentStamps | undefined, access: McpAccess): boolean {
+  return stamps !== undefined && remembersFor(access);
 }
 
 /**
@@ -195,9 +209,9 @@ export function mcpUseHooks(
 ): Required<Pick<BrokerHooks, 'resolveMcpUse' | 'rememberMcpConsent'>> {
   const stamps = consentStampsFor(state);
   return {
-    resolveMcpUse: (entryId, action) => mcpUseLookup(storage, entryId, action, stamps, now()),
-    rememberMcpConsent: (accountId, entityId, rungs) =>
-      rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now()),
+    resolveMcpUse: (entryId, action, server) => mcpUseLookup(storage, entryId, action, stamps, now(), server),
+    rememberMcpConsent: (accountId, entityId, rungs, serverEntityId) =>
+      rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now(), serverEntityId),
   };
 }
 

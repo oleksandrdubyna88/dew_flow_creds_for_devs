@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { after, test } from 'node:test';
+import { after, mock, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
@@ -70,6 +70,10 @@ interface Parts {
   runFails?: boolean;
   /** The window refuses the connection — a remote one can, and the action must not claim success. */
   connectRefuses?: boolean;
+  /** The credential read itself fails (a keychain that errors): `prepareAuth` throws instead of answering (X1). */
+  credentialThrows?: boolean;
+  /** The journal will not take a line: `deps.note` throws (X3). */
+  noteThrows?: boolean;
 }
 
 const ENTITY = {
@@ -108,7 +112,8 @@ async function world(parts: Parts): Promise<World> {
 function mocks(parts: Parts, storageDir: string, log: Log): Record<string, unknown> {
   return {
     './sshCredential': {
-      resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
+      resolveSshCredential: (): Promise<unknown> =>
+        parts.credentialThrows === true ? Promise.reject(new Error('the keychain would not answer')) : Promise.resolve(parts.source),
     },
     './keyInstaller': {
       // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
@@ -166,6 +171,9 @@ function deps(w: World, parts: Parts): SshUseDeps {
       };
     },
     note: (m: string): void => {
+      if (parts.noteThrows === true) {
+        throw new Error('the journal could not be written');
+      }
       w.notes.push(m);
     },
     agentSocket: (): string | undefined => w.agentSocket,
@@ -222,6 +230,85 @@ test('an entity with no credential left is refused, and the slot is given back',
 
   assert.equal((result.body.error as { code: string }).code, 'no_credential');
   assert.equal(w.tally.slotsHeld, 0);
+});
+
+test('X1: a credential read that THROWS gives the slot back and fails the call — it neither leaks nor hangs', async () => {
+  // `prepareAuth` is awaited after the slot is taken and before the `try` that releases it: a throw out of it used to
+  // leave the slot held for ever, and a handful of such calls would have exhausted the pool.
+  const parts: Parts = { source: KEY_SOURCE, credentialThrows: true };
+  const w = await world(parts);
+  await assert.rejects(exec(w, parts), { message: 'the keychain would not answer' });
+  assert.equal(w.tally.slotsHeld, 0, 'the slot came back');
+  assert.deepEqual(w.runs, [], 'and nothing ran');
+  parts.credentialThrows = false; // the mock reads the world's own parts
+  const result = await exec(w, parts);
+  assert.equal(result.status, 200, 'the next call is served');
+});
+
+test('C.3: asksAfterConsent is true on the terminal action (a remote window\'s refusal modal can follow the Allow); on exec it is per entity — only a forwarding entry with the agent socket up', async () => {
+  const forwarding: EntityMetadata = { ...ENTITY, agentForward: true };
+  const asked = async (entity: EntityMetadata, socket: string | undefined): Promise<unknown> => {
+    const parts: Parts = { source: KEY_SOURCE, entity };
+    const w = await world(parts);
+    w.agentSocket = socket;
+    const flag = w.mod.sshExecAction(deps(w, parts)).asksAfterConsent;
+    return typeof flag === 'function' ? flag({ accountId: 'a1', entityId: 'e1', entityName: 'prod' }) : flag;
+  };
+  const parts: Parts = { source: KEY_SOURCE };
+  const w = await world(parts);
+  assert.equal(w.mod.sshTerminalAction(deps(w, parts)).asksAfterConsent, true);
+  assert.deepEqual(
+    [await asked(forwarding, '/run/agent.sock'), await asked(forwarding, undefined), await asked(ENTITY, '/run/agent.sock'), await asked(ENTITY, undefined)],
+    [true, false, false, false],
+    'forwarding+socket, forwarding without the socket, plain with the socket, plain without',
+  );
+});
+
+test('X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal', async () => {
+  // `fs.rmSync(..., { force: true })` swallows ENOENT only: an EPERM/EBUSY out of the `finally` used to leak one of the eight
+  // exec slots, leave the key on disk and replace a finished result with a rejection (Amendment 3, C.6).
+  const parts: Parts = { source: KEY_SOURCE };
+  const w = await world(parts);
+  // The module object itself: `import * as fs` is a frozen namespace copy, and the action under test calls the real one.
+  const nodeFs = require('node:fs') as typeof fs;
+  const real = nodeFs.rmSync;
+  const refused = mock.method(nodeFs, 'rmSync', (target: fs.PathLike, options?: fs.RmOptions): void => {
+    if (String(target).endsWith('.key')) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${String(target)}'`), { code: 'EPERM' });
+    }
+    real(target, options);
+  });
+  try {
+    const result = await exec(w, parts);
+    assert.equal(result.status, 200, 'the finished exec is the answer, not the failed cleanup');
+    assert.equal(refused.mock.callCount() > 0, true, 'the removal was attempted');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
+    assert.ok(w.notes.some((note) => note.startsWith('ssh:exec — the key file could not be removed: ')), `the note names the removal failure: ${w.notes.join(' | ')}`);
+    assert.ok(w.notes.every((note) => !note.includes('PRIVATE KEY BODY')), 'and not the key');
+  } finally {
+    refused.mock.restore();
+  }
+});
+
+test('X3 (Amendment 6, D.6): a key file that cannot be removed AND a journal that will not say so still give the slot back and keep the finished result', async () => {
+  const parts: Parts = { source: KEY_SOURCE, noteThrows: true };
+  const w = await world(parts);
+  const nodeFs = require('node:fs') as typeof fs;
+  const real = nodeFs.rmSync;
+  const refused = mock.method(nodeFs, 'rmSync', (target: fs.PathLike, options?: fs.RmOptions): void => {
+    if (String(target).endsWith('.key')) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${String(target)}'`), { code: 'EPERM' });
+    }
+    real(target, options);
+  });
+  try {
+    const result = await exec(w, parts);
+    assert.equal(result.status, 200, 'the finished exec is the answer, not the failed note');
+    assert.equal(refused.mock.callCount() > 0, true, 'the removal was attempted');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
+  } finally {
+    refused.mock.restore();
+  }
 });
 
 test('a stored key is written, used, and DELETED before the call returns', async () => {

@@ -1,6 +1,6 @@
+import type { BridgeWallSource, ResolveUse } from './bridgeScope';
 import { ConfigRouteSources } from './brokerConfigRoute';
 import { McpCreateHooks } from './brokerMcpDoor';
-import { McpUseLookup } from './brokerRequests';
 import { McpEntry } from './mcpEntries';
 import { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
@@ -126,7 +126,7 @@ export interface BrokerHooks {
    * have one answer and splitting them is how a path ends up asking the first and forgetting the
    * second.</p>
    */
-  readonly resolveMcpUse?: (entryId: string, action: string) => McpUseLookup;
+  readonly resolveMcpUse?: ResolveUse;
 
   /**
    * A person answered a dialog for this entry: remember WHEN, on this machine only.
@@ -134,8 +134,11 @@ export interface BrokerHooks {
    * <p>Never in the vault, never in a share, never synced — see `mcpConsentPolicy.ts` for why a
    * remembered answer that travels is not a check. Absent means this window remembers nothing, so
    * every call asks, which is what a build with no storage should do.</p>
+   *
+   * <p>`serverEntityId` is given when the answer came through a Remote Bridge (E1.4), and the stamp is then that
+   * server's own: it silences that server's later calls on this entry and nothing else.</p>
    */
-  readonly rememberMcpConsent?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  readonly rememberMcpConsent?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
 
   /**
    * Move an entry to the Trash, answering whether it was still there to move.
@@ -159,6 +162,15 @@ export interface BrokerHooks {
    * holds grants, and a config key is not one. Absent serves no config to anything.
    */
   readonly configRoute?: ConfigRouteSources;
+
+  /**
+   * What a Remote Bridge's wall needs from the vault side: the scope of each server, the texts a stored command
+   * or script would be searched in, and the references' source (E1.3).
+   *
+   * <p>Absent means this build can open no bridge: `openBridgeListener` refuses, because a door with no wall
+   * would serve a server the whole vault. `extension.ts` wires it in E2.2, and nothing does before then.</p>
+   */
+  readonly bridgeWall?: BridgeWallSource;
 }
 
 /**
@@ -196,6 +208,7 @@ const HOOK_KINDS = {
   moveToTrash: 'function',
   mcpCreate: 'object',
   configRoute: 'object',
+  bridgeWall: 'object',
 } as const;
 
 /** The names {@link checkedHooks} accepts. Exported so the test can assert the guard's own list. */

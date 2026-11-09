@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { UseAction, UseActionRegistry, launchGuards } from '../useActions';
+import { UseAction, UseActionRegistry, asksAfter, launchGuards } from '../useActions';
 
 /**
  * The registry is the seam for entity kinds beyond SSH. Its one rule worth a
@@ -105,4 +105,15 @@ test('work that must finish once started: the request ending refuses the start b
   assert.equal(kills(guards), false, 'a started rotation would be killed half-way, losing its new value');
   window.abort();
   assert.equal(kills(guards), true, 'only the window ending stops it');
+});
+
+test('asksAfter: a boolean flag is read as it is, a function is asked with the call\'s target, and absent is no', () => {
+  const target = { accountId: 'a1', entityId: 'e1', entityName: 'prod' };
+  const seen: unknown[] = [];
+  assert.equal(asksAfter({ asksAfterConsent: true }, target), true);
+  assert.equal(asksAfter({ asksAfterConsent: false }, target), false);
+  assert.equal(asksAfter({}, target), false);
+  assert.equal(asksAfter({ asksAfterConsent: (t) => (seen.push(t), true) }, target), true);
+  assert.equal(asksAfter({ asksAfterConsent: () => false }, target), false);
+  assert.deepEqual(seen, [target]);
 });

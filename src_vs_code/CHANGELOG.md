@@ -6,6 +6,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The help and the README now show how to run tmux over `ssh` from a local window on Windows.** The line is
+  `ssh -t <host> tmux new -A -s {name}`, with *Runs on* set to Windows. You replace `<host>`; the extension fills in `{name}`.
+  The entry's arrow sees `ssh` end (after a detach or a dropped connection) only in PowerShell 7 (`pwsh`). In Windows
+  PowerShell 5.1 and Command Prompt there is no shell integration, so the arrow asks each time. A silent drop can leave `ssh`
+  waiting, and the arrow then asks. The help shows this in all five languages. No behaviour changed.
+
+## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
+
+### Changed — an agent cannot export a secret into another computer's terminals
+
+- **`creds env <token>` and the MCP door's `exportEnv` (an agent's export) are refused in a Remote-SSH or container
+  window**, with one stable sentence and the code `denied`, before any prompt: the value would land in the terminals
+  of another computer. Where you have stored a command for the job, an agent can run that instead; it then gets only
+  the output. A local or WSL window is unchanged. `creds env <name>` never reached the refusal and does not now: no
+  window serves that road (the CLI posts a route the broker does not register, and reports that no window has the name
+  enabled), in any window, as before.
+- **Saving an entry with an environment binding in such a window now warns** that the new terminals of the window
+  run on another computer, where any process running under your login can read the value; that the value stays
+  until you remove the binding through Edit in this window; and that deleting the entry does not remove it. The
+  value is still written.
+- **The CLI help article says that only `creds env <token>` is refused there** (and that `creds env <name>` is served
+  by no window) and points to `run` and `script` instead, in all five languages. It does not describe the save warning.
+
+### Changed — the broker's one consent dialog: who holds its place, and for how long
+
+- **The place one dialog takes is the dialog's, given back when it closes** (`brokerConsent.ts`, `shown`), not when the call that raised it
+  ends: a client that hangs up during its dialog leaves the modal on screen and the place taken until you click it or five minutes pass.
+  Before, the place went back at the call's end and the next call could open a second modal over the first. A local call that carries a
+  token is not admitted at all (`credsAgentServer.ts` runs it without `admit`), so it takes no place, and its dialog closing frees nothing of
+  another call's place (`doorOfDialog`).
+- **A prompt is counted when it is shown, not when the call is admitted** (`aliasThrottle.ts`, `prompted`), on the alias and MCP doors: a
+  call refused before any dialog no longer spends one of the five prompts a minute.
+- **A new ceiling: a caller without a token may ask at most 60 times a minute** on the alias and MCP doors, calls refused for their
+  content included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
+  admitted is not counted (an unknown alias, a missing field, a call made while a dialog is standing), and neither is a call that carries a
+  token, which is not admitted at all.
+- **A long `query`, `run` or `exec` no longer makes every other asking alias and MCP call hear *busy*.** Before, every alias and MCP call that
+  could prompt kept the one place until the call ended, an `exec` for its whole run included. Now a call keeps it past your Allow only if it
+  may show a prompt of its own next: a local `create` (the folder's PIN box), `terminal`, `up` and `down` (the install offer when no VPN
+  client is on the PATH), `rotate` (the PIN and copy prompts), and an `exec` on an entry that forwards your SSH agent, if the agent is
+  running when you click Allow (its signing prompt), all keep it until that call ends, as before; `query`, `run` and any other `exec` (an entry that does not forward, or an agent that is not running at that moment) give it back when the
+  dialog closes. A local call that carries a token keeps nothing: it is not admitted at all (`credsAgentServer.ts` runs it without `admit`).
+- **A failure inside a request handler answers 500** with its own sentence instead of leaving the request unanswered until the client
+  gives up. The agent journal records that it failed and where, with the kind of error but never its message: one line with the error's class, a
+  system error name such as `ENOENT` when it has one, the route or `other`, and whether the answer had already started. It carries no
+  message, so nothing a request put into the error reaches the journal.
+- The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
+  left), and a call refused before anybody was asked leaves no grant behind. The exception is a call a policy had already allowed: if it is
+  refused before it is reserved, it still leaves an allowed grant with no use, which the tiers now reclaim before a call whose dialog is open.
+- **An agent's `up` or `down` no longer postpones auto-lock** (`vpnRun.ts`, `notePersonsAct`): an agent's call is not a person's act. Your own
+  Start or Stop, an Allow or Deny click, and the other commands that already counted still count as you being at the keyboard.
+- **A request target the server cannot parse, such as `GET //`, is answered `not_found`** with no journal line, instead of leaving the request
+  unanswered (`requestUrl`).
+- **A stored key file that cannot be removed after an SSH `exec`** (a lock on Windows) no longer replaces the finished result with an error or
+  keeps one of the eight exec slots; the failure goes to the agent journal, and if the journal cannot take the line either, the result still
+  stands (`removeKeyFile`).
+- **A keychain read that throws during an SSH `exec`** no longer keeps one of the eight exec slots (`sshUseActions.ts`, `prepareAuth`); the
+  call is answered 500 with the generic sentence and the reason goes to the agent journal.
+- **Unchanged, said here so nobody reads it as new:** a dialog nobody answers still times out after five minutes, still answers the caller
+  *The human did not allow this grant.*, and still gives the place back, so the next call raises a dialog while the old one may be on
+  screen. A later release changes this.
+
 ### Fixed — security — an agent's SQL can no longer reach the database client's own commands
 
 - **A stored mysql password could be sent to a host the agent named.** The `query` action's gate (`refuseQuery`) let
@@ -34,6 +98,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a file with no option at all). **Changed behaviour:** a query that relied on `LOAD DATA LOCAL INFILE` from the laptop
   no longer works. Known residue: Oracle's client still honours `load-data-local-dir` from an option file under
   `--local-infile=0`; `--no-defaults` would close it but would drop the person's TLS and socket settings.
+
+### Fixed — security — the consent dialog no longer claims an Allow covers more than it does
+
+- **The dialog said *Allowing covers every later call on this token* on every door, and that is true on one.** On the
+  token route one Allow does cover every later call. On the alias route and the MCP routes each call is its own grant,
+  so an Allow covers that call only. The dialog now says *Allowing covers this call only, not any later one* there.
+  Under *Ask once every 12 hours* an Allow can also quiet later MCP use calls on this machine, and the dialog now says
+  so in words that match the code: *For up to 12 hours on this machine, later MCP calls from any agent to* the verbs
+  of the entry *may also skip asking because of this Allow — only while this entry is set to "Ask once every 12 hours"
+  and its agent switches are as they are now. Deleting still asks.* Read it plainly: the window belongs to the entry,
+  not to the action, so one Allow on *run a command* also quiets *change the stored secret of* and the export for the
+  window, from any MCP client that reaches a broker on this machine; that is why the sentence lists every verb. A policy or
+  switch change suspends the window and changing it back resumes it, so the sentence says *only while*. The alias route
+  and the token route are not quieted by it. The hours in the sentence come from the window's own constant. The token
+  door's sentence is as it was, word for word.
+- **One thing an Allow does changed.** An Allow on a dialog that said *this call only* no longer writes the twelve-hour
+  stamp, even when the entry's policy turned to *Ask once every 12 hours* while the dialog was open (a sync, or another
+  window of the same profile): the stamp is now written only after a dialog that announced the window. The grants, the
+  way a stamp is read, and the policies are as they were. A lookup built without a stamp store now says *this call
+  only*, as it should. Every release since the alias route (0.61.0) and the MCP door (0.69.0) carries the old sentence;
+  update to the release that follows.
 
 ## [1.17.0] — 2026-11-05 — One arrow brings back a whole Terminal folder, and the green arrow no longer types into a busy terminal
 

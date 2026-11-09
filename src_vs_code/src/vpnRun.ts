@@ -41,6 +41,13 @@ export function agentVpnOpener(storage: StorageManager, storageDir: string, vaul
   };
 }
 
+/** The person's own Start or Stop postpones auto-lock; an agent's `up` or `down` (`startGate` set) is not a person at the keyboard (parent §2.1 Q9). */
+function notePersonsAct(vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, startGate: AbortSignal | undefined): void {
+  if (startGate === undefined) {
+    vaultKeys.noteUserActivity();
+  }
+}
+
 /**
  * Bring a VPN tunnel up or down.
  *
@@ -72,7 +79,7 @@ export async function runVpn(
   trust: TrustStore,
   startGate: AbortSignal | undefined,
 ): Promise<boolean> {
-  vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  notePersonsAct(vaultKeys, startGate);
   const entry = vpnEntry(target);
   if (entry === undefined || requestGone(startGate)) {
     return false;

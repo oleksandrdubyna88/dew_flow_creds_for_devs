@@ -117,7 +117,7 @@ test('a client that leaves while the modal is open: a late Allow grants nothing 
 });
 
 test('the MCP door: a late Allow after the client left runs nothing and remembers nothing', async () => {
-  const w = world({ holdDialogs: true, mcpUse: 'usable' });
+  const w = world({ holdDialogs: true, mcpUse: 'usable', mcpRemembers: true });
   try {
     const { port } = await share(w);
     const gone = hanging(port, '/v1/mcp/use/exec', { entry: 'e1', command: 'uptime' });

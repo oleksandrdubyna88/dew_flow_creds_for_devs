@@ -4,6 +4,8 @@ import { EntityMetadata } from '../types';
 import { endedStage } from '../requestLife';
 import { loadWithVscode } from './vscodeStub';
 import { STORED_CONFIG, World, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, until, world } from './vpnWorld';
+import { VpnUseDeps, vpnAction } from '../agentUseActions';
+import { call, share, world as brokerWorld } from './brokerWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -391,4 +393,43 @@ test('the agent VPN opener hands its gate to the start: a request already gone s
 
   assert.equal(await open('a1', 'vpn', 'start', new AbortController().signal), true, w.warnings.join('\n'));
   assert.equal(await open('a1', 'missing', 'start', new AbortController().signal), false, 'an entry that is gone opens nothing');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 6, F.5 — an agent's `up` or `down` is never a person's act (parent §2.1 Q9): it must not postpone auto-lock
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('V1: an agent\'s up and down (a start gate behind them) do not tell the vault a person is here', async () => {
+  for (const action of ['start', 'stop'] as const) {
+    const w = world({});
+    await startVpn(scope, w, wireguard(), { action, startGate: new AbortController().signal, mocks: CLI });
+    assert.equal(w.userActivity, 0, `an agent's ${action} postponed auto-lock`);
+  }
+});
+
+test('V2: the person\'s own Start and Stop (no start gate) do', async () => {
+  for (const action of ['start', 'stop'] as const) {
+    const w = world({});
+    await startVpn(scope, w, wireguard(), { action, mocks: CLI });
+    assert.equal(w.userActivity, 1, `the person's ${action} did not postpone auto-lock`);
+  }
+});
+
+test('V1 through a local door: an agent\'s up and down, posted to the broker, run the real start and never tell the vault a person is here', async () => {
+  for (const action of ['up', 'down'] as const) {
+    const vw = world({});
+    const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', vw.vscode, CLI);
+    const open = agentVpnOpener(storageOf(wireguard()), ownedDir(scope, 'agentvpn'), { noteUserActivity: () => void (vw.userActivity += 1) }, memoryTrust());
+    const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, verb, gate) => open(accountId, 'vpn', verb, gate) };
+    const bw = brokerWorld({ realAction: vpnAction(deps, action) });
+    try {
+      const { port, secret } = await share(bw);
+      const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: action } });
+      assert.equal(answer.status, 200, JSON.stringify(answer.body));
+      assert.ok(vw.terminals.some((t) => VPN_TERMINAL.test(t.name) && t.sent.length === 1), `the real ${action} typed its line`);
+      assert.equal(vw.userActivity, 0, `an agent's ${action} through the broker postponed auto-lock`);
+    } finally {
+      bw.server.dispose();
+    }
+  }
 });

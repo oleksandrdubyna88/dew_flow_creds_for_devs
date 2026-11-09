@@ -37,6 +37,11 @@ function launch(scope, exe, args, options = {}) {
   child.stderr.on('data', (chunk) => {
     result.stderr += chunk;
   });
+  // `exit` can come before the last chunk of output: `closed` is the child's `close`, after every stream has ended (D.9).
+  result.closed = new Promise((resolve) => {
+    child.once('close', () => resolve());
+    child.once('error', () => resolve());
+  });
   result.done = new Promise((resolve) => {
     child.once('exit', (code) => {
       result.exited = true;

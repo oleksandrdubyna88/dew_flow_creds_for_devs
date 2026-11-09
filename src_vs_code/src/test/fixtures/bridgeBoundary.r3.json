@@ -1,0 +1,246 @@
+{
+  "port GET /v1/health": {
+    "status": 200,
+    "body": "{\"ok\":true,\"service\":\"creds-for-devs-agent\"}"
+  },
+  "socket GET /v1/health": {
+    "status": 200,
+    "body": "{\"ok\":true,\"service\":\"creds-for-devs-agent\"}"
+  },
+  "port GET /v1/aliases": {
+    "status": 200,
+    "body": "{\"aliases\":[]}"
+  },
+  "socket GET /v1/aliases": {
+    "status": 200,
+    "body": "{\"aliases\":[]}"
+  },
+  "port GET /v1/mcp/entries": {
+    "status": 200,
+    "body": "{\"entries\":[]}"
+  },
+  "socket GET /v1/mcp/entries": {
+    "status": 200,
+    "body": "{\"entries\":[]}"
+  },
+  "port GET /v1/mcp/config-snippet": {
+    "status": 200,
+    "body": "{\"error\":\"no such config is open to agents\",\"envVar\":\"CREDSFORDEVS_KEY\",\"languages\":[]}"
+  },
+  "socket GET /v1/mcp/config-snippet": {
+    "status": 200,
+    "body": "{\"error\":\"no such config is open to agents\",\"envVar\":\"CREDSFORDEVS_KEY\",\"languages\":[]}"
+  },
+  "port GET /v1/mcp/folders": {
+    "status": 200,
+    "body": "{\"folders\":[]}"
+  },
+  "socket GET /v1/mcp/folders": {
+    "status": 200,
+    "body": "{\"folders\":[]}"
+  },
+  "port GET /v1/mcp/kinds": {
+    "status": 200,
+    "body": "{\"kinds\":[{\"kind\":\"credential\",\"label\":\"Credential\",\"summary\":\"A login: a password, with the login name and the address it is used at.\",\"creatable\":true},{\"kind\":\"ssh\",\"label\":\"SSH connection\",\"summary\":\"An SSH host: address, user and port, with the password as the secret. A key pair is its own sshkey entry.\",\"creatable\":true},{\"kind\":\"sshkey\",\"label\":\"SSH key\",\"summary\":\"An SSH key pair: the private key as the secret, the public half and its file path as fields.\",\"creatable\":true},{\"kind\":\"vpn\",\"label\":\"VPN\",\"summary\":\"A VPN: its protocol and endpoint, with the configuration file as the secret.\",\"creatable\":true},{\"kind\":\"db\",\"label\":\"Database\",\"summary\":\"A database: its engine, with the connection string as the secret.\",\"creatable\":true},{\"kind\":\"terminal\",\"label\":\"Terminal command\",\"summary\":\"A saved command line: the command, its arguments one per row, a note, and the OS it runs on.\",\"creatable\":true},{\"kind\":\"script\",\"label\":\"Script\",\"summary\":\"A stored script: the language, the complete body, and the values its ${NAME} placeholders take.\",\"creatable\":true},{\"kind\":\"config\",\"label\":\"Config file\",\"summary\":\"A whole config file kept out of git: its format and file name, with the body as the secret.\",\"creatable\":true},{\"kind\":\"payment\",\"label\":\"Payment instrument\",\"summary\":\"A payment instrument — a card or a bank account. Not creatable by an agent.\",\"creatable\":false}]}"
+  },
+  "socket GET /v1/mcp/kinds": {
+    "status": 200,
+    "body": "{\"kinds\":[{\"kind\":\"credential\",\"label\":\"Credential\",\"summary\":\"A login: a password, with the login name and the address it is used at.\",\"creatable\":true},{\"kind\":\"ssh\",\"label\":\"SSH connection\",\"summary\":\"An SSH host: address, user and port, with the password as the secret. A key pair is its own sshkey entry.\",\"creatable\":true},{\"kind\":\"sshkey\",\"label\":\"SSH key\",\"summary\":\"An SSH key pair: the private key as the secret, the public half and its file path as fields.\",\"creatable\":true},{\"kind\":\"vpn\",\"label\":\"VPN\",\"summary\":\"A VPN: its protocol and endpoint, with the configuration file as the secret.\",\"creatable\":true},{\"kind\":\"db\",\"label\":\"Database\",\"summary\":\"A database: its engine, with the connection string as the secret.\",\"creatable\":true},{\"kind\":\"terminal\",\"label\":\"Terminal command\",\"summary\":\"A saved command line: the command, its arguments one per row, a note, and the OS it runs on.\",\"creatable\":true},{\"kind\":\"script\",\"label\":\"Script\",\"summary\":\"A stored script: the language, the complete body, and the values its ${NAME} placeholders take.\",\"creatable\":true},{\"kind\":\"config\",\"label\":\"Config file\",\"summary\":\"A whole config file kept out of git: its format and file name, with the body as the secret.\",\"creatable\":true},{\"kind\":\"payment\",\"label\":\"Payment instrument\",\"summary\":\"A payment instrument — a card or a bank account. Not creatable by an agent.\",\"creatable\":false}]}"
+  },
+  "port GET /v1/mcp/kind-help": {
+    "status": 200,
+    "body": "{\"error\":\"\\\"\\\" is not a kind of entry. One of: credential, ssh, sshkey, vpn, db, terminal, script, config, payment.\",\"hint\":\"Call creds_kinds for the list, then creds_kind_help with one of them.\"}"
+  },
+  "socket GET /v1/mcp/kind-help": {
+    "status": 200,
+    "body": "{\"error\":\"\\\"\\\" is not a kind of entry. One of: credential, ssh, sshkey, vpn, db, terminal, script, config, payment.\",\"hint\":\"Call creds_kinds for the list, then creds_kind_help with one of them.\"}"
+  },
+  "port POST /v1/config/read": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"That key does not open a config in this window.\"}}"
+  },
+  "socket POST /v1/config/read": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"That key does not open a config in this window.\"}}"
+  },
+  "port POST /v1/use/exec": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/exec": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/terminal": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/terminal": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/query": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/query": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/run": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/run": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/exportEnv": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/exportEnv": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/up": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/up": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/use/down": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "socket POST /v1/use/down": {
+    "status": 401,
+    "body": "{\"error\":{\"code\":\"unauthorized\",\"message\":\"Unknown or missing grant token.\"}}"
+  },
+  "port POST /v1/mcp/delete": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/delete": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/create": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with a \\\"name\\\" for the new entry.\"}}"
+  },
+  "socket POST /v1/mcp/create": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with a \\\"name\\\" for the new entry.\"}}"
+  },
+  "port POST /v1/mcp/use/exec": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/exec": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/terminal": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/terminal": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/query": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/query": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/run": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/run": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/exportEnv": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/exportEnv": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/up": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/up": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/down": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/down": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/use/rotate": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "socket POST /v1/mcp/use/rotate": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"entry\\\" id.\"}}"
+  },
+  "port POST /v1/mcp/folder/create": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with a \\\"name\\\" for the new folder.\"}}"
+  },
+  "socket POST /v1/mcp/folder/create": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with a \\\"name\\\" for the new folder.\"}}"
+  },
+  "port POST /v1/mcp/folder/edit": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with the \\\"folder\\\" id to change.\"}}"
+  },
+  "socket POST /v1/mcp/folder/edit": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with the \\\"folder\\\" id to change.\"}}"
+  },
+  "port POST /v1/mcp/folder/delete": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with the \\\"folder\\\" id to move to the Trash.\"}}"
+  },
+  "socket POST /v1/mcp/folder/delete": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with the \\\"folder\\\" id to move to the Trash.\"}}"
+  },
+  "port POST /v1/alias/exec": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"alias\\\".\"}}"
+  },
+  "socket POST /v1/alias/exec": {
+    "status": 400,
+    "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"Body must be a JSON object with an \\\"alias\\\".\"}}"
+  },
+  "port browser": {
+    "status": 403,
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This is a local agent broker, not a web service. Requests that look like they came from a browser are refused: it answers command-line tools on this machine only.\"}}"
+  },
+  "port wrong Host": {
+    "status": 403,
+    "body": "{\"error\":{\"code\":\"forbidden\",\"message\":\"This is a local agent broker, not a web service. Requests that look like they came from a browser are refused: it answers command-line tools on this machine only.\"}}"
+  },
+  "socket wrong Host": {
+    "status": 200,
+    "body": "{\"ok\":true,\"service\":\"creds-for-devs-agent\"}"
+  }
+}

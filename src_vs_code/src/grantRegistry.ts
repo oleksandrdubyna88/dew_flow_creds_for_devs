@@ -1,3 +1,4 @@
+import { bridgeAuditName, type BridgeGrant } from './bridgeContext';
 import { describeSecret, newSecret } from './grantToken';
 
 /**
@@ -46,7 +47,24 @@ export interface Grant {
    * was reported on PR #106 rather than found here.</p>
    */
   readonly scope: GrantScope;
+  /**
+   * Set only by a Remote Bridge door, from the context the door handed the router (E1.3). Absent, as a KEY, on
+   * every grant the two existing doors mint, so every branch that reads it is skipped for them. It survives
+   * `allow`, `deny` and `reserve`, which spread the grant.
+   */
+  readonly bridge?: BridgeGrant;
 }
+
+/** Eviction, in one ordered list so the registry never reaches a token while a call grant exists. */
+const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
+  (g) => g.scope === 'call' && g.status === 'denied', // a call the person refused: its secret is in no response, it answers nobody
+  (g) => g.scope === 'call' && g.status === 'allowed' && g.uses > 0, // a call that ran (silent MCP use at sixty a minute lands here)
+  (g) => g.scope === 'call' && g.status === 'allowed', // an Allow not yet reserved: live while the call waits for its turn (the one-use lane, `remember`, `releaseWaiting`, the mask read), or dead for good (refused or abandoned after a pre-consent) — oldest first
+  (g) => g.scope === 'call', // pending: a dialog open now, or a client that left during it — the last call to go
+  (g) => g.status === 'denied', // tombstones (already capped at 64)
+  (g) => g.scope === 'token' && g.status === 'pending', // a token whose first dialog is open
+  (g) => g.scope === 'token', // the last resort, as before
+];
 
 /** @see Grant.scope */
 export type GrantScope = 'token' | 'call';
@@ -136,6 +154,7 @@ export class GrantRegistry {
     kind: string,
     now: number = Date.now(),
     scope: GrantScope = 'token',
+    bridge?: BridgeGrant,
   ): Grant {
     this.prune();
     const grant: Grant = {
@@ -149,6 +168,9 @@ export class GrantRegistry {
       lastUsedAt: now,
       uses: 0,
       scope,
+      // The key is ABSENT when there is no bridge, never present as `undefined`: a grant of the existing doors
+      // is byte-for-byte what it was (`'bridge' in grant` is the pin).
+      ...(bridge === undefined ? {} : { bridge }),
     };
     this.grants.set(grant.secret, grant);
     return grant;
@@ -268,29 +290,27 @@ export class GrantRegistry {
   }
 
   /**
-   * The grant the cap should reclaim next, in three tiers.
+   * The grant the cap should reclaim next: the first tier of {@link EVICTION_ORDER} that has one, the oldest within it.
    *
-   * <p>First the oldest NON-allowed — a pending grant awaiting or abandoned by consent, which
-   * nobody holds. Then the oldest allowed **call** grant: one request's capability, whose secret
-   * was never in any response, so dropping it can cost nothing. Only when neither exists does it
-   * fall back to the oldest allowed TOKEN, which is the case the cap was originally written for —
-   * a window that has genuinely shared 256 credentials.</p>
-   *
-   * <p>The middle tier is issue #95's doing and the reason this is three tiers rather than two:
-   * silent MCP calls mint allowed grants at sixty a minute, so "every grant is allowed" stopped
-   * being the rare case and a live shared token became the first thing evicted, in about four
-   * minutes of unattended agent work.</p>
+   * <p>A list, so the registry never reaches a token while a call grant exists. The first two tiers are the calls
+   * that answer nobody: a call the person refused, and a call that ran (issue #95 — silent MCP use mints them at
+   * sixty a minute, allowed at once). The third is an Allow not yet reserved: a live one while the call waits
+   * between the gate's `allow` and `reserve` (the one-use lane, `remember`, `releaseWaiting`, the mask read — no dialog among them), and otherwise a dead one for good — a pre-consented call refused in
+   * `usable`, or abandoned before `reservedNow`, stays `allowed, uses 0`, because {@link drop} deletes pending
+   * grants only. The fourth is pending alone: a call whose dialog is open now (or whose client left during it).
+   * Evicting that one loses a person's answer (Amendment 3, C.4; Amendment 6, D.5), so a loop of quiet calls that
+   * leave dead Allows behind reaches it last among the calls. Only then a denied tombstone, a token whose first
+   * dialog is open, and the last resort, the oldest token, which is the case
+   * the cap was originally written for.</p>
    */
   private oldestEvictable(): string | undefined {
-    return this.oldestWhere((grant) => grant.status !== 'allowed')
-      ?? this.oldestWhere((grant) => grant.scope === 'call')
-      ?? this.oldestWhere((grant) => grant.scope === 'token');
+    return EVICTION_ORDER.map((fits) => this.oldestWhere(fits)).find((victim) => victim !== undefined);
   }
 
   /**
-   * The oldest grant that fits, by insertion order — three cheap passes over at most 256 entries
-   * rather than one pass carrying three running answers, which the complexity ceiling refused and
-   * which read worse anyway: the tiers ARE the policy, and here they are three readable lines.
+   * The oldest grant that fits, by insertion order — one cheap pass per tier over at most 256 entries
+   * rather than one pass carrying a running answer for each, which the complexity ceiling refused and
+   * which read worse anyway: the tiers ARE the policy, and {@link EVICTION_ORDER} is where they are written.
    */
   private oldestWhere(fits: (grant: Grant) => boolean): string | undefined {
     for (const [secret, grant] of this.grants) {
@@ -299,6 +319,14 @@ export class GrantRegistry {
       }
     }
     return undefined;
+  }
+
+  /** Delete a `'call'` grant that is still `pending`: a call refused before anybody was asked. A token, or a settled grant, is never dropped. */
+  drop(secret: string): void {
+    const grant = this.grants.get(secret);
+    if (grant?.scope === 'call' && grant.status === 'pending') {
+      this.grants.delete(secret);
+    }
   }
 
   /** Only a pending grant settles; a settled one is never revisited. */
@@ -312,8 +340,13 @@ export class GrantRegistry {
     return next;
   }
 
-  /** Log-safe identifier for a grant's secret. */
+  /**
+   * Log-safe identifier for a grant's secret, and — for a call that came through a Remote Bridge — the bridge's name from
+   * the CONTEXT, so every line the funnel writes about the call says which server it was for (E1.4). It sits inside the
+   * parentheses of the line's grant group, which is why `bridgeAuditName` has no `)`.
+   */
   static describe(grant: Grant): string {
-    return describeSecret(grant.secret);
+    const label = describeSecret(grant.secret);
+    return grant.bridge === undefined ? label : `${label} bridge=${bridgeAuditName(grant.bridge.context.serverName)}`;
   }
 }

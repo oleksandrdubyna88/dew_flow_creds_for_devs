@@ -253,6 +253,7 @@ function createWorld(
   details: (id: string) => EntityMetadata,
   newPassword: string | undefined,
   pinInputs: string[],
+  remoteName?: string,
 ): CreateWorld {
   const said: Said = { infos: [], warnings: [] };
   const env = fakeEnv();
@@ -272,7 +273,7 @@ function createWorld(
   // The REAL `envCollectionRef`, loaded in the same graph: `setEnvCollection` is what `activate`
   // calls, and the notices then travel the real road — `showEnvNotice` into the stubbed `window`
   // — rather than into a mock that records them, which would prove nothing about the wiring.
-  envCollectionRefOf(mod).setEnvCollection(env as never);
+  envCollectionRefOf(mod).setEnvCollection(env as never, remoteName);
   mod.registerTreeMutationCommands({
     announceArrival: () => Promise.resolve(),
     log: { write: (): void => undefined },
@@ -351,6 +352,32 @@ test('CREATE with one writable and one withheld binding says both', async () => 
   assert.deepEqual(w.env.replaced, { PUB: 'ssh-ed25519 AAAA' });
   assert.match(w.said.infos[0] ?? '', /\$PUB is set/);
   assert.match(w.said.warnings[0] ?? '', /\$PROD_PW was not written/);
+});
+
+test('CREATE in a Remote-SSH window: the collection is still written, and the warning says where the value goes (W4)', async () => {
+  // The terminals of an ssh-remote window run on ANOTHER computer. The value is written all the same
+  // (owner decision 5), and the person is told, through the same `showEnvNotice` every surface uses.
+  const w = createWorld(
+    plainDetails({ publicKey: 'PUB' }, { publicKey: 'ssh-ed25519 AAAA' }),
+    undefined,
+    [],
+    'ssh-remote',
+  );
+
+  await w.addEntity();
+
+  assert.deepEqual(w.env.replaced, { PUB: 'ssh-ed25519 AAAA' }, 'the value is still written');
+  assert.match(w.said.infos[0] ?? '', /\$PUB is set for NEW integrated terminals/);
+  assert.equal(w.said.warnings.length, 1, `one warning, got: ${JSON.stringify(w.said.warnings)}`);
+  assert.match(w.said.warnings[0], /\$PUB reaches another computer: the new terminals of this window run there \(ssh-remote\)/);
+});
+
+test('CREATE in a window with no remote name: no such warning (stubs without an `env` read as local)', async () => {
+  const w = createWorld(plainDetails({ publicKey: 'PUB' }, { publicKey: 'ssh-ed25519 AAAA' }), undefined, []);
+
+  await w.addEntity();
+
+  assert.deepEqual(w.said.warnings, []);
 });
 
 // ---------------------------------------------------------------------------------------------

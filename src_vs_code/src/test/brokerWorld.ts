@@ -1,4 +1,5 @@
 import { loadWithVscode } from './vscodeStub';
+import type { ResolveUse } from '../bridgeScope';
 import type { McpUseLookup } from '../brokerRequests';
 import type { CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 
@@ -28,6 +29,8 @@ interface Ran {
 }
 
 interface World {
+  /** The entity kind this world's grants and MCP lookups point at; `ssh` unless a test serves another. */
+  kind: string;
   mod: Broker;
   server: InstanceType<Broker['CredsAgentServer']>;
   dialogs: string[];
@@ -35,6 +38,8 @@ interface World {
   answers: (string | undefined)[];
   ran: Ran[];
   audit: string[];
+  /** How many times the broker asked for its output channel: 0 means it never started. */
+  outputChannels: number;
   burned: string[];
   /** Entity ids moved to the Trash by an agent. */
   trashed: string[];
@@ -44,7 +49,7 @@ interface World {
   settleDeadlines: number[];
   presence: number;
   /** Consents the vault was asked to remember: accountId, entityId and the ladder shown (#95). */
-  consents: { entityId: string; rungs: string }[];
+  consents: { entityId: string; rungs: string; serverEntityId?: string }[];
   /** Called by the run stub: a rotation writing its new value into storage mid-run. */
   rotate?: () => void;
   /**
@@ -105,6 +110,11 @@ function world(options: {
   rotatesTo?: string;
   burns?: boolean;
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
+  /**
+   * More names than the one `prod`, each to its own target — for a test about which names a door may resolve
+   * (E1.3's walk). Read BEFORE the `prod` rule, so a map may also redefine that name.
+   */
+  aliasMap?: Record<string, { accountId: string; entityId: string; entityName: string; kind: string }>;
   /** The names `creds ls` would see. Absent means this window has no registry at all. */
   aliasList?: { name: string; kind: string }[];
   /** What the vault would show an agent. Absent means this window shows agents nothing. */
@@ -115,13 +125,24 @@ function world(options: {
   /** Whether the vault says this call's dialog has already been answered (issue #95). */
   mcpPreConsented?: boolean;
   /**
+   * Whether the stubbed lookup says an Allow on this entry will be remembered (a stamp written).
+   *
+   * <p>Absent by default, so a stubbed lookup reads as `call` — the fail-closed reading — and a test
+   * about the dialog's sentence for a door with no policy keeps testing exactly that. A test whose
+   * subject is the stamp WRITE sets it, because the write is gated on the sentence that was shown
+   * (`opensWindow`) and a stub that says nothing announces nothing.</p>
+   */
+  mcpRemembers?: boolean;
+  /** The verb each action's dialog head uses, by action name. Absent actions read `run a command on`. */
+  verbs?: Record<string, string>;
+  /**
    * The REAL lookup, for a test that wants production's own answer rather than a scripted verdict.
    *
    * <p>Its own option rather than `hooks`, because that one is spread FIRST and then overwritten by
    * the shaped collaborators — a raw `resolveMcpUse` passed there is silently replaced, which is a
    * test that proves nothing while looking like it proves everything.</p>
    */
-  mcpResolve?: (entryId: string, action: string) => McpUseLookup;
+  mcpResolve?: ResolveUse;
   /**
    * The REAL write, for the test that drives a consent from asked to remembered to quiet.
    *
@@ -129,7 +150,7 @@ function world(options: {
    * than instead of it: `w.consents` stays the thing every other test reads, and this one also puts
    * the stamp where production puts it.</p>
    */
-  mcpRemember?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  mcpRemember?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
   /**
    * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
    * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
@@ -157,20 +178,38 @@ function world(options: {
   supports?: string[];
   /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
   holdDialogs?: boolean;
+  /** The scripted actions declare `asksAfterConsent: true`: they may put a prompt of their own on screen after the Allow (Amendment 3, K8). */
+  asksAfterConsent?: boolean;
+  /**
+   * How long the consent gate waits for an answer, in place of its five minutes (Amendment 2, P3). Passed to the
+   * server's graph as a mock of `./agentConsent` with the real module's other exports, so the dialog's timeout can be
+   * watched in milliseconds and nothing else of that module changes.
+   */
+  consentTimeoutMs?: number;
   /**
    * A REAL action to serve on the `exec` route instead of the scripted stub — for a test about what that
    * action itself does when its request goes (E4.S3, the VPN start). The broker does not care which
    * action a route resolves to; the action's own `run` is the subject.
    */
   realAction?: unknown;
+  /** A real action by name, read before `realAction`, so one route can be real while the others stay scripted. */
+  realActions?: Record<string, unknown>;
+  /**
+   * The entity kind the grants, the alias and the MCP lookup carry, and the registry resolves the
+   * actions for. `ssh` unless a test serves another kind's real action under its own name (E1.1, X3:
+   * the `credential` kind's `exportEnv`, on the route a client actually posts to).
+   */
+  kind?: string;
 }): World {
   const w: World = {
+    kind: options.kind ?? 'ssh',
     mod: undefined as never,
     server: undefined as never,
     dialogs: [],
     answers: [...(options.answers ?? ['Allow'])],
     ran: [],
     audit: [],
+    outputChannels: 0,
     burned: [],
     trashed: [],
     created: [],
@@ -193,24 +232,28 @@ function world(options: {
           : Promise.resolve(w.answers.shift());
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
-      createOutputChannel: (): unknown => ({
-        appendLine: (line: string): void => {
-          w.audit.push(line);
-        },
-        dispose: (): void => undefined,
-        show: (): void => undefined,
-      }),
+      createOutputChannel: (): unknown => {
+        w.outputChannels += 1;
+        return {
+          appendLine: (line: string): void => {
+            w.audit.push(line);
+          },
+          dispose: (): void => undefined,
+          show: (): void => undefined,
+        };
+      },
     },
     workspace: { getConfiguration: () => ({ get: settingsFor(options.maxCalls) }) },
-  });
+  }, consentMocks(options.consentTimeoutMs));
 
   const supported = options.supports ?? ['exec'];
-  const action = (name: string): unknown => options.realAction ?? scripted(name);
+  const action = (name: string): unknown => options.realActions?.[name] ?? options.realAction ?? scripted(name);
   const scripted = (name: string): unknown => ({
-    kind: 'ssh',
+    kind: w.kind,
     action: name,
     mutatesSecrets: options.rotatesTo !== undefined,
-    verb: `run a command on`,
+    ...(options.asksAfterConsent === true ? { asksAfterConsent: true } : {}),
+    verb: options.verbs?.[name] ?? `run a command on`,
     describeOutcome: (): string => 'exit 0',
     validate: (body: Record<string, unknown>): unknown =>
       body.command === '' ? { ok: false, message: 'no command given' } : { ok: true },
@@ -228,7 +271,7 @@ function world(options: {
   });
   const registry = {
     resolve: (kind: string, name: string): unknown =>
-      kind === 'ssh' && supported.includes(name) ? action(name) : undefined,
+      kind === w.kind && supported.includes(name) ? action(name) : undefined,
     actionsFor: (): unknown[] => supported.map((n) => action(n)),
   };
 
@@ -240,6 +283,11 @@ function world(options: {
     hooksFor(w, options),
   );
   return w;
+}
+
+/** `./agentConsent` with a shorter wait, or no mock at all: the module has no `vscode` in it, so the real one is spread. */
+function consentMocks(timeoutMs: number | undefined): Record<string, unknown> {
+  return timeoutMs === undefined ? {} : { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: timeoutMs } };
 }
 
 /**
@@ -257,16 +305,16 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     maskEntriesFor: maskerFor(w, options),
     burnAfterUse: burnerFor(w, options.burns),
     isOneUse: oneUseFor(w, options.oneUse),
-    resolveAlias: aliasResolverFor(options.alias),
+    resolveAlias: aliasResolverFor(options.alias, options.aliasMap),
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
-    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented),
+    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind, options.mcpRemembers),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create, options.settle),
-    rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
-      w.consents = [...w.consents, { entityId, rungs }];
-      return options.mcpRemember?.(accountId, entityId, rungs) ?? Promise.resolve();
+    rememberMcpConsent: (accountId: string, entityId: string, rungs: string, serverEntityId?: string): Promise<void> => {
+      w.consents = [...w.consents, { entityId, rungs, ...(serverEntityId === undefined ? {} : { serverEntityId }) }];
+      return options.mcpRemember?.(accountId, entityId, rungs, serverEntityId) ?? Promise.resolve();
     },
   };
 }
@@ -398,6 +446,8 @@ function mcpEntriesFor(
 function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
   preConsented = false,
+  kind = 'ssh',
+  remembers?: boolean,
 ): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;
@@ -410,8 +460,9 @@ function mcpUseFor(
       ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
       : {
           kind: 'usable',
-          target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' },
+          target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind },
           preConsented,
+          remembers,
           // The ladder this verdict was reached under. A lookup that omits it reads as the empty
           // string, which matches no resolved ladder and so refuses the write — fail-closed, and
           // what the five `.cjs` harnesses get.
@@ -476,8 +527,12 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: Crea
 
 function aliasResolverFor(
   alias: { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
+  aliasMap?: Record<string, { accountId: string; entityId: string; entityName: string; kind: string }>,
 ): ((name: string) => typeof alias) | undefined {
-  return alias === undefined ? undefined : (name: string) => (name === 'prod' ? alias : undefined);
+  if (alias === undefined && aliasMap === undefined) {
+    return undefined;
+  }
+  return (name: string) => (aliasMap !== undefined && Object.hasOwn(aliasMap, name) ? aliasMap[name] : name === 'prod' ? alias : undefined);
 }
 
 interface Answer {
@@ -521,7 +576,7 @@ async function call(
 
 /** Mint a grant and hand back the port and secret the CLI would use. */
 async function share(w: World): Promise<{ port: number; secret: string }> {
-  const token = await w.server.share('a1', 'e1', 'prod', 'ssh');
+  const token = await w.server.share('a1', 'e1', 'prod', w.kind);
   const dot = token.indexOf('.');
   return { port: Number(token.slice(0, dot)), secret: token.slice(dot + 1) };
 }

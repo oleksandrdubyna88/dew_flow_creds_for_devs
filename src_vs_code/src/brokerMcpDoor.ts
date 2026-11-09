@@ -54,7 +54,8 @@ export interface BrokerDoor {
    * DENIED stays denied, because the tombstone is checked before this can matter.</p>
    */
   preConsent(grant: Grantish): void;
-  mint(target: McpUseTarget): Grantish;
+  /** `quiet` is the bridge's switch as the lookup read it (E1.4): a grant is snapshotted from the scope its own lookup used, never from a second read. */
+  mint(target: McpUseTarget, quiet?: boolean): Grantish;
   describe(grant: Grantish): string;
   note(entry: {
     grant: string;
@@ -81,6 +82,8 @@ export interface BrokerDoor {
     caller: CallerLabel | undefined,
     /** The ladder the lookup resolved, so a remembered consent names the grant that was shown. */
     rungs?: string,
+    /** Whether the entry's policy will remember an Allow — what the dialog says the Allow covers. */
+    remembers?: boolean,
   ): Promise<void>;
   /**
    * Ask the human. `caller` is REQUIRED — `undefined` must be written, never omitted — so that a
@@ -93,6 +96,8 @@ export interface BrokerDoor {
     verb: string,
     summary: string,
     caller: CallerLabel | undefined,
+    /** The call may show a prompt of its own after an Allow (create's PIN box): the dialog place is kept until the call ends. */
+    followUp?: boolean,
   ): Promise<ConsentOutcome>;
   respond(res: http.ServerResponse, status: number, body: unknown): void;
   /**
@@ -210,11 +215,12 @@ export async function handleMcpUse(
   if (slot === undefined) {
     return;
   }
-  const caller = callerFrom(read.body);
-  const grant = minted(door, read.target, 'mcp', caller);
-  quietly(door, grant, read.target, caller, prompts);
+  // Everything after `admit` is inside the `try`: a throw from a journal append must still give the place back (Amendment 3, C.7).
   try {
-    await door.perform(res, grant, action, read.body, caller, read.rungs);
+    const caller = callerFrom(read.body);
+    const grant = minted(door, read.target, 'mcp', caller, read.quiet);
+    quietly(door, grant, read.target, caller, prompts);
+    await door.perform(res, grant, action, read.body, caller, read.rungs, read.remembers);
   } finally {
     slot.release();
   }
@@ -325,8 +331,8 @@ async function confirmAndDelete(
 }
 
 /** Mint, and write the line that says a call began — and who the body says began it. */
-function minted(door: BrokerDoor, target: McpUseTarget, what: string, caller: CallerLabel | undefined): Grantish {
-  const grant = door.mint(target);
+function minted(door: BrokerDoor, target: McpUseTarget, what: string, caller: CallerLabel | undefined, quiet?: boolean): Grantish {
+  const grant = door.mint(target, quiet);
   door.note({
     grant: door.describe(grant),
     entityName: target.entityName,
@@ -475,7 +481,7 @@ async function confirmAndCreate(
   const grant = minted(door, decision.target, 'mcp-create', caller);
   // The consent step's deadline, taken before the modal: the PIN a folder asks for is part of the step.
   const deadline = Date.now() + CONSENT_TIMEOUT_MS;
-  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller);
+  const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller, true);
   if (consent !== 'allowed') {
     consentNotGiven(door, res, consent, { grant, action: 'create', summary: decision.summary, caller }, 'The human did not allow this.');
     return;

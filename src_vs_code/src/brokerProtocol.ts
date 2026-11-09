@@ -95,6 +95,27 @@ export function errorBody(
 export const INTERNAL_FAILURE = 'The action failed inside this window. See the agent journal for the reason.';
 
 /**
+ * What a request is told when a handler threw before it could answer (`unanswered`). Its own sentence: `INTERNAL_FAILURE` promises a reason
+ * in the journal, and the journal line of this failure is a classification (the error's class, a system errno name when it has one, the route) that never carries the message (parent §4.1).
+ */
+export const UNANSWERED_FAILURE = 'The request failed inside this window. The agent journal records that it failed and where, with the kind of error but never its message.';
+
+/**
+ * What an agent is told when it asks to export a secret into the terminals of another computer.
+ *
+ * <p>One sentence on every door, so a client can match it and a person can search for it. The export
+ * writes the value into the environment collection of the window, and in a Remote-SSH (or container)
+ * window the terminals that collection feeds run on the remote computer, so the value would land
+ * there. It does not say that no secret ever reaches the server, because a person may put a value
+ * there on purpose (owner decision 5), and it does not say that a stored command can use a vault
+ * value: no agent executor resolves a `creds://` reference before E3, so it only points at a stored
+ * command the person already has. The agent then gets only the command's output. Refused in
+ * `validate`, so no modal asks a person to allow it first.</p>
+ */
+export const EXPORT_REFUSED =
+  "An agent cannot export a secret here: the value would land in the terminals of another computer (this window's, or the server behind a Remote Bridge). Where the person has stored a command for the job, run that instead: the agent gets only its output.";
+
+/**
  * What an agent is told when this window cannot read the values it would have to redact.
  *
  * <p>Said BEFORE the action, always: the table is built first precisely so that a storage read
@@ -210,6 +231,9 @@ export interface EnvExportResponseBody {
   written: string[];
 }
 
+/** Where an alias call is posted; the contract carries it, so a client does not hold a literal of its own. */
+export const ALIAS_ROUTE_PREFIX = '/v1/alias/';
+
 /**
  * `/v1/alias/<action>` → the action, for a call that names its entry by alias.
  *
@@ -220,11 +244,10 @@ export interface EnvExportResponseBody {
  * on one route and something else on the other.</p>
  */
 export function parseAliasRoute(pathname: string): string | undefined {
-  const prefix = '/v1/alias/';
-  if (!pathname.startsWith(prefix)) {
+  if (!pathname.startsWith(ALIAS_ROUTE_PREFIX)) {
     return undefined;
   }
-  const action = pathname.slice(prefix.length);
+  const action = pathname.slice(ALIAS_ROUTE_PREFIX.length);
   return ACTION_NAME.test(action) ? action : undefined;
 }
 
