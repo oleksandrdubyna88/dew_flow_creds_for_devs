@@ -69,9 +69,16 @@ export function untilGone<T>(promise: Thenable<T>, startGate: AbortSignal | unde
     if (startGate.aborted) {
       leave();
     }
-    Promise.resolve(promise)
-      .then((value) => (gateWon ? onLate?.(value) : resolve(value)), () => resolve(undefined))
-      .finally(done);
+    Promise.resolve(promise).then(
+      (value) => {
+        done();
+        return gateWon ? onLate?.(value) : resolve(value);
+      },
+      () => {
+        done();
+        resolve(undefined);
+      },
+    );
   });
 }
 

@@ -11,6 +11,7 @@ import { GRANT_NOT_ALLOWED, consentRefusal } from '../brokerRequests';
 import { STAMPS_KEY } from '../mcpConsentPolicy';
 import { untilGone } from '../requestLife';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
+import { LEDGER } from './promptSiteLedger';
 import { memento } from './bridgeModules';
 import { ACCOUNT, Ask, Door, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
@@ -714,4 +715,21 @@ test('C18: a gate that has already fired resolves undefined at once, leaves no l
   await Promise.resolve();
   assert.deepEqual(late, ['answer']);
   assert.equal(abortListeners(gate.signal), 0);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * C17 — the ledger's three reasons say what the code does now (the table is exact in `promptSites.test.ts`; this reads three words)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** A ledger row's reason, or the empty string. */
+const reasonOf = (id: string): string => LEDGER[id]?.reason ?? '';
+
+test('C17: the prompt-site ledger\'s three reasons say the place is a person\'s, and the two questions are modal on an agent call', () => {
+  const shown = reasonOf('brokerConsent.ts#ConsentGate.shown#showWarningMessage#1');
+  assert.ok(shown.includes('never a timer'), `the consent dialog's row: ${shown}`);
+  assert.equal(shown.includes('`shown` frees'), false, 'it no longer says `shown` frees the place');
+  for (const id of ['dependencyRunHost.ts#askToContinue#showInformationMessage#1', 'vpnRun.ts#openVpnConnect#showInformationMessage#1']) {
+    assert.ok(reasonOf(id).includes('a modal on an agent call'), `${id}: ${reasonOf(id)}`);
+    assert.equal(reasonOf(id).includes('not a modal'), false, `${id} still says it is not a modal`);
+  }
 });
