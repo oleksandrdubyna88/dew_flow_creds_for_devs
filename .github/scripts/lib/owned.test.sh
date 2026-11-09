@@ -841,22 +841,22 @@ EOF
   premise "F2 the child reached its wait" await_file "$CTL/tf2a.ready" || { kill -9 "$cpid"; return 0; }
   kill -TERM "$cpid"
   premise "F2 the exit chain started" await_file "$CTL/tf2a.inchain" || { kill -9 "$cpid"; return 0; }
-  kill -INT "$cpid"
+  kill -HUP "$cpid"   # HUP, not INT: a background child of a script ignores SIGINT from its start, and an ignored signal cannot be trapped
   sleep 0.3
   : > "$CTL/tf2a.stop2"
   { wait "$cpid"; } 2> /dev/null
-  eq "F2 P3: TERM then INT in the chain: the status is the first signal's, 143" "$?" 143
+  eq "F2 P3: TERM then HUP in the chain: the status is the first signal's, 143" "$?" 143
   eq "F2 P3: folder and claim are gone" "$(count "$CR")" 0
   child tf2b << 'EOF'
 . "$T_OWNED_SH"
-f() { kill -INT $$; }
+f() { kill -HUP $$; }
 owned_trap f
 owned_dir d x
 owned_dir e y
 exit 3
 EOF
   run_child tf2b
-  eq "F2 P3b: an INT during the chain: the status is 3" "$CH_RC" 3
+  eq "F2 P3b: a HUP during the chain: the status is 3" "$CH_RC" 3
   eq "F2 P3b: both folders and both claims are gone" "$(count "$CR")" 0
 }
 
