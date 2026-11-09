@@ -76,6 +76,10 @@ export interface World {
   listReadsAfterDispose(): number;
   /** The `preopened` terminals and the ones a flow created, by name: the newest of each. */
   live: Record<string, LiveTerminal>;
+  /** Executions started with `holdExecutions`, oldest first: each ends only when the test ends it through `shell.end`. */
+  executions: { terminal: LiveTerminal; execution: object }[];
+  /** How many listeners the three terminal events hold right now: what an abandoned run must not leave behind (E1.5, C20). */
+  listenerCounts(): { ended: number; closed: number };
   shell: ShellEvents;
   /** How many times the start or stop told the vault the person is at the keyboard (`noteUserActivity`): the idle clock's one input from here. */
   userActivity: number;
@@ -84,7 +88,10 @@ export interface World {
 type Listener = (e: unknown) => void;
 
 export interface WorldOptions {
-  integration?: boolean;
+  /** `false`: the shell never starts (the terminal closes at once). `'absent'`: it starts and never reports shell integration, and never closes. */
+  integration?: boolean | 'absent';
+  /** Executions never end by themselves: `world.executions` lists them and the test ends each through `world.shell.end` (E1.5, C10). */
+  holdExecutions?: boolean;
   /** What the person clicks on a notification (Continue / Stop). */
   notification?: 'Continue' | 'Stop';
   /** A modal gets its first button unless the test dismisses it or asks for the last. */
@@ -107,12 +114,10 @@ export interface WorldOptions {
 
 export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}): World {
   const terminals: FakeTerminal[] = [];
-  const warnings: string[] = [];
-  const infos: string[] = [];
+  const [warnings, infos]: [string[], string[]] = [[], []];
   const held: HeldDialog[] = [];
-  const started: Listener[] = [];
-  const ended: Listener[] = [];
-  const closed: Listener[] = [];
+  const executions: { terminal: LiveTerminal; execution: object }[] = [];
+  const [started, ended, closed]: [Listener[], Listener[], Listener[]] = [[], [], []];
   const subscribe = (list: Listener[]) => (l: Listener) => {
     list.push(l);
     return { dispose: () => list.splice(list.indexOf(l), 1) };
@@ -141,12 +146,19 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
         record.sent.push(text);
       },
     };
-    if (opts.integration !== false) {
+    if (opts.integration === false) {
+      // A shell that could not start: the terminal closes before integration ever activates.
+      setImmediate(() => [...closed].forEach((l) => l(terminal)));
+    } else if (opts.integration !== 'absent') {
       terminal.shellIntegration = {
         executeCommand: (line: string) => {
           record.executed.push(line);
           opts.onExecute?.(line);
           const execution = { line };
+          if (opts.holdExecutions === true) {
+            executions.push({ terminal, execution });
+            return execution;
+          }
           setImmediate(() => {
             [...ended].forEach((l) => l({ terminal, execution, exitCode: exitCodes[line] ?? 0, shellIntegration: terminal.shellIntegration }));
             if (opts.closeAfterFirst === true) {
@@ -156,9 +168,6 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
           return execution;
         },
       };
-    } else {
-      // A shell that could not start: the terminal closes before integration ever activates.
-      setImmediate(() => [...closed].forEach((l) => l(terminal)));
     }
     return terminal;
   };
@@ -223,7 +232,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     [...closed].forEach((l) => l(terminal));
   };
   const open = (name: string, shellPath?: string): LiveTerminal => makeTerminal({ name, shellPath });
-  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell, userActivity: 0 };
+  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell, userActivity: 0, executions, listenerCounts: () => ({ ended: ended.length, closed: closed.length }) };
 }
 
 function reply(opts: WorldOptions, buttons: string[], modal: boolean): string | undefined {

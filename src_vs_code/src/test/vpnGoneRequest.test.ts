@@ -164,6 +164,7 @@ test('OpenVPN Connect: a client gone while its import question is open imports n
   const nodes = wireguard({ vpnType: 'openvpn' });
   const run = startVpn(scope, w, nodes, { startGate: request.signal, mocks });
   await until(() => w.held.length === 1, 'the import question');
+  assert.equal(w.held[0].modal, true, 'a modal on an agent call (E1.5, D14)');
 
   request.abort();
   w.held[0].answer('Import profile');

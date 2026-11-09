@@ -51,6 +51,12 @@ export interface UseActionContext {
    * resolves a `creds://` reference reads values through `scopedRefSource` whenever this is set (E3.3).
    */
   readonly bridge?: BridgeContext;
+  /**
+   * Set by the broker: a prompt of this action's own was answered after the call had ended (the client left while it stood). Writes the late-answer
+   * line with the grant, and decides nothing. Absent for a start that serves no request (the person's own click). Read by nothing but the late road of
+   * a question the action raced against its request's life (`untilGone`'s `onLate`).
+   */
+  readonly lateAnswer?: (what: string) => void;
 }
 
 /**

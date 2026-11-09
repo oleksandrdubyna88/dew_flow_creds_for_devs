@@ -47,6 +47,46 @@ export function requestGone(startGate: AbortSignal | undefined): boolean {
   return startGate?.aborted === true;
 }
 
+/**
+ * `promise`'s value, or `undefined` the moment `startGate` fires, whichever is first — the one race of a start's two QUESTIONS (the
+ * OpenVPN Connect import and the dependency chain's *Continue*); the step's own wait has its own, in `dependencyRunHost.ts`.
+ *
+ * <p>With no gate (the person's own click) it is `promise`'s value, as it always was: nothing a client does can cancel what a person asked for in the
+ * window. The abort listener is removed when EITHER side settles, so a thousand settled races leave a long-lived signal clean: a listener
+ * on a signal that never fires is a leak, and `{ once: true }` alone does not remove it. A rejection resolves `undefined`.</p>
+ *
+ * <p>The promise is not cancelled (VS Code cannot take a modal down): `onLate`, when given, receives what resolves it AFTER the gate won, and
+ * nothing else reads it. It is how a late click is journalled and decides nothing.</p>
+ */
+export function untilGone<T>(promise: Thenable<T>, startGate: AbortSignal | undefined, onLate?: (value: T) => void): Promise<T | undefined> {
+  if (startGate === undefined) {
+    return Promise.resolve(promise);
+  }
+  return new Promise((resolve) => {
+    let gateWon = false;
+    const leave = (): void => {
+      gateWon = true;
+      startGate.removeEventListener('abort', leave);
+      resolve(undefined);
+    };
+    startGate.addEventListener('abort', leave);
+    if (startGate.aborted) {
+      leave();
+    }
+    const settled = (): void => startGate.removeEventListener('abort', leave);
+    Promise.resolve(promise).then(
+      (value) => {
+        settled();
+        return gateWon ? onLate?.(value) : resolve(value);
+      },
+      () => {
+        settled();
+        resolve(undefined);
+      },
+    );
+  });
+}
+
 /** The journal's words for a request whose action had not been launched when its client left. */
 export const NOT_LAUNCHED = 'as the action was starting — it was not launched';
 

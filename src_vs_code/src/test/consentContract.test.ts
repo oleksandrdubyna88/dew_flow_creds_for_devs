@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { getEventListeners } from 'node:events';
 import { mock, test } from 'node:test';
 import { CONSENT_TIMEOUT_MS } from '../agentConsent';
 import { BUSY_PLACE, LOCAL_DOOR, TokenlessCeilings, countedOnPlace } from '../aliasThrottle';
@@ -8,6 +9,7 @@ import { BRIDGED_BUTTONS, LOCAL_BUTTONS, consentButtons } from '../bridgeConsent
 import { CONSENT_TIMED_OUT, CONSENT_TIMED_OUT_ON_PLACE, consentTimedOut } from '../brokerProtocol';
 import { GRANT_NOT_ALLOWED, consentRefusal } from '../brokerRequests';
 import { STAMPS_KEY } from '../mcpConsentPolicy';
+import { untilGone } from '../requestLife';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
 import { memento } from './bridgeModules';
 import { ACCOUNT, Ask, Door, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
@@ -660,4 +662,56 @@ test('C9: a quiet call of an action WITHOUT the flag holds nothing — an asking
     settleAll(ww);
     ww.dispose();
   }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * C18 — `untilGone` leaves the gate clean
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const abortListeners = (signal: AbortSignal): number => getEventListeners(signal, 'abort').length;
+
+test('C18: untilGone leaves the gate clean — 500 settled by the promise on one signal, 500 by the gate, 200 whose promise rejects; a listener stays on no signal that never fires', async () => {
+  const shared = new AbortController();
+  for (let race = 0; race < 500; race += 1) {
+    assert.equal(await untilGone(Promise.resolve(race), shared.signal), race);
+    assert.equal(abortListeners(shared.signal), 0, `race ${race}: the shared signal holds a listener from a race that settled`);
+  }
+  for (let race = 0; race < 500; race += 1) {
+    const gate = new AbortController();
+    const late: number[] = [];
+    let resolveLate: (value: number) => void = () => undefined;
+    const pending = untilGone(new Promise<number>((resolve) => void (resolveLate = resolve)), gate.signal, (value) => void late.push(value));
+    assert.equal(abortListeners(gate.signal), 1, 'one listener while the race is open');
+    gate.abort();
+    assert.equal(await pending, undefined);
+    assert.equal(abortListeners(gate.signal), 0);
+    resolveLate(race);
+    resolveLate(race + 1);
+    await Promise.resolve();
+    assert.deepEqual(late, [race], 'onLate fires once, with the value that resolved the promise after the gate won');
+  }
+  for (let race = 0; race < 200; race += 1) {
+    assert.equal(await untilGone(Promise.reject(new Error('the dialog failed')), shared.signal), undefined, 'a rejection resolves undefined');
+    assert.equal(abortListeners(shared.signal), 0);
+  }
+});
+
+test('C18: with no gate the value comes through; onLate never fires when the promise wins', async () => {
+  const late: string[] = [];
+  assert.equal(await untilGone(Promise.resolve('answer'), undefined, (value) => void late.push(value)), 'answer');
+  const gate = new AbortController();
+  assert.equal(await untilGone(Promise.resolve('answer'), gate.signal, (value) => void late.push(value)), 'answer');
+  gate.abort();
+  await Promise.resolve();
+  assert.deepEqual(late, [], 'the promise won: nothing is late');
+});
+
+test('C18: a gate that has already fired resolves undefined at once, leaves no listener, and reports the late value', async () => {
+  const gate = new AbortController();
+  gate.abort();
+  const late: string[] = [];
+  assert.equal(await untilGone(Promise.resolve('answer'), gate.signal, (value) => void late.push(value)), undefined);
+  await Promise.resolve();
+  assert.deepEqual(late, ['answer']);
+  assert.equal(abortListeners(gate.signal), 0);
 });

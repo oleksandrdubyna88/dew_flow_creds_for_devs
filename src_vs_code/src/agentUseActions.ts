@@ -48,7 +48,7 @@ export type EntitySource = Pick<StorageManager, 'getNode'>;
  */
 export interface VpnUseDeps {
   readonly storage: EntitySource;
-  open(accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal): Promise<boolean>;
+  open(accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal, lateAnswer?: (what: string) => void): Promise<boolean>;
 }
 
 export interface AgentUseDeps {
@@ -415,7 +415,7 @@ export function vpnAction(deps: VpnUseDeps, action: 'up' | 'down'): UseAction {
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      const opened = await deps.open(ctx.accountId, ctx.entityId, action === 'up' ? 'start' : 'stop', ctx.signal);
+      const opened = await deps.open(ctx.accountId, ctx.entityId, action === 'up' ? 'start' : 'stop', ctx.signal, ctx.lateAnswer);
       return vpnOutcome(opened, ctx, doneVerb);
     },
   };
