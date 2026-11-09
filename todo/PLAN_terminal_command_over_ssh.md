@@ -130,11 +130,20 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
   What is tested is the delivery: the typed line, run through the REAL local shell (`/bin/bash -c`, and `pwsh -c`
   when installed) with a fake `ssh` first on PATH that records its argv NUL-separated, gives ONE element after `--`
   and the destination, equal byte-for-byte to the remote command, for a corpus holding `;`, `&&`, `|`, `'`, `"`,
-  `$()`, backtick, `\`, `%`, `!`, `*`, a tab and non-ASCII. What the remote shell then does is hand check 4.
+  `$()`, backtick, `\`, `%`, `!`, `*`, a tab and non-ASCII. The remote side is then EMULATED: the received element
+  is run as `<shell> -c '<element>'` — what sshd does with an exec request, which carries one command string
+  (RFC 4254 §6.5) — under `dash` and `bash` (and `zsh` when installed, else skipped with a printed reason), and its
+  output must equal running the line directly in that shell. A real sshd round trip stays hand check 4.
+- **Supported remote login shells**: the POSIX family — `sh`, `dash`, `bash`, `zsh`, `ksh`. `fish`, `csh` and
+  `tcsh` are not supported (their syntax differs and the stay-open wrapper is POSIX); the help says so. The remote
+  shell cannot be known before connecting, so this is a documented limit, not a check.
 - `typedLine(plan, prepared, localFamily)`: `buildSshCommand` with a new optional `remote = {command, tty}` option:
   program, `-t`, the existing options, `--`, destination, then the remote command as ONE word quoted by
   `quoteFor(localFamily, …)`. Without `remote` the builder's output is byte-identical to today.
-- `secretsStdin(env, line)`: `NAME='value'; export NAME` lines (posix single quotes), then the line inside a group
+- `secretsStdin(env, line)`: `NAME=<quoteFor('posix', value)>; export NAME` lines — `quoteFor` (`hostShell.ts:117`)
+  closes, escapes and reopens around every `'` in a value, so a value is one literal word whatever it holds; a test
+  runs the produced script under a real local `sh` and checks each variable equals its raw value for values holding
+  `'`, `"`, `$`, `` ` ``, `\` and a newline — then the line inside a group
   with each brace on its own line — `{\n<line>\n} </dev/null` — then `exit $?`. The line holds no newline (refused
   above), so a trailing `# comment` in it ends at its own line and cannot swallow the closing brace. `sh -s` reads its script from stdin as it goes, so a command that reads
   stdin would otherwise swallow the rest of the script; a `{ … }` group is parsed whole before it runs, and its stdin
@@ -161,6 +170,11 @@ whose `finally` calls `cleanup()` unless the hand-over happened — so a decline
 thrown error, a failed terminal creation and a row that is never sent all leave no key file and no pin behind. Each of
 these five exits is a named test (§6).
 
+**One snapshot per prepared session.** `ready` carries the SSH entry as it was read for the preparation, and the
+jump string it resolved. The trust line, the typed line and the spawn argv are all built from THAT snapshot; nothing
+between `prepareSshSession` and the send or spawn reads the SSH entry from storage again. So a sync that changes the
+host while the trust dialog is open cannot send the line, or the secrets, to a host the dialog did not name.
+
 - **Arrow and VPN launcher**: `sendGuarded` takes a target: `{kind:'entry', terminalOs}` (today) or
   `{kind:'ssh', env?}`. For `ssh` the shell is the one SSH Connect pins. With `env` (password) the guard never finds
   or disposes: it opens a new terminal with the env (D10). The key file is deleted when that terminal closes, as
@@ -168,8 +182,9 @@ these five exits is a named test (§6).
 - **Folder run**: the modal shows each row's trust line; after the modal and the chain, EVERY linked row is
   prepared, one after another in row order (their PIN and host-key prompts come in that order), and only then does
   the synchronous `typeAll` send anything. A row whose preparation is `refused` is reported as failed and the others
-  are typed. A `stopped` row (the person cancelled a PIN or a host-key prompt) stops the whole run: nothing is typed,
-  and every row prepared so far is cleaned. The prepared rows are one list owned by the run, and the run's `finally`
+  are typed. A `stopped` row (the person cancelled a PIN or a host-key prompt) stops the whole run: nothing is typed —
+  linked or not — and every row prepared so far is cleaned. `stopped` is a run-level state, checked once more
+  immediately before the synchronous `typeAll`, and no row of any kind is sent after it is set. The prepared rows are one list owned by the run, and the run's `finally`
   cleans every row that was not handed over to a terminal.
 - **Dependency chain**: a linked step has no stay-open (D11); a password step is refused at plan time; *Runs on* of a
   linked step is not an OS refusal; the step's key is deleted when the step ends.
@@ -178,7 +193,10 @@ these five exits is a named test (§6).
   resolve the secret values → spawn. No child exists and no byte is written to any stdin before the trust is given;
   a declined trust cleans the session and spawns nothing. The child is `ssh` by argv
   (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`, no `-t`, `shell:false`); STDIN carries `secretsStdin` (D12), then
-  is closed; output masked as today; the banner says typed input is not forwarded. A **password** SSH entry: the
+  is closed; output masked as today. The run is NON-INTERACTIVE: no tty, and the command's stdin is `/dev/null`, so a
+  command that asks a question (`terraform apply`, `apt-get install` without `-y`) reads end-of-input and usually
+  stops. The banner says so before the output and names the way out: "Run in Terminal" (interactive, but the values
+  are not injected); the help says the same. A **password** SSH entry: the
   human PIN prompt runs inside `prepareSshSession` as for any road; its askpass env (`SSH_ASKPASS`,
   `SSH_ASKPASS_REQUIRE=force`, the password variable) goes into the CHILD's environment — never argv — with
   `NumberOfPasswordPrompts=1` from `buildSshExecArgv`'s askpass branch and its `ConnectTimeout=10`, so a wrong password
@@ -240,6 +258,11 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | folder: a `stopped` row stops the run, nothing typed, every prepared row cleaned | folder world | §4.4 |
 | secrets: no child and no stdin write before trust; declined trust spawns nothing; password entry → askpass vars in the child env, not argv | masked-run test with a fake spawn | §4.4 |
 | Copy Command on a linked entry copies the trust line, never a key path | viewer / copy test | §4.4 |
+| delivery corpus re-parsed by `dash -c` and `bash -c` (zsh when installed) equals the line run directly | `test/remoteLaunchDelivery.test.ts` | supported shells |
+| folder: cancel after mixed linked and unlinked rows were prepared — no row typed | folder world | run-level `stopped` |
+| snapshot: the SSH entry changed in storage after prepare (during the trust dialog) — the sent line and the spawn argv still name the prepared host; nothing re-reads storage | arrow world, masked-run test | one snapshot |
+| masking end to end: a fake `ssh` echoes each injected value to stdout and stderr; the shown output is masked | masked-run test | D12 |
+| export: the exported Terminal entry has no `sshEntityId`; importing the bundle does not restore it | `externalBundle` test | D4 |
 | prepare opens no terminal; `cleanup` deletes key and pin; `refused` leaves nothing on disk | `test/sshSession.test.ts` | the seam |
 | existing SSH Connect suites green, unchanged | `sshConnect.test.ts`, `sshConnectRemote.test.ts` | no regression |
 | arrow: typed line, password → new terminal with env beside a live one, nothing disposed; declined trust → cleanup; missing link → sentence, nothing typed | arrow world | D10 |
@@ -319,121 +342,151 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 
 ## Epics
 
-Five epics over the nine build-order steps of §5. Steps that share a seam sit in one epic; a step that is a seam
-of its own is an epic of its own. Each epic is mergeable alone: a road not yet built keeps E1's refusal (D8), so no
-build between two epics runs a linked command locally. Stories are not written now: each epic's stories document,
-`todo/PLAN_terminal_command_over_ssh_E<n>.md`, is written by Opus when that epic starts, and this section gets the
-link to it then (the both-sides rule of `planning-docs.md`).
+Three epics over the nine build-order steps of §5, each of three stories. The split was five epics until the plan
+gate's round 2 (2026-11-09), when the operator commanded: 2-3 epics of 2-3 logically complete stories, fewer is fine,
+never more; the gate runs once per epic; each epic has its own branch, started from the previous epic's commit, and
+lands as ONE commit. That command outranks our defaults, so five became three: the seam joined the field and the
+composer (no road runs without the three), the terminal roads kept one epic, and the two non-interactive roads took
+the closing documents with them. Documentation is updated with every change: the help, README and `research/` lines
+for a road land in that road's story, so no epic is only documents. Each epic is mergeable alone: a road not yet built
+keeps E1's refusal (D8), so no build between two epics runs a linked command locally.
+
+The gate runs once per epic, declared with `plan` and `epic: "k/3"`. The consultation cadence is once per three
+epics, so one consultation runs before E1 is built and none is owed before E2 or E3. The stories below carry one line
+of scope each; each epic's stories document, `todo/PLAN_terminal_command_over_ssh_E<n>.md`, is written by Opus when
+that epic starts, and this section gets the link to it then (the both-sides rule of `planning-docs.md`).
 
 The question consultant was asked what is important (2 of 2 answered, 2026-11-09). Ranked: (1) the single launch
 composer with the canonical trust line, two-shell quoting and fail-closed coverage of every road — a missed road runs
-a destructive command LOCALLY; (2) the SSH preparation seam cut from `connectEntity` — the largest regression radius
-on an existing security flow; (3) the non-interactive boundary — Run with Secrets over stdin to `sh -s`, and the
-agent gate. With five epics the quota is Q = 2, so areas (1) and (2) are the cornerstone areas. Area (3) is watched
-without a mark: its agent gate is authorisation, which `subagent-models.md` gives to a Fable security judgement
-outside any quota; the rest of it is an Opus judge's.
+a destructive command LOCALLY; (2) the SSH preparation seam cut from `connectEntity` — identity, host pin, route, the
+lifetime of the credential and the key, and the "one owner" and "one snapshot" rules of §4.4 — the largest regression
+radius on an existing security flow; (3) the non-interactive boundary — Run with Secrets over stdin to `sh -s`, and
+the agent gate. With three epics the quota is Q = ⌈2·3/5⌉ = 2, so areas (1) and (2) are the cornerstone areas. Both
+live in E1, so at most two E1 stories can be marked, and E2 and E3 carry no mark. Area (3) is watched without a mark:
+its agent gate is authorisation, which `subagent-models.md` gives to a Fable security judgement outside any quota; the
+rest of it is an Opus judge's.
 
-| Epic | Steps of §5 | Cornerstone area |
-|---|---|---|
-| E1 · The field, the refusal on every road, the composer, the scan | 1, 2 | yes — area (1) |
-| E2 · The SSH preparation seam | 3 | yes — area (2) |
-| E3 · The terminal roads: arrow, VPN launcher, folder run, chain | 4, 5, 6 | none |
-| E4 · The non-interactive roads: Run with Secrets, agent | 7, 8 | none (area (3), watched) |
-| E5 · Help, README, CHANGELOG, `research/` | 9 | none |
+| Epic | Steps of §5 | Stories | Cornerstone area |
+|---|---|---|---|
+| E1 · Foundation: the field, the refusal on every road, the composer, the seam | 1, 2, 3 | S1 field · S2 composer · S3 seam | yes — areas (1) and (2) |
+| E2 · Terminal roads: arrow and VPN launcher, folder run, dependency chain | 4, 5, 6 | S1 arrow + launcher · S2 folder run · S3 chain | none |
+| E3 · Non-interactive roads and closing: Run with Secrets, agent, the rest of the documents | 7, 8, 9 | S1 secrets · S2 agent · S3 closing | none (area (3), watched) |
 
-### E1 · The field, the refusal on every road, the composer, the scan
+### E1 · Foundation: the field, the refusal on every road, the composer, the seam
 
-- **Goal.** A Terminal entry can store an SSH link, the form round-trips it, every road refuses a linked entry with
-  a sentence, and ONE pure module is the only way from "entry + link" to a launch, held there by a structural test.
-  After E1 no road can run a linked line locally, built or not.
-- **Scope.** §4.1 whole, §4.2 whole, §4.5, §4.6 (the PowerShell 5.1 refusal); build steps 1 and 2; D5–D9, D13, D14.
-  Files: `types.ts`, `typeGuards.ts`, `execFormFields.ts`, `entityFormPanel.ts`, `entityFormScript.ts`,
-  `entityFormPage.ts`, `entityFormShape.ts`, `commandTargets.ts` (`collectSshCandidates`), `shareFormat.ts`,
-  `externalBundle.ts`, `idQuarantine.ts`, the viewer row, the agent-create deny-list; a refusal line in each of
-  `commands/runCommands.ts` (arrow and Run with Secrets), `commands/folderRunCommand.ts`, `dependencyRun.ts`,
-  `vpnLauncherRun.ts`, `agentUseActions.ts`; new `remoteLaunch.ts` (`sshLinkOf`, `planLaunch`, `trustLineFor`,
-  `typedLine`, `secretsStdin`); `sshCommand.ts` (`buildSshCommand` `remote` option, byte-identical without it);
-  new `test/launchRoadScan.test.ts`, `test/remoteLaunch.test.ts`, `test/sshCommand.test.ts` additions.
-- **Depends on.** The coai plan round at `proceed`. Nothing else in this plan. Step 1 is the first story and lands
-  before step 2 (D8); each is mergeable alone.
+- **Goal.** A Terminal entry can store an SSH link, the form round-trips it, every road refuses a linked entry with a
+  sentence, ONE pure module is the only way from "entry + link" to a launch (held there by a structural test), and
+  `prepareSshSession` does everything `connectEntity` does before it opens a terminal. After E1 no road can run a
+  linked line locally, built or not, and every road of E2 and E3 has its composer and its seam ready.
+- **Stories.**
+  - **S1 — The field.** `sshEntityId` on `EntityMetadata`, the `sshLinkField` select (**— Do not use —**, candidates,
+    **(missing entry)**), every round trip (guard, scrub, post, share strip, export strip, quarantine remap,
+    `collectSshCandidates`, viewer row, agent-create deny-list), and a refusal on EVERY road while a link is set
+    (step 1, D8). Lands first. Its help line for the field in five languages, English first, and the README sentence.
+  - **S2 — The composer.** `remoteLaunch.ts` (`sshLinkOf`, `planLaunch`, `trustLineFor`, `typedLine`,
+    `secretsStdin`), `buildSshCommand`'s `remote` option (byte-identical without it), the delivery test through the
+    REAL local shell with a recording fake `ssh` and the emulated remote parse, the PowerShell 5.1 refusal, and the
+    road scan `test/launchRoadScan.test.ts` (step 2). `research/module_extension.md` names the module and the scan.
+  - **S3 — The seam.** `prepareSshSession` in `sshSession.ts`, cut from `sshConnect.ts:143-295` in the same order,
+    returning `ready | refused | stopped` with `cleanup()`; `connectEntity` becomes prepare + its four open branches;
+    its two suites green unchanged (step 3). `research/module_extension.md` names the seam and its contract.
+- **Scope.** §4.1 whole, §4.2 whole, §4.3 whole, §4.5, §4.6 (the PowerShell 5.1 refusal); build steps 1, 2 and 3;
+  D5–D9, D13, D14. Files: `types.ts`, `typeGuards.ts`, `execFormFields.ts`, `entityFormPanel.ts`,
+  `entityFormScript.ts`, `entityFormPage.ts`, `entityFormShape.ts`, `commandTargets.ts` (`collectSshCandidates`),
+  `shareFormat.ts`, `externalBundle.ts`, `idQuarantine.ts`, the viewer row, the agent-create deny-list; a refusal line
+  in each of `commands/runCommands.ts` (arrow and Run with Secrets), `commands/folderRunCommand.ts`,
+  `dependencyRun.ts`, `vpnLauncherRun.ts`, `agentUseActions.ts`; new `remoteLaunch.ts`; `sshCommand.ts`
+  (`buildSshCommand` `remote` option); new `sshSession.ts` and `sshConnect.ts` (the call and the open branches); new
+  `test/launchRoadScan.test.ts`, `test/remoteLaunch.test.ts`, `test/remoteLaunchDelivery.test.ts`,
+  `test/sshSession.test.ts`, `test/sshCommand.test.ts` additions; the five help files (the field's line), `README.md`,
+  `research/module_extension.md`, `research/module_tests.md`. Risk 7 is inherited by S3 on purpose and not fixed here.
+- **Depends on.** The coai plan round at `proceed` and the one consultation of the cadence. Nothing else in this
+  plan. S1 lands before S2 (D8); S3 can be built beside them; the three land in E1's one commit on E1's branch.
 - **Done when.** §6 rows "guard", "`sshLinkField`", "post literal", "share strip", "candidates", "every road
-  refuses", "link none / linked / …", "`buildSshCommand` byte-identical", "PowerShell 5.1" and "road scan" are
-  green; `commandRoadScan.test.ts` still green; `resolveCommand(` is imported by exactly two files.
-- **Cornerstone area (1).** The launch composer: the canonical trust line (no `-i`, no known_hosts path, a new
-  text for a new host, user, port or jump), the two-shell quoting (`quoteFor` for the local parse, the line
-  untouched for the remote parse), and the fail-closed coverage — the step-1 refusals plus the road scan that pins
-  every `.sshEntityId` reader and every send or spawn to an allow-listed line. One marked story at most here; Opus
-  picks it when the stories document is written.
+  refuses", "export", "link none / linked / …", "`buildSshCommand` byte-identical", "PowerShell 5.1", "delivery",
+  "stay-open wrapper text", "`secretsStdin`", "delivery corpus re-parsed", "road scan", "prepare opens no terminal" and
+  "existing SSH Connect suites green, unchanged" are green; `commandRoadScan.test.ts` still green; `resolveCommand(` is
+  imported by exactly two files; `cleanup()` deletes the materialised key and our pin; a `refused` result leaves
+  nothing on disk; no road calls the seam yet; the help tests pass for the field's line.
+- **Cornerstone areas (1) and (2).** Area (1) is S2: the canonical trust line (no `-i`, no known_hosts path, a new
+  text for a new host, user, port or jump), the two-shell quoting (`quoteFor` for the local parse, the line untouched
+  for the remote parse), and the fail-closed coverage — S1's refusals plus the road scan that pins every `.sshEntityId`
+  reader and every send or spawn to an allow-listed line. Area (2) is S3: the order of the awaits, the per-window
+  route, and the lifetime of the credential, the key file and the askpass env from `ready` to `cleanup()` — the
+  contract behind the "one owner" and "one snapshot" rules every road in E2 and E3 relies on. Opus marks the concrete
+  stories (at most two, within Q = 2) when the E1 stories document is written, and updates the ledger line below in
+  the same commit.
 
-### E2 · The SSH preparation seam
-
-- **Goal.** `prepareSshSession` does everything `connectEntity` does before it opens a terminal — identity and PIN,
-  route per window, jump chain, host-key pin and modal, known_hosts, platform, key file or askpass env — and hands
-  back `ready | refused | stopped` with a `cleanup()`. `connectEntity` becomes prepare + its four open branches, and
-  its tests pass unchanged.
-- **Scope.** §4.3 whole; build step 3. Files: new `sshSession.ts` (moved from `sshConnect.ts:143-295`, same order),
-  `sshConnect.ts` (the call and the open branches), new `test/sshSession.test.ts`. Risk 7 is inherited here on
-  purpose and not fixed here.
-- **Depends on.** Nothing in this plan; it can start beside E1. SSH Connect's two suites are its guard.
-- **Done when.** §6 rows "prepare opens no terminal" and "existing SSH Connect suites green, unchanged" are green;
-  `cleanup()` deletes the materialised key and our pin; a `refused` result leaves nothing on disk; no road calls the
-  seam yet.
-- **Cornerstone area (2).** The seam itself: the order of the awaits, the per-window route, and the lifetime of the
-  credential, the key file and the askpass env from `ready` to `cleanup()` — the contract every road in E3 and E4
-  will rely on. One marked story at most here.
-
-### E3 · The terminal roads: arrow, VPN launcher, folder run, chain
+### E2 · Terminal roads: arrow and VPN launcher, folder run, dependency chain
 
 - **Goal.** A person's roads that type into a VS Code terminal run a linked entry on the chosen host, in the order
   "resolve and link → prepare → trust → dependencies → synchronous send", with `cleanup()` on every exit that sends
-  nothing.
-- **Scope.** §4.4 bullets "Arrow and VPN launcher", "Folder run", "Dependency chain", "Copy Command / viewer";
-  build steps 4, 5, 6; D10, D11; risks 3, 4, 5. Files: `terminalGuard.ts` (`sendGuarded` takes a target
-  `{kind:'entry'}` or `{kind:'ssh', env?}`), `pinnedTerminal.ts`, `commands/runCommands.ts:115-147`,
-  `vpnLauncherRun.ts`, `commands/folderRunCommand.ts`, `folderRun.ts`, `dependencyRun.ts`, `dependencyRunHost.ts`,
-  the Copy Command and viewer; their test worlds. It adds the `ssh` target to `sendGuarded` and must not close or
-  change the items of `PLAN_terminal_runs_followups.md` (§7a).
-- **Depends on.** E1 (composer, scan allow-list) and E2 (the seam). Steps 4, 5 and 6 are each mergeable alone; the
-  roads not yet built keep E1's refusal.
-- **Done when.** §6 rows "arrow", "folder" and "chain" are green; the road scan is green with the new send lines
-  allow-listed; hand checks 1 and 2 of §10 are handed to the owner (they are owed, not a gate for the merge).
-- **Cornerstone areas.** None. The key-file and password lifetimes these roads use are E2's contract; the roads only
-  call `cleanup()`. Opus judges each story.
+  nothing, from one snapshot of the SSH entry. The help, README and `research/` lines for each road land with it.
+- **Stories.**
+  - **S1 — Arrow and VPN launcher.** `sendGuarded` takes a target `{kind:'entry', terminalOs}` or `{kind:'ssh', env?}`;
+    a password entry opens a new terminal with the env BESIDE a live one (D10); a launcher whose line uses `{config}`
+    is refused when linked; Copy Command and the viewer show the trust line with its one sentence (step 4). Help ×5
+    for the arrow, the launcher and Copy Command; the `helpEn.ts:84` hand-written ssh advice is replaced here.
+  - **S2 — Folder run.** The modal shows each row's trust line; every linked row is prepared in row order before the
+    synchronous `typeAll`; a `refused` row is reported and the others typed; a `stopped` row stops the whole run and
+    cleans every prepared row; the run's `finally` cleans what was not handed over (step 5). Help ×5 for the folder run.
+  - **S3 — Dependency chain.** A linked step has no stay-open (D11); a password step is refused at plan time; *Runs on*
+    of a linked step is not an OS refusal; the step's key is deleted when the step ends (step 6). Help ×5 for the chain.
+- **Scope.** §4.4 head (order, one owner, one snapshot) and bullets "Arrow and VPN launcher", "Folder run",
+  "Dependency chain", "Copy Command / viewer"; build steps 4, 5, 6; D10, D11; risks 3, 4, 5. Files: `terminalGuard.ts`
+  (`sendGuarded` target), `pinnedTerminal.ts`, `commands/runCommands.ts:115-147`, `vpnLauncherRun.ts`,
+  `commands/folderRunCommand.ts`, `folderRun.ts`, `dependencyRun.ts`, `dependencyRunHost.ts`, the Copy Command and
+  viewer; their test worlds; the five help files, `README.md`, `research/module_extension.md`,
+  `research/module_tests.md` for these roads. It adds the `ssh` target to `sendGuarded` and must not close or change
+  the items of `PLAN_terminal_runs_followups.md` (§7a).
+- **Depends on.** E1 merged (composer, scan allow-list, seam). E2's branch starts from E1's commit and lands as one
+  commit. Each story is complete alone; a road whose story is not yet built keeps E1's refusal.
+- **Done when.** §6 rows "arrow", "folder" (both), "chain", "cleanup ownership" (declined trust, cancelled dependency,
+  thrown error, failed terminal creation, unsent folder row), "folder: a `stopped` row", "folder: cancel after mixed
+  rows", "snapshot" (the arrow world half) and "Copy Command" are green; the road scan is green with the new send lines
+  allow-listed; the help tests pass for the changed lines; hand checks 1, 2 and 4 of §10 are handed to the owner (they
+  are owed, not a gate for the merge).
+- **Cornerstone areas.** None. The key-file and password lifetimes these roads use are E1 S3's contract; the roads
+  only call `cleanup()`. Opus judges each story.
 
-### E4 · The non-interactive roads: Run with Secrets, agent
+### E3 · Non-interactive roads and closing: Run with Secrets, agent, the rest of the documents
 
 - **Goal.** The two roads that run a child process instead of typing into a terminal run a linked entry over SSH
-  without a secret in argv, in the remote `ps` or in a history; the agent road runs only when the SSH entry itself
-  is open to the agent for `exec`, and refuses with the exact sentence otherwise.
-- **Scope.** §4.4 bullets "Run with Secrets" and "Agent"; build steps 7 and 8; D2, D12. Files: `maskedTerminal.ts`
-  (`MaskedRunOptions` gains `argv` and `stdinText`; `shell:false`), `commands/runCommands.ts:260-311`, `runPlan.ts`,
-  `agentUseActions.ts:187-237`, `mcpEntries.ts` (`findUsableEntry` on the SSH entry), `sshExecCommand.ts`
-  (`buildSshExecArgv`), `sshExecAuth.ts` (`resolveExecAuth`), the consent text; `test/maskedTerminal.test.ts` with a
-  fake spawn, `test/agentUseActions.test.ts`.
-- **Depends on.** E1 (`secretsStdin`, trust line, scan) and E2 (Run with Secrets prepares through the seam). The
-  agent road uses the existing exec auth and argv builder. Steps 7 and 8 are each mergeable alone.
-- **Done when.** §6 rows "secrets" and "agent" are green: no value in argv, the exports and the `{ … } </dev/null`
-  group on stdin, `sh -s`, no `-t`, output masked, Windows refused; the closed SSH entry gives the exact sentence,
-  the usable one gives argv via `buildSshExecArgv`, the consent names the SSH entry; hand check 3 of §10 is handed
-  to the owner.
-- **Cornerstone areas.** None within the quota: this is consultant area (3), ranked below (1) and (2). The agent
-  gate (the SSH entry's own `exec` eligibility, no confused deputy, no leak in the refusal text) is authorisation, so
-  its judgement is a Fable security judgement outside the quota, not a marked story. Stdin ownership, EOF, the
-  group's `/dev/null`, secret-free argv and masking are an Opus judge's, with the fake-spawn test as the proof.
-
-### E5 · Help, README, CHANGELOG, `research/`
-
-- **Goal.** The help in five languages says what the field does and no longer tells a person to write the ssh line
-  by hand (`helpEn.ts:84`); README, CHANGELOG and `research/` describe the shipped system; the plan is promoted with
-  its deviations.
-- **Scope.** Build step 9; DoD rows "Help changed in all five languages" and "Plan promoted". Files: `helpEn.ts`
-  first, then the four other help files; `README.md`; `CHANGELOG.md`; `research/module_extension.md`,
-  `research/module_tests.md`; `todo/README.md` and `research/README.md` rows for the plan and its stories documents.
-- **Depends on.** E1–E4 merged, so the text describes what exists. Help lines for a road may land with that road's
-  epic when its story needs them; this epic closes what is left.
-- **Done when.** §6 row "help tests (5 languages)" is green; the `research/` pages and the README name the field,
-  the trust line and the refusals; the plan and its stories documents are promoted together with the deviations
-  recorded.
-- **Cornerstone areas.** None.
+  without a secret in argv, in the remote `ps` or in a history; the agent road runs only when the SSH entry itself is
+  open to the agent for `exec`, and refuses with the exact sentence otherwise. Then every document describes the
+  shipped system and the plan is promoted with its deviations.
+- **Stories.**
+  - **S1 — Run with Secrets.** Order prepare → `confirmTrusted(trustLine)` → dependencies → resolve values → spawn; the
+    child is `ssh` by argv (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`, no `-t`, `shell:false`); STDIN carries
+    `secretsStdin` then closes; askpass env in the CHILD's environment, never argv; the non-interactive banner; output
+    masked; Windows refused (step 7, D12). Help ×5 for Run with Secrets, with the banner's way out.
+  - **S2 — Agent.** `findUsableEntry(…, sshEntityId, 'exec')` must answer `usable`, else the exact sentence and nothing
+    runs; `resolveExecAuth`, jump and pin as the agent exec does; `buildSshExecArgv` with the bare line; key deleted in
+    `finally`; the consent text names the SSH entry and its target (step 8, D2). Help ×5 for the agent road.
+  - **S3 — Closing.** What the road stories did not already change: the remaining help ×5 lines (the limits — POSIX
+    remote shells only, Windows remote refused, the risk-1 note), `README.md`, `CHANGELOG.md`,
+    `research/module_extension.md` and `research/module_tests.md` as a whole, the `todo/README.md` and
+    `research/README.md` rows, and the promotion of the plan and its three stories documents together, deviations
+    recorded (step 9).
+- **Scope.** §4.4 bullets "Run with Secrets" and "Agent"; build steps 7, 8, 9; D2, D12; DoD rows "Help changed in
+  all five languages" and "Plan promoted". Files: `maskedTerminal.ts` (`MaskedRunOptions` gains `argv`, `env` and
+  `stdinText`; `shell:false`), `commands/runCommands.ts:260-311`, `runPlan.ts`, `agentUseActions.ts:187-237`,
+  `mcpEntries.ts` (`findUsableEntry` on the SSH entry), `sshExecCommand.ts` (`buildSshExecArgv`), `sshExecAuth.ts`
+  (`resolveExecAuth`), the consent text; `test/maskedTerminal.test.ts` with a fake spawn, `test/agentUseActions.test.ts`;
+  the five help files, `README.md`, `CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,
+  `todo/README.md`, `research/README.md`; the plan and its stories documents (the `git mv` last).
+- **Depends on.** E1 (`secretsStdin`, trust line, scan, seam) and E2 (so the closing text describes every road as it
+  exists). E3's branch starts from E2's commit and lands as one commit. S1 and S2 are each complete alone; S3 closes
+  what the earlier stories left.
+- **Done when.** §6 rows "secrets" (both), "masking end to end", "snapshot" (the masked-run half), "agent" and "help
+  tests (5 languages)" are green: no value in argv, the exports and the `{ … } </dev/null` group on stdin, `sh -s`,
+  no `-t`, output masked, Windows refused; the closed SSH entry gives the exact sentence, the usable one gives argv via
+  `buildSshExecArgv`, the consent names the SSH entry; the `research/` pages and the README name the field, the trust
+  line and the refusals; `helpEn.ts` no longer tells a person to write the ssh line by hand; the plan and its stories
+  documents are promoted together with the deviations recorded; hand check 3 of §10 is handed to the owner.
+- **Cornerstone areas.** None within the quota: this is consultant area (3), ranked below (1) and (2). The agent gate
+  (the SSH entry's own `exec` eligibility, no confused deputy, no leak in the refusal text) is authorisation, so its
+  judgement is a Fable security judgement outside the quota, not a marked story. Stdin ownership, EOF, the group's
+  `/dev/null`, secret-free argv and masking are an Opus judge's, with the fake-spawn test as the proof.
 
 Cornerstones: 0 of 2 — none marked yet
