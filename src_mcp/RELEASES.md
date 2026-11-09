@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.3...mcp-v0.11.0) (2026-11-09)
+
+
+### Features
+
+* **leftovers:** E2.3 — the C# helper as an adapted copy in all five executables; every C# test site owned, swept and audited ([#311](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/311)) ([0ae0211](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0ae0211fbe74db9c427315e509495b34f1f2e852))
+
 ## [0.10.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.2...mcp-v0.10.3) (2026-10-14)
 
 
