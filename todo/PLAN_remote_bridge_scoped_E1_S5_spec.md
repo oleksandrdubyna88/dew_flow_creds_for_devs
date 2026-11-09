@@ -1,6 +1,6 @@
 # PLAN — E1.5 spec: the consent lifecycle — the place is the dialog's until a person's act
 
-> Status: **spec, 2026-11-09, by Fable, written as a security spec (authorisation: what frees the one dialog place) before its code; not built. Revised the same day after the coai plan gate:** the parent recorded change 7.1 (`bf7d2ff`: an Escape is its own outcome, `dismissed`, frees the place like a click and keeps today's wire answer), and the gate's accepted findings are designed and tested here — the late-answer line for a late click on `up`'s questions through a seam on the action context (Q-C, judged as satisfying the plan as written), a rejection-safe dialog promise, explicit timeout/answer arbitration with `keep` computed only for a live waiter, and listener hygiene in `untilGone` and `executed` (§S5.2, C11, C18-C21, M27-M33). Finding 5 (a guard against two dialogs on one local token) was rejected: it is §4.10's stated exception, and the visible outcome is M10's to measure.
+> Status: **built on PR #323 (§S5.12 *As built*); amended for epoch 8 on 2026-11-09 (§ *Amendment for epoch 8*, at the end): the parent's fix-forward F1-F8 is specified there for the coder and is not built yet; every section it supersedes is marked in place with a pointer, and its old text stays.** What follows is the status before that amendment: **spec, 2026-11-09, by Fable, written as a security spec (authorisation: what frees the one dialog place) before its code; not built. Revised the same day after the coai plan gate:** the parent recorded change 7.1 (`bf7d2ff`: an Escape is its own outcome, `dismissed`, frees the place like a click and keeps today's wire answer), and the gate's accepted findings are designed and tested here — the late-answer line for a late click on `up`'s questions through a seam on the action context (Q-C, judged as satisfying the plan as written), a rejection-safe dialog promise, explicit timeout/answer arbitration with `keep` computed only for a live waiter, and listener hygiene in `untilGone` and `executed` (§S5.2, C11, C18-C21, M27-M33). Finding 5 (a guard against two dialogs on one local token) was rejected: it is §4.10's stated exception, and the visible outcome is M10's to measure.
 > Story E1.5 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md)
 > §4.10 whole: its table, *What changes in the code (E1.5)*, the follow-up contract per action, the residuals, *Accepted / Not established*; §7
 > *The consent contract* and *Local doors at partial E1*; §9; `## Epics` E1). The parent is approved at epoch 7 and is not edited here. Where this
@@ -52,6 +52,8 @@ Line numbers quoted by the parent were taken at older commits and are re-cited h
    ended; nothing ran*, and one notice. The existing `ignored` detail (*answered after the request had gone — nothing decided*) is therefore reworded to the
    row's words, and the notice is shown in both cases. No test pins the old detail (`brokerAbandoned.test.ts:89` matches `/ ignored /`; `bridgeKeptPlace.test.ts:159`
    `includes('ignored')`).
+   *[Superseded in its words by the Amendment for epoch 8, F2: the line's detail ends with *the answer changed nothing*, not *nothing ran*, and the
+   notice is F2's. The one road for both late cases stands.]*
 4. **A dismissal is not a timeout, and E1.5 tells them apart** — now the parent's own contract (change 7.1, `bf7d2ff`, in the ledger and in §4.10's E1.5
    paragraph): an Escape is its own outcome, `dismissed`, frees the place as a click does, and keeps today's answer on the wire (504 `consent_timeout`,
    *The human did not allow this grant.*). Built as §S5.2 shows; Q-A is closed by it.
@@ -65,6 +67,8 @@ Line numbers quoted by the parent were taken at older commits and are re-cited h
    gate; `executed()` is raced too. The install offer (`toolEnsure.ts:21`) is left as it is, because the parent's §7 `down` case asserts that a leaving client frees
    nothing of it and the click does. §4.10's "as the install offer already is (`vpnRun.ts:194`)" is inexact (H10): the offer reads the gate after its modal, it is not
    raced. Q-D records it as a repaired reference.
+   *[Superseded in part by the Amendment for epoch 8, F1: the races stand, but a client that leaves frees the place only when no question of the
+   call stands. A standing import question or *Continue* question keeps the place until a person settles it; the request still ends at once.]*
 8. **"A late click [on `up`'s follow-up] leaves the late-answer line" needs a seam, and the seam is the action's context** (H11, H18; the gate's finding 0, judged
    as satisfying the plan as written). `performCall` gives every action `ctx.lateAnswer?(what)`, a closure over `deps.log` that writes the late-answer line with the
    grant (`ignored`, `"<what>" answered after its call had ended; nothing ran`); `vpnAction` hands it to `open`, `agentVpnOpener` to `runVpn`, `VpnRunContext`
@@ -232,6 +236,11 @@ async function askToContinue(question: string, request: Pick<DependencyRunReques
 //   `endedAfter('a dependency step had been typed')`, today's words. A stale execution that ends later finds no listener and reaches no question and no next step.
 ```
 
+*[Epoch 8: in the block above, the words of `LATE_ANSWER_NOTICE` and of both `ignored` details (`brokerConsent` and `brokerCall.ts:201`) are superseded
+by the Amendment for epoch 8, F2; the clause *so a stray Enter lands on Deny* of the `consentButtons` comment by F6; `shown`'s `Promise.resolve(…)`
+around the call by F3; the `openVpnConnect` and `askToContinue` sketches gain F1's `standingPrompt`; `untilGone`'s `onLate` and the late
+continuation gain F8's guards; `executed`'s order of type and gate by F8.]*
+
 **The order of effects, stated once.** A call is admitted (the place is the call's) → `prompted` (the place is the dialog's) → the modal is shown with the
 door's buttons, wrapped once into a `DialogEnd` → **either** the dialog ends first (Allow, Deny, Escape, or a failure): if every waiter had left, `dialogClosed(keep
 = false)` then `ignored`; otherwise `dialogClosed(question, keep)` with `keep` read then, for an Allow only, then `apply` (`allowed` / `denied` / `dismissed`, the
@@ -249,6 +258,8 @@ whatever stands (the stated exception; nothing here changes it).
    terminal, in the VS Code window that owns the place. Answer or finish it there; the next request is then asked.* The first sentence is the parent's, byte for
    byte; the help names the four things §4.10 names (the standing dialog, a follow-up prompt, a running dependency step, the window that owns the place). The
    help's wording for the local-token exception is **not** written here: it waits for M10 (the parent's §7 M10 row).
+   *[Superseded by the Amendment for epoch 8, F4: the help names the quiet holder too, and its last sentence no longer says what the next request
+   does. The new sentence is F4's, byte for byte.]*
 2. **The timeout answer**, 504 `consent_timeout`, per door (the parent's §4.10 row 3, byte for byte):
    - a call counted on the place (`CONSENT_TIMED_OUT_ON_PLACE`): *Nobody answered within five minutes. The question is still on the person's screen and keeps this
      window's shared dialog place until they answer it. This request did not run.*
@@ -258,7 +269,9 @@ whatever stands (the stated exception; nothing here changes it).
 3. **The late-answer line**: outcome `ignored`, detail `"Allow" answered after its call had ended; nothing ran` (or `"Deny"`). The grant field is `GrantRegistry.describe`'s
    (so a bridged line carries `bridge=<name>`, E1.4). The same shape for a late click on `up`'s questions, through `ctx.lateAnswer`: `"Import profile" answered after
    its call had ended; nothing ran`, and `"Continue"` / `"Stop"` for the chain's question, with the call's own `action` (`up`) and door.
+   *[Superseded in its words by the Amendment for epoch 8, F2: `"<button>" answered after its call had ended; the answer changed nothing`.]*
 4. **The notice** (`LATE_ANSWER_NOTICE`): *That request had already ended; nothing ran. The next one will ask again.*
+   *[Superseded by the Amendment for epoch 8, F2: *That request had already ended, so this answer changed nothing.*]*
 5. **Unchanged, byte for byte**: `GRANT_NOT_ALLOWED` on a Deny (403) and on a dismissal (504); `'The human did not allow this.'` / `'…this deletion.'` likewise; the
    `ABANDONED` details; the dialog's text (`wording`, E1.4's C11 literal stays green with no edit); the `too_many_requests` sentences other than `busy`.
 6. **Buttons**: a bridged modal `['Deny', 'Allow']`; a local one `['Allow', 'Deny']`.
@@ -313,22 +326,22 @@ today's code does instead. Doors: `viaMain` (alias and MCP), `viaMain` with a to
 | C1d | A bridged token call is counted | the same as C1c through `viaBridge` with a token | as C1c | the place clause; the next bridged call `busy` | the sentence |
 | C2 | The words say what the constant is | pure | — | `CONSENT_TIMED_OUT_ON_PLACE` and `CONSENT_TIMED_OUT` both contain `within five minutes`, and `CONSENT_TIMEOUT_MS === 5 * 60_000` | new |
 | C2r | The real five-minute path, no `consentTimeoutMs` (rewrites P3 real, `bridgePrompts.test.ts:486`) | a local alias call under `mock.timers`; its dialog open | tick 299 s: nobody answered; tick 1.1 s | 504 with the place sentence; a second local alias call is `busy` (no second modal, `w.dialogs.length === 1`); the first dialog Allowed: `ignored` line, no `ALLOWED`, `w.ran` empty; then the second call is asked and runs | today a second modal opens (`:505-508`) |
-| C3 | A late Allow on an expired dialog authorises nothing | C1 after the 504 | `openDialogs[0]('Allow')` | one `ignored` line whose detail is `"Allow" answered after its call had ended; nothing ran`; no `ALLOWED` line; `w.ran` empty; `w.consents` empty (an MCP `every12h` variant: the stamp store has no new key); `w.presence` unchanged; `w.notices` holds `LATE_ANSWER_NOTICE` once; then the next bridged alias call is **asked** and its Allow runs it | today the click lands on nobody's dialog and the place was already free; the detail and the notice do not exist |
+| C3 | A late Allow on an expired dialog authorises nothing | C1 after the 504 | `openDialogs[0]('Allow')` | one `ignored` line whose detail is `"Allow" answered after its call had ended; nothing ran`; no `ALLOWED` line; `w.ran` empty; `w.consents` empty (an MCP `every12h` variant: the stamp store has no new key); `w.presence` unchanged; `w.notices` holds `LATE_ANSWER_NOTICE` once; then the next bridged alias call is **asked** and its Allow runs it | today the click lands on nobody's dialog and the place was already free; the detail and the notice do not exist. *[Epoch 8: the words of the detail and the notice superseded by F2 (F2a); the facts stand]* |
 | C3b | A late Deny tombstones nothing | C1 | `openDialogs[0]('Deny')` | one `ignored` line (`"Deny" …`), no `DENIED` line; the notice; the next call on the same token (token door variant) is asked, not refused 403 | the tombstone path (`deny`) is reachable from a late click today only through `apply`; here `lateAnswer` never reaches it (mutation M3 proves the test's teeth) |
 | C3c | A late Escape frees and says nothing | C1 | `openDialogs[0](undefined)` | no `ignored` line, no notice; the next call is asked | — (the place: red today in the sense that it was already free; asserted as the end state) |
-| C4 | A client that leaves during its dialog: the place stays until the click, and the click is told | a local alias call, hang up during its dialog (`sendAbortable`) | `ABANDONED` seen; a second local call: `busy`; then Allow | the `ignored` line with the new detail; the notice; `w.ran` empty; the next call asked | the detail is today's old sentence and there is no notice (`brokerAbandoned.test.ts:91-117` stays green through `/ ignored /` and is extended) |
+| C4 | A client that leaves during its dialog: the place stays until the click, and the click is told | a local alias call, hang up during its dialog (`sendAbortable`) | `ABANDONED` seen; a second local call: `busy`; then Allow | the `ignored` line with the new detail; the notice; `w.ran` empty; the next call asked | the detail is today's old sentence and there is no notice (`brokerAbandoned.test.ts:91-117` stays green through `/ ignored /` and is extended). *[Epoch 8: the words superseded by F2 (F2a); the facts stand]* |
 | C4b | The same when the timer fires after the client left | C4, `consentTimeoutMs: 100`, wait past it before the click | a second call during the wait: `busy`; then Allow | as C4; exactly one `ABANDONED` line, one `ignored` line | today the timer frees the place at 100 ms |
 | C5 | Escape is a person's act, answered as today | a local alias call | `openDialogs[0](undefined)` | 504 `consent_timeout`, `GRANT_NOT_ALLOWED` (byte for byte today's); the place free: the next call asked; no `ignored` line; `w.presence` unchanged | green today; **kept as a guard** so the new sentence never speaks for an Escape (mutation M4) |
 | C6 | Buttons by door | a bridged alias call; a local alias call; a local token call | read the arguments `showWarningMessage` received | bridged: `['Deny', 'Allow']`; both local: `['Allow', 'Deny']`; the pure `consentButtons(true/false)` answers the same lists | today every door gets `'Allow', 'Deny'` |
 | C7 | `KEPT_PLACE_MS` does not exist | the sources under `src/` except `src/test` | grep, as R1 walks (`bridgeBoundary.test.ts:142`) | zero hits | green; a guard against D.2 |
-| C8 | The `busy` sentence, and the facts it states | (a) C1's standing dialog; (b) a local `down` with no VPN client, its install offer held after the Allow (the `consentFollowUps.test.ts:70` rig); (c) an agent `up` whose dependency step never ends (C10) | an alias call during each | `429` with `BUSY_PLACE` in all three; and in each the thing the help names is observed: (a) `w.dialogs.length === 1` and `openDialogs.length === 1`; (b) the install offer is held (`vw.held.length === 1`) and no second modal; (c) the chain terminal holds an execution that has not ended | the sentence is `main`'s |
+| C8 | The `busy` sentence, and the facts it states | (a) C1's standing dialog; (b) a local `down` with no VPN client, its install offer held after the Allow (the `consentFollowUps.test.ts:70` rig); (c) an agent `up` whose dependency step never ends (C10) | an alias call during each | `429` with `BUSY_PLACE` in all three; and in each the thing the help names is observed: (a) `w.dialogs.length === 1` and `openDialogs.length === 1`; (b) the install offer is held (`vw.held.length === 1`) and no second modal; (c) the chain terminal holds an execution that has not ended | the sentence is `main`'s. *[Epoch 8: the words superseded by F4; (d), a quiet holder, added by F4b]* |
 | C9 | D.3: a quiet call that may prompt again holds the place for its length | the local MCP door pre-consented (`quietLocal`), the scripted action with `asksAfterConsent: true`, its run held (`w.hold`) | a bridged alias call and a local alias call during the run; then release the hold | both `busy` with `BUSY_PLACE` and no dialog (`w.dialogs.length === 0`); the quiet call's `allowed without a prompt` line is written as today; after the run ends the next call is asked; a quiet call of an action **without** the flag (today's `exec` script) holds nothing: a concurrent asking call is asked while it runs; through a bridge (`exec`, `query`) nothing changes: C21 of the E1.4 spec stays green | today the quiet call takes no place (`brokerMcpDoor.ts:210,214`) |
 | C9b | D.3 with the per-entity flag | the real `sshExecAction` under `bridgeLinksWorld`, a forwarding entry with the socket up, the local MCP door quiet | as C9 | the place is held for the run; the same entry with the socket down holds nothing | new |
 | C10 | D14: an agent's `up` whose dependency step never ends frees the place when the client leaves (the main `up` case of the parent's §7) | the real `vpnAction` over `agentVpnOpener` and the vpn world, inside `brokerWorld` (the `consentFollowUps.test.ts:70-80` rig); an entry with a `runDependencies` chain of one terminal step; the fake terminal's execution is never ended; the call is an MCP use through the main port, sent with `sendAbortable` | Allow; `until` the step is typed; (i) a local alias call: `busy` with `BUSY_PLACE`; (ii) hang up the client | after (ii): one `ABANDONED` line whose detail is `after a dependency step had been typed …` (today's words, `requestLife.ts:67-69`); the place free: the next local alias call is asked and runs; no VPN config file under the storage dir; no VPN terminal; the dialog count unchanged | today `executed()` is awaited unbounded: the hang-up changes nothing until the step ends; the next call stays `busy` for ever |
 | C10b | The same through the launcher path | the entry names a launcher (`vpnLauncherEntityId`) whose chain has the never-ending step (`vpnLauncherRun.ts:89`) | as C10 | as C10 | as C10 |
-| C10c | The `Continue` question is modal on an agent call and a client leaving ends it | a chain under a terminal with no shell integration (`integration: false`), so `askToContinue` is reached at `runStep` `:288`; held by regex `/Continue once it has finished/` | hang up; then click `Continue` | `held[0].modal === true`; the call ended on the hang-up (`ABANDONED`, *after a dependency step had been typed*), the place free before the click; the late `Continue` runs no second step and types nothing | today a toast; the hang-up changes nothing until the click |
+| C10c | The `Continue` question is modal on an agent call and a client leaving ends it | a chain under a terminal with no shell integration (`integration: false`), so `askToContinue` is reached at `runStep` `:288`; held by regex `/Continue once it has finished/` | hang up; then click `Continue` | `held[0].modal === true`; the call ended on the hang-up (`ABANDONED`, *after a dependency step had been typed*), the place free before the click; the late `Continue` runs no second step and types nothing | today a toast; the hang-up changes nothing until the click. *[Superseded as written by the Amendment for epoch 8, F1: "the place free before the click" is the defect of change 7.3; the case is rewritten as F1a]* |
 | C10d | The person's own Start keeps the toast | the same chain with no `startGate` | the person clicks `Continue` | `held[0].modal === false`; the chain goes on as today | green; a guard |
-| C11 | D14: the OpenVPN Connect question, and the late click's line | an agent `up` on an `openvpn` entry with `resolveVpnLauncher → openvpn-connect` (the `vpnGoneRequest.test.ts:160-174` mocks), through `brokerWorld` (so the real `performCall` builds `ctx.lateAnswer`), held by `/Import this profile/` | (i) a local alias call: `busy`; (ii) hang up; (iii) click `Import profile` | `held[0].modal === true`; after (ii) one `ABANDONED` line (*as the action was starting — it was not launched*) and the next call asked (the place freed before any click); after (iii) exactly one more journal line: outcome `ignored`, action `up`, the grant's describe, detail `"Import profile" answered after its call had ended; nothing ran`; no file under the storage dir, no terminal (today's assertions `:171-172`), `w.ran` unchanged; the chain's *Continue* question (C10c) gets the same line with `"Continue"` on a late click | today the question is a toast, the hang-up is read only when the person clicks, and no line exists |
+| C11 | D14: the OpenVPN Connect question, and the late click's line | an agent `up` on an `openvpn` entry with `resolveVpnLauncher → openvpn-connect` (the `vpnGoneRequest.test.ts:160-174` mocks), through `brokerWorld` (so the real `performCall` builds `ctx.lateAnswer`), held by `/Import this profile/` | (i) a local alias call: `busy`; (ii) hang up; (iii) click `Import profile` | `held[0].modal === true`; after (ii) one `ABANDONED` line (*as the action was starting — it was not launched*) and the next call asked (the place freed before any click); after (iii) exactly one more journal line: outcome `ignored`, action `up`, the grant's describe, detail `"Import profile" answered after its call had ended; nothing ran`; no file under the storage dir, no terminal (today's assertions `:171-172`), `w.ran` unchanged; the chain's *Continue* question (C10c) gets the same line with `"Continue"` on a late click | today the question is a toast, the hang-up is read only when the person clicks, and no line exists. *[Superseded as written by the Amendment for epoch 8, F1 and F2: "the next call asked (the place freed before any click)" is the defect of change 7.3 and the detail's words are 7.2's; the case is rewritten as F1b]* |
 | C11b | The person's own Start | the same with no `startGate` | the person clicks | `modal === false`; the profile is written and the import line typed, as today (`:186-193`) | green; a guard |
 | C12 | A local `up` held in its follow-up longer than any former timer | `consentTimeoutMs: 100`; a local `down`/`up` with the install offer held for 400 ms after the Allow | alias and MCP calls at 150 ms and 350 ms | all `busy`; the place frees at the click on the offer, not before, not at a hang-up (the parent's §7 `down` case, as `consentFollowUps.test.ts:70` asserts) | green today (the timer never ran on a follow-up); kept beside C1 so the two rules are seen together |
 | C13 | The overnight row | a bridged `exec` with `quiet` off; the agent sends ten calls over 2 s with `consentTimeoutMs: 100` | — | one 504, nine `busy`; `w.dialogs.length === 1` at the end; then one click clears it and the eleventh call is asked | today ten dialogs would be raised one after another (each timeout frees the place) |
@@ -416,18 +429,22 @@ Commands: the E1 document's common block with `<name>` = `consentContract`, `con
 1. The timer answers the call and touches the throttle by nothing; the dialog's own resolution frees the place, through `lateAnswer`, with `keep` false.
 2. A late Allow or Deny, after a timeout or after every waiter left, writes one `ignored` line with the words *answered after its call had ended; nothing ran*
    and shows `LATE_ANSWER_NOTICE`; a late Escape frees the place and writes and shows nothing.
+   *[Superseded in its words by the Amendment for epoch 8, F2; the rule stands.]*
 3. A dismissal is a `ConsentOutcome` of its own, `dismissed`: it frees the place as a click does and is answered on the wire exactly as today, 504 `consent_timeout`
    with *The human did not allow this grant.* — **the parent's change 7.1 (`bf7d2ff`, 2026-11-09)**, binding; a modal that fails before the timer is read as a dismissal.
 10. One rejection-safe dialog promise (`DialogEnd`); after the timer, every end of the dialog goes through `lateAnswer` with `keep = false`; no rejection escapes `ask`.
 11. Arbitration is `withTimeout`'s single settlement, read as `end === undefined`; `keep` is computed only after `stillWanted()` says a waiter remains.
 12. The late click on `up`'s import question and on the chain's *Continue* question writes the late-answer line through `ctx.lateAnswer`, a seam built by
     `performCall` from the broker's `log`; it writes no profile and types nothing (the gate's finding 0, judged as satisfying the plan as written).
+    *[Superseded in its words by the Amendment for epoch 8, F2; and by F1: that late click is also what frees the place.]*
 13. `untilGone` removes its abort listener when either side settles; `executed` finishes on the gate and disposes its listeners, so abandoned runs on one terminal
     accumulate nothing and a stale execution reaches no follow-up.
 4. The timeout sentence is chosen by `countedOnPlace`, not by `via`; `create` and `delete` hear the place clause (Q-B).
 5. D.3 is built here, with the per-entity flag read through `asksAfter(action, target)`.
 6. D14 races the import question, `askToContinue` and `executed()` against `ctx.startGate` on an agent call and makes the two questions modal there; the person's own
    path is byte for byte today's; the install offer is untouched.
+   *[Superseded in part by the Amendment for epoch 8, F1: the races stand; a standing question keeps the place after its client leaves, until a
+   person settles it.]*
 7. `consentPlace.ts` is not created unless §S5.4's trigger fires.
 8. The bridged modal's buttons are `['Deny', 'Allow']`; local `['Allow', 'Deny']`; both pure data.
 9. M10 is recorded with this story and does not block its merge (the parent's §7); the help's wording for the local-token exception is written after M10, not here.
@@ -485,12 +502,17 @@ same way, C19); a quiet local MCP call of `terminal`, `up`, `down`, `rotate`, or
 leaves during them or during a running dependency step ends the call, and a late click on either question leaves the late-answer line and does nothing (C10, C10c,
 C11); the person's own Start is unchanged (C10d, C11b). **Not reachable** (no production door opens a bridge before E2; R1): the button order
 (C6), the place clause through a bridged token call (C1d), the bridged journal mark on the late line. Their release notes go in E4.1's flip entry.
+*[Superseded in part by the Amendment for epoch 8: the late line's words and the notice by F2; "a client that leaves during them … ends the call" stands
+for the request, but a standing question keeps the place until it is settled (F1); the `busy` sentence is F4's; the quiet calls that now hear `busy`
+themselves are F5's D.3 bullet.]*
 
 **The `CHANGELOG.md` entry** goes under `[Unreleased]` (`src_vs_code/CHANGELOG.md:8`), is **derived from the diff at the commit** and checked bullet by bullet
 against the file and line each names, never copied from here (the parent's *Observations*); it covers the first paragraph above and nothing of the second, says
 in one clause that 1.18.0's *or five minutes pass* no longer holds, and names no behaviour behind a bridge door. `research/module_extension.md:3610-3612` and
 `:3620-3622` are corrected in the same commit (the place is freed by the click, never the timer; the timeout answers the call only; the late line's words; D.3; D14),
 and `:3597-3598` gains the timeout beside the leaving client.
+*[Superseded by the Amendment for epoch 8, F5 and F9: the entry is re-derived from the diff at the fixed commit, bullet by bullet, and the
+`module_extension.md` paragraphs follow F1-F5.]*
 
 **The prompt-site ledger** (`test/promptSiteLedger.ts`) changes three reasons (H13) and gains a row only if the coder's shape adds a site; `promptSites.test.ts` is the
 proof either way (C17). The notice is one argument and is no site.
@@ -562,7 +584,7 @@ takes with `['Deny', 'Allow']`, whether Escape resolves the promise, whether a m
 8. The §S5.11 CHANGELOG entry omits `create` from the quiet calls (see the question below) and names the folder verbs with `create`/`delete`: `consentNotGiven` serves `brokerFolderDoor.ts` too, and that door is admitted on the place (`:142`). No test of its own for the folder timeout.
 9. `brokerConsent.ts`'s doc comments at the file head and on `ConsentGateDeps.dialogClosed` were rewritten; `aliasThrottle.ts`'s two comments naming "the 5-minute timeout"/"timed out" too; `module_extension.md`'s three places named in H15 and two new paragraphs (D.3, D14) are written from the diff.
 
-## S5.12 — Questions for the coordinator
+## S5.13 — Questions for the coordinator
 
 - **Q1. §S5.11's "a quiet local MCP call of `create`, …" is false for `create`.** A create is never quiet: `confirmAndCreate` admits with `door.admit(res, true)` (`brokerMcpDoor.ts:385`), and only `handleMcpUse` reads the flag (`:223`). The calls that hold the place quietly are `terminal`, `up`, `down`, `rotate`, and `exec` on a forwarding entry with the agent up (the five flags of H9). The CHANGELOG says so; the spec sentence was not changed.
 - **Q2. §S5.4 does not list `bridgeLinks.test.ts:403`**, a test that pins today's "a quiet forwarding exec holds nothing" and turns red under D.3 by design. It was inverted into C9b (difference 6). Please confirm that is the intended owner of C9b.
@@ -570,3 +592,304 @@ takes with `['Deny', 'Allow']`, whether Escape resolves the promise, whether a m
 - **Q4. §S5.6 M26 "by review only"** is now caught by a test (C17's reasons check). It reads three words of three rows, so it proves the words and not their truth: the review checklist item 9 still stands.
 
 **Answers (coordinator, 2026-11-09).** Q1: the code is right and §S5.11's sentence was wrong; `create` is struck from it above. The parent's D.3 row names no action, so this repairs the spec and is not a plan change. Q2: yes, `bridgeLinks.test.ts` owns C9b. Q3: the folder verbs hearing the place clause is the per-door rule of §4.10 applied to a door counted on the place, the same reading as Q-B, which two of two consultants judged not a change; it stays, and the CHANGELOG names the folder verbs. Q4: accepted; review item 9 stands.
+
+## Amendment for epoch 8 (2026-11-09)
+
+*(Written for the spec's writer by the coordinator's stand-in, after the parent's sort (`### Re-review for epoch 8`, its `cut` rows) and the
+opening of epoch 8 (`2fa03e0`). The contract is the parent's §4.10 at that commit: the head's place rule, *The lifecycle, three facts apart*
+(`todo/PLAN_remote_bridge_scoped.md:576-596`), the list *E1.5 after the stop: the fix-forward* (`:600-610`), §7's consent-contract case (`:725`)
+and §9's dialog-place line (`:793`). Nothing in the contract is changed here; where it could not be built as written, the point is under
+*Questions for the plan (epoch 8)* below. Every `file:line` here was opened on `feat/remote-bridge-e15` at `6e4cccd` (PR #323's head with `main`
+merged in) on 2026-11-09; paths are relative to `src_vs_code/src/` unless they say otherwise. None of this is new scope.)*
+
+### A8.1 — What F1-F5 supersede, and what replaces it
+
+The old text stays where it is, marked *[Superseded …]* with a pointer to this section.
+
+| Section of this spec | Superseded by | What replaces it |
+|---|---|---|
+| §S5.1 item 3 (the words *nothing ran* of the one late sentence) | F2 | the detail `"<button>" answered after its call had ended; the answer changed nothing` and F2's notice; one road for both late cases stands |
+| §S5.1 item 7 (D14's races, read as freeing the place when the client leaves) | F1 | the races stand; the request ends at once, but a standing import or *Continue* question keeps the place until a person settles it |
+| §S5.2's code block: the late words, `shown`'s wrap, the Enter clause, `onLate`, `executed`'s order | F2, F3, F6, F8, F1 | A8.2's items; the marker under the block lists them |
+| §S5.3 item 1 (`BUSY_PLACE`) | F4 | F4's sentence below, byte for byte |
+| §S5.3 items 3 and 4 (the line's words, the notice) | F2 | F2's two sentences below, byte for byte |
+| §S5.8 item 2 (the late line's words) | F2 | the same rule, F2's words |
+| §S5.8 item 6 (D14 frees on the client's leaving) | F1 | the place is a standing question's until it settles |
+| §S5.8 item 12 (the late click's line words) | F2 (and F1: that click frees the place) | F2's words |
+| Scenarios C3, C4 (the words of the detail and the notice) | F2 | F2a; their facts stand |
+| Scenario C8 (the words of `BUSY_PLACE`) | F4 | F4a, and F4b adds the quiet holder |
+| Scenario C10c (both test cases) as written | F1 | F1a; "the place free before the click" is change 7.3's defect |
+| Scenario C11 as written | F1, F2 | F1b |
+| §S5.11's two paragraphs (what a local user reaches; the `CHANGELOG.md` entry and `module_extension.md`) | F5, F9 | A8.2 F5: the entry re-derived from the diff at the fixed commit; the module text follows F1-F5 |
+
+Not superseded, and kept as built: everything else of §S5.0-§S5.12, the 21 scenarios' facts, M1-M33, C10 and C10b (the running step with no question
+up still frees the place at the call's end, the plan's lifecycle row *The client leaves while a dependency step runs and no question is up*).
+
+### A8.2 — F1-F8, buildable
+
+Each item: the change, the exact sentences, the files, the scenarios (Start / Transition / Expected, RED first, the fact observed beside any words).
+Doors and worlds as §S5.5. The D14 rig is `test/consentContractVpn.test.ts`'s `rig` (`:48-63`): `r.bw` is the broker world (consent modals in
+`r.bw.dialogs` / `r.bw.openDialogs`, their buttons in `r.bw.buttons`), `r.vw` the VPN world (the follow-up questions in `r.vw.held`, each with `modal`).
+**Reading of the plan's observation:** where §4.10's F1 says `w.dialogs.length === 1` for a follow-up question, this rig observes it as
+`r.vw.held.length === 1` (one question on screen) beside `r.bw.openDialogs.length` unchanged (no new consent modal); see question Q8-1.
+
+#### F1 — the place outlives the request on the D14 roads (change 7.3)
+
+**The change (the sketch is decided here: a `standingPrompt` seam beside `lateAnswer`).** When an agent call's follow-up question is on
+screen, the throttle is told that a dialog of the call's own holding stands; when the question's promise settles, by any road, the dialog is
+closed with `keep = true`. `OneInFlight` already does the rest (`aliasThrottle.ts:187-204`): while the dialog stands, `released` frees nothing
+and remembers `endedId`; at the settlement, `dialogClosed(held, true)` keeps the place for a call still running (the flag's kept place, as
+today) and frees it for a call that has ended. So the request ends at once when its client leaves (its `ABANDONED` line, nothing more typed or
+written), and the place frees at the person's click, with no timer. The precedent is `consentTurns.ts` (a turn holds its key until its work settles).
+
+1. `aliasThrottle.ts`, `TokenlessCeilings`, a new public method beside `prompted` / `dialogClosed` (`:399-421`):
+   ```ts
+   /**
+    * A follow-up prompt of the holder's own call is on screen (F1): the place is that prompt's until it settles, whatever the call does meanwhile,
+    * and then the call's until its release. Nothing for a local token call, which is counted on no door. Every road that reaches a follow-up
+    * question holds the place as the call's: an asking call by its flag's kept place, a quiet one by D.3.
+    */
+   followUpStands(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, prompt: PromiseLike<unknown>): void
+   //   const held = doorOfDialog(grant.bridge?.context.bridgeId, via) === undefined ? undefined : this.flight.holder();
+   //   if (held === undefined) { return; }
+   //   this.flight.prompted(held);
+   //   const settled = (): void => this.flight.dialogClosed(held, true);
+   //   void Promise.resolve(prompt).then(settled, settled);      // a rejection settles it too; `settled` cannot throw
+   ```
+   No modal stamp: the follow-up question is not a consent dialog and is not counted in the modal window (as today).
+2. `brokerCall.ts`: `CallDeps` gains `standing?(prompt: PromiseLike<unknown>): void;` with a doc line; `startNow`'s context literal (`:201`) gains
+   `standingPrompt: deps.standing`. `credsAgentServer.ts`, `runAndDeliver`'s literal (`:677-690`), **one line**:
+   `standing: (prompt) => this.ceilings.followUpStands(grant, via, prompt),`.
+3. `useActions.ts`, `UseActionContext` (`:54-59`): `readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;`, doc: *Set by the broker: a
+   prompt of this action's own is on screen; the one dialog place is that prompt's until it settles. Absent for a start that serves no request.*
+4. Threaded exactly as `lateAnswer` is, beside it: `VpnUseDeps.open` (`agentUseActions.ts:51`) a sixth parameter `standingPrompt?`;
+   `vpnAction.run` (`:418`) passes `ctx.standingPrompt`; `agentVpnOpener` (`vpnRun.ts:38-40`) passes it on; `runVpn` (`:77-86`) a ninth parameter,
+   put on the context (`:95`); `VpnRunContext` (`vpnLauncherRun.ts:44`) the field; `vpnDependencies` (`:49`) copies it; `DependencyRunRequest`
+   (`dependencyRunHost.ts:47`) the field; the `Pick<…, 'startGate' | 'lateAnswer'>` of `runAll`, `runStep`, `settle`, `askToContinue`
+   (`:234,286,312,360`) gains `'standingPrompt'`.
+5. The two question sites call it **before** the race, with the question's own promise:
+   - `openVpnConnect` (`vpnRun.ts:222-226`): `const question = vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON);`
+     `ctx.standingPrompt?.(question);` then `untilGone(question, ctx.startGate, …)` as built.
+   - `askToContinue` (`dependencyRunHost.ts:360-368`): the same shape with its question.
+   The call stays in the same function, first of its kind, so both prompt-site ledger ids are unchanged and C17 stays green.
+   `executed` (the running step) calls nothing: no question is up, and the place frees at the call's end (C10 stays as built).
+6. Texts that become false with F1 and are corrected in the same commit: the comment `vpnRun.ts:220-221` (*a client that leaves frees the place
+   at once*) → *a client that leaves ends the request at once; the question keeps the place until a person settles it, and a click that lands
+   later is journalled and does nothing*; the file docblock `dependencyRunHost.ts:20-22` (*the call ends when its client leaves and frees the one
+   dialog place*) → *the call ends when its client leaves; a standing question keeps the one dialog place until it is settled, a running step
+   with no question up does not*; the header `test/consentContractVpn.test.ts:16-18` (*A client that leaves frees the place*) the same; the
+   titles of C10c and C11 (`:170`, `:198`, `:251`) are replaced by F1a / F1b's.
+7. The rig's `open` (`test/consentContractVpn.test.ts:58-61`) forwards the sixth argument.
+
+**Files:** `aliasThrottle.ts`, `brokerCall.ts`, `credsAgentServer.ts` (+1), `useActions.ts`, `agentUseActions.ts`, `vpnRun.ts`,
+`vpnLauncherRun.ts`, `dependencyRunHost.ts`; tests `consentContractVpn.test.ts`, `consentContract.test.ts` (F1f).
+
+**Scenarios** (through the MCP door of the main port unless said; `execAsk` is the local alias door; `assertBusy` / `assertPlaceFree` as `:84-99`):
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F1a | *Continue* keeps the place after its client leaves (replaces C10c, both callers: `runStep` with `integration: 'absent'`, and `settle` after a failed step) | C10c's rig and timers; an agent `up` Allowed; the *Continue* question held | (i) hang up; (ii) an alias `exec` and an MCP `up`; (iii) click `Continue` late; (iv) an alias `exec` | after (i): one `ABANDONED` line with *after a dependency step had been typed*; after (ii): both `429` with `BUSY_PLACE` at once, `r.vw.held.length === 1`, `r.bw.openDialogs.length` unchanged and `r.bw.buttons` has no new `['Allow', 'Deny']` entry (no Allow-first modal opened over the question); after (iii): one `ignored` line whose detail is `"Continue" answered after its call had ended; the answer changed nothing` and which does not contain `nothing ran`, beside the same call's `ABANDONED` line, which says a step was typed; the chain terminal's `sent` is `['a-step']`; after (iv): the call is asked and runs (`assertPlaceFree`). A variant clicks `Stop` late: the same, and the place frees | as built the place is freed at (i): (ii) is asked and a consent modal opens over the question |
+| F1b | The OpenVPN Connect question keeps the place (replaces C11) | C11's rig (`CONNECT` mocks), an agent `up` Allowed, held by `/Import this profile/` | (i) hang up; (ii) an alias `exec`; (iii) click `Import profile` late; (iv) an alias `exec` | after (i): one `ABANDONED` line (*as the action was starting — it was not launched*); (ii): `429` `BUSY_PLACE`, `r.vw.held.length === 1`, no new consent modal; (iii): one `ignored` line, action `up`, the grant's describe, detail `"Import profile" answered after its call had ended; the answer changed nothing`; no file under the storage dir, no VPN terminal, `r.bw.ran` unchanged; (iv): asked and runs | as built (ii) is asked |
+| F1c | Five never-ask `up`s, each hung up at its question: one question, four `busy` (the Fable finding) | the D14 rig with `mcpPreConsented: true` (no consent modal: D.3 holds the place for the quiet `up`); `integration: 'absent'` | send `up` #1, wait for its question, hang up; then send `up` #2-#5, hanging each up if it reaches a question | `up` #2-#5 are each `429` `BUSY_PLACE` at once; at the end `r.vw.held.length === 1` (one modal), `r.bw.dialogs.length === 0`, exactly one `ABANDONED` line, `r.gates.length === 1` (only one `up` reached its action); then a late `Stop` on the one question frees the place: a sixth `up` reaches its own question | as built each `up` is admitted after the previous hang-up: five questions, no `busy` |
+| F1d | The running step with no question is unchanged | C10 and C10b as built | — | as built: the place frees at the call's end | guards; they go red under M52 |
+| F1e | A question answered while the client is still there keeps the call's place, as today | the F1a rig, chain `a`, `b`; the `b` step's execution held | click `Continue` in time; during step `b` an alias `exec`; then end step `b` | the alias `exec` is `429` `BUSY_PLACE` while `b` runs (the kept place, by the flag); after the `up` answers, an alias `exec` is asked and runs | green as built; a guard against M36 (a close with `keep = false` frees the place while the call still runs) |
+| F1f | The seam, by unit (`TokenlessCeilings`) | a holder admitted asking on the local door | (i) `followUpStands({}, 'mcp', p)`, then release the holder, then settle `p`; (ii) the same with `via: 'token'` and no bridge while another holding holds the place, then release that holder; (iii) as (i) with `p` rejecting; (iv) settle `p` before the release | (i) `admit(true)` is `busy` after the release and admitted after the settlement; (ii) the place is free at the release: `followUpStands` marked nothing; (iii) as (i): a rejection frees too, no unhandled rejection; (iv) `busy` until the release, admitted after it | new method; RED as a missing method |
+
+**Mutations (A8.3):** M34-M40, M52.
+
+#### F2 — the late-answer words (change 7.2)
+
+**The sentences, byte for byte from §4.10 (the late-click row, `:565`, its line and its notice; F2 at `:603`):**
+- journal detail, outcome `ignored`: `"<button>" answered after its call had ended; the answer changed nothing` (the button's own word: `Allow`,
+  `Deny`, `Continue`, `Stop`, `Import profile`);
+- notice (`LATE_ANSWER_NOTICE`): `That request had already ended, so this answer changed nothing.`
+
+**Roads and what the speaker knows.** The gate's late road (`brokerConsent.ts:282-288`, `ignored`) knows that the call had ended and that this
+answer decided nothing (`lateAnswer` never reaches `apply`); `performCall`'s seam (`brokerCall.ts:206-210`) knows the same for `up`'s questions.
+Neither knows what ran before the call ended (the same call's `ABANDONED` line says that) nor what the next call will do, so neither says it.
+
+**The change.** `brokerConsent.ts:160` (the notice) and `:286` (the detail); `brokerCall.ts:208` (the detail). Doc comments that quote the old
+words follow. No other file names them in `src` (grepped: `nothing ran` appears elsewhere only in `dependencyRunHost.ts:181,185` and
+`oneUseLane.ts:36`, which are other sentences and stay).
+
+**Scenarios** (a new file, `test/consentContractEpoch8.test.ts`, for F2-F4, F7, F8b; `consentContract.test.ts` is 735 lines and would pass 800):
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F2a | The words on the gate's road (C3, C3b, C4, K6 and `brokerAbandoned.test.ts:88-89` updated to import the constant and the new detail) | C3 / C4 as written | as written | their facts as written (no `ALLOWED`, `w.ran` empty, no stamp, the next call asked), and the detail and `w.notices` are F2's; no `ignored` detail contains `nothing ran` | the old words |
+| F2b | The typed-step road | F1a | — | asserted in F1a (iii): the late line beside the same call's `ABANDONED` line *after a dependency step had been typed*, and the late line does not deny it | the old words claimed *nothing ran* |
+| F2c | Two dialogs on one local token: the notice still true when the next call is not asked | a local token call, `consentTimeoutMs: 100`; after its 504, a second call on the same token raises the second dialog (C1c) | Allow the newer (`openDialogs[1]`); then Deny the older (`openDialogs[0]`); then a third call on the same token | the second call is `200` and runs; the late Deny writes one `ignored` line `"Deny" answered after its call had ended; the answer changed nothing`, no `DENIED` line, and the notice is F2's; the third call is `200` with **no** new dialog (`w.dialogs.length` unchanged) and runs: the next call was not asked, and the notice promised nothing about it | the old notice (*The next one will ask again*) is false here |
+| F2d | A policy turned to never-ask while the dialog stands | a local MCP call of an action with no follow-up flag, its lookup a `mcpResolve` closure whose `preConsented` reads a mutable `policy` (`brokerWorld.ts:333`), `policy = 'every12h'`, `consentTimeoutMs: 100` | wait for the 504; set `policy = 'never'`; Allow the standing dialog late; then a second MCP call | the late Allow: one `ignored` line, F2's notice, no `ALLOWED`; the second call is `200` with no new dialog and an `allowed without a prompt` line | the old notice is false here |
+
+**Mutations:** M41-M43.
+
+#### F3 — a prompt that cannot open frees the place
+
+**The change.** `shown` (`brokerConsent.ts:236-241`) wraps the call itself:
+`return new Promise<string | undefined>((resolve) => resolve(vscode.window.showWarningMessage(…))).then(answered, failed)` — the executor runs
+synchronously, so a synchronous throw becomes the rejection that the existing handler turns into `{ kind: 'failed' }`. Before the timer, that end
+is `answered` → `stillWanted()` → `dialogClosed(question, false)` → `apply` → `dismissed`: 504 `consent_timeout` with *The human did not allow this
+grant.* (`GRANT_NOT_ALLOWED`, unchanged), no notice, no line, `onUserPresent` not called. Nothing else changes; the method keeps its name (ledger id).
+
+**Files:** `brokerConsent.ts`; `test/brokerWorld.ts` gains the option `throwDialogs: number` (the first *n* `showWarningMessage` calls throw
+synchronously and record nothing in `w.dialogs`).
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F3a | A modal that throws synchronously | `throwDialogs: 1`, a `process.on('unhandledRejection')` spy for the test | a local alias call; then a second local alias call | the first is 504 `consent_timeout` with `GRANT_NOT_ALLOWED`; `w.dialogs.length === 0`; no `ignored` line, no notice, `w.presence` unchanged; the second call is **asked** (`w.dialogs.length === 1`), Allowed, runs; the spy recorded nothing | as built the throw escapes `shown` with the place held (`prompted` at `:205`) and nothing on screen: the second call is `busy` |
+
+**Mutation:** M44. Supersedes nothing in the spec (§S5.1 item 11 meant it).
+
+#### F4 — `BUSY_PLACE` names the quiet holder
+
+**The sentence (one static sentence, one static help; `aliasThrottle.ts:278-279`), byte for byte:**
+
+> Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again.
+
+The first sentence is §4.10's (the row *The dialog is on screen*, `:563`). The clause *a request that may prompt again may still be running with nothing on screen yet* is
+F4's (`:605`); an orphaned follow-up question is *a prompt that followed an Allow*. **The last sentence is rewritten, and the rule is why:** the
+built tail *Answer or finish it there; the next request is then asked.* claims what the next call will do, which the `busy` speaker does not know:
+the quiet D.3 caller hears `busy` (`brokerMcpDoor.ts:223`, admitted with `prompts` false) and is never asked afterwards, and a call on a grant
+allowed meanwhile is not asked either. The new tail says only what the person can do. Every clause is a *may*, so the help is true whichever
+holder stands. **Roads:** every asking call on a counted door while the place is held, and a quiet call with the follow-up flag; never a local
+token call (`doorOfDialog`).
+
+**Files:** `aliasThrottle.ts` (the constant and its doc, which says "the four things" → "the things"); tests import the constant.
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F4a | The words (C8 (the words), `consentContract.test.ts:49`) | pure | — | `BUSY_PLACE` equals the sentence above; it contains `nothing on screen yet` and does not contain `is then asked` | the built sentence |
+| F4b | The quiet holder, observed beside the words (C9b, `bridgeLinks.test.ts:403`, and C9, `consentContract.test.ts:629`, extended) | a quiet forwarding `exec` with the agent socket up, its run held | an asking alias call | `429` with `BUSY_PLACE` **and** `w.dialogs.length === 0` **and** the quiet call still running (its hold not released) | the words lack the clause (the facts are green as built) |
+
+**Mutations:** M45, M46.
+
+#### F5 — the `CHANGELOG.md` entry, re-derived from the diff at the fixed commit
+
+Not words to copy (the parent's *Observations* rule): after F1-F4 and F6-F8 are built, the coder reads `src_vs_code/CHANGELOG.md:9-41` against
+the diff `455567a..HEAD -- src_vs_code/src` bullet by bullet. What each bullet must state, with the case that observes it:
+- the D.3 bullet (`:32-36`): a quiet `terminal`, `up`, `down`, `rotate`, or `exec` on an entry forwarding the agent while it runs, is itself
+  refused *busy* while the place is held, where before no quiet call heard *busy*; other quiet calls are unchanged (C9, C9b: a second quiet call `busy`);
+- the D14 bullet (`:37-41`): the request ends when its client leaves; a standing import or *Continue* question keeps the place until you
+  answer it; a running step with no question up gives the place back when the call ends (F1a-F1c, C10);
+- the late-answer bullet (`:25-28`): F2's line and notice; no *nothing ran* (F2a-F2d);
+- the `busy` bullet (`:15-18`): F4's sentence, the quiet request included (F4a);
+- the Escape bullet (`:29-31`): a modal that cannot open at all is read as a dismissal too (F3a);
+- nothing bridged is named (R1): not the button order, not a bridged door.
+The `research/module_extension.md` paragraphs (`:3610-3628`, `:3637-3640`, `:3642-3648`) follow F1-F5 from the same diff (F9).
+
+#### F6 — the Enter comment
+
+`bridgeConsentText.ts:82`: `/** A bridged modal puts Deny first (parent Q5), so a stray Enter lands on Deny. */` →
+`/** A bridged modal puts Deny first (parent Q5), intended to put Deny under a stray Enter; M10 measures which button Enter takes. */`
+No test asserts where Enter lands (§4.10 row *Enter*); no scenario, no mutation. Review checklist item A8.4 (3).
+
+#### F7 — the folder verbs' timeout sentence has a test
+
+The code is as built (`brokerFolderDoor.ts:142` admits on the place; `:176` answers through `consentNotGiven`, whose one `onPlace = true` serves it).
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F7a | A folder verb's timeout through the MCP door | the broker world with `w.server.setFolderHooks(FOLDER_HOOKS)` (the rig of `brokerConsentText.test.ts:70-115`), `holdDialogs`, `consentTimeoutMs: 100` | `POST /v1/mcp/folder/create`; wait for the reply; then a local alias call and a second folder call. Variant: a fresh world, a folder call whose dialog gets Escape before the timer, then a local alias call | 504 `consent_timeout` with `CONSENT_TIMED_OUT_ON_PLACE`; `w.dialogs.length === 1`; both later calls `429` `BUSY_PLACE`; the dismissal variant: 504 with *The human did not allow this.* and the next call asked | written after the code (as-built difference 8): no RED against the code; its teeth are M47, watched red |
+
+#### F8 — the coai code round's three items (code only)
+
+1. **`executed` reads the gate before it types** (`dependencyRunHost.ts:352-355`). Move the check above `integration.executeCommand(line)`; when
+   the gate has fired, finish with a fourth value, `'untyped'`, and type nothing. `runStep`'s integration road (`:296`, through `ran`, `:300-303`)
+   answers `{ next: false, typed: false }` for `'untyped'` — the same end as its own check at `:287` — so the journal says *not launched* or, after
+   an earlier step, *after a dependency step had been typed*, and never claims a step that was not typed. (Mapping `'untyped'` like `'gone'` would
+   send it to `settle`, whose `typedAndStillWanted` (`:274-277`) throws *after a dependency step had been typed*: false on that road.) Keep
+   `runStep` at complexity 4: `ran` becomes the helper that holds the new branch.
+2. **Rejection guards.** `timedOut`'s continuation (`brokerConsent.ts:213`): `void dialog.then(…).catch(() => undefined)` with a comment that the late
+   road decides nothing and a throwing journal must not become an unhandled rejection. `untilGone`'s `onLate` (`requestLife.ts:75`): called
+   through a small helper that catches and drops a throw (complexity 4). F1's `settled` cannot throw and needs none.
+3. **The `as never` cast:** nothing to remove (§4.10 F8, `:609`); none added by F1-F8.
+
+| # | Scenario | Start | Transition | Expected | RED first, because |
+|---|---|---|---|---|---|
+| F8a | A gate that fires between `runStep`'s check and the type | `runDependenciesFirst` loaded with the VPN world's `vscode` (`vpnWorld`'s `preopened` chain terminal), a request with the test's own `AbortController` as `startGate`; the preopened terminal's `exitStatus` is a getter that calls `controller.abort()` and answers `undefined` | run the chain | it resolves `{ ready: false, typed: false }` and throws nothing; `r.vw.executions.length === 0` and the terminal's `sent` is empty | as built the step is typed (`executions.length === 1`) before the gate is read, and the chain throws `endedAfter` |
+| F8b | A throwing journal on the late road | `brokerConsentPrompted.test.ts`'s `gateOver` under `mock.timers` (C21's), its `log` and `dialogClosed` throwing; an `unhandledRejection` spy | tick past the timer; answer `Allow` | the call was answered `'timeout'`; the spy records nothing | as built the throw from `lateAnswer` rejects the continuation, unhandled |
+| F8c | A throwing `onLate` | unit, `untilGone` with a gate that fires first and an `onLate` that throws; the spy | resolve the promise after the gate | `untilGone` resolved `undefined`; the spy records nothing | as built the `.then` handler's throw is an unhandled rejection |
+
+**Mutations:** M48-M51.
+
+### A8.3 — Mutations for the new scenarios (mutate, watch the named case fail, restore; both outputs in the PR)
+
+| # | Mutation | First red case | Symptom |
+|---|---|---|---|
+| M34 | `openVpnConnect` does not call `standingPrompt` | F1b | the next call is asked after the hang-up |
+| M35 | `askToContinue` does not call `standingPrompt` | F1a, F1c | the next call is asked; five questions in F1c |
+| M36 | `followUpStands`' close passes `keep = false` | F1e, F1f (iv) | the place frees while the call still runs |
+| M37 | `followUpStands` attaches no close | F1a (iv), F1f (i) | `busy` after the late click, for ever |
+| M38 | `followUpStands` skips the `doorOfDialog` check | F1f (ii) | a local token call's question holds another call's place |
+| M39 | the close is attached for fulfilment only | F1f (iii) | a rejected question leaves the place held |
+| M40 | `credsAgentServer.ts` omits `standing` from the literal (or `startNow` omits `standingPrompt`) | F1a, F1b, F1c | the next call is asked after the hang-up |
+| M41 | `brokerConsent.ts`'s detail keeps *nothing ran* | F2a, F2c | the detail differs |
+| M42 | `brokerCall.ts`'s detail keeps *nothing ran* | F1a (iii), F1b (iii) | the detail differs |
+| M43 | `LATE_ANSWER_NOTICE` keeps *The next one will ask again.* | F2a, F2c, F2d | the notice differs |
+| M44 | `shown` evaluates `showWarningMessage` outside the promise (as built) | F3a | the second call is `busy` |
+| M45 | `BUSY_PLACE` loses the quiet clause | F4a, F4b | the words lack it |
+| M46 | `BUSY_PLACE` ends with *the next request is then asked.* | F4a | the tail differs |
+| M47 | `consentNotGiven` passes `onPlace = false` | F7a, C15 | the folder's and `create`'s timeout lose the place clause |
+| M48 | `executed` types before it reads the gate (as built) | F8a | `executions.length === 1` |
+| M49 | `ran` maps `'untyped'` like `'gone'` | F8a | the chain throws *after a dependency step had been typed* |
+| M50 | `timedOut`'s continuation without its guard | F8b | an unhandled rejection |
+| M51 | `untilGone`'s `onLate` without its guard | F8c | an unhandled rejection |
+| M52 | `executed` (the running step) calls `standingPrompt` | C10, C10b | the place stays `busy` after the hang-up with no question up |
+
+### A8.4 — Review checklist for the fix-forward (in addition to §S5.7)
+
+1. `followUpStands` is the only new writer of `OneInFlight.prompted` / `dialogClosed`; it stamps no window; a local token call marks nothing.
+2. No sentence in `src`, `CHANGELOG.md` or `module_extension.md` still says *nothing ran* for a late answer, *The next one will ask again*, *the next
+   request is then asked*, *frees the place at once* for a standing question, or *a stray Enter lands on Deny* (grep each).
+3. F6's comment says *intended*; no test asserts where Enter lands.
+4. The RED outputs of F1a, F1b, F1c, F2a, F2c, F2d, F3a, F4a, F8a, F8b, F8c and the 19 mutations M34-M52 are in the PR, with the GREEN beside them;
+   F1e, F1d and F7a are named as guards with their mutations' red outputs.
+5. The `CHANGELOG.md` entry was re-read against the diff at the fixed commit (F5), and its bullets name the files and lines they describe.
+
+### A8.5 — Line-count plan after F1-F8
+
+| File | At `6e4cccd` | Change | Planned |
+|---|---|---|---|
+| `credsAgentServer.ts` | 792 | `standing` in `runAndDeliver`'s literal | **793 (≤ 795)** |
+| `aliasThrottle.ts` | 491 | `followUpStands`; `BUSY_PLACE` (same two lines) | ≤ 510 |
+| `brokerConsent.ts` | 372 | F2's two strings (same lines); F3's wrap; F8's guard | ≤ 378 |
+| `brokerCall.ts` | 247 | `CallDeps.standing`; the literal's field; F2's detail | ≤ 252 |
+| `useActions.ts` | 172 | `standingPrompt?` with its doc | ≤ 178 |
+| `requestLife.ts` | 141 | the `onLate` guard helper | ≤ 150 |
+| `vpnRun.ts` | 280 | the parameter, the question site, the comment | ≤ 288 |
+| `vpnLauncherRun.ts` | 178 | the field and its copy | ≤ 182 |
+| `dependencyRunHost.ts` | 373 | the field; the question site; `'untyped'`; the docblock | ≤ 388 |
+| `agentUseActions.ts` | 436 | `open`'s sixth parameter; the call | ≤ 442 |
+| `bridgeConsentText.ts` | 88 | the comment (same line) | 88 |
+| `extension.ts` | 1003 | **unchanged** | 1003 |
+| `brokerFolderDoor.ts`, `toolEnsure.ts`, `consentTurns.ts`, `src_cli`, `src_mcp`, `src_broker_client` | — | **untouched** | — |
+
+Tests: `consentContractVpn.test.ts` 376 → ≤ 650; new `consentContractEpoch8.test.ts` ≤ 450; `consentContract.test.ts` 735 → ≤ 760 (F1f, C8's
+words); `brokerWorld.ts` 654 → ≤ 670; `bridgeLinks.test.ts` +≤ 6. **No file over 800.** If `consentContractVpn.test.ts` would pass 800, F1c goes to
+`consentContractEpoch8.test.ts` with a copy of the rig's helpers it needs.
+
+**`consentPlace.ts` is not created.** The trigger of §S5.4 (`credsAgentServer.ts` past 795, or `aliasThrottle.ts` past 700) does not fire at 793
+and ≤ 510; F1's one new method belongs with `OneInFlight`, which it drives. The coder re-takes the counts with `wc -l` and writes them in the PR;
+if a count crosses the trigger, §S5.4's order is followed and said there.
+
+### A8.6 — Questions for the plan (epoch 8)
+
+None of these changes the contract; each is how this amendment reads it, with the evidence.
+
+- **Q8-1 — the observation `w.dialogs.length === 1` for a follow-up question.** §4.10 F1 (`todo/PLAN_remote_bridge_scoped.md:602`) writes the
+  five-`up` case and the *Continue* case as `w.dialogs.length === 1`. In the only rig that runs the real `up` (`test/consentContractVpn.test.ts:48-63`),
+  `w.dialogs` is the broker world's consent-modal record (`test/brokerWorld.ts:298`, `showWarningMessage` only), while the follow-up question is
+  `showInformationMessage` held by the VPN world (`r.vw.held`). Under a never-ask policy no consent modal opens at all, so `r.bw.dialogs.length`
+  is 0 there. This amendment observes "one dialog on screen" as `r.vw.held.length === 1` with no new consent modal (F1a, F1c). If the plan meant
+  the broker world's record, the words need a correction there; the fact observed is the same.
+- **Q8-2 — F8's first item, read with the journal's words.** §4.10 F8 (`:609`) says *a client gone before the type gets nothing typed*. Built
+  literally (the gate read first, then the existing `'gone'`), the untyped road would reach `settle`, whose `typedAndStillWanted`
+  (`dependencyRunHost.ts:274-277`, called at `:313`) writes *after a dependency step had been typed* for a step that was not typed. F8 here
+  answers `'untyped'` and ends the step as `runStep`'s own check does (`:287-289`). Today the road is reachable only when the gate fires
+  synchronously between `:287` and `:352`, with no `await` between them; F8a reaches it with a getter. No contract change: the item is satisfied
+  and the line stays true.
+- **Q8-3 — `BUSY_PLACE`'s last sentence (for the record).** §4.10 prescribes the first sentence and the holders, not the tail; the built tail
+  (*the next request is then asked*, `aliasThrottle.ts:279`) claimed the next call's behaviour, false for the D.3 quiet caller
+  (`brokerMcpDoor.ts:223`). F4 rewrites it here under *Reading this plan*'s rule; nothing in the plan changes.
+- **Q8-4 — one more text that becomes false with F1.** §4.10 F1 names `vpnRun.ts:220` and the test header; the file docblock
+  `dependencyRunHost.ts:20-22` says the same (*frees the one dialog place*) and is corrected in F1 item 6. A repaired reference, not a change.
