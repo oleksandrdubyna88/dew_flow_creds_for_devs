@@ -480,7 +480,7 @@ to the next asking alias or MCP call until a person clicks it, where 1.18.0 re-a
 `BUSY_PLACE` (C8); the timeout answer on the local alias and MCP doors is the place sentence and on the local token door the shorter one, replacing *The human did
 not allow this grant.* (C1b, C1c; `create` and `delete`: C15); a late Allow or Deny on a dialog whose call had timed out or whose client had left writes
 *answered after its call had ended; nothing ran* and shows the notice (C3, C4); an Escape frees the place and is answered as before (C5; a modal that fails is read the
-same way, C19); a quiet local MCP call of `create`, `terminal`, `up`, `down`, `rotate`, or `exec` on a forwarding entry with the agent up, holds the place while it runs
+same way, C19); a quiet local MCP call of `terminal`, `up`, `down`, `rotate`, or `exec` on a forwarding entry with the agent up, holds the place while it runs
 (C9, C9b: D.3); an agent's `up` (through any local door) shows the OpenVPN Connect question and the dependency chain's *Continue* question as modals, a client that
 leaves during them or during a running dependency step ends the call, and a late click on either question leaves the late-answer line and does nothing (C10, C10c,
 C11); the person's own Start is unchanged (C10d, C11b). **Not reachable** (no production door opens a bridge before E2; R1): the button order
@@ -568,3 +568,5 @@ takes with `['Deny', 'Allow']`, whether Escape resolves the promise, whether a m
 - **Q2. §S5.4 does not list `bridgeLinks.test.ts:403`**, a test that pins today's "a quiet forwarding exec holds nothing" and turns red under D.3 by design. It was inverted into C9b (difference 6). Please confirm that is the intended owner of C9b.
 - **Q3. The folder verbs hear the place clause on a timeout** (difference 8): `consentNotGiven`'s one `true` serves them, because they are admitted on the place. §S5.2 names only `create` and `delete`. Built as the chooser's rule says; say so if the parent wanted the folder's old sentence.
 - **Q4. §S5.6 M26 "by review only"** is now caught by a test (C17's reasons check). It reads three words of three rows, so it proves the words and not their truth: the review checklist item 9 still stands.
+
+**Answers (coordinator, 2026-11-09).** Q1: the code is right and §S5.11's sentence was wrong; `create` is struck from it above. The parent's D.3 row names no action, so this repairs the spec and is not a plan change. Q2: yes, `bridgeLinks.test.ts` owns C9b. Q3: the folder verbs hearing the place clause is the per-door rule of §4.10 applied to a door counted on the place, the same reading as Q-B, which two of two consultants judged not a change; it stays, and the CHANGELOG names the folder verbs. Q4: accepted; review item 9 stands.
