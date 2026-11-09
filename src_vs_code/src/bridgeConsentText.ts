@@ -75,3 +75,14 @@ export function bridgeCoverageLine(bridge: BridgeGrant): string {
     ? "Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer."
     : 'Allowing covers this call only.';
 }
+
+/** The consent modal's buttons, in the order VS Code shows them. A local modal is unchanged. */
+export const LOCAL_BUTTONS = ['Allow', 'Deny'] as const;
+
+/** A bridged modal puts Deny first (parent Q5), so a stray Enter lands on Deny. */
+export const BRIDGED_BUTTONS = ['Deny', 'Allow'] as const;
+
+/** The buttons of one modal: the bridged order through a Remote Bridge, today's order everywhere else. Pure data, so a test reads the lists. */
+export function consentButtons(bridged: boolean): readonly string[] {
+  return bridged ? BRIDGED_BUTTONS : LOCAL_BUTTONS;
+}

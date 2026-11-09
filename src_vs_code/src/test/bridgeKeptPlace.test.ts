@@ -1,8 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
-import { UNANSWERED_FAILURE, statusForErrorCode } from '../brokerProtocol';
+import { CONSENT_TIMED_OUT_ON_PLACE, UNANSWERED_FAILURE, statusForErrorCode } from '../brokerProtocol';
 import { ACCOUNT, CONTEXT_1, Ask, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { BUSY_PLACE } from '../aliasThrottle';
 
 /**
  * The one dialog place after an Allow, the registry under a loop of quiet calls, a denied token's loop, and a journal that
@@ -12,7 +13,7 @@ import { ACCOUNT, CONTEXT_1, Ask, WallWorld, answeredAtOnce, send, sendAbortable
  */
 
 const CONTEXT_B = { ...CONTEXT_1, bridgeId: 'bridge-B', serverEntityId: 'server-B', serverName: 'other' };
-const BUSY = 'Another request is already waiting for the person to answer. Try again once they have.';
+const BUSY = BUSY_PLACE;
 
 const alias = (command = 'id'): Ask => ({ path: '/v1/alias/exec', body: { alias: 'one', command } });
 const mcp = (command = 'id'): Ask => ({ path: '/v1/mcp/use/exec', body: { entry: 'e1', command } });
@@ -88,13 +89,18 @@ test('K2: a Deny frees the place at once — the create never reached its PIN st
   }
 });
 
-test('K3: an unanswered create times out, and the place is free: the next call is asked', async () => {
+test('K3 (E1.5): an unanswered create times out with the place sentence, and the place stays the dialog\'s — the next call is busy until the dialog is answered, then asked', async () => {
   const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 100 });
   try {
     const timedOut = await send(viaMain(ww), create());
-    assert.deepEqual([timedOut.status, code(timedOut)], [504, 'consent_timeout']);
+    assert.deepEqual([timedOut.status, code(timedOut), message(timedOut)], [504, 'consent_timeout', CONSENT_TIMED_OUT_ON_PLACE]);
+    const refused = await answeredAtOnce(send(viaBridge(ww.bridge), alias()), 'the next call was let in over the standing dialog');
+    assert.deepEqual([refused.status, message(refused)], [429, BUSY]);
+    assert.equal(ww.w.dialogs.length, 1, 'no second dialog');
+    ww.w.openDialogs[0]('Deny');
+    await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the click on the standing dialog to be read');
     const next = send(viaBridge(ww.bridge), alias());
-    await until(() => ww.w.openDialogs.length === 2, 'the next call to be asked');
+    await until(() => ww.w.openDialogs.length === 2, 'the next call to be asked once the dialog was answered');
     ww.w.openDialogs[1]('Allow');
     assert.equal((await next).status, 200);
   } finally {
@@ -157,6 +163,8 @@ test('K6: a late Allow on a create whose client had gone frees the place — a k
     await until(() => ww.w.audit.some((line) => line.includes('ABANDONED')), 'the broker to learn the client left');
     ww.w.openDialogs[0]('Allow');
     await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the late click to be read and applied to nothing');
+    assert.ok(ww.w.audit.some((line) => line.includes('ignored') && line.includes('"Allow" answered after its call had ended; nothing ran')), 'the line says so in the contract\'s words');
+    assert.deepEqual(ww.w.notices, ['That request had already ended; nothing ran. The next one will ask again.'], 'and the person is told once');
     assert.equal(ww.w.audit.some((line) => line.includes('ALLOWED')), false, 'it decided nothing');
     assert.deepEqual(ww.w.created, []);
     const next = send(viaBridge(ww.bridge), alias());

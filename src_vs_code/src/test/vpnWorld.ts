@@ -37,6 +37,8 @@ export interface FakeTerminal {
 export interface HeldDialog {
   text: string;
   buttons: string[];
+  /** Whether the dialog was a modal (`{ modal: true }` as its options): a toast otherwise (E1.5, C10c, C11). */
+  modal: boolean;
   answer(button: string | undefined): void;
 }
 
@@ -166,7 +168,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     sink.push(text);
     const buttons = rest.filter((r): r is string => typeof r === 'string');
     if (opts.holdDialogs?.test(text) === true) {
-      return new Promise<string | undefined>((resolve) => held.push({ text, buttons, answer: resolve }));
+      return new Promise<string | undefined>((resolve) => held.push({ text, buttons, modal: isModal(rest[0]), answer: resolve }));
     }
     return Promise.resolve(reply(opts, buttons, isModal(rest[0])));
   };

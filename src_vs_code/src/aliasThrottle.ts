@@ -180,7 +180,7 @@ export class OneInFlight {
   }
 
   /**
-   * The dialog closed — the person's click, or the 5-minute timeout: the place is free, whatever the call does next. `keep` (an
+   * The dialog closed — the person's click or dismissal (never a timer, E1.5): the place is free, whatever the call does next. `keep` (an
    * Allow of a call that may show a prompt of its own next, Amendment 3, C.3): the place stays the call's until it is released
    * — unless the call has already ended, which a kept place must not outlive.
    */
@@ -271,6 +271,20 @@ export interface Admission extends Slot {
 /** The key of the local door: the main port and the socket, which are one window's callers with no token. */
 export const LOCAL_DOOR = 'local';
 
+/**
+ * The `busy` answer, with the help a caller can act on: what may hold the place, and where to answer it. Exported: tests import it and never retype it.
+ *
+ * <p>The help names the four things the parent's §4.10 names: the standing dialog, a prompt that followed an Allow, a running dependency step, and the
+ * window that owns the place. Its wording for the local-token exception waits for M10 (the parent's §7).</p>
+ */
+export const BUSY_PLACE =
+  "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), or a dependency step may still be running in a terminal, in the VS Code window that owns the place. Answer or finish it there; the next request is then asked.";
+
+/** Whether a dialog raised for this call is counted on the place: its bridge's door, or the local door; none for a local token call. */
+export function countedOnPlace(bridgeId: string | undefined, via: AuditDoor): boolean {
+  return doorOfDialog(bridgeId, via) !== undefined;
+}
+
 /** Which door a dialog is counted on: its bridge's, the local door for a local alias or MCP call, and none for a local token call, which is not throttled. */
 function doorOfDialog(bridgeId: string | undefined, via: AuditDoor): string | undefined {
   if (bridgeId !== undefined) {
@@ -324,11 +338,31 @@ export class TokenlessCeilings {
    * <p>Prompts: the place held → `busy`; this door's asking window full → `too-many`; its modal window full →
    * `too-many`; else the place is held and the call allowed. Neither refusal holds the place, and both count as a call in
    * the asking window. Silent: this door's silent window admits (and stamps) or refuses; no place is taken, because that
-   * rule protects a human from a pile-up and this path has no human to protect.</p>
+   * rule protects a human from a pile-up and this path has no human to protect — except a quiet call whose action may prompt again
+   * (`followUp`, D.3): it holds the place from admission to its release, with no dialog, because the prompt it may raise next would otherwise
+   * open over a standing dialog or beside another call's.</p>
    */
-  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR): Admission {
+  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR, followUp: boolean = false): Admission {
     const counts = this.countsOf(door, nowMs);
-    return prompts ? this.admitAsking(counts, door, nowMs) : this.admitSilent(counts, door, nowMs);
+    return prompts ? this.admitAsking(counts, door, nowMs) : this.admitQuiet(counts, door, nowMs, followUp);
+  }
+
+  /** A call that raises no dialog: it holds the place only when its action may prompt again. */
+  private admitQuiet(counts: DoorCounts, door: string, nowMs: number, followUp: boolean): Admission {
+    return followUp ? this.admitSilentPlace(counts, door, nowMs) : this.admitSilent(counts, door, nowMs);
+  }
+
+  /** The mirror of {@link admitAsking} on the quiet path: the place first, then the silent window, which gives the place back when it refuses. No modal stamp, no asking stamp: the call raises no dialog. */
+  private admitSilentPlace(counts: DoorCounts, door: string, nowMs: number): Admission {
+    const held = this.flight.hold();
+    if (held === undefined) {
+      return this.refused('busy', door, counts, nowMs);
+    }
+    if (counts.silent.admit(nowMs) !== 'allow') {
+      this.flight.released(held);
+      return this.refused('silent', door, counts, nowMs);
+    }
+    return this.holding(held);
   }
 
   private admitSilent(counts: DoorCounts, door: string, nowMs: number): Admission {
@@ -378,7 +412,7 @@ export class TokenlessCeilings {
   }
 
   /**
-   * The dialog raised for this grant closed — answered, or timed out: the place is free again, whatever its call does
+   * The dialog raised for this grant closed — answered or dismissed by a person, never by a timer: the place is free again, whatever its call does
    * next. Pairs with {@link prompted} and frees only the holding that one marked: a second or late close names a holding
    * that no longer has the place, so it frees nothing of the next holder. `keep`: see {@link OneInFlight.dialogClosed}.
    */
@@ -432,7 +466,7 @@ export class TokenlessCeilings {
   /** What to tell a caller that was refused, in words it can act on: a sentence about THIS ceiling, in the door's own terms. */
   private describe(ceiling: Ceiling, door: string): string {
     if (ceiling === 'busy') {
-      return 'Another request is already waiting for the person to answer. Try again once they have.';
+      return BUSY_PLACE;
     }
     const who = door === LOCAL_DOOR ? 'a caller without a token' : 'this Remote Bridge';
     const says = {

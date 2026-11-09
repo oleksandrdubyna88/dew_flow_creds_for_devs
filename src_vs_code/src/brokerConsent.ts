@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import type { AuditDoor, AuditEntry } from './agentAuditLog';
-import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite } from './bridgeConsentText';
+import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite, consentButtons } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -24,7 +24,13 @@ import { withTimeout } from './withTimeout';
  * <p>A dismissed dialog (Escape) is a one-off refusal that is NOT recorded: a mis-click must not lock an
  * agent out for the window's life. Only an explicit Deny is sticky, and a timeout leaves the grant
  * re-promptable — a missed notification is the common case, not a decision. A click on a prompt whose
- * every request has gone is neither: it decides nothing and says so in the journal.</p>
+ * every request has gone, or whose call timed out, is neither: it decides nothing and says so in the
+ * journal, and tells the person in a notice (E1.5).</p>
+ *
+ * <p><b>The place is the dialog's until a person acts on it, never a timer's</b> (parent §4.10). The call's wait ends
+ * at `CONSENT_TIMEOUT_MS` and the call is answered `timeout`; the dialog stays on screen (VS Code cannot take a modal
+ * down) and keeps the one dialog place. Whatever ends the dialog afterwards (a click, an Escape, a failure) frees the
+ * place and decides nothing ({@link ConsentGate.lateAnswer}).</p>
  */
 
 /** What the gate needs from the broker. */
@@ -40,9 +46,9 @@ export interface ConsentGateDeps {
    */
   prompted?(question: ConsentQuestion): void;
   /**
-   * The dialog raised for this question is gone: answered, or given up on at the timeout. The one place a dialog holds is
-   * given back here (`aliasThrottle.ts`), not when the call that raised it ends — a client that leaves does not take the
-   * modal off the screen. `keep`: the person Allowed and the call may put a prompt of its own on screen next
+   * The dialog raised for this question is gone: answered or dismissed by a person (a modal that failed is read the same way).
+   * The one place a dialog holds is given back here (`aliasThrottle.ts`), not when the call that raised it ends and never at
+   * the call's timeout — a client that leaves, or a wait that runs out, does not take the modal off the screen. `keep`: the person Allowed and the call may put a prompt of its own on screen next
    * (`ConsentQuestion.followUp`), so the place stays the call's until the call ends (Amendment 3, C.3).
    */
   dialogClosed?(question: ConsentQuestion, keep: boolean): void;
@@ -134,8 +140,27 @@ function windowTail(entityName: string, everything: string): string {
   );
 }
 
+/**
+ * How the modal ended. NEVER `undefined` and NEVER a rejection: `undefined` is reserved for the timer (see {@link ConsentGate.ask}), and a
+ * rejected modal (the window going down under it) is an end like any other.
+ */
+type DialogEnd = { kind: 'answered'; choice: string | undefined } | { kind: 'failed'; error: unknown };
+
+/** The button a person clicked, or `undefined` for an Escape and for a modal that failed. */
+function choiceOf(end: DialogEnd): string | undefined {
+  return end.kind === 'answered' ? end.choice : undefined;
+}
+
+/** Whether an Allow keeps the place: the person Allowed, and the call may put a prompt of its own on screen next. */
+function keepsPlace(question: ConsentQuestion, end: DialogEnd): boolean {
+  return choiceOf(end) === 'Allow' && followsUp(question);
+}
+
+/** The notice a person sees when they click a dialog whose call had already ended: said once, in words, because the click did nothing. */
+export const LATE_ANSWER_NOTICE = 'That request had already ended; nothing ran. The next one will ask again.';
+
 export class ConsentGate {
-  private readonly prompts = new SharedPrompts<boolean>();
+  private readonly prompts = new SharedPrompts<ConsentOutcome>();
 
   constructor(private readonly deps: ConsentGateDeps) {}
 
@@ -156,11 +181,11 @@ export class ConsentGate {
   }
 
   /** The wait is over: abandoned if this request left first or meanwhile, else what the grant now says. */
-  private after(grant: Grant, answered: boolean | typeof ABANDONED, signal: AbortSignal): ConsentOutcome {
+  private after(grant: Grant, answered: ConsentOutcome | typeof ABANDONED, signal: AbortSignal): ConsentOutcome {
     if (answered === ABANDONED || signal.aborted) {
       return 'abandoned';
     }
-    return this.known(grant) ?? unsettled(answered);
+    return this.known(grant) ?? answered;
   }
 
   /** What this grant already says — `undefined` while nobody has answered for it. */
@@ -169,43 +194,69 @@ export class ConsentGate {
     return status === 'allowed' || status === 'denied' ? status : undefined;
   }
 
-  private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<boolean> {
+  /**
+   * Show the dialog and read how it ended.
+   *
+   * <p>ARBITRATION, stated once: `withTimeout` settles exactly once. `end === undefined` is the one fact that says the timer settled the call
+   * (a {@link DialogEnd} is never `undefined`), so there is no third reading. Whatever the dialog does after the timer settled the call (a click,
+   * a dismissal, a rejection) is read by {@link lateAnswer} and by nothing else: {@link apply} is unreachable from there.</p>
+   */
+  private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<ConsentOutcome> {
     this.deps.prompted?.(question);
-    const choice = await this.shown(question);
-    // The defused modal (§3.3): it could not be closed when its requests left, so the answer it gives
-    // after that is read here and applied to nothing.
-    if (!stillWanted()) {
-      this.ignored(question, choice);
-      return false;
-    }
-    return this.apply(question, choice);
+    const dialog = this.shown(question);
+    const end = await withTimeout(dialog, CONSENT_TIMEOUT_MS, { unref: true });
+    return end === undefined ? this.timedOut(question, dialog) : this.answered(question, end, stillWanted);
+  }
+
+  /** The timer won: the call is answered, the dialog stands. The continuation is attached HERE, after the timer, so an answer landing in the same tick still takes the late road. */
+  private timedOut(question: ConsentQuestion, dialog: Promise<DialogEnd>): ConsentOutcome {
+    void dialog.then((late) => this.lateAnswer(question, late));
+    return 'timeout';
   }
 
   /**
-   * The dialog, awaited for at most the timeout. In a `finally` that tells the throttle the dialog is gone before anything is
-   * decided from the answer, so a defused modal (its requests left) frees the place at its click, and a timeout frees it
-   * although VS Code cannot take the modal down.
+   * The dialog ended before the timer. The waiter FIRST, the flag after: an Allow nobody waits for never keeps the place. The defused modal (§3.3)
+   * could not be closed when its requests left, so the answer it gives after that is read here and applied to nothing.
    */
-  private async shown(question: ConsentQuestion): Promise<string | undefined> {
-    let choice: string | undefined;
-    try {
-      choice = await withTimeout(
-        Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
-        CONSENT_TIMEOUT_MS,
-        // The HTTP server keeps this process alive; the timer need not.
-        { unref: true },
-      );
-      return choice;
-    } finally {
-      // A timeout leaves `choice` undefined: freed. Only an Allow of a call that may ask again keeps the place.
-      this.deps.dialogClosed?.(question, choice === 'Allow' && followsUp(question));
+  private answered(question: ConsentQuestion, end: DialogEnd, stillWanted: () => boolean): ConsentOutcome {
+    if (!stillWanted()) {
+      this.deps.dialogClosed?.(question, false);
+      this.ignored(question, end);
+      return 'timeout';
     }
+    // The flag is read HERE, on an Allow, with the dialog's own answer, as change 6.1 built it.
+    this.deps.dialogClosed?.(question, keepsPlace(question, end));
+    return this.apply(question, end);
   }
 
-  /** Allow or Deny, applied to the grant; anything else refuses this call and leaves it re-promptable. */
-  private apply(question: ConsentQuestion, choice: string | undefined): boolean {
+  /**
+   * The one dialog promise: the modal with the door's buttons, wrapped once so it settles with a {@link DialogEnd} on every road. The method keeps
+   * its name so the prompt-site ledger row keeps its id.
+   */
+  private shown(question: ConsentQuestion): Promise<DialogEnd> {
+    return Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, ...consentButtons(question.grant.bridge !== undefined))).then(
+      (choice): DialogEnd => ({ kind: 'answered', choice }),
+      (error: unknown): DialogEnd => ({ kind: 'failed', error }),
+    );
+  }
+
+  /**
+   * The standing dialog of a call that was answered `timeout`: whatever ends it frees the place (`keep` false) and decides nothing. Never {@link apply}:
+   * no `allow`, `deny`, `onUserPresent` or `remember` is reachable from here.
+   */
+  private lateAnswer(question: ConsentQuestion, end: DialogEnd): void {
+    this.deps.dialogClosed?.(question, false);
+    this.ignored(question, end);
+  }
+
+  /**
+   * Allow or Deny, applied to the grant. Anything else — Escape, or a modal that failed before the timer — is a DISMISSAL: a one-off refusal that is
+   * not recorded (change 7.1), and a person's act, so the place was freed at the close. A failure's error is not read here and appears in no line.
+   */
+  private apply(question: ConsentQuestion, end: DialogEnd): ConsentOutcome {
+    const choice = choiceOf(end);
     if (choice !== 'Allow' && choice !== 'Deny') {
-      return false;
+      return 'dismissed';
     }
     // Agent traffic after this deliberately does NOT postpone auto-lock: a long unattended run is
     // exactly what the idle window exists to catch.
@@ -213,22 +264,27 @@ export class ConsentGate {
     return choice === 'Allow' ? this.allow(question) : this.deny(question);
   }
 
-  private allow(question: ConsentQuestion): true {
+  private allow(question: ConsentQuestion): 'allowed' {
     this.deps.grants.allow(question.grant.secret);
     this.line(question, 'ALLOWED', 'first use consented');
-    return true;
+    return 'allowed';
   }
 
-  private deny(question: ConsentQuestion): false {
+  private deny(question: ConsentQuestion): 'denied' {
     this.deps.grants.deny(question.grant.secret);
     this.line(question, 'DENIED', 'first use refused');
-    return false;
+    return 'denied';
   }
 
-  /** A click on a prompt nobody waits for any more: one line, nothing decided. A timeout says nothing. */
-  private ignored(question: ConsentQuestion, choice: string | undefined): void {
+  /**
+   * Allow or Deny on a dialog whose call had ended (it timed out, or every waiter left): one line, the notice, nothing decided. A dismissal, or a
+   * modal that failed, says nothing. The notice has ONE argument, so it is a notice and not a prompt site (`promptSiteLedger.ts`).
+   */
+  private ignored(question: ConsentQuestion, end: DialogEnd): void {
+    const choice = choiceOf(end);
     if (choice === 'Allow' || choice === 'Deny') {
-      this.line(question, 'ignored', `"${choice}" answered after the request had gone — nothing decided`);
+      this.line(question, 'ignored', `"${choice}" answered after its call had ended; nothing ran`);
+      void vscode.window.showInformationMessage(LATE_ANSWER_NOTICE);
     }
   }
 
@@ -313,9 +369,4 @@ function shownName(grant: Grant): string {
 /** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
 function bridgeLine({ grant, action }: ConsentQuestion): string {
   return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, bridgeRunSite(action), grant.entityName)}`;
-}
-
-/** An answer that settled nothing on the grant: Allow that was not recorded reads as allowed, the rest as a timeout. */
-function unsettled(allowed: boolean): ConsentOutcome {
-  return allowed ? 'allowed' : 'timeout';
 }

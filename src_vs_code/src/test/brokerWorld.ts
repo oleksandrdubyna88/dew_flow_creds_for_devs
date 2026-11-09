@@ -34,6 +34,10 @@ interface World {
   mod: Broker;
   server: InstanceType<Broker['CredsAgentServer']>;
   dialogs: string[];
+  /** The buttons each dialog in `dialogs` was shown with, in the order VS Code shows them (E1.5, C6). */
+  buttons: string[][];
+  /** Texts of the one-argument notices the broker showed (`showInformationMessage`), in order (E1.5, C3). */
+  notices: string[];
   /** Consent answers, in order; undefined means the dialog was dismissed. */
   answers: (string | undefined)[];
   ran: Ran[];
@@ -71,6 +75,8 @@ interface World {
    * was open" could not be written at all: there was never a moment in which the modal was open.</p>
    */
   openDialogs: ((answer: string | undefined) => void)[];
+  /** The twin of each entry of `openDialogs`: makes that dialog's promise REJECT, as a window going down under a modal does (E1.5, C19). */
+  failDialogs: ((error: unknown) => void)[];
   /** The signal each create's `settle` was handed — the folder PIN step's own end. */
   settleSignals: AbortSignal[];
   /** Awaited inside `settle` when set, so a test can hang up while the PIN step is in progress. */
@@ -206,6 +212,8 @@ function world(options: {
     mod: undefined as never,
     server: undefined as never,
     dialogs: [],
+    buttons: [],
+    notices: [],
     answers: [...(options.answers ?? ['Allow'])],
     ran: [],
     audit: [],
@@ -218,20 +226,14 @@ function world(options: {
     consents: [],
     actionSignals: [],
     openDialogs: [],
+    failDialogs: [],
     settleSignals: [],
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
   };
   w.mod = loadWithVscode<Broker>('../credsAgentServer', {
     window: {
-      showWarningMessage: (m: string): Promise<string | undefined> => {
-        w.dialogs.push(m);
-        return options.holdDialogs === true
-          ? new Promise((resolve) => {
-              w.openDialogs.push(resolve);
-            })
-          : Promise.resolve(w.answers.shift());
-      },
-      showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+      showWarningMessage: (m: string, _options?: unknown, ...buttons: string[]) => shown(w, options.holdDialogs === true, m, buttons),
+      showInformationMessage: (m: string): Promise<undefined> => noticed(w, m),
       createOutputChannel: (): unknown => {
         w.outputChannels += 1;
         return {
@@ -283,6 +285,25 @@ function world(options: {
     hooksFor(w, options),
   );
   return w;
+}
+
+/** A one-argument notice: recorded, and answered with nothing, as a toast nobody clicked is. */
+function noticed(w: World, text: string): Promise<undefined> {
+  w.notices.push(text);
+  return Promise.resolve(undefined);
+}
+
+/** One consent dialog: recorded with its buttons, then answered from the script, or held (with a way to fail it) until the test answers. */
+function shown(w: World, hold: boolean, text: string, buttons: string[]): Promise<string | undefined> {
+  w.dialogs.push(text);
+  w.buttons.push(buttons);
+  if (!hold) {
+    return Promise.resolve(w.answers.shift());
+  }
+  return new Promise((resolve, reject) => {
+    w.openDialogs.push(resolve);
+    w.failDialogs.push(reject);
+  });
 }
 
 /** `./agentConsent` with a shorter wait, or no mock at all: the module has no `vscode` in it, so the real one is spread. */

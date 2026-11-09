@@ -11,6 +11,7 @@ import { memoryStorage } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
 import { WslRelayManager } from '../wslRelayManager';
+import { BUSY_PLACE } from '../aliasThrottle';
 
 /**
  * What a Remote Bridge may be told about the entries an in-scope entry LINKS to (E1.3 epoch 3, L1-L5, A.3.6).
@@ -300,7 +301,7 @@ test('M3: a credential read that throws, through the main port — the call is a
  * There is no real agent socket in CI: the pretended `ssh` holds (`lw.hold`) where the socket's signing modal would be open.
  * ------------------------------------------------------------------------------------------------------------- */
 
-const BUSY_SENTENCE = 'Another request is already waiting for the person to answer. Try again once they have.';
+const BUSY_SENTENCE = BUSY_PLACE;
 const ALIAS_EXEC = { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } };
 
 /** An exec held inside the pretended `ssh` (a signing prompt open), a second local call, and what became of it. */
@@ -399,8 +400,38 @@ for (const door of ['alias', 'mcp'] as const) {
  * The follow-up contract through the doors (the epoch 6 review): a quiet forwarding exec holds nothing, and the hold is bounded
  * ------------------------------------------------------------------------------------------------------------- */
 
-test('a quiet (pre-consented) forwarding exec holds nothing — no dialog, no place: a second call is not told busy while it runs', async () => {
-  await both({ agentForward: true, agentSocket: '/run/agent.sock' }, { agentForward: true, quietLocal: true }, async ({ lw, ww }) => {
+test('C9b (D.3): a quiet (pre-consented) forwarding exec with the agent socket up holds the place with no dialog — an asking call and a second quiet call are busy while it runs, and asked once it ends', async () => {
+  await both({ agentForward: true, agentSocket: '/run/agent.sock' }, { agentForward: true, quietLocal: true, holdDialogs: true }, async ({ lw, ww }) => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    lw.hold = () => gate;
+    try {
+      const first = send(viaMain(ww), ASK_BY.mcp);
+      await until(() => lw.runs.length === 1, 'the quiet exec to be inside ssh');
+      for (const [who, door, ask] of [['an asking alias call', viaMain(ww), ASK_BY.alias], ['a second quiet call', viaMain(ww), ASK_BY.mcp], ['a bridged call', viaBridge(ww.bridge), ASK_BY.alias]] as const) {
+        const refused = await Promise.race([send(door, ask), new Promise<string>((resolve) => setTimeout(resolve, 600, 'waiting'))]);
+        assert.ok(typeof refused !== 'string', `${who} was let in over the quiet call's possible signing prompt`);
+        assert.deepEqual([refused.status, message(refused)], [429, BUSY_PLACE], who);
+      }
+      assert.equal(ww.w.dialogs.length, 0, 'nobody was asked: the entry\'s policy answered, and no call raised a dialog');
+      assert.equal(lw.runs.length, 1, 'and nothing else ran');
+      release();
+      assert.equal((await first).status, 200);
+      const next = send(viaMain(ww), ASK_BY.alias);
+      await until(() => ww.w.openDialogs.length === 1, 'the next asking call to be asked, now that the quiet call is over');
+      ww.w.openDialogs[0]('Allow');
+      assert.equal((await next).status, 200);
+    } finally {
+      release();
+      ww.w.openDialogs.forEach((answer) => answer('Deny'));
+    }
+  });
+});
+
+test('C9b (D.3): the same entry with the agent socket down holds nothing — a second quiet call runs while the first does, and an asking call is asked', async () => {
+  await both({ agentForward: true }, { agentForward: true, quietLocal: true, holdDialogs: true }, async ({ lw, ww }) => {
     let release = (): void => undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -411,11 +442,14 @@ test('a quiet (pre-consented) forwarding exec holds nothing — no dialog, no pl
       await until(() => lw.runs.length === 1, 'the quiet exec to be inside ssh');
       const second = send(viaMain(ww), ASK_BY.mcp);
       await until(() => lw.runs.length === 2, 'the second quiet call to run (it was told busy: the quiet call held the place)');
-      assert.equal(ww.w.dialogs.length, 0, 'nobody was asked: the entry\'s policy answered');
+      const asking = send(viaMain(ww), ASK_BY.alias);
+      await until(() => ww.w.openDialogs.length === 1, 'an asking call to be asked while the quiet calls run');
+      ww.w.openDialogs[0]('Allow');
       release();
-      assert.deepEqual((await Promise.all([first, second])).map((reply) => reply.status), [200, 200]);
+      assert.deepEqual((await Promise.all([first, second, asking])).map((reply) => reply.status), [200, 200, 200]);
     } finally {
       release();
+      ww.w.openDialogs.forEach((answer) => answer('Deny'));
     }
   });
 });

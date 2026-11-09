@@ -377,7 +377,7 @@ test('S14: a token path is throttled like an alias call — one dialog at a time
     await until(() => ww.w.openDialogs.length === 1, 'the first dialog');
     const busy = await send(viaBridge(ww.bridge), ASK_TOKEN(two));
     assert.deepEqual([busy.status, code(busy)], [429, 'too_many_requests']);
-    assert.match(message(busy), /Another request is already waiting/);
+    assert.match(message(busy), /Another request holds this window's dialog place/);
     ww.w.openDialogs[0]('Allow');
     assert.equal((await first).status, 200);
     assert.equal(ww.w.dialogs.length, 1, 'the refused call raised no dialog');
