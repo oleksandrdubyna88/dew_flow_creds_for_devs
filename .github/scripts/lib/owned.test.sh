@@ -59,6 +59,7 @@ fi
 unset TESTSTODELETE_OWNER TESTSTODELETE_RUN
 if [ -z "${TESTSTODELETE_OWNER+x}" ] && [ -z "${TESTSTODELETE_RUN+x}" ]; then ok "TESTSTODELETE_OWNER and TESTSTODELETE_RUN are unset"; else bad "env" "still set"; fi
 
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=owned.sh
 source "$T_OWNED" || { echo "FAIL cannot source $T_OWNED" >&2; exit 1; }
 
@@ -273,31 +274,36 @@ EOF
   eq "T5 the folder is the second name" "$(first_line "$CTL/t5.dir")" "$CR/testsToDelete-$TOK-creds-x-bbbbbbbb"
   eq "T5 the planted claim is unchanged" "$(first_line "$CR/testsToDelete-$TOK-creds-x-aaaaaaaa.owner")" "foreign content"
   isfalse "T5 no folder exists at the first name" test -e "$CR/testsToDelete-$TOK-creds-x-aaaaaaaa"
-  # C5: two real children race one plain mkdir on an absent path
+  # C5: two real children race ONE owned_create_dir (the helper's own create) on an absent path, 20 rounds. The helper uses perl's
+  # mkdir where perl exists: the kernel's exclusive create. Plain mkdir of uutils coreutils is not always exclusive (measured 2026-11-09).
   case_root t5race
-  premise "T5 the race path is absent" test ! -e "$CR/race" || return 0
   mkdir "$CR/taken"; : > "$CR/taken/sentinel"
-  local a b
-  "$BASH" -c 'while [ ! -e "$2" ]; do :; done; mkdir -- "$1" 2>/dev/null; echo $? > "$3"' _ "$CR/race" "$CTL/t5.go" "$CTL/t5.a" &
-  a=$!; CHILD_PIDS+=("$a")
-  "$BASH" -c 'while [ ! -e "$2" ]; do :; done; mkdir -- "$1" 2>/dev/null; echo $? > "$3"' _ "$CR/race" "$CTL/t5.go" "$CTL/t5.b" &
-  b=$!; CHILD_PIDS+=("$b")
-  : > "$CTL/t5.go"
-  wait "$a"; wait "$b"
-  local ra rb zeros=0
-  ra="$(first_line "$CTL/t5.a")"; rb="$(first_line "$CTL/t5.b")"
-  [ "$ra" = 0 ] && zeros=$((zeros + 1)); [ "$rb" = 0 ] && zeros=$((zeros + 1))
-  if mkdir --version 2>&1 | grep -qi uutils; then
-    # Measured 2026-11-09 on WSL (Ubuntu with uutils coreutils 0.10.0): two racing plain mkdir BOTH succeeded in about 1 of 14 runs.
-    # The helper does not rely on mkdir alone: two live runs never share a name because the claim is an exclusive create.
-    echo "T5 NOTE: this machine's mkdir is uutils: two racing mkdir are not always exclusive (statuses $ra, $rb); asserting at least one wins"
-    istrue "T5 at least one of two racing mkdir succeeds (statuses $ra, $rb)" test "$zeros" -ge 1
+  local n=0 a b ra rb zeros bad_rounds=0 shape=""
+  while [ "$n" -lt 20 ]; do
+    n=$((n + 1))
+    rm -f "$CTL/t5.go" "$CTL/t5.a" "$CTL/t5.b"
+    "$BASH" -c '. "$4"; while [ ! -e "$2" ]; do :; done; owned_create_dir "$1"; echo $? > "$3"' _ "$CR/race$n" "$CTL/t5.go" "$CTL/t5.a" "$T_OWNED" &
+    a=$!; CHILD_PIDS+=("$a")
+    "$BASH" -c '. "$4"; while [ ! -e "$2" ]; do :; done; owned_create_dir "$1"; echo $? > "$3"' _ "$CR/race$n" "$CTL/t5.go" "$CTL/t5.b" "$T_OWNED" &
+    b=$!; CHILD_PIDS+=("$b")
+    sleep 0.2
+    : > "$CTL/t5.go"
+    wait "$a"; wait "$b"
+    ra="$(first_line "$CTL/t5.a")"; rb="$(first_line "$CTL/t5.b")"
+    zeros=0
+    [ "$ra" = 0 ] && zeros=$((zeros + 1)); [ "$rb" = 0 ] && zeros=$((zeros + 1))
+    if [ "$zeros" != 1 ]; then bad_rounds=$((bad_rounds + 1)); shape="$shape($ra,$rb)"; fi
+  done
+  if mkdir --version 2>&1 | grep -qi uutils && ! command -v perl > /dev/null 2>&1; then
+    echo "T5 NOTE: mkdir is uutils and perl is missing: the helper's create is not exclusive in a race ($bad_rounds of 20 rounds had no single winner $shape); the limit is documented"
+    ok "T5 race measured, no exclusive create on this machine ($bad_rounds of 20)"
   else
-    eq "T5 exactly one of two racing mkdir succeeds (statuses $ra, $rb)" "$zeros" 1
+    eq "T5 exactly one of two racing owned_create_dir wins, 20 rounds (bad rounds: $shape)" "$bad_rounds" 0
   fi
-  "$BASH" -c 'mkdir -- "$1" 2>/dev/null' _ "$CR/taken"
-  local rtaken=$?
-  isfalse "T5 mkdir of an existing folder fails" test "$rtaken" = 0
+  local rtaken
+  "$BASH" -c '. "$2"; owned_create_dir "$1"' _ "$CR/taken" "$T_OWNED"
+  rtaken=$?
+  isfalse "T5 owned_create_dir of an existing folder fails" test "$rtaken" = 0
   istrue "T5 the sentinel of the existing folder is unchanged" test -f "$CR/taken/sentinel"
 }
 
@@ -326,16 +332,22 @@ EOF
 
 # --- T7 the traps ------------------------------------------------------------------------------------------------------------
 t7a() {
-  local pattern='^[[:space:]]*trap[[:space:]].*(EXIT|INT|TERM|HUP)' fixture callers f hits=0
-  fixture=$'echo before\n  trap cleanup EXIT\necho after'
-  if printf '%s\n' "$fixture" | grep -Eq "$pattern"; then ok "T7a the scan finds the planted trap line in its fixture"; else bad "T7a fixture" "the pattern found nothing"; fi
+  local pattern='(^|[^[:alnum:]_-])trap[[:space:]].*(EXIT|INT|TERM|HUP|[[:space:]]0([[:space:]]|$))' fixture callers f hits=0 line
+  # comment lines are dropped first; then every spelling of a trap that would replace the helper's must be found
+  trap_scan() { grep -Ev '^[[:space:]]*#' | grep -E "$pattern"; }
+  # every spelling of a trap that would replace the helper's, each in a line of its own (a scan that finds nothing passes forever)
+  for line in '  trap cleanup EXIT' 'trap f 0' 'echo before; trap cleanup EXIT' 'if x; then trap cleanup TERM; fi' '  trap - INT'; do
+    if printf '%s\n' "$line" | trap_scan > /dev/null; then ok "T7a the scan finds the planted line [$line]"; else bad "T7a fixture [$line]" "the pattern found nothing"; fi
+  done
+  fixture='# trap cleanup EXIT is what a caller must never write'
+  if printf '%s\n' "$fixture" | trap_scan > /dev/null; then bad "T7a comment" "a comment line was found"; else ok "T7a a comment about a trap is not a trap"; fi
   callers="$(git -C "$repo" grep -l 'lib/owned.sh' -- '*.sh' 2>/dev/null | grep -v -e '^.github/scripts/lib/owned.sh$' -e '^.github/scripts/lib/owned.test.sh$')"
   if [ -z "$callers" ]; then
     echo "T7a note: no caller sources lib/owned.sh yet (E2.4.S2 and S4 write them); only the fixture is checked"
     return 0
   fi
   while IFS= read -r f; do
-    if grep -Enq "$pattern" "$repo/$f"; then bad "T7a $f" "sets a trap of its own: $(grep -En "$pattern" "$repo/$f" | head -n 1)"; hits=$((hits + 1)); fi
+    if trap_scan < "$repo/$f" > /dev/null; then bad "T7a $f" "sets a trap of its own: $(trap_scan < "$repo/$f" | head -n 1)"; hits=$((hits + 1)); fi
   done <<< "$callers"
   [ "$hits" = 0 ] && ok "T7a no caller sets a trap of its own ($(printf '%s\n' "$callers" | wc -l | tr -d ' ') scanned)"
   return 0
@@ -761,8 +773,188 @@ EOF
   eq "T20b nothing else remains" "$(entries "$CR")" "testsToDelete-$TOK-creds-x-eeeeeeee "
 }
 
+# --- T9b a planted folder that holds THIS run's own record is still not registered (the registry check, not the claim text, refuses) ---
+t9b() {
+  case_root t9b
+  child t9b << 'EOF'
+. "$T_OWNED_SH"
+owned_dir d x || exit 1
+planted="$CR/testsToDelete-$OWNED_TOKEN-creds-x-11111111"
+mkdir "$planted"; : > "$planted/sentinel"
+printf '%s\n' "$OWNED_OWNER" > "$planted.owner"
+owned_remove "$planted" 2> "$T_CTL/t9b.msg"; echo "$?" > "$T_CTL/t9b.rc"
+[ -d "$d" ] && echo kept > "$T_CTL/t9b.d"
+EOF
+  run_child t9b
+  eq "T9b the child exits 0" "$CH_RC" 0
+  eq "T9b owned_remove of an unregistered folder with our own record returns 1" "$(first_line "$CTL/t9b.rc")" 1
+  eq "T9b it says so in one line" "$(lines_of "$CTL/t9b.msg")" 1
+  istrue "T9b the planted folder and its sentinel remain" test -f "$CR/testsToDelete-$TOK-creds-x-11111111/sentinel"
+  istrue "T9b the registered folder was not removed in its place" test -f "$CTL/t9b.d"
+  eq "T9b only the planted folder and its claim are left (the child's own are gone)" "$(count "$CR")" 2
+}
+
+# --- F1 the caller's function ends the shell (P1) or meets an unbound variable (P2): the cleanup still runs, the status is kept ---
+tf1() {
+  case_root tf1
+  child tf1a << 'EOF'
+. "$T_OWNED_SH"
+f() { : > "$T_CTL/tf1a.marker"; exit 5; }
+owned_trap f
+owned_dir d x
+exit 3
+EOF
+  rm -f "$CTL/tf1a.marker"
+  run_child tf1a
+  premise "F1 the caller's function ran" test -f "$CTL/tf1a.marker" || return 0
+  eq "F1 P1: f calls exit 5: the status is the script's 3" "$CH_RC" 3
+  eq "F1 P1: the root is empty" "$(count "$CR")" 0
+  child tf1b << 'EOF'
+set -u
+. "$T_OWNED_SH"
+f() { : > "$T_CTL/tf1b.marker"; echo "$NOT_SET_ANYWHERE" > /dev/null; }
+owned_trap f
+owned_dir d x
+exit 3
+EOF
+  rm -f "$CTL/tf1b.marker"
+  run_child tf1b
+  premise "F1 the caller's function ran (P2)" test -f "$CTL/tf1b.marker" || return 0
+  eq "F1 P2: an unbound variable in f: the status is 3" "$CH_RC" 3
+  eq "F1 P2: the root is empty" "$(count "$CR")" 0
+}
+
+# --- F2 a second signal during the exit chain (P3, P3b) ---
+tf2() {
+  case_root tf2
+  child tf2a << 'EOF'
+. "$T_OWNED_SH"
+f() { : > "$T_CTL/tf2a.inchain"; hold "$T_CTL/tf2a.stop2"; }
+owned_trap f
+owned_dir d x
+: > "$T_CTL/tf2a.ready"
+hold "$T_CTL/tf2a.stop1"
+EOF
+  rm -f "$CTL/tf2a.inchain" "$CTL/tf2a.ready" "$CTL/tf2a.stop1" "$CTL/tf2a.stop2"
+  start_child tf2a
+  local cpid="$CH_PID"
+  premise "F2 the child reached its wait" await_file "$CTL/tf2a.ready" || { kill -9 "$cpid"; return 0; }
+  kill -TERM "$cpid"
+  premise "F2 the exit chain started" await_file "$CTL/tf2a.inchain" || { kill -9 "$cpid"; return 0; }
+  kill -INT "$cpid"
+  sleep 0.3
+  : > "$CTL/tf2a.stop2"
+  { wait "$cpid"; } 2> /dev/null
+  eq "F2 P3: TERM then INT in the chain: the status is the first signal's, 143" "$?" 143
+  eq "F2 P3: folder and claim are gone" "$(count "$CR")" 0
+  child tf2b << 'EOF'
+. "$T_OWNED_SH"
+f() { kill -INT $$; }
+owned_trap f
+owned_dir d x
+owned_dir e y
+exit 3
+EOF
+  run_child tf2b
+  eq "F2 P3b: an INT during the chain: the status is 3" "$CH_RC" 3
+  eq "F2 P3b: both folders and both claims are gone" "$(count "$CR")" 0
+}
+
+# --- F4 the traps are set before the claim is written (P4): a signal right after the claim write leaves nothing ---
+tf4() {
+  case_root tf4
+  child tf4 << 'EOF'
+. "$T_OWNED_SH"
+owned_holds() {
+  if [ ! -e "$T_CTL/tf4.sent" ]; then : > "$T_CTL/tf4.sent"; kill -TERM $$; fi
+  local line="" extra=""
+  if [ ! -f "$1" ] || [ -L "$1" ]; then return 1; fi
+  { IFS= read -r line && ! IFS= read -r extra; } < "$1" 2> /dev/null || return 1
+  [ "$line" = "$2" ]
+}
+owned_dir d x
+: > "$T_CTL/tf4.survived"
+EOF
+  rm -f "$CTL/tf4.sent" "$CTL/tf4.survived"
+  run_child tf4
+  premise "F4 the signal was sent right after the claim write" test -f "$CTL/tf4.sent" || return 0
+  eq "F4 P4: the child ends with 143" "$CH_RC" 143
+  eq "F4 P4: the claim is not left (the root is empty)" "$(entries "$CR")" ""
+}
+
+# --- F5 WSL_DISTRO_NAME: the record equals the reference's formatOwner (spaces only: no distro; a space inside: one '-') ---
+tf5() {
+  case_root tf5
+  premise "F5 node runs" test -f "$mount_lib/owned.mjs" || return 0
+  child tf5 << 'EOF'
+. "$T_OWNED_SH"
+owned_dir d x || exit 1
+: > "$T_CTL/tf5.ready"
+hold "$T_CTL/tf5.stop"
+EOF
+  local wsl cpid d line expected pid_for_ref idx=0
+  for wsl in "   " "My Distro"; do
+    idx=$((idx + 1))
+    rm -f "$CTL/tf5.ready" "$CTL/tf5.stop"
+    start_child tf5 WSL_DISTRO_NAME="$wsl"
+    cpid="$CH_PID"
+    premise "F5 the child is alive" await_file "$CTL/tf5.ready" || { kill -9 "$cpid"; return 0; }
+    d="$(ls -A "$CR" | grep -v '\.owner$' | head -n 1)"
+    line="$(first_line "$CR/$d.owner")"
+    pid_for_ref="$cpid"
+    if [ "$osclass" = windows ]; then pid_for_ref="$(first_line "/proc/$cpid/winpid")"; fi
+    expected="$(WSL_DISTRO_NAME="$wsl" ARG_PID="$pid_for_ref" njs "const o = await lib('owned.mjs'); const pid = Number(process.env.ARG_PID);
+      process.stdout.write(o.formatOwner({ owner: o.thisOwnerToken(), host: o.thisOwner().host, pid, start: o.processProbe(pid).start, ns: o.readPidNamespace() }));")"
+    eq "F5 WSL_DISTRO_NAME [$wsl]: the claim equals the reference's formatOwner" "$line" "$expected"
+    : > "$CTL/tf5.stop"
+    { wait "$cpid"; } 2> /dev/null
+    eq "F5 the folder and claim are gone after the exit" "$(count "$CR")" 0
+  done
+}
+
+# --- F6 a relative TMPDIR still cleans up after the script changes directory (P7) ---
+tf6() {
+  case_root tf6
+  child tf6 << 'EOF'
+. "$T_OWNED_SH"
+cd "$CR/.." || exit 90
+TMPDIR="${CR##*/}"
+owned_dir d x || exit 1
+printf '%s\n' "$d" > "$T_CTL/tf6.dir"
+cd / || exit 91
+exit 0
+EOF
+  run_child tf6
+  eq "F6 the child exits 0" "$CH_RC" 0
+  case "$(first_line "$CTL/tf6.dir")" in /*) ok "F6 the folder path is absolute" ;; *) bad "F6 path" "$(first_line "$CTL/tf6.dir")" ;; esac
+  eq "F6 folder and claim are gone after the cd" "$(count "$CR")" 0
+}
+
+# --- F9 a seam that is set is named on stderr, once ---
+tf9() {
+  case_root tf9
+  child tf9 << 'EOF'
+. "$T_OWNED_SH"
+hk() { :; }
+OWNED_HOOK_AFTER_CLAIM=hk
+OWNED_TEST_IDS="f1f1f1f1 f2f2f2f2"
+owned_dir d x || exit 1
+owned_dir e y || exit 1
+EOF
+  run_child tf9
+  eq "F9 OWNED_HOOK_AFTER_CLAIM is named once" "$(grep -c OWNED_HOOK_AFTER_CLAIM "$CTL/tf9.err")" 1
+  eq "F9 OWNED_TEST_IDS is named once" "$(grep -c OWNED_TEST_IDS "$CTL/tf9.err")" 1
+  child tf9b << 'EOF'
+. "$T_OWNED_SH"
+owned_dir d x || exit 1
+EOF
+  run_child tf9b
+  eq "F9 with no seam the helper writes nothing" "$(lines_of "$CTL/tf9b.err")" 0
+}
+
 # --- run ----------------------------------------------------------------------------------------------------------------------
-t1; t2; t4; t5; t6; t7a; t7b; t7c; t7d; t8; t9; t10; t11; t12; t13; t15; t16; t18; t19; t20
+t1; t2; t4; t5; t6; t7a; t7b; t7c; t7d; t8; t9; t9b; t10; t11; t12; t13; t15; t16; t18; t19; t20
+tf1; tf2; tf4; tf5; tf6; tf9
 
 echo "owned.test.sh: $PASS passed, $FAILN failed"
 if [ "$FAILN" -gt 0 ]; then exit 1; fi
