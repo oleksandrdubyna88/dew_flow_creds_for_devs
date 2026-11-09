@@ -18,7 +18,8 @@ connection entries, default **Do not use**. When one is chosen, running the entr
 entry, then runs the command inside that SSH session.
 
 Done when: every road that runs a Terminal entry either runs the command on the chosen SSH host, or refuses with a
-sentence that says why. **No road ever runs a linked entry's command on the local machine.**
+sentence that says why. **No road of this build or a later one runs a linked entry's command on the local
+machine.** An OLDER build does not know the field; that exposure is risk 1, not covered by this guarantee.
 
 ## 2. Decisions taken, and by whom
 
@@ -111,16 +112,31 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
   SSH entry, has no safe host (`isSafeSshTarget`), or is the entry itself; else `linked`.
 - `planLaunch(entry, link, {stayOpen})`: resolves the line through `resolveCommand` (the composer becomes one of the
   two allowed importers); refuses a linked entry whose *Runs on* is Windows (D9) or whose line has a newline, CR or
-  NUL; the remote command is `<line>; exec "${SHELL:-sh}" -l` when `stayOpen`, else the line.
-- `trustLineFor(ssh, jump, remoteCommand)`: the canonical text trust is keyed on —
-  `ssh [-p port] [-J jump] -- user@host '<remote command>'`. No `-i`, no known_hosts path, no program word, no env
-  prefix (they hold per-window paths). A changed host, user, port or jump gives a new text, so trust asks again (D6).
-  Today's `commandFingerprint` is reused unchanged with this text as its `line`.
+  NUL. Stay-open is for the INTERACTIVE roads only (arrow, folder run, VPN launcher); there the remote command is
+  `<line>; s=$?; [ "$s" -eq 0 ] || printf 'creds: the command ended with exit code %s\n' "$s" >&2; exec "${SHELL:-sh}" -l`,
+  so a failed command is said in the terminal before the login shell starts (the login shell's own exit status is
+  not the command's). The chain step, Run with Secrets and the agent get the bare line, and ssh's exit status IS the
+  remote command's.
+- `trustLineFor(ssh, jump, line)`: the canonical text trust is keyed on —
+  `ssh [-p port] [-J jump] -- user@host '<line>'`, built from the person's LINE, not from the wrapped remote command,
+  so one approval covers every road (arrow, folder, chain, launcher, secrets, agent). No `-i`, no known_hosts path, no
+  program word, no env prefix (they hold per-window paths). A changed host, user, port or jump gives a new text, so
+  trust asks again (D6). Today's `commandFingerprint` is reused unchanged with this text as its `line`.
+- **The remote serialization contract.** ssh joins its remote arguments with spaces and hands the one string to the
+  remote login shell (`$SHELL -c`); argument boundaries do not survive. So the composer passes EXACTLY ONE remote
+  argument, and the local quoting exists only to deliver that argument to ssh byte-for-byte. The remote shell then
+  parses the person's text exactly as if it were typed at a remote prompt: `;`, `$()`, quotes and pipes in the line
+  are the person's remote syntax and are meant to be parsed there (D14: the line is written for the remote system).
+  What is tested is the delivery: the typed line, run through the REAL local shell (`/bin/bash -c`, and `pwsh -c`
+  when installed) with a fake `ssh` first on PATH that records its argv NUL-separated, gives ONE element after `--`
+  and the destination, equal byte-for-byte to the remote command, for a corpus holding `;`, `&&`, `|`, `'`, `"`,
+  `$()`, backtick, `\`, `%`, `!`, `*`, a tab and non-ASCII. What the remote shell then does is hand check 4.
 - `typedLine(plan, prepared, localFamily)`: `buildSshCommand` with a new optional `remote = {command, tty}` option:
   program, `-t`, the existing options, `--`, destination, then the remote command as ONE word quoted by
   `quoteFor(localFamily, …)`. Without `remote` the builder's output is byte-identical to today.
 - `secretsStdin(env, line)`: `NAME='value'; export NAME` lines (posix single quotes), then the line inside a group
-  `{ <line>\n} </dev/null`, then `exit $?`. `sh -s` reads its script from stdin as it goes, so a command that reads
+  with each brace on its own line — `{\n<line>\n} </dev/null` — then `exit $?`. The line holds no newline (refused
+  above), so a trailing `# comment` in it ends at its own line and cannot swallow the closing brace. `sh -s` reads its script from stdin as it goes, so a command that reads
   stdin would otherwise swallow the rest of the script; a `{ … }` group is parsed whole before it runs, and its stdin
   is `/dev/null` (raised by a consultant, 2026-11-09). The exit code of the group is the exit code of the run.
 
@@ -135,27 +151,47 @@ a refusal still shows its remedy, and the person runs the entry again.
 
 ### 4.4 The roads
 
-Order on every interactive road: resolve and link → `prepareSshSession` (all awaits: PIN, host-key modal, route
-refusal) → `confirmTrusted(trustLine)` → dependencies → the synchronous find-and-send. `cleanup()` runs on every exit
-that sends nothing.
+Order on every road a person starts: resolve and link → `prepareSshSession` (all awaits: PIN, host-key modal, route
+refusal) → `confirmTrusted(trustLine)` → dependencies → the synchronous find-and-send, or the spawn.
+
+**One owner per prepared session.** The road that called `prepareSshSession` owns its `ready` result until the
+hand-over: the moment the line is sent into a terminal (the owner becomes that terminal's close handler) or the
+child is spawned (the owner becomes the child's exit handler). Until then the road holds it in a `try … finally`
+whose `finally` calls `cleanup()` unless the hand-over happened — so a declined trust, a cancelled dependency, a
+thrown error, a failed terminal creation and a row that is never sent all leave no key file and no pin behind. Each of
+these five exits is a named test (§6).
 
 - **Arrow and VPN launcher**: `sendGuarded` takes a target: `{kind:'entry', terminalOs}` (today) or
   `{kind:'ssh', env?}`. For `ssh` the shell is the one SSH Connect pins. With `env` (password) the guard never finds
   or disposes: it opens a new terminal with the env (D10). The key file is deleted when that terminal closes, as
   SSH Connect does. A launcher whose line uses `{config}` (a local file) is refused when linked.
-- **Folder run**: the modal shows each row's trust line; linked rows are prepared after the modal and the chain,
-  before the synchronous `typeAll`; a row whose preparation refuses is reported as failed, the others are typed.
+- **Folder run**: the modal shows each row's trust line; after the modal and the chain, EVERY linked row is
+  prepared, one after another in row order (their PIN and host-key prompts come in that order), and only then does
+  the synchronous `typeAll` send anything. A row whose preparation is `refused` is reported as failed and the others
+  are typed. A `stopped` row (the person cancelled a PIN or a host-key prompt) stops the whole run: nothing is typed,
+  and every row prepared so far is cleaned. The prepared rows are one list owned by the run, and the run's `finally`
+  cleans every row that was not handed over to a terminal.
 - **Dependency chain**: a linked step has no stay-open (D11); a password step is refused at plan time; *Runs on* of a
   linked step is not an OS refusal; the step's key is deleted when the step ends.
-- **Run with Secrets**: local window only; the child is `ssh` by argv (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`,
-  no `-t`, `shell:false`); STDIN carries `secretsStdin` (D12); output masked as today; the banner says typed input is
-  not forwarded. `MaskedRunOptions` gains `argv` and `stdinText`.
+- **Run with Secrets**: local window only. Order: prepare → `confirmTrusted(trustLine)` (the same host-bound trust as
+  every road; it is asked AFTER the host-key decision, so it names the host the values will reach) → dependencies →
+  resolve the secret values → spawn. No child exists and no byte is written to any stdin before the trust is given;
+  a declined trust cleans the session and spawns nothing. The child is `ssh` by argv
+  (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`, no `-t`, `shell:false`); STDIN carries `secretsStdin` (D12), then
+  is closed; output masked as today; the banner says typed input is not forwarded. A **password** SSH entry: the
+  human PIN prompt runs inside `prepareSshSession` as for any road; its askpass env (`SSH_ASKPASS`,
+  `SSH_ASKPASS_REQUIRE=force`, the password variable) goes into the CHILD's environment — never argv — with
+  `NumberOfPasswordPrompts=1` from `buildSshExecArgv`'s askpass branch and its `ConnectTimeout=10`, so a wrong password
+  ends the child with ssh's error instead of a hang. `MaskedRunOptions` gains `argv`, `env` and `stdinText`.
 - **Agent**: `findUsableEntry(…, sshEntityId, 'exec')` must answer `usable`, else
   `"<entry>" runs over the SSH connection "<ssh>", which is not open to agents. Nothing ran.` Then `resolveExecAuth`
   (refuses a PIN-locked or woven password), jump and pin as the agent exec does, `buildSshExecArgv` with the remote
   command WITHOUT stay-open, key deleted in `finally`. Trust uses the same trust line, so one approval covers the
   arrow and the agent. Consent text names the SSH entry and its target.
-- **Copy Command / viewer**: show the trust line for a linked entry.
+- **Copy Command / viewer**: show and copy the trust line for a linked entry, with one sentence beside it: "This line
+  uses your own ssh setup (agent, `~/.ssh/config`); the vault's key and password are not in it — use Run to connect
+  with them." The composed launch line is never copied: it holds a per-window key path and, on the relay route, a
+  socket path.
 
 ### 4.5 The structural test — `test/launchRoadScan.test.ts`
 
@@ -197,6 +233,13 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | link none / linked / missing / trashed / self / no host; Windows refusal; newline refusal; wrapper text; trust line differs per host / user / port / jump and holds no `-i` | `test/remoteLaunch.test.ts` | D5, D6, D9 |
 | `buildSshCommand` byte-identical without `remote`; `-t`, `--` order; quoting of `'`, `"`, `$`, backtick for posix and PowerShell | `test/sshCommand.test.ts` | two parses |
 | PowerShell 5.1 + `"` refused | composer test | §4.6 |
+| delivery: the typed line through the REAL local shell (`/bin/bash -c`; `pwsh -c` when installed, else skipped with a printed reason) and a recording fake `ssh` gives one remote element equal to the remote command, for the metacharacter corpus | `test/remoteLaunchDelivery.test.ts` | §4.2 serialization contract |
+| stay-open wrapper text; a non-zero exit prints the sentence (run the wrapper with `sh -c` locally, `SHELL=/bin/true`) | `test/remoteLaunch.test.ts` | finding: status not lost |
+| `secretsStdin`: braces on their own lines, `exit $?`, a `# comment` line, a value with `'` | `test/remoteLaunch.test.ts`, plus a local `sh -s` run of the produced script with a stdin-reading command | §4.2 |
+| cleanup ownership: declined trust, cancelled dependency, thrown error, failed terminal creation, unsent folder row each leave no key file and no pin | the road worlds | §4.4 one owner |
+| folder: a `stopped` row stops the run, nothing typed, every prepared row cleaned | folder world | §4.4 |
+| secrets: no child and no stdin write before trust; declined trust spawns nothing; password entry → askpass vars in the child env, not argv | masked-run test with a fake spawn | §4.4 |
+| Copy Command on a linked entry copies the trust line, never a key path | viewer / copy test | §4.4 |
 | prepare opens no terminal; `cleanup` deletes key and pin; `refused` leaves nothing on disk | `test/sshSession.test.ts` | the seam |
 | existing SSH Connect suites green, unchanged | `sshConnect.test.ts`, `sshConnectRemote.test.ts` | no regression |
 | arrow: typed line, password → new terminal with env beside a live one, nothing disposed; declined trust → cleanup; missing link → sentence, nothing typed | arrow world | D10 |
@@ -210,7 +253,12 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 ## 7. Risks
 
 1. **An older extension build** ignores the field and runs the command locally; its Save rebuilds the whole record
-   and erases the field, and sync carries that everywhere. No version gate exists. Recorded, not solved here.
+   and erases the field, and sync carries that everywhere. No version gate exists for any field of this product; the
+   same risk was accepted for `vpnLauncherEntityId` and `dependsOn` (`research/PLAN_os_aware_execution.md`, risk 2).
+   The exposure is the window between a person's first link and the update of their other machines (the Marketplace
+   updates extensions by default). Recorded, not solved here; the guarantee of §1 is narrowed to this build and later.
+   Checked and not built: storing a *Runs on* value that old builds refuse — `entryShell` uses the default profile in
+   a Remote-SSH window and does not refuse there, so it is not airtight (§9).
 2. **Windows PowerShell 5.1 quoting** of native arguments (§4.6) — refused for `"`; other cases are a hand check.
 3. **A key file lives while the stay-open terminal lives** — the same lifetime as SSH Connect's session today, plus
    the purge on activate and deactivate.
@@ -242,7 +290,9 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 
 - A Windows remote (D9) — a later plan, after a hand check of Windows OpenSSH's default shell.
 - Remapping references on external import (an existing gap for all four reference fields).
-- A version gate against older builds (risk 1).
+- A version gate against older builds (risk 1) — a product-wide sync/schema feature. A cheaper idea for later: a
+  fail-closed marker that every road of an old build already refuses in every window kind (the *Runs on* value is
+  not one, see risk 1).
 - The bridge: it refuses `run` and `terminal` today (`bridgeAllowList.ts:44-46`) and keeps doing so.
 
 ## 10. Hand checks (owner)
@@ -250,7 +300,10 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 1. Local Windows, pwsh 7: arrow on an entry linked to a key SSH entry; `tmux new -A -s {name}`; detach; the remote
    shell stays.
 2. The same with a password SSH entry; a second run opens a second terminal.
-3. Run with Secrets over SSH on a Linux host; the value is masked; `ps` on the host shows `sh -s`.
+3. Run with Secrets over SSH on a Linux host, once with a key entry and once with a password entry; the value is
+   masked; `ps` on the host shows `sh -s`; a wrong password ends with ssh's error, not a hang.
+4. A real peer: a linked entry whose line is `printf '%s|' a\ b "c;d" '$(x)' && echo; echo "$HOME"` prints the same
+   on the server as when typed at a remote prompt (bash and zsh login shells).
 
 ## 11. Definition of Done
 
