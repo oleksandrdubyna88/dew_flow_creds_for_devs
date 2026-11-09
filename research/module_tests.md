@@ -359,6 +359,22 @@ release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'cred
 line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
 version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
 
+**The bash helper `owned.sh` has a self-test in real child processes (2026-11-09, E2.4.S1 of
+[PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).** `.github/scripts/lib/owned.sh` gives a shell script one owned
+folder, `testsToDelete-<owner>-creds-<what>-<8 hex>`, in the rule's order (claim by an exclusive write of the owner record, register
+the traps, create with `mkdir`), and removes it on every exit path by its exact name. `.github/scripts/lib/owned.test.sh` runs 20
+cases (T1 to T21 of the spec; T3, T12 and T14 are Windows only) and every case starts a real `bash` with its own temp root: the
+name and the record against the mounted `owned.mjs` (the claim is byte for byte the reference's `formatOwner`, `:<start>:<ns>` on
+Linux), claim-first, a taken claim, a squatter folder that is never removed, `owned_remove` limited to this run's folders, a
+removal that gives up, `kill -9` between the claim and the `mkdir` and after it (the shipped janitor and the mounted Node sweep
+collect the claim on Linux and macOS; on Windows the Node sweep lists it `unverified:` and the janitor is a dry run), `OWNED_KEEP`,
+the exit chain under `set -e`, `set -u` with an empty registry, and a signal that arrives while `mkdir` runs. `ci-clients.yml` runs it
+on the three legs (macOS with `/bin/bash`, 3.2); `ci-server.yml` shellchecks both files. What it does not cover: a trap a caller sets
+itself (T7d measures the replacement, T7a scans the callers), a race of two live scripts on one name, the Windows
+collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
+whose plain `mkdir` is not always exclusive in a race (about 1 run in 14 gave two successes): T5 notes it there and the helper relies
+on its exclusive claim for two live runs.
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
