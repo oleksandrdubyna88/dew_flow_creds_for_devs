@@ -32,7 +32,8 @@
 # no associative array, no mapfile, no stat, no touch -d. Functions return; only owned_exit_chain and owned_signal
 # end the script, as the caller's own exit would.
 
-# The token of this repository: the ONLY place it is written (rule section 1). OWNED_REPO is the same text for the patterns below.
+# The token of this repository: the ONLY place it is written (rule section 1; the guard reads the name). OWNED_REPO is the same text for the patterns
+# below. Sourcing this file sets REPO_TOKEN and so overwrites a REPO_TOKEN of the caller: a caller must not use that name.
 REPO_TOKEN="creds"; OWNED_REPO="$REPO_TOKEN"
 
 # The state is set once. A second source of this file in the same shell keeps what the first one registered.
@@ -45,6 +46,8 @@ if [ -z "${OWNED_LOADED:-}" ]; then
   OWNED_CALLER_FN=""
   OWNED_BUSY=0
   OWNED_PENDING=""
+  OWNED_SEAM_HOOK_SAID=""
+  OWNED_SEAM_IDS_SAID=""
   OWNED_PATHS=()
   OWNED_STATES=()
   OWNED_TEXTS=()
@@ -112,7 +115,7 @@ owned_norm() {
 owned_owner() {
   if [ -n "$OWNED_OWNER" ]; then printf '%s\n' "$OWNED_OWNER"; return 0; fi
   owned_token > /dev/null || return 1
-  local os host pid rec line rest btime k v tick nsl start="" ns="" re_num='^[0-9]+$' re_pos='^[1-9][0-9]*$' re_ns='^pid:\[([0-9]+)\]$'
+  local os host wsl pid rec line rest btime k v tick nsl start="" ns="" re_num='^[0-9]+$' re_pos='^[1-9][0-9]*$' re_ns='^pid:\[([0-9]+)\]$'
   local -a words
   case "$OWNED_UNAME" in
     Linux) os=linux ;;
@@ -122,7 +125,8 @@ owned_owner() {
   esac
   if ! host="$(hostname)" || [ -z "$host" ]; then owned_say "cannot read the host name"; return 1; fi
   owned_norm "$host"; host="$OWNED_NORM"
-  if [ -n "${WSL_DISTRO_NAME:-}" ]; then owned_norm "$WSL_DISTRO_NAME"; host="$host~$OWNED_NORM"; fi
+  wsl="${WSL_DISTRO_NAME:-}"
+  if [ -n "${wsl//[[:space:]]/}" ]; then owned_norm "$wsl"; host="$host~$OWNED_NORM"; fi
   pid="$$"
   if [ "$os" = windows ]; then
     if ! IFS= read -r pid < "/proc/$$/winpid" 2> /dev/null || [ -z "$pid" ]; then owned_say "cannot read the Windows pid of this shell"; return 1; fi
@@ -175,8 +179,12 @@ owned_trap() {
 # ends with the status it had (C2).
 owned_exit_chain() {
   local rc=$?
-  set +e
-  if [ -n "$OWNED_CALLER_FN" ]; then "$OWNED_CALLER_FN" || true; fi
+  # A signal that comes now is only recorded (owned_signal): the status is the first one's, and the cleanup is not cut short.
+  OWNED_BUSY=1
+  # set +eu: the caller's own options (set -e, set -u) must not end the chain. The function runs in a subshell, so an
+  # `exit` in it, or an unbound variable, ends only the subshell and owned_cleanup still runs.
+  set +eu
+  if [ -n "$OWNED_CALLER_FN" ]; then ( "$OWNED_CALLER_FN" ) || true; fi
   owned_cleanup || true
   exit "$rc"
 }
@@ -226,8 +234,14 @@ owned_unclaim() {
 }
 
 # owned_create_dir <dir>: the one place the folder is made. mkdir fails on an existing path.
+# Where perl exists its mkdir is used: the kernel's own exclusive create. The plain mkdir of uutils coreutils is not always exclusive in a
+# race (measured: two racing calls both succeeded). Without perl, on uutils, that limit stays (the claim is exclusive in any case).
 owned_create_dir() {
-  mkdir -- "$1" 2> /dev/null
+  if command -v perl > /dev/null 2>&1; then
+    perl -e 'mkdir $ARGV[0] or exit 1' "$1" 2> /dev/null
+  else
+    mkdir -- "$1" 2> /dev/null
+  fi
 }
 
 # owned_leave: end of the busy window of owned_dir; a signal that came meanwhile is raised now.
@@ -263,6 +277,16 @@ owned_dir() {
   owned_owner > /dev/null || return 1
   root="${TMPDIR:-/tmp}"
   while [ "${root%/}" != "$root" ]; do root="${root%/}"; done
+  # A relative root would break the cleanup after a `cd`: the root is made absolute here, once.
+  case "$root" in
+    /*) ;;
+    *) if ! root="$(cd "${root:-.}" 2> /dev/null && pwd)" || [ -z "$root" ]; then owned_say "owned_dir: the temp root '${TMPDIR:-/tmp}' cannot be entered"; return 1; fi ;;
+  esac
+  # The seams are named on stderr, once each, so nobody takes a test run for a real one.
+  if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ] && [ -z "$OWNED_SEAM_HOOK_SAID" ]; then OWNED_SEAM_HOOK_SAID=1; owned_say "test seam OWNED_HOOK_AFTER_CLAIM is set"; fi
+  if [ -n "${OWNED_TEST_IDS:-}" ] && [ -z "$OWNED_SEAM_IDS_SAID" ]; then OWNED_SEAM_IDS_SAID=1; owned_say "test seam OWNED_TEST_IDS is set"; fi
+  # The traps are set BEFORE the first claim is written (a signal right after the write must find them).
+  if [ -z "$OWNED_TRAP_SET" ]; then owned_install_traps; fi
   while [ "$draws" -lt 3 ]; do
     draws=$((draws + 1))
     owned_next_id
@@ -281,7 +305,6 @@ owned_dir() {
     OWNED_PATHS[$i]="$dir"
     OWNED_STATES[$i]="claimed"
     OWNED_TEXTS[$i]="$OWNED_OWNER"
-    if [ -z "$OWNED_TRAP_SET" ]; then owned_install_traps; fi
     if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ]; then "$OWNED_HOOK_AFTER_CLAIM" "$dir" || true; fi
     # 3. CREATE
     owned_create_dir "$dir" && rc=0 || rc=$?
