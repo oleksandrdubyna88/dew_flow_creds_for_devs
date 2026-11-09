@@ -2279,6 +2279,53 @@ From the coai code gate (G0, G3, G5) and the Opus review of S5 (four minors). Fo
 names the owner (the caller, `BUILTIN\Administrators`, another account; on POSIX the uid). The cases with a re-owned or foreign fixture are unchanged. The first test is renamed `The_natural_node_output_not_re_owned_is_judged_by_its_real_owner_and_the_runner_says_which_outcome_it_gave` and is no longer skipped on a non-elevated runner.
 Checked on Linux only (`CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581 / 25; the Windows case is skipped there, the socket test takes the `live` branch); the Windows legs are CI's. F31's text stands as a limit that MAY show on a runner; this runner did not show it.
 
+### E2.4 build record, part 1 — S1 (2026-11-09, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.4_S1_spec.md](PLAN_test_leftovers_E2.4_S1_spec.md), test first. Commits, oldest first: `2d0a188` RED (`owned.test.sh`, no helper);
+`e7baf47` `owned.sh` (GREEN on Linux); the guard fix of the test file (T17); the CI step and the shellcheck line (`45a1225`); `59859b9` `module_tests.md`; `4225f8b` the janitor's own words in the test output;
+this record. Only S1 is built; S2 to S4 are not touched.
+
+**What was built.**
+- `.github/scripts/lib/owned.sh`: `owned_token`, `owned_owner`, `owned_trap`, `owned_exit_chain`, `owned_signal`, `owned_dir`, `owned_remove`, `owned_cleanup`, with the state in three indexed arrays (`OWNED_PATHS`, `OWNED_STATES`, `OWNED_TEXTS`),
+  the states `claimed`, `created`, `kept`, `released`, the claim write with the `-e`/`-L` pre-check, `noclobber` and the read-back, the busy window (`OWNED_BUSY`, `OWNED_PENDING`), the Linux record `:<start>:<ns>` (field 22 after the last `)`, one `getconf`, one `readlink`).
+  The word `mktemp` is nowhere in the two files. `git grep -n REPO_TOKEN -- .github/scripts/lib` is one line.
+- `.github/scripts/lib/owned.test.sh`: T1 to T21 (T17 is by hand, below), every case in a real child `bash`, waited for with `wait`, read after the child is gone; the scope premise before every janitor and Node-sweep run.
+- `ci-clients.yml`: step *Self-test the shell helper* after the version-smoke self-test (macOS runs `/bin/bash`); `ci-server.yml`: `$SHELLCHECK -x` over the two files. `research/module_tests.md`: one paragraph.
+
+**The RED list.**
+1. The trivial RED (no helper): `.github/scripts/lib/owned.test.sh: line 60: .../owned.sh: No such file or directory` then `FAIL cannot source .../owned.sh`, exit 1 (the source line, as the spec says).
+2. T4 and T13, by hand, the folder made before the claim (a copy of the helper with `mkdir` at the start of `owned_claim`): `FAIL T4 at the hook the claim exists and the folder does not: expected [true], got [false]`; `FAIL T13 the root holds exactly ONE entry: expected [1], got [2]` and `FAIL T13 the entry: testsToDelete-u1000-creds-x-440d5364` (an unclaimed folder; the folder first, the claim second is what both sweeps would list `unmarked:`).
+3. T8, by hand, the squatter adopted (`released` not set, state `created`, claim kept): `FAIL T8 the squatter's sentinel survives: condition false: test -f .../testsToDelete-u1000-creds-x-cccccccc/sentinel`; `FAIL T8 the root holds exactly one entry: expected [1], got [0]`; the same in T20b.
+4. T20, by hand, `owned_signal` exits at once (no `OWNED_BUSY` check): `FAIL T20a the root holds NO folder and NO claim: expected [0], got [1]` (a folder without its claim).
+5. T18, by hand, the chain as `cleanup; owned_cleanup` (no `set +e`, no `exit "$rc"`): `FAIL T18 the status is 3: expected [3], got [1]`; `FAIL T18 the root is empty: expected [0], got [2]`; `FAIL T18 with no owned_trap the root is empty: expected [0], got [2]`.
+6. T7a, by hand, a tracked caller (`git add` only, then `git rm --cached`) with `trap cleanup EXIT`: `FAIL T7a .github/scripts/zz-caller.sh: sets a trap of its own: 4:trap cleanup EXIT`; the fixture half passed.
+7. T2, T13, T15, T16, by hand, `owned_owner` without `:<start>:<ns>`: `FAIL T2 Linux record: u1000:jinx~Ubuntu@linux:933738`; `FAIL T2 the claim line equals the reference's formatOwner (byte for byte): expected [u1000:jinx~Ubuntu@linux:933738:1794264044:4026532216], got [u1000:jinx~Ubuntu@linux:933738]`;
+   `FAIL T2 parseOwner reads start and ns ...: expected [ok ns start], got [ok nsDIFF startDIFF]`; `FAIL T15 the janitor collects folder and claim (root empty): expected [0], got [2]` with the janitor saying `skipped: folder ... liveness unknown for process 981265; the record names no pid namespace, or another one than this reader's`; the same in T16. This is the counterexample of the parent's item 8.1.
+8. T19, by hand, a `"${OWNED_PATHS[@]}"` loop: **no RED on Linux** (bash 5.3.9 accepts an empty array under `set -u`); it is red on macOS bash 3.2 only, so that RED is CI's.
+9. T5, found by running: `FAIL T5 exactly one of two racing mkdir succeeds (statuses 0, 0): expected [1], got [2]` (see difference 1).
+
+**What ran where.** Linux, bash 5.3.9 (WSL, Ubuntu), run by hand with `TMPDIR` set to a scratch folder and once in the default root: `107 passed, 0 failed`, four times in a row after the T5 change; T13, T15, T16 ran the shipped janitor (`JANITOR_MIN_AGE_MINUTES=10`, `--token creds`, a private root) and the mounted `sweepLeftovers` for real, scope premise green (this machine has no `docker` binary; nothing was run with docker).
+The record on this machine: `u1000:jinx~Ubuntu@linux:896992:1794263866:4026532216`. T17: `leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` gives 16 findings, none under `.github/scripts/lib/` (the first draft of the test file had two: a printf format and a `${base#testsToDelete-}` cut, both rewritten); `git grep -n REPO_TOKEN -- .github/scripts/lib` is one line.
+
+**What did not run, and why.**
+- macOS (`/bin/bash` 3.2) and Git for Windows: CI only. So T3, T12, the Windows branches of T13, T15 and T16 (`windows_listing`, the F16 `unverified:` line, F31's `[ -O ]` outcome), T21's macOS asserts, T19's RED and T11 on macOS never ran. The by-hand review of the code for bash 3.2 found no `declare -A`, `mapfile`, `${x,,}`, quoted `=~` pattern, or `"${arr[@]}"` of a possibly empty array.
+- `shellcheck` is not installed here and `docker` is not to be run, so the spec's by-hand shellcheck did not run. Directives added without measuring: `# shellcheck shell=bash` and `disable=SC2329` (owned.sh), `disable=SC2329,SC2016,SC2015,SC2012` (test), `disable=SC2206` on the one `words=($rest)`, and `-x` in the CI line. CI's `ci · server` is the first measurement.
+- `actionlint` is not installed: both workflows were parsed with PyYAML only.
+
+**Differences from the spec.**
+1. **T5's race, a measured fact about this machine:** `mkdir` here is uutils coreutils 0.10.0, and two racing plain `mkdir` on one path both succeeded in about 1 run of 14 (22 of 300 in a loop). The spec's premise (C5) "exactly one succeeds" is false for it. The test asserts "at least one" when `mkdir --version` says uutils, "exactly one" elsewhere, and prints a NOTE. The helper is safe against two live runs because the claim is an exclusive create; only a non-helper process that makes the same name inside the same microseconds could be adopted. **For the coordinator:** keep this, or decide whether `owned_create_dir` must stop relying on `mkdir` (no portable exclusive create of a folder exists in bash); it is not a plan change.
+2. A second `source` of `owned.sh` keeps the registered entries (`OWNED_LOADED`); the spec says the arrays are declared when the file is sourced. The smoke scripts of S2 source it twice.
+3. The line `REPO_TOKEN="creds"; OWNED_REPO="$REPO_TOKEN"` holds the second name for the patterns, so `git grep REPO_TOKEN` is one line (spec row 15).
+4. The busy window covers the whole draw (claim write, registration, trap install, hook, create), not only the create, so a trapped signal never lands between the claim and its registration. Every path leaves it through `owned_leave`.
+5. `OWNED_HOOK_AFTER_CLAIM` runs after the claim, the registration and the trap install, right before the create (the spec: between steps 1 and 2).
+6. The traps are installed on the first call also under `OWNED_KEEP=1`.
+7. `owned_cleanup` on a `created` entry whose claim no longer holds what this run wrote: one line, state `released`, folder left (the spec is silent; `owned_remove` refuses). `kept` is removable by `owned_remove` and untouched by `owned_cleanup`.
+8. T8's by-hand RED: with the states of section 4, taking out the `released` transition leaves the state `claimed`, and the cleanup then removes only the claim, so the sentinel survives. The RED that gives "the sentinel is gone" is the adoption of the squatter (item 3 above).
+9. Every case has its own temp root below the private root (the spec: `TMPDIR="$ROOT"` for all), because the scripts and control files would be entries of one shared root and "exactly one entry" could not be read.
+10. T7a reads `*.sh` files only (`git grep -l 'lib/owned.sh' -- '*.sh'`); a workflow that names the file is no caller. T3's `tasklist` check runs inside T2's alive window; T14's logic is `windows_listing`, shared by T13 and T15 on Windows. T16 on Windows is listed as skipped.
+11. `owned_next_id` takes ids from `OWNED_TEST_IDS` by removing them from the variable; when the list is empty the draw is random.
+12. The test also takes `T_OWNED_SH` (the helper to test), the seam the by-hand REDs use.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
