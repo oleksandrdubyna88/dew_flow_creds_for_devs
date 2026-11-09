@@ -26,6 +26,8 @@ import {
 } from '../folderRun';
 import { entryOpenRefusal, liveTerminalsOfEntry } from '../pinnedTerminal';
 import { typeIntoNew } from '../terminalGuard';
+import { EntryTerminalKey, entryTerminalKey } from '../terminalTitles';
+import type { TreeNode } from '../types';
 import type { RunCommandsHost } from './runCommands';
 
 /**
@@ -35,12 +37,17 @@ import type { RunCommandsHost } from './runCommands';
  * <p>Closing is authorised per terminal OBJECT, in a snapshot taken when the modal is built, and never by name afterwards.
  * From the chain's end to the last send nothing is awaited, so the one re-check is as fresh as one per line, and nothing
  * reads the terminal list after a `dispose` (a disposed terminal may still be listed).</p>
+ *
+ * <p>Every title of a row is `keyOf(folder, row.name)`: the folder node re-read in `folderAt`, one key for the classification,
+ * the modal's snapshot, the re-check and the creation. Every row is a DIRECT child of the folder, so the folder is its parent.</p>
  */
 
 interface Folder {
   readonly accountId: string;
   readonly id: string;
   readonly name: string;
+  /** The node as `folderAt` re-read it: the parent of every row. */
+  readonly node: TreeNode;
 }
 
 /** The terminals the modal listed, by row id: what `Close Open Terminals and Run` authorises, and nothing else. */
@@ -48,10 +55,13 @@ type Authorised = ReadonlyMap<string, readonly vscode.Terminal[]>;
 
 const NOTHING_AUTHORISED: Authorised = new Map();
 
-const FACTS: FolderFacts = {
-  shellRefusal: entryOpenRefusal,
-  isOpen: (name) => liveTerminalsOfEntry(name).length > 0,
-};
+function keyOf(folder: Folder, name: string): EntryTerminalKey {
+  return entryTerminalKey(name, folder.node);
+}
+
+function factsOf(folder: Folder): FolderFacts {
+  return { shellRefusal: entryOpenRefusal, isOpen: (name) => liveTerminalsOfEntry(keyOf(folder, name)).length > 0 };
+}
 
 /** Folders with a run pending, in a modal or a chain, as the guard's `asking`. Each key leaves in a `finally`, so it cannot grow. */
 const inFlight = new Set<string>();
@@ -76,7 +86,7 @@ function folderAt(host: RunCommandsHost, target: unknown): Folder | undefined {
   }
   const byId = (id: string) => host.storage.getNode(element.accountId, id);
   const found = folderTarget(byId(element.node.id), byId);
-  return found.ok ? { accountId: element.accountId, id: found.node.id, name: found.node.name } : warned(found.reason);
+  return found.ok ? { accountId: element.accountId, id: found.node.id, name: found.node.name, node: found.node } : warned(found.reason);
 }
 
 function warned(message: string): undefined {
@@ -99,7 +109,7 @@ async function oneAtATime(folder: Folder, run: () => Promise<void>): Promise<voi
 }
 
 async function planAndAsk(host: RunCommandsHost, folder: Folder): Promise<void> {
-  const plan = planFolderRun(host.storage.getChildren(folder.accountId, folder.id), FACTS);
+  const plan = planFolderRun(host.storage.getChildren(folder.accountId, folder.id), factsOf(folder));
   const isNew = (row: LineRow): boolean => !isCommandTrusted(host.context.globalState, row.id, row.line);
   const stop = beforeAsking(folder.name, plan, isNew);
   if (stop === undefined) {
@@ -111,7 +121,7 @@ async function planAndAsk(host: RunCommandsHost, folder: Folder): Promise<void> 
 
 /** The modal, ALWAYS (decision C). The snapshot is read in the same tick as its text. */
 async function ask(host: RunCommandsHost, folder: Folder, plan: FolderPlan, isNew: (row: LineRow) => boolean): Promise<void> {
-  const snapshot = openTerminals(plan);
+  const snapshot = openTerminals(plan, folder);
   const choice = await vscode.window.showWarningMessage(
     folderQuestion(folder.name, plan, isNew),
     { modal: true },
@@ -123,8 +133,8 @@ async function ask(host: RunCommandsHost, folder: Folder, plan: FolderPlan, isNe
 }
 
 /** Every live terminal of each open row's name, any shell. */
-function openTerminals(plan: FolderPlan): Authorised {
-  return new Map(lineRows(plan).filter((row) => row.kind === 'open').map((row) => [row.id, liveTerminalsOfEntry(row.name)]));
+function openTerminals(plan: FolderPlan, folder: Folder): Authorised {
+  return new Map(lineRows(plan).filter((row) => row.kind === 'open').map((row) => [row.id, liveTerminalsOfEntry(keyOf(folder, row.name))]));
 }
 
 /** `authorised` is present only for the closing button. */
@@ -136,30 +146,30 @@ async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan
   const request = dependencyRequest(host.storage, folder.accountId, lines.map((row) => row.details), folder.name, trust, plan.directIds);
   const chain = await runDependenciesFirst({ ...request, ownerIsFolder: true });
   if (chain.ready) {
-    say(reportNotice(folder.name, typeAll(plan, closing, authorised ?? NOTHING_AUTHORISED)));
+    say(reportNotice(folder.name, typeAll(plan, closing, authorised ?? NOTHING_AUTHORISED, folder)));
   } else {
     warned(chainStopped(folder.name));
   }
 }
 
 /** The re-check over every row first, then the closes and the sends: synchronous from here to the last send. */
-function typeAll(plan: FolderPlan, closing: boolean, authorised: Authorised): readonly FolderOutcome[] {
-  const settled = plan.rows.map((row) => settleRow(row, closing, (r) => appeared(r, authorised)));
-  return settled.map((step) => (step.kind === 'type' ? typeLine(step.row, authorised.get(step.row.id) ?? []) : step));
+function typeAll(plan: FolderPlan, closing: boolean, authorised: Authorised, folder: Folder): readonly FolderOutcome[] {
+  const settled = plan.rows.map((row) => settleRow(row, closing, (r) => appeared(r, authorised, folder)));
+  return settled.map((step) => (step.kind === 'type' ? typeLine(step.row, authorised.get(step.row.id) ?? [], folder) : step));
 }
 
 /** A live terminal of the row's name that the person did not authorise closing. */
-function appeared(row: LineRow, authorised: Authorised): boolean {
+function appeared(row: LineRow, authorised: Authorised, folder: Folder): boolean {
   const known = authorised.get(row.id) ?? [];
-  return liveTerminalsOfEntry(row.name).some((terminal) => !known.includes(terminal));
+  return liveTerminalsOfEntry(keyOf(folder, row.name)).some((terminal) => !known.includes(terminal));
 }
 
 /** Close what was authorised for this row, by object; then a NEW terminal, never found. A failure is this row's alone. No rollback. */
-function typeLine(row: LineRow, toClose: readonly vscode.Terminal[]): FolderOutcome {
+function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], folder: Folder): FolderOutcome {
   const live = toClose.filter((terminal) => terminal.exitStatus === undefined);
   try {
     live.forEach((terminal) => terminal.dispose());
-    const sent = typeIntoNew(row.name, row.details.terminalOs, () => row.line);
+    const sent = typeIntoNew(keyOf(folder, row.name), row.details.terminalOs, () => row.line);
     return sent.kind === 'typed' ? { kind: 'typed', name: row.name } : failed(row, failedAfterClosing(sent.reason, live.length));
   } catch (error) {
     return failed(row, failedAfterClosing(describeError(error), live.length));

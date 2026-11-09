@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { commandFingerprint } from '../commandTrust';
 import { loadWithVscode } from './vscodeStub';
 import { endedStage } from '../requestLife';
-import { EntityMetadata } from '../types';
+import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
+import { EntityMetadata, TreeNode } from '../types';
 import { ownedDir, type Scope } from '../../scripts/lib/leftovers.cjs';
 
 /**
@@ -289,11 +290,28 @@ export function ownerChain(): Record<string, EntityMetadata> {
   return { install, start, vpn };
 }
 
+/** The title of the terminal of a ROOT entry (no parent folder) named `name`, built by the real functions. */
+export const rootTitle = (name: string): string => entryTerminalTitle(entryTerminalKey(name, undefined));
+
 export const STORED_CONFIG = 'client\nremote vpn.example 1194\n';
 
-export function storageOf(nodes: Record<string, EntityMetadata>, config: () => Promise<string | undefined> = () => Promise.resolve(STORED_CONFIG)) {
+/** The folder of `placed` with this id, if any. */
+function folderIn(placed: Record<string, TreeNode>, id: string): TreeNode | undefined {
+  return Object.values(placed).find((folder) => folder.id === id);
+}
+
+/**
+ * The storage of a chain world: `nodes` are the entries by id; `placed[entryId]` is the folder node that entry sits in
+ * (none: the root). An id it does not know answers `undefined`.
+ */
+export function storageOf(
+  nodes: Record<string, EntityMetadata>,
+  config: () => Promise<string | undefined> = () => Promise.resolve(STORED_CONFIG),
+  placed: Record<string, TreeNode> = {},
+) {
   return {
-    getNode: (_account: string, id: string) => (nodes[id] === undefined ? undefined : { id, details: nodes[id] }),
+    getNode: (_account: string, id: string): TreeNode | undefined =>
+      nodes[id] === undefined ? folderIn(placed, id) : { id, name: nodes[id].name, type: 'entity', details: nodes[id], parentId: placed[id]?.id },
     getVpnConfig: config,
   };
 }

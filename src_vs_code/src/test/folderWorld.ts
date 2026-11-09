@@ -1,4 +1,5 @@
 import { siblingOrder } from '../stateKeys';
+import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import { EntityMetadata, TreeNode } from '../types';
 import { registerRunWorld } from './arrowWorld';
 import { FakeTerminal, HeldDialog, World, WorldOptions, hostOs, memoryTrust, seedTrusted, until, world } from './vpnWorld';
@@ -10,8 +11,11 @@ import { FakeTerminal, HeldDialog, World, WorldOptions, hostOs, memoryTrust, see
  */
 export const FOLDER = 'claude sessions';
 
-/** The terminal an entry named `name` runs in. */
-export const T = (name: string): string => `CredsForDevs: ${name}`;
+/** The folder node the world's entries are direct children of (a test may override parts of it through `folder`). */
+export const FOLDER_NODE: TreeNode = { id: 'f', name: FOLDER, type: 'folder', folderType: 'terminal', parentId: null };
+
+/** The terminal an entry named `name` runs in: the real title of a direct child of the folder. */
+export const T = (name: string): string => entryTerminalTitle(entryTerminalKey(name, FOLDER_NODE));
 
 /** A Terminal entry whose line is `tmux attach -t <name>`, its id being its name. */
 export function session(name: string, extra: Partial<EntityMetadata> = {}): EntityMetadata {
@@ -80,7 +84,7 @@ function treeOf(entries: readonly EntityMetadata[], o: FolderWorldOptions): Tree
   const subfolder = (name: string): TreeNode => ({ id: `sub-${name}`, name, type: 'folder', folderType: 'terminal', parentId: 'f' });
   const trashNode: TreeNode = { id: 'trash', name: 'Trash', type: 'folder', parentId: null, isTrash: true };
   return [
-    { id: 'f', name: FOLDER, type: 'folder', folderType: 'terminal', parentId: null, ...o.folder },
+    { ...FOLDER_NODE, ...o.folder },
     ...(o.subfolders ?? []).map(subfolder),
     ...entries.map(entity('f')),
     ...(o.outside ?? []).map(entity(null)),

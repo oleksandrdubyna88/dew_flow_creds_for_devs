@@ -420,7 +420,7 @@ test('another_folder_is_not_held_up', async () => {
 });
 
 test('one_failure_at_opening_does_not_stop_the_rest', async () => {
-  const w = folderWorld([session('a'), session('b'), session('c')], { failCreate: /: b$/ });
+  const w = folderWorld([session('a'), session('b'), session('c')], { failCreate: / \/ b$/ });
 
   await w.click();
 
@@ -432,7 +432,7 @@ test('one_failure_at_opening_does_not_stop_the_rest', async () => {
 });
 
 test('one_failure_at_typing_does_not_stop_the_rest', async () => {
-  const w = folderWorld([session('a'), session('b')], { failSend: /: a$/ });
+  const w = folderWorld([session('a'), session('b')], { failSend: / \/ a$/ });
 
   await w.click();
 

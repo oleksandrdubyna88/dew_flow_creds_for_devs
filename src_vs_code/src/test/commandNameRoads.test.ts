@@ -8,7 +8,7 @@ import { FieldReading } from '../fieldReading';
 import { shellRead } from '../runPlan';
 import { CommandArg, EntityMetadata } from '../types';
 import { arrowWorld } from './arrowWorld';
-import { memoryTrust, ownerChain, startVpn, terminalNamed, world } from './vpnWorld';
+import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -46,7 +46,7 @@ test('the_arrow_displays_approves_fingerprints_and_types_one_string', async () =
   assert.equal(modals(aw).length, 1, aw.warnings.join('\n'));
   assert.ok(modals(aw)[0].includes(`\n\n${L}\n\n`), modals(aw)[0]);
   assert.equal(isCommandTrusted(aw.trust, 'e1', L), true, 'the resolved line is what the store approved');
-  assert.deepEqual(terminalNamed(aw, 'CredsForDevs: alert').sent, [L]);
+  assert.deepEqual(terminalNamed(aw, rootTitle('alert')).sent, [L]);
 });
 
 test('the_arrow_refuses_a_name_with_no_modal_and_types_nothing', async () => {
@@ -64,14 +64,14 @@ test('a_rename_asks_again_and_types_the_new_line', async () => {
   await aw.run(entry);
   await aw.run({ ...entry, name: 'bravo' });
   assert.equal(modals(aw).length, 2, aw.warnings.join('\n'));
-  assert.deepEqual(terminalNamed(aw, 'CredsForDevs: alert').sent, ['tmux attach -t alert']);
-  assert.deepEqual(terminalNamed(aw, 'CredsForDevs: bravo').sent, ['tmux attach -t bravo']);
+  assert.deepEqual(terminalNamed(aw, rootTitle('alert')).sent, ['tmux attach -t alert']);
+  assert.deepEqual(terminalNamed(aw, rootTitle('bravo')).sent, ['tmux attach -t bravo']);
 });
 
 test('the_name_and_the_terminal_title_are_both_details_name', async () => {
   const aw = arrowWorld();
   await aw.run(E('alert', 'x {name}'), 'other');
-  assert.deepEqual(terminalNamed(aw, 'CredsForDevs: alert').sent, ['x alert']);
+  assert.deepEqual(terminalNamed(aw, rootTitle('alert')).sent, ['x alert']);
   assert.equal(aw.terminals.length, 1, 'nothing opened under the node name');
 });
 
@@ -79,7 +79,7 @@ test('a_history_row_titles_its_terminal_from_that_versions_details_name', async 
   const aw = arrowWorld();
   const live = E('alert', 'x {name}');
   await aw.runRevision(live, { name: 'row-name', details: E('older', 'x {name}') });
-  assert.deepEqual(aw.terminals.map((t) => [t.name, t.sent]), [['CredsForDevs: older', ['x older']]]);
+  assert.deepEqual(aw.terminals.map((t) => [t.name, t.sent]), [[rootTitle('older'), ['x older']]]);
 });
 
 test('an_empty_command_still_says_so_as_before', async () => {
@@ -95,7 +95,7 @@ test('a_literal_in_an_old_entry_is_asked_about_once', async () => {
   await aw.run(E('alert', 'jq {name}'));
   assert.equal(modals(aw).length, 1, aw.warnings.join('\n'));
   assert.ok(modals(aw)[0].includes('\n\njq alert\n\n'), modals(aw)[0]);
-  assert.deepEqual(terminalNamed(aw, 'CredsForDevs: alert').sent, ['jq alert']);
+  assert.deepEqual(terminalNamed(aw, rootTitle('alert')).sent, ['jq alert']);
 });
 
 // ---------- Run with Secrets ----------
@@ -211,7 +211,7 @@ test('the_launcher_fingerprint_keeps_config_and_fills_name', async () => {
     const line = 'openvpn --config {config} --remote start-openvpn';
     assert.ok(modals(w).some((t) => t.includes(`\n\n${line}\n\n`)), w.warnings.join('\n'));
     assert.equal(isCommandTrusted(trust, 'start', line), true);
-    assert.match(terminalNamed(w, 'CredsForDevs: start-openvpn').sent[0], /^openvpn --config '.*' --remote start-openvpn$/);
+    assert.match(terminalNamed(w, rootTitle('start-openvpn')).sent[0], /^openvpn --config '.*' --remote start-openvpn$/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
