@@ -214,7 +214,7 @@ export class CredsAgentServer implements vscode.Disposable {
    * has to satisfy before reaching it.</p>
    */
   private admitAliasCall(res: http.ServerResponse, prompts: boolean, bridge?: BridgeContext, followUp?: boolean): Slot | undefined {
-    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId, followUp);
+    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId, followUp, res);
     const refused = admission.refusal;
     if (refused === undefined) {
       return admission;
@@ -687,7 +687,7 @@ export class CredsAgentServer implements vscode.Disposable {
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
         atLaunch,
-        standing: (prompt) => this.ceilings.followUpStands(grant, via, prompt),
+        standing: (prompt) => this.ceilings.followUpStands(res, grant, via, prompt),
       },
       call,
     );

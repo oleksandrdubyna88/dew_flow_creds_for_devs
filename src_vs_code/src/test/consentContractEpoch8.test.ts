@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { BUSY_PLACE, TokenlessCeilings } from '../aliasThrottle';
+import { BUSY_PLACE, LOCAL_DOOR, TokenlessCeilings } from '../aliasThrottle';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import { CONSENT_TIMED_OUT_ON_PLACE } from '../brokerProtocol';
 import { GRANT_NOT_ALLOWED } from '../brokerRequests';
@@ -220,9 +220,10 @@ const turns = async (): Promise<void> => {
 
 test('F1f (i): a follow-up question keeps the place after its call ended — busy after the release, admitted after the settlement', async () => {
   const ceilings = new TokenlessCeilings();
-  const holder = ceilings.admit(true, 0);
+  const call = {};
+  const holder = ceilings.admit(true, 0, LOCAL_DOOR, false, call);
   const q = question();
-  ceilings.followUpStands({}, 'mcp', q.prompt);
+  ceilings.followUpStands(call, {}, 'mcp', q.prompt);
   holder.release();
   assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE, 'the question holds the place');
   q.settle();
@@ -232,8 +233,9 @@ test('F1f (i): a follow-up question keeps the place after its call ended — bus
 
 test('F1f (ii): a local token call marks nothing — the place is free at the release', () => {
   const ceilings = new TokenlessCeilings();
-  const holder = ceilings.admit(true, 0);
-  ceilings.followUpStands({}, 'token', question().prompt);
+  const call = {};
+  const holder = ceilings.admit(true, 0, LOCAL_DOOR, false, call);
+  ceilings.followUpStands(call, {}, 'token', question().prompt);
   holder.release();
   assert.equal(ceilings.admit(true, 1).refusal, undefined);
 });
@@ -244,9 +246,10 @@ test('F1f (iii): a question that is rejected frees the place too, and nothing is
   process.on('unhandledRejection', spy);
   try {
     const ceilings = new TokenlessCeilings();
-    const holder = ceilings.admit(true, 0);
+    const call = {};
+    const holder = ceilings.admit(true, 0, LOCAL_DOOR, false, call);
     const q = question();
-    ceilings.followUpStands({}, 'mcp', q.prompt);
+    ceilings.followUpStands(call, {}, 'mcp', q.prompt);
     holder.release();
     assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE);
     q.fail();
@@ -260,9 +263,10 @@ test('F1f (iii): a question that is rejected frees the place too, and nothing is
 
 test('F1f (iv): a question settled before the release keeps the place for the call still running — busy until the release', async () => {
   const ceilings = new TokenlessCeilings();
-  const holder = ceilings.admit(true, 0);
+  const call = {};
+  const holder = ceilings.admit(true, 0, LOCAL_DOOR, false, call);
   const q = question();
-  ceilings.followUpStands({}, 'mcp', q.prompt);
+  ceilings.followUpStands(call, {}, 'mcp', q.prompt);
   q.settle();
   await turns();
   assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE, 'the call is still running and keeps the place by its flag');
@@ -282,4 +286,33 @@ test('the reload remedy is true: the place is in-memory state of one broker, so 
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'aliasThrottle.ts'), 'utf8');
   assert.equal(/from 'node:fs'|globalState|workspaceState|writeFile/.test(source), false, 'and nothing of the place is persisted for a reload to find');
   assert.ok(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'credsAgentServer.ts'), 'utf8').includes('private readonly ceilings = new TokenlessCeilings()'), 'one TokenlessCeilings per broker');
+});
+
+test('F1g: a call that reaches its question without holding the place never marks another call\'s holding — the other call\'s release frees the place at once', async () => {
+  const ceilings = new TokenlessCeilings();
+  const other = {};
+  const stranger = {};
+  const holder = ceilings.admit(true, 0, LOCAL_DOOR, false, other);
+  ceilings.admit(false, 0, LOCAL_DOOR, false, stranger); // a quiet call with no follow-up flag: it holds nothing
+  const q = question();
+  ceilings.followUpStands(stranger, {}, 'mcp', q.prompt); // ... and then raises a question of its own
+  holder.release();
+  assert.equal(ceilings.admit(true, 1).refusal, undefined, 'the other call\'s place was freed at its release: the stranger\'s question marked nothing of it');
+  q.settle();
+  await turns();
+});
+
+test('F1g: a call whose own holding has already been given back marks nothing either, whoever holds the place now', async () => {
+  const ceilings = new TokenlessCeilings();
+  const first = {};
+  const done = ceilings.admit(true, 0, LOCAL_DOOR, false, first);
+  done.release();
+  const next = ceilings.admit(true, 1);
+  assert.equal(next.refusal, undefined);
+  const q = question();
+  ceilings.followUpStands(first, {}, 'mcp', q.prompt);
+  next.release();
+  assert.equal(ceilings.admit(true, 2).refusal, undefined, 'the next holder\'s release freed it: a stale call marked nothing of it');
+  q.settle();
+  await turns();
 });

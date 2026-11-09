@@ -266,6 +266,8 @@ export interface Admission extends Slot {
    * asking call, which can come by any door.
    */
   readonly refusal?: { message: string; report: boolean; via?: AuditDoor };
+  /** The place this admission holds, when it holds one: a quiet call that takes none, and a refusal, have none. */
+  readonly held?: Holding;
 }
 
 /** The key of the local door: the main port and the socket, which are one window's callers with no token. */
@@ -326,6 +328,8 @@ export class TokenlessCeilings {
   /** The one dialog in flight, for every door together. */
   private readonly flight = new OneInFlight();
   private readonly doors = new Map<string, DoorCounts>();
+  /** The place each admitted call holds, by the call's own response object: what its follow-up question may mark, and nothing else. */
+  private readonly owned = new WeakMap<object, Holding>();
   /** The holding whose dialog is on screen, set by {@link prompted} and consumed by {@link dialogClosed}. */
   private open: Holding | undefined;
 
@@ -339,9 +343,17 @@ export class TokenlessCeilings {
    * rule protects a human from a pile-up and this path has no human to protect — except a quiet call whose action may prompt again
    * (`followUp`, D.3): it holds the place from admission to its release, with no dialog, so its next prompt opens over nothing.</p>
    */
-  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR, followUp: boolean = false): Admission {
+  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR, followUp: boolean = false, owner?: object): Admission {
     const counts = this.countsOf(door, nowMs);
-    return prompts ? this.admitAsking(counts, door, nowMs) : this.admitQuiet(counts, door, nowMs, followUp);
+    return this.claimed(prompts ? this.admitAsking(counts, door, nowMs) : this.admitQuiet(counts, door, nowMs, followUp), owner);
+  }
+
+  /** Remember which call holds the place an admission took, so only that call's question can mark it ({@link followUpStands}). */
+  private claimed(admission: Admission, owner: object | undefined): Admission {
+    if (owner !== undefined && admission.held !== undefined) {
+      this.owned.set(owner, admission.held);
+    }
+    return admission;
   }
 
   /** A call that raises no dialog: it holds the place only when its action may prompt again. */
@@ -422,11 +434,12 @@ export class TokenlessCeilings {
 
   /**
    * A follow-up prompt of the holder's own call is on screen (F1): the place is that prompt's until it settles, whatever the call does meanwhile, and then the
-   * call's until its release. Nothing for a local token call, which is counted on no door. Every road that reaches a follow-up question holds the place as the
+   * call's until its release. It marks the holding of the call that raised the question (`owner`, the response the call was admitted with), never the
+   * global holder: a call that holds nothing, or whose holding was given back, marks nothing of another call's. Nothing for a local token call, which is counted on no door. Every road that reaches a follow-up question holds the place as the
    * call's: an asking call by its flag's kept place, a quiet one by D.3. No modal stamp: the question is not a consent dialog.
    */
-  followUpStands(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, prompt: PromiseLike<unknown>): void {
-    const held = doorOfDialog(grant.bridge?.context.bridgeId, via) === undefined ? undefined : this.flight.holder();
+  followUpStands(owner: object, grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, prompt: PromiseLike<unknown>): void {
+    const held = doorOfDialog(grant.bridge?.context.bridgeId, via) === undefined ? undefined : this.owned.get(owner);
     if (held === undefined) {
       return;
     }
@@ -447,8 +460,8 @@ export class TokenlessCeilings {
   }
 
   /** The place this call holds, given back by the call that took it — and only if the place is still its own, so a second release frees nothing. */
-  private holding(held: Holding): Slot {
-    return { release: () => this.flight.released(held) };
+  private holding(held: Holding): Admission {
+    return { release: () => this.flight.released(held), held };
   }
 
   private countsOf(door: string, nowMs: number): DoorCounts {
