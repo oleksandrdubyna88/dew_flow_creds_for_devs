@@ -35,9 +35,9 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  * refusal the person saw never reaches the agent as "opened".
  */
 export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore): VpnUseDeps['open'] {
-  return async (accountId, entityId, action, startGate, lateAnswer) => {
+  return async (accountId, entityId, action, startGate, lateAnswer, standingPrompt) => {
     const node = storage.getNode(accountId, entityId);
-    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate, lateAnswer);
+    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate, lateAnswer, standingPrompt);
   };
 }
 
@@ -83,6 +83,7 @@ export async function runVpn(
   trust: TrustStore,
   startGate: AbortSignal | undefined,
   lateAnswer?: (what: string) => void,
+  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
 ): Promise<boolean> {
   notePersonsAct(vaultKeys, startGate);
   const entry = vpnEntry(target);
@@ -92,7 +93,7 @@ export async function runVpn(
   // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
   // computer's, and a tunnel there is not the one the person asked for.
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer, standingPrompt }, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {
@@ -210,6 +211,16 @@ async function noCli(ctx: VpnRunContext, launcher: ReturnType<typeof resolveVpnL
 const IMPORT_QUESTION = 'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.';
 const IMPORT_BUTTON = 'Import profile';
 
+/**
+ * The import question: a modal on an agent call, raced against the request. A client that leaves ends the request at once; the question keeps the place until a
+ * person settles it, and a click that lands later is journalled and does nothing. The person's own Start keeps the toast (D14, F1).
+ */
+async function askToImport(ctx: VpnRunContext): Promise<string | undefined> {
+  const question = vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON);
+  ctx.standingPrompt?.(question);
+  return untilGone(question, ctx.startGate, (late) => (late === undefined ? undefined : ctx.lateAnswer?.(late)));
+}
+
 async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, action: 'start' | 'stop'): Promise<boolean> {
   if (action === 'stop') {
     return refuse('This machine uses OpenVPN Connect — disconnect from its own window.', 'info');
@@ -217,13 +228,7 @@ async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, ac
   // The GUI can IMPORT a profile; it cannot be driven like the CLI. Importing is the
   // honest half we can do — connecting stays in its window, where the tunnel may in
   // fact already be up.
-  // A modal on an agent call, raced against the request: a client that leaves frees the place at once, and a click that lands later is journalled and does
-  // nothing. The person's own Start keeps the toast (D14).
-  const open = await untilGone(
-    vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON),
-    ctx.startGate,
-    (late) => (late === undefined ? undefined : ctx.lateAnswer?.(late)),
-  );
+  const open = await askToImport(ctx);
   // The profile is written only once the import is accepted — and `writeVpnConfig` reads the request last.
   const configPath = open === IMPORT_BUTTON ? await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name)) : undefined;
   if (configPath === undefined) {

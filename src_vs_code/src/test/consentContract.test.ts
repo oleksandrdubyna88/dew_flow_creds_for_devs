@@ -735,23 +735,3 @@ test('C17: the prompt-site ledger\'s three reasons say the place is a person\'s,
     assert.equal(reasonOf(id).includes('not a modal'), false, `${id} still says it is not a modal`);
   }
 });
-
-test('F8c: an `onLate` that throws is not an unhandled rejection — untilGone resolved undefined at the gate and the throw is dropped', async () => {
-  const escaped: unknown[] = [];
-  const spy = (reason: unknown): void => void escaped.push(reason);
-  process.on('unhandledRejection', spy);
-  try {
-    const gate = new AbortController();
-    let resolveLate: (value: string) => void = () => undefined;
-    const pending = untilGone(new Promise<string>((resolve) => void (resolveLate = resolve)), gate.signal, () => {
-      throw new Error('the journal could not be written');
-    });
-    gate.abort();
-    assert.equal(await pending, undefined);
-    resolveLate('Continue');
-    await pause(30);
-    assert.deepEqual(escaped, []);
-  } finally {
-    process.off('unhandledRejection', spy);
-  }
-});

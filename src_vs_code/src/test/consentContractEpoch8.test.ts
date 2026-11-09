@@ -1,9 +1,10 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BUSY_PLACE } from '../aliasThrottle';
+import { BUSY_PLACE, TokenlessCeilings } from '../aliasThrottle';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import { CONSENT_TIMED_OUT_ON_PLACE } from '../brokerProtocol';
 import { GRANT_NOT_ALLOWED } from '../brokerRequests';
+import { untilGone } from '../requestLife';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
 import { ACCOUNT, Ask, Door, WallWorld, answeredAtOnce, send, settleAll, until, viaMain, wallWorld } from './bridgeWallWorld';
 import { World, share, world as brokerWorld } from './brokerWorld';
@@ -168,4 +169,101 @@ test('F7a: a timed-out folder verb hears the place clause, and the place is held
     escaped.w.openDialogs.forEach((answer) => answer('Deny'));
     escaped.w.server.dispose();
   }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * F8c — an `onLate` that throws, and F1f — the seam by unit
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('F8c: an `onLate` that throws is not an unhandled rejection — untilGone resolved undefined at the gate and the throw is dropped', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => void escaped.push(reason);
+  process.on('unhandledRejection', spy);
+  try {
+    const gate = new AbortController();
+    let resolveLate: (value: string) => void = () => undefined;
+    const pending = untilGone(new Promise<string>((resolve) => void (resolveLate = resolve)), gate.signal, () => {
+      throw new Error('the journal could not be written');
+    });
+    gate.abort();
+    assert.equal(await pending, undefined);
+    resolveLate('Continue');
+    await pause(30);
+    assert.deepEqual(escaped, []);
+  } finally {
+    process.off('unhandledRejection', spy);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * F1f — the seam, by unit: a follow-up question keeps the holder's place until it settles
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** A question's promise and the two ways a person can end it. */
+function question(): { prompt: Promise<unknown>; settle(): void; fail(): void } {
+  let settle: () => void = () => undefined;
+  let fail: () => void = () => undefined;
+  const prompt = new Promise<unknown>((resolve, reject) => {
+    settle = () => resolve('Stop');
+    fail = () => reject(new Error('the window went down'));
+  });
+  return { prompt, settle, fail };
+}
+
+const turns = async (): Promise<void> => {
+  for (let turn = 0; turn < 5; turn += 1) {
+    await Promise.resolve();
+  }
+};
+
+test('F1f (i): a follow-up question keeps the place after its call ended — busy after the release, admitted after the settlement', async () => {
+  const ceilings = new TokenlessCeilings();
+  const holder = ceilings.admit(true, 0);
+  const q = question();
+  ceilings.followUpStands({}, 'mcp', q.prompt);
+  holder.release();
+  assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE, 'the question holds the place');
+  q.settle();
+  await turns();
+  assert.equal(ceilings.admit(true, 2).refusal, undefined, 'the settlement freed it');
+});
+
+test('F1f (ii): a local token call marks nothing — the place is free at the release', () => {
+  const ceilings = new TokenlessCeilings();
+  const holder = ceilings.admit(true, 0);
+  ceilings.followUpStands({}, 'token', question().prompt);
+  holder.release();
+  assert.equal(ceilings.admit(true, 1).refusal, undefined);
+});
+
+test('F1f (iii): a question that is rejected frees the place too, and nothing is unhandled', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => void escaped.push(reason);
+  process.on('unhandledRejection', spy);
+  try {
+    const ceilings = new TokenlessCeilings();
+    const holder = ceilings.admit(true, 0);
+    const q = question();
+    ceilings.followUpStands({}, 'mcp', q.prompt);
+    holder.release();
+    assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE);
+    q.fail();
+    await pause(20);
+    assert.equal(ceilings.admit(true, 2).refusal, undefined);
+    assert.deepEqual(escaped, []);
+  } finally {
+    process.off('unhandledRejection', spy);
+  }
+});
+
+test('F1f (iv): a question settled before the release keeps the place for the call still running — busy until the release', async () => {
+  const ceilings = new TokenlessCeilings();
+  const holder = ceilings.admit(true, 0);
+  const q = question();
+  ceilings.followUpStands({}, 'mcp', q.prompt);
+  q.settle();
+  await turns();
+  assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE, 'the call is still running and keeps the place by its flag');
+  holder.release();
+  assert.equal(ceilings.admit(true, 2).refusal, undefined);
 });

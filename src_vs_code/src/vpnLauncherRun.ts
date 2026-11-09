@@ -42,11 +42,13 @@ export interface VpnRunContext {
   readonly startGate?: AbortSignal;
   /** The broker's seam for a late click on a question of this start's own (E1.5): see `runVpn`. Absent for the person's own Start. */
   readonly lateAnswer?: (what: string) => void;
+  /** The broker's seam that makes a standing question of this start's own hold the one dialog place until it settles (F1). Absent for the person's own Start. */
+  readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
 }
 
 /** The dependency chain of `roots`, carrying the request this start serves. */
 export function vpnDependencies(ctx: VpnRunContext, roots: readonly EntityMetadata[], exclude?: ReadonlySet<string>): DependencyRunRequest {
-  return { ...dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude), startGate: ctx.startGate, lateAnswer: ctx.lateAnswer };
+  return { ...dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude), startGate: ctx.startGate, lateAnswer: ctx.lateAnswer, standingPrompt: ctx.standingPrompt };
 }
 
 export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetadata, action: 'start' | 'stop'): Promise<boolean> {

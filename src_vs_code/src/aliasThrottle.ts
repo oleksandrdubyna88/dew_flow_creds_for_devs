@@ -420,6 +420,21 @@ export class TokenlessCeilings {
     }
   }
 
+  /**
+   * A follow-up prompt of the holder's own call is on screen (F1): the place is that prompt's until it settles, whatever the call does meanwhile, and then the
+   * call's until its release. Nothing for a local token call, which is counted on no door. Every road that reaches a follow-up question holds the place as the
+   * call's: an asking call by its flag's kept place, a quiet one by D.3. No modal stamp: the question is not a consent dialog.
+   */
+  followUpStands(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, prompt: PromiseLike<unknown>): void {
+    const held = doorOfDialog(grant.bridge?.context.bridgeId, via) === undefined ? undefined : this.flight.holder();
+    if (held === undefined) {
+      return;
+    }
+    this.flight.prompted(held);
+    const settled = (): void => this.flight.dialogClosed(held, true);
+    void Promise.resolve(prompt).then(settled, settled);
+  }
+
   /** A bridge closed (E2 wires it): its counts go, and so does any door whose windows have nothing in them. */
   forget(door: string, nowMs: number = Date.now()): void {
     this.doors.delete(door);

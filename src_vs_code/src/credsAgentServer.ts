@@ -687,6 +687,7 @@ export class CredsAgentServer implements vscode.Disposable {
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
         atLaunch,
+        standing: (prompt) => this.ceilings.followUpStands(grant, via, prompt),
       },
       call,
     );

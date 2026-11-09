@@ -57,6 +57,10 @@ export interface UseActionContext {
    * a question the action raced against its request's life (`untilGone`'s `onLate`).
    */
   readonly lateAnswer?: (what: string) => void;
+  /**
+   * Set by the broker: a prompt of this action's own is on screen; the one dialog place is that prompt's until it settles. Absent for a start that serves no request.
+   */
+  readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
 }
 
 /**

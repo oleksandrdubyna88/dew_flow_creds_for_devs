@@ -6,16 +6,17 @@ import { parseAuditLine } from '../agentAuditLog';
 import { BUSY_PLACE } from '../aliasThrottle';
 import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { EntityMetadata } from '../types';
-import { message, pause } from './bridgeDoorHarness';
-import { Door, answeredAtOnce, send, sendAbortable, until } from './bridgeWallWorld';
+import { Reply, message, pause } from './bridgeDoorHarness';
+import { Ask, Door, answeredAtOnce, send, sendAbortable, until } from './bridgeWallWorld';
 import { World as BrokerWorld, share, world as brokerWorld } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
 import { World as VpnWorld, WorldOptions, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, world as vpnWorld } from './vpnWorld';
 
 /**
- * D14 (parent §4.10, E1.5): an agent's `up` is not held by a question nobody is waiting on. The OpenVPN Connect import question and the dependency
+ * D14 (parent §4.10, E1.5): an agent's `up` is not held by a request nobody is waiting on. The OpenVPN Connect import question and the dependency
  * chain's *Continue* question are modals on an agent call and are raced against the request's life; a running dependency step is raced too. A client
- * that leaves frees the place; a late click leaves the late-answer line and does nothing. The person's own Start is unchanged.
+ * that leaves ends the request at once; a standing question keeps the one dialog place until a person settles it (F1, change 7.3), and a running step
+ * with no question up frees it at the call's end. A late click leaves the late-answer line and does nothing. The person's own Start is unchanged.
  *
  * <p>The REAL `vpnAction` over the real `agentVpnOpener` and the VPN test world, inside the broker world (so the real `performCall` builds
  * `ctx.lateAnswer`): the rig of `consentFollowUps.test.ts`.</p>
@@ -46,7 +47,7 @@ interface Rig {
 }
 
 /** An agent `up` through the broker: the real action, the real opener, a vpn world that holds what the test asks it to. */
-async function rig(nodes: Record<string, EntityMetadata>, exitCodes: Record<string, number>, options: WorldOptions, mocks?: Record<string, unknown>): Promise<Rig> {
+async function rig(nodes: Record<string, EntityMetadata>, exitCodes: Record<string, number>, options: WorldOptions, mocks?: Record<string, unknown>, quiet = false): Promise<Rig> {
   const vw = vpnWorld(exitCodes, options);
   const dir = ownedDir(scope, 'consent');
   const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
@@ -55,12 +56,12 @@ async function rig(nodes: Record<string, EntityMetadata>, exitCodes: Record<stri
   const entity = { id: 'e1', name: 'prod', type: 'entity' as const, details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' as const } };
   const deps: VpnUseDeps = {
     storage: { getNode: () => entity },
-    open: (accountId, _entityId, action, gate, lateAnswer) => {
+    open: (accountId, _entityId, action, gate, lateAnswer, standingPrompt) => {
       gates.push(gate);
-      return open(accountId, 'vpn', action, gate, lateAnswer);
+      return open(accountId, 'vpn', action, gate, lateAnswer, standingPrompt);
     },
   };
-  const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: ['up', 'exec'], realActions: { up: vpnAction(deps, 'up') }, aliasMap: { one: TARGET }, mcpUse: 'usable' });
+  const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: ['up', 'exec'], realActions: { up: vpnAction(deps, 'up') }, aliasMap: { one: TARGET }, mcpUse: 'usable', mcpPreConsented: quiet });
   const { port } = await share(bw);
   return { bw, vw, port, dir, gates };
 }
@@ -73,11 +74,11 @@ function settle(r: Rig): void {
   r.bw.server.dispose();
 }
 
-const upAsk = { path: '/v1/mcp/use/up', body: { entry: 'e1' } };
-const execAsk = { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } };
+const upAsk: Ask = { path: '/v1/mcp/use/up', body: { entry: 'e1' } };
+const execAsk: Ask = { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } };
 
 /** An agent `up` through the main port's MCP door, hung up on by the test: its dialog is Allowed once it is open. */
-async function allowedUp(r: Rig): Promise<{ abort(): void }> {
+async function allowedUp(r: Rig): Promise<{ abort(): void; reply: Promise<Reply> }> {
   const dialogs = r.bw.openDialogs.length;
   const call = sendAbortable(door(r.port), upAsk);
   call.reply.catch(() => undefined);
@@ -167,7 +168,47 @@ async function untilImmediate(done: () => boolean, what: string): Promise<void> 
 const NO_INTEGRATION: WorldOptions = { integration: 'absent', holdDialogs: CONTINUE };
 const ACTIVATION_BUDGET_MS = 10_000;
 
-test('C10c (runStep): the Continue question is a modal on an agent call and a client leaving ends the call — ABANDONED, the place free before the click, and a late Continue types nothing and is journalled', async () => {
+/** Old and new answers of a place held by a question: asked of the door at once, by the event loop's immediates (a mocked `setTimeout` leaves them alone). */
+async function answeredNow(reply: Promise<Reply>, what: string): Promise<Reply> {
+  const raced = await Promise.race([reply, (async (): Promise<string> => {
+    for (let turn = 0; turn < 3_000; turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return what;
+  })()]);
+  assert.notEqual(typeof raced, 'string', typeof raced === 'string' ? `${raced}: not answered at once, so it was let in behind the standing place` : '');
+  return raced as Reply;
+}
+
+async function assertBusyNow(r: Rig, ask: Ask, what: string): Promise<void> {
+  const refused = await answeredNow(send(door(r.port), ask), what);
+  assert.deepEqual([refused.status, message(refused)], [429, BUSY_PLACE], what);
+}
+
+/**
+ * F1a / F1b, steps (i)-(iv): the client leaves a standing question — the request ends at once (its ABANDONED line), the place stays the QUESTION's (no new consent modal,
+ * the question still the one on screen), a late click on `button` is journalled with the contract's words and does not deny what the ABANDONED line says, and the place frees.
+ */
+async function leaveAndSettleLate(r: Rig, call: { abort(): void }, button: string, stage: string): Promise<void> {
+  const [dialogs, buttons] = [r.bw.openDialogs.length, r.bw.buttons.length];
+  call.abort();
+  await untilImmediate(() => lines(r, 'ABANDONED').length === 1, '(i) the abandoned line');
+  assert.ok(lines(r, 'ABANDONED')[0].includes(stage), lines(r, 'ABANDONED')[0]);
+  await assertBusyNow(r, execAsk, '(ii) an alias exec while the question stands');
+  await assertBusyNow(r, upAsk, '(ii) an MCP up while the question stands');
+  assert.equal(r.vw.held.length, 1, 'one question on screen');
+  assert.equal(r.bw.openDialogs.length, dialogs, 'and no new consent modal opened over it');
+  assert.equal(r.bw.buttons.length, buttons, 'no Allow-first modal was shown');
+  mock.timers.reset();
+  r.vw.held[0].answer(button);
+  await until(() => lines(r, 'ignored').length === 1, `(iii) the late ${button} to be journalled`);
+  assertLateLine(lines(r, 'ignored')[0], lines(r, 'ABANDONED')[0], button);
+  assert.equal(lines(r, 'ignored')[0].includes('nothing ran'), false, 'the late line does not claim what ran');
+  assert.ok(lines(r, 'ABANDONED')[0].includes(stage), 'and does not deny the ABANDONED line');
+  await assertPlaceFree(r, '(iv) after the late click');
+}
+
+test('F1a (runStep): the Continue question keeps the place after its client leaves — busy for the alias and the MCP door, no new modal, a late Continue types nothing, then the place frees', async () => {
   const r = await rig(chainOf('a', 'b'), {}, NO_INTEGRATION, CLI);
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
@@ -179,14 +220,7 @@ test('C10c (runStep): the Continue question is a modal on an agent call and a cl
     mock.timers.tick(ACTIVATION_BUDGET_MS);
     await untilImmediate(() => r.vw.held.length === 1, 'the Continue question');
     assert.equal(r.vw.held[0].modal, true, 'a modal on an agent call');
-    call.abort();
-    await untilImmediate(() => lines(r, 'ABANDONED').length === 1, 'the abandoned line');
-    assert.ok(lines(r, 'ABANDONED')[0].includes('after a dependency step had been typed'));
-    mock.timers.reset();
-    await assertPlaceFree(r, 'before any click on the question');
-    r.vw.held[0].answer('Continue');
-    await until(() => lines(r, 'ignored').length === 1, 'the late click to be journalled');
-    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; the answer changed nothing'), lines(r, 'ignored')[0]);
+    await leaveAndSettleLate(r, call, 'Continue', 'after a dependency step had been typed');
     assert.deepEqual(r.vw.terminals.find((t) => t.name === CHAIN_TERMINAL)?.sent, ['a-step'], 'no second step was typed');
     assert.equal(r.vw.held.length, 1, 'and no second question was raised');
   } finally {
@@ -195,20 +229,49 @@ test('C10c (runStep): the Continue question is a modal on an agent call and a cl
   }
 });
 
-test('C10c (settle): the Continue question after a failed step is a modal on an agent call too — a late Continue types no second step and is journalled', async () => {
-  const r = await rig(chainOf('a', 'b'), { 'a-step': 1 }, { holdDialogs: /exited with code 1/ }, CLI);
+for (const button of ['Continue', 'Stop']) {
+  test(`F1a (settle): the question after a failed step keeps the place after its client leaves — a late ${button} is journalled, types nothing, and frees the place`, async () => {
+    const r = await rig(chainOf('a', 'b'), { 'a-step': 1 }, { holdDialogs: /exited with code 1/ }, CLI);
+    try {
+      const call = await allowedUp(r);
+      await until(() => r.vw.held.length === 1, 'the question after the failed step');
+      assert.equal(r.vw.held[0].modal, true);
+      await leaveAndSettleLate(r, call, button, 'after a dependency step had been typed');
+      assert.deepEqual(r.vw.terminals.flatMap((t) => t.executed), ['a-step'], 'no second step ran');
+    } finally {
+      settle(r);
+    }
+  });
+}
+
+test('F1c: five never-ask ups, each hung up at its question — one question, four busy, one ABANDONED line; a late Stop frees the place and a sixth up reaches its own question', async () => {
+  const r = await rig(chainOf('a'), {}, NO_INTEGRATION, CLI, true);
+  mock.timers.enable({ apis: ['setTimeout'] });
   try {
-    const call = await allowedUp(r);
-    await until(() => r.vw.held.length === 1, 'the question after the failed step');
-    assert.equal(r.vw.held[0].modal, true);
-    call.abort();
-    await until(() => lines(r, 'ABANDONED').length === 1, 'the abandoned line');
-    await assertPlaceFree(r, 'before any click on the question');
-    r.vw.held[0].answer('Continue');
-    await until(() => lines(r, 'ignored').length === 1, 'the late click to be journalled');
-    assert.ok(lines(r, 'ignored')[0].includes('"Continue" answered after its call had ended; the answer changed nothing'));
-    assert.deepEqual(r.vw.terminals.flatMap((t) => t.executed), ['a-step'], 'no second step ran');
+    const first = sendAbortable(door(r.port), upAsk);
+    first.reply.catch(() => undefined);
+    await untilImmediate(() => r.vw.terminals.some((t) => t.name === CHAIN_TERMINAL), 'the first up\'s chain terminal');
+    mock.timers.tick(ACTIVATION_BUDGET_MS);
+    await untilImmediate(() => r.vw.held.length === 1, 'the first up\'s question');
+    first.abort();
+    await untilImmediate(() => lines(r, 'ABANDONED').length === 1, 'the abandoned line');
+    for (let up = 2; up <= 5; up += 1) {
+      await assertBusyNow(r, upAsk, `up #${up}`);
+    }
+    assert.equal(r.vw.held.length, 1, 'one modal in all');
+    assert.equal(r.bw.dialogs.length, 0, 'no consent modal: the entry never asks');
+    assert.equal(lines(r, 'ABANDONED').length, 1);
+    assert.equal(r.gates.length, 1, 'only one up reached its action');
+    r.vw.held[0].answer('Stop');
+    const sixth = sendAbortable(door(r.port), upAsk);
+    sixth.reply.catch(() => undefined);
+    await untilImmediate(() => r.vw.terminals.filter((t) => t.name === CHAIN_TERMINAL).length === 2, 'the sixth up\'s own chain terminal');
+    mock.timers.tick(ACTIVATION_BUDGET_MS);
+    await untilImmediate(() => r.vw.held.length === 2, 'the sixth up\'s own question: the place was freed by the late Stop');
+    assert.equal(r.gates.length, 2);
+    sixth.abort();
   } finally {
+    mock.timers.reset();
     settle(r);
   }
 });
@@ -248,25 +311,17 @@ function assertLateLine(late: string, abandoned: string, button: string): void {
   assert.notEqual(entry.grant, '\u2014', 'and not a dash');
 }
 
-test('C11: the OpenVPN Connect question is a modal on an agent call — a client leaving frees the place before any click, and the late click leaves one ignored line, writes no profile and types nothing', async () => {
+test('F1b: the OpenVPN Connect question keeps the place after its client leaves — busy, no new modal, a late Import profile writes no profile and types nothing, then the place frees', async () => {
   const r = await rig({ vpn: vpn({ vpnType: 'openvpn' }) }, {}, { holdDialogs: IMPORT }, CONNECT);
   try {
     const call = await allowedUp(r);
     await until(() => r.vw.held.length === 1, 'the import question');
     assert.equal(r.vw.held[0].modal, true);
-    await assertBusy(r, '(i) a local alias call while the question stands');
-    call.abort();
-    await until(() => lines(r, 'ABANDONED').length === 1, '(ii) the abandoned line');
-    assert.ok(lines(r, 'ABANDONED')[0].includes('as the action was starting — it was not launched'), lines(r, 'ABANDONED')[0]);
-    await assertPlaceFree(r, 'after the hang-up, before any click');
-    const journal = r.bw.audit.length;
     const ran = r.bw.ran.length;
-    r.vw.held[0].answer('Import profile');
-    await until(() => r.bw.audit.length === journal + 1, '(iii) the late click to be journalled');
-    assertLateLine(r.bw.audit[journal], lines(r, 'ABANDONED')[0], 'Import profile');
+    await leaveAndSettleLate(r, call, 'Import profile', 'as the action was starting — it was not launched');
     assert.deepEqual(filesUnder(r.dir), [], 'no profile was written');
     assert.deepEqual(r.vw.terminals.map((t) => t.sent.length + t.executed.length), [], 'nothing was typed');
-    assert.equal(r.bw.ran.length, ran, 'and nothing ran');
+    assert.equal(r.bw.ran.length, ran + 1, 'and nothing ran for the up: only the exec of step (iv)');
   } finally {
     settle(r);
   }
@@ -370,6 +425,52 @@ test('C8 (b) and C12: a local down whose install offer stands for 400 ms with th
     vw.held[0].answer(undefined);
     await first;
     await assertPlaceFree(r, 'at the click on the offer');
+  } finally {
+    settle(r);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * F8a — a gate that fires between `runStep`'s check and the type: nothing is typed, and the journal never claims a step
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('F8a: a gate that fires after runStep\'s own check and before the step is typed — nothing is typed, the chain is {ready: false, typed: false}, and nothing is thrown', async () => {
+  const vw = vpnWorld({}, { holdExecutions: true });
+  const controller = new AbortController();
+  const window = vw.vscode.window as { createTerminal: (options: { name: string }) => object };
+  const create = window.createTerminal;
+  window.createTerminal = (options) => {
+    const terminal = create(options);
+    // `runStep` reads `exitStatus` after its own gate check and before it types: the gate fires there, with no await in between.
+    Object.defineProperty(terminal, 'exitStatus', { get: () => (controller.abort(), undefined) });
+    return terminal;
+  };
+  const nodes = chainOf('a');
+  const host = loadWithVscode<typeof import('../dependencyRunHost')>('../dependencyRunHost', vw.vscode);
+  const request = { ...host.dependencyRequest(storageOf(nodes) as never, 'a1', [nodes.vpn], nodes.vpn.name, memoryTrust()), startGate: controller.signal };
+  assert.deepEqual(await host.runDependenciesFirst(request), { ready: false, typed: false });
+  assert.equal(vw.executions.length, 0, 'no step was handed to the shell');
+  assert.deepEqual(vw.terminals.flatMap((t) => [...t.executed, ...t.sent]), [], 'and nothing was sent');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * F1e — a question answered while the client is still there keeps the call's place, as before
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('F1e: a Continue clicked in time keeps the place for the call still running — busy while step b runs, asked once the up has answered', async () => {
+  const r = await rig(chainOf('a', 'b'), {}, { holdExecutions: true, holdDialogs: /exited with code 1/ }, CLI);
+  try {
+    const call = await allowedUp(r);
+    await stepTyped(r);
+    r.vw.shell.end(r.vw.executions[0].terminal, r.vw.executions[0].execution, 1);
+    await until(() => r.vw.held.length === 1, 'the question after the failed step a');
+    r.vw.held[0].answer('Continue');
+    await stepTyped(r, 2);
+    await assertBusy(r, 'an alias exec while step b runs: the call is still running and keeps the place by its flag');
+    r.vw.shell.end(r.vw.executions[1].terminal, r.vw.executions[1].execution, 0);
+    const reply = await call.reply;
+    assert.equal(reply.status, 200, reply.body);
+    await assertPlaceFree(r, 'after the up has answered');
   } finally {
     settle(r);
   }
