@@ -130,6 +130,9 @@ scope_premise() {
   if printf '%s\n' "$lists" | grep -qi "teststodelete[-_]${TOK}[-_]creds"; then return 1; fi
   return 0
 }
+janitor_said() { # <label> <root>: when the janitor left something, say why (its own words)
+  if [ "$(count "$2")" != 0 ]; then echo "$1 the janitor said: $(head -n 3 "$CTL/janitor.err" | tr '\n' '|')"; fi
+}
 age() { local p; for p in "$@"; do touch -t 200001010000 "$p"; done; }
 run_janitor() { # <root>; sets J_RC, files $CTL/janitor.out and .err
   (cd "$repo" && JANITOR_MIN_AGE_MINUTES=10 TMPDIR="$1" "$BASH" "$janitor" --token creds > "$CTL/janitor.out" 2> "$CTL/janitor.err")
@@ -577,6 +580,7 @@ t13() {
   run_janitor "$root_j"
   case "$J_RC" in 0 | 3) ok "T13 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T13 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
   eq "T13 the janitor leaves the root EMPTY" "$(count "$root_j")" 0
+  janitor_said T13 "$root_j"
   # the Node sweep over a second root of the same shape
   premise "T13 scope again" scope_premise || return 0
   kill_between t13node
@@ -633,6 +637,7 @@ EOF
   run_janitor "$CR"
   case "$J_RC" in 0 | 3) ok "T15 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T15 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
   eq "T15 the janitor collects folder and claim (root empty)" "$(count "$CR")" 0
+  janitor_said T15 "$CR"
 }
 
 # --- T16 OWNED_KEEP ----------------------------------------------------------------------------------------------------------
@@ -662,6 +667,7 @@ EOF
   run_janitor "$CR"
   case "$J_RC" in 0 | 3) ok "T16 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T16 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
   eq "T16 the janitor collects the kept folder and its claim" "$(count "$CR")" 0
+  janitor_said T16 "$CR"
 }
 
 # --- T18 the chain under set -e (C2) ----------------------------------------------------------------------------------------
