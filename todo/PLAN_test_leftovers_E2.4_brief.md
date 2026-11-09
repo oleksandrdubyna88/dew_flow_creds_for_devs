@@ -6,8 +6,9 @@
 > written beside this brief. This brief uses `owned.sh`'s API as that spec's § 3 fixes it (the stories' § S4 block plus
 > `owned_trap`). Branch
 > `feat/test-leftovers-e2.4`, cut from `main` `0ae0211` (E2.1 #294, E2.2 #310, E2.3 #311 merged); the mount is release
-> `37b9aa5`. Brief by Opus; code by a Sonnet coder; review by Opus. **Epoch 7 of the parent has used its one change
-> (entry 7.1). The next accepted change is the seventh full stop.** § 6 marks each answer that would be a change.
+> `37b9aa5`. Brief by Opus; code by a Sonnet coder; review by Opus. **The parent's epoch 8 is open with no change used
+> (epoch 7 stopped at entry 7.2). An accepted change would be entry 8.1; a second one would be the next full stop.** § 6
+> marks each answer that would be a change.
 > **One question has no answer that is clearly free (Q1, the Docker names against the released guard, measured).** The
 > stories' own rule for that case is "stop and report — never resolve the difference in code" (D8, § *Order*); this
 > brief reports it and recommends the answer that carries out D5's own decision.
@@ -75,7 +76,7 @@ A row with "—" in the implementation or check column is **unmapped**: an open 
 | 22 | **Parent row E2.4-b** — every remover command runs on every path | `docker.yml`'s remover: `shell: bash` on the step (GitHub runs it as `bash --noprofile --norc -eo pipefail {0}`), `\|\| true` on each of the four removals, `if: always()`, `continue-on-error: true` (§ 3.2 item 3) | `docker.yml` `image` | S3.3 (a): a creds test beside `leftoversGuardFixtures.test.ts` reads the step from `docker.yml`, asserts `shell: bash`, and RUNS its body under that shell with a stub `docker` first on `PATH` whose first removal fails: all four removals are called. RED: one line without `\|\| true` | The guard does NOT check it. `continue-on-error` keeps only the job's verdict. Observed by the parent **[M]**: with the stub, 4 removals called, exit 0; without `\|\| true`, 1 removal called, exit 1; B with no `\|\| true`: 0 guard findings |
 | 23 | **Parent row E2.4-k** — nothing of the smoke is left after the remover, or the job is red | a check step after the remover, `if: always()`, `shell: bash`, NO `continue-on-error`: `docker ps -a -q --filter "name=^<name>$"` for the two containers, `docker volume ls -q --filter "name=^<name>$"` for the two volumes, each name a literal; any answer → one line naming it, exit 1 (§ 3.2 item 3a) | `docker.yml` `image` | S3.3 (b): the same test runs the body with the stub: a stub that still lists `…-creds-cv-…` → exit 1, RED; nothing listed → exit 0. In S3.1 and S3.2, the step's result is quoted (row E2.4-d) | A stub stands in for Docker; the hosted runs observe the real answer. Observed 2026-11-07 for this brief: the whole `docker.yml` of `0ae0211` with § 3.2's text, scanned by `scanText` of the guard at `37b9aa5`: 0 findings; one check line as `docker inspect <name>`: 1 `docker-run`; the same reader through a loop variable: 0, so the names stay literal |
 | 24 | **Parent row E2.4-c** — the owner segment is the runner's uid, checked before any resource exists | the naming step, before *Build*: its FIRST command `[ "$(id -u)" = 1001 ] \|\| exit 1` (§ 3.2 item 1) | `ubuntu-latest` | S3.3 (c): the naming step's first command is the uid check, and the step comes before *Build*. RED: the check removed, or the step moved after *Build*. The first dispatch prints the uid | The guard does not see it (the parent **[M]**: B without the check, 0 findings). **To observe** before the plan gate: uid `1001` in a hosted throwaway run (the parent's build order) |
-| 25 | **Parent row E2.4-h** — acme's compose project is the owned folder's name, never a fixed one | `run.sh`: `PROJECT` from `$STATE`'s basename, lower-cased, and from nothing else (§ 3.3 step 3) | `run.sh` | S4.5: a creds test over `run.sh`: `PROJECT` is assigned from `$STATE`'s basename only. RED: `PROJECT=acme` | The guard cannot see it: the value is wholly an expansion. The parent **[M]**: `-p "$PROJECT"` no finding; `-p acme`: `docker-name` |
+| 25 | **Parent row E2.4-h** — acme's compose project is the owned folder's name, never a fixed one | `run.sh`: `PROJECT` from `$STATE`'s basename, lower-cased, and from nothing else (§ 3.3 step 3) | `run.sh` | S4.5: a creds test over `run.sh`: `PROJECT` is assigned from `$STATE`'s basename only. RED: `PROJECT=acme` | **S4.5 is the only pin.** The guard is no evidence here: in `run.sh`'s real shape a fixed project gives 0 findings (whole-file drafts, also `COMPOSE=(docker compose -p acme …)`); only a direct `docker compose -p acme … up -d` line gives `docker-name` (Opus review, 2026-11-09). The test reads the text; it does not run compose |
 
 *[2026-11-07, the parent's epoch 8.]* Rows 22–25 are the parent's rows this table lacked. The other rows of the parent's
 item 3 map so: **E2.4-a** → row 12 (now mapped: Q1 is (B)); **E2.4-d** → rows 10 and 11 (each run also quotes row 23's
@@ -294,13 +295,19 @@ item 4.3.2, rows E2.4-f, E2.4-h. The parent names the state `certs`, `data`, `lo
 mounted at two paths (`/etc/letsencrypt`, `/var/www/certbot`), so it becomes two volumes. The same project, the same
 label, the same teardown: nothing of 4.3.2 changes.]* `run.sh`, in this order:
 
-1. Right after `set -euo pipefail` and `cd` (`:19-20`): `source ../../.github/scripts/lib/owned.sh`; `export
-   TESTS_TO_DELETE_OWNER="$(owned_owner)"`; `STATE=""`, `PROJECT=""`; `cleanup` (skips what is not made yet: `compose -p
-   "$PROJECT" … down -v --remove-orphans || true` when `PROJECT` is set, **which removes the named volumes with the
-   containers and the network**; ~~`docker run --rm -v "$STATE":/s alpine sh -c
-   'rm -rf /s/certs /s/data /s/logs' || true` then~~ `owned_cleanup` when `STATE` is set); `owned_trap cleanup` (D6's `trap
+1. Right after `set -euo pipefail` and `cd` (`:19-20`): `source ../../.github/scripts/lib/owned.sh`; `owned_owner
+   >/dev/null || exit 1; export TESTS_TO_DELETE_OWNER="$OWNED_OWNER"` (the S1 spec's cache variable: a `$( )` would
+   compute the record in a subshell and lose the cache, and `export X="$(…)"` hides the exit status, shellcheck SC2155,
+   which `ci-server.yml:296-305` reports at its default severity); `STATE=""`, `PROJECT=""`; `cleanup` (skips what is
+   not made yet, and so never runs an empty teardown when a failure comes before `PROJECT` or `STATE` is set, or when only
+   `STATE` is: `if [ -n "${PROJECT:-}" ]; then docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v
+   --remove-orphans || true; fi`, **which removes the named volumes with the containers and the network**; ~~`docker run --rm -v "$STATE":/s alpine sh -c
+   'rm -rf /s/certs /s/data /s/logs' || true` then~~ `if [ -n "${STATE:-}" ]; then owned_cleanup; fi`; an `if`, not a
+   `[ … ] && …` list, so a skipped step does not leave the function with status 1); `owned_trap cleanup` (D6's `trap
    cleanup EXIT`, in S1's spelling, S1's Q1; ~~the container-side wipe must run BEFORE `owned_cleanup`, so~~ `cleanup` calls
-   `owned_cleanup` itself — idempotent), `trap 'exit 130' INT`, `trap 'exit 143' TERM`. *[2026-11-07, the parent's item
+   `owned_cleanup` itself — idempotent), ~~`trap 'exit 130' INT`, `trap 'exit 143' TERM`~~ and no signal trap of its own:
+   `owned_trap` installs INT, TERM and HUP (`owned_signal`, exit codes 130, 143, 129), so the window the S1 spec's C1 closes
+   stays closed *[2026-11-09, the S1 spec's Q8, the coordinator: not a change — the stories decide the effect, S4:1025]*. *[2026-11-07, the parent's item
    4.3.2: the container-side wipe goes; the state is in named volumes, and `$STATE` holds only files `run.sh` copied out.]*
 2. `rc=0; JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token creds || rc=$?`; 0 and 3
    fine; anything else one line (127 also names `git submodule update --init .claude/rules/shared`); the run goes on.
@@ -318,8 +325,10 @@ alpine test -f /s/live/vaulthost/fullchain.pem`. A file `run.sh` needs to read i
 standard output (`docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine cat /s/<file> > "$STATE/<file>"`), so every
 file in `$STATE` is the user's own and `owned_remove` can delete it. `$STATE` is never mounted into a container: a
 container writes root-owned files there (I6).** *[2026-11-07, the parent's epoch 8, item 4.3.2. Read-only check: these
-lines and the `PROJECT` line through `scanText('deploy/acme-test/run.sh', …)` of the guard at `37b9aa5`: 0 findings;
-`docker compose -p acme up -d`: `docker-name`. To observe on the throwaway of S4.2 (the parent's item 8.2 names both as
+lines and the `PROJECT` line through `scanText('deploy/acme-test/run.sh', …)` of the guard at `37b9aa5`: 0 findings.
+The guard is NOT a pin for the project name (Opus review, 2026-11-09): whole-file drafts in `run.sh`'s real shape give 0
+findings, also with `COMPOSE=(docker compose -p acme …)`; only a direct `docker compose -p acme … up -d` line gives
+`docker-name`. S4.5's creds test is the only pin (row 25). To observe on the throwaway of S4.2 (the parent's item 8.2 names both as
 likely surprises): that `compose create` makes the four volumes with their labels and names, and that the chown before
 `up` holds.]*
 
@@ -405,8 +414,9 @@ name and label, and the owned folder by its claim** (row 15; Q3 and Q4 decided 2
 
 ## 6. Open questions, each with a recommended answer
 
-Each goes to the coordinator before the plan gate. **A "yes" marked CHANGE would be entry 7.2 of the parent: the
-seventh full stop.**
+Each goes to the coordinator before the plan gate. **A "yes" marked CHANGE would now be entry 8.1 of the parent (epoch 8
+is open with no change used); a second accepted change would be the next full stop.** *[Revised 2026-11-09: these lines
+said "entry 7.2 … the seventh full stop", which was true when written; entry 7.2 came, and epoch 8 settled Q1, Q3, Q4.]*
 
 - **Q1 — D5's names against the released guard (row 12; I2, I3; measured).** Both texts: D5 — "names spelled with the
   literal prefix in every command (the guard compares the text), the owner segment from the runner's uid:
@@ -558,7 +568,7 @@ gh workflow run docker.yml --ref tmp/e24-smoke-red          # one plain command 
 gh workflow run docker.yml --ref feat/test-leftovers-e2.4  # S3.2
 ```
 
-- [ ] Rows 1–21 of § 1 each have their evidence line on the PR; the unmapped rows carry § 6's answers.
+- [ ] Rows 1–25 of § 1 each have their evidence line on the PR; the unmapped rows carry § 6's answers.
 - [ ] S2.1–S2.7, S3.0–S3.3, S4.1–S4.5 (S3.3 and S4.5 added 2026-11-07): each RED seen once and quoted with its premise,
       then GREEN; the hosted run URLs on the PR; the throwaway branches deleted after.
 - [ ] The four CI steps' "the root is empty" checks green on every leg they run (Linux, macOS, Windows for the smokes).
@@ -581,4 +591,4 @@ Hosted throwaway branch `tmp/e24-observe` (creds, from main `f8a42f9`, never mer
 - **E2.4-f, acme killed mid-issuance, state in labelled named volumes — matches.** Before the kill: 4 project volumes (`certs-conf`, `certs-www`, `data`, `logs`), each carrying `testsToDelete.owner`; the record `u1001:<host>@linux:<pid>:<start>:<ns>`. `kill -9` at the first issuance line (status 137). After 660 s the janitor's dry run listed 4 containers, 4 volumes, the network, the folder and the claim; the next run's janitor call removed each (`janitor exit code: 0`). Then `docker volume ls`, `docker ps -a` and `docker network ls`, each filtered by `label=com.docker.compose.project=<project>`, were empty, and the folder and its claim were gone. Nothing waited for a person; the janitor removed the root-owned volumes as the job's user.
 - **Found, not part of E2.4's leftovers: acme's own green path fails on this runner image.** In both runs the next run failed `nginx opened 443 … expected 200, got 000`, `unexpected issuer: none`, `… expected 401, got 000`, `port 80 redirects … expected 301, got 503`. The control step, the UNCHANGED `deploy/acme-test/run.sh` with bind mounts, fails the same four lines on the same runner (run 42416565709, step "Control"), so the cause is the runner image or the acme flow on it, not the named-volume shape. Until it is fixed, E2.4's "the next run is green" (sc. 6, sc. 7) cannot be observed on hosted ubuntu26; it is reported to the parent and to creds as its own defect.
 
-*Addendum (run 42416565709, acme job 128535822896):* the two green paths fail at different points. The control (bind mounts, unchanged `run.sh`) adds `FAIL no certificate was issued`: certbot's log shows the certificate arrived just after `run.sh`'s 90 s wait. The named-volume prototype obtains the certificate (`ok certbot obtained a certificate through a real HTTP-01 challenge`), then nginx loops `config test FAILED — restoring the previous config`, so 443 never opens; the certificate files are present in the volume (`live/vaulthost/fullchain.pem -> ../../archive/vaulthost/fullchain1.pem`), and the entrypoint hides `nginx -t`'s own text. Images: today's `:latest` (nginx 1.27.5, certbot on Python 3.14). Both flows are red on hosted ubuntu26 before any E2.4 change; E2.4's acme "run is green" needs this fixed or understood first.
+*Addendum (run 42416565709, acme job 128535822896):* the two green paths fail at different points. The control (bind mounts, unchanged `run.sh`) adds `FAIL no certificate was issued`: certbot's log shows the certificate arrived just after `run.sh`'s 90 s wait. The named-volume prototype obtains the certificate (`ok certbot obtained a certificate through a real HTTP-01 challenge`), then nginx loops `config test FAILED — restoring the previous config`, so 443 never opens; the certificate files are present in the volume (`live/vaulthost/fullchain.pem -> ../../archive/vaulthost/fullchain1.pem`), and the entrypoint hides `nginx -t`'s own text. Images: the compose file pins `nginx:1.27-alpine` (`docker-compose.acme-test.yml:53`; the run pulled nginx 1.27.5) and takes `certbot/certbot:latest` (`:83`; the run pulled certbot on Python 3.14) and `ghcr.io/letsencrypt/pebble:latest` (`:25`). Both flows are red on hosted ubuntu26 before any E2.4 change; E2.4's acme "run is green" needs this fixed or understood first.
