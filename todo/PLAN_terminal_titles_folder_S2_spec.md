@@ -1,6 +1,10 @@
 # PLAN — S2 spec: one key for every entry terminal (CORNERSTONE)
 
-> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (commit of S2; deviations in the parent's `## As built`).** Scope: `src_vs_code/src/pinnedTerminal.ts`, `terminalGuard.ts`,
+> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (commit 01a8a41; deviations in the parent's `## As built`).**
+> The parent is stopped for re-review (change 1.2): the folder run's keys AFTER the dependency wait are revised by the
+> parent's story S5 and its §Design "The folder run's timing contract" — F6, §S2.4 (`folderRunCommand.ts`) and pitfalls
+> 1-2 below are marked where S5 supersedes them. This spec keeps no ledger; its changes are the parent's entries.
+> Scope: `src_vs_code/src/pinnedTerminal.ts`, `terminalGuard.ts`,
 > `commands/runCommands.ts`, `commands/folderRunCommand.ts`, `vpnLauncherRun.ts`; the fakes `test/arrowWorld.ts`,
 > `test/vpnWorld.ts`, `test/folderWorld.ts`; the new `test/terminalTitleRoads.test.ts`; expectation updates in seven suites.
 > Story S2 of [PLAN_terminal_titles_folder.md](PLAN_terminal_titles_folder.md) (§Design "Signature changes", §Test plan items
@@ -16,7 +20,7 @@
 | F3 | `Entry` (`runCommands.ts:50-55`) is built once in `entryAt` (:57-64) from `nodeAt`'s element; `host.storage` is a `StorageManager` whose `getNode(accountId, id)` is synchronous (`storageManager.ts:409`). | The key is one more field of `Entry`, built in `entryAt` from storage. |
 | F4 | For a history row `nodeAt` answers `{ ...element.node, name: revision.name, details: revision.details }` (`entityViewerCommands.ts:476-480`): the id is the live entry's, the details are the revision's. | The folder comes from the live node, the entry half from the revision's `details.name` (as today). |
 | F5 | The launcher is `liveDetails(ctx.storage, ctx.accountId, id)` (`vpnRun.ts:118`), an `EntityMetadata` whose `id` is its node id; `launch(ctx, launcher, line)` (`vpnLauncherRun.ts:108`) has `ctx.storage` and `ctx.accountId`. | `entryTerminalKeyOf(ctx.storage, ctx.accountId, launcher.id, launcher.name)` needs no new parameter. |
-| F6 | `folderAt` (`folderRunCommand.ts:458-466`) re-reads the folder node from storage and keeps only `id` and `name`; `FACTS` is a module constant (:437-440); `openTerminals` (:512), `appeared` (:538) and `typeLine` (:544) build the title from `row.name`. `planFolderRun` passes the same `row.name` to `facts.isOpen` (`folderRun.ts:144`), and `row.name` is `details.name` for every row with a line (:96). | `Folder` keeps the node; one `keyOf(folder, name)` serves the four readers with the same input the planner used. `FolderFacts` keeps `isOpen(name)`. |
+| F6 | `folderAt` (`folderRunCommand.ts:458-466`) re-reads the folder node from storage and keeps only `id` and `name`; `FACTS` is a module constant (:437-440); `openTerminals` (:512), `appeared` (:538) and `typeLine` (:544) build the title from `row.name`. `planFolderRun` passes the same `row.name` to `facts.isOpen` (`folderRun.ts:144`), and `row.name` is `details.name` for every row with a line (:96). | `Folder` keeps the node; one `keyOf(folder, name)` serves the four readers with the same input the planner used. `FolderFacts` keeps `isOpen(name)`. **Superseded in part by S5 (re-review):** the two readers BEFORE the modal (`factsOf`, `openTerminals`) keep `entryTerminalKey(name, folder.node)`; the two AFTER the last await (`appeared`, `typeIntoNew`) read `entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name)` per row — a folder renamed, an entry moved or a node deleted during the wait is keyed as storage holds it then. |
 | F7 | `arrowWorld.run` writes the stored node and the element from one record with no `parentId` (`arrowWorld.ts:86-89`); `registerRunWorld` fixes `storageDir: '/storage'` (:61); `storageOf` answers `{ id, details }` for entries and `undefined` otherwise (`vpnWorld.ts:294-299`); `folderWorld`'s `T` is the literal `` `CredsForDevs: ${name}` `` (`folderWorld.ts:14`) and every entry is a child of folder `f` (:79-88). | §S2.2 adds a parent to each fake; `T` becomes the real title of a direct child of the folder node. |
 | F8 | The world's `dispose` closes nothing: the terminal stays listed and live (`vpnWorld.ts:32-33, 130-133`). A modal gets its first button unless `modal: 'last'` / `'dismiss'`; `holdDialogs` holds one for the test (:163-172). | "Left alone" is asserted as `disposed === 0`; `TYPE_ANYWAY` is the first (only) button of the busy question. |
 | F9 | `scriptRunPlan('bash', platform)` answers `run` on every platform (`scriptRun.ts:18-21`); `writeScriptFile` writes under `materializedKeyPath(storageDir, …)` and runs `lockToOwner` (`runCommands.ts:233-239`). | The script test uses `scriptLanguage: 'bash'` and an owned directory. |
@@ -155,7 +159,10 @@ const built from it. Not touched in S2: every `CredsForDevs: before …` (`depen
   (family) => withConfig(line, configPath, family), ctx.startGate)`; a one-line `launcherKey(ctx, launcher)` helper if the
   line gets long. The comment at `:113-115` gains: the LAUNCHER's own folder, not the VPN's.
 
-**`src/commands/folderRunCommand.ts`**
+**`src/commands/folderRunCommand.ts`** — as built in S2. **S5 revises the post-wait half** (the parent's §Design, "The
+folder run's timing contract"): `typeAll`, `appeared` and `typeLine` take a per-row key reader built in `runChosen` after
+`chain.ready` (`(row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name)`) instead of `folder`; `keyOf(folder,
+name)` stays only in `factsOf` and `openTerminals`, before the modal. The lines below describe S2's commit.
 
 - Import `{ EntryTerminalKey, entryTerminalKey } from '../terminalTitles'` and `type { TreeNode } from '../types'`.
 - `:426-430` `interface Folder { accountId; id; name; readonly node: TreeNode }`; `:465` `{ accountId: element.accountId,
@@ -195,10 +202,17 @@ const built from it. Not touched in S2: every `CredsForDevs: before …` (`depen
 
 1. **Find and create must get the SAME key value.** Four readers (`findEntryTerminal` → `liveEntryTerminal`,
    `openEntryTerminal`, `liveTerminalsOfEntry`, `pinnedTerminal` for the script) call `entryTerminalTitle(key)` and nothing
-   else composes a title. In the folder run every key is `keyOf(folder, name)` — never `entryTerminalKey(row.details.name, …)`
-   in one place and `row.name` in another, though they are equal today (F6).
+   else composes a title. In the folder run the re-check and the creation (the two post-wait readers) must get the same
+   key, and the key must be read AFTER the last await — never carried from before the modal: a folder renamed during the
+   wait would make the re-check miss the terminal the arrow opened under the new name (the code gate's finding, change
+   1.2). As built in S2 every key was `keyOf(folder, name)` over the captured node, which is exactly that carry; S5 reads
+   the post-wait keys per row through `entryTerminalKeyOf`, the arrow's function. Pre-modal, `keyOf(folder, name)` and the
+   per-row read are equal (nothing awaited since the re-read; every row a direct child), so the classification and the
+   snapshot keep it. The name is always `row.name` (= `details.name`, F6), never `row.details.name` in one place and
+   `row.name` in another.
 2. **The folder run's planner interface stays.** `FolderFacts.isOpen(name)` and `shellRefusal(name, os)` are unchanged;
-   the folder node lives in the host's closure (`factsOf`). `git diff src/folderRun.ts` is empty.
+   the folder node lives in the host's closure (`factsOf`) and is read there and in the snapshot only. `git diff
+   src/folderRun.ts` is empty — in S2 and in S5.
 3. **The launcher uses its own node.** `launcher.id` and `launcher.name` (F5), never `ctx.details` — the VPN may sit in
    another folder (B1).
 4. **`entryAt` reads the stored node's parentId, not the element's.** `entryTerminalKeyOf(host.storage, accountId,
