@@ -372,8 +372,9 @@ the exit chain under `set -e`, `set -u` with an empty registry, and a signal tha
 on the three legs (macOS with `/bin/bash`, 3.2); `ci-server.yml` shellchecks both files. What it does not cover: a trap a caller sets
 itself (T7d measures the replacement, T7a scans the callers), a race of two live scripts on one name, the Windows
 collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
-whose plain `mkdir` is not always exclusive in a race (about 1 run in 14 gave two successes): T5 notes it there and the helper relies
-on its exclusive claim for two live runs.
+whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two successes), so `owned_create_dir` uses perl's `mkdir`
+where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
+(the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE.
 
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
