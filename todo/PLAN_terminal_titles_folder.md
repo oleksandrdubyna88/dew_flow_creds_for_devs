@@ -1,16 +1,18 @@
 # PLAN — Terminal titles name the folder, and "CredsForDevs" becomes "Creds"
 
-> Status: **stopped for re-review, 2026-11-09.** S1-S4 are built on `feat/terminal-titles-folder` (pushed, not merged);
-> the code gate passed (session d1d8e222, 8 of 8 reviewers) and its accepted finding is change 1.2, the plan's second
-> change since approval. No new code until the whole plan is reviewed again. The revision below (the whole plan read
-> again against the built code; story S5 added for change 1.2 and the accepted review clean-ups) is written and awaits
-> its re-review; the Opus judge's verdicts on the done work are still to be filled in. Scope: the VS Code extension's
+> Status: **epoch 2 open, 2026-11-09; S5 to build.** S1-S4 are built on `feat/terminal-titles-folder` (pushed, not
+> merged); the code gate passed (session d1d8e222, 8 of 8 reviewers) and its accepted finding was change 1.2, the
+> plan's second change since approval, which stopped the plan. The re-review is done: the revision below (the whole
+> plan read again against the built code; story S5 added for change 1.2 and the accepted review clean-ups) went
+> through the coai document review (`proceed`, 4 of 4, its one finding accepted) and the own Opus review, and the Opus
+> judge marked every commit `fits` in the record's table; their accepted findings are folded in below as the epoch-2
+> baseline. Scope: the VS Code extension's
 > terminal titles (src_vs_code/src), five help languages, the changelog and the extension and test module docs.
 > Plan gate: coai `proceed` 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-09 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-09 · by reviewers · state: closed
 
 - 1.1 · 2026-11-09 · reviewer · approach — a folder name's control characters are escaped in the title instead of a new folder-run refusal
   (plan gate findings 0 and 4, and the own Opus review, accepted after the plan's proceed. The same round's other
@@ -21,9 +23,7 @@
   (code gate finding 2 and the own Opus bug review: a folder renamed while the chain waits makes the re-check miss a
   terminal the arrow opened under the new name, so a second terminal opens. The consultants split on whether this
   only satisfies the plan as written (consult e5cc1cdc); it needs a new decision for a folder deleted during the wait,
-  so it is counted. This second change stopped the plan. The re-review settled it as: after the last await every
-  row's key is read per row through `entryTerminalKeyOf`, the function the arrow and the launcher use — §Design,
-  "The folder run's timing contract" — built by story S5.)
+  so it is counted. This second change stopped the plan.)
 
 ### Re-review for epoch 2
 
@@ -36,6 +36,8 @@ Narrowed: no
 | S3 — the short prefix on the three other titles, the help, the scan, 7c26422 | pushed, unmerged (`feat/terminal-titles-folder`) | fits | kept; S5 generalises the scan |
 | S4 — CHANGELOG, module_extension, module_tests, the As built (the promotion not done), 726d80b | pushed, unmerged (`feat/terminal-titles-folder`) | fits | kept; S5 corrects the docs |
 | the stop — the ledger moved under the status block, change 1.2 recorded, ecc0466 | pushed, unmerged (`feat/terminal-titles-folder`) | fits | kept |
+
+> Epoch 2 · approved 2026-11-09 · by reviewers · state: open
 
 ## Goal
 
@@ -80,14 +82,18 @@ Verified against the built branch on 2026-11-09 (`feat/terminal-titles-folder` a
   parent node, or `undefined` at the root or for a dangling id. `storage.getNode` is synchronous.
 - `nodeAt` returns the element the menu handed over (src_vs_code/src/entityViewerCommands.ts), drawn before any later
   move; storage replaces a node object on a move (src_vs_code/src/storageManager.ts:528). `folderAt` re-reads storage
-  for this reason (src_vs_code/src/commands/folderRunCommand.ts:71-79) and keeps the node it read (`Folder.node`).
+  for this reason (src_vs_code/src/commands/folderRunCommand.ts:82-90) and keeps the node it read (`Folder.node`).
+- **A delete is a move to the Trash.** `moveToTrash` (src_vs_code/src/storageManager.ts:545-560) sets the node's
+  `parentId` to the Trash folder's id (`trashedFrom` remembers the old one); `deleteNodeRecursive` (:622) is the only
+  permanent removal, and the only way to remove the Trash itself. So a "deleted" entry has the Trash as its parent, and a
+  "deleted" folder keeps its name under the Trash while its children keep pointing at it.
 - **The folder run's awaits, in order** (src_vs_code/src/commands/folderRunCommand.ts): `folderAt` (sync) →
   `planFolderRun` with `factsOf(folder)` (sync) → `beforeAsking` (sync) → `openTerminals` snapshot (sync, "the same
   tick as the modal's text") → `await showWarningMessage` (the modal) → `await trustAll` → `await runDependenciesFirst`
   (the chain) → `typeAll` (sync to the last send: `settleRow` with `appeared`, then the closes and `typeIntoNew`).
   Nothing is awaited between the folder's re-read and the snapshot; the modal and the chain are the only waits.
 - **Today every key of the folder run is `keyOf(folder, name)` = `entryTerminalKey(name, folder.node)`** over the
-  node captured before the modal (folderRunCommand.ts:48-54, 123, 153, 160), for the classification, the snapshot,
+  node captured before the modal (folderRunCommand.ts:58-60, 137, 164, 172), for the classification, the snapshot,
   `appeared` and `typeIntoNew`. A folder renamed during the wait keeps its old name in every post-wait key: the
   re-check misses a terminal the arrow opened under the new name (change 1.2's cause), and the new terminal opens under
   the old name. An entry moved out of the folder during the wait is likewise still keyed to the folder.
@@ -101,7 +107,15 @@ Verified against the built branch on 2026-11-09 (`feat/terminal-titles-folder` a
   src_vs_code/src/test/folderRunCommand.test.ts:84-95). An `open` row with no such terminal under `Run` is reported
   `CLOSED_MEANWHILE` (folderRun.ts:34, :280).
 - Closing is authorised per terminal OBJECT from the snapshot (`Authorised`, by row id), never by name afterwards
-  (folderRunCommand.ts:34-37, 153-168).
+  (folderRunCommand.ts:37-39, 162-177). Under `Run` the snapshot is NOT handed on (`runChosen` gets `undefined`, so
+  `appeared` compares against `NOTHING_AUTHORISED`): today "under `Run`, any live terminal" (folderRun.ts:268-269) is
+  true only because the key does not change between the snapshot and the re-check.
+- `folderButtons` (folderRun.ts:193-196) shows `Run` only when a `run` row exists and `Close Open Terminals and Run` only
+  when an `open` row exists: a test that needs a button must have a row of that kind before the click. A test closes a
+  terminal "meanwhile" with `w.exit(terminal)` (sets `exitStatus`, removes it from `window.terminals`;
+  folderRunCommand.test.ts:183-194); "still live" is `exitStatus === undefined`.
+- A row's `name` and `line` are captured before the modal (`planFolderRun`); an entry renamed during the wait keeps its
+  old `row.name` in the folder run while the arrow's key uses the current `details.name`.
 - `FolderFacts.isOpen(name)` gets a NAME only (folderRun.ts:64-69; `finalRow` passes `row.name`, :144); two rows may
   share a name (two same-named entries in one folder share one terminal, by design).
 - `entryShell` / `entryOpenRefusal` / `usableEntryShell` use the entry NAME only for refusal sentences
@@ -111,19 +125,20 @@ Verified against the built branch on 2026-11-09 (`feat/terminal-titles-folder` a
 - A script entry and a command entry are different kinds (`isScript`; menus `:cmd` / `:script`), so one entry never has
   both an arrow terminal and a script terminal.
 - `escapeControl` (used as `shown` in folderRun.ts:19) writes `\n`, `\r`, `\t` as visible escapes.
-- **The fakes.** `folderWorld` exposes `nodes` (src_vs_code/src/test/folderWorld.ts:63-66), and `folderTarget` carries
+- **The fakes.** `folderWorld` exposes `nodes` (src_vs_code/src/test/folderWorld.ts:64), and `folderTarget` carries
   a COPY of the folder node, but `folderAt` re-reads `nodes.find(...)`, so the captured `Folder.node` IS the object
   `nodes[0]`: a test that renames the folder in place (`w.nodes[0].name = …`) also renames the captured node and cannot
   go red against today's code; a test must REPLACE the node object (`w.nodes[0] = { ...w.nodes[0], name }`), as real
   storage does on a move. `held` + `clickAndWait` hold the folder modal; `holdDialogs: /^(Run the entries|Before )/`
   also holds the chain's own dialog (folderRunCommand.test.ts:316), which is a point strictly inside the wait.
-  `w.arrow(id)` runs the real arrow handler in the same world (folderWorld.ts:116). The world's `dispose` closes
+  `w.arrow(id)` runs the real arrow handler in the same world (folderWorld.ts:118); `trash: true` adds a Trash folder
+  with id `trash` (folderWorld.ts:82). The world's `dispose` closes
   nothing: "left alone" is `disposed === 0`, "closed" is `disposed === 1`.
 - `arrowWorld`'s `elementOf` reads `'elementParentId' in opts` (src_vs_code/src/test/arrowWorld.ts:81-84) so that a
   `null` can be passed; no test passes `null`. The doc comment "The world with `runCommands` registered against a fake
   host…" stands above `ArrowOptions` (arrowWorld.ts:70-73), not above `arrowWorld`.
 - Four test sites compose `entryTerminalTitle(entryTerminalKey(…))`: `rootTitle` (src_vs_code/src/test/vpnWorld.ts:294),
-  `T` (folderWorld.ts:17), `titleIn` (src_vs_code/src/test/terminalTitleRoads.test.ts:31) and
+  `T` (folderWorld.ts:18), `titleIn` (src_vs_code/src/test/terminalTitleRoads.test.ts:31) and
   src_vs_code/src/test/terminalActivity.test.ts:233. `terminalTitleRoads.test.ts:125` asserts `T('a') === titleIn(FOLDER_NODE, 'a')`,
   two calls of the same two functions: a tautology.
 - The scan (src_vs_code/src/test/terminalTitleScan.test.ts) matches `CredsForDevs: ${` and the one literal
@@ -175,7 +190,9 @@ new refusal. The entry half is not escaped (unchanged behaviour; the folder run 
 
 ### The folder run's timing contract (change 1.2, settled at the re-review)
 
-`commands/folderRunCommand.ts` has two reading points and nothing in between is a key:
+The re-review settled change 1.2 as: after the last await every row's key is read per row through `entryTerminalKeyOf`,
+the function the arrow and the launcher use; built by story S5. `commands/folderRunCommand.ts` has two reading points
+and nothing in between is a key:
 
 1. **Before the modal, synchronous from `folderAt` to the snapshot.** `folderAt` re-reads the folder node from storage;
    the classification (`factsOf(folder).isOpen(name)`) and the modal's `openTerminals` snapshot build their keys with
@@ -194,15 +211,28 @@ What follows from 2, each pinned by a test in S5:
 - A folder renamed during the wait: the re-check and the creation use the NEW name. A terminal the arrow opened under
   the new name during the wait is found: the row is left alone, no second terminal (the 1.2 bug). A terminal under the
   OLD name that the modal listed is still closed by OBJECT under `Close Open Terminals and Run`, and the line goes into
-  a new terminal under the new name. Under `Run`, an `open` row whose old-title terminal is not found under the new
-  title is reported `CLOSED_MEANWHILE` and not typed (nothing is typed into a second terminal; the terminal is left
-  alone; the wording is the existing one — accepted, the same one-time effect the owner accepted for a rename).
+  a new terminal under the new name.
+- **Under `Run`, a terminal the snapshot listed and that is still live counts as `appeared`** (decision at the
+  re-review): the row is reported `Left alone, terminal already open`, never `CLOSED_MEANWHILE` ("its terminal closed"
+  would be false — the terminal is open under its old title). This is folderRun.ts:268-269's own words, "under `Run`,
+  any live terminal", kept true when the key changes. In `folderRunCommand.ts` only: `ask` hands the snapshot to
+  `runChosen` under BOTH buttons with `closing` as a separate boolean; `appeared(row)` is: any live terminal of the
+  row's CURRENT key not in the snapshot, or — under `Run` only — any snapshot terminal of the row with
+  `exitStatus === undefined`. `CLOSED_MEANWHILE` keeps its one case: the snapshot terminal really ended
+  (`an_open_row_whose_terminal_closed_under_run_is_not_run_saying_so` stays green). `folderRun.ts` is unchanged.
 - An entry moved out of the folder alone during the wait: its key names its NEW parent (or none); the line is typed
   there.
-- A folder deleted during the wait (its children left dangling, or deleted with it) or an entry deleted during the wait:
-  `entryTerminalKeyOf` answers no folder and the title is `Creds: <name>`; the line is still typed, as today
-  (`settleRow` re-reads nothing of the entry) — the run is NOT cancelled. This is the "new decision" change 1.2 asked
-  for: the bare title is `entryTerminalKeyOf`'s existing rule (S1 note 2), and the typing is the existing behaviour.
+- **A delete during the wait is a move to the Trash** (`moveToTrash`): a trashed entry is typed under
+  `Creds: Trash / <name>` (the Trash is a normal parent); a trashed folder keeps its name, so its rows keep
+  `Creds: <folder> / <name>` and still run. A permanent removal (`deleteNodeRecursive`: the entry gone, or the folder
+  gone with its children dangling) gives no folder and the title `Creds: <name>`. In every case the line is still typed,
+  as today (`settleRow` re-reads nothing of the entry) — the run is NOT cancelled. This is the "new decision" change 1.2
+  asked for: the Trash and bare titles are `entryTerminalKeyOf`'s existing rules (S1 note 2), the typing is the existing
+  behaviour.
+- **An entry renamed during the wait — accepted as it is:** the folder run types under the pre-modal `row.name` (the
+  name the person approved in the modal, the one the control-character refusal judged), while the arrow's key uses the
+  current `details.name`; after such a rename the arrow opens its own terminal once. The same one-time effect the
+  owner accepted for a rename or a move; not re-read on purpose.
 - Authorisation stays by terminal object from the snapshot; nothing is authorised by name after the modal.
 
 Signature changes (S2, built): pinnedTerminal.ts `findEntryTerminal(key, terminalOs)`, `openEntryTerminal(key, terminalOs)`,
@@ -221,11 +251,14 @@ Built (S1-S3): see §Stories and §As built. Added at the re-review (S5):
    file would pass 450 lines): a rename during the wait with no terminal (created under the new name); with a terminal the
    arrow opened under the NEW name during the wait (left alone, one terminal, under both buttons); with a terminal the
    modal listed under the OLD name (`Close Open Terminals and Run` disposes it by object and types under the new name;
-   `Run` leaves it alone, types nothing for that row, reports it not run); an entry moved out alone (typed under the new
-   parent); the folder deleted (typed under `Creds: <name>`); an entry deleted (typed under `Creds: <name>`). Every
-   rename or move REPLACES the node object in `w.nodes` (the fact above).
+   `Run` leaves it alone, types nothing for that row, reports it `Left alone, terminal already open`); an entry moved out
+   alone (typed under the new parent); an entry trashed (typed under `Creds: Trash / <name>`); the folder trashed (title
+   unchanged, still runs); the folder removed for good (typed under `Creds: <name>`); an entry removed for good (typed
+   under `Creds: <name>`). Every rename or move REPLACES the node object in `w.nodes` (the fact above); a test that needs
+   a button has a row of that kind (`folderButtons`).
 7. The scan made general: an old entry-title literal in a test is caught in single, double and backtick quotes with any
-   name and in the regex form; a notification prefix (`` `CredsForDevs: ${message}` ``) is NOT a site (a negative fixture).
+   name — one matcher per delimiter, so a name holding the other quote character (`"CredsForDevs: O'Brien"`) is caught —
+   and in the regex form; a notification prefix (`` `CredsForDevs: ${message}` ``) is NOT a site (a negative fixture).
 8. Guards for the clean-ups: `dependencyChain.test.ts:118` exact title; the four title compositions become one `titleIn`.
 
 Updates (built in S2/S3): `test/folderWorld.ts` `T`; `BEFORE` in the two folder suites; the regexes `/: b$/` → `/ \/ b$/`;
@@ -395,23 +428,30 @@ its §S2.4 folder-run brief and pitfalls 1-2 are superseded by S5 for the post-w
   `src/folderRun.ts`, `src/pinnedTerminal.ts`, `src/terminalGuard.ts`, `src/commands/runCommands.ts`, `src/vpnLauncherRun.ts`.
 - **What changes, A (change 1.2):** in `folderRunCommand.ts`, after `chain.ready`, `runChosen` builds one reader
   `keyOfRow = (row: LineRow) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name)` and hands it to
-  `typeAll`, `appeared` and `typeLine` in place of `folder`; `appeared` and `typeIntoNew` use it for every row. Before the
+  `typeAll`, `appeared` and `typeLine` in place of `folder`; `appeared` and `typeIntoNew` use it for every row. `ask` hands
+  the snapshot to `runChosen` under both buttons, with `closing = choice === CLOSE_AND_RUN` beside it; `typeLine` closes
+  only when `closing`. `appeared(row, snapshot, closing, keyOfRow)`: a live terminal of `keyOfRow(row)` not in the
+  snapshot, or (`!closing`) a snapshot terminal of the row with `exitStatus === undefined` (the decision above). Before the
   modal nothing changes: `factsOf(folder)` and `openTerminals(plan, folder)` keep `entryTerminalKey(name, folder.node)` (the
   contract's point 1; `FolderFacts.isOpen(name)` unchanged). `Folder.node` stays for those two readers. The header comment
-  states the contract: what is read before the modal, what after the last await, and that the captured node is never read
-  after the wait. The authorisation snapshot stays by terminal object. Functions stay under complexity 4 and 50 lines
-  (`runChosen` is the one that grows by one line; if it passes 4, the reader is built in a one-line helper `rowKeys(host, folder)`).
+  states the contract: what is read before the modal, what after the last await, that the captured node is never read
+  after the wait, and what `appeared` means under each button. The authorisation to CLOSE stays by terminal object and by
+  the closing button only. Functions stay under complexity 4 and 50 lines (`appeared` takes a one-line helper
+  `stillLive(terminals)` if it passes 4; `runChosen` grows by one line).
 - **What changes, B (accepted review clean-ups, same scope):**
   - `terminalTitleScan.test.ts`: the title shapes over all of `src` stay (`Creds: `, `Creds run: `, `Creds VPN: `,
     `CredsForDevs: before `, `CredsForDevs run: `, `CredsForDevs VPN: `); the `CredsForDevs: ${` pattern goes, with the
     seven allow-list lines only it needed (transportFactory.ts, extension.ts ×2, treeMutationCommands.ts, wslRelayCommands.ts ×3);
-    a second set over `src/test` only catches an old entry-title literal in single, double or backtick quotes with any name
-    (`/(['"`])CredsForDevs: (?!\$\{)[^'"`]*\1/`) and the regex form (`/\/\^?CredsForDevs: /`). The lines it catches today and
-    their allow-list reasons: terminalTitleRoads.test.ts:144 and :149 (the pinned one-time effect — kept), bridgeConsent.test.ts:486
-    and sshAgentHelp.test.ts:179, :182 (an output panel's name, not a terminal title), envApply.test.ts:108 (the env
-    collection description, not a terminal title). `the_scan_still_finds_what_it_is_about` adds the negative case: the line
-    `` void vscode.window.showWarningMessage(`CredsForDevs: ${message}`); `` is a site for neither set, and a positive one for
-    each of the three quote styles and the regex form with a name other than `a`.
+    a second set over `src/test` only catches an old entry-title literal with any name, ONE matcher per delimiter so a
+    name holding the other quote character is caught: `/'CredsForDevs: [^']*'/`, `/"CredsForDevs: [^"]*"/`,
+    `` /`CredsForDevs: (?!\$\{)[^`]*`/ `` (a backtick title that is not a `${` prefix), and the regex form
+    (`/\/\^?CredsForDevs: /`). The lines they catch today and their allow-list reasons: terminalTitleRoads.test.ts:144 and
+    :149 (the pinned one-time effect — kept), bridgeConsent.test.ts:486 and sshAgentHelp.test.ts:179, :182 (an output
+    panel's name, not a terminal title), envApply.test.ts:108 (the env collection description, not a terminal title).
+    `the_scan_still_finds_what_it_is_about` adds the fixtures: the negative line
+    `` void vscode.window.showWarningMessage(`CredsForDevs: ${message}`); `` is a site for neither set; a positive one for
+    each of the three quote styles and the regex form with a name other than `a`; and `"CredsForDevs: O'Brien"` (a quote
+    inside a differently quoted title) is one site.
   - One `titleIn(parent: TreeNode | undefined, name: string)` exported from `test/vpnWorld.ts` is the only composition of
     `entryTerminalTitle(entryTerminalKey(…))` under `src/test`; `rootTitle(name)` becomes `titleIn(undefined, name)` and
     folderWorld's `T(name)` becomes `titleIn(FOLDER_NODE, name)` (one-line names over it, kept so seven suites do not churn);
@@ -433,28 +473,39 @@ its §S2.4 folder-run brief and pitfalls 1-2 are superseded by S5 for the post-w
   the change happens while the chain itself waits:
   `a_folder_renamed_during_the_wait_is_typed_under_its_new_name` (no terminal before; after the rename and `Run`:
   one terminal `titleIn(renamed, 'a')`, `sent [L('a')]`, nothing under the old title);
-  `a_terminal_the_arrow_opened_under_the_new_name_during_the_wait_is_left_alone` (rename, then `await w.arrow('a')`
-  with `trusted`, then the button; under `Run` AND under `Close Open Terminals and Run`: the arrow's terminal has
-  `disposed 0`, `sent [L('a')]`, no second terminal, the report says `Left alone, terminal already open: a` — RED today:
-  a second terminal opens under the OLD title);
-  `an_old_title_terminal_the_modal_listed_is_closed_by_object_after_a_rename` (`preopened: [T('a')]`, `modal: 'last'`
-  through the held dialog: the old terminal `disposed 1`, a new one under the new title with `[L('a')]`, `Typed 1 of 1` —
+  `a_terminal_the_arrow_opened_under_the_new_name_during_the_wait_is_left_alone` (rows `a` and `b`, so both buttons
+  exist: under `Run` `b` is a `run` row; under `Close Open Terminals and Run` `b` is `preopened: [T('b')]`; rename, then
+  `await w.arrow('a')` with `trusted`, then the button — in both: the arrow's terminal has `disposed 0`, `sent [L('a')]`,
+  no second terminal for `a`, `b` typed once (under Close its old terminal `disposed 1`), the report
+  `Typed 1 of 2 … Left alone, terminal already open: a. Typed: b.` — RED today: a second terminal for `a` opens under the
+  OLD title);
+  `an_old_title_terminal_the_modal_listed_is_closed_by_object_after_a_rename` (one row, `preopened: [T('a')]`, the only
+  button is Close: the old terminal `disposed 1`, a new one under the new title with `[L('a')]`, `Typed 1 of 1` —
   RED today on the title of the new terminal);
-  `under_run_an_old_title_terminal_is_left_alone_after_a_rename_and_the_row_is_not_run` (`preopened: [T('a')]`, `Run`:
-  the old terminal `disposed 0`, `sent []`, no new terminal, the report names `a` as not run with the existing
-  closed-meanwhile sentence — RED today: the old title is still the key, the row is "left alone, already open");
+  `under_run_an_old_title_terminal_still_live_is_left_alone_after_a_rename` (rows `a` and `b`, `preopened: [T('a')]`, so
+  `Run` exists; `Run`: the old terminal `disposed 0`, `sent []`, no new terminal for `a`, `b` typed under the new title,
+  the report `Typed 1 of 2 … Left alone, terminal already open: a. Typed: b.` and nothing of `closed while the question
+  was open` — RED today twice: before S5's key change the old title is still the key (`b`'s title is wrong); with the key
+  change alone `a` is reported closed meanwhile, which pins the decision);
   `an_entry_moved_out_during_the_wait_is_typed_under_its_new_parent` (a folder `g` pushed, the entry node replaced with
   `parentId: 'g'`: one terminal `titleIn(g, 'a')` — RED today: `T('a')`);
-  `a_folder_deleted_during_the_wait_types_under_the_bare_title` (`w.nodes.splice(0, 1)`: one terminal `titleIn(undefined, 'a')`,
-  `Typed 1 of 1` — RED today);
-  `an_entry_deleted_during_the_wait_is_still_typed_under_the_bare_title` (the entry node removed: `titleIn(undefined, 'a')`,
-  `Typed 1 of 1` — RED today on the title; the typing itself is today's behaviour).
-  Scan: the general matcher is written first with a fixture line `'CredsForDevs: other'` in a test — RED until the
-  allow-list and the fixture are settled; the negative case is green before and after (a guard). Guards (green before
+  `an_entry_trashed_during_the_wait_is_typed_under_the_trash` (`trash: true`, the entry node replaced with
+  `parentId: 'trash'`: one terminal `titleIn(trashNode, 'a')` = `Creds: Trash / a`, `Typed 1 of 1` — RED today: `T('a')`);
+  `a_folder_trashed_during_the_wait_keeps_its_title_and_runs` (`trash: true`, `w.nodes[0]` replaced with
+  `parentId: 'trash'`: one terminal `T('a')`, `Typed 1 of 1` — a guard, green before and after; it pins that a trashed
+  folder does not cancel or retitle the run);
+  `a_folder_removed_for_good_during_the_wait_types_under_the_bare_title` (`w.nodes.splice(0, 1)`: one terminal
+  `titleIn(undefined, 'a')`, `Typed 1 of 1` — RED today);
+  `an_entry_removed_for_good_during_the_wait_is_still_typed_under_the_bare_title` (the entry node removed:
+  `titleIn(undefined, 'a')`, `Typed 1 of 1` — RED today on the title; the typing itself is today's behaviour).
+  Scan: the per-delimiter matchers are written first with fixture lines `'CredsForDevs: other'` and
+  `"CredsForDevs: O'Brien"` in a test — RED until the allow-list and the fixtures are settled (the O'Brien line is RED
+  against one shared matcher too, which is why there are three); the negative case is green before and after (a guard). Guards (green before
   and after, each run once): the exact chain title at dependencyChain:118, `titleIn` in the four places, `elementParentId`
   as a string. The RED list is run once against ecc0466's tree with the test-side edits only, then green after the edits.
 - **Done:** every test above passes; `grep -n 'folder.node\|keyOf(' src/commands/folderRunCommand.ts` shows the captured
-  node read only in `factsOf` and `openTerminals`; `grep -rn 'entryTerminalTitle(entryTerminalKey' src/test` finds one
+  node read only in `factsOf` and `openTerminals`; `grep -n CLOSED_MEANWHILE src/folderRun.ts` is unchanged (its one
+  case is a terminal that ended); `grep -rn 'entryTerminalTitle(entryTerminalKey' src/test` finds one
   line (`titleIn`); `grep -n 'CredsForDevs: \\\$' src/test/terminalTitleScan.test.ts` finds nothing; `git diff --stat
   src/folderRun.ts src/pinnedTerminal.ts src/terminalGuard.ts src/commands/runCommands.ts src/vpnLauncherRun.ts` is empty;
   CHANGELOG, module_extension and module_tests carry the S5 text; typecheck, lint, suite green; one commit.
@@ -487,6 +538,11 @@ its §S2.4 folder-run brief and pitfalls 1-2 are superseded by S5 for the post-w
    the arrow. Two functions in one file is accepted for this reason, and the header comment says which is used where.
 8. **An in-place edit of the fake's folder node does not go red.** `Folder.node` is the object `w.nodes[0]` (the fact
    above); S5's tests replace the object. A test that edits in place would pass before and after S5 and prove nothing.
+9. **Why `appeared` under `Run` reads the snapshot (re-review decision).** With the key read after the wait, a terminal
+   the modal listed under the old title is no longer found by the row's key; without the snapshot the row would be
+   reported "its terminal closed while the question was open", which is false. The snapshot is already taken for the
+   closing button; under `Run` it is read, never acted on. The planner's `settleRow` keeps its contract (an `open` row
+   with no `appeared` under `Run` is `CLOSED_MEANWHILE`): only the window's answer to `appeared` gets truer.
 
 ## As built
 

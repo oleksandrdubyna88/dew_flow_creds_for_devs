@@ -162,7 +162,9 @@ const built from it. Not touched in S2: every `CredsForDevs: before …` (`depen
 **`src/commands/folderRunCommand.ts`** — as built in S2. **S5 revises the post-wait half** (the parent's §Design, "The
 folder run's timing contract"): `typeAll`, `appeared` and `typeLine` take a per-row key reader built in `runChosen` after
 `chain.ready` (`(row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name)`) instead of `folder`; `keyOf(folder,
-name)` stays only in `factsOf` and `openTerminals`, before the modal. The lines below describe S2's commit.
+name)` stays only in `factsOf` and `openTerminals`, before the modal. The snapshot reaches `runChosen` under both buttons
+(`closing` a separate boolean): under `Run` a snapshot terminal still live counts as `appeared`, so a row whose old-title
+terminal is open after a rename is "left alone", not "closed meanwhile". The lines below describe S2's commit.
 
 - Import `{ EntryTerminalKey, entryTerminalKey } from '../terminalTitles'` and `type { TreeNode } from '../types'`.
 - `:426-430` `interface Folder { accountId; id; name; readonly node: TreeNode }`; `:465` `{ accountId: element.accountId,
