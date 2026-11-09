@@ -631,6 +631,31 @@ takes with `['Deny', 'Allow']`, whether Escape resolves the promise, whether a m
 
 **Reading Q8-1 as A8.6 does:** "one dialog on screen" is `r.vw.held.length === 1` with `r.bw.openDialogs.length` and `r.bw.buttons.length` unchanged; no scenario needed the broker world's `dialogs` for it.
 
+### S5.12 (epoch 8, review fixes) — change 8.1, the CHANGELOG against 1.18.0, the call's own holding
+
+*(Written by the coder, 2026-11-09, after the Opus review and the coai code round of the fix-forward.)*
+
+**1. Change 8.1 and the reload remedy.** `BUSY_PLACE` is now, byte for byte (one static sentence, its help naming every possible holder):
+
+> Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt the request raised after its consent, asked or not, may be open (a PIN box, an install offer, a trust modal, a VPN question), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again. If nothing is on screen there, reloading that window frees the place.
+
+The last sentence is the remedy §4.10's *Not established* paragraph says the help names. It is true: the place is `TokenlessCeilings.flight`, one in-memory object per broker (`credsAgentServer.ts:67`), and `aliasThrottle.ts` persists nothing; a reloaded window builds a fresh broker. A test pins this (`consentContractEpoch8.test.ts`, "the reload remedy is true": a fresh `TokenlessCeilings` is free while the held one stays busy, `aliasThrottle.ts` has no file or state store, one `TokenlessCeilings` per broker); a real window reload cannot be run in this rig, so that is as far as it goes. C8 and F4a (the S5.3 literal, the words test) carry both changes; F1c (the never-ask road) asserts that the fifth caller hears *a prompt the request raised after its consent, asked or not* and *a VPN question*. The CHANGELOG busy bullet and `module_extension.md` repeat the help.
+
+**2. The CHANGELOG against `extension-v1.18.0`.** The Escape bullet's "before" was false against 1.18.0. There `shown` was an async method with a `try`/`finally` (`brokerConsent.ts:189-201` at the tag), so a dialog that threw before it opened freed the place and the call was answered 500 `internal` with `UNANSWERED_FAILURE` (observed by running the tag's `brokerConsent.ts` under F3a: `500 internal`, *The request failed inside this window…*); a dialog whose promise rejected after it opened was an unhandled rejection (`withTimeout` has no rejection handler) and kept the place until the five-minute timer answered the call as a timeout (observed under C19 (b): the sentinel error unhandled). The bullet now says exactly that, and gives the per-verb dismissal sentences, each verified in code and by a test: *The human did not allow this grant.* (`GRANT_NOT_ALLOWED`, `brokerRequests.ts:30`; C5), *…did not allow this.* for `create` and the folder verbs (`brokerMcpDoor.ts:495`, `brokerFolderDoor.ts:176`; C15, F7a), *…this deletion.* for `delete` (`brokerMcpDoor.ts:324`; C15). Every other bullet's "before" was checked against the tag, not against this PR's history: the busy sentence (`aliasThrottle.ts:435` at the tag), the timeout sentences (`credsAgentServer.ts:650-651`, `brokerMcpDoor.ts:155`), the late line's old words (`brokerConsent.ts` `ignored`), the quiet call taking no place (`brokerMcpDoor.ts:213`, `door.admit(res, prompts)`), and the questions being toasts awaited with no race (`vpnRun.ts`, `dependencyRunHost.ts`); all hold. The line citations were re-taken after the edits.
+
+**3. The call's own holding (coai finding 0).** `followUpStands(owner, grant, via, prompt)` no longer marks `flight.holder()`, the global holder. `TokenlessCeilings.admit` takes the call's response object as `owner` (the one argument added to the call in `credsAgentServer.admitAliasCall`, in place) and records the holding that admission took (`Admission.held`, set by `holding`; a quiet call that takes no place has none) in a `WeakMap`; the seam marks that holding, and `OneInFlight.prompted` and `dialogClosed` already ignore a holding that no longer owns the place. So a call that holds nothing, or whose holding was given back, can mark nothing of another call's. F1g (two tests, RED first: the other call's release left the place busy until the stranger's question settled; and a stale call marked the next holder's place) pins both; F1f is updated to the new signature. M55 and M56 are its mutations.
+
+**Mutations, re-run at the final code.** M34-M52 were all applied again (the strings of M38 and M40 follow the new code): 19 of 19 caught, hashes restored. New rows, 4 of 4 caught:
+
+| # | Mutation | Red cases | Restored |
+|---|---|---|---|
+| M53 | `BUSY_PLACE` goes back to *a prompt that followed an Allow* | S5, C8 (the words), F1c | yes |
+| M54 | `BUSY_PLACE` loses the reload remedy | S5, C8 (the words) | yes |
+| M55 | `followUpStands` marks the global holder (`this.flight.holder()`) | F1g | yes |
+| M56 | the throttle never records which holding a call owns | F1f (i), F1f (iii), F1a (runStep), F1a (settle), F1c, F1b | yes |
+
+Counts: `aliasThrottle.ts` 519 (A8.5 planned ≤ 510: over by 9 for `owned`, `claimed` and `held`; the trigger of §S5.4 is 700), `credsAgentServer.ts` 793, `consentContractEpoch8.test.ts` 318. The suite totals are in the report of this round.
+
 ## S5.13 — Questions for the coordinator
 
 - **Q1. §S5.11's "a quiet local MCP call of `create`, …" is false for `create`.** A create is never quiet: `confirmAndCreate` admits with `door.admit(res, true)` (`brokerMcpDoor.ts:385`), and only `handleMcpUse` reads the flag (`:223`). The calls that hold the place quietly are `terminal`, `up`, `down`, `rotate`, and `exec` on a forwarding entry with the agent up (the five flags of H9). The CHANGELOG says so; the spec sentence was not changed.
