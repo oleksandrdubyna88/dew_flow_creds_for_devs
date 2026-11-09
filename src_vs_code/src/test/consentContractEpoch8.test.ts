@@ -1,4 +1,6 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { BUSY_PLACE, TokenlessCeilings } from '../aliasThrottle';
 import type { McpFolderHooks } from '../brokerFolderDoor';
@@ -266,4 +268,18 @@ test('F1f (iv): a question settled before the release keeps the place for the ca
   assert.equal(ceilings.admit(true, 1).refusal?.message, BUSY_PLACE, 'the call is still running and keeps the place by its flag');
   holder.release();
   assert.equal(ceilings.admit(true, 2).refusal, undefined);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The reload remedy of `BUSY_PLACE`: the place lives in this window's memory and nowhere else
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('the reload remedy is true: the place is in-memory state of one broker, so a fresh broker (a reloaded window) is free while the old one stays held', () => {
+  const held = new TokenlessCeilings();
+  held.admit(true, 0);
+  assert.equal(held.admit(true, 1).refusal?.message, BUSY_PLACE, 'the first window is held');
+  assert.equal(new TokenlessCeilings().admit(true, 1).refusal, undefined, 'a fresh state, as a reloaded window builds, is free');
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'aliasThrottle.ts'), 'utf8');
+  assert.equal(/from 'node:fs'|globalState|workspaceState|writeFile/.test(source), false, 'and nothing of the place is persisted for a reload to find');
+  assert.ok(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'credsAgentServer.ts'), 'utf8').includes('private readonly ceilings = new TokenlessCeilings()'), 'one TokenlessCeilings per broker');
 });

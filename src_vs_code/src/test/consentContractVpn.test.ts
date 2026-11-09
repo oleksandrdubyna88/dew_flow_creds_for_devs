@@ -258,6 +258,9 @@ test('F1c: five never-ask ups, each hung up at its question — one question, fo
     for (let up = 2; up <= 5; up += 1) {
       await assertBusyNow(r, upAsk, `up #${up}`);
     }
+    // The never-ask road: the orphaned question was raised with no Allow, and the help the caller hears names it (change 8.1).
+    const heard = message(await answeredNow(send(door(r.port), upAsk), 'a fifth caller'));
+    assert.ok(heard.includes('a prompt the request raised after its consent, asked or not') && heard.includes('a VPN question'), heard);
     assert.equal(r.vw.held.length, 1, 'one modal in all');
     assert.equal(r.bw.dialogs.length, 0, 'no consent modal: the entry never asks');
     assert.equal(lines(r, 'ABANDONED').length, 1);

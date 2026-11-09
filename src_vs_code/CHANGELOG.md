@@ -13,9 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   told to the throttle at the timer). The next alias or MCP call that would ask hears *busy*, where 1.18.0 raised a second modal over the
   first. 1.18.0's "until you click it or five minutes pass" no longer holds: only your click or an Escape gives the place back.
 - **The *busy* answer names every holder of the place, the quiet one included** (`aliasThrottle.ts:278`, `BUSY_PLACE`): *Another request holds this
-  window's dialog place.*, then a consent dialog that may be standing unanswered, a prompt that followed an Allow (a PIN box, an install offer, a trust
-  modal), a dependency step that may still be running in a terminal, or a request that may prompt again and may still be running with nothing on
-  screen yet, in the VS Code window that owns the place; answer or finish it there, or wait for the running request to end, then try again. It replaces
+  window's dialog place.*, then a consent dialog that may be standing unanswered, a prompt the request raised after its consent, asked or not (a PIN box, an install offer, a
+  trust modal, a VPN question), a dependency step that may still be running in a terminal, or a request that may prompt again and may still be running
+  with nothing on screen yet, in the VS Code window that owns the place; answer or finish it there, or wait for the running request to end, then try
+  again, and if nothing is on screen there, reloading that window frees the place. It replaces
   *Another request is already waiting for the person to answer. Try again once they have.* and no longer says what the next call will do.
 - **The timeout answer says the question is still on your screen** (`brokerProtocol.ts:102-110`, `CONSENT_TIMED_OUT_ON_PLACE` and
   `CONSENT_TIMED_OUT`). On the local alias and MCP doors, and for an agent's `create`, `delete` and folder verbs, it adds that the question keeps this

@@ -3620,8 +3620,8 @@ answer decided nothing, and says no more — not what ran before, not what the n
 outcome, `dismissed`, and is answered as it always was, 504 with `The human did not allow this grant.`. A client that hangs up during its dialog,
 and a call that timed out, therefore do not let the next call raise a second modal on top of the standing one, and a long action does not make
 every other door `busy`. The `busy` sentence is `BUSY_PLACE` and names what may hold the place (every clause a *may*, so it is true whichever holder stands): a standing
-dialog, a prompt that followed an Allow, a running dependency step, a request that may prompt again and still runs with nothing on screen yet (the D.3
-quiet caller), and the window that owns it; it says what the person can do, not what the next call will do. A bridged dialog shows Deny first (`BRIDGED_BUTTONS`); a local one is unchanged. A stale release or close (a different holding) frees nothing
+dialog, a prompt the request raised after its consent, asked or not (a PIN box, an install offer, a trust modal, a VPN question: on the never-ask road a call raises it with no Allow), a running dependency step, a request that may prompt again and still runs with nothing on screen yet (the D.3
+quiet caller), and the window that owns it; it says what the person can do, not what the next call will do, and its last step is the remedy for a modal VS Code hid without resolving its promise: reloading that window frees the place (the place is one broker's in-memory state; nothing persists it). A bridged dialog shows Deny first (`BRIDGED_BUTTONS`); a local one is unchanged. A stale release or close (a different holding) frees nothing
 of a later holder's place. **The one exception is the call that may ask again** (Amendment 3, C.3): an Allow keeps the place, past
 the dialog's close, until the call's own `release` when the call declares that it may put a prompt of its own on screen after the
 Allow — `UseAction.asksAfterConsent`: `terminal`, `up` and `down` of the VPN (the install offer), `rotate` (the PIN and copy prompts of

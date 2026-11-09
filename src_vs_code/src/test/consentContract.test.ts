@@ -34,7 +34,7 @@ test('C2: both timeout sentences say "within five minutes", and the constant the
 test('S5.3: the sentences of the contract, byte for byte', () => {
   assert.equal(
     BUSY_PLACE,
-    "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again.",
+    "Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt the request raised after its consent, asked or not, may be open (a PIN box, an install offer, a trust modal, a VPN question), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again. If nothing is on screen there, reloading that window frees the place.",
   );
   assert.equal(
     CONSENT_TIMED_OUT_ON_PLACE,
@@ -48,8 +48,10 @@ test('S5.3: the sentences of the contract, byte for byte', () => {
 
 test('C8 (the words): BUSY_PLACE opens with the parent\'s sentence and names the four things the place can be held by', () => {
   assert.ok(BUSY_PLACE.startsWith("Another request holds this window's dialog place."), 'the parent\'s first sentence');
+  assert.ok(BUSY_PLACE.endsWith('If nothing is on screen there, reloading that window frees the place.'), 'the remedy of the parent\'s Not established paragraph is the last step');
+  assert.ok(BUSY_PLACE.includes('a VPN question') && !BUSY_PLACE.includes('followed an Allow'), 'change 8.1: a prompt raised with no Allow is a holder too');
   assert.ok(BUSY_PLACE.includes('nothing on screen yet') && !BUSY_PLACE.includes('is then asked'), 'F4a: the quiet holder is named, and no claim about what the next call will do');
-  for (const named of ['consent dialog may be standing unanswered', 'a prompt that followed an Allow may be open', 'a dependency step may still be running', 'a request that may prompt again may still be running', 'the VS Code window that owns the place']) {
+  for (const named of ['consent dialog may be standing unanswered', 'a prompt the request raised after its consent, asked or not, may be open', 'a dependency step may still be running', 'a request that may prompt again may still be running', 'the VS Code window that owns the place']) {
     assert.ok(BUSY_PLACE.includes(named), `the help names: ${named}`);
   }
 });
