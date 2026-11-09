@@ -2326,6 +2326,27 @@ The record on this machine: `u1000:jinx~Ubuntu@linux:896992:1794263866:402653221
 11. `owned_next_id` takes ids from `OWNED_TEST_IDS` by removing them from the variable; when the list is empty the draw is random.
 12. The test also takes `T_OWNED_SH` (the helper to test), the seam the by-hand REDs use.
 
+### E2.4 build record, part 1b — the fix round after the Opus review of `owned.sh` (2026-11-10, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
+
+Commits: `95052ea` the tests (RED against the helper of `e9a2677`), `7c8f328` the helper, `61ec0b4` F2 uses HUP, `f0335b4` `module_tests.md`. Every review item is accepted. Each RED below was seen first against the old helper; then each fix was taken out of the new helper
+(a changed copy, `T_OWNED_SH`) and the test was red again.
+
+| Item | Test | RED (failing text) | Fix |
+|---|---|---|---|
+| 1 | `tf1` P1, P2 | `F1 P1 ... the status is the script's 3: expected [3], got [5]`; `F1 P1 the root is empty: expected [0], got [2]`; `F1 P2 the root is empty: expected [0], got [4]` | `owned_exit_chain`: `set +eu`, then `( "$OWNED_CALLER_FN" ) \|\| true` |
+| 2 | `tf2` P3, P3b | `F2 P3 ... expected [143], got [129]`; `folder and claim are gone: expected [0], got [2]`; P3b `expected [3], got [129]`, `expected [0], got [6]` | `OWNED_BUSY=1` first in the chain |
+| 3 | `t5` | `T5 exactly one of two racing owned_create_dir wins, 20 rounds (bad rounds: (0,0)(0,0)...): expected [0], got [9]` (the plain mkdir; 2 of 20 with the fix out) | `owned_create_dir`: `perl -e 'mkdir $ARGV[0] or exit 1'` when perl exists, else `mkdir` |
+| 4 | `tf4` P4 | `F4 P4: the claim is not left (the root is empty): expected [], got [testsToDelete-u1000-creds-x-7da47ea1.owner ]` | the traps are set before the draw loop |
+| 5 | `tf5` | `F5 WSL_DISTRO_NAME [   ]: ... expected [u1000:jinx@linux:...], got [u1000:jinx~-@linux:...]` | `[ -n "${wsl//[[:space:]]/}" ]` |
+| 6 | `tf6` P7 | `F6 path: tf6/testsToDelete-u1000-creds-x-6a243180`; `F6 folder and claim are gone after the cd: expected [0], got [2]` | a relative root is made absolute (`cd` and `pwd`); one line and return 1 when it cannot be entered |
+| 7 | `t9b` | green on the old helper (the check was there); with the registry check taken out: `T9b owned_remove of an unregistered folder with our own record returns 1: expected [1], got [0]` | none (the test is the fix) |
+| 8 | the `source` line of the test | not measured here (no shellcheck) | `# shellcheck source-path=SCRIPTDIR` then `source=owned.sh` |
+| 9 | `tf9`, `t7a` | `F9 OWNED_HOOK_AFTER_CLAIM is named once: expected [1], got [0]` (and `OWNED_TEST_IDS`); with the old scan pattern: `T7a fixture [trap f 0]`, `[echo before; trap cleanup EXIT]`, `[if x; then trap cleanup TERM; fi]`: the pattern found nothing | one stderr line per seam, once; the scan drops comment lines and finds a trap after `;`, `then`, and `trap f 0`; the header says sourcing overwrites a caller's `REPO_TOKEN` |
+
+**Found while testing, not in the review:** a child started with `&` by a non-interactive script ignores SIGINT from its start, and bash cannot trap a signal that was ignored at entry. So the F2 test sends HUP as the second signal; the helper's INT trap works in a foreground script and not in a `&` child (a limit of the shell, not a defect of the helper). P3b of the review (INT during `owned_remove_at`) is covered by a HUP sent from inside the caller's function.
+**Effect of item 1:** the caller's function runs in a subshell, so a variable it sets is not seen by `owned_cleanup`; the function must act on files or processes, which is what a clean-up does.
+**Not run here:** shellcheck (item 8 and the new directives are unmeasured), macOS bash 3.2 and Git for Windows (CI). Totals on Linux: 138 asserts, 0 failed, ten runs in a row (see the report).
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
