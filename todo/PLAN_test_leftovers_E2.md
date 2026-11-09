@@ -2282,7 +2282,7 @@ Checked on Linux only (`CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581
 ### E2.4 build record, part 1 — S1 (2026-11-09, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
 
 Built by a Sonnet coder from [PLAN_test_leftovers_E2.4_S1_spec.md](PLAN_test_leftovers_E2.4_S1_spec.md), test first. Commits, oldest first: `2d0a188` RED (`owned.test.sh`, no helper);
-`e7baf47` `owned.sh` (GREEN on Linux); the guard fix of the test file (T17); the CI step and the shellcheck line (`45a1225`); `59859b9` `module_tests.md`; `4225f8b` the janitor's own words in the test output;
+`e7baf47` `owned.sh` (GREEN on Linux); `0c1d27b` the guard fix of the test file (T17); `45a1225` the CI step and the shellcheck line; `59859b9` `module_tests.md`; `4225f8b` the janitor's own words in the test output;
 this record. Only S1 is built; S2 to S4 are not touched.
 
 **What was built.**
