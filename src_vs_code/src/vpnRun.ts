@@ -212,11 +212,10 @@ const IMPORT_QUESTION = 'This machine has OpenVPN Connect (the GUI), not the Ope
 const IMPORT_BUTTON = 'Import profile';
 
 /**
- * The import question: a modal on an agent call, raced against the request. A client that leaves ends the request at once; the question keeps the place until a
- * person settles it, and a click that lands later is journalled and does nothing. The person's own Start keeps the toast (D14, F1).
+ * The import question's race: a client that leaves ends the request at once; the question keeps the place until a person settles it (`standingPrompt`, F1), and a
+ * click that lands later is journalled and does nothing. The question itself is asked in `openVpnConnect`, a modal on an agent call and a toast on the person's own Start (D14).
  */
-async function askToImport(ctx: VpnRunContext): Promise<string | undefined> {
-  const question = vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON);
+function untilSettled(ctx: VpnRunContext, question: Thenable<string | undefined>): Promise<string | undefined> {
   ctx.standingPrompt?.(question);
   return untilGone(question, ctx.startGate, (late) => (late === undefined ? undefined : ctx.lateAnswer?.(late)));
 }
@@ -228,7 +227,7 @@ async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, ac
   // The GUI can IMPORT a profile; it cannot be driven like the CLI. Importing is the
   // honest half we can do — connecting stays in its window, where the tunnel may in
   // fact already be up.
-  const open = await askToImport(ctx);
+  const open = await untilSettled(ctx, vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON));
   // The profile is written only once the import is accepted — and `writeVpnConfig` reads the request last.
   const configPath = open === IMPORT_BUTTON ? await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name)) : undefined;
   if (configPath === undefined) {
