@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The help and the README now show how to run tmux over `ssh` from a local window on Windows.** The line is
+  `ssh -t <host> tmux new -A -s {name}`, with *Runs on* set to Windows. You replace `<host>`; the extension fills in `{name}`.
+  The entry's arrow sees `ssh` end (after a detach or a dropped connection) only in PowerShell 7 (`pwsh`). In Windows
+  PowerShell 5.1 and Command Prompt there is no shell integration, so the arrow asks each time. A silent drop can leave `ssh`
+  waiting, and the arrow then asks. The help shows this in all five languages. No behaviour changed.
+
 ## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
 
 ### Changed — an agent cannot export a secret into another computer's terminals

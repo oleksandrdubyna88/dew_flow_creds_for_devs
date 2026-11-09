@@ -468,6 +468,11 @@ asleep overnight, can leave `ssh` waiting, and the terminal then reads `running`
 under a default profile named `Windows PowerShell` fell back to `pwsh` without saying so, so it is not counted as the 5.1 row, which
 names the path of `powershell.exe` in its own profile.
 
+**The owner's reports, 2026-11-09.** The owner reported that the `ssh -t <host> tmux new -A -s {name}` entry with `Runs on` set to Windows works
+on their real host. The owner also reported that after a restart of their PC the terminals are gone, and one click on the folder's green
+arrow reconnects every session and work continues. These are the owner's reports; they were not measured here. The help and the README now show
+this entry, from the next extension release after 1.18.0.
+
 ## Build order
 
 One branch, one pull request, one gate run over one commit, in the order of §Stories: S1 → S2 → S3 → S5 → S4. S1 went

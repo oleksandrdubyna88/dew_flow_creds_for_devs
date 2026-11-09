@@ -284,6 +284,13 @@ works after the machine has rebooted; `tmux attach -t '={name}'` matches the nam
 bare `-t foo` also attaches `foobar`; and keep `.` and `:` out of a session's name, because tmux
 rewrites them (`a.b:c` becomes `a_b_c`). Checked on tmux 3.6.
 
+From a local window on Windows, put `ssh` in the line itself: `ssh -t <host> tmux new -A -s {name}`,
+with *Runs on* set to Windows. You replace `<host>` with your host; the extension fills in `{name}`.
+The entry's arrow sees `ssh` end, after a detach or a dropped connection, only when the terminal's
+shell is PowerShell 7 (`pwsh`); Windows PowerShell 5.1 and Command Prompt have no shell integration,
+so there it asks each time. A connection that dies silently, such as a laptop asleep overnight, can
+leave `ssh` waiting, and the arrow then asks. Checked with OpenSSH for Windows 9.5.
+
 ## Environment variables in the terminal
 
 Each secret field — password, private key, public key, connection string, DB password — has a
