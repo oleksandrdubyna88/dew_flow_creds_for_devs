@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
+import { chainTerminalTitle } from '../terminalTitles';
 import { CLOSE_AND_RUN, NO_FOLDER_TARGET, RUN } from '../folderRun';
 import type { TreeNode } from '../types';
 import { FOLDER, FolderWorld, L, T, choose, clickAndWait, everyText, folderModals, folderWorld, held, modalNumber, named, needing, session, step } from './folderWorld';
@@ -14,7 +15,7 @@ import { LiveTerminal, hostOs, until } from './vpnWorld';
  * was typed into it and how often it was disposed; a dispose closes nothing here (the worst case VS Code allows).
  */
 
-const BEFORE = `CredsForDevs: before ${FOLDER}`;
+const BEFORE = chainTerminalTitle(FOLDER);
 
 /** The window's default shell is not a shell of this OS, so an entry written for this OS takes the pinned road. */
 function pin(w: FolderWorld): void {
@@ -420,7 +421,7 @@ test('another_folder_is_not_held_up', async () => {
 });
 
 test('one_failure_at_opening_does_not_stop_the_rest', async () => {
-  const w = folderWorld([session('a'), session('b'), session('c')], { failCreate: /: b$/ });
+  const w = folderWorld([session('a'), session('b'), session('c')], { failCreate: / \/ b$/ });
 
   await w.click();
 
@@ -432,7 +433,7 @@ test('one_failure_at_opening_does_not_stop_the_rest', async () => {
 });
 
 test('one_failure_at_typing_does_not_stop_the_rest', async () => {
-  const w = folderWorld([session('a'), session('b')], { failSend: /: a$/ });
+  const w = folderWorld([session('a'), session('b')], { failSend: / \/ a$/ });
 
   await w.click();
 

@@ -2209,6 +2209,30 @@ The lines themselves do not wait for each other.
 (`entryShell`'s pinned-or-default choice) creates and disposes nothing, then `typed` calls `noteSent` before `sendText`. It is
 never `findEntryTerminal`, and never `pinnedTerminal(name, { fresh: true })`, which disposes by name.
 
+*The title is one key (2026-11-09, `PLAN_terminal_titles_folder.md`).* A terminal's title is both the name it is created under
+and the key every lookup matches exactly, so `terminalTitles.ts` (no `vscode` import) builds every Creds terminal title and
+nothing else does (`terminalTitleScan.test.ts` pins it). An entry's terminal is `Creds: <folder> / <entry>`, or `Creds: <entry>`
+with no parent folder; the key is `EntryTerminalKey { entryName, folderName }`, made by `entryTerminalKey(name, folderNode)`, and
+`findEntryTerminal`, `openEntryTerminal`, `liveTerminalsOfEntry`, `sendGuarded` and `typeIntoNew` take the key, never a name. The
+folder is the DIRECT parent tree folder (Trash is a normal parent), and `entryTerminalTitle` is the one place that writes its name
+through `escapeControl`. Each road builds its key once and in one way: the arrow in `entryAt` from the CURRENT stored node
+(`entryTerminalKeyOf(storage, accountId, node.id, details.name)`, never the menu element's old `parentId`); *Run Script* from the
+same key; a VPN launcher from its OWN node (it may sit in another folder than the VPN); and the folder run at two reading points
+(S5, the timing contract). BEFORE the modal, synchronously from `folderAt` to the snapshot, `entryTerminalKey(name, folder.node)`
+over the folder node `folderAt` re-read serves the classification (`factsOf`) and the modal's snapshot: nothing is awaited since,
+and every row is a direct child of that node. AFTER the last await (`chain.ready`), the re-check (`appeared`) and the creation
+(`typeIntoNew`) take each row's key from `entryTerminalKeyOf(storage, accountId, row.id, row.name)`, the arrow's own function, so
+find and create cannot part; the captured node is never read after the wait. A folder renamed during the wait is typed under its
+new name and finds a terminal the arrow opened under it (no second terminal); an entry moved out is typed under its new parent;
+an entry deleted meanwhile is a move to the Trash and is typed under `Creds: Trash / <name>`; a trashed folder keeps its name and
+its rows still run; a folder or entry removed for good gives the bare `Creds: <name>`; the line is typed in every case, as
+`settleRow` re-reads nothing of the entry. An entry renamed during the wait is typed under the name the person approved. Under
+`Run` the modal's snapshot is read, never acted on: a snapshot terminal still live counts as `appeared`, so its row is left alone
+(not "closed meanwhile"). `folderRun.ts` still knows only `isOpen(name)`. The other three titles
+are fixed shapes of the same module with no folder: `Creds: before <owner>`, `Creds run: <name>` (the node's name) and
+`Creds VPN: <name>`. A terminal opened under an old title, or before a folder rename or an entry move, is not found: the arrow
+opens a second one once (accepted, no search for old titles).
+
 *`Close Open Terminals and Run`.* Authority to close is a SNAPSHOT of terminal OBJECTS taken in the same tick as the modal's
 text: for each `open` row, every live terminal of its name in any shell. `Run` authorises nothing. After the choice nothing is
 looked up by name in order to close it. Four cases: a snapshot terminal that exits while the modal sits is skipped
@@ -2295,7 +2319,8 @@ one: which OS the line is for, and which shell will read it.
   itself, so the alerts (41–43, PR #137) are dismissed as false positives with that reason on each —
   do not re-open them for a new caller; a caller that bypasses `quoteFor` is the thing to look for.
 - `pinnedTerminal.ts` is the `vscode` half, and the one way a line the extension COMPOSES for this
-  machine reaches a terminal: VPN start/stop, the OpenVPN Connect import (both words single-quoted now),
+  machine reaches a terminal (its terminal titles come from `terminalTitles.ts`; an entry's is found and created from one
+  `EntryTerminalKey`): VPN start/stop, the OpenVPN Connect import (both words single-quoted now),
   the install offer (`toolEnsure.ts`, which refuses before offering), *Run Script*, the dependency chain
   (`sendPinned` / `pinnedTerminal`), and SSH connect in a local window (`composedShellPath` — a WSL
   window composes for Linux and keeps its Linux default profile). It passes `shellPath`, reuses a

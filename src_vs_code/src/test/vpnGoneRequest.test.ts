@@ -31,7 +31,7 @@ type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown,
 /** The built-in launcher found on PATH — the question is what happens around it, not where it lives. */
 const CLI = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'wg-quick' }) } };
 
-const VPN_TERMINAL = /^CredsForDevs VPN: /;
+const VPN_TERMINAL = /^Creds VPN: /;
 
 function wireguard(extra: Partial<EntityMetadata> = {}): Record<string, EntityMetadata> {
   return { vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard', ...extra } };

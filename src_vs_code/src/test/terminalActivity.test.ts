@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ActivityEvent, ActivityState, TYPE_ANYWAY, UNKNOWN, agentRefusal, busyQuestion, closedMeanwhile, nextActivity as n, readActivity as r } from '../terminalActivity';
+import { titleIn } from './vpnWorld';
 
 /**
  * The pure half of the busy-terminal guard: every cell of the transition table is a test here (parent
@@ -229,7 +230,7 @@ test('states_are_values_not_mutated', () => {
 });
 
 test('the_question_names_the_terminal_and_shows_the_line_verbatim', () => {
-  const name = 'CredsForDevs: alert';
+  const name = titleIn(undefined, 'alert');
   const line = 'tmux attach -t alert';
   const running = busyQuestion(name, 'running', line);
   const unknown = busyQuestion(name, 'unknown', line);

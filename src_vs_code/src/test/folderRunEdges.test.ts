@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
+import { chainTerminalTitle } from '../terminalTitles';
 import { CLOSE_AND_RUN, MAX_QUESTION_CHARACTERS } from '../folderRun';
 import { FOLDER, FolderWorld, L, T, choose, clickAndWait, everyText, folderModals, folderWorld, held, modalNumber, named, needing, session, step } from './folderWorld';
 import { hostOs } from './vpnWorld';
@@ -11,7 +12,7 @@ import { hostOs } from './vpnWorld';
  * `folderWorld.ts`, as for `folderRunCommand.test.ts`, which this file was split from at the 800-line limit.
  */
 
-const BEFORE = `CredsForDevs: before ${FOLDER}`;
+const BEFORE = chainTerminalTitle(FOLDER);
 const BUSY_QUESTION = /was not typed/;
 
 // ---- Names that try to draw rows --------------------------------------------------------------------------
@@ -125,7 +126,7 @@ test('under_the_closing_button_the_open_rows_are_typed_in_row_order_trusted_and_
 });
 
 test('a_closed_terminal_with_no_replacement_says_it_was_closed', async () => {
-  const w = folderWorld([session('a'), session('o')], { preopened: [T('o')], modal: 'last', failCreate: /: o$/ });
+  const w = folderWorld([session('a'), session('o')], { preopened: [T('o')], modal: 'last', failCreate: / \/ o$/ });
 
   await w.click();
 
@@ -135,7 +136,7 @@ test('a_closed_terminal_with_no_replacement_says_it_was_closed', async () => {
 });
 
 test('a_closed_terminal_whose_replacement_took_no_line_says_it_was_closed', async () => {
-  const w = folderWorld([session('o')], { preopened: [T('o')], failSend: /: o$/ });
+  const w = folderWorld([session('o')], { preopened: [T('o')], failSend: / \/ o$/ });
 
   await w.click();
 
@@ -159,7 +160,7 @@ test('a_closed_terminal_whose_replacement_was_refused_says_it_was_closed', async
 });
 
 test('a_failure_with_nothing_closed_claims_no_close', async () => {
-  const w = held([session('o')], { preopened: [T('o')], failCreate: /: o$/ });
+  const w = held([session('o')], { preopened: [T('o')], failCreate: / \/ o$/ });
   const { done, modal } = await clickAndWait(w);
 
   w.exit(w.live[T('o')]);
