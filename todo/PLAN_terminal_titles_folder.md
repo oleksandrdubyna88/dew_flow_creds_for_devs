@@ -1,6 +1,6 @@
 # PLAN — Terminal titles name the folder, and "CredsForDevs" becomes "Creds"
 
-> Status: **plan only, nothing implemented yet, 2026-11-09.** Scope: the VS Code extension's terminal titles
+> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (S1-S4 committed; the code review gate and the promotion to `research/` are still to do).** Scope: the VS Code extension's terminal titles
 > (src_vs_code/src), five help languages, the changelog and the extension module doc. Plan gate: coai `proceed`
 > 2026-11-09 (session d1d8e222, 2 of 2 reviewers).
 
@@ -278,3 +278,30 @@ Cornerstones: 1 of 4 — S2. Its spec: [PLAN_terminal_titles_folder_S2_spec.md](
    script test needs an owned `storageDir` (`ownedDir` of `scripts/lib/leftovers.cjs`, as `dependencyChain.test.ts` does).
 6. **The masked run keeps the NODE's name.** `runCommands.ts:368` uses `job.entry.name`; the design's `maskedRunTitle(job.entry.name)`
    keeps that. Only the prefix changes there — written down so S3 does not "fix" it to `details.name`.
+
+## As built
+
+Four commits on `feat/terminal-titles-folder`, one per story. Suite after each: 6998, 7010, 7015 tests, 0 failed, 8 skipped.
+
+RED seen first, by story (messages in the commit bodies):
+
+- S1: `Cannot find module '../terminalTitles'`; then against a stub returning `''`: `actual '' expected 'Creds: ops / x'` and the like (6 of 9).
+- S2: on S1's tree `terminalTitleRoads` 12 of 12 (`no terminal "Creds: ops / alert" — opened: CredsForDevs: alert`; the arrow's second
+  terminal, 2 against 1; `no terminal "Creds: X / start openvpn" — opened: CredsForDevs: before ops relay stage, CredsForDevs: start openvpn`),
+  plus the suites that go through `T` / `rootTitle`.
+- S3: the scan named `runCommands.ts:374`, `dependencyRunHost.ts:169`, `vpnRun.ts:240`; `'CredsForDevs run: node-alert'` against
+  `'Creds run: node-alert'`; the chain title missing; the help's VERBATIM absent in English.
+
+Deviations from the plan and the S2 spec:
+
+1. The folder-run fakes' regexes `/: b$/`, `/: a$/`, `/: o$/` do NOT still match (the folder stands between the colon and the name);
+   they became `/ \/ b$/` etc.
+2. `the_arrows_terminal_is_closed_by_close_open_terminals_and_run` (a guard in the spec) also failed on S1's tree: `T` already named the
+   folder while the arrow did not. It is a guard only after the code change.
+3. A shared `rootTitle(name)` in `vpnWorld.ts` builds a root entry's title from the real functions; the seven suites use it.
+4. `dependencyChain`'s trashed-launcher absence check looks for any title ending in the entry half: that launcher's own title would
+   name the Trash.
+5. The scan's allow-list also holds seven other `CredsForDevs: ${...}` notification prefixes (not terminal titles), the vpnGoneRequest
+   regex line and a second old-title line in `terminalTitleRoads.test.ts`; the plan named only `transportFactory.ts:261`.
+6. `entryAt`'s key is read from the destructured element in one return statement; `launcherKey(ctx, launcher)` is a small helper in
+   `vpnLauncherRun.ts`.

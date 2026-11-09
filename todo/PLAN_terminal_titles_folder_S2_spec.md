@@ -1,6 +1,6 @@
 # PLAN — S2 spec: one key for every entry terminal (CORNERSTONE)
 
-> Status: **plan only, nothing implemented yet, 2026-11-09.** Scope: `src_vs_code/src/pinnedTerminal.ts`, `terminalGuard.ts`,
+> Status: **built on `feat/terminal-titles-folder`, 2026-11-09 (commit of S2; deviations in the parent's `## As built`).** Scope: `src_vs_code/src/pinnedTerminal.ts`, `terminalGuard.ts`,
 > `commands/runCommands.ts`, `commands/folderRunCommand.ts`, `vpnLauncherRun.ts`; the fakes `test/arrowWorld.ts`,
 > `test/vpnWorld.ts`, `test/folderWorld.ts`; the new `test/terminalTitleRoads.test.ts`; expectation updates in seven suites.
 > Story S2 of [PLAN_terminal_titles_folder.md](PLAN_terminal_titles_folder.md) (§Design "Signature changes", §Test plan items

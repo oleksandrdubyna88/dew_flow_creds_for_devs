@@ -14,6 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PowerShell 5.1 and Command Prompt there is no shell integration, so the arrow asks each time. A silent drop can leave `ssh`
   waiting, and the arrow then asks. The help shows this in all five languages. No behaviour changed.
 
+### Changed — terminal titles name the folder
+
+- **A terminal of an entry is titled `Creds: <folder> / <entry>`** instead of `CredsForDevs: <entry>`. The folder is the
+  CredsForDevs tree folder that holds the entry (the direct parent only, never the path); an entry at the root, or whose
+  folder is gone, is titled `Creds: <entry>`. The Trash folder counts as a folder (`Creds: Trash / x`). This covers the entry's
+  green arrow, a VPN launcher entry, a row of *Run All in Folder*, and *Run Script*. A tab or a line break in a folder name is
+  written as a visible `\uXXXX`. The entry half is the entry's own name; for *Run Script* it is now the entry's name inside the
+  entry, as for the arrow, where it used to be the tree node's name (the two differ only for a share that renamed one of them).
+- **Three terminals keep no folder and take the short prefix:** the dependency wait terminal is `Creds: before <owner>`, the
+  masked run `Creds run: <name>`, and the built-in VPN `Creds VPN: <name>`. Unchanged: `SSH: <host>`, `env check: …`,
+  `Install <tool>`, the output channels, the command titles and the status bar. The folder-run help names the new wait title in
+  all five languages.
+- **One-time effect.** A terminal opened before this update keeps its old title and is not found again: the arrow opens a
+  second terminal once, and *Run All in Folder* does not count the old one as open. The same happens after you rename a folder
+  or move an entry to another folder (the title follows the current folder). There is no search for old titles.
+- **Two entries that make the same title share one terminal**, as two same-named entries in one folder already did: for example
+  a root entry named `x / y` and the entry `y` in a folder `x`.
+
 ## [1.18.0] — 2026-11-08 — Security — an agent's SQL cannot reach the database client, and the consent dialog says what an Allow covers
 
 ### Changed — an agent cannot export a secret into another computer's terminals
