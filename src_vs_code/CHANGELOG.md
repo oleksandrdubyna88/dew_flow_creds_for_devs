@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The help and the README now show how to run tmux over `ssh` from a local window on Windows.** The line is
   `ssh -t <host> tmux new -A -s {name}`, with *Runs on* set to Windows. You replace `<host>`; the extension fills in `{name}`.
-  The arrow knows that the session ended (a detach or a dropped connection) only in PowerShell 7 (`pwsh`). In Windows
+  The arrow sees `ssh` end (after a detach or a dropped connection) only in PowerShell 7 (`pwsh`). In Windows
   PowerShell 5.1 and Command Prompt there is no shell integration, so the arrow asks each time. A silent drop can leave `ssh`
   waiting, and the arrow then asks. The help shows this in all five languages. No behaviour changed.
 
