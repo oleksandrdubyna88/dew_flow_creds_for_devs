@@ -134,5 +134,11 @@ bare word with `$`. See the commit message for the extra run through the Windows
   `!calc!`, `^!x^!`, `p"q%PATH%^r!s`, `<x>|y`, `100%`, ` lead and trail `, `x!y!z`, `a^b`, `(paren)`, `it's`.
 - **Windows PowerShell 5.1**: the line words, 46 of 46 (the coder's run, recorded in d9b9e9c's message); the old code
   created the marker file.
-- **Not observed yet**: pwsh 7 (not installed on this host), a real `ssh.exe` password login (needs an SSH server with a
-  password account), the extension's UI. The windows CI step and §5's hand checks cover them.
+- **PowerShell 7.6.9 and 5.1.26100** (the host's real shells): 32 of 32 each — every `quoteFor('powershell')` word as an
+  expression and as an argument, and the `buildSshCommand` win32 lines (hostile `-i`, `a$HOME`, a two-hop `-J`), read
+  back as UTF-16 code units; the marker file was never created.
+- **A real password login** (hand check 1, done 2026-11-10 by the owner's leave): Windows `ssh.exe` 9.5 to a throwaway
+  user on the owner's IONOS server, password `Te&st%9!x^y`, askpass forced. The FIXED `.bat` logged in without a prompt
+  (`LOGIN-OK`, exit 0). The RELEASED `.bat` made cmd try to run `st%9!xy` as a command, then `Permission denied`. The
+  user was deleted afterwards.
+- **Not observed yet**: the extension's UI (hand check 2's Connect click). The windows CI step runs the parser tests.
