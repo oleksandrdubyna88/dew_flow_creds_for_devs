@@ -1,4 +1,5 @@
 import { FieldReading } from '../fieldReading';
+import type { EnvDrop } from '../sshProgram';
 import { EntityMetadata, TreeNode } from '../types';
 import { World, WorldOptions, memoryTrust, seedTrusted, world } from './vpnWorld';
 import { loadWithVscode } from './vscodeStub';
@@ -17,6 +18,7 @@ export interface MaskedRecord {
   argv?: readonly string[];
   cwd?: string;
   env: Record<string, string>;
+  withoutEnv?: EnvDrop;
   stdinText?: string;
   secrets: readonly { value: string; label: string }[];
   banner: string;

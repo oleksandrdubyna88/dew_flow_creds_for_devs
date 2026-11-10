@@ -554,14 +554,14 @@ async function trustedThenSpawned(run: SecretsOverSsh, sessions: OwnedSessions):
   }
 }
 
-/** `secretsLaunch` and `spawnLaunch`, or `undefined` having said why: nothing is read and nobody is asked yet. A warning of the launch is the banner's. */
+/** `spawnLaunch` first (its `ownAgent` goes into the argv) and `secretsLaunch`, or `undefined` having said why: nothing is read and nobody is asked yet. A warning of the launch is the banner's. */
 function launchesOf(run: SecretsOverSsh): SshLaunches | undefined {
-  const launch = secretsLaunch(run.plan, run.ready);
-  if (launch.kind === 'refused') {
-    return void warn(launch.reason);
-  }
   const spawn = run.host.sshRoad.spawnLaunch(run.ready.snapshot, run.ready.env);
-  return spawn.kind === 'refused' ? void warn(spawn.reason) : { launch, spawn };
+  if (spawn.kind === 'refused') {
+    return void warn(spawn.reason);
+  }
+  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent);
+  return launch.kind === 'refused' ? void warn(launch.reason) : { launch, spawn };
 }
 
 /** The trust modal on the prepared snapshot's trust line (it names the host the values will reach), then the dependencies. */
@@ -580,6 +580,7 @@ function maskedOverSsh(sessions: OwnedSessions, run: SecretsOverSsh, launches: S
       argv: [launches.spawn.program, ...launches.launch.argv],
       cwd: launches.spawn.cwd,
       env: launches.spawn.env,
+      withoutEnv: launches.spawn.withoutEnv,
       stdinText: secretsStdin(resolved.env, secretsRemoteLine(run.plan, run.refs)),
       secrets: resolved.secrets,
       banner: maskedOverSshBanner(describedRefs(resolved.plan), launches.spawn.warning, launches.launch.target, resolved.secrets),

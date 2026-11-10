@@ -521,7 +521,7 @@ async function launchArgv(password: boolean): Promise<readonly string[]> {
   await road.prepare('a1', S1.details as EntityMetadata);
   const plan = planLaunch(LINKED, sshLinkOf(LINKED, (id) => (id === 's1' ? S1 : undefined)), { stayOpen: false });
   assert.equal(plan.kind, 'remote');
-  const launch = secretsLaunch(plan as RemotePlan, road.readies[0]);
+  const launch = secretsLaunch(plan as RemotePlan, road.readies[0], false);
   assert.equal(launch.kind, 'spawn');
   return launch.kind === 'spawn' ? launch.argv : [];
 }

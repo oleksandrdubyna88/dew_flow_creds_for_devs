@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
 import { RemotePlan, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsOverSshBanner, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
-import { NO_AGENT_TO_FORWARD, NO_SSH_TO_SPAWN } from '../sshProgram';
+import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD, NO_SSH_TO_SPAWN } from '../sshProgram';
 import type { ReadySsh } from '../sshSession';
 import type { CommandArg, EntityMetadata, TreeNode } from '../types';
 import { ArrowOptions, ArrowWorld, MaskedRecord, arrowWorld, runCommandsModule, vaultOf } from './arrowWorld';
-import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
+import { FakeRoad, OUR_SOCKET, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
 import { hostOs, until } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -143,7 +143,8 @@ test('the_child_is_ssh_by_argv_with_no_value_in_argv_or_env', async () => {
   await aw.runWithSecrets(LINKED);
   const r1 = only(road.readies);
   const run = theRun(aw);
-  const launch = secretsLaunch(PLAN, r1);
+  const spawn = only(road.launches);
+  const launch = secretsLaunch(PLAN, r1, spawn.kind === 'spawn' && spawn.ownAgent);
   assert.equal(launch.kind, 'spawn');
   assert.deepEqual(run.argv, ['ssh', ...(launch.kind === 'spawn' ? launch.argv : [])]);
   assert.equal(run.commandLine, undefined);
@@ -213,7 +214,7 @@ test('a_password_entry_puts_askpass_in_the_child_env_never_in_argv', async () =>
   assert.ok(!run.argv.some((element) => element.includes((r1.env as Record<string, string>).CREDS_ASKPASS_PASSWORD)), 'the password is not in argv');
 });
 
-test('the_child_env_is_the_askpass_and_agent_variables_only_and_holds_no_value', async () => {
+test('the_run_adds_only_the_askpass_and_agent_variables_and_no_value', async () => {
   for (const script of [(): { password?: true } => ({}), (): { password?: true } => ({ password: true })]) {
     const { aw, road } = setup({ script });
     await aw.runWithSecrets(LINKED);
@@ -239,6 +240,45 @@ test('the_spawn_warning_is_in_the_banner_and_no_toast_races_the_run', async () =
   assert.equal(lines[1], `Note: ${NO_AGENT_TO_FORWARD}.`);
   assert.equal(lines[2], secretsOverSshBanner(r1.target as string, run.secrets));
   assert.deepEqual(events.filter((e) => e.startsWith('dialog:') && e.includes(NO_AGENT_TO_FORWARD)), [], 'a toast would race the run');
+});
+
+// ---- the agent socket and the child's environment (F3, F6 (3); parent D16, D17) -----------------------------------------------
+
+const FORWARDING = sshNode('s1', { agentForward: true });
+
+/** The world of a forwarding SSH entry: only the bare line is trusted, so the trust modal is asked, with the trust line that was approved. */
+function forwardingWorld(o: SetupOptions = {}): Setup {
+  return setup({ ...o, others: [FORWARDING], trusted: [['e1', BARE]] });
+}
+
+test('a_run_with_secrets_that_forwards_with_no_agent_up_sends_no_dash_a', async () => {
+  const { aw, events } = forwardingWorld({ warning: NO_AGENT_TO_FORWARD });
+  await aw.runWithSecrets(LINKED);
+  const run = theRun(aw);
+  assert.ok(!run.argv.includes('-A'), `no -A while the banner says that nothing is forwarded: ${run.argv.join(' ')}`);
+  assert.ok(run.argv.some((word, i) => word === '-o' && run.argv[i + 1] === 'ForwardAgent=no'), 'and -o ForwardAgent=no');
+  assert.ok(run.banner.includes(`Note: ${NO_AGENT_TO_FORWARD}.`), 'the banner says it');
+  const trustLine = trustLineFor(FORWARDING.details as EntityMetadata, undefined, PLAN.line);
+  assert.ok(trustLine.includes(' -A '), 'the fixture: the approval shows -A');
+  assert.ok(events.some((e) => e.startsWith('dialog: ') && e.includes(trustLine)), 'the trust line that was asked still holds -A: the launch does less than was approved');
+});
+
+test('a_forwarding_entry_with_our_agent_up_sends_dash_a_and_our_socket', async () => {
+  const { aw } = forwardingWorld();
+  await aw.runWithSecrets(LINKED);
+  const run = theRun(aw);
+  assert.ok(run.argv.includes('-A'), `the positive control: our agent serves, so -A: ${run.argv.join(' ')}`);
+  assert.ok(!run.argv.includes('ForwardAgent=no'));
+  assert.equal(run.env.SSH_AUTH_SOCK, OUR_SOCKET, 'and its socket is what the run adds');
+});
+
+test('a_run_with_secrets_removes_the_hosts_socket_and_the_reference_names_on_every_session', async () => {
+  const forwarding = (): { password?: true } => ({});
+  for (const [script, world] of [[forwarding, setup], [(): { password?: true } => ({ password: true }), setup], [forwarding, forwardingWorld]] as const) {
+    const { aw } = world({ script });
+    await aw.runWithSecrets(LINKED);
+    assert.deepEqual(theRun(aw).withoutEnv, E3_INHERITED_DROP, 'a key session, a password session and a forwarding entry alike');
+  }
 });
 
 // ---- ONE OWNER ----------------------------------------------------------------------------------------------------------------

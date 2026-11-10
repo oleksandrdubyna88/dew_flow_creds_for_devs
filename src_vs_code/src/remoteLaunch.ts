@@ -409,19 +409,21 @@ export function secretsLocalOnly(name: string): string {
 
 /**
  * The argv of the `ssh` child of Run with Secrets (E3.S1, rows K1-K3), after its program word: `buildSshExecArgv` with the remote
- * login shell reading stdin (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), no `-t`, and no value anywhere in it
- * (D12). The key branch says `-o BatchMode=yes`, the password branch `-o NumberOfPasswordPrompts=1` (askpass answers, nothing is
+ * login shell reading stdin (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), `-T` as its first word (ssh asks for no pty,
+ * also when the person's config says `RequestTTY force`: D16), no `-t`, and no value anywhere in it (D12). `ownAgent` is
+ * `SpawnLaunch.ownAgent`: whether the extension's own agent serves the run; an entry that forwards with no agent of ours sends no `-A`
+ * and `-o ForwardAgent=no` (D17 (b)), so the banner that says nothing is forwarded is true. The key branch says `-o BatchMode=yes`, the password branch `-o NumberOfPasswordPrompts=1` (askpass answers, nothing is
  * read from stdin), and both `-o ConnectTimeout=10` (E3-D11 (a): what we ASK ssh; hand check 3 observes the effect).
  *
  * <p>A prepared session with a relay `prefix` or a client `program` was composed for another shell (a WSL or Remote-SSH window):
  * it is refused as not local (K1), fail closed, though a local window never produces one. It reads the prepared snapshot only (one
  * snapshot): the trust line, this argv, the spawn program's folder and the banner's target all come from the same `ready`.</p>
  */
-export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn): SecretsLaunch {
+export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean): SecretsLaunch {
   if (composedForAnotherShell(prepared)) {
     return { kind: 'refused', reason: secretsLocalOnly(plan.entryName) };
   }
-  const argv = secretsArgv(prepared);
+  const argv = secretsArgv(prepared, ownAgent);
   return argv === undefined || prepared.target === undefined ? { kind: 'refused', reason: noHostSentence(plan.sshName) } : { kind: 'spawn', argv, target: prepared.target };
 }
 
@@ -430,9 +432,14 @@ function composedForAnotherShell(prepared: PreparedForSpawn): boolean {
   return prepared.prefix !== undefined || prepared.options.program !== undefined;
 }
 
-function secretsArgv(prepared: PreparedForSpawn): string[] | undefined {
+function secretsArgv(prepared: PreparedForSpawn, ownAgent: boolean): string[] | undefined {
   const auth = prepared.env === undefined ? 'key' : 'askpass';
-  return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, auth, { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile });
+  return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, auth, {
+    jump: prepared.jump,
+    knownHostsFile: prepared.options.knownHostsFile,
+    ownAgent,
+    noTty: true,
+  });
 }
 
 /**

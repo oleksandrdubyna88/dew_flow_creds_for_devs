@@ -61,8 +61,8 @@ function containsRun(argv: readonly string[], words: readonly string[]): boolean
   return argv.some((_, at) => words.every((word, i) => argv[at + i] === word));
 }
 
-function spawnArgv(plan: RemotePlan, prepared: PreparedForSpawn): readonly string[] {
-  const launch = secretsLaunch(plan, prepared);
+function spawnArgv(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent = false): readonly string[] {
+  const launch = secretsLaunch(plan, prepared, ownAgent);
   assert.equal(launch.kind, 'spawn', launch.kind === 'refused' ? launch.reason : '');
   return launch.kind === 'spawn' ? launch.argv : [];
 }
@@ -73,17 +73,18 @@ test('the_argv_ends_with_the_remote_login_shell_reading_stdin_after_the_destinat
   const ready = await readyOf();
   const prepared: PreparedForSpawn = { ...ready, entity: { ...ready.entity, sshKeyPath: '/keys/s1.key' }, env: undefined };
   const plan = planOf();
-  const launch = secretsLaunch(plan, prepared);
+  const launch = secretsLaunch(plan, prepared, false);
   assert.equal(launch.kind, 'spawn');
   if (launch.kind !== 'spawn') {
     return;
   }
-  const expected = buildSshExecArgv(prepared.entity, '/keys/s1.key', SECRETS_REMOTE_COMMAND, 'key', { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile });
+  assert.equal(launch.argv[0], '-T', 'ssh is asked for no remote pty, first and by name (T1; also with RequestTTY force in the person\'s config)');
+  const expected = buildSshExecArgv(prepared.entity, '/keys/s1.key', SECRETS_REMOTE_COMMAND, 'key', { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile, ownAgent: false, noTty: true });
   assert.ok(expected !== undefined, 'the entity passes the host check');
   assert.deepEqual(launch.argv, expected);
   assert.equal(launch.argv[launch.argv.length - 1], SECRETS_REMOTE_COMMAND);
   assert.deepEqual(launch.argv.slice(-3, -1), ['--', 'deploy@prod.example']);
-  assert.ok(!launch.argv.includes('-t'), 'no remote pty');
+  assert.ok(!launch.argv.includes('-t'), 'and no -t');
   assert.ok(containsRun(launch.argv, ['-o', 'ConnectTimeout=10']), 'the connect bound is SENT (hand check 3 observes its effect)');
   assert.ok(containsRun(launch.argv, ['-o', 'BatchMode=yes']), 'a key session answers no prompt from stdin');
   assert.equal(launch.target, 'deploy@prod.example');
@@ -93,6 +94,7 @@ test('a_password_session_uses_askpass_one_prompt_and_a_connect_timeout', async (
   const ready = await readyOf(S1.details as EntityMetadata, true);
   assert.ok(ready.env !== undefined, 'the fixture is a password session');
   const argv = spawnArgv(planOf(), ready);
+  assert.equal(argv[0], '-T', 'the password branch asks for no pty either');
   assert.ok(argv.includes('NumberOfPasswordPrompts=1'));
   assert.ok(argv.includes('ConnectTimeout=10'));
   assert.ok(!argv.includes('BatchMode=yes'));
@@ -118,20 +120,30 @@ test('the_jump_and_the_forwards_are_the_trust_lines', async () => {
   const prepared: PreparedForSpawn = { ...ready, jump: 'deploy@bastion', options: { ...ready.options, jump: 'deploy@bastion' } as PreparedForSpawn['options'] };
   const words = sshOptionArgv(ready.entity, 'deploy@bastion');
   assert.ok(words.length >= 4, `the fixture has a jump, -A and a forward: ${words.join(' ')}`);
-  assert.ok(containsRun(spawnArgv(planOf(), prepared), words), `every word of the trust line's options, in order: ${words.join(' ')}`);
+  assert.ok(containsRun(spawnArgv(planOf(), prepared, true), words), `every word of the trust line's options, in order: ${words.join(' ')}`);
+});
+
+test('the_third_parameter_says_whether_the_agent_is_ours_and_reaches_the_builder', async () => {
+  const ready = await readyOf({ ...(S1.details as EntityMetadata), agentForward: true });
+  const without = spawnArgv(planOf(), ready, false);
+  assert.ok(!without.includes('-A'), `no -A while our agent is not up: ${without.join(' ')}`);
+  assert.ok(containsRun(without, ['-o', 'ForwardAgent=no']), 'and the person\'s own agent is not forwarded by a config either');
+  const ours = spawnArgv(planOf(), ready, true);
+  assert.ok(ours.includes('-A'), `our agent serves: -A: ${ours.join(' ')}`);
+  assert.ok(!ours.includes('ForwardAgent=no'));
 });
 
 test('a_relay_prefix_or_a_client_program_is_refused_as_not_local', async () => {
   const ready = await readyOf();
   const expected = { kind: 'refused', reason: secretsLocalOnly('deploy') };
   assert.notEqual(expected.reason, '', 'the sentence exists');
-  assert.deepEqual(secretsLaunch(planOf(), { ...ready, prefix: "env SSH_AUTH_SOCK='/run/x.sock' " }), expected);
-  assert.deepEqual(secretsLaunch(planOf(), { ...ready, options: { ...ready.options, program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe' } as PreparedForSpawn['options'] }), expected);
+  assert.deepEqual(secretsLaunch(planOf(), { ...ready, prefix: "env SSH_AUTH_SOCK='/run/x.sock' " }, false), expected);
+  assert.deepEqual(secretsLaunch(planOf(), { ...ready, options: { ...ready.options, program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe' } as PreparedForSpawn['options'] }, false), expected);
 });
 
 test('an_entity_with_no_safe_host_is_refused_with_the_no_host_sentence', async () => {
   const ready = await readyOf();
-  const launch = secretsLaunch(planOf(), { ...ready, entity: { ...ready.entity, host: '-oProxyCommand=x' } });
+  const launch = secretsLaunch(planOf(), { ...ready, entity: { ...ready.entity, host: '-oProxyCommand=x' } }, false);
   assert.deepEqual(launch, { kind: 'refused', reason: noHostSentence('prod box') });
 });
 
