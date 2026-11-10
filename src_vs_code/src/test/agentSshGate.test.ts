@@ -14,6 +14,7 @@ import { MaskSourceUnavailable, maskEntriesWithLink } from '../maskEntries';
 import type { LinkedSecretSource } from '../maskEntries';
 import { stored } from '../storedSecret';
 import type { StoredSecret } from '../storedSecret';
+import type { SshUseDeps } from '../sshUseActions';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
 import { ACCOUNT_1, ACCOUNT_2, GateOptions, GateWorld, OK_BODY, asBroker, detailsOf, gateWorld, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
@@ -673,7 +674,10 @@ test('uses_names_the_ssh_entry_only_after_the_gate', async () => {
     assert.equal(usesOf(gateWorld(options)), undefined);
   }
 
-  const exec = (await loadSshActions()).sshExecAction(gateWorld().deps as never);
+  // `SshUseDeps` over the world's typed deps: the one field `SshUseDeps` requires and `AgentUseDeps` leaves optional is given, and nothing is cast.
+  const gate = gateWorld().deps;
+  const sshDeps: SshUseDeps = { ...gate, agentSocket: gate.agentSocket ?? ((): string | undefined => undefined) };
+  const exec = (await loadSshActions()).sshExecAction(sshDeps);
   assert.equal(typeof exec.uses, 'undefined', 'no other action declares it');
 });
 

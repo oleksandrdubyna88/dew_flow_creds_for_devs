@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 import type { EntityMetadata } from '../types';
-import type { SpawnLaunch, SshRoad } from '../sshRoad';
+import type { SpawnLaunch, SshRoad, SshRoadDeps } from '../sshRoad';
 import type { ReadySsh, RefusedSsh } from '../sshSession';
 import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD } from '../sshProgram';
 import { OPTIONS, WSL_NO_RELAY, entity, storage, world } from './sshConnectWorld';
@@ -44,6 +44,11 @@ function loadRoad(vscode: Record<string, unknown>, mocks: Record<string, unknown
   return loadWithVscode<Road>('../sshRoad', vscode, { './sshSession': {}, './sshConnect': {}, './remoteConnectHost': {}, ...mocks });
 }
 
+/** The deps of a road over the shared typed storage (these tests never read it): a typed partial, so a field added to `SshRoadDeps` is a compile error here and not a cast. */
+function roadDeps(over: Partial<SshRoadDeps> = {}): SshRoadDeps {
+  return { storage, storageDir: '/storage', ...over };
+}
+
 /** A ready whose `cleanup()` is counted. */
 function counted(): { ready: ReadySsh; cleaned(): number } {
   let n = 0;
@@ -80,7 +85,7 @@ test('the_road_prepares_isolated_with_this_windows_route_and_the_agents_answer',
   assert.equal(remoteArgs[0][0], relays);
   assert.equal((calls[1][2] as Record<string, unknown>).agentServesKey, false, 'the answer is asked per entity');
 
-  const local = loadRoad(closeEvents().vscode, mocks).sshRoadOf({ storage: {}, storageDir: '/dir' } as never);
+  const local = loadRoad(closeEvents().vscode, mocks).sshRoadOf(roadDeps({ storageDir: '/dir' }));
   calls.length = 0;
   await local.prepare('a1', SSH);
   assert.equal((calls[0][2] as Record<string, unknown>).remote, undefined, 'no relays: a local window');
@@ -239,7 +244,7 @@ const SSH_SESSION_MOCK = (calls: unknown[][]): Record<string, unknown> => ({
 
 test('a_spawn_preparation_never_relies_on_the_agent', async () => {
   const calls: unknown[][] = [];
-  const road = loadRoad(closeEvents().vscode, SSH_SESSION_MOCK(calls)).sshRoadOf({ storage: {}, storageDir: '/dir', servesKeyForEntity: () => true } as never);
+  const road = loadRoad(closeEvents().vscode, SSH_SESSION_MOCK(calls)).sshRoadOf(roadDeps({ storageDir: '/dir', servesKeyForEntity: () => true }));
 
   await road.prepare('a1', SSH, 'spawn');
   await road.prepare('a1', SSH);
@@ -252,7 +257,7 @@ test('a_spawn_preparation_never_relies_on_the_agent', async () => {
 
 test('spawn_launch_names_the_client_its_folder_and_the_extensions_agent_for_a_forwarding_entry', () => {
   const sshProgram = require('../sshProgram') as typeof import('../sshProgram');
-  const road = loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => '/tmp/agent.sock' } as never);
+  const road = loadRoad(closeEvents().vscode).sshRoadOf(roadDeps({ agentSocket: () => '/tmp/agent.sock' }));
   const forwarding = { ...SSH, agentForward: true } as EntityMetadata;
 
   const launch = road.spawnLaunch(forwarding, { SSH_ASKPASS: '/keys/askpass.sh' });
@@ -266,16 +271,16 @@ test('spawn_launch_names_the_client_its_folder_and_the_extensions_agent_for_a_fo
 
 test('spawn_launch_says_so_when_no_client_can_be_started_and_carries_the_agent_warning', () => {
   const sshProgram = require('../sshProgram') as typeof import('../sshProgram');
-  const none = loadRoad(closeEvents().vscode, { './sshProgram': { ...sshProgram, spawnableSshProgram: () => undefined } }).sshRoadOf({ storage: {}, storageDir: '/storage' } as never);
+  const none = loadRoad(closeEvents().vscode, { './sshProgram': { ...sshProgram, spawnableSshProgram: () => undefined } }).sshRoadOf(roadDeps());
   assert.deepEqual(none.spawnLaunch(SSH, undefined), { kind: 'refused', reason: sshProgram.NO_SSH_TO_SPAWN });
 
-  const noAgent = loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => undefined } as never);
+  const noAgent = loadRoad(closeEvents().vscode).sshRoadOf(roadDeps({ agentSocket: () => undefined }));
   const launch = noAgent.spawnLaunch({ ...SSH, agentForward: true } as EntityMetadata, undefined);
   assert.equal(launch.kind === 'spawn' ? launch.warning : 'refused', sshProgram.NO_AGENT_TO_FORWARD, 'the warning travels to the banner (E3-D12)');
 });
 
 test('spawn_launch_says_whether_the_agent_is_ours', () => {
-  const road = (socket: string | undefined): SshRoad => loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => socket } as never);
+  const road = (socket: string | undefined): SshRoad => loadRoad(closeEvents().vscode).sshRoadOf(roadDeps({ agentSocket: () => socket }));
   const spawned = (ssh: EntityMetadata, socket: string | undefined): Extract<SpawnLaunch, { kind: 'spawn' }> => {
     const launch = road(socket).spawnLaunch(ssh, undefined);
     assert.equal(launch.kind, 'spawn', JSON.stringify(launch));

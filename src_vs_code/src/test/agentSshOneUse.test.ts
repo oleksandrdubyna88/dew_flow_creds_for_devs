@@ -209,7 +209,7 @@ function oneUseWorld(options: OneUseOptions = {}): OneUseWorld {
   const s1 = usableSsh('s1', { burnPolicy: 'oneUse', ...options.s1 });
   const nodes = [s1, terminalNode({ id: 't1', name: 'deploy', ...options.t1 }), terminalNode({ id: 't2', name: 'deploy2' }), ...(options.extra ?? [])];
   const storage = oneUseStorage({ 'acct-1': nodes });
-  const gate = gateWorld({ noTerminal: true, acct1: nodes });
+  const gate = gateWorld({ noTerminal: true, acct1: nodes, storage });
   const calls: OverSshCall[] = [];
   const holder: { w?: World } = {};
   const state = { answer: { status: 200, body: OK_BODY } as UseActionResult };
@@ -218,7 +218,7 @@ function oneUseWorld(options: OneUseOptions = {}): OneUseWorld {
     await holder.w?.hold?.();
     return state.answer;
   };
-  const deps = { ...gate.deps, storage: storage as never, overSsh };
+  const deps = { ...gate.deps, overSsh };
   const action = terminalRunAction(deps);
   const w = brokerWorld({
     kind: 'terminal',

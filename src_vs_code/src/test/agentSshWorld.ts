@@ -134,6 +134,8 @@ export interface GateOptions {
   /** `acquireExecSlot` answers nothing. */
   readonly busy?: boolean;
   readonly overSshRejects?: boolean;
+  /** A storage of the test's own (the one-use broker tests' `oneUseStorage`) in place of the world's: `acct1` and `acct2` are then not read. */
+  readonly storage?: AgentStorage;
 }
 
 export interface GateWorld {
@@ -190,7 +192,7 @@ function socketOf(options: GateOptions): Pick<AgentUseDeps, 'agentSocket'> {
 function storageOf(options: GateOptions, terminal: TreeNode): { storage: AgentStorage; acct1: readonly TreeNode[] } {
   const acct1 = [...(options.noTerminal === true ? [] : [terminal]), ...(options.acct1 ?? [usableSsh('s1')])];
   const second: Record<string, readonly TreeNode[]> = options.acct2 === undefined ? {} : { [ACCOUNT_2]: options.acct2 };
-  return { storage: agentStorage({ ...second, [ACCOUNT_1]: acct1 }), acct1 };
+  return { storage: options.storage ?? agentStorage({ ...second, [ACCOUNT_1]: acct1 }), acct1 };
 }
 
 export function gateWorld(options: GateOptions = {}): GateWorld {
