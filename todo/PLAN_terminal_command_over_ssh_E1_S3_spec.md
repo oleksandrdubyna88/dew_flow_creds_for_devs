@@ -140,8 +140,9 @@ export async function prepareSshSession(
   connect: PrepareOptions,
 ): Promise<PreparedSsh>;
 
-/** `command` with `-o StrictHostKeyChecking=accept-new` after the program word when `acceptNew` — sshConnect.ts:325-328, verbatim regex. */
-export function withAcceptNew(command: string, acceptNew: boolean): string;
+// As built (E1 §S4 F5): withAcceptNew lives in the pure sshCommand.ts, not here, and is imported by
+// sshConnect.ts and remoteLaunch.ts — one copy. Its regex is /^(\S+) / (the first word, so a Windows client
+// path is matched too); sshCommand.test.ts F5 pins it.
 ```
 
 `sshConnect.ts` keeps:
@@ -428,7 +429,7 @@ B15 is run to show a non-finding, as the parity row's evidence; the others must 
 | D7 | `RemoteWindowDeps`, `LOCAL_WINDOW`, `PrepareOptions`, `windowOf` live in `sshSession.ts`; `ConnectOptions` extends `PrepareOptions` in `sshConnect.ts` | No import cycle; the retry fields are connectEntity's alone; the two external importers of the type are unchanged (F9). |
 | D8 | The askpass script is written by prepare and deleted by nobody but the purge | As today (`keyInstaller.ts:206-213`): static, secret-free, shared. Deleting it in `cleanup()` would break a second live password terminal. |
 | D9 | The fixture change is one call and one field | Rule 5 of §S3.6. A second world would copy nine mocks. |
-| D10 | `withAcceptNew` is exported from `sshSession.ts` | E2's arrow and E3's secrets need the same regex on their own lines; one copy. The regex (`/^ssh /`) is today's, with today's limit: a program word that is not `ssh` (a quoted Windows path) is not matched — inherited, to be checked by E2.S1 on Windows, not changed here. |
+| D10 | `withAcceptNew` has ONE copy, in the pure `sshCommand.ts` (as built by E1 §S4 F5; first written here as an export of `sshSession.ts`) | E2's arrow and E3's secrets need the same rewrite on their own lines, and `remoteLaunch.ts` must stay free of `vscode`. The regex is `/^(\S+) /`: the option goes after the first word, so a Windows client path gets it too — the old `/^ssh /` left a password connection with `-A` and no pin without `accept-new` (F5, pinned by `sshCommand.test.ts`). |
 
 ## S3.12 — Not verified by this spec, and what the roads inherit
 
