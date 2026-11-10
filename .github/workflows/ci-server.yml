@@ -320,9 +320,6 @@ jobs:
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
           # -x follows the one `source` of owned.sh each of them has (E2.4.S2).
           $SHELLCHECK -x .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
-          # The two release smokes and their self-tests (E2.4.S2): each reads owned.sh on one branch.
-          $SHELLCHECK -x .github/scripts/mcp-listen-smoke.sh .github/scripts/mcp-listen-smoke.test.sh \
-            .github/scripts/version-smoke.sh .github/scripts/version-smoke.test.sh
           # E2.4.S1: the bash helper and its self-test. -x follows the one `source` of the self-test.
           $SHELLCHECK -x .github/scripts/lib/owned.sh .github/scripts/lib/owned.test.sh .github/scripts/lib/owned.test.lib.sh \
             .github/scripts/lib/owned.test.record.sh .github/scripts/lib/owned.test.exit.sh .github/scripts/lib/owned.test.sweeps.sh

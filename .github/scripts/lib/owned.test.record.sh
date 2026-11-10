@@ -236,7 +236,7 @@ owned_dir d x || exit 1
 : > "$T_CTL/tf5.ready"
 hold "$T_CTL/tf5.stop"
 EOF
-  local wsl cpid d line expected pid_for_ref idx=0
+  local wsl cpid d e line expected pid_for_ref idx=0
   local long="" k=0
   while [ "$k" -lt 25 ]; do k=$((k + 1)); long="$long seg$k@:  "; done
   for wsl in "   " "My Distro" "My  Dis@:tro--x  " "$long"; do
@@ -245,10 +245,11 @@ EOF
     start_child tf5 WSL_DISTRO_NAME="$wsl"
     cpid="$CH_PID"
     premise "F5 the child is alive" await_file "$CTL/tf5.ready" || { kill -9 "$cpid"; return 0; }
-    d=""
-    for d in "$CR"/*; do # the first entry that is not a claim
-      case "$d" in *.owner) continue ;; esac
-      d="${d##*/}"
+    d="(no folder)" # what F5's failure text says when the root holds none
+    for e in "$CR"/*; do # the first entry that is not a claim
+      case "$e" in *.owner) continue ;; esac
+      [ -e "$e" ] || break
+      d="${e##*/}"
       break
     done
     line="$(first_line "$CR/$d.owner")"

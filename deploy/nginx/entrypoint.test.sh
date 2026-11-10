@@ -14,7 +14,8 @@
 #
 # The entrypoint is RUN, not copied: its own seams (CRED_VAULT_CERT_LIVE, CRED_VAULT_TEMPLATE,
 # CRED_VAULT_CONF_DIR, CRED_VAULT_RENDER_ONLY) point it at a private folder and stop it before the
-# reload loop. Nothing is written outside that folder, an owned folder that is removed on exit.
+# reload loop. Nothing is written outside that folder, an owned folder that is removed on exit. Under Git Bash
+# (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -uo pipefail
 
 # A local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md), the same
