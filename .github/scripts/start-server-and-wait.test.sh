@@ -20,28 +20,32 @@
 #   i. the start line (on c's run)      → names the program, never its arguments, which may carry a secret (round 1);
 #   j. no START_SERVER_LOG, no RUNNER_TEMP → the log is in an owned, claimed, kept folder, never a loose file (E2.4.S2).
 # START_SERVER_SCRIPT points the cases at another implementation — how the old inline loop was shown to pass (a).
-# Needs bash, node, curl and GNU date. Its scratch folder is its own `mktemp -d`; the trap removes it and stops
-# every pid this test recorded (only those — never anything by name), however the test ends.
+# Needs bash, node, curl and GNU date. Its scratch folder is an owned folder (lib/owned.sh); the helper's exit trap
+# runs `cleanup`, which stops every pid this test recorded (only those — never anything by name), and then removes the
+# folder and its claim, however the test ends.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 start="${START_SERVER_SCRIPT:-$here/start-server-and-wait.sh}"
-work="$(mktemp -d)"
-fake="$work/fake-server.cjs"
 failures=0
 pids=()
 
-# Invoked by the EXIT trap only. Both codes, as in deploy/restore-archive.sh: shellcheck 0.11 calls it SC2329,
-# every version before it SC2317.
+# The clean-up function of owned_trap, run by the helper's exit trap (it runs in a subshell, so it acts on processes
+# only). The folder and its claim are removed by the helper afterwards. Both codes, as in deploy/restore-archive.sh:
+# shellcheck 0.11 calls it SC2329, every version before it SC2317.
 # shellcheck disable=SC2317,SC2329
 cleanup() {
   local p
   for p in "${pids[@]}"; do
     kill "$p" 2> /dev/null || true
   done
-  rm -rf "$work"
 }
-trap cleanup EXIT
+# The trap is set before the folder exists (the helper owns every trap of this script; it sets none of its own).
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+owned_trap cleanup || exit 1
+owned_dir work start-test || exit 1
+fake="$work/fake-server.cjs"
 
 cat > "$fake" <<'EOF'
 // A stand-in server: node fake-server.cjs <mode> <port>

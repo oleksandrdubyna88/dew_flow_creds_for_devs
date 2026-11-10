@@ -13,14 +13,20 @@
 #   1. refuses to start anything when <health-url> ALREADY answers — a server left from an earlier run would
 #      answer the probe while the new one dies on EADDRINUSE, and the suite would test the wrong build;
 #   2. starts <command> in the background, stdin from /dev/null, stdout+stderr into a log file
-#      ($START_SERVER_LOG, else a new file under $RUNNER_TEMP / $TMPDIR / /tmp), and records its pid;
+#      ($START_SERVER_LOG, else `server.log` in a new owned folder of lib/owned.sh, in $TMPDIR or /tmp), and records
+#      its pid. That folder is claimed and KEPT: the log is handed on (it is printed, and written to $GITHUB_OUTPUT), so
+#      the script never removes it. The claim names this script's shell: the next sweep of the test-leftovers rule
+#      collects folder and claim once that shell is gone and 10 minutes have passed — and it cannot tell that the SERVER
+#      outlives the script, so a log read later than 10 minutes after the script ended may be gone. Give START_SERVER_LOG
+#      (CI does) to keep the log where you say;
 #   3. probes <health-url> every ${START_SERVER_POLL_SECONDS:-1} s (curl: connect 2 s, at most 5 s a probe, and
 #      never past the deadline):
 #        - 2xx while the process is alive   → exit 0, the server left running, its pid and log printed and, when
 #                                             $GITHUB_OUTPUT is set, written there as `pid=` and `log=`;
 #        - the process EXITED                → exit 1 at once, with its exit code and its whole log;
 #        - the deadline passed               → the process is stopped, exit 1 with one sentence and its whole log;
-#        - this script is interrupted (INT, TERM, HUP) while it waits → the process is stopped, exit 143.
+#        - this script is interrupted (INT, TERM, HUP) while it waits → the process is stopped, exit 128 + the signal
+#                                             number (143 for TERM, the cancel of a CI step).
 #   Exit 2 is a usage error. The start line names the program only, never its arguments (they may carry a secret).
 #   The longest it takes: the deadline, plus a 5 s grace when the server has to be stopped.
 #
@@ -78,13 +84,16 @@ stop_own() {
 }
 
 # A wait cut short — a cancelled step, a Ctrl+C — must not leave the server behind with its pid recorded nowhere
-# (code round 1). Invoked by the trap only, hence the disable (SC2329 in shellcheck 0.11, SC2317 before).
+# (code round 1). It is the clean-up function of owned_trap, so it runs at every exit — after owned.sh's signal trap has
+# ended the script with 128 + the signal number — and stops the server only while $waiting is 1: every path that ends
+# the wait itself (an answer, an exit, the deadline) sets it to 0 first. Invoked by the helper's exit trap only, hence
+# the disable (SC2329 in shellcheck 0.11, SC2317 before). It runs in a subshell, so it acts on files and processes only.
 # shellcheck disable=SC2317,SC2329
-interrupted() {
+on_exit() {
+  [[ "$waiting" == 1 ]] || return 0
   echo "interrupted while waiting for $url; stopping pid $pid"
   stop_own
   show_log
-  exit 143
 }
 
 describe() {
@@ -98,17 +107,31 @@ show_log() {
   echo "--- end of the server's log ---"
 }
 
+# The helper owns every trap of this script. The clean-up function is registered first, before the first step that can
+# fail after a resource exists; a script of its own `trap` on EXIT, INT, TERM or HUP would replace the helper's.
+waiting=0
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+owned_trap on_exit || exit 1
+
 before="$(probe)"
 if [[ "$before" == 2?? ]]; then
   echo "something already answers $before on $url — refusing to start a second server there; stop the first one"
   exit 1
 fi
 
-log="${START_SERVER_LOG:-$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/start-server-XXXXXX.log")}"
+if [[ -n "${START_SERVER_LOG:-}" ]]; then
+  log="$START_SERVER_LOG"
+else
+  # The log is handed on, so its folder is claimed and made but never put in the clean-up list (OWNED_KEEP).
+  OWNED_KEEP=1 owned_dir logdir server-log || exit 1
+  log="$logdir/server.log"
+fi
 : > "$log"
 "$@" < /dev/null > "$log" 2>&1 &
 pid=$!
-trap interrupted INT TERM HUP
+waiting=1
 # The program only: an argument may carry a secret, and this line goes to a CI log (code round 1).
 echo "started pid $pid: $1"
 
@@ -119,6 +142,7 @@ while :; do
   last="$(probe "$(budget)")"
   # Alive is checked AFTER the probe, so a 2xx from some other process in the moment ours died does not count.
   if ! kill -0 "$pid" 2> /dev/null; then
+    waiting=0
     code=0
     wait "$pid" || code=$?
     echo "the server exited with code $code before it answered $url (last answer: $(describe "$last"))"
@@ -131,7 +155,7 @@ while :; do
     if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
       printf 'pid=%s\nlog=%s\n' "$pid" "$log" >> "$GITHUB_OUTPUT"
     fi
-    trap - INT TERM HUP
+    waiting=0
     exit 0
   fi
   if (($(now_ms) >= deadline)); then
@@ -141,7 +165,7 @@ while :; do
 done
 
 echo "the server did not answer 2xx on $url within $timeout_s s (last answer: $(describe "$last")); stopping pid $pid"
-trap - INT TERM HUP
+waiting=0
 stop_own
 show_log
 exit 1
