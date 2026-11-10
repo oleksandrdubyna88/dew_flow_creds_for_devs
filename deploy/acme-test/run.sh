@@ -4,7 +4,9 @@
 # 11 to 13 minutes: the waits alone are 60 s for port 80 (30 tries of 2 s), 300 s for the certificate
 # (150 tries of 2 s, a line "still waiting for the certificate: try N of 150" every 15 tries) and 216 s
 # for nginx's port 443 (24 tries of 9 s) — 576 s — plus one `docker run` for each certificate try and up
-# to 4 s for each curl that hangs (every curl has --max-time).
+# to 4 s for each curl that hangs (every curl has --max-time). Each certificate probe is bounded at 30 s,
+# and the FIRST docker failure (a non-zero code, a timeout, output that is not `cert:yes` or `cert:no`) ends
+# the wait at once with its code and words, so a broken docker does not cost the whole wait.
 #
 #   ./run.sh                                  # uses the published :edge image
 #   VAULT_IMAGE=cred-vault-server:local ./run.sh
@@ -79,6 +81,8 @@ expect() { # expect <description> <expected> <actual>
 # shellcheck disable=SC2317,SC2329
 cleanup() {
   local out="" rc=0
+  # A probe that is still running (an interrupt came during the certificate wait) is ended first.
+  if [ -n "${probe_pid:-}" ]; then kill "$probe_pid" 2>/dev/null || true; fi
   if [ -n "${PROJECT:-}" ]; then
     out=$(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans 2>&1) || rc=$?
     if [ "$rc" != 0 ]; then
@@ -146,39 +150,89 @@ echo
 echo "-- 2. issuance -------------------------------------------------"
 "${COMPOSE[@]}" up -d certbot >/dev/null 2>&1
 # certbot's live folder is `drwx------ root`: the job's user cannot see into it from the host (a host
-# `[ -f ]` said "no certificate" while certbot had one). A one-shot container reads the volume as root.
-have_cert() { docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine test -f /s/live/vaulthost/fullchain.pem; }
-tries=150
-# `test -f` inside the container says 1 when the file is not there yet. Any other code is docker's own (125 daemon, 126, 127, a failed
-# pull): that is not "no certificate yet", and it is told apart below. The last try's code and words are kept.
-cert_rc=0
-cert_err=""
-docker_failures=0
-try_cert() {
-  cert_rc=0
-  cert_err=$(have_cert 2>&1 >/dev/null) || cert_rc=$?
+# `[ -f ]` said "no certificate" while certbot had one). A one-shot container reads the volume as root and
+# PRINTS what it found, `cert:yes` or `cert:no`, exiting 0 either way: an exit code alone cannot tell "no file
+# yet" from a docker error (`docker run` itself exits 1, 125, 126 or 127 on its own failures). Only that exact
+# marker on stdout is an answer; a non-zero code, a timeout, empty or other output is a docker failure.
+cert_probe_cmd=(docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine sh -c 'if test -f /s/live/vaulthost/fullchain.pem; then echo cert:yes; else echo cert:no; fi')
+# Each probe is bounded: a stalled image pull or daemon must not hold the wait. ACME_PROBE_TIMEOUT (seconds) and
+# ACME_PROBE_WATCHDOG (use the portable bound even where `timeout` exists) are test seams.
+probe_timeout="${ACME_PROBE_TIMEOUT:-30}"
+probe_pid=""
+probe_rc=0
+probe_out=""
+probe_err=""
+cert_state="no"
+cert_why=""
+
+# The portable bound, for a shell with no `timeout` (stock macOS): poll the probe from this shell and kill it after
+# $probe_timeout seconds. Nothing runs beside it, so nothing is left behind; a signal ends the loop at once.
+watch_probe() {
+  local limit=$((SECONDS + probe_timeout)) rc=0
+  while kill -0 "$probe_pid" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$limit" ]; then
+      kill "$probe_pid" 2>/dev/null || true
+      probe_rc=124
+      break
+    fi
+    sleep 0.2
+  done
+  wait "$probe_pid" 2>/dev/null || rc=$?
+  if [ "$probe_rc" != 124 ]; then probe_rc=$rc; fi
 }
+
+# One probe: sets probe_rc, probe_out, probe_err (the files are in the owned folder). The probe runs in the
+# background and this shell waits for it, so an INT or TERM is handled at once, and `cleanup` kills it.
+run_probe() {
+  probe_rc=0
+  if [ -z "${ACME_PROBE_WATCHDOG:-}" ] && command -v timeout >/dev/null 2>&1; then
+    timeout "$probe_timeout" "${cert_probe_cmd[@]}" >"$STATE/probe.out" 2>"$STATE/probe.err" &
+    probe_pid=$!
+    wait "$probe_pid" || probe_rc=$?
+  else
+    "${cert_probe_cmd[@]}" >"$STATE/probe.out" 2>"$STATE/probe.err" &
+    probe_pid=$!
+    watch_probe
+  fi
+  probe_pid=""
+  probe_out=$(cat "$STATE/probe.out")
+  probe_err=$(cat "$STATE/probe.err")
+}
+
+# What the last probe said: cert_state is yes, no or failed; cert_why says what failed.
+classify_probe() {
+  local words
+  words=$(printf '%s\n' "$probe_err" | head -n 3 | tr '\n' ' ')
+  cert_state="failed"
+  if [ "$probe_rc" = 124 ]; then cert_why="the probe timed out after ${probe_timeout} s"
+  elif [ "$probe_rc" != 0 ]; then cert_why="docker exited with code ${probe_rc}: ${words}"
+  elif [ "$probe_out" = "cert:yes" ]; then cert_state="yes"
+  elif [ "$probe_out" = "cert:no" ]; then cert_state="no"
+  else cert_why="the probe printed '${probe_out}' and exited 0, not cert:yes or cert:no: ${words}"
+  fi
+}
+
+tries=150
 for n in $(seq 1 "$tries"); do
-  try_cert
-  [ "$cert_rc" = 0 ] && break
-  if [ "$cert_rc" = 1 ]; then docker_failures=0; else docker_failures=$((docker_failures + 1)); fi
-  # Docker failing five times in a row will not turn into a certificate: stop and say why.
-  [ "$docker_failures" -ge 5 ] && break
+  run_probe
+  classify_probe
+  # The first docker failure ends the wait: it will not turn into a certificate, and alternating failures with "no" answers must not hide it.
+  if [ "$cert_state" != "no" ]; then break; fi
   # The wait can last five minutes: say so every 15 tries, so a hosted log or a person does not look at a silent job.
   if [ $((n % 15)) = 0 ]; then echo "  still waiting for the certificate: try $n of $tries"; fi
   sleep 2
 done
-# One more look after the last sleep, unless docker itself was what failed.
-if [ "$cert_rc" != 0 ] && [ "$docker_failures" -lt 5 ]; then try_cert; fi
-if [ "$cert_rc" = 0 ]; then
-  pass "certbot obtained a certificate through a real HTTP-01 challenge"
-elif [ "$cert_rc" != 1 ]; then
-  fail "the certificate check failed in docker, not for want of a file (exit code $cert_rc, after $n tries): $(printf '%s\n' "$cert_err" | head -n 3 | tr '\n' ' ')"
-  "${COMPOSE[@]}" logs certbot | tail -25
-else
-  fail "no certificate was issued after $tries tries (the last try found no file)"
-  "${COMPOSE[@]}" logs certbot | tail -25
-fi
+# One more look after the last sleep, when the wait ran out of tries.
+if [ "$cert_state" = "no" ]; then run_probe; classify_probe; fi
+case "$cert_state" in
+  yes) pass "certbot obtained a certificate through a real HTTP-01 challenge" ;;
+  failed)
+    fail "the certificate check failed in docker, not for want of a file (${cert_why}, after ${n} tries)"
+    "${COMPOSE[@]}" logs certbot | tail -25 ;;
+  *)
+    fail "no certificate was issued after $tries tries (the last try found no file)"
+    "${COMPOSE[@]}" logs certbot | tail -25 ;;
+esac
 
 echo
 echo "-- 3. nginx picks it up unattended -----------------------------"
