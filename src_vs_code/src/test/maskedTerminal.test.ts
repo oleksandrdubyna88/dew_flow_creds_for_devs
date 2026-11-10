@@ -6,6 +6,7 @@ import { TestContext, test } from 'node:test';
 import * as childKill from '../childKill';
 import { KILL_GRACE_MS } from '../childKill';
 import { RemotePlan, planLaunch, secretsLaunch, secretsStdin, sshLinkOf } from '../remoteLaunch';
+import { E3_INHERITED_DROP, type EnvDrop } from '../sshProgram';
 import { EntityMetadata } from '../types';
 import { fakeRoad, sshNode } from './sshRoadWorld';
 import { StubEventEmitter, loadWithVscode } from './vscodeStub';
@@ -403,6 +404,7 @@ interface ArgvRun {
   /** An owned folder unless a test gives one. */
   cwd?: string;
   env?: Record<string, string>;
+  withoutEnv?: EnvDrop;
   stdinText?: string;
   secrets?: readonly (string | { value: string; label: string })[];
   onEnded?: () => void;
@@ -415,6 +417,7 @@ function runArgv(t: TestContext, w: World, options: ArgvRun): void {
     argv: options.argv,
     cwd: options.cwd ?? ownedDir(t, 'cwd'),
     env: options.env ?? {},
+    withoutEnv: options.withoutEnv,
     stdinText: options.stdinText,
     secrets: options.secrets ?? [],
     banner: '[masked]',
@@ -634,6 +637,69 @@ test('the_ssh_childs_environment_holds_no_secret_value', REAL_CHILD, async (t) =
     }
   } finally {
     assertNoProcessLeft(dir);
+  }
+});
+
+// ---- the whole child environment of E3's two roads (F6 (2); parent D17 (a)) -------------------------------------------------
+
+const HOST_SOCKET = '/tmp/host-agent.sock';
+const RESOLVED = 'correct-horse-battery-staple';
+const ASKPASS = { SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' };
+
+/** `env`'s own bookkeeping: a started `/bin/sh` re-derives these, so a changed one is the shell's, not the run's. */
+const SHELL_OWN = new Set(['PWD', 'OLDPWD', 'SHLVL', '_']);
+
+/** One run of the recording fake ssh with the host's agent socket and a CREDS_REF_ name seeded; answers what its `env -0` recorded. */
+async function recordedEnv(t: TestContext, password: boolean, env: Record<string, string>): Promise<string[]> {
+  const dir = ownedDir(t, 'ssh');
+  const fake = writeFakeSsh(dir);
+  const w = world();
+  try {
+    runArgv(t, w, {
+      argv: [fake, ...(await launchArgv(password))],
+      env,
+      withoutEnv: E3_INHERITED_DROP,
+      stdinText: secretsStdin({ CREDS_REF_1: RESOLVED }, `echo $$ >> '${dir}/pids'; true`),
+      secrets: [{ value: RESOLVED, label: 'CREDS_REF_1' }],
+    });
+    await closedWithin(w, 5_000);
+    return nulSplit(path.join(dir, 'env'));
+  } finally {
+    assertNoProcessLeft(dir);
+  }
+}
+
+/** The keys whose value differs from `process.env` — added or changed — in what the child recorded. */
+function changedKeys(recorded: readonly string[]): string[] {
+  const pairs = recorded.map((entry) => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)]);
+  return pairs.filter(([key, value]) => process.env[key] !== value && !SHELL_OWN.has(key)).map(([key]) => key).sort();
+}
+
+test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', REAL_CHILD, async (t) => {
+  const seeded = { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK, CREDS_REF_7: process.env.CREDS_REF_7 };
+  Object.assign(process.env, { SSH_AUTH_SOCK: HOST_SOCKET, CREDS_REF_7: 'seeded' });
+  try {
+    const password = await recordedEnv(t, true, ASKPASS);
+    assert.ok(password.some((entry) => entry.startsWith('PATH=')), 'the positive control: ordinary variables are inherited');
+    assert.ok(!password.some((entry) => entry.startsWith('SSH_AUTH_SOCK=')), `the host's socket is gone: ${password.filter((e) => e.includes('SSH_AUTH_SOCK')).join(' ')}`);
+    assert.deepEqual(password.filter((entry) => entry.toUpperCase().startsWith('CREDS_REF_')), [], 'no CREDS_REF_ name, in any letter case');
+    assert.ok(!password.some((entry) => entry.includes(RESOLVED)), 'no resolved value in any value');
+    assert.deepEqual(changedKeys(password), Object.keys(ASKPASS).sort(), 'what the run added or changed is exactly the askpass variables');
+
+    const ours = await recordedEnv(t, false, { SSH_AUTH_SOCK: '/tmp/ours.sock' });
+    assert.deepEqual(changedKeys(ours), ['SSH_AUTH_SOCK'], 'with our agent: only its socket');
+    assert.deepEqual(ours.filter((entry) => entry.startsWith('SSH_AUTH_SOCK=')), ['SSH_AUTH_SOCK=/tmp/ours.sock'], 'ours, exactly once');
+    assert.ok(!ours.some((entry) => entry.includes(HOST_SOCKET)), 'and the host socket stands nowhere');
+
+    assert.deepEqual(changedKeys(await recordedEnv(t, false, {})), [], 'a key session with no env adds and changes nothing');
+  } finally {
+    for (const [name, value] of Object.entries(seeded)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
   }
 });
 

@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { SecretMasker } from './outputMask';
 import { killChild } from './childKill';
 import type { MaskEntry } from './secretMasker';
+import { type EnvDrop, NOTHING_DROPPED, envWithout } from './sshProgram';
 
 /**
  * A terminal whose output the extension owns, so a secret the child was given cannot appear in
@@ -28,7 +29,10 @@ import type { MaskEntry } from './secretMasker';
  * `shell: false`, in a folder the caller names (never the workspace). A script goes to its stdin once and stdin is then closed, so
  * keystrokes are NOT forwarded. The run ends exactly once (`onEnded`: the child's end, a failed start, a close before the start, a
  * throw from `show()`), and its end destroys stdin, so a part of the script not yet taken by the child (it holds the values) is
- * dropped and never written later; `open()` after the end spawns nothing and writes nothing.</p>
+ * dropped and never written later; `open()` after the end spawns nothing and writes nothing. The child's environment is the inherited
+ * one without `withoutEnv`, with `env` on top: the run ADDS only the askpass variables and, when the extension's agent serves it, its
+ * `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name; other ordinary variables (`PATH`, `HOME`, …) are
+ * inherited as by every spawned program (E3-D8, parent D17 (a)).</p>
  */
 
 /** What every masked run has, shell or argv. */
@@ -37,7 +41,8 @@ interface MaskedRunBase {
   name: string;
   /**
    * Variables the child gets on top of the parent environment (the resolved secrets). In argv mode this carries NO resolved
-   * value: the askpass variables of a password SSH entry and `SSH_AUTH_SOCK` only (E3-D8) — the values go in `stdinText`.
+   * value: the askpass variables of a password SSH entry and, when the extension's agent serves the run, its `SSH_AUTH_SOCK` only
+   * (E3-D8) — the values go in `stdinText`.
    */
   env: Record<string, string>;
   /**
@@ -77,6 +82,7 @@ interface MaskedShellRun extends MaskedRunBase {
    */
   shell?: string;
   argv?: undefined;
+  withoutEnv?: undefined;
 }
 
 /**
@@ -86,6 +92,13 @@ interface MaskedShellRun extends MaskedRunBase {
 interface MaskedArgvRun extends MaskedRunBase {
   argv: readonly [string, ...string[]];
   cwd: string;
+  /**
+   * Names and prefixes taken out of the inherited environment before `env` is laid on top (E3's two roads, parent D17 (a)): Run with
+   * Secrets over SSH removes the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name. The run ADDS only what `env` holds and REMOVES
+   * what this names; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. Absent: nothing is
+   * removed.
+   */
+  withoutEnv?: EnvDrop;
   commandLine?: undefined;
   shell?: undefined;
 }
@@ -281,7 +294,7 @@ function spawnChild(options: MaskedRunOptions): SpawnResult {
     const child = childProcess.spawn(launch.program, launch.args, {
       shell: launch.shell,
       cwd: launch.cwd,
-      env: { ...process.env, ...options.env },
+      env: { ...envWithout(process.env, options.withoutEnv ?? NOTHING_DROPPED, process.platform), ...options.env },
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as childProcess.ChildProcessWithoutNullStreams;
