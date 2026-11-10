@@ -265,18 +265,6 @@ that actually break:
 What it cannot prove is the half that belongs to your network: that a public name resolves to your
 host and that port 80 is reachable from the internet. Nothing local can assert those.
 
-It leaves nothing behind. The compose project is the name of a folder the run owns
-(`testsToDelete-<owner>-creds-acme-<id>` in the temp folder, lower-cased), so two runs never share
-a project. The state (`data`, `logs` and the two certificate folders) is in **named volumes** of that
-project, not in a folder of the checkout, and every container, the network and every volume carries
-the label `testsToDelete.owner`. When the script ends — also on Ctrl-C or `kill` — it runs
-`docker compose down -v` for its own project and removes its folder. A run that is killed with
-`kill -9` cannot clean up; the **next** `./run.sh` starts with the shared janitor
-(`bash ../../.claude/rules/shared/tools/janitor.sh --token creds`, from the shared rules folder:
-`git submodule update --init .claude/rules/shared`), which removes what is more than 10 minutes old
-and never touches a run that is still alive. The old `deploy/acme-test/state/` folder is no longer
-made; delete one that an earlier version left.
-
 ## Updating
 
 ```bash
