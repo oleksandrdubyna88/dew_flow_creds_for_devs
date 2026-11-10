@@ -1,6 +1,6 @@
 # PLAN — Test leftovers, E2.5 brief: repository-wide enforcement (stories S1–S3)
 
-> Status: **S1–S3 built on `feat/test-leftovers-e2.5` (PR #330, unmerged), 2026-11-10; the coai plan gate said `proceed`; the hosted evidence is the coordinator's.** Build record: § *E2.5 build record* of [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md). Was: brief only, nothing built. Revised the same day in one pass
+> Status: **S1–S3 merged as PR #330 (`b6cc6b3`), 2026-11-10; the plan gate and every code round said `proceed`; the hosted evidence is recorded.** Was: S1–S3 built on `feat/test-leftovers-e2.5` (PR #330, unmerged). Build record: § *E2.5 build record* of [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md). Was: brief only, nothing built. Revised the same day in one pass
 > with the gate's accepted findings G1–G3 and an independent Opus review's findings F1–F18 (§ 13 says, for each, why it is
 > not a change). Scope: the build brief of epic E2.5 of [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md)
 > (§ *Epics* → E2.5, § S5, D7, D8, D9; § *Revision for the rollout's epochs 6 and 7* rows 1, 2, 6, 7; § *Revision for the
