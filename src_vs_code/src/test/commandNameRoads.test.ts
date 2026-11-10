@@ -4,11 +4,10 @@ import { after, test } from 'node:test';
 import { resolveCommand, shownCommandLine } from '../commandLine';
 import { NAME_REFUSAL, nameRefusal } from '../commandName';
 import { isCommandTrusted } from '../commandTrust';
-import { FieldReading } from '../fieldReading';
 import { shellRead } from '../runPlan';
 import { chainTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { CommandArg, EntityMetadata } from '../types';
-import { arrowWorld } from './arrowWorld';
+import { arrowWorld, vaultOf } from './arrowWorld';
 import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -100,20 +99,6 @@ test('a_literal_in_an_old_entry_is_asked_about_once', async () => {
 });
 
 // ---------- Run with Secrets ----------
-
-/** A vault of one account `me` holding the entities named, each with the one password. */
-function vaultOf(names: readonly string[], reading: () => FieldReading = () => ({ kind: 'value', value: 'correct-horse-battery' })) {
-  const calls: string[] = [];
-  const source = {
-    accounts: () => [{ accountId: 'acc', email: 'me' }],
-    entities: () => names.map((name) => ({ id: `id-${name}`, name, path: [name] })),
-    fieldReading: (_account: string, entityId: string) => {
-      calls.push(entityId);
-      return Promise.resolve(reading());
-    },
-  };
-  return { source, calls };
-}
 
 const TOKEN_REF: CommandArg[] = [{ value: 'creds://me/{name}/password' }];
 

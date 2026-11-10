@@ -1,6 +1,6 @@
 # PLAN — E1.S3 spec: the seam, `prepareSshSession` (CORNERSTONE)
 
-> Status: **spec by Fable, 2026-11-10, written before its code. Nothing built.**
+> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e1 (local), promotes with the parent.** Spec by Fable, written before the code.
 > Story E1.S3 of [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) — parent §4.3 (the seam),
 > §4.4 (the "one owner" and "one snapshot" rules), §6 (rows "prepare opens no terminal" and "existing SSH Connect
 > suites green, unchanged"), risk 7, `## Epics` › E1 › S3. Its own file because the E1 stories document goes whole to

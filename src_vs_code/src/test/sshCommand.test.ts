@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SshCommandOptions, buildSshCommand, describeSshTarget, isSafeSshHost, isSafeSshUser } from '../sshCommand';
+import { SshCommandOptions, buildSshCommand, describeSshTarget, isSafeSshHost, isSafeSshUser, withAcceptNew } from '../sshCommand';
 import { EntityMetadata } from '../types';
 import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 
@@ -682,4 +682,20 @@ test('S5 win32 a_word_PowerShell_argument_mode_would_read_as_something_else_is_q
   // The port is a number by type and a string by data (sync and import write JSON): it is a word like any other.
   assert.equal(buildSshCommand(entity({ port: 2200 }), 'win32', WIN), 'ssh -p 2200 deploy@example.com');
   assert.equal(buildSshCommand(entity({ port: '2200;calc' as never }), 'win32', WIN), "ssh -p '2200;calc' deploy@example.com");
+});
+
+// F5: ONE `withAcceptNew`, for the Connect road and the terminal roads. It takes the FIRST WORD of the line as the program
+// word (`^(\S+) `), not only a bare `ssh`: the Windows client reached from WSL, and the built-in one on Windows, are program
+// words with a path, and with the password branch's SSH_ASKPASS_REQUIRE=force an unpinned host key question that did not
+// get `accept-new` would be answered by the askpass program, with the password. No program word holds a space.
+test('F5 withAcceptNew_puts_the_option_after_the_program_word_whatever_the_word_is', () => {
+  const ACCEPT = '-o StrictHostKeyChecking=accept-new';
+  for (const program of ['ssh', 'C:/Windows/System32/OpenSSH/ssh.exe', '/mnt/c/Windows/System32/OpenSSH/ssh.exe']) {
+    const line = buildSshCommand(entity({ port: 2222 }), 'linux', { program });
+    assert.equal(line, `${program} -p 2222 deploy@example.com`);
+    assert.equal(withAcceptNew(line as string, true), `${program} ${ACCEPT} -p 2222 deploy@example.com`, program);
+    assert.equal(withAcceptNew(line as string, false), line, `${program}: not asked, not added`);
+  }
+  const remote = buildSshCommand(entity(), 'linux', { program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe', remote: { command: 'echo hi', tty: true } });
+  assert.equal(withAcceptNew(remote as string, true), `/mnt/c/Windows/System32/OpenSSH/ssh.exe ${ACCEPT} -t -- deploy@example.com 'echo hi'`);
 });

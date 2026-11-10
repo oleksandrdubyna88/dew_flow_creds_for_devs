@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { buildSshCommand, openSshTerminal } from './terminalManager';
 import { requestGone } from './requestLife';
+import { withAcceptNew } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
 import { forgetMaterializedKey } from './keyInstaller';
 import { RefusalReason } from './remoteRoute';
@@ -18,7 +19,6 @@ import {
   RemoteWindowDeps,
   prepareSshSession,
   windowOf,
-  withAcceptNew,
 } from './sshSession';
 
 export type { RemoteWindowDeps } from './sshSession';

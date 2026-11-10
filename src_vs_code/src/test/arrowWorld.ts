@@ -1,3 +1,4 @@
+import { FieldReading } from '../fieldReading';
 import { EntityMetadata, TreeNode } from '../types';
 import { World, WorldOptions, memoryTrust, seedTrusted, world } from './vpnWorld';
 import { loadWithVscode } from './vscodeStub';
@@ -121,4 +122,18 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
     return handlers['credSshManager.runCommand']({ kind: 'revision', accountId: 'a1', index, node: { id: entry.id, name: entry.name, details: entry } });
   };
   return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision };
+}
+
+/** A vault of one account `me` holding the entities named, each with the one password: the `refSource` of `arrowWorld`, and the ids it was asked to read. */
+export function vaultOf(names: readonly string[], reading: () => FieldReading = () => ({ kind: 'value', value: 'correct-horse-battery' })) {
+  const calls: string[] = [];
+  const source = {
+    accounts: () => [{ accountId: 'acc', email: 'me' }],
+    entities: () => names.map((name) => ({ id: `id-${name}`, name, path: [name] })),
+    fieldReading: (_account: string, entityId: string) => {
+      calls.push(entityId);
+      return Promise.resolve(reading());
+    },
+  };
+  return { source, calls };
 }

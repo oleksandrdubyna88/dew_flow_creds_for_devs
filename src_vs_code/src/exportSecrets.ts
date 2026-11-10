@@ -2,6 +2,7 @@ import { ExternalSecrets } from './externalBundle';
 import { parseFields } from './entityFields';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import { plainSecret, readSecret } from './secretEnvelope';
+import { withoutSshLink } from './remoteLaunch';
 import { StoredSecret, carried } from './storedSecret';
 import { EntityMetadata, TreeNode } from './types';
 
@@ -134,5 +135,5 @@ export function exportedNode(node: TreeNode): TreeNode {
  * entry of THIS vault, which a recipient's copy has never heard of, so the copy runs on its own machine.
  */
 function exportedDetails(details: EntityMetadata): EntityMetadata {
-  return { ...details, pinProtected: details.pinProtected === true ? undefined : details.pinProtected, sshEntityId: undefined };
+  return withoutSshLink({ ...details, pinProtected: details.pinProtected === true ? undefined : details.pinProtected });
 }

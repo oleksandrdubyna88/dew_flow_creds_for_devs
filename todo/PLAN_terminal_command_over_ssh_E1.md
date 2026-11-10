@@ -1,8 +1,8 @@
 # PLAN — Terminal command over SSH, E1: the field, the refusal on every road, the composer, the seam
 
-> Status: **stories of E1, nothing implemented yet, 2026-11-09.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E1.
+> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e1 (local), promotes with the parent.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E1.
 > Scope: `src_vs_code` only. S1 is specified in full here (scenarios and brief, by Opus). S2 and S3 are cornerstones:
-> their specs are Fable's, in their own files. Branch `feat/terminal-command-over-ssh`; E1 lands as ONE commit.
+> their specs are Fable's, in their own files. Branch `feat/terminal-command-over-ssh-e1`; E1 was built as one commit and then the §S4 fixes.
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on commit
 `e468285` of this branch.
@@ -347,4 +347,4 @@ out of 782444a.
 | F4 | Export uses `withoutSshLink` (`exportSecrets.ts`); the candidate list filters with the link decision (`sshLinkOf`, or an exported `isLinkTarget`) instead of its own copy of the checks | coai (antigravity) + own review | R2 and C1/R8 stay green; a mutation in `sshLinkOf` now changes the candidates too |
 | F5 | ONE `withAcceptNew` in the pure `sshCommand.ts`, used by `sshSession.ts` and `remoteLaunch.ts`, one regex chosen and recorded | own review (simplicity) | a test with a non-bare program word |
 | F6 | Small duplicates: delete `test/sshLinkGate.test.ts` (a copy of R24); `isWindowsPowerShell51` next to `shellFamily` in `hostShell.ts`; `sshDestination`/`portArgv` shared from `sshCommand.ts`; `noHostSentence` shared; `launcherId` → `otherEntityId`; the `UNLINK` constant reused; one `entityPicker` for the two pickers; `vaultOf` exported from `test/arrowWorld.ts` | own review (simplicity) | existing tests stay green |
-| F7 | Text that no longer matches: comments naming `sshConnect.ts` for the password branch; "three controls" in `execFormFields.ts`; "eleven calls in eight files" → the real count; "fifteen hostile commands" → the real count; the dangling `b983b57` references; the status lines of this document, the specs and `todo/README.md`; `research/` sections for S1 (the field, its round trips, the refusal on every road) and the askpass row | own review (conventions) | `plan-lifecycle.mjs` clean; a reader can find each flow in `research/module_tests.md` |
+| F7 | Text that no longer matches: comments naming `sshConnect.ts` for the password branch; "three controls" in `execFormFields.ts`; "eleven calls in eight files" → the real count; "fifteen hostile commands" → the real count; the dangling commit references; the status lines of this document, the specs and `todo/README.md`; `research/` sections for S1 (the field, its round trips, the refusal on every road) and the askpass row | own review (conventions) | `plan-lifecycle.mjs` clean; a reader can find each flow in `research/module_tests.md` |

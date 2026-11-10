@@ -11,6 +11,7 @@ import {
   type NodeLookup,
   type PreparedForTyping,
   type SshLink,
+  isLinkTarget,
   planLaunch,
   secretsStdin,
   sshLinkOf,
@@ -19,7 +20,8 @@ import {
   trustLineFor,
   typedLine,
 } from '../remoteLaunch';
-import type { EntityMetadata, TreeNode } from '../types';
+import { sshOptionArgv } from '../sshOptions';
+import type { EntityMetadata, PortForward, TreeNode } from '../types';
 
 /**
  * E1.S2 of `PLAN_terminal_command_over_ssh.md` (spec `PLAN_terminal_command_over_ssh_E1_S2_spec.md`): the composer.
@@ -151,6 +153,38 @@ test('R8 the_candidate_predicate_and_the_link_agree', () => {
   }
 });
 
+test('F4 the_candidate_list_holds_no_copy_of_the_link_decision_and_export_uses_the_one_strip', () => {
+  const read = (file: string): string => fs.readFileSync(path.join(SRC, file), 'utf8');
+  const targets = read('commandTargets.ts');
+  // The candidate filter asks `isLinkTarget`; it imports none of the three checks the decision is made of.
+  assert.equal(targets.includes('isLinkTarget(node, byId)'), true, 'collectSshCandidates asks the shared decision');
+  for (const copy of ["from './sshCommand'", "from './trash'", "from './entityKind'"]) {
+    assert.equal(targets.includes(copy), false, `commandTargets.ts imports ${copy}: a second copy of the link checks`);
+  }
+  // Export strips the link with the ONE strip an import and a share use, not its own `sshEntityId: undefined`.
+  const exported = read('exportSecrets.ts');
+  assert.equal(exported.includes('withoutSshLink('), true);
+  assert.equal(exported.includes('sshEntityId: undefined'), false, 'exportSecrets.ts spells the strip again');
+});
+
+test('F4b isLinkTarget_is_the_decision_sshLinkOf_takes_for_every_node_of_the_fixture', () => {
+  const nodes: TreeNode[] = [
+    sshNode('ok'),
+    sshNode('flags', { kind: undefined, host: 'a.corp.com' }),
+    folder('trash', null, true),
+    sshNode('gone', {}, 'trash'),
+    sshNode('nohost', { host: undefined }),
+    sshNode('flag', { host: '-oProxyCommand=x' }),
+    sshNode('term', { kind: 'terminal', isTerminal: true, isSshEnabled: false }),
+    folder('plain'),
+  ];
+  const lookup = lookupOf(nodes);
+  assert.equal(isLinkTarget(lookup('missing'), lookup), false, 'a missing node is not a target');
+  const verdicts = nodes.map((node) => [node.id, isLinkTarget(node, lookup), sshLinkOf(entry({ id: 'me', sshEntityId: node.id }), lookup).kind === 'linked']);
+  assert.deepEqual(verdicts.filter(([, target, linked]) => target !== linked), []);
+  assert.deepEqual(verdicts.filter(([, target]) => target).map(([id]) => id), ['ok', 'flags'], 'the fixture accepts something and refuses something');
+});
+
 // ---- planLaunch (§S2.3 P1-P7) -----------------------------------------------------------------------------------
 
 const LINKED: SshLink = { kind: 'linked', ssh: { id: 's1', name: 'prod', isSshEnabled: true, host: 'prod.corp.com' }, sshName: 'prod' };
@@ -250,6 +284,36 @@ test('R18 the_trust_line_changes_with_host_user_port_and_jump_and_not_with_key_o
   for (const text of [base, ...changed]) {
     assert.equal(/ -i | -o |\//.test(text), false, text);
   }
+});
+
+test('F1 the_trust_line_changes_with_agent_forwarding_and_every_enabled_forward_and_names_them_as_the_launch_does', () => {
+  const base = trustLineFor(SSH, 'j@b', 'echo hi');
+  const withAgent = trustLineFor({ ...SSH, agentForward: true }, 'j@b', 'echo hi');
+  assert.notEqual(withAgent, base, 'ONLY agent forwarding changed: a new text');
+  assert.equal(withAgent, "ssh -p 2222 -J j@b -A -- deploy@host 'echo hi'");
+  const local: PortForward = { kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432 };
+  const remote: PortForward = { kind: 'remote', bindAddress: 'localhost', bindPort: 9000, host: 'app', hostPort: 80 };
+  const withLocal = trustLineFor({ ...SSH, portForwards: [local] }, 'j@b', 'echo hi');
+  assert.notEqual(withLocal, base, 'ONLY a forward changed: a new text');
+  assert.equal(withLocal, "ssh -p 2222 -J j@b -L 8080:db:5432 -- deploy@host 'echo hi'");
+  const withRemote = trustLineFor({ ...SSH, portForwards: [remote] }, 'j@b', 'echo hi');
+  assert.equal(withRemote, "ssh -p 2222 -J j@b -R localhost:9000:app:80 -- deploy@host 'echo hi'");
+  const moved = trustLineFor({ ...SSH, portForwards: [{ ...local, hostPort: 5433 }] }, 'j@b', 'echo hi');
+  assert.equal(new Set([base, withAgent, withLocal, withRemote, moved]).size, 5, 'each change is its own text');
+  // The text is what the launch composes: the same options, in the same order, from the same function.
+  const both: EntityMetadata = { ...SSH, agentForward: true, portForwards: [local, remote] };
+  assert.equal(trustLineFor(both, 'j@b', 'x'), `ssh -p 2222 ${sshOptionArgv(both, 'j@b').join(' ')} -- deploy@host 'x'`);
+});
+
+test('F1 a_disabled_or_invalid_forward_is_not_in_the_trust_line_and_the_text_still_holds_no_key_option_or_program', () => {
+  const base = trustLineFor(SSH, undefined, 'echo hi');
+  const disabled: PortForward = { kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432, disabled: true };
+  const invalid: PortForward = { kind: 'local', bindPort: 0, host: '-oProxyCommand=x', hostPort: 5432 };
+  assert.equal(trustLineFor({ ...SSH, portForwards: [disabled, invalid] }, undefined, 'echo hi'), base);
+  assert.equal(trustLineFor({ ...SSH, agentForward: false }, undefined, 'echo hi'), base);
+  const full = trustLineFor({ ...SSH, agentForward: true, sshKeyPath: '/k', portForwards: [{ kind: 'local', bindPort: 1, host: 'h', hostPort: 2 }] }, 'j@b', 'echo hi');
+  assert.equal(/ -i | -o | -t |\/|^ssh\.exe|^[^ ]*\/ssh/.test(full), false, full);
+  assert.equal(full.startsWith('ssh '), true);
 });
 
 test('R19 the_trust_line_quotes_posix_on_win32_too', () => {

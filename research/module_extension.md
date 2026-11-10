@@ -2355,6 +2355,38 @@ The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on THIS mac
 window, so for them an OS means: refused on another OS, the native shell on this one. The viewer's
 command row reads `Command · runs on Linux` (`commandRowLabel`).
 
+#### Terminal entry SSH link (E1.S1 of `PLAN_terminal_command_over_ssh.md`)
+
+A Terminal entry can name ONE SSH entry of its own vault in `details.sshEntityId` (form label *Runs over SSH*; the first option is
+*— Do not use —*, and the stored value is absent or `''` for "not linked"). In this build the link is only stored and shown: no road
+runs a command over SSH yet (E2 and E3 switch the roads to `planLaunch`), so every road REFUSES a linked entry.
+
+*The field.* `sshLinkField` (`execFormFields.ts`) is a `<select>` made by the same private `entityPicker` as the VPN launcher's
+*Started by*: "none" first, then the candidates, then a stored id that is no longer offered shown as *(missing entry)* so a save does
+not drop it. The candidates are `collectSshCandidates` (`commandTargets.ts`): never the entry itself, and every entry that
+`remoteLaunch.isLinkTarget` accepts (live at any depth, kind `ssh`, a host `isSafeSshTarget` accepts). `isLinkTarget` is the
+decision `sshLinkOf` takes, asked without an entry, so the list offers exactly what the composer can use and a change to the decision
+changes both. The save scrub (`execDetails`) keeps the id only on a Terminal entry, never itself, never empty. `typeGuards.ts`
+accepts a string or nothing; an agent can never set it (it is outside the agent-create allow-list).
+
+*Round trips.* A backup and a sync keep the link (the ids are one vault's own; a backup import that renames an SSH entry renames the
+link, `idQuarantine.ts`). A share and an export remove it: `shareableDetails` strips it, `exportedDetails` does it with
+`withoutSshLink`, and an import and an accepted share strip it again (`withoutSshLink` in `landShare` and the import), because the id
+names an entity of the SENDER's vault. **Update it** on a received share keeps the RECIPIENT's own link and never takes the sender's:
+`shareUpdateSeal.rebuilt` carries it with the recipient's other marks through `remoteLaunch.keepingSshLink(incoming, existing)`, so a
+payload that carries a link (hand-made, or from an older build) does not set one on an unlinked entry and does not replace a linked one.
+The viewer shows the linked entry's name in a *Runs over SSH* row.
+
+*The refusal on every road.* `sshLinkRefusal(entry)` (`remoteLaunch.ts`) is the ONE sentence: `"<name>" is set to run over SSH, which
+this version cannot do yet. To run it on this machine, edit it and set "Runs over SSH" to "Do not use".` It answers through
+`sshLinkOf` row L1, so "is this entry linked" has one reader. It is asked, before any question, dependency, secret read or spawn, by the
+green arrow and Run with Secrets (`commands/runCommands.ts`), the folder run (`folderRun.ts`), a dependency chain step
+(`dependencyRun.ts`), a VPN's launcher (`vpnLauncherRun.ts`), the agent's run (`agentUseActions.ts`), and every copy: Copy Command
+(`commands/entityCommands.ts`), Copy All (`entityText.ts`) and the viewer's *Full command* row and copy (`entityViewPage.ts`,
+`entityViewCopy.ts`: the line is hidden and the sentence shown in *Will not run*). `launchRoadScan.test.ts` pins this: `.sshEntityId`
+is read only by the plumbing and `sshLinkOf`/`keepingSshLink`, and `sshLinkRefusal(` is called only from the listed functions (a list
+that shrinks as E2 and E3 switch each road). The help article of all five languages and the README carry the field.
+
 ### Which shell parses the line (issue #103)
 
 A line composed for the **host** platform used to be typed into whatever terminal the window opens

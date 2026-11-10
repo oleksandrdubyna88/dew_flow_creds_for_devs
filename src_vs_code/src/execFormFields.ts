@@ -4,8 +4,9 @@ import { KeyCandidate, LauncherCandidate } from './entityFormShape';
 import { escapeHtml } from './webviewHtml';
 
 /**
- * The form's three controls for issue #103 — what a Terminal entry is written for, which Terminal
- * entry starts a VPN, and whether an entry runs its dependencies first.
+ * The form's four controls — what a Terminal entry is written for and which Terminal entry starts a VPN
+ * (issue #103), which SSH entry a Terminal entry runs over (E1.S1 of `PLAN_terminal_command_over_ssh.md`), and
+ * whether an entry runs its dependencies first.
  *
  * <p>Their own module because `entityFormPage.ts` is at its line ceiling; each is one `${…}` there.
  * Pure: markup from data, no `vscode`, so the choices each control offers are unit tests.</p>
@@ -38,15 +39,35 @@ function isForeignOs(value: string): boolean {
   return value !== '' && asOsName(value) === undefined;
 }
 
+/** What one entry picker is made of: its element id, its label, the choice that stores nothing, and a hint paragraph (markup). */
+interface PickerText {
+  readonly id: string;
+  readonly label: string;
+  readonly none: string;
+  readonly hintHtml: string;
+}
+
+/**
+ * A `<select>` that points at another entity, in the shape both pickers share: "none" first, then what is offered, then —
+ * when the stored choice is no longer offered — the stored id shown as missing, so a save does not drop it silently.
+ */
+function entityPicker(text: PickerText, selected: string, offered: readonly { readonly id: string; readonly label: string }[]): string {
+  const options = offered.map((c) => option(c.id, c.label, selected));
+  const dangling = selected !== '' && !offered.some((c) => c.id === selected) ? [option(selected, '(missing entry)', selected)] : [];
+  return `<label for="${text.id}">${text.label}</label>
+    <select id="${text.id}">${[option('', text.none, selected), ...options, ...dangling].join('')}</select>
+    <p class="hint">${text.hintHtml}</p>`;
+}
+
 /** The launcher picker in the VPN section — a `<select>`, the way an SSH entry picks its key. */
 export function vpnLauncherField(d: EntityMetadata | undefined, candidates: readonly LauncherCandidate[]): string {
-  const selected = d?.vpnLauncherEntityId ?? '';
-  const offered = candidates.map((c) => option(c.id, launcherLabel(c), selected));
-  // A launcher that no longer exists is shown as such rather than silently dropped on save.
-  const dangling = isDangling(selected, candidates) ? [option(selected, '(missing entry)', selected)] : [];
-  return `<label for="vpnLauncherEntityId">Started by</label>
-    <select id="vpnLauncherEntityId">${[option('', '— built-in (detected) —', selected), ...offered, ...dangling].join('')}</select>
-    <p class="hint">A Terminal entry whose command starts this VPN. Write <code>{config}</code> where the path to the stored config file goes.</p>`;
+  const text: PickerText = {
+    id: 'vpnLauncherEntityId',
+    label: 'Started by',
+    none: '— built-in (detected) —',
+    hintHtml: 'A Terminal entry whose command starts this VPN. Write <code>{config}</code> where the path to the stored config file goes.',
+  };
+  return entityPicker(text, d?.vpnLauncherEntityId ?? '', candidates.map((c) => ({ id: c.id, label: launcherLabel(c) })));
 }
 
 function launcherLabel(c: LauncherCandidate): string {
@@ -58,16 +79,13 @@ function launcherLabel(c: LauncherCandidate): string {
  * stored link that is no longer offered stays selectable (shown as missing) so a save does not drop it silently.
  */
 export function sshLinkField(d: EntityMetadata | undefined, candidates: readonly KeyCandidate[]): string {
-  const selected = d?.sshEntityId ?? '';
-  const offered = candidates.map((c) => option(c.id, c.name, selected));
-  const dangling = isDangling(selected, candidates) ? [option(selected, '(missing entry)', selected)] : [];
-  return `<label for="sshEntityId">Runs over SSH</label>
-    <select id="sshEntityId">${[option('', '— Do not use —', selected), ...offered, ...dangling].join('')}</select>
-    <p class="hint">One of your SSH entries. This version saves the choice but cannot run a command over SSH yet: while one is chosen, every way of running this entry refuses and says why.</p>`;
-}
-
-function isDangling(selected: string, candidates: readonly KeyCandidate[]): boolean {
-  return selected !== '' && !candidates.some((c) => c.id === selected);
+  const text: PickerText = {
+    id: 'sshEntityId',
+    label: 'Runs over SSH',
+    none: '— Do not use —',
+    hintHtml: 'One of your SSH entries. This version saves the choice but cannot run a command over SSH yet: while one is chosen, every way of running this entry refuses and says why.',
+  };
+  return entityPicker(text, d?.sshEntityId ?? '', candidates.map((c) => ({ id: c.id, label: c.name })));
 }
 
 /** Inside the Depends-on body, so it is shown exactly while a dependency can be chosen. */
@@ -98,8 +116,8 @@ export function execDetails(
 ): ExecDetails {
   return {
     terminalOs: kind === 'terminal' ? nonEmpty(text(data.terminalOs)) : undefined,
-    sshEntityId: kind === 'terminal' ? launcherId(text(data.sshEntityId), selfId) : undefined,
-    vpnLauncherEntityId: kind === 'vpn' ? launcherId(text(data.vpnLauncherEntityId), selfId) : undefined,
+    sshEntityId: kind === 'terminal' ? otherEntityId(text(data.sshEntityId), selfId) : undefined,
+    vpnLauncherEntityId: kind === 'vpn' ? otherEntityId(text(data.vpnLauncherEntityId), selfId) : undefined,
     runDependencies: runMark(dependsOnCount, data.runDependencies),
   };
 }
@@ -113,8 +131,8 @@ function nonEmpty(value: string): string | undefined {
   return value === '' ? undefined : value;
 }
 
-/** Never itself — the self-reference guard `jumpHostEntityId` applies too. */
-function launcherId(value: string, selfId: string | undefined): string | undefined {
+/** The id of ANOTHER entity — never itself (the self-reference guard `jumpHostEntityId` applies too), and not empty. */
+function otherEntityId(value: string, selfId: string | undefined): string | undefined {
   return value === '' || value === selfId ? undefined : value;
 }
 

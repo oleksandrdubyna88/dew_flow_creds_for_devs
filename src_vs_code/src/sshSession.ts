@@ -5,6 +5,7 @@ import { describeError } from './describeError';
 import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
 import { askpassEnv } from './sshAskpass';
+import { noHostSentence } from './sshCommand';
 import { buildSshCommand, describeSshTarget } from './terminalManager';
 import { sshClientPresent } from './sshProgram';
 import { offerToInstall } from './toolEnsure';
@@ -248,11 +249,6 @@ export async function prepareSshSession(
   return looked.kind === 'stopped' ? looked : routed({ accountId, ssh, connect, remote, source: looked });
 }
 
-/** `command` with `-o StrictHostKeyChecking=accept-new` after the program word when `acceptNew`. */
-export function withAcceptNew(command: string, acceptNew: boolean): string {
-  return acceptNew ? command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ') : command;
-}
-
 const stopped = (why: StopReason): StoppedSsh => ({ kind: 'stopped', why });
 
 const refused = (reasons: readonly RefusalReason[], retryable: boolean): RefusedSsh => ({
@@ -490,7 +486,7 @@ function passwordBranch(s: Staged, password: string): PreparedSsh {
   // the defect the whole change is about, and leaving one copy of it behind is how it comes back.
   const command = buildSshCommand(s.ssh, s.platform, s.options);
   if (command === undefined || describeSshTarget(s.ssh) === undefined) {
-    void vscode.window.showWarningMessage(`"${s.ssh.name}" has no host configured — cannot start SSH.`);
+    void vscode.window.showWarningMessage(noHostSentence(s.ssh.name));
     giveBack(s);
     return stopped('no-host');
   }

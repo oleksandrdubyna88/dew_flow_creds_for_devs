@@ -4,12 +4,11 @@ import { after, test } from 'node:test';
 import { commandFingerprint } from '../commandTrust';
 import { terminalRunAction } from '../agentUseActions';
 import { planDependencyRun, StepRefusal } from '../dependencyRun';
-import { FieldReading } from '../fieldReading';
 import { FolderFacts, planFolderRun } from '../folderRun';
 import { osMismatch } from '../hostShell';
 import { sshLinkRefusal } from '../remoteLaunch';
 import { CommandArg, EntityMetadata, TreeNode } from '../types';
-import { arrowWorld } from './arrowWorld';
+import { arrowWorld, vaultOf } from './arrowWorld';
 import { L, folderWorld, named, session } from './folderWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
@@ -45,19 +44,6 @@ test('the_arrow_refuses_a_linked_entry_before_the_trust_question_when_the_line_i
   assert.deepEqual(aw.warnings.filter((t) => RUN_THIS.test(t)), [], 'no trust modal');
   assert.deepEqual(aw.terminals, []);
 });
-
-function vaultOf(names: readonly string[], reading: () => FieldReading = () => ({ kind: 'value', value: 'correct-horse-battery' })) {
-  const calls: string[] = [];
-  const source = {
-    accounts: () => [{ accountId: 'acc', email: 'me' }],
-    entities: () => names.map((name) => ({ id: `id-${name}`, name, path: [name] })),
-    fieldReading: (_account: string, entityId: string) => {
-      calls.push(entityId);
-      return Promise.resolve(reading());
-    },
-  };
-  return { source, calls };
-}
 
 test('run_with_secrets_refuses_a_linked_entry_and_reads_no_secret', async () => {
   const vault = vaultOf(['alert']);

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
-import { SshCommandOptions, buildSshCommand, describeSshTarget } from './sshCommand';
+import { SshCommandOptions, buildSshCommand, describeSshTarget, noHostSentence } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
 
 // Re-exported so existing callers keep one import site.
@@ -26,9 +26,7 @@ export function openSshTerminal(
   const command = buildSshCommand(entity, platform, options);
   const target = describeSshTarget(entity);
   if (command === undefined || target === undefined) {
-    void vscode.window.showWarningMessage(
-      `"${entity.name}" has no host configured — cannot start SSH.`,
-    );
+    void vscode.window.showWarningMessage(noHostSentence(entity.name));
     return undefined;
   }
 

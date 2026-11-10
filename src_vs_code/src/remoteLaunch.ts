@@ -1,8 +1,9 @@
 import { EntityMetadata, TreeNode } from './types';
 import { resolveCommand } from './commandLine';
 import { resolveKind } from './entityKind';
-import { HostShell, asOsName, quoteFor } from './hostShell';
-import { DEFAULT_SSH_PORT, SshCommandOptions, buildSshCommand, isSafeSshTarget } from './sshCommand';
+import { HostShell, asOsName, isWindowsPowerShell51, quoteFor } from './hostShell';
+import { SshCommandOptions, buildSshCommand, isSafeSshTarget, noHostSentence, portArgv, sshDestination, withAcceptNew } from './sshCommand';
+import { sshOptionArgv } from './sshOptions';
 import { isInTrash } from './trash';
 
 /**
@@ -50,20 +51,35 @@ function isUsable(node: TreeNode | undefined): node is UsableNode {
   return node !== undefined && node.type === 'entity' && node.details !== undefined;
 }
 
-function trashRefusal(entry: LaunchEntry, node: UsableNode, lookup: NodeLookup): string | undefined {
-  return isInTrash(node, lookup) ? `"${entry.name}" runs over the SSH connection "${node.name}", which is in the Trash. Restore it first.` : undefined;
+function trashRefusal(name: string, node: UsableNode, lookup: NodeLookup): string | undefined {
+  return isInTrash(node, lookup) ? `"${name}" runs over the SSH connection "${node.name}", which is in the Trash. Restore it first.` : undefined;
 }
 
-function kindRefusal(entry: LaunchEntry, node: UsableNode): string | undefined {
-  return resolveKind(node.details) === 'ssh' ? undefined : `"${entry.name}" runs over "${node.name}", which is not an SSH connection entry. ${CHOOSE}.`;
+function kindRefusal(name: string, node: UsableNode): string | undefined {
+  return resolveKind(node.details) === 'ssh' ? undefined : `"${name}" runs over "${node.name}", which is not an SSH connection entry. ${CHOOSE}.`;
 }
 
-function hostRefusal(entry: LaunchEntry, node: UsableNode): string | undefined {
-  return isSafeSshTarget(node.details) ? undefined : `"${entry.name}" runs over the SSH connection "${node.name}", whose address is not a valid host and user.`;
+function hostRefusal(name: string, node: UsableNode): string | undefined {
+  return isSafeSshTarget(node.details) ? undefined : `"${name}" runs over the SSH connection "${node.name}", whose address is not a valid host and user.`;
+}
+
+/** Rows L4-L6 for a node that exists: why it cannot be the target of `name`'s link (trashed, not SSH, unsafe address), or nothing. */
+function targetRefusal(name: string, node: UsableNode, lookup: NodeLookup): string | undefined {
+  return trashRefusal(name, node, lookup) ?? kindRefusal(name, node) ?? hostRefusal(name, node);
+}
+
+/**
+ * Whether a node can be the target of a link at all (rows L4-L6): a live SSH entry with a safe address. The decision
+ * `sshLinkOf` takes, asked without an entry, so the field's candidate list (`commandTargets.collectSshCandidates`) offers
+ * exactly the entries the composer will accept and a change to the decision changes both. Self is the caller's check (row
+ * L2 is by id).
+ */
+export function isLinkTarget(node: TreeNode | undefined, lookup: NodeLookup): boolean {
+  return isUsable(node) && targetRefusal('', node, lookup) === undefined;
 }
 
 function linkToNode(entry: LaunchEntry, node: UsableNode, lookup: NodeLookup): SshLink {
-  const reason = trashRefusal(entry, node, lookup) ?? kindRefusal(entry, node) ?? hostRefusal(entry, node);
+  const reason = targetRefusal(entry.name, node, lookup);
   return reason === undefined ? { kind: 'linked', ssh: node.details, sshName: node.name } : refusedLink(reason);
 }
 
@@ -100,7 +116,7 @@ export type LinkedEntry = Pick<EntityMetadata, 'id' | 'name' | 'sshEntityId'>;
 export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
   return sshLinkOf(entry, () => undefined).kind === 'none'
     ? undefined
-    : `"${entry.name}" is set to run over SSH, which this version cannot do yet. To run it on this machine, edit it and set "Runs over SSH" to "Do not use".`;
+    : `"${entry.name}" is set to run over SSH, which this version cannot do yet. To run it on this machine, edit it and ${UNLINK}`;
 }
 
 /**
@@ -110,6 +126,16 @@ export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
  */
 export function withoutSshLink<T extends Pick<EntityMetadata, 'sshEntityId'>>(details: T): T {
   return { ...details, sshEntityId: undefined };
+}
+
+/**
+ * The details of an *Update it* on a received share: the RECIPIENT's own link, never the payload's (D4, epoch 2). The
+ * link names an entity of ONE vault, so the sender's id means nothing here (it is dropped even when a hand-made payload
+ * carries one) and the recipient's own id must not be erased by an update that cannot carry it. Without an existing
+ * entry there is no link. The key stays present as `undefined`, as `withoutSshLink` leaves it.
+ */
+export function keepingSshLink<T extends Pick<EntityMetadata, 'sshEntityId'>>(incoming: T, existing: Pick<EntityMetadata, 'sshEntityId'> | undefined): T {
+  return { ...incoming, sshEntityId: existing?.sshEntityId };
 }
 
 // ---- the plan -------------------------------------------------------------------------------------------------------
@@ -192,24 +218,16 @@ export function stayOpenWrapper(line: string): string {
 
 // ---- the trust line -------------------------------------------------------------------------------------------------
 
-function portArgv(ssh: EntityMetadata): string[] {
-  return ssh.port !== undefined && ssh.port !== DEFAULT_SSH_PORT ? ['-p', String(ssh.port)] : [];
-}
-
-function jumpArgv(jump: string | undefined): string[] {
-  return jump !== undefined && jump !== '' ? ['-J', jump] : [];
-}
-
 /**
- * The canonical approval text: `ssh[ -p <port>][ -J <jump>] -- <user@host|host> '<line>'`. Posix quoting on every OS, so
- * one entry gives one text everywhere. The key, the pin file, the program word, `-t`, `-o` and any prefix are NOT in
- * it: it is the approval key (`commandFingerprint(terminalEntry.id, trustLine)`), and what the person approves is where
- * the command runs and what it is. `jump` is the resolved `-J` value, or undefined.
+ * The canonical approval text: `ssh[ -p <port>][ -J <jump>][ -A][ -L|-R …] -- <user@host|host> '<line>'`. Posix quoting on
+ * every OS, so one entry gives one text everywhere. The jump, `-A` and every enabled forward are what `sshOptionArgv`
+ * composes for the launch (that function's output, not a second composer): a forward or agent forwarding applies to the
+ * launch, so a synced change that adds one must ask again. The key, the pin file, the program word, `-t`, `-o` and any
+ * prefix are NOT in it: it is the approval key (`commandFingerprint(terminalEntry.id, trustLine)`), and what the person
+ * approves is where the command runs and what it is. `jump` is the resolved `-J` value, or undefined.
  */
 export function trustLineFor(ssh: EntityMetadata, jump: string | undefined, line: string): string {
-  const host = ssh.host ?? '';
-  const destination = ssh.user ? `${ssh.user}@${host}` : host;
-  return ['ssh', ...portArgv(ssh), ...jumpArgv(jump), '--', destination, quoteFor('posix', line)].join(' ');
+  return ['ssh', ...portArgv(ssh.port, 'linux'), ...sshOptionArgv(ssh, jump), '--', sshDestination(ssh), quoteFor('posix', line)].join(' ');
 }
 
 // ---- the typed line -------------------------------------------------------------------------------------------------
@@ -227,7 +245,7 @@ export interface PreparedForTyping {
   readonly platform: NodeJS.Platform;
   /** The relay prefix, or undefined on every other route. */
   readonly prefix: string | undefined;
-  /** The password branch without a pin (`sshConnect.ts`): `-o StrictHostKeyChecking=accept-new`. */
+  /** The password branch without a pin (`passwordBranch` of `sshSession.ts`): `-o StrictHostKeyChecking=accept-new`. */
   readonly acceptNew: boolean;
 }
 
@@ -237,22 +255,12 @@ export type TypedLine =
 
 type RemotePlan = Extract<LaunchPlan, { kind: 'remote' }>;
 
-function isPowerShell51(shellPath: string): boolean {
-  const base = shellPath.toLowerCase().split('\\').join('/').split('/').pop() ?? '';
-  return base === 'powershell.exe' || base === 'powershell';
-}
-
 /** Windows PowerShell 5.1 wraps a native argument with a space in `"…"` and escapes no inner `"`: a known-wrong parse is refused. */
 function powerShell51Refusal(plan: RemotePlan, localShell: HostShell): string | undefined {
   const bad = plan.remoteCommand.includes('"') || plan.remoteCommand.endsWith('\\');
-  return bad && isPowerShell51(localShell.shellPath)
+  return bad && isWindowsPowerShell51(localShell.shellPath)
     ? `This terminal is Windows PowerShell 5.1, which cannot pass a double quote or a trailing backslash to ssh correctly. Install PowerShell 7 (pwsh) and run "${plan.entryName}" again.`
     : undefined;
-}
-
-/** `-o StrictHostKeyChecking=accept-new` after the program word, as `withAcceptNew` does for the Connect road. */
-function withAcceptNew(command: string, acceptNew: boolean): string {
-  return acceptNew ? command.replace(/^(\S+) /, '$1 -o StrictHostKeyChecking=accept-new ') : command;
 }
 
 /**
@@ -266,11 +274,19 @@ export function typedLine(plan: RemotePlan, prepared: PreparedForTyping, localSh
   }
   const command = buildSshCommand(prepared.entity, prepared.platform, { ...prepared.options, remote: { command: plan.remoteCommand, tty: true } });
   return command === undefined
-    ? { kind: 'refused', reason: `"${plan.sshName}" has no host configured — cannot start SSH.` }
+    ? { kind: 'refused', reason: noHostSentence(plan.sshName) }
     : { kind: 'typed', line: (prepared.prefix ?? '') + withAcceptNew(command, prepared.acceptNew) };
 }
 
 // ---- the secrets script ---------------------------------------------------------------------------------------------
+
+/**
+ * The ONE remote command of Run with Secrets: the remote LOGIN shell reads the script from stdin (D12, epoch 2). It is the
+ * shell that parses the line on every other road, so a line written for the person's own shell (bash `[[ ]]`, `$'…'`)
+ * parses here as it does there; a plain `sh -s` is dash on Debian and Ubuntu and failed such a line with 127 (measured).
+ * The text holds `"`: a road that types it into Windows PowerShell 5.1 meets that refusal, and the secrets road spawns ssh with no shell (D12).
+ */
+export const SECRETS_REMOTE_COMMAND = '"${SHELL:-sh}" -s';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -282,7 +298,7 @@ function exportLine(name: string, value: string): string {
 }
 
 /**
- * The script a remote `sh -s` reads on stdin for Run with Secrets: each value assigned and exported in two steps (so a
+ * The script `SECRETS_REMOTE_COMMAND` (the remote login shell's `-s`) reads on stdin for Run with Secrets: each value assigned and exported in two steps (so a
  * value is never parsed as syntax), then the line in a `{ … } </dev/null` group (a command that reads stdin reads end of
  * input, not the rest of this script), then `exit $?`. The blank line after the line is deliberate: a line ending in `\`
  * continues onto it, not onto `}`. A name is never quoted, so one that is not `^[A-Za-z_][A-Za-z0-9_]*$` throws.

@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TestContext, test } from 'node:test';
-import { secretsStdin, stayOpenWrapper } from '../remoteLaunch';
+import { SECRETS_REMOTE_COMMAND, secretsStdin, stayOpenWrapper } from '../remoteLaunch';
 import { buildSshCommand } from '../sshCommand';
 import { EntityMetadata } from '../types';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
@@ -225,3 +225,48 @@ for (const sh of ['dash', 'bash']) {
     assert.equal(run('true').status, 0);
   });
 }
+
+/** Where a shell lives on THIS machine: the remote's `$SHELL` is a path, and the test must name a real one. */
+function shellPath(name: string): string | undefined {
+  try {
+    return execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The emulated remote of Run with Secrets: `<sshd's shell> -c <the one remote argument>`, stdin = the script, `SHELL` = that login shell. */
+function viaRemoteLoginShell(shell: string, line: string): { stdout: string; status: number | null } {
+  const r = spawnSync(shell, ['-c', SECRETS_REMOTE_COMMAND], {
+    input: secretsStdin({}, line),
+    env: { ...process.env, SHELL: shell },
+    timeout: SHELL_TIMEOUT_MS,
+    encoding: 'utf8',
+  });
+  assert.equal(r.error, undefined, String(r.error));
+  return { stdout: r.stdout, status: r.status };
+}
+
+const BASH_ONLY = '[[ x = x ]] && printf ok';
+
+test('F3_a_bash_only_line_runs_when_the_remote_login_shell_is_bash', { skip: NO_BASH || skipUnless('bash') }, () => {
+  const bash = shellPath('bash');
+  assert.ok(bash !== undefined, 'bash was found by the skip check');
+  const run = viaRemoteLoginShell(bash, BASH_ONLY);
+  assert.equal(run.stdout, 'ok');
+  assert.equal(run.status, 0);
+});
+
+// RECORDED 2026-11-10: the same script read by dash (a login shell that is dash) fails, as it would typed there: `[[` is not
+// a command in dash, so the line does not run (status 127, nothing printed). The remote's login shell decides, as on every road.
+test('F3_the_same_line_fails_when_the_remote_login_shell_is_dash_as_it_would_typed_there', { skip: skipUnless('dash') }, () => {
+  const dash = shellPath('dash');
+  assert.ok(dash !== undefined, 'dash was found by the skip check');
+  const run = viaRemoteLoginShell(dash, BASH_ONLY);
+  assert.equal(run.stdout, '');
+  assert.equal(run.status, 127);
+});
+
+test('F3_the_secrets_remote_command_names_the_login_shell', () => {
+  assert.equal(SECRETS_REMOTE_COMMAND, '"${SHELL:-sh}" -s');
+});

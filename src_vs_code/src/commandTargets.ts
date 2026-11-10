@@ -5,9 +5,7 @@ import { executableLine } from './dependencyRun';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import { inheritedFolderType } from './defaultFolders';
 import { StorageManager } from './storageManager';
-import { isInTrash } from './trash';
-import { resolveKind } from './entityKind';
-import { isSafeSshTarget } from './sshCommand';
+import { isLinkTarget } from './remoteLaunch';
 
 /**
  * Turning what a command was INVOKED with into what it may act on.
@@ -124,24 +122,17 @@ function hasCommand(details: TreeNode['details']): boolean {
 }
 
 /**
- * The SSH entries a Terminal entry can run over (D13 of `PLAN_terminal_command_over_ssh.md`): live (not in the Trash,
- * at any depth), of the SSH kind, with a host `isSafeSshTarget` accepts, and never the entry itself. The same test as
- * the composer's link check, so every entry offered here is one the composer can use.
+ * The SSH entries a Terminal entry can run over (D13 of `PLAN_terminal_command_over_ssh.md`): never the entry itself, and
+ * every other entry the composer's own decision accepts (`remoteLaunch.isLinkTarget`: live at any depth, of the SSH kind,
+ * with a host `isSafeSshTarget` accepts). The decision is asked, not copied, so every entry offered here is one the
+ * composer can use and a change to the decision changes this list.
  */
 export function collectSshCandidates(storage: StorageManager, accountId: string, excludeEntityId: string): KeyCandidate[] {
   const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
   return storage
     .getNodes(accountId)
-    .filter((node) => canRunOver(node, excludeEntityId) && !isInTrash(node, byId))
+    .filter((node) => node.id !== excludeEntityId && isLinkTarget(node, byId))
     .map((node) => ({ id: node.id, name: node.name }));
-}
-
-function canRunOver(node: TreeNode, excludeEntityId: string): boolean {
-  return node.type === 'entity' && node.id !== excludeEntityId && node.details !== undefined && isSshLinkTarget(node.details);
-}
-
-function isSshLinkTarget(details: EntityMetadata): boolean {
-  return resolveKind(details) === 'ssh' && isSafeSshTarget(details);
 }
 
 /**

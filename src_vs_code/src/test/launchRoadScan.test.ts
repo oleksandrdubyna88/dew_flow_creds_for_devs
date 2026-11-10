@@ -112,12 +112,15 @@ test('resolveCommand_is_imported_only_by_the_listed_files', () => {
 const ALLOWED_LINK_READS: AllowList = {
   'typeGuards.ts': [{ line: "(v.sshEntityId === undefined || typeof v.sshEntityId === 'string') &&", because: 'the validator at the door (two reads on the line)', count: 2 }],
   'execFormFields.ts': [
-    { line: "const selected = d?.sshEntityId ?? '';", because: "the form's select shows the stored choice" },
-    { line: "sshEntityId: kind === 'terminal' ? launcherId(text(data.sshEntityId), selfId) : undefined,", because: "the form's scrub on save: Terminal entries only, never itself" },
+    { line: "return entityPicker(text, d?.sshEntityId ?? '', candidates.map((c) => ({ id: c.id, label: c.name })));", because: "the form's select shows the stored choice" },
+    { line: "sshEntityId: kind === 'terminal' ? otherEntityId(text(data.sshEntityId), selfId) : undefined,", because: "the form's scrub on save: Terminal entries only, never itself" },
   ],
   'idQuarantine.ts': [{ line: "...remappedRef('sshEntityId', details.sshEntityId, to),", because: 'a backup import remaps the id with the others' }],
   'entityViewerCommands.ts': [{ line: 'sshLinkName: nameOf(storage, accountId, details.sshEntityId || undefined),', because: "the viewer's row shows the name, a display" }],
-  'remoteLaunch.ts': [{ line: 'const id = entry.sshEntityId;', because: 'sshLinkOf row L1: the ONE reader; the S1 refusal answers through it' }],
+  'remoteLaunch.ts': [
+    { line: 'const id = entry.sshEntityId;', because: 'sshLinkOf row L1: the ONE reader; the S1 refusal answers through it' },
+    { line: 'return { ...incoming, sshEntityId: existing?.sshEntityId };', because: "keepingSshLink: Update it on a share keeps the RECIPIENT's own link (D4); a copy of the id, no launch" },
+  ],
 };
 
 test('sshEntityId_is_read_only_by_the_plumbing_and_sshLinkOf', () => {
@@ -165,7 +168,7 @@ test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
 
 // ---- scan 4: who calls the S1 refusal -------------------------------------------------------------------------------
 
-/** `file:function` pairs: the declaration, then the eleven calls in eight files (E1 stories §S1.3, last paragraph). */
+/** `file:function` pairs, one per match of the pattern: the declaration, then every call (a function that calls twice is listed twice). E2 and E3 shrink it. */
 const REFUSAL_SITES = [
   'agentUseActions.ts:terminalRunAction',
   'commands/entityCommands.ts:copyCommandLine',
