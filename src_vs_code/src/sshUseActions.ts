@@ -16,7 +16,7 @@ import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
 import { notStarted } from './requestLife';
-import { E3_INHERITED_DROP, envWithout, sshSpawnLaunch } from './sshProgram';
+import { E3_INHERITED_DROP, envWithout, hasAgentSocket, sshSpawnLaunch } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { RemoteWindowDeps, connectEntity } from './sshConnect';
@@ -91,16 +91,20 @@ export const NO_BRIDGED_SSH_CONFIG = 'no per-call ssh_config yet: E1.6';
  * the agent — on Windows only the built-in OpenSSH can, ours being a named pipe — and that
  * `SSH_AUTH_SOCK` is in THIS child's environment rather than only in terminals. Both halves were
  * missing until 2026-08-26; `sshProgram.ts` records the measurement.</p>
+ *
+ * <p>`socket` is the ONE read of `deps.agentSocket()` that `execOverSsh` made for this call: the argv's `ownAgent` and this environment are
+ * decided from the same answer, so an agent that goes away or comes up between two reads cannot leave `-A` with no socket (or a socket with no `-A`).</p>
  */
 function agentAwareLaunch(
   deps: SshUseDeps,
   entity: EntityMetadata,
+  socket: string | undefined,
   env: NodeJS.ProcessEnv,
 ): { program: string; env: NodeJS.ProcessEnv } {
   // `sshSpawnLaunch` (shared with Run with Secrets over SSH, E3.S1): `openSshBinary`, not `openSshProgram`, because this string is
   // SPAWNED with `shell: false`, and on Windows a relative name is resolved by `CreateProcess`, which searches the current directory
   // before `PATH`. The viewer's copyable bare word belongs to the other function.
-  const launch = sshSpawnLaunch(entity, deps.agentSocket(), process.platform);
+  const launch = sshSpawnLaunch(entity, socket, process.platform);
   if (launch.warning !== undefined) {
     deps.note(`ssh:exec — ${launch.warning}`);
   }
@@ -222,10 +226,17 @@ function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
  * `launchRoadScan.test.ts` (F5) finds the `ownAgent` key without reading a second function. `ownAgentOnly` says whether the extension's own agent
  * is the only one this call may forward (E3's linked run); `noTty` puts `-T` first (parent D16, D17 (b)).
  */
-function execArgv(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, prepared: { keyPath?: string; auth: SshExecAuth }, jump: string | undefined): string[] {
+function execArgv(
+  deps: SshUseDeps,
+  ctx: UseActionContext,
+  call: OverSshCall,
+  prepared: { keyPath?: string; auth: SshExecAuth },
+  jump: string | undefined,
+  socket: string | undefined,
+): string[] {
   return buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, {
     ...connectionArgvOptions(deps, call.ssh, jump, ctx.bridge !== undefined),
-    ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined,
+    ownAgent: call.ownAgentOnly ? hasAgentSocket(socket) : undefined,
     noTty: call.noTty,
   }) as string[]; // the host was checked by the caller
 }
@@ -253,8 +264,9 @@ export function execOverSsh(deps: SshUseDeps): OverSsh {
       if (!chain.ok) {
         return refuse('no_credential', chain.reason);
       }
-      const argv = execArgv(deps, ctx, call, prepared, chain.value);
-      const launch = agentAwareLaunch(deps, call.ssh, childEnv(call, prepared.env));
+      const socket = deps.agentSocket(); // read ONCE: the argv and the environment below are decided from this one answer
+      const argv = execArgv(deps, ctx, call, prepared, chain.value, socket);
+      const launch = agentAwareLaunch(deps, call.ssh, socket, childEnv(call, prepared.env));
       const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });
       const response: ExecResponseBody = outcome;
       return { status: 200, body: response };

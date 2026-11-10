@@ -259,6 +259,11 @@ export interface AgentForwardEnv {
   warning?: string;
 }
 
+/** Whether a socket answer names an agent: present and not empty. The one rule of the argv's `ownAgent` and of the child's `SSH_AUTH_SOCK`. */
+export function hasAgentSocket(socketPath: string | undefined): socketPath is string {
+  return socketPath !== undefined && socketPath.length > 0;
+}
+
 /**
  * The child's environment, with `SSH_AUTH_SOCK` added when — and only when — this connection
  * asked to forward the agent and there is one to forward.
@@ -273,7 +278,7 @@ export function agentForwardEnv(
   if (!agentForward) {
     return { env: base };
   }
-  if (socketPath === undefined || socketPath.length === 0) {
+  if (!hasAgentSocket(socketPath)) {
     return { env: base, warning: NO_AGENT_TO_FORWARD };
   }
   return { env: { ...base, SSH_AUTH_SOCK: socketPath } };

@@ -46,6 +46,8 @@ interface World {
   readonly slots: { taken: number };
   /** The path `materializeKnownHosts` answered: read back, never guessed. */
   readonly knownHosts: string;
+  /** How many times `deps.agentSocket()` was read. */
+  readonly socketReads: () => number;
 }
 
 /** The SSH entry of this file: `sshNode` is built against the real link validator at load (testing.md), so no cast stands in for the type. */
@@ -64,6 +66,8 @@ interface Parts {
   readonly source: Record<string, unknown>;
   readonly runFails?: boolean;
   readonly agentSocket?: string;
+  /** The answers of the first, second, … read of `deps.agentSocket()`; a read past the list answers nothing (an agent that went away between two reads). */
+  readonly agentSocketReads?: readonly (string | undefined)[];
 }
 
 async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Promise<World> {
@@ -100,6 +104,7 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
     await seedEntry(storage, entity, {});
   }
   const slots = { taken: 0 };
+  let socketReads = 0;
   const deps: SshUseDeps = {
     storage,
     storageDir,
@@ -113,9 +118,12 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
     note: (message: string): void => {
       notes.push(message);
     },
-    agentSocket: (): string | undefined => parts.agentSocket,
+    agentSocket: (): string | undefined => {
+      socketReads += 1;
+      return parts.agentSocketReads === undefined ? parts.agentSocket : parts.agentSocketReads[socketReads - 1];
+    },
   };
-  return { mod, deps, runs, materialised, notes, slots, knownHosts };
+  return { mod, deps, runs, materialised, notes, slots, knownHosts, socketReads: () => socketReads };
 }
 
 function callOf(over: Partial<OverSshCall> = {}): OverSshCall {
@@ -297,4 +305,32 @@ test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', async () 
     await exec.mod.sshExecAction(exec.deps).run({ ...CTX, entityId: 'e1', entityName: 'prod' }, { command: 'uptime' });
     assert.equal(exec.runs[0].env.SSH_AUTH_SOCK, HOST_SOCKET);
   });
+});
+
+test('one_call_reads_the_agent_socket_once_so_the_argv_and_the_environment_agree', async () => {
+  const forwarding = sshEntity({ agentForward: true });
+
+  // The agent answers on the first read and has gone on the second: the argv said -A, the child's environment had no socket.
+  const goesAway = await world({ source: KEY, agentSocketReads: [OUR_SOCKET, undefined] });
+  await goesAway.mod.execOverSsh(goesAway.deps)(CTX, linkedCall({ ssh: forwarding }));
+  assert.ok(goesAway.runs[0].argv.includes('-A'), goesAway.runs[0].argv.join(' '));
+  assert.equal(goesAway.runs[0].env.SSH_AUTH_SOCK, OUR_SOCKET, '-A and the socket the child forwards from are the same read');
+  assert.equal(goesAway.socketReads(), 1, 'the socket is read once per call');
+
+  // The other way: no agent on the first read, one on the second: no -A, and no socket in the environment either.
+  const comesUp = await world({ source: KEY, agentSocketReads: [undefined, OUR_SOCKET] });
+  await comesUp.mod.execOverSsh(comesUp.deps)(CTX, linkedCall({ ssh: forwarding }));
+  assert.ok(!comesUp.runs[0].argv.includes('-A'), comesUp.runs[0].argv.join(' '));
+  assert.ok(comesUp.runs[0].argv.includes('ForwardAgent=no'), comesUp.runs[0].argv.join(' '));
+  assert.ok(!('SSH_AUTH_SOCK' in comesUp.runs[0].env), 'no socket in the environment when the argv forwards nothing');
+});
+
+test('an_empty_agent_socket_is_no_agent_for_the_argv_as_it_is_for_the_environment', async () => {
+  const empty = await world({ source: KEY, agentSocket: '' });
+  await empty.mod.execOverSsh(empty.deps)(CTX, linkedCall({ ssh: sshEntity({ agentForward: true }) }));
+
+  assert.ok(!empty.runs[0].argv.includes('-A'), empty.runs[0].argv.join(' '));
+  assert.ok(empty.runs[0].argv.includes('ForwardAgent=no'), empty.runs[0].argv.join(' '));
+  assert.ok(!('SSH_AUTH_SOCK' in empty.runs[0].env), 'an empty socket is not laid in the environment');
+  assert.ok(empty.notes.some((note) => note.includes(NO_AGENT_TO_FORWARD)), empty.notes.join(' | '));
 });
