@@ -188,7 +188,9 @@ case "$1" in
           kill -"$STUB_PROBE_SIGNAL" "$target"
           exec /bin/sleep 30
         fi
+        if [ -n "\${STUB_PROBE_IGNORE_TERM:-}" ]; then trap '' TERM; while :; do /bin/sleep 1; done; fi
         if [ -n "\${STUB_PROBE_SLEEP:-}" ]; then exec /bin/sleep "$STUB_PROBE_SLEEP"; fi
+        if [ -n "\${STUB_PROBE_DELAY:-}" ]; then /bin/sleep "$STUB_PROBE_DELAY"; fi
         if [ -n "\${STUB_CERT_ERR:-}" ]; then echo "$STUB_CERT_ERR" >&2; exit "\${STUB_CERT_ERR_CODE:-125}"; fi
         if [ -n "\${STUB_PROBE_RAW:-}" ]; then printf '%s' "\${STUB_PROBE_OUT:-}"; exit 0; fi
         if [ "\${STUB_CERT:-1}" = 1 ]; then echo cert:yes; else echo cert:no; fi
@@ -218,7 +220,7 @@ const OPENSSL = `#!/bin/bash
 case "$1" in x509) echo "issuer=CN = Pebble Intermediate CA" ;; esac
 exit 0
 `;
-const SLEEP = '#!/bin/bash\nexit 0\n';
+const SLEEP = '#!/bin/bash\nexec /bin/sleep 0.01\n';
 const JANITOR = `# a stand-in for the shared janitor: it logs its call and ends as told
 echo "janitor $* MIN_AGE=\${JANITOR_MIN_AGE_MINUTES:-}" >> "$STUB_CALLS"
 if [ -n "\${STUB_JANITOR_SIGNAL:-}" ]; then kill -"$STUB_JANITOR_SIGNAL" "$PPID"; fi
@@ -275,7 +277,7 @@ function makeTree(text: string): { dir: string; script: string; tmp: string; stu
 function execute(text: string, env: Record<string, string>, noRoot: boolean): Run {
   const tree = makeTree(text);
   const root = noRoot ? path.join(tree.dir, 'absent', 'nowhere') : tree.tmp;
-  const childEnv = { PATH: `${path.join(tree.dir, 'bin')}:${String(process.env.PATH)}`, HOME: tree.dir, TMPDIR: root, STUB_CALLS: tree.calls, STUB_DIR: tree.stub, ...env };
+  const childEnv = { PATH: `${path.join(tree.dir, 'bin')}:${String(process.env.PATH)}`, HOME: tree.dir, TMPDIR: root, STUB_CALLS: tree.calls, STUB_DIR: tree.stub, ACME_CERT_DEADLINE: '2', ...env };
   const result = spawnSync('bash', [tree.script], { cwd: tree.dir, env: childEnv, encoding: 'utf8', timeout: 60000 });
   const folder = splitLines(fs.readFileSync(path.join(tree.stub, 'seen'), 'utf8')).find((entry) => !entry.endsWith('.owner'));
   return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), probePid: fs.existsSync(path.join(tree.stub, 'probe.pid')) ? Number(fs.readFileSync(path.join(tree.stub, 'probe.pid'), 'utf8')) : undefined, curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
@@ -339,9 +341,8 @@ test('only the marker `cert:yes` means found and only `cert:no` means not yet: e
     assert.equal(probeTries(run), 1);
   }
   const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
-  assert.match(absent.output, /no certificate was issued after 150 tries \(the last try found no file\)/);
+  assert.match(absent.output, /no certificate was issued within 2 s \(the last try found no file\)/);
   assert.doesNotMatch(absent.output, /failed in docker/);
-  assert.equal(probeTries(absent), 151, 'every try, and the one look after the last sleep');
 });
 
 test('a stalled probe is bounded: it counts as a docker failure "timed out after N s", well before the full wait, and leaves nothing (timeout, and the portable watchdog)', () => {
@@ -495,12 +496,37 @@ test('the certificate is asked for through a container: a certificate only a con
   assert.deepEqual(absent.left, [], 'a failing run leaves nothing');
 });
 
-test('the certificate wait says it is waiting: a progress line every 15 tries, and the number of tries when it gives up; a run that finds the certificate at once says nothing', () => {
-  const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
-  const progress = [...absent.output.matchAll(/still waiting for the certificate: try (\d+) of 150/g)].map((hit) => Number(hit[1]));
-  assert.deepEqual(progress, [15, 30, 45, 60, 75, 90, 105, 120, 135, 150], absent.output);
-  assert.match(absent.output, /FAIL\S*\s+no certificate was issued after 150 tries/);
+test('the certificate wait is bounded by ONE deadline, not a count of tries: a slow probe that keeps saying cert:no stops at the deadline', () => {
+  const began = Date.now();
+  const run = runAcme(REAL_RUN, { STUB_CERT: '0', STUB_PROBE_DELAY: '1', ACME_CERT_DEADLINE: '3' });
+  const seconds = (Date.now() - began) / 1000;
+  assert.equal(run.status, 1, run.output);
+  assert.match(run.output, /FAIL\S*\s+no certificate was issued within 3 s \(the last try found no file\)/);
+  assert.doesNotMatch(run.output, /after 150 tries/);
+  assert.ok(probeTries(run) >= 2 && probeTries(run) <= 6, `${probeTries(run)} probes for a 3 s deadline and 1 s probes`);
+  assert.ok(seconds < 25, `the wait ran for ${seconds} s`);
+  assert.deepEqual(run.left, []);
+});
+
+test('the certificate wait says it is waiting on a time interval, with the seconds and the deadline; a run that finds the certificate at once says nothing', () => {
+  const slow = runAcme(REAL_RUN, { STUB_CERT: '0', STUB_PROBE_DELAY: '0.5', ACME_CERT_DEADLINE: '4', ACME_CERT_NOTE_EVERY: '1' });
+  const notes = [...slow.output.matchAll(/still waiting for the certificate: (\d+) s of 4 s/g)].map((hit) => Number(hit[1]));
+  assert.ok(notes.length >= 2 && notes.length <= 4, slow.output);
+  assert.deepEqual(notes, [...notes].sort((x, y) => x - y), 'the seconds only grow');
   assert.doesNotMatch(runAcme(REAL_RUN).output, /still waiting for the certificate/);
+});
+
+test('a probe that ignores TERM is killed after the bound plus five seconds, in both modes: the run fails with the timeout text and the probe is gone', () => {
+  for (const env of [{}, { ACME_PROBE_WATCHDOG: '1' }] as Array<Record<string, string>>) {
+    const began = Date.now();
+    const run = runAcme(REAL_RUN, { ACME_PROBE_TIMEOUT: '2', STUB_PROBE_IGNORE_TERM: '1', ...env });
+    const seconds = (Date.now() - began) / 1000;
+    assert.equal(run.status, 1, run.output);
+    assert.match(run.output, /the certificate check failed in docker, not for want of a file \(the probe timed out after 2 s/, `${JSON.stringify(env)}: ${run.output}`);
+    assert.ok(seconds < 15, `${JSON.stringify(env)}: a probe that ignores TERM held the run for ${seconds} s`);
+    assert.deepEqual(run.left, []);
+    assert.ok(run.probePid !== undefined && !alive(run.probePid), `${JSON.stringify(env)}: the probe (pid ${run.probePid}) is still running`);
+  }
 });
 
 test('a certificate check from the host, as the job\'s user, says "no certificate was issued" although the volume holds it: the plant the test above refuses', () => {
