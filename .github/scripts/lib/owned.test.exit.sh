@@ -500,6 +500,22 @@ EOF2
   eq "H3b the exit status survives" "$CH_RC" 4
   eq "H3b a claim gone while the folder stays keeps its warning" "$(grep -c "not what this run wrote" "$CTL/th3b.err")" 1
   istrue "H3b and the folder is left, as the helper says" test -d "$(first_line "$CTL/th3b.dir")"
+
+  # H3c: the folder is gone and the claim holds OTHER text (someone else's, or a rewrite): not released silently. The warning stays, and the
+  # claim is not removed (it is not ours to remove).
+  case_root th3c
+  child th3c << 'EOF2'
+. "$T_OWNED_SH"
+owned_dir d x || exit 96
+printf '%s\n' "$d" > "$T_CTL/th3c.dir"
+rm -rf "$d"
+printf 'u1:someone-else@linux:1\n' > "$d.owner"
+exit 5
+EOF2
+  run_child th3c
+  eq "H3c the exit status survives" "$CH_RC" 5
+  eq "H3c a folder gone with a claim of other text keeps its warning" "$(grep -c "not what this run wrote" "$CTL/th3c.err")" 1
+  eq "H3c and the claim of other text is not removed" "$(first_line "$(first_line "$CTL/th3c.dir").owner")" "u1:someone-else@linux:1"
 }
 
 # --- run ---
