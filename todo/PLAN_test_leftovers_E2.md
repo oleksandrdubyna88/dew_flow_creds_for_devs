@@ -2824,7 +2824,7 @@ jobs:
 
 ### E2.4 build record, part 2d — the independent review of the fix round, and the first CI run of PR #329 (2026-11-10, branch `feat/test-leftovers-e2.4`, pushed by the coordinator as PR #329)
 
-**Commits.** `H3c` test `…`; the S1 spec note; `5c3511e` RED (acme: `--max-time`, the guard block); `c715f27` run.sh; the CodeQL commit; the janitor-from-PATH commit; the Windows plant commit; `0cce340` CI line, `entrypoint.test.sh` header, F5 value; the brief notes; this record. (`git log --oneline` after `0d3dd2a` names each.)
+**Commits.** `5ada0ee` H3c test; `6cb6599` the S1 spec note; `5c3511e` RED (acme: `--max-time`, the guard block); `c715f27` run.sh; `ac0ecb8` CodeQL (C) and the live-lines rule; `1e4181d` the janitor from PATH (A); `204636d` the Windows plant (B); `0cce340` CI line, `entrypoint.test.sh` header, F5 value; `71cdb30` the brief notes; `445a225` and the commit after it, this record.
 
 **1. Scope: the smokes' shellcheck.** Brief § 5 and I16 say the smoke scripts' shellcheck is a todo, not built here. The four files left the CI line (`ci-server.yml`); the other shellcheck lines stay. They are shellcheck-clean by hand: `shellcheck -x` 0.11.0 on the four files, 2026-11-10, no output. The sentence "closes I16" of part 2b is corrected there.
 
