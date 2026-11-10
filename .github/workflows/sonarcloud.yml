@@ -155,6 +155,14 @@ jobs:
           dotnet-coverage collect -f xml -o coverage/mcp.xml -- ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
           dotnet-coverage collect -f xml -o coverage/broker.xml -- ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
           dotnet-coverage collect -f xml -o coverage/logging.xml -- ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests
+      # The shipped leftovers guard loads `yaml` from the mount's own node_modules, and three of the extension's tests read that guard
+      # (dockerSmokeLeftovers, acmeRunLeftovers, leftoversGuardFixtures, through mountedGuard.ts). With the modules missing they would
+      # SKIP, and a skip is green: so they are installed here, and the step that runs them sets CREDS_GUARD_TESTS_REQUIRED=1, which turns a
+      # guard that cannot load into a failure. --ignore-scripts: SonarCloud githubactions:S6505.
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .claude/rules/shared
+
       # The extension is TypeScript and the .NET scanner does not run its tests, so every change to
       # src_vs_code arrived at the gate as 0 % coverage of new code — a number about the analysis
       # rather than about the change. Measured on PR #18: 339 new lines to cover, 339 uncovered, from
@@ -162,6 +170,8 @@ jobs:
       # dew_flow_connect_other_ais first; this is that fix, ported.
       - name: The extension's coverage
         working-directory: src_vs_code
+        env:
+          CREDS_GUARD_TESTS_REQUIRED: "1"
         run: |
           # --ignore-scripts: SonarCloud githubactions:S6505 — a lifecycle script runs as CI with the
           # token in the environment. keytar's node-gyp rebuild is the only one here and the tests do
