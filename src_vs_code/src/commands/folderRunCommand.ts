@@ -194,7 +194,7 @@ function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: K
   const live = toClose.filter((terminal) => terminal.exitStatus === undefined);
   try {
     live.forEach((terminal) => terminal.dispose());
-    const sent = typeIntoNew(keyOfRow(row), row.details.terminalOs, () => row.line);
+    const sent = typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line);
     return sent.kind === 'typed' ? { kind: 'typed', name: row.name } : failed(row, failedAfterClosing(sent.reason, live.length));
   } catch (error) {
     return failed(row, failedAfterClosing(describeError(error), live.length));

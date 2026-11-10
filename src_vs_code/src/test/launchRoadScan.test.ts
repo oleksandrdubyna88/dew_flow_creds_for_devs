@@ -133,7 +133,8 @@ test('sshEntityId_is_read_only_by_the_plumbing_and_sshLinkOf', () => {
 /** Today's sites by exact trimmed line, each with the road it is and the epic that will change it. */
 const ALLOWED_SENDS: AllowList = {
   'commands/runCommands.ts': [
-    { line: 'const sent = await sendGuarded(entry.key, entry.details.terminalOs, () => line);', because: 'Run in Terminal (the arrow): E2 switches it to planLaunch + typedLine' },
+    { line: "const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);", because: 'Run in Terminal, an entry with no link: the local road, unchanged' },
+    { line: "const sent = await sendGuarded(entry.key, { kind: 'ssh', env: ready.env }, () => typed.line);", because: 'Run in Terminal over SSH (E2.S1): the line typedLine built from the prepared snapshot' },
     { line: "opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);", because: 'Run Script in a terminal: a script, never linked (E1.S1 scrub)' },
     { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: E3 switches it to the remote script on stdin' },
     { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
@@ -141,20 +142,21 @@ const ALLOWED_SENDS: AllowList = {
   'commands/folderRunCommand.ts': [
     { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow)));', because: 'Run Folder, the call: E2 switches the per-row typing' },
     { line: 'function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow): readonly FolderOutcome[] {', because: 'Run Folder, the declaration: E2' },
-    { line: 'const sent = typeIntoNew(keyOfRow(row), row.details.terminalOs, () => row.line);', because: 'Run Folder, one row into a new terminal: E2' },
+    { line: "const sent = typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line);", because: 'Run Folder, one row into a new terminal: E2.S2' },
   ],
   'dependencyRunHost.ts': [{ line: 'terminal.sendText(step.line, true);', because: 'the dependency chain step: E2 types the composed line' }],
   'vpnLauncherRun.ts': [
     {
-      line: 'const sent = await sendGuarded(launcherKey(ctx, launcher), launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);',
-      because: 'the VPN launcher: E2 switches it',
+      line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'entry', terminalOs: launcher.terminalOs }, (family) => withConfig(line, configPath, family), ctx.startGate);",
+      because: "the VPN launcher with no link, or an agent's start: the local road, unchanged",
     },
+    { line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'ssh', env: ready.env }, () => typed.line);", because: "a VPN launcher over SSH on the person's Start (E2.S1)" },
   ],
   'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
   'terminalGuard.ts': [
     { line: 'export async function sendGuarded(', because: 'the guarded send: the road under Run in Terminal and the VPN launcher' },
-    { line: 'return typeIntoNew(key, terminalOs, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable' },
-    { line: 'export function typeIntoNew(key: EntryTerminalKey, terminalOs: string | undefined, lineFor: (family: ShellFamily) => string): NewTerminalSend {', because: 'the new-terminal send under the folder run' },
+    { line: 'return typeIntoNew(key, target, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable (always, for a password session)' },
+    { line: 'export function typeIntoNew(key: EntryTerminalKey, target: SendTarget, lineFor: (family: ShellFamily) => string): NewTerminalSend {', because: 'the new-terminal send under the folder run' },
     { line: 'terminal.sendText(line, true);', because: 'the ONE sendText of the guarded roads: the typed line arrives here' },
   ],
   'pinnedTerminal.ts': [{ line: 'opened.terminal.sendText(line, true);', because: 'the pinned-shell opener used by the launchers (E2)' }],
@@ -171,15 +173,8 @@ test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
 /** `file:function` pairs, one per match of the pattern: the declaration, then every call (a function that calls twice is listed twice). E2 and E3 shrink it. */
 const REFUSAL_SITES = [
   'agentUseActions.ts:terminalRunAction',
-  'commands/entityCommands.ts:copyCommandLine',
-  'commands/runCommands.ts:arrowRefusal',
   'commands/runCommands.ts:secretsRefusal',
   'dependencyRun.ts:stepRefusal',
-  'entityText.ts:formatEntityBlock',
-  'entityViewCopy.ts:copyValueFor',
-  'entityViewCopy.ts:copyValueFor',
-  'entityViewPage.ts:renderEntityViewHtml',
-  'entityViewPage.ts:renderEntityViewHtml',
   'folderRun.ts:judgedLine',
   'remoteLaunch.ts:sshLinkRefusal',
   'vpnLauncherRun.ts:launcherRefusal',

@@ -4,12 +4,14 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { commandRefusal } from './commandLine';
-import { sshLinkRefusal } from './remoteLaunch';
+import { LaunchPlan, RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from './remoteLaunch';
+import { SshRoad, ownedSession } from './sshRoad';
+import type { ReadySsh } from './sshSession';
 import { executableLine } from './dependencyRun';
 import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
 import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
-import { shellContext } from './pinnedTerminal';
+import { shellContext, sshReaderShell } from './pinnedTerminal';
 import { sendGuarded } from './terminalGuard';
 import { EntryTerminalKey, entryTerminalKeyOf } from './terminalTitles';
 import { confirmTrusted } from './trustPrompt';
@@ -27,6 +29,11 @@ import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig 
  * launcher's line typed — into the launcher's own terminal, in its own OS's shell, and typed only when that
  * terminal's last command is known to have finished; otherwise the person is asked, and an agent's request is refused
  * (`terminalGuard.ts`).</p>
+ *
+ * <p><b>A linked launcher on the person's Start</b> (E2.S1 of `PLAN_terminal_command_over_ssh.md`): link, then prepare, then
+ * trust on the trust line, then the chain, then the send, with the ONE OWNER of `sshRoad.ts` holding the session; a line
+ * with `{config}` is refused before anything is prepared (the file is on this machine). An agent's start has no road and
+ * keeps E1's refusal (E2-D2).</p>
  */
 
 export interface VpnRunContext {
@@ -46,6 +53,8 @@ export interface VpnRunContext {
   readonly lateAnswer?: (what: string) => void;
   /** The broker's seam that makes a standing question of this start's own hold the one dialog place until it settles (F1). Absent for the person's own Start. */
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
+  /** The person's road host, set by their Start only (E2.S1). Absent for an agent's `creds_vpn_up`, which keeps E1's refusal of a linked launcher (E2-D2). */
+  readonly sshRoad?: SshRoad;
 }
 
 /** The dependency chain of `roots`, carrying the request this start serves. */
@@ -53,22 +62,108 @@ export function vpnDependencies(ctx: VpnRunContext, roots: readonly EntityMetada
   return { ...dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude), startGate: ctx.startGate, lateAnswer: ctx.lateAnswer, standingPrompt: ctx.standingPrompt };
 }
 
+/** A linked launcher's line may not use `{config}`: the file is on this machine, the line runs on the SSH host (E2.S1). */
+export function linkedConfigRefusal(name: string): string {
+  return `The launcher "${name}" runs over SSH, and its line uses {config}, a file on this machine. Remove {config} from the line, or set "Runs over SSH" to "Do not use".`;
+}
+
 export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetadata, action: 'start' | 'stop'): Promise<boolean> {
   if (action === 'stop') {
     void vscode.window.showInformationMessage(launcherStopNote(launcher.name));
     return false;
   }
-  const line = launcherLine(launcher);
+  const link = linkOf(ctx, launcher);
+  return ctx.sshRoad === undefined || link.kind === 'none' ? runLocalLauncher(ctx, launcher) : runLinkedLauncher(ctx, ctx.sshRoad, launcher, link);
+}
+
+/** No road (an agent's start) is no link: it keeps E1's refusal on the local road (E2-D2). */
+function linkOf(ctx: VpnRunContext, launcher: EntityMetadata): SshLink {
+  return ctx.sshRoad === undefined ? { kind: 'none' } : sshLinkOf(launcher, (id) => ctx.storage.getNode(ctx.accountId, id));
+}
+
+/** A launcher with no link, or an agent's start: today's road, unchanged. */
+async function runLocalLauncher(ctx: VpnRunContext, launcher: EntityMetadata): Promise<boolean> {
+  const line = launcherLine(launcher, launcherRefusal);
   if (line === undefined || !(await confirmTrusted(ctx.trust, launcher.id, launcher.name, line))) {
     return false;
   }
   return dependenciesThenLaunch(ctx, launcher, line);
 }
 
-/** The launcher's line — or `undefined`, having said why, when it cannot run here at all. */
-function launcherLine(launcher: EntityMetadata): string | undefined {
+/**
+ * A linked launcher (E2.S1): its plan, then the `{config}` refusal BEFORE `prepare` (so no PIN is asked and no config
+ * file is written), then prepare; the ONE OWNER holds the session from there.
+ */
+async function runLinkedLauncher(ctx: VpnRunContext, road: SshRoad, launcher: EntityMetadata, link: SshLink): Promise<boolean> {
+  if (launcherLine(launcher, () => undefined) === undefined) {
+    return false;
+  }
+  const plan = planLaunch(launcher, link, { stayOpen: true });
+  const refusal = linkedRefusal(launcher, plan);
+  if (refusal !== undefined) {
+    return refuse(refusal);
+  }
+  return plan.kind === 'remote' ? prepareAndLaunch(ctx, road, launcher, plan) : false;
+}
+
+/** Why a linked launcher cannot start: the plan's own refusal (the link's, a Windows remote's, a line break's), or a `{config}` in its line. */
+function linkedRefusal(launcher: EntityMetadata, plan: LaunchPlan): string | undefined {
+  if (plan.kind === 'refused') {
+    return plan.reason;
+  }
+  return plan.kind === 'remote' && usesConfig(plan.line) ? linkedConfigRefusal(launcher.name) : undefined;
+}
+
+async function prepareAndLaunch(ctx: VpnRunContext, road: SshRoad, launcher: EntityMetadata, plan: RemotePlan): Promise<boolean> {
+  const prepared = await road.prepare(ctx.accountId, plan.ssh);
+  if (prepared.kind === 'refused') {
+    await road.sayRefused(prepared, plan.ssh);
+    return false;
+  }
+  return prepared.kind === 'ready' && ownedSession(prepared, () => trustThenLaunch(ctx, launcher, plan, prepared));
+}
+
+/** Said, and nothing runs. */
+function refuse(why: string): false {
+  void vscode.window.showWarningMessage(why);
+  return false;
+}
+
+/**
+ * From the PREPARED snapshot only: the typed line's own refusal, the trust question on the trust line, the chain, then the
+ * send into the launcher's own terminal. No `{config}` and no `afterTheChain`: those belong to the agent's start, which
+ * has no road. Answers the terminal the line went into, or `undefined` when nothing was sent.
+ */
+async function trustThenLaunch(ctx: VpnRunContext, launcher: EntityMetadata, plan: RemotePlan, ready: ReadySsh): Promise<vscode.Terminal | undefined> {
+  const typed = typedLine(plan, ready, sshReaderShell());
+  if (typed.kind === 'refused') {
+    refuse(typed.reason);
+    return undefined;
+  }
+  return (await trustedAndChained(ctx, launcher, trustLineFor(ready.entity, ready.jump, plan.line))) ? sendLinkedLauncher(ctx, launcher, ready, typed) : undefined;
+}
+
+/** The trust question on the trust line, then the dependencies the VPN and the launcher ask for. */
+async function trustedAndChained(ctx: VpnRunContext, launcher: EntityMetadata, trustLine: string): Promise<boolean> {
+  return (await confirmTrusted(ctx.trust, launcher.id, launcher.name, trustLine)) && (await runDependenciesFirst(vpnDependencies(ctx, [ctx.details, launcher], new Set([launcher.id])))).ready;
+}
+
+async function sendLinkedLauncher(ctx: VpnRunContext, launcher: EntityMetadata, ready: ReadySsh, typed: { readonly line: string }): Promise<vscode.Terminal | undefined> {
+  const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'ssh', env: ready.env }, () => typed.line);
+  if (sent.kind === 'refused') {
+    refuse(sent.reason);
+  }
+  return sent.kind === 'typed' ? sent.terminal : undefined;
+}
+
+/**
+ * The launcher's line — or `undefined`, having said why, when it cannot run here at all: no command, a refused `{name}`,
+ * or the road's own refusal of the place (`placeRefusal`: this window's terminal for the local road; none for a linked
+ * one, whose *Runs on* is the remote's system).
+ */
+function launcherLine(launcher: EntityMetadata, placeRefusal: (launcher: EntityMetadata) => string | undefined): string | undefined {
   const line = executableLine(launcher);
-  const why = line === undefined ? `The launcher "${launcher.name}" has no command — edit it and fill one in.` : launcherRefusal(launcher);
+  const why = line === undefined ? `The launcher "${launcher.name}" has no command — edit it and fill one in.` : refusalOf(launcher, placeRefusal);
   if (why !== undefined) {
     void vscode.window.showWarningMessage(why);
     return undefined;
@@ -76,10 +171,15 @@ function launcherLine(launcher: EntityMetadata): string | undefined {
   return line;
 }
 
-/** Its `{name}` first, then its OS: neither gets as far as the trust modal. */
-function launcherRefusal(launcher: EntityMetadata): string | undefined {
+/** Its `{name}` first, then the place: neither gets as far as the trust modal. */
+function refusalOf(launcher: EntityMetadata, placeRefusal: (launcher: EntityMetadata) => string | undefined): string | undefined {
   const reason = commandRefusal(launcher);
-  return sshLinkRefusal(launcher) ?? (reason === undefined ? refusedHere(launcher) : `The launcher "${launcher.name}" will not start: ${reason}`);
+  return reason === undefined ? placeRefusal(launcher) : `The launcher "${launcher.name}" will not start: ${reason}`;
+}
+
+/** The local road's place: E1's refusal of a link (an agent's start has no road, E2-D2), then this window's terminal for the launcher's own OS. */
+function launcherRefusal(launcher: EntityMetadata): string | undefined {
+  return sshLinkRefusal(launcher) ?? refusedHere(launcher);
 }
 
 /** The launcher's OS against THIS window's terminal — the rule every Terminal entry follows. */
@@ -124,7 +224,7 @@ async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string
   // `{config}` quoted for the shell that will READ the line (`readerFamily`) — quoting for another one would be #103
   // again. With a request behind the start, the guard refuses a busy terminal instead of asking, so no await stands
   // between `configFor`'s last read of the request and the send (E4.S3).
-  const sent = await sendGuarded(launcherKey(ctx, launcher), launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);
+  const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'entry', terminalOs: launcher.terminalOs }, (family) => withConfig(line, configPath, family), ctx.startGate);
   if (sent.kind === 'refused') {
     void vscode.window.showWarningMessage(sent.reason);
   }

@@ -16,6 +16,7 @@ import { materializedKeyPath } from './keyInstaller';
 import { TrustStore } from './commandTrust';
 import { NO_CHAIN, liveDetails, runDependenciesFirst } from './dependencyRunHost';
 import { quoteFor } from './hostShell';
+import type { SshRoad } from './sshRoad';
 import { VpnRunContext, afterTheChain, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
 import { requestGone, untilGone } from './requestLife';
 import type { VpnUseDeps } from './agentUseActions';
@@ -74,6 +75,9 @@ function notePersonsAct(vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, startGat
  * <p>`lateAnswer` is the broker's seam for a late click on a question of this start's own, whose request had gone (E1.5): the OpenVPN Connect
  * question and the chain's *Continue* are modals on an agent call, raced against `startGate`; a click that lands after the client left is journalled
  * through it and does nothing. Absent for the person's own Start.</p>
+ *
+ * <p>`sshRoad` is the person's road host (E2.S1): only their Start passes it, so only their Start can run a launcher linked to an SSH
+ * entry. The agent's opener (`agentVpnOpener`) passes none and keeps E1's refusal (E2-D2).</p>
  */
 export async function runVpn(
   target: unknown,
@@ -85,6 +89,7 @@ export async function runVpn(
   startGate: AbortSignal | undefined,
   lateAnswer?: (what: string) => void,
   standingPrompt?: (prompt: PromiseLike<unknown>) => void,
+  sshRoad?: SshRoad,
 ): Promise<boolean> {
   notePersonsAct(vaultKeys, startGate);
   const entry = vpnEntry(target);
@@ -94,7 +99,7 @@ export async function runVpn(
   // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
   // computer's, and a tunnel there is not the one the person asked for.
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer, standingPrompt }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer, standingPrompt, sshRoad }, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {

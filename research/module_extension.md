@@ -2245,7 +2245,7 @@ Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds th
 the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
 (`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
 the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
-`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. No road calls the composer yet; E2 and E3 switch them.
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher and the copies call it since E2.S1; the folder run (E2.S2), the chain (E2.S3), Run with Secrets and the agent (E3) follow.
 `launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
 send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
 
@@ -2379,13 +2379,31 @@ The viewer shows the linked entry's name in a *Runs over SSH* row.
 
 *The refusal on every road.* `sshLinkRefusal(entry)` (`remoteLaunch.ts`) is the ONE sentence: `"<name>" is set to run over SSH, which
 this version cannot do yet. To run it on this machine, edit it and set "Runs over SSH" to "Do not use".` It answers through
-`sshLinkOf` row L1, so "is this entry linked" has one reader. It is asked, before any question, dependency, secret read or spawn, by the
-green arrow and Run with Secrets (`commands/runCommands.ts`), the folder run (`folderRun.ts`), a dependency chain step
-(`dependencyRun.ts`), a VPN's launcher (`vpnLauncherRun.ts`), the agent's run (`agentUseActions.ts`), and every copy: Copy Command
-(`commands/entityCommands.ts`), Copy All (`entityText.ts`) and the viewer's *Full command* row and copy (`entityViewPage.ts`,
-`entityViewCopy.ts`: the line is hidden and the sentence shown in *Will not run*). `launchRoadScan.test.ts` pins this: `.sshEntityId`
+`sshLinkOf` row L1, so "is this entry linked" has one reader. It is asked, before any question, dependency, secret read or spawn, by
+Run with Secrets (`commands/runCommands.ts`), the agent's run (`agentUseActions.ts`), a VPN launcher on an AGENT's start (`vpnLauncherRun.ts`,
+which has no road host) and a chain step with no road (the agent's start, `dependencyRun.ts`), and the folder run (`folderRun.ts`) until E2.S2.
+The copies no longer say it: they show the trust line of a linked entry (`copiedLineOf`, below). `launchRoadScan.test.ts` pins this: `.sshEntityId`
 is read only by the plumbing and `sshLinkOf`/`keepingSshLink`, and `sshLinkRefusal(` is called only from the listed functions (a list
 that shrinks as E2 and E3 switch each road). The help article of all five languages and the README carry the field.
+
+*The arrow, the launcher and the copies over SSH (E2.S1 of PLAN_terminal_command_over_ssh.md).* The order of the green arrow and of a VPN's
+*Started by* (the person's own Start) on a linked entry: link (`sshLinkOf`) → `planLaunch` (its refusal is said before anyone is asked; no
+`windowRefusal`, *Runs on* is the remote's system) → prepare → the typed line's own refusal (`typedLine`, PowerShell 5.1) → the trust question
+on the trust line `trustLineFor(ready.entity, ready.jump, line)` → the dependencies → `sendGuarded` with the `ssh` target
+(`SendTarget`, `terminalGuard.ts`; SSH Connect's shell, `composedShellPath`, via `findSshTerminal` / `openSshEntryTerminal`). `sshRoad.ts`
+holds the road host: `SshRoad` (`prepare` through `prepareSshSession` with `isolate: true`, the window's route and the agent's answer for THAT
+entry; `sayRefused` is SSH Connect's modal through `offerTheFix`, with NO retry, the person runs the entry again) and `sshRoadOf`, which
+`extension.ts` imports through `sshUseActions.ts` (the size ratchet). Only the person's roads get it; an agent's `creds_vpn_up` passes none, so
+a linked launcher on an agent's start keeps E1's refusal (E2-D2). ONE OWNER: `ownedSession` cleans the prepared session on every exit that
+sends nothing (declined trust, cancelled dependency, a throw, a failed terminal creation, a declined busy question); after a send,
+`cleanWhenClosed` makes that terminal's close clean it, and a `WeakMap` keeps ONE session per terminal (a reused terminal cleans the earlier
+session at the next hand-over, lead amendment A1). ONE SNAPSHOT: from `prepare` to the send nothing reads the SSH entry from storage again.
+A session that signs in with a password has an environment, which a terminal takes only at creation: its send opens a NEW terminal beside any
+live one and disposes nothing (D10). `sshReaderShell()` (`pinnedTerminal.ts`) is the shell that reads the typed line (only the PowerShell 5.1
+check). A linked launcher whose line uses `{config}` is refused before prepare (`linkedConfigRefusal`): the file is on this machine. The copies
+read `copiedLineOf` (`remoteLaunch.ts`): a linked entry shows `ssh … -- user@host '<line>'` with `COPY_NOTE` (it uses the person's own ssh
+setup, the vault's key and password are not in it) in Copy Command, the viewer's *Full command* and *About this line* rows and copy, and Copy
+All (`entityCommandRows.ts`); a broken link or a bad plan shows why and copies nothing.
 
 ### Which shell parses the line (issue #103)
 

@@ -55,6 +55,15 @@ export function composedShellPath(): string | undefined {
   return windowKind(vscode.env.remoteName) === 'local' ? pinnedShell().shellPath : undefined;
 }
 
+/**
+ * The shell that READS a typed ssh line (E2-D7 of `PLAN_terminal_command_over_ssh.md`): the pinned native shell in a
+ * local window, else the window's default profile, which in a WSL window is a posix shell. It feeds only `typedLine`'s
+ * PowerShell 5.1 check; the quoting of the line itself follows the platform of the prepared session.
+ */
+export function sshReaderShell(): HostShell {
+  return composedShellPath() === undefined ? { shellPath: vscode.env.shell ?? '', family: 'posix' } : pinnedShell();
+}
+
 export interface PinnedOptions {
   /** Only settable at creation, so a terminal given one is never reused (see `runScript`). */
   env?: Record<string, string>;
@@ -136,6 +145,27 @@ export function openEntryTerminal(key: EntryTerminalKey, terminalOs: string | un
   const terminal = vscode.window.createTerminal(usable.choice.kind === 'pinned' ? { name, shellPath: pinnedShell().shellPath } : { name });
   terminal.show();
   return { ok: true, terminal, family: usable.family };
+}
+
+/**
+ * The terminal an SSH-linked line would be typed into, if one is LIVE (E2.S1): a live terminal of the entry's title
+ * running SSH Connect's own shell (`composedShellPath`, D14) — in a WSL window both are `undefined`, so the default-profile
+ * terminal matches. Found, never created, never shown. A terminal opened with an environment is never offered for reuse
+ * by the caller (`sendGuarded` opens a new one for a password, D10).
+ */
+export function findSshTerminal(key: EntryTerminalKey): vscode.Terminal | undefined {
+  return liveTerminalsOfEntry(key).find((t) => shellPathOf(t) === composedShellPath());
+}
+
+/**
+ * A NEW terminal for an SSH-linked line, shown — created, never found, nothing disposed (D10). `env` is a password
+ * session's askpass environment: VS Code sets a terminal's environment only at creation, so a terminal with one is
+ * never reused. Its shell is SSH Connect's (`composedShellPath`, D14); *Runs on* is the REMOTE's system and is not read.
+ */
+export function openSshEntryTerminal(key: EntryTerminalKey, env: Record<string, string> | undefined): vscode.Terminal {
+  const terminal = vscode.window.createTerminal({ name: entryTerminalTitle(key), shellPath: composedShellPath(), env });
+  terminal.show();
+  return terminal;
 }
 
 /**

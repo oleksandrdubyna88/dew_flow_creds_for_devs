@@ -6,7 +6,7 @@ import { terminalRunAction } from '../agentUseActions';
 import { planDependencyRun, StepRefusal } from '../dependencyRun';
 import { FolderFacts, planFolderRun } from '../folderRun';
 import { osMismatch } from '../hostShell';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
 import { CommandArg, EntityMetadata, TreeNode } from '../types';
 import { arrowWorld, vaultOf } from './arrowWorld';
 import { L, folderWorld, named, session } from './folderWorld';
@@ -28,19 +28,26 @@ const LINKED: EntityMetadata = { id: 'e1', name: 'deploy', isSshEnabled: false, 
 
 const RUN_THIS = /Run this command/;
 
-test('the_arrow_refuses_a_linked_entry_before_any_question_even_when_trusted', async () => {
+/** E2.S1: the arrow and Copy Command have a road; `s1` is not in these worlds, so a linked entry says `sshLinkOf`'s missing-entry sentence. */
+const MISSING = (e: EntityMetadata): string => {
+  const link = sshLinkOf(e, () => undefined);
+  assert.equal(link.kind, 'refused');
+  return (link as { reason: string }).reason;
+};
+
+test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_any_question_even_when_trusted', async () => {
   const aw = arrowWorld({}, [['e1', 'echo linked']]);
   await aw.run({ ...LINKED, runDependencies: true, dependsOn: ['dep'] });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)]);
   assert.deepEqual(aw.terminals, []);
 });
 
 // W1b: the stored line is NOT trusted. A refusal that came after the trust question would show the modal first,
 // so only an untrusted world can see "refused before any question" (the trusted W1 cannot: no modal is asked there).
-test('the_arrow_refuses_a_linked_entry_before_the_trust_question_when_the_line_is_not_trusted', async () => {
+test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_trust_question_when_the_line_is_not_trusted', async () => {
   const aw = arrowWorld({}, []);
   await aw.run({ ...LINKED, runDependencies: true, dependsOn: ['dep'] });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')], 'the sentence is the only thing shown');
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)], 'the sentence is the only thing shown');
   assert.deepEqual(aw.warnings.filter((t) => RUN_THIS.test(t)), [], 'no trust modal');
   assert.deepEqual(aw.terminals, []);
 });
@@ -202,12 +209,12 @@ function copyWorld() {
   return { warnings, infos, copied, copy };
 }
 
-test('copy_command_copies_nothing_for_a_linked_entry', async () => {
+test('copy_command_copies_nothing_for_a_linked_entry_whose_ssh_entry_is_missing', async () => {
   const h = copyWorld();
   await h.copy({ id: 'e1', name: 'deploy', type: 'entity', details: LINKED });
   assert.deepEqual(h.copied, []);
   assert.deepEqual(h.infos, []);
-  assert.deepEqual(h.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(h.warnings, [MISSING(LINKED)]);
 });
 
 test('an_unlinked_entry_runs_as_before', async () => {

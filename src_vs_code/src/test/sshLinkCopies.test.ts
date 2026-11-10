@@ -7,14 +7,19 @@ import { exportedNode } from '../exportSecrets';
 import { formatEntityBlock } from '../entityText';
 import { EntityViewOptions, copyValueFor, renderEntityViewHtml } from '../entityViewPage';
 import { quarantineUnsafeIds } from '../idQuarantine';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { sshLinkOf } from '../remoteLaunch';
 import { shareableDetails } from '../shareFormat';
 import { escapeHtml } from '../webviewHtml';
 import type { BackupBundle, EntityMetadata, TreeNode } from '../types';
 
 /** E1.S1: the link is kept by a backup and a sync, removed by a share and an export, shown by the viewer as a name. */
 
-const SENTENCE = (name: string): string => sshLinkRefusal({ id: 'x', name, sshEntityId: 's1' }) as string;
+/** E2.S1: without `sshCopy` (no lookup was made) a linked entry fails closed with `sshLinkOf`'s missing-entry sentence. */
+const MISSING = (details: EntityMetadata): string => {
+  const link = sshLinkOf(details, () => undefined);
+  assert.equal(link.kind, 'refused');
+  return (link as { reason: string }).reason;
+};
 
 function terminal(extra: Partial<EntityMetadata> = {}): EntityMetadata {
   return { id: 't1', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'ls', ...extra };
@@ -97,13 +102,13 @@ test('the_viewer_names_the_ssh_entry_and_shows_the_sentence_not_the_line', () =>
   const html = renderEntityViewHtml(linked());
   assert.match(html, /Runs over SSH[\s\S]*?<input readonly value="prod box">/);
   assert.doesNotMatch(html, /Full command/);
-  assert.ok(html.includes(escapeHtml(SENTENCE('deploy'))), 'the sentence is in the "Will not run" row');
+  assert.ok(html.includes(escapeHtml(MISSING(terminal({ sshEntityId: 's1' })))), 'the sentence is in the "Will not run" row');
 });
 
 test('the_viewer_copies_no_line_for_a_linked_entry', async () => {
   const options = linked();
   assert.equal(await copyValueFor(options, 'fullCommand'), undefined);
-  assert.equal(await copyValueFor(options, 'commandRefusal'), SENTENCE('deploy'));
+  assert.equal(await copyValueFor(options, 'commandRefusal'), MISSING(terminal({ sshEntityId: 's1' })));
   assert.equal(await copyValueFor(options, 'sshLink'), 'prod box');
 });
 
@@ -115,7 +120,7 @@ test('the_viewer_copy_all_of_a_linked_entry_holds_the_sentence_and_not_the_local
   const details = terminal({ command: LOCAL_LINE, sshEntityId: 's1' });
   const options = viewOptions({ details, sshLinkName: 'prod box', copyAllText: async () => formatEntityBlock(details, undefined) });
   const all = await copyValueFor(options, 'all');
-  assert.ok(all?.includes(SENTENCE('deploy')), `the sentence is in the block: ${all}`);
+  assert.ok(all?.includes(MISSING(details)), `the sentence is in the block: ${all}`);
   assert.equal(all?.includes(LOCAL_LINE), false, `the local line is not in the block: ${all}`);
 });
 

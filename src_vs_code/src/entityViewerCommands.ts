@@ -14,6 +14,7 @@ import { sshLineFor } from './sshCommand';
 import { secretResolver } from './viewerOptions';
 import { totpViewFor } from './viewerOptions';
 import { formatEntityBlock } from './dialogs';
+import { copiedLineOf } from './remoteLaunch';
 import { saveVpnConfigToFile } from './vpnRun';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
@@ -143,6 +144,8 @@ async function loadEntry(ctx: ViewerContext, gate: PinGate): Promise<LoadedEntry
 function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions {
   const { accountId, node, details, storage, doors } = ctx;
   const pinnedKey = parseHostKey(details.hostKey);
+  // What a Terminal entry's rows and Copy All show, read once (E2.S1): the trust line of a linked entry, or the entry's own line.
+  const sshCopy = copiedLineOf(details, (id) => storage.getNode(accountId, id));
   return {
     details,
     ...cardOptions(details, loaded),
@@ -155,6 +158,7 @@ function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions
     keySourceName: nameOf(storage, accountId, details.sshKeyEntityId),
     jumpHostName: nameOf(storage, accountId, details.jumpHostEntityId),
     sshLinkName: nameOf(storage, accountId, details.sshEntityId || undefined),
+    sshCopy,
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
     hasPassword: loaded.hasPassword,
     hasPrivateKey: loaded.hasPrivateKey,
@@ -168,7 +172,7 @@ function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions
     sshCommand: sshLineFor(details),
     resolveSecret: secretResolver(loaded.reader),
     copyAllText: async () =>
-      formatEntityBlock(details, await loaded.reader.password(), await loaded.reader.dbConnection(), loaded.notes, loaded.fields),
+      formatEntityBlock(details, await loaded.reader.password(), await loaded.reader.dbConnection(), loaded.notes, loaded.fields, sshCopy),
     saveVpnConfig: () => saveVpnConfigToFile(accountId, details, storage),
     hasAttachment: loaded.hasAttachment,
     createdAt: node.createdAt,
@@ -312,7 +316,7 @@ async function setEnv(ctx: ViewerContext, field: Parameters<typeof bindableField
 export async function openRevisionViewer(accountId: string, node: TreeNode, revision: Revision, storage: StorageManager): Promise<void> {
   const opened = await openKeptVersion(storage, accountId, node.id, revision, { door: 'see this previous version', version: 'see it' });
   if (opened !== undefined) {
-    showEntityView(await revisionViewOptions(node, opened, keptRead(accountId, node, opened)));
+    showEntityView(await revisionViewOptions(accountId, node, opened, keptRead(accountId, node, opened), storage));
   }
 }
 
@@ -344,11 +348,13 @@ async function keptText(revision: Revision, gate: PinGate): Promise<Record<'note
 }
 
 /** The page for one opened version — every value from the version, none from the live entry. */
-async function revisionViewOptions(node: TreeNode, revision: Revision, kept: KeptRead): Promise<EntityViewOptions> {
+async function revisionViewOptions(accountId: string, node: TreeNode, revision: Revision, kept: KeptRead, storage: StorageManager): Promise<EntityViewOptions> {
   // The version's own name, once, so its page and its Copy All fill `{name}` alike.
   const details = { ...revision.details, name: revision.name };
   const { password, privateKey, vpnConfig, dbConnection } = revision.secrets;
   const text = await keptText(revision, kept.gate);
+  // The same reading as the live page, for this version's own details (E2.S1).
+  const sshCopy = copiedLineOf(details, (id) => storage.getNode(accountId, id));
   return {
     details,
     // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
@@ -363,10 +369,11 @@ async function revisionViewOptions(node: TreeNode, revision: Revision, kept: Kep
     fields: parseFields(text.fields),
     config: text.config,
     ...dbDisplay(text.dbConnection, details.dbType),
+    sshCopy,
     sshCommand: sshLineFor(details),
     resolveSecret: secretResolver(kept.reader),
     ...(await revisionCard(revision, kept.reader)),
-    copyAllText: async () => formatEntityBlock(details, await kept.reader.password(), text.dbConnection, text.notes),
+    copyAllText: async () => formatEntityBlock(details, await kept.reader.password(), text.dbConnection, text.notes, undefined, sshCopy),
     saveVpnConfig: () => saveRevisionVpnConfig(revision, kept.reader),
     hasAttachment: false,
     createdAt: node.createdAt,

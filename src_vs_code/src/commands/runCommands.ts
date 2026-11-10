@@ -13,7 +13,7 @@ import { lockToOwner, materializedKeyPath, safeFileComponent } from '../material
 import { RefPlan, buildCommandLineWithRefs, planRefs, refField, rewriteScriptRefs } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
-import { pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
+import { pinnedShell, pinnedTerminal, shellContext, sshReaderShell } from '../pinnedTerminal';
 import { sendGuarded } from '../terminalGuard';
 import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { registerFolderRun } from './folderRunCommand';
@@ -22,7 +22,9 @@ import { confirmTrusted } from '../trustPrompt';
 import { dependencyRequest, runDependenciesFirst } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
 import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from '../remoteLaunch';
+import { SshRoad, ownedSession } from '../sshRoad';
+import type { ReadySsh } from '../sshSession';
 
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
@@ -31,6 +33,11 @@ export interface RunCommandsHost {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
+  /**
+   * The person's road host (E2.S1 of `PLAN_terminal_command_over_ssh.md`): how a linked entry's SSH session is prepared and
+   * refused. Only the person's roads hold it; the agent's calls keep E1's refusal (E2-D2).
+   */
+  readonly sshRoad: SshRoad;
 }
 
 /**
@@ -111,11 +118,6 @@ function windowRefusal(entry: Entry): string | undefined {
   return choice.kind === 'refused' ? choice.reason : undefined;
 }
 
-/** The SSH link first (E1.S1 of `PLAN_terminal_command_over_ssh.md`), then the window. */
-function arrowRefusal(entry: Entry): string | undefined {
-  return sshLinkRefusal(entry.details) ?? windowRefusal(entry);
-}
-
 // ---------- Run in Terminal ----------
 
 async function runCommand(host: RunCommandsHost, target: unknown): Promise<void> {
@@ -125,11 +127,67 @@ async function runCommand(host: RunCommandsHost, target: unknown): Promise<void>
   }
 }
 
+/**
+ * The order of the arrow (E2.S1): the line (no command and the `{name}` refusal in today's words, for a linked entry
+ * too), then the SSH link, then the local road or the linked one.
+ */
 async function runEntryLine(host: RunCommandsHost, entry: Entry): Promise<void> {
   const line = arrowLine(entry);
-  if (line !== undefined && (await passGates(host, entry, line, arrowRefusal(entry)))) {
+  if (line === undefined) {
+    return;
+  }
+  const link = sshLinkOf(entry.details, (id) => host.storage.getNode(entry.accountId, id));
+  await (link.kind === 'none' ? runLocalLine(host, entry, line) : runLinkedEntry(host, entry, link));
+}
+
+/** An entry with no link: today's road, unchanged — this window's terminal for its own *Runs on*. */
+async function runLocalLine(host: RunCommandsHost, entry: Entry, line: string): Promise<void> {
+  if (await passGates(host, entry, line, windowRefusal(entry))) {
     await typeIntoEntryTerminal(entry, line);
   }
+}
+
+/** A linked entry: the plan first — its refusal (the link's, a Windows remote's, a line break's) is said before anyone is asked. No `windowRefusal`: *Runs on* is the remote's system (D14). */
+async function runLinkedEntry(host: RunCommandsHost, entry: Entry, link: SshLink): Promise<void> {
+  const plan = planLaunch(entry.details, link, { stayOpen: true });
+  if (plan.kind === 'refused') {
+    warn(plan.reason);
+  } else if (plan.kind === 'remote') {
+    await runLinkedLine(host, entry, plan);
+  }
+}
+
+/** Prepare, then the ONE OWNER holds the session: a stopped preparation said what it had to; a refused one shows SSH Connect's own modal, with no retry. */
+async function runLinkedLine(host: RunCommandsHost, entry: Entry, plan: RemotePlan): Promise<void> {
+  const prepared = await host.sshRoad.prepare(entry.accountId, plan.ssh);
+  if (prepared.kind === 'refused') {
+    await host.sshRoad.sayRefused(prepared, plan.ssh);
+  } else if (prepared.kind === 'ready') {
+    await ownedSession(prepared, () => trustedThenSent(host, entry, plan, prepared));
+  }
+}
+
+/**
+ * From the PREPARED snapshot only (one snapshot): the typed line's own refusal first (PowerShell 5.1, before anyone is asked to
+ * trust a line that could not run), then the trust question on the trust line, then the dependencies, then the send.
+ * Answers the terminal the line went into, or `undefined` when nothing was sent.
+ */
+async function trustedThenSent(host: RunCommandsHost, entry: Entry, plan: RemotePlan, ready: ReadySsh): Promise<vscode.Terminal | undefined> {
+  const typed = typedLine(plan, ready, sshReaderShell());
+  if (typed.kind === 'refused') {
+    warn(typed.reason);
+    return undefined;
+  }
+  return (await passGates(host, entry, trustLineFor(ready.entity, ready.jump, plan.line), undefined)) ? sendSshLine(entry, ready, typed) : undefined;
+}
+
+/** The guarded send into SSH Connect's own shell, with the session's environment (a password opens a new terminal, D10). */
+async function sendSshLine(entry: Entry, ready: ReadySsh, typed: { readonly line: string }): Promise<vscode.Terminal | undefined> {
+  const sent = await sendGuarded(entry.key, { kind: 'ssh', env: ready.env }, () => typed.line);
+  if (sent.kind === 'refused') {
+    warn(sent.reason);
+  }
+  return sent.kind === 'typed' ? sent.terminal : undefined;
 }
 
 /** The entry's resolved line, or `undefined` having said why, before anyone is asked anything. */
@@ -146,7 +204,7 @@ function arrowLine(entry: Entry): string | undefined {
  * the names cannot part their terminals.
  */
 async function typeIntoEntryTerminal(entry: Entry, line: string): Promise<void> {
-  const sent = await sendGuarded(entry.key, entry.details.terminalOs, () => line);
+  const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);
   if (sent.kind === 'refused') {
     warn(sent.reason);
   }
