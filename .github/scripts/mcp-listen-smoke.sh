@@ -43,7 +43,8 @@ fixture="$here/../../src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-0
 # passes a root). `owned.sh` is read on that branch only, so the release jobs gain no dependency.
 root="${2:-${RUNNER_TEMP:-}}"
 if [[ -n "$root" ]]; then
-  dir="$(cd "$root" && (pwd -W 2>/dev/null || pwd))/listen-smoke-log-$$"
+  abs="$(cd "$root" 2>/dev/null && (pwd -W 2>/dev/null || pwd))" || { echo "the log root '$root' cannot be entered"; exit 1; }
+  dir="$abs/listen-smoke-log-$$"
   mkdir -p "$dir"
 else
   # shellcheck source-path=SCRIPTDIR
