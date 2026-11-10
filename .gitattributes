@@ -31,6 +31,7 @@ src_service_defaults/tests/Leftovers/LeftoversAuditTests.cs -text
 src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs -text
 src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs -text
 src_service_defaults/tests/Leftovers/LeftoversJanitorTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversRepositoryGuardTests.cs -text
 src_service_defaults/tests/Leftovers/LeftoversSweepTests.cs -text
 src_service_defaults/tests/Leftovers/LivenessStateTests.cs -text
 src_service_defaults/tests/Leftovers/LivenessTests.cs -text

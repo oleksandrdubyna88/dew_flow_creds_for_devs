@@ -172,6 +172,18 @@
       ]
     },
     {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversRepositoryGuardTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversRepositoryGuardTests.cs",
+      "blob": "956f18ffca4793673525f46742edc5ec18b3c428",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
       "upstream": "tests/Mcp.Tests/Leftovers/LeftoversSweepTests.cs",
       "target": "src_service_defaults/tests/Leftovers/LeftoversSweepTests.cs",
       "blob": "2caec6fbe79d8b4c0a75a96e9ed60af589e43bb2",
