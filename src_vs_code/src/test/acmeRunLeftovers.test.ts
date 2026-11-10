@@ -173,7 +173,20 @@ case "$1" in
     for each in "$@"; do case "$each" in create|up|down|logs) verb="$each"; break ;; esac; done
     [ "$verb" = create ] && ls "$TMPDIR" >> "$STUB_DIR/seen"
     if [ "$verb" = "\${STUB_FAIL:-}" ]; then echo "stub docker: $verb fails" >&2; exit 1; fi
+    if [ "$verb" = down ]; then
+      # an interrupted probe leaves its container in the stub world, holding the certs-conf volume until rm -f is called on it
+      if [ -e "$STUB_DIR/held" ]; then echo "Error response from daemon: remove certs-conf: volume is in use - [probe-held]" >&2; exit 1; fi
+      : > "$STUB_DIR/volume.gone"
+    fi
     if [ "$verb" = "\${STUB_SIGNAL_ON:-}" ]; then kill -"$STUB_SIGNAL" "$PPID"; fi
+    exit 0 ;;
+  ps)
+    for each in "$@"; do
+      case "$each" in volume=*_certs-conf) [ -e "$STUB_DIR/held" ] && echo probe-held ;; esac
+    done
+    exit 0 ;;
+  rm)
+    case "$*" in *probe-held*) rm -f "$STUB_DIR/held" ;; esac
     exit 0 ;;
   run)
     case "$*" in
@@ -185,6 +198,7 @@ case "$1" in
         if [ -n "\${STUB_PROBE_SIGNAL:-}" ]; then
           target="$PPID"
           case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in timeout*) target="$(ps -o ppid= -p "$PPID" | tr -d ' ')" ;; esac
+          : > "$STUB_DIR/held"
           kill -"$STUB_PROBE_SIGNAL" "$target"
           exec /bin/sleep 30
         fi
@@ -240,6 +254,10 @@ interface Run {
   readonly curlCalls: string[];
   /** The pid of the stub that last answered the certificate probe, when it wrote one. */
   readonly probePid: number | undefined;
+  /** The volume was removed by `compose down -v` (it fails while a stub container holds it). */
+  readonly volumeGone: boolean;
+  /** A stub probe container still holds the certs-conf volume after the run. */
+  readonly held: boolean;
 }
 
 /** Is the process still there? (a signal of 0 only asks) */
@@ -280,7 +298,7 @@ function execute(text: string, env: Record<string, string>, noRoot: boolean): Ru
   const childEnv = { PATH: `${path.join(tree.dir, 'bin')}:${String(process.env.PATH)}`, HOME: tree.dir, TMPDIR: root, STUB_CALLS: tree.calls, STUB_DIR: tree.stub, ACME_CERT_DEADLINE: '2', ...env };
   const result = spawnSync('bash', [tree.script], { cwd: tree.dir, env: childEnv, encoding: 'utf8', timeout: 60000 });
   const folder = splitLines(fs.readFileSync(path.join(tree.stub, 'seen'), 'utf8')).find((entry) => !entry.endsWith('.owner'));
-  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), probePid: fs.existsSync(path.join(tree.stub, 'probe.pid')) ? Number(fs.readFileSync(path.join(tree.stub, 'probe.pid'), 'utf8')) : undefined, curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
+  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), volumeGone: fs.existsSync(path.join(tree.stub, 'volume.gone')), held: fs.existsSync(path.join(tree.stub, 'held')), probePid: fs.existsSync(path.join(tree.stub, 'probe.pid')) ? Number(fs.readFileSync(path.join(tree.stub, 'probe.pid'), 'utf8')) : undefined, curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
 }
 
 const runAcme = (text: string, env: Record<string, string> = {}): Run => execute(text, env, false);
@@ -359,13 +377,24 @@ test('a stalled probe is bounded: it counts as a docker failure "timed out after
   }
 });
 
-test('an interrupt during a probe ends the run with 128 + n, kills the probe and its watchdog, and leaves nothing', () => {
+/** After an interrupted probe: the probe is gone, nothing is left, and the volume its container held was freed BEFORE `down -v` (which fails while it is held). */
+function assertCleanAfterInterrupt(run: Run, label: string): void {
+  assert.deepEqual(run.left, []);
+  assert.ok(run.probePid !== undefined && !alive(run.probePid), `${label}: the probe (pid ${run.probePid}) is still running`);
+  assert.doesNotMatch(run.output, /down -v ended with exit code/, `${label}: ${run.output}`);
+  assert.ok(run.volumeGone, `${label}: the certs-conf volume was left`);
+  assert.equal(run.held, false);
+  const removed = run.calls.findIndex((call) => call === 'rm -f probe-held');
+  const down = run.calls.findIndex((call) => /^compose .* down\b/.test(call));
+  assert.ok(removed >= 0 && down > removed, `${label}: the held container is removed first (rm at ${removed}, down at ${down})`);
+}
+
+test('an interrupt during a probe ends the run with 128 + n, kills the probe and its watchdog, frees the volume its container held, and leaves nothing', () => {
   for (const [signal, code] of [['INT', 130], ['TERM', 143]] as const) {
     for (const env of [{}, { ACME_PROBE_WATCHDOG: '1' }] as Array<Record<string, string>>) {
       const run = runAcme(REAL_RUN, { STUB_PROBE_SIGNAL: signal, ACME_PROBE_TIMEOUT: '60', ...env });
       assert.equal(run.status, code, `${signal} ${JSON.stringify(env)}: ${run.output}`);
-      assert.deepEqual(run.left, []);
-      assert.ok(run.probePid !== undefined && !alive(run.probePid), `${signal} ${JSON.stringify(env)}: the probe (pid ${run.probePid}) is still running`);
+      assertCleanAfterInterrupt(run, `${signal} ${JSON.stringify(env)}`);
     }
   }
 });
