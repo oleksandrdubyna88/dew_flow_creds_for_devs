@@ -170,6 +170,11 @@ async function refuseAndOfferTheFix(
   return action === undefined || requestGone(startGate) ? false : actOnRefusal(action, entity, remote, retry);
 }
 
+/** A road's refusal (E2 of PLAN_terminal_command_over_ssh.md): the same modal and remedy, and NO retry — the person runs the entry again (parent §4.3). */
+export function offerTheFix(refused: RefusedSsh, entity: EntityMetadata, remote: RemoteWindowDeps): Promise<boolean> {
+  return refuseAndOfferTheFix(refused.reasons, entity, remote, undefined, undefined);
+}
+
 /** The button the person pressed, for a request that is still there. */
 async function actOnRefusal(
   action: RefusalAction,

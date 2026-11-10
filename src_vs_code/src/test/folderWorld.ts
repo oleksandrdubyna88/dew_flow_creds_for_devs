@@ -48,6 +48,8 @@ export interface FolderWorldOptions extends WorldOptions {
   failTrust?: boolean;
   /** Modules to stand in for, by the request string their importer writes. */
   mocks?: Record<string, unknown>;
+  /** The person's road host (`SshRoad`), as `registerRunCommands` receives it (E2.S2). */
+  sshRoad?: unknown;
 }
 
 export interface FolderWorld extends World {
@@ -106,6 +108,7 @@ export function folderWorld(entries: readonly EntityMetadata[], o: FolderWorldOp
       getHistory: () => Promise.resolve([]),
     },
     mocks: o.mocks,
+    sshRoad: o.sshRoad,
     onActivity: () => {
       activity.count += 1;
     },

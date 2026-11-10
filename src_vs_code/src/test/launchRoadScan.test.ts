@@ -17,7 +17,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 const RESOLVE_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bresolveCommand\b[^}]*\}\s*from/g;
 const SSH_LINK_READS = [/\.\s*sshEntityId\b/g, /\{[^{}]*\bsshEntityId\b[^{}]*\}\s*=[^=>]/g, /\[\s*['"`]sshEntityId['"`]\s*\]/g];
-const SENDS = [/\.sendText\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
+const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
 const REFUSAL_CALL = /\bsshLinkRefusal\s*\(/g;
 
 /** The road files of spec §S2.7 scan 3: where a line is typed into a terminal or handed to a child. */
@@ -28,6 +28,7 @@ const ROAD_FILES = [
   'dependencyRun.ts',
   'dependencyRunHost.ts',
   'vpnLauncherRun.ts',
+  'sshRoad.ts',
   'agentUseActions.ts',
   'terminalGuard.ts',
   'pinnedTerminal.ts',
@@ -99,7 +100,7 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
  * Sorted, compared whole, so a new importer and a vanished one both fail. The target state (parent §4.5 (1)) is
  * `commandLine.ts`' own users, `remoteLaunch.ts`, and the display-only readers; each of E2 and E3 removes road files.
  */
-const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'folderRun.ts', 'remoteLaunch.ts'];
+const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
@@ -133,31 +134,47 @@ test('sshEntityId_is_read_only_by_the_plumbing_and_sshLinkOf', () => {
 /** Today's sites by exact trimmed line, each with the road it is and the epic that will change it. */
 const ALLOWED_SENDS: AllowList = {
   'commands/runCommands.ts': [
-    { line: 'const sent = await sendGuarded(entry.key, entry.details.terminalOs, () => line);', because: 'Run in Terminal (the arrow): E2 switches it to planLaunch + typedLine' },
+    { line: "const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);", because: 'Run in Terminal, an entry with no link: the local road, unchanged' },
     { line: "opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);", because: 'Run Script in a terminal: a script, never linked (E1.S1 scrub)' },
     { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: E3 switches it to the remote script on stdin' },
     { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
   ],
   'commands/folderRunCommand.ts': [
-    { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow)));', because: 'Run Folder, the call: E2 switches the per-row typing' },
-    { line: 'function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow): readonly FolderOutcome[] {', because: 'Run Folder, the declaration: E2' },
-    { line: 'const sent = typeIntoNew(keyOfRow(row), row.details.terminalOs, () => row.line);', because: 'Run Folder, one row into a new terminal: E2' },
+    { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));', because: 'Run Folder, the call (E2.S2): after every linked row is prepared and the run-level stop is read' },
+    { line: 'function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow, prepared: Prepared): readonly FolderOutcome[] {', because: 'Run Folder, the declaration (E2.S2): synchronous from the last re-check to the last send' },
+    {
+      line: "return typeLine(row, toClose, () => typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line));",
+      because: 'Run Folder, one unlinked row into a new terminal: its own line, the local road (E2.S2)',
+    },
+    {
+      line: "const sent = typeIntoNew(key, { kind: 'ssh', env: state.ready.env }, () => state.typed);",
+      because: "Run Folder, one linked row into a new terminal: the line typedLine built from the row's prepared snapshot, with a password session's own environment (E2.S2)",
+    },
   ],
-  'dependencyRunHost.ts': [{ line: 'terminal.sendText(step.line, true);', because: 'the dependency chain step: E2 types the composed line' }],
+  'dependencyRunHost.ts': [
+    { line: 'terminal.sendText(step.typed, true);', because: "a chain step with no shell integration: the line is the step's typed text, from the prepared snapshot when linked (E2.S3)" },
+    { line: 'execution = integration.executeCommand(line);', because: "a chain step through shell integration: the line is the step's typed text (E2.S3)" },
+  ],
   'vpnLauncherRun.ts': [
     {
-      line: 'const sent = await sendGuarded(launcherKey(ctx, launcher), launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);',
-      because: 'the VPN launcher: E2 switches it',
+      line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'entry', terminalOs: launcher.terminalOs }, (family) => withConfig(line, configPath, family), ctx.startGate);",
+      because: "the VPN launcher with no link, or an agent's start: the local road, unchanged",
     },
   ],
   'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
   'terminalGuard.ts': [
     { line: 'export async function sendGuarded(', because: 'the guarded send: the road under Run in Terminal and the VPN launcher' },
-    { line: 'return typeIntoNew(key, terminalOs, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable' },
-    { line: 'export function typeIntoNew(key: EntryTerminalKey, terminalOs: string | undefined, lineFor: (family: ShellFamily) => string): NewTerminalSend {', because: 'the new-terminal send under the folder run' },
+    { line: 'return typeIntoNew(key, target, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable (always, for a password session)' },
+    { line: 'export function typeIntoNew(key: EntryTerminalKey, target: SendTarget, lineFor: (family: ShellFamily) => string): NewTerminalSend {', because: 'the new-terminal send under the folder run' },
     { line: 'terminal.sendText(line, true);', because: 'the ONE sendText of the guarded roads: the typed line arrives here' },
   ],
   'pinnedTerminal.ts': [{ line: 'opened.terminal.sendText(line, true);', because: 'the pinned-shell opener used by the launchers (E2)' }],
+  'sshRoad.ts': [
+    {
+      line: "const sent = await sendGuarded(key(), { kind: 'ssh', env: ready.env }, () => line);",
+      because: "the one linked send of the person's arrow and a VPN launcher (E2.S1, runOverSsh): the line typedLine built from the prepared snapshot, with a password session's own environment",
+    },
+  ],
   'maskedTerminal.ts': [{ line: 'const child = childProcess.spawn(options.commandLine, [], {', because: 'the masked child of Run with Secrets: E3' }],
 };
 
@@ -171,16 +188,8 @@ test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
 /** `file:function` pairs, one per match of the pattern: the declaration, then every call (a function that calls twice is listed twice). E2 and E3 shrink it. */
 const REFUSAL_SITES = [
   'agentUseActions.ts:terminalRunAction',
-  'commands/entityCommands.ts:copyCommandLine',
-  'commands/runCommands.ts:arrowRefusal',
   'commands/runCommands.ts:secretsRefusal',
   'dependencyRun.ts:stepRefusal',
-  'entityText.ts:formatEntityBlock',
-  'entityViewCopy.ts:copyValueFor',
-  'entityViewCopy.ts:copyValueFor',
-  'entityViewPage.ts:renderEntityViewHtml',
-  'entityViewPage.ts:renderEntityViewHtml',
-  'folderRun.ts:judgedLine',
   'remoteLaunch.ts:sshLinkRefusal',
   'vpnLauncherRun.ts:launcherRefusal',
 ];
@@ -213,4 +222,5 @@ test('the_scan_still_finds_what_it_is_about', () => {
   const sendLiteral = 'terminal\n  .sendText(\n    line,\n    true,\n  );';
   assert.equal(sitesIn('literal.ts', sendLiteral, SENDS).length, 1);
   assert.equal(sitesIn('literal.ts', 'x = sshLinkRefusal\n(\n  d)', [REFUSAL_CALL]).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x\n  .executeCommand(\n y)', SENDS).length, 1);
 });

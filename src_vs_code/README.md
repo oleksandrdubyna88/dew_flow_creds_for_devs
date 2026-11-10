@@ -253,17 +253,21 @@ removed and reordered, and a live preview shows exactly what will run.
   terminal runs it when it is a shell of that system — pwsh 7, zsh with your aliases — and that
   system's own shell does otherwise; on another system it is refused. *Not set* keeps your default
   terminal, exactly as before.
-- **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. This version
-  saves the choice, keeps it through sync and backup, and leaves it out of a share and an export, but
-  it cannot run a command over SSH yet: while one is chosen, *Run in Terminal*, *Run All in Folder*, a
-  dependency chain, a VPN's *Started by*, *Run with Secrets* and an agent's run all refuse and say why,
-  and *Copy Command* copies nothing. Nothing runs on this machine instead.
+- **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. With one chosen,
+  *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain connect with that
+  entry — its key or password, its pinned host key, its jump host — and run the line there; *Runs on*
+  then names the server's system. *Run with Secrets* and an agent's run still refuse such an entry
+  and say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
+  out of a share and an export.
 
 **Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
 before *Run in Terminal*, *Run Script*, *Run with Secrets* or *Start VPN*, its Terminal
 dependencies run in order, each one awaited — "install openvpn", then "start openvpn", then the
 VPN. You read the chain before its first run; a step that fails asks whether to go on; a circular
-chain is refused. Waiting for a step needs VS Code **1.93** or newer.
+chain is refused. Waiting for a step needs VS Code **1.93** or newer. A step set to run over SSH runs there
+and ends there, so the chain sees its exit code; its connection is made, and its PIN or host key asked,
+after you approve the chain and before any step runs. A step whose SSH entry signs in with a password is refused, because the chain's
+one terminal has one environment.
 
 **`{name}` in the command or an enabled argument row is the entry's own name**, so
 `tmux attach -t {name}` needs the name once and follows a rename. The line with the name filled in
@@ -282,19 +286,31 @@ open, closes those terminals and types their lines too. Closing ends whatever ru
 client only detaches, and its session goes on. The lines do not wait for each other: something that
 has to finish first goes outside the folder, under *Depends on*, and a dependency that never exits
 holds the whole run. At most 32 lines and a 4000-character question, because it has to show every
-line; an entry whose name holds a control character is not run.
+line; an entry whose name holds a control character is not run. A line set to run over SSH is shown as the
+`ssh … -- user@host '<line>'` it runs. After the question and the dependencies, each such entry connects in
+turn, in the folder's order, and only then is anything typed: cancelling one of its questions types nothing
+at all, and an entry whose SSH entry or jump host changed while the question was open is not typed — run
+the folder again.
 
 For tmux sessions: `tmux new -A -s {name}` attaches to the session or creates it, so the entry still
 works after the machine has rebooted; `tmux attach -t '={name}'` matches the name exactly, because a
 bare `-t foo` also attaches `foobar`; and keep `.` and `:` out of a session's name, because tmux
 rewrites them (`a.b:c` becomes `a_b_c`). Checked on tmux 3.6.
 
-From a local window on Windows, put `ssh` in the line itself: `ssh -t <host> tmux new -A -s {name}`,
-with *Runs on* set to Windows. You replace `<host>` with your host; the extension fills in `{name}`.
-The entry's arrow sees `ssh` end, after a detach or a dropped connection, only when the terminal's
-shell is PowerShell 7 (`pwsh`); Windows PowerShell 5.1 and Command Prompt have no shell integration,
-so there it asks each time. A connection that dies silently, such as a laptop asleep overnight, can
-leave `ssh` waiting, and the arrow then asks. Checked with OpenSSH for Windows 9.5.
+To run a line on a server, choose its **ssh** entry under *Runs over SSH* instead of writing `ssh` into
+the line. The arrow then connects with that entry — its key or password, its pinned host key, its jump
+host — and the line runs in your login shell there, which stays open after the line ends; a line that
+fails says its exit code first. Write the line for the server, such as `tmux new -A -s {name}` with
+*Runs on* set to Linux or macOS; a Windows server is refused. The login shell must be sh, bash, zsh, ksh
+or dash; fish and csh are not supported. The approval names the host, so a changed host, user, port,
+jump host, agent forwarding or port forward asks again. If the SSH entry signs in with a password, every
+run opens a new terminal beside any open one. Windows PowerShell 5.1 cannot pass a double quote or a
+final backslash to ssh, so such a line is refused there; install PowerShell 7 (`pwsh`). After a run, the
+arrow asks before it types into that terminal again, because the login shell is still open. A VPN's
+*Started by* runs over SSH the same way, but a launcher line with `{config}` is refused, because the
+config is a file on this machine, and an agent's VPN start with such a launcher is refused. *Copy
+Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent, `~/.ssh/config`), and
+the vault's key and password are not in it.
 
 ## Environment variables in the terminal
 
