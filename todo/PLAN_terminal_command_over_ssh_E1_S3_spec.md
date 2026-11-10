@@ -444,3 +444,26 @@ B15 is run to show a non-finding, as the parity row's evidence; the others must 
   (`terminalManager.ts:36-41`). Not changed here; recorded for E2.S2 (folder run with a duplicated row).
 - The 50-line and complexity limits are checked by lint, not by this spec's table; the cut in §S3.7 is a suggestion
   that fits, not a requirement of names.
+
+## S3.13 — Lead amendment, 2026-11-10 (after the cadence consultation, verified in code)
+
+**A1 — A road's session owns its files ALONE.** Verified: the key file is `keys/<pid>/<entityId>.key`
+(`keyInstaller.ts:154`) and the pin file `known_hosts-<entityId>` (`hostKeyTrust.ts:67`). Two prepares of one SSH entry
+share both paths, so a dependency step linked to the same SSH entry as its parent deletes the parent's key and pin in
+its `cleanup()` BEFORE the parent's send (order: prepare → trust → dependencies → send). This is not a folder-run
+corner case (§S3.12 bullet 4 is withdrawn); it is the seam's ownership contract.
+- `PrepareOptions` gains `readonly isolate?: boolean`. `connectEntity` never sets it: SSH Connect keeps today's names
+  and stays byte-identical, and its suites stay unchanged.
+- With `isolate: true` (every road in E2 and E3 passes it) the key is written as `<entityId>-<uuid>.key` and the pin as
+  `known_hosts-<entityId>-<uuid>`, the uuid from `crypto.randomUUID()` per preparation, in the same `keys/<pid>/`
+  folder (so the activate/deactivate purge still owns them). Add an optional `suffix` parameter to
+  `materializePrivateKey` and to the known_hosts writer; omitted, the name is today's. The suffix is a uuid, never vault
+  data, and passes `safeFileComponent` unchanged.
+- `cleanup()` deletes exactly the two paths THIS preparation wrote.
+- New scenarios: **T20** two isolated prepares of one SSH entry write four distinct files; cleaning the second leaves
+  the first's key and pin on disk. **T21** a non-isolated prepare writes today's names (byte-identical guard).
+
+**A2 — `ReadySsh` satisfies S2's `PreparedForTyping`.** The E1.S2 spec §S2.2 is amended to match this type: its
+`ssh` field is read from `entity` (the snapshot with the key path set or cleared), and `prefix` is
+`string | undefined`. `test/sshSession.test.ts` pins it at compile time: `const typed: PreparedForTyping = ready;`
+(the test imports both modules; neither module imports the other).

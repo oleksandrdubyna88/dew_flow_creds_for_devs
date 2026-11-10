@@ -198,7 +198,12 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   the synchronous `typeAll` send anything. A row whose preparation is `refused` is reported as failed and the others
   are typed. A `stopped` row (the person cancelled a PIN or a host-key prompt) stops the whole run: nothing is typed —
   linked or not — and every row prepared so far is cleaned. `stopped` is a run-level state, checked once more
-  immediately before the synchronous `typeAll`, and no row of any kind is sent after it is set. The prepared rows are one list owned by the run, and the run's `finally`
+  immediately before the synchronous `typeAll`, and no row of any kind is sent after it is set.
+  The modal is the folder's approval, and it is shown BEFORE preparation, from its own read of each SSH entry. So after
+  preparation each linked row's trust line is rebuilt from its prepared snapshot; a row whose text differs from the one
+  the modal showed (its SSH entry or jump changed while the dialog was open) is NOT trusted and NOT typed — it is
+  reported as failed with "changed while the dialog was open — run the folder again" and its session is cleaned. A named
+  folder test changes a jump host while the modal is open (one snapshot, §4.4). The prepared rows are one list owned by the run, and the run's `finally`
   cleans every row that was not handed over to a terminal.
 - **Dependency chain**: a linked step has no stay-open (D11); a password step is refused at plan time; *Runs on* of a
   linked step is not an OS refusal; the step's key is deleted when the step ends.
@@ -270,6 +275,7 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | stay-open wrapper text; a non-zero exit prints the sentence (run the wrapper with `sh -c` locally, `SHELL=/bin/true`) | `test/remoteLaunch.test.ts` | finding: status not lost |
 | `secretsStdin`: braces on their own lines, `exit $?`, a `# comment` line, a value with `'` | `test/remoteLaunch.test.ts`, plus a local `sh -s` run of the produced script with a stdin-reading command | §4.2 |
 | cleanup ownership: declined trust, cancelled dependency, thrown error, failed terminal creation, unsent folder row each leave no key file and no pin | the road worlds | §4.4 one owner |
+| a chain step linked to the same SSH entry as its parent: the step's cleanup leaves the parent's key and pin (isolated per-session file names) | `test/sshSession.test.ts` T20, chain world | §4.4 one owner |
 | folder: a `stopped` row stops the run, nothing typed, every prepared row cleaned | folder world | §4.4 |
 | secrets: no child and no stdin write before trust; declined trust spawns nothing; password entry → askpass vars in the child env, not argv | masked-run test with a fake spawn | §4.4 |
 | Copy Command on a linked entry copies the trust line, never a key path | viewer / copy test | §4.4 |

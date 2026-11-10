@@ -49,7 +49,7 @@ lines are named by role, never by number.
    but §4.4 "one snapshot" says the trust line is built from the SSH entry **as prepared** (after `prepareSshSession`),
    and `planLaunch` runs before prepare (the link decides whether to prepare at all). Two trust texts from two reads
    would be the defect §4.4 forbids. So `planLaunch` gives `line` and `remoteCommand`; the road calls
-   `trustLineFor(prepared.ssh, prepared.jump, plan.line)` from the snapshot. The folder modal (E2.S2) shows the trust
+   `trustLineFor(prepared.entity, prepared.jump, plan.line)` from the snapshot. The folder modal (E2.S2) shows the trust
    line before prepare from its own `resolveJumpChain` read — a display, not the approval key. **Parent diagram
    change, owed.**
 3. **The self check is the first check after `none`, by id, with no lookup.** The brief's order (none, missing, trashed,
@@ -118,10 +118,11 @@ export function trustLineFor(ssh: EntityMetadata, jump: string | undefined, line
 
 /** What `typedLine` needs of S3's `PreparedSsh.ready`. A structural type: S3's `ready` must satisfy it, S2 does not import S3. */
 export interface PreparedForTyping {
-  readonly ssh: EntityMetadata;                   // the snapshot, `sshKeyPath` set to the materialised file or cleared
+  // Lead amendment 2026-11-10: named as S3's ReadySsh names them, so `ready` is assignable with no adapter (S3 §S3.13 A2).
+  readonly entity: EntityMetadata;                // the snapshot with `sshKeyPath` set to the materialised file or cleared
   readonly options: SshCommandOptions;            // jump, knownHostsFile, program — as `connectionOptions` resolved them
   readonly platform: NodeJS.Platform;             // `terminalPlatform(side, hostPlatform)`, the shell that parses the line
-  readonly prefix: string;                        // the relay prefix or ''
+  readonly prefix: string | undefined;            // the relay prefix, or undefined on every other route
   readonly acceptNew: boolean;                    // the password branch without a pin (sshConnect.ts:325-328)
 }
 
@@ -195,7 +196,7 @@ them whole.
 |---|---|---|---|
 | T1 | PowerShell 5.1 | `localShell.shellPath`'s lower-cased basename (either separator) is `powershell.exe` or `powershell`, and `plan.remoteCommand` holds `"` or ends with `\` | refused: `This terminal is Windows PowerShell 5.1, which cannot pass a double quote or a trailing backslash to ssh correctly. Install PowerShell 7 (pwsh) and run "<entry>" again.` (`<entry>` is not in the plan; `typedLine` takes it from `plan.line`? No — add `entryName: string` to the remote plan: `{ …, entryName }`. Correction applied in §S2.2 by the coder: the remote plan carries `entryName`.) |
 | T2 | no target | `buildSshCommand` returns `undefined` (cannot happen after L6 and the one-snapshot rule, kept as a belt) | refused: `"<ssh>" has no host configured — cannot start SSH.` (the text of `terminalManager.ts:30`) |
-| T3 | typed | else | `prefix + command`, where `command` is `buildSshCommand(prepared.ssh, prepared.platform, { ...prepared.options, remote: { command: plan.remoteCommand, tty: true } })`, and when `prepared.acceptNew` the program word is followed by ` -o StrictHostKeyChecking=accept-new` exactly as `sshConnect.ts:325-328` does (a regex on `^(\S+) ` so a quoted program word with no space still works — if the program word can hold a space, the coder reports it; today `openSshProgram` returns a path or `ssh`) |
+| T3 | typed | else | `(prefix ?? '') + command`, where `command` is `buildSshCommand(prepared.entity, prepared.platform, { ...prepared.options, remote: { command: plan.remoteCommand, tty: true } })`, and when `prepared.acceptNew` the program word is followed by ` -o StrictHostKeyChecking=accept-new` exactly as `sshConnect.ts:325-328` does (a regex on `^(\S+) ` so a quoted program word with no space still works — if the program word can hold a space, the coder reports it; today `openSshProgram` returns a path or `ssh`) |
 
 `tty` is `true` on every terminal road: the chain step also types into a terminal. The `tty: false` form exists for the
 option's honesty and is pinned by one `sshCommand.test.ts` case; E3's roads use `buildSshExecArgv`, not this builder.
@@ -374,7 +375,7 @@ error or `undefined is not a function` is the RED of a new module) and the pass.
 | R19 | `the_trust_line_quotes_posix_on_win32_too` | `trustLineFor` has no platform parameter; the text with `'` in the line holds `'"'"'`. |
 | R20 | `typedLine_refuses_powershell_5_1_for_a_double_quote_or_a_trailing_backslash` | T1 for `shellPath: 'powershell.exe'`, `C:\\…\\powershell.exe`, `powershell`; with `pwsh.exe` and with `/bin/bash` the same plan is typed. A remote command without `"` and not ending in `\` is typed under 5.1. |
 | R21 | `typedLine_is_prefix_then_the_builder_with_t_and_the_remote_word` | `prefix: "env SSH_AUTH_SOCK='/s' "`, posix: `env SSH_AUTH_SOCK='/s' ssh -t -p 2222 -- deploy@host 'echo hi'`; `acceptNew: true` → `ssh -o StrictHostKeyChecking=accept-new -t …`. |
-| R22 | `typedLine_reads_the_snapshot_not_the_plan` | `plan.ssh.host = 'a'`, `prepared.ssh.host = 'b'`: the typed line names `b`. |
+| R22 | `typedLine_reads_the_snapshot_not_the_plan` | `plan.ssh.host = 'a'`, `prepared.entity.host = 'b'`: the typed line names `b`. |
 | R23 | `secretsStdin_is_exact` | The §S2.4 text for two variables and `echo x`; a value with `'` is `'"'"'`-quoted; the blank line is present; a bad name throws. |
 | R24 | `the_s1_refusal_answers_through_sshLinkOf` | After the move: S1's function for a linked entry returns S1's sentence, for an unlinked one `undefined`; it is exported from `remoteLaunch.ts`. |
 
@@ -428,7 +429,7 @@ error or `undefined is not a function` is the RED of a new module) and the pass.
 - [ ] Every sentence in the tests is compared whole, not by `includes`.
 - [ ] The wrapper is the `eval` form with `'\''`, and R16 asserts no `"`.
 - [ ] `trustLineFor` has no platform parameter, no `-i`, no `-o`, no program word; R18 proves the four inputs change it.
-- [ ] `LaunchPlan.remote` has no `trustLine` field (§S2.1 item 2); `typedLine` reads `prepared.ssh`, never `plan.ssh` (R22).
+- [ ] `LaunchPlan.remote` has no `trustLine` field (§S2.1 item 2); `typedLine` reads `prepared.entity`, never `plan.ssh` (R22).
 - [ ] `secretsStdin` validates names, uses the two-step export, has the blank line, `} </dev/null`, `exit $?`.
 - [ ] The fake `ssh` is a `#!/bin/sh` script that invokes nothing named `ssh`; `PATH` is prepended, not replaced; the file is in
       an `ownedDir`; every spawn has a timeout.
