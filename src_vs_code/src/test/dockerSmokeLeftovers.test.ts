@@ -418,6 +418,54 @@ test('E2.4-c: on a runner whose uid is not 1001 the naming step ends at once wit
   assert.match(right.env, /^SMOKE_OWNER=u1001:[^@:\s]+@linux:\d+$/m);
 });
 
+// --- a command that fails inside a command substitution must fail the step (the rollout's entry 8.1) ----------------------------------
+
+/** A folder with the given stubs (`name -> script body`) first on PATH, and one GITHUB_ENV file. */
+function stubbed(stubs: Record<string, string>): { dir: string; bin: string; envFile: string } {
+  const dir = ownedDir(scope, 'stubs');
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  for (const [name, body] of Object.entries(stubs)) fs.writeFileSync(path.join(bin, name), `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+  const envFile = path.join(dir, 'github-env');
+  fs.writeFileSync(envFile, '');
+  return { dir, bin, envFile };
+}
+
+const DOWN = 'echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2\nexit 1';
+
+/** Runs a step body as GitHub runs that step, against `stubs`; returns its status, output and what it wrote to GITHUB_ENV. */
+function runWith(text: string, name: string, stubs: Record<string, string>, extraEnv: Record<string, string> = {}): { status: number | null; output: string; env: string } {
+  const where = stubbed(stubs);
+  const script = path.join(where.dir, 'step.sh');
+  fs.writeFileSync(script, bodyOf(text, name));
+  const result = spawnSync('bash', [...shellArgsOf(text, name), script], { env: { PATH: `${where.bin}:${process.env.PATH ?? ''}`, GITHUB_ENV: where.envFile, ...extraEnv }, encoding: 'utf8', timeout: 30000 });
+  return { status: result.status, output: `${result.stdout}${result.stderr}`, env: fs.readFileSync(where.envFile, 'utf8') };
+}
+
+test('entry 8.1: when docker itself fails (the daemon is down) the check step fails, it does not read an empty answer as "nothing left"', () => {
+  const run = runWith(REAL, CHECK, { docker: DOWN }, { SMOKE_ID: 'abcd1234' });
+  assert.notEqual(run.status, 0, `the check passed with no docker daemon:\n${run.output}`);
+  assert.match(run.output, /Cannot connect to the Docker daemon/);
+  // the plant is the old line: a failing command inside `[ -z "$(…)" ]` is an empty answer, and the old check is green
+  const old = mutate(REAL, '          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }', '          left=""\n          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"\n          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }');
+  assert.equal(runWith(old, CHECK, { docker: DOWN }, { SMOKE_ID: 'abcd1234' }).status, 0, 'the old shape of a check line is green while docker is down: the real check must differ');
+});
+
+test('entry 8.1: when openssl fails the naming step fails and writes no SMOKE_ID; an id that is not 8 hex digits is refused', () => {
+  const id1001 = '[ "$1" = -u ] && { echo 1001; exit 0; }\nexec /usr/bin/id "$@"';
+  const down = runWith(REAL, NAMING, { id: id1001, openssl: 'echo "openssl: broken" >&2\nexit 1' });
+  assert.notEqual(down.status, 0, `the naming step passed with a failing openssl:\n${down.output}`);
+  assert.doesNotMatch(down.env, /SMOKE_ID/, 'an empty id must never be written');
+  for (const bad of ['', 'xyz', '1234567', '123456789', 'ABCD1234', 'abcd123g']) {
+    const run = runWith(REAL, NAMING, { id: id1001, openssl: `echo "${bad}"` });
+    assert.notEqual(run.status, 0, `the id "${bad}" was accepted:\n${run.output}`);
+    assert.doesNotMatch(run.env, /SMOKE_ID/, `the id "${bad}" was written`);
+  }
+  const good = runWith(REAL, NAMING, { id: id1001, openssl: 'echo abcd1234' });
+  assert.equal(good.status, 0, good.output);
+  assert.match(good.env, /^SMOKE_ID=abcd1234$/m);
+});
+
 // --- the remover, E2.4-b ----------------------------------------------------------------------------------------------------
 
 test('E2.4-b: there is one remover, always-run, `shell: bash`, with `|| true` on each of the four unquoted removals', () => {
