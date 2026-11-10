@@ -93,6 +93,10 @@ const LOCAL_WINDOW: RemoteWindowDeps = {
  * can call the exact same code the tree's Connect button runs.
  */
 export interface ConnectOptions {
+  /**
+   * The profile. Tests pass a partial one (`sshConnectWorld.storageWith`): this path reads only `getNode` (the
+   * terminal title's folder) before the credential and host-key modules, which those tests replace.
+   */
   readonly storage: StorageManager;
   readonly storageDir: string;
   /**

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, entity, storage, world } from './sshConnectWorld';
+import { E1_AT_ROOT, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, entity, storage, storageWith, world } from './sshConnectWorld';
 
 /**
  * The human Connect path (audit A3): WHICH credential reaches ssh, and what each way leaves behind.
@@ -444,7 +444,7 @@ test('a request already gone at a late refusal is shown no modal, and its pin fi
 
 test('after the entry moved, the password road still closes ITS earlier terminal', async () => {
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
-  const atRoot = { getNode: (_a: string, id: string) => (id === 'e1' ? { id: 'e1', name: 'prod', type: 'entity', parentId: null } : undefined) } as never;
+  const atRoot = storageWith(E1_AT_ROOT);
 
   await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
   w.existing.push(w.created[0]);

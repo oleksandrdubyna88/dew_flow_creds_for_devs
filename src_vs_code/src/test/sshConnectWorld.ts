@@ -1,5 +1,6 @@
 import { loadWithVscode } from './vscodeStub';
-import { EntityMetadata } from '../types';
+import { EntityMetadata, TreeNode } from '../types';
+import { StorageManager } from '../storageManager';
 import * as sshProgram from '../sshProgram';
 
 /**
@@ -277,11 +278,21 @@ export const entity = (extra: Partial<EntityMetadata> = {}): EntityMetadata =>
  * The entry `e1` sits in the folder "ssh connections", so a connect names that folder in its terminal title (the owner,
  * 2026-11-10). Only `getNode` is read on this path.
  */
-const NODES: Record<string, { id: string; name: string; type: string; parentId: string | null }> = {
-  e1: { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' },
-  f1: { id: 'f1', name: 'ssh connections', type: 'folder', parentId: null },
-};
-export const storage = { getNode: (_accountId: string, id: string) => NODES[id] } as never;
+const E1_IN_FOLDER: TreeNode = { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' };
+const FOLDER: TreeNode = { id: 'f1', name: 'ssh connections', type: 'folder', folderType: 'ssh', parentId: null };
+/** The entry `e1` at the root, for a test that moves it out of its folder. */
+export const E1_AT_ROOT: TreeNode = { ...E1_IN_FOLDER, parentId: null };
+
+/**
+ * A storage that knows exactly these nodes. The connect path reads only `getNode` before the mocked modules take
+ * over, so that member is typed against the real `StorageManager`; the one cast is here, and `ConnectOptions.storage`
+ * carries the note (typescript.doctrine § 3).
+ */
+export function storageWith(...nodes: TreeNode[]): StorageManager {
+  const read: Pick<StorageManager, 'getNode'> = { getNode: (_accountId, id) => nodes.find((node) => node.id === id) };
+  return read as StorageManager;
+}
+export const storage = storageWith(E1_IN_FOLDER, FOLDER);
 /** The title every connect of `entity()` gives its terminal. */
 export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };
