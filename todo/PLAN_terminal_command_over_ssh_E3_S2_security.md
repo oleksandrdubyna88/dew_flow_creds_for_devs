@@ -1,7 +1,6 @@
 # PLAN — Terminal command over SSH, E3.S2: the authorisation of the agent's run (security spec)
 
-> Status: **spec, 2026-11-10. The first two amendments are built on `feat/terminal-command-over-ssh-e3` (757bf3a3..7c6e4ffb,
-> pushed, unmerged). The third amendment (the re-review for epoch 4) is written and is not built.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
+> Status: **spec, 2026-11-10. The first two amendments are built on `feat/terminal-command-over-ssh-e3` in 757bf3a3..7c6e4ffb, and the third (the re-review for epoch 4) in 9a47c56c..cdfe769c. The code reviews and the promotion are next.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
 > §2 D2, §4.4 "Agent", §9. Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md) §S2, whose §S2.1
 > lists the ten questions this file answers. A Fable security judgement (`subagent-models.md` "Security judgement", outside
 > the cornerstone quota). It owns the gate, the refusal texts, the consent text, `asksAfterConsent`, the mask table, the

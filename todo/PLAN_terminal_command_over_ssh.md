@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 4 open 2026-11-10, 0 changes (after the whole re-review of entry 3.2's stop: nothing narrowed, nothing cut). E1 (#335) and E2 (#337) merged and released in 1.20.0 (#341); E3 S1 and S2 built on feat/terminal-command-over-ssh-e3 (pushed, unmerged); next: build F-S1 and F-S2 (the fix forward, E3 stories §E3.4), then S3 with F-S3.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 4 open 2026-11-10, 0 changes (after the whole re-review of entry 3.2's stop: nothing narrowed, nothing cut). E1 (#335) and E2 (#337) merged and released in 1.20.0 (#341); E3 S1, S2 and the fix forward F-S1 and F-S2 built, and S3 with F-S3 built except the promotion, on feat/terminal-command-over-ssh-e3 (local, unmerged); next: the code reviews, then the promotion of the seven documents LAST (E3 stories §S3.2); hand check 3 is the owner's.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.

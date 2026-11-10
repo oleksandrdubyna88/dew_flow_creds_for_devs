@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3: Run with Secrets, the agent's run, and the closing
 
-> Status: **stories of E3, S1 and S2 built (d4ebcab9 … 7c6e4ffb, pushed, unmerged), S3 and the fix forward of §E3.4 not built, 2026-11-10. The parent's epoch 4 is open (after the re-review of entry 3.2's stop); §E3.4 here is that revision's share of the stories; next: build F-S1 and F-S2, then S3 with F-S3.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
+> Status: **S1, S2 and the fix forward of §E3.4 (F-S1, F-S2) are built (d4ebcab9 … cdfe769c), and S3 with F-S3 is built except the promotion (local on feat/terminal-command-over-ssh-e3, 2026-11-10; the earlier commits are pushed, unmerged). The parent's epoch 4 is open (after the re-review of entry 3.2's stop). Next: the code reviews; the promotion of §S3.2 comes LAST, after them; hand check 3 is the owner's.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
 > fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
 > `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
@@ -859,6 +859,77 @@ The lead runs the full `npm test`.
 | `research/module_tests.md` | The E1, E2 and E3 sections: every new test file has a row; each row's flow is covered or `not covered` with a reason; one **Not covered** line names the hand checks of parent §10 and who runs them. |
 | parent §10 | Hand check 3 is handed to the owner (it is owed, not a gate for the merge); the summary says so. With it go the observations E3 could not make in a unit test (E3-D11): with a jump host, closing the masked terminal mid-run leaves no `ssh` helper on this machine (`pgrep -f 'ssh .*-W'` empty after a few seconds), and an unreachable host ends the run with ssh's error after about 10 s. They are the owner's to run, written into the hand-over message, not into the parent (§E3.R1, flag 7). |
 
+### Deviations of S1 and S2
+
+What the S1, S2 and fix-forward coders built differently from the briefs and the security spec, in the order they happened; each says what was CHECKED. Source: the commit bodies from `d4ebcab9` to `cdfe769c`, the S2 coder's report (the S2 commit bodies carry no RED evidence and no deviations, the Opus conventions review's findings 2 and 7), and the F-S3 review. Nothing here moved an owner decision or a parent section; the parent's deviations section (§S3.2 step 1) collects the ones a reader of the plan needs.
+
+**S1 (`d4ebcab9` … `320297b8`).**
+
+| Where | The brief said | What was built, and what was checked |
+|---|---|---|
+| `extension.ts`, `maskingBanner` (M7) | the banner moves to `outputMask.ts` | `extension.ts` re-exports `maskingBanner` in place of the unused import line, so no caller changes; the file shrank from 1003 to 981 lines (the ratchet baseline was lowered in the S3 commit) |
+| `secretsLaunch` | one function | split into `secretsLaunch` and `secretsArgv` to stay at complexity 4 |
+| the masked run (M5b, M9b) | M1-M14 | two tests added: **M5b** (a throwing spawn) and **M9b** (an `error` event while the child lives), because M5 and M9 stay green with the error-handler end and the stdin destroy removed (checked: each line reverted, the old test stayed green) |
+| `sshSpawnLaunch` (P7) | P1-P6; `sshSpawnLaunch` covered through H7 | **P7** added: `sshSpawnLaunch` itself, with and without a socket |
+| `maskedOverSsh` and `trustedThenSpawned` | §S1.3: one record `{ job, plan, refs, ready, launch, resolved, spawn }` and `maskedOverSsh(sessions, run)` | `trustedThenSpawned(run, sessions)` and `maskedOverSsh(sessions, run, launches, resolved)`, with the record `SecretsOverSsh` (`commands/runCommands.ts`; find them by name): the same behaviour, every function at four parameters or fewer; the conventions review (finding 7) asked for this line |
+| `NO_REFERENCE` | a function in `commands/runCommands.ts`, text unchanged | exported (`export function NO_REFERENCE`, `commands/runCommands.ts:397` on `c0bbe5ce`) because `resolvedValues` and `describedRefs` are shared with the local road; the text is unchanged |
+| `test/commandNameRoads.test.ts` | no change | reads `aw.masked[0].commandLine` through a local variable, because the masked record's `commandLine` is optional now (an argv run has none); no expected value changed |
+| W2, W2b of `sshRoadSecrets.test.ts` | as the plan says | renamed and now expect `sshLinkOf`'s missing-entry sentence (`s1` is not in that world): the two expected-value changes the plan named |
+
+**S2 (`757bf3a3` … `7c6e4ffb`).**
+
+| Where | The spec or brief said | What was built, and what was checked |
+|---|---|---|
+| `linkedSummary` | `(linked, entity)` | `(deps, call, entity, accountId)` (`agentUseActions.ts:278` on `c0bbe5ce`), because the jump-chain read needs the storage |
+| G19 | `{ view: true, edit: true }` is NOT usable | checked in `mcpAccess.ts`: `climb()` makes `edit` imply `use`, so that pair IS usable. The test now asserts: *use* without *edit* is usable, and *view* without *use* is refused |
+| G10 (b) | `usableSsh('s2')` relinked changes the target and the compare refuses | `s2` had the same name and target as `s1`, so the rebuilt summary was identical and the compare passed. `s2` now has `name: 'staging box'`; mutation checked: with the compare removed the test fails |
+| G4 | the case reaches `accountOnly` | the spec's own case never does, because `sshLinkOf` refuses first. A case was added where `s1` is closed in the Terminal entry's account and usable in the other (listed first); mutation checked: with `accountOnly` removed it fails |
+| `promptSites.test.ts`, the broker's mask-table root | E3-D10: stop on any red there but the two named | the test pinned `maskEntriesFor` as a broker root; the spec's own change at `extension.ts` (`maskEntriesWithLink`) made the root `maskEntriesWithLink`. The coder did not stop (the decision was buildable as written, the fix is one word in the root list); it is in `c0bbe5ce`, so `b0c35a30` alone leaves that test red |
+| `refusalSaid` | not named | exported from `remoteLaunch.ts` for the gate's refusals |
+| the three lint directives | named | removed where unused (`agentUseActions.ts`, and the `max-lines-per-function` and `complexity` ones of `sshUseActions.ts`); no new `eslint-disable` |
+| `validate` and `summarize` | take the grant | fifteen test calls gained the target argument; no expected value changed |
+| the third help table | two tables (`EN_BULLET`, `CHAIN_BULLET`) | the old sentence was quoted in a third (`RUNS_BULLET_SENTENCE`, Hp6); all three updated. In F-S3 the two bullet-sentence tables were merged into one |
+| the bridged journal line | the spec's literal ending (*the agent was told only that the SSH connection is not open to it*) | built literally in S2, false on a bridge, where the agent was told `BRIDGE_NOT_SERVED`; fixed forward in epoch 4 (`journalLine(name, why, bridged)`, one assertion per ending) |
+| the S2 docs | §S2.3: README, `module_extension.md`, `module_tests.md` | not written in S2 (conventions review finding 1); written in the S3 commits |
+
+**The S2 RED evidence** (the stub-first state for each new export, or a temporary mutation that was never committed; from the coder's report, because the S2 commit bodies do not carry it).
+
+| Tests | RED observed |
+|---|---|
+| X1-X4 (`execOverSsh`) | with a stub: *spawn recorder called 0 times*, answer `execOverSsh is not built yet`; mutations: removing the key `finally`, ignoring the jump and skipping the chain check each failed their own test |
+| G17 | *run got the summary the dialog showed: actual [undefined]* |
+| G13 (table half) | */v1/use/run: … (run waits for E3)* |
+| G14 | with the stub the table was `[]`; ignoring the link also failed it |
+| G1-G12, G15, G18-G22, AG1-AG6 | against E1's behaviour plus stubs, all failed on E1's sentence or on the stub's empty text |
+| **AG8** (the all-walls bypass) | with the gate answering `local` for every entry: *a local run printed the probe: {"stdout":"local-run-probe-8\n"…}* |
+| G22 | with the stub that reads the link alone: *closed, -A true: the flag is the bit of an unlinked entry, true !== false* |
+| other mutations, each RED | closed counted as usable (G2); the compare removed (G10); `planLaunch` before the gate (G20); the bridge wall removed or moved after the link (G13); `validate` not asking the gate (G6); the gate's refusal not applied in `run` (G9); an `eval` wrapper (AG1); local-line trust (AG2); the slot not released (AG4); `accountOnly` removed (G4) |
+| G11, G16, AG7, X5 | guards: green before and after |
+
+**The fix forward of epoch 4 (`9a47c56c` … `cdfe769c`).** The RED messages are in the commit bodies; the deviations are these.
+
+| Where | The brief said | What was built, and what was checked |
+|---|---|---|
+| F6 (2), the changed-keys set | the keys whose value differs from `process.env` are EXACTLY the askpass variables | the set ignores `PWD`, `OLDPWD`, `SHLVL` and `_`: the recording child is a `#!/bin/sh` script and dash re-derives `PWD` for the child's folder (observed: the set held `PWD` when not ignored), so that key is the shell's, not the run's. Everything else is exact |
+| the fake road (`sshRoadWorld.ts`) and the masked record (`arrowWorld.ts`) | not named | the fake road answers `ownAgent` and `withoutEnv` as the real road does, and the record carries `withoutEnv`, so the road tests see what the real road says |
+| `usedEntryOf` and the broker's helper | the spec writes `useAction.uses?.(grant)` in `perform` | `perform` has no complexity left (the optional call made it 5), so the broker's helper is `usedByCall(action, target)` in `brokerCall.ts` (the action's own is `usedEntryOf`); `credsAgentServer.ts` is 795 lines, inside the 797 the plan allowed |
+| U7, the holder | X and Y started in one tick on idle entries deadlock without the key order | **measured:** that literal scenario cannot deadlock in either order of turns, because an entry with nothing in flight starts its job synchronously (`keyedQueue.ts`), so the first call takes both turns before the second starts. A cycle needs a third call that holds one key while X and Y queue behind it, so U7 adds `holder` (a call on `a` that answers 500, spends nothing and holds `a` for 100 ms). Mutation checked: without `.sort(byKey)` it fails (*the two calls did not end in 2 s*) |
+| U2 | each road wins once | arrival order at the server is not fixed, so U2 asserts the same invariants (ssh started once, the SSH entry spent once) whichever call is sent first, in THREE orders |
+| U10 | one table | two structures (`DECISIONS` for the hooks that take the grant's entry, `PER_ENTRY_FREE` for the rest); the scan finds `burnAfterUse` |
+| G17 | extended | extended by an assertion in the old test (an action with no `uses` gets none) and by a sibling test for an action that declares it, on both doors |
+| T2's scan and F5 | in `launchRoadScan.test.ts` "or a scan file of its own" | in `launchRoadScan.test.ts` itself (its helpers are private to it) |
+| the cast of `sshExecOver.test.ts` | a typed factory built against the real validators | a typed factory over `sshNode`, built against the real link validator at load |
+| `EN_BULLET` | exact text | its expected value carries the new one-use sentence because the text it pins changed |
+
+**S3 (this commit series).**
+
+| Where | The brief said | What was built, and what was checked |
+|---|---|---|
+| the one-use sentence in DE, RU and UK | written from the English by the coder, checked by the Opus reviewer | reviewed here: DE quoted a translated label in typographic quotes (the UI label is English, `CLAUDE.md` rule 7), and RU and UK said the SSH entry was "set to live"; reworded to the paraphrase the lifetime article of each language uses. ES was natural and stays. Hp10's table carries the new words |
+| the risk-1 note (§S3.1) | an Hp9 test | built: Hp9, five sentences exactly as the plan wrote them |
+| the CHANGELOG | four more lines (§E3.4 F-S3) | E3's block is `## [1.21.0]`, with the lines of S1, S2 and F-S1/F-S2 and a *Known limits* section; no line for `ssh:exec` (its argv and environment do not change), as the plan says; the promised *CHANGELOG path* is `src_vs_code/CHANGELOG.md` (flag 5) |
+| not built | — | **the promotion** (§S3.2), which comes after the code reviews; hand check 3 (handed to the owner, §S3.3) |
+
 ### S3.2 The promotion — together, the `git mv` LAST (`planning-docs.md` § *The `git mv` goes LAST*)
 
 The documents are SEVEN, listed in the table below. NOT `research/PLAN_windows_shell_quoting_injection.md` (its own
@@ -931,7 +1002,7 @@ The steps, in this order:
 
 ---
 
-## E3.4 — The fix forward of epoch 4 (re-review of entry 3.2; not built)
+## E3.4 — The fix forward of epoch 4 (re-review of entry 3.2; built, F-S3 written)
 
 The parent stopped at entry 3.2. Its revision for epoch 4 keeps every S1 and S2 commit (`fits`, the parent's record)
 and adds the items below, fixed forward on this branch before E3 merges (parent §5: E3 merges as one unit with them).
