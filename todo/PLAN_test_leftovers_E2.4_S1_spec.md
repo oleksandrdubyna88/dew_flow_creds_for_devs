@@ -167,6 +167,8 @@ owned_cleanup           # for every registered entry, last first (by index, `${#
                         #   becomes `released` after it is handled). Never `exit`s.
 ```
 
+*[2026-11-10, part 2d of the build record (not a change: the helper is made to meet this spec's "idempotent, so a function given to `owned_trap` may call `owned_cleanup`"). The function runs in a subshell, so the release it makes is lost to the shell's own `owned_cleanup`. A new branch: an entry in state `created` whose claim file is gone AND whose folder is gone is marked `released` with no line, because nothing is left and nothing is wrong (case H3). A claim that is gone while the folder stays (H3b), or a folder that is gone while the claim holds other text (H3c), keeps its warning and removes nothing. **Trade-off:** if a buggy sweep (or a person) removed a LIVE run's folder and its claim together, this run's exit is silent about it, where it used to say that the claim was not what the run wrote. The removal itself was the fault, and a sweep that does it is judged by its own tests; the helper's exit line was never the check for it.]*
+
 **Environment read.** `TMPDIR` (the root; a trailing `/` is stripped; unset → `/tmp`); `WSL_DISTRO_NAME`; `OWNED_KEEP`
 (`1`: the folder is claimed and created and left out of the cleanup, state `kept`; for a handed-on resource, S4:971);
 `PATH` (for `node` on Windows). **Test seams, unset in every real run** (S4:949): `OWNED_HOOK_AFTER_CLAIM` names a function
