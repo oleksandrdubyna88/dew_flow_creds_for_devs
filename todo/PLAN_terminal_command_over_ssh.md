@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 2 open 2026-11-10 after the re-review. E1 built locally (782444a, cut: to be split under the security plan and fixed forward per E1 §S4); E2 built locally on feat/terminal-command-over-ssh-e2; E3 not started; nothing pushed.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 2 stopped for re-review 2026-11-10 (entry 2.2). E1 merged (#335), E2 merged (#337); E3 stories amended after its plan round 1, no E3 code.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -35,13 +35,15 @@ Narrowed: no — the Definition of Done is identical to epoch 1's; the trust lin
   (Sorted by an Opus judge, 2026-11-10. The stop commit was not pushed: the repository is public and the cut commit
   describes unreleased security defects; the push is the owner's decision.)
 
-> Epoch 2 · approved 2026-11-10 · by reviewers · state: open
+> Epoch 2 · approved 2026-11-10 · by reviewers · state: stopped
 
   (The re-review round on branch feat/terminal-command-over-ssh-epoch2: verdict proceed, 1 of 2 reviewers answered —
   antigravity's answer was unparseable; the Update-it finding accepted (already E1 §S4 F2), the `exit` finding
   rejected with its reason.)
 - 2.1 · 2026-11-10 · reviewer · contract — the E3.S2 security judgement (Fable): the agent's refusal of a linked run names only the Terminal entry (not the SSH entry), its code is `denied`, and the captured output is also masked with the linked SSH entry's values
   (One cause, one entry. Not counted: the internal widening of `summarize`/`validate` to take the call target, E3.L flag 2.)
+- 2.2 · 2026-11-10 · reviewer · contract — the E3 plan round 1, item 2 (E3-D13): `LaunchPlan` is not changed, so `commands/runCommands.ts` keeps importing `resolveCommand` for its local uses and §4.5 (1)'s structural target ("imported only by `commandLine.ts` and `remoteLaunch.ts`") is never reached
+  (Accepted in round 1 on 2026-11-10, recorded in 5f32ae71; first flagged as "may count" by the Opus judge, E3 flag 7 (a). In doubt it is a change. This second change stopped the plan. Flag 7 (b) and (c) are not changes: no parent text moves.)
 
 ## 1. Goal
 
