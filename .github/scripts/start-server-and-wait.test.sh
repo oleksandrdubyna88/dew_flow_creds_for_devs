@@ -17,7 +17,8 @@
 #   f. the URL already answers 2xx      → FAIL at once, starting nothing;
 #   g. the wait is interrupted (TERM)   → the script stops the server it started before it goes (code round 1);
 #   h. accepts and never answers        → no probe outlives the deadline: FAIL within it, not 5 s later (round 1);
-#   i. the start line (on c's run)      → names the program, never its arguments, which may carry a secret (round 1).
+#   i. the start line (on c's run)      → names the program, never its arguments, which may carry a secret (round 1);
+#   j. no START_SERVER_LOG, no RUNNER_TEMP → the log is in an owned, claimed, kept folder, never a loose file (E2.4.S2).
 # START_SERVER_SCRIPT points the cases at another implementation — how the old inline loop was shown to pass (a).
 # Needs bash, node, curl and GNU date. Its scratch folder is its own `mktemp -d`; the trap removes it and stops
 # every pid this test recorded (only those — never anything by name), however the test ends.
@@ -220,6 +221,40 @@ if want h; then
     ok=yes
   fi
   verdict 'h. a server that accepts and never answers fails within the deadline, not one probe later' "$ok"
+fi
+
+# j. No START_SERVER_LOG and no RUNNER_TEMP (a person's run, http/README.md): the log goes into an owned folder that is
+# CLAIMED and KEPT — the log is handed on, so the script never removes it. The temp root then holds exactly that folder and
+# its claim, the claim is a well-formed owner record whose pid is this script's own and is no longer alive, and the
+# old default (a `start-server-*.log` file in the root) is gone. A sweep collects the pair once the script's shell has been
+# gone for 10 minutes (E2.4.S2, sc. 4).
+if want j; then
+  mkdir "$work/root-j"
+  : > "$work/run.log"
+  port="$(free_port)"
+  env -u START_SERVER_LOG -u RUNNER_TEMP -u GITHUB_OUTPUT TMPDIR="$work/root-j" \
+    bash "$start" "http://127.0.0.1:$port/api/health" 30 -- node "$fake" refused "$port" > "$work/run.log" 2>&1 &
+  script=$!
+  pids+=("$script")
+  code=0
+  ms=0
+  wait "$script" || code=$?
+  entries="$(ls -A "$work/root-j")"
+  folder="$(printf '%s\n' "$entries" | grep -E '^testsToDelete-[uw][0-9]{1,10}-creds-server-log-[0-9a-f]{8}$' || true)"
+  record=""
+  [[ -n "$folder" && -f "$work/root-j/$folder.owner" ]] && record="$(cat "$work/root-j/$folder.owner")"
+  recorded_pid="$(printf '%s' "$record" | sed -n -E 's/^[uw][0-9]{1,10}:[^:@]+@(linux|macos|windows):([0-9]+)(:[0-9]+:[0-9]+)?$/\2/p')"
+  ok=no
+  if [[ "$code" -eq 1 && "$(printf '%s\n' "$entries" | wc -l | tr -d ' ')" -eq 2 && -n "$folder" && -n "$recorded_pid" ]] \
+    && [[ "$entries" == *"$folder.owner"* ]] && [[ -f "$work/root-j/$folder/server.log" ]] \
+    && grep -q 'stand-in: mode refused' "$work/root-j/$folder/server.log" && says "$folder/server.log"; then ok=yes; fi
+  # The record's pid is this script's own where the shell's pid and the record's pid are one (not Git Bash on Windows, which
+  # writes the Windows pid); and that script is over.
+  if [[ "$ok" == yes && "$(uname -s)" != MINGW* && "$(uname -s)" != MSYS* && "$(uname -s)" != CYGWIN* ]]; then
+    if [[ "$recorded_pid" != "$script" ]] || alive "$recorded_pid"; then ok=no; fi
+  fi
+  if [[ "$ok" == no ]]; then echo "     the root holds: [$entries]; the claim reads: [$record]"; fi
+  verdict 'j. with no START_SERVER_LOG the log is in an owned folder with a claim, kept for a sweep' "$ok"
 fi
 
 if [[ "$failures" -eq 0 ]]; then
