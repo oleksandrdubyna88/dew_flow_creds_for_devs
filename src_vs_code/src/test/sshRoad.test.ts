@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 import type { EntityMetadata } from '../types';
+import type { SpawnLaunch, SshRoad } from '../sshRoad';
 import type { ReadySsh, RefusedSsh } from '../sshSession';
+import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD } from '../sshProgram';
 import { OPTIONS, WSL_NO_RELAY, entity, storage, world } from './sshConnectWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -256,7 +258,7 @@ test('spawn_launch_names_the_client_its_folder_and_the_extensions_agent_for_a_fo
   const launch = road.spawnLaunch(forwarding, { SSH_ASKPASS: '/keys/askpass.sh' });
 
   const program = sshProgram.spawnableSshProgram(sshProgram.openSshBinary('ssh', true, process.platform), process.platform, process.env.PATH, fs.existsSync);
-  assert.deepEqual(launch, { kind: 'spawn', program, cwd: '/storage', env: { SSH_AUTH_SOCK: '/tmp/agent.sock', SSH_ASKPASS: '/keys/askpass.sh' } });
+  assert.deepEqual(launch, { kind: 'spawn', program, cwd: '/storage', env: { SSH_AUTH_SOCK: '/tmp/agent.sock', SSH_ASKPASS: '/keys/askpass.sh' }, ownAgent: true, withoutEnv: E3_INHERITED_DROP });
   const plain = road.spawnLaunch(SSH, undefined);
   assert.equal(plain.kind === 'spawn' ? plain.env.SSH_AUTH_SOCK : 'refused', undefined, 'no forwarding: the extension agent is not handed over');
   assert.equal(plain.kind === 'spawn' ? plain.cwd : '', '/storage', 'the extension\'s own folder, never the workspace (B1)');
@@ -270,6 +272,33 @@ test('spawn_launch_says_so_when_no_client_can_be_started_and_carries_the_agent_w
   const noAgent = loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => undefined } as never);
   const launch = noAgent.spawnLaunch({ ...SSH, agentForward: true } as EntityMetadata, undefined);
   assert.equal(launch.kind === 'spawn' ? launch.warning : 'refused', sshProgram.NO_AGENT_TO_FORWARD, 'the warning travels to the banner (E3-D12)');
+});
+
+test('spawn_launch_says_whether_the_agent_is_ours', () => {
+  const road = (socket: string | undefined): SshRoad => loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => socket } as never);
+  const spawned = (ssh: EntityMetadata, socket: string | undefined): Extract<SpawnLaunch, { kind: 'spawn' }> => {
+    const launch = road(socket).spawnLaunch(ssh, undefined);
+    assert.equal(launch.kind, 'spawn', JSON.stringify(launch));
+    return launch as Extract<SpawnLaunch, { kind: 'spawn' }>;
+  };
+  const forwarding = { ...SSH, agentForward: true } as EntityMetadata;
+
+  const ours = spawned(forwarding, '/tmp/agent.sock');
+  assert.equal(ours.ownAgent, true, 'the entry forwards and the extension agent is up');
+  assert.equal(ours.env.SSH_AUTH_SOCK, '/tmp/agent.sock');
+
+  const down = spawned(forwarding, undefined);
+  assert.equal(down.ownAgent, false, 'the entry forwards and the agent is not up');
+  assert.equal(down.warning, NO_AGENT_TO_FORWARD);
+  assert.equal('SSH_AUTH_SOCK' in down.env, false);
+
+  const quiet = spawned(SSH, '/tmp/agent.sock');
+  assert.equal(quiet.ownAgent, false, 'an entry that does not forward: the agent is not ours to hand over');
+  assert.equal(quiet.warning, undefined);
+
+  for (const launch of [ours, down, quiet]) {
+    assert.deepEqual(launch.withoutEnv, E3_INHERITED_DROP, 'every answer takes the host\'s socket and the CREDS_REF_ names out of the inheritance');
+  }
 });
 
 /** A ready whose `cleanup()` counts EVERY call (the real one is idempotent: this one is not, so a double clean is visible). */

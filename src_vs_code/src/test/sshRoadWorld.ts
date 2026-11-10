@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { isLinkTarget } from '../remoteLaunch';
 import { resolveJumpChain } from '../sshOptions';
+import { E3_INHERITED_DROP } from '../sshProgram';
 import type { SpawnLaunch, SshRoad } from '../sshRoad';
 import type { PreparedSsh, ReadySsh } from '../sshSession';
 import type { EntityMetadata, TreeNode } from '../types';
@@ -112,8 +113,8 @@ export function fakeRoad(
       road.refusedShown += 1;
       return Promise.resolve();
     },
-    spawnLaunch: (_ssh, env): SpawnLaunch => {
-      const launch = launchAnswer(env, spawnWarning, spawnRefused);
+    spawnLaunch: (ssh, env): SpawnLaunch => {
+      const launch = launchAnswer(ssh, env, spawnWarning, spawnRefused);
       road.launches.push(launch);
       return launch;
     },
@@ -122,12 +123,21 @@ export function fakeRoad(
 }
 
 /** What the fake road answers a spawn: the refusal, or a program `ssh` in `/storage` with the askpass environment it was given. */
-function launchAnswer(env: Readonly<Record<string, string>> | undefined, warning: string | undefined, refused: string | undefined): SpawnLaunch {
+function launchAnswer(ssh: EntityMetadata, env: Readonly<Record<string, string>> | undefined, warning: string | undefined, refused: string | undefined): SpawnLaunch {
   if (refused !== undefined) {
     return { kind: 'refused', reason: refused };
   }
-  const base = { kind: 'spawn' as const, program: 'ssh', cwd: '/storage', env: { ...(env ?? {}) } };
+  const base = spawnedWith(ssh.agentForward === true && warning === undefined, env);
   return warning === undefined ? base : { ...base, warning };
+}
+
+/** The extension agent's socket, as a fake road's launch gives it when the entry forwards and no warning was scripted. */
+export const OUR_SOCKET = '/tmp/ours.sock';
+
+/** As the real road does: a forwarding entry is served by OUR agent unless the launch has the warning, and then its socket is in the environment. */
+function spawnedWith(ownAgent: boolean, env: Readonly<Record<string, string>> | undefined): Extract<SpawnLaunch, { kind: 'spawn' }> {
+  const socket: Record<string, string> = ownAgent ? { SSH_AUTH_SOCK: OUR_SOCKET } : {};
+  return { kind: 'spawn', program: 'ssh', cwd: '/storage', env: { ...socket, ...(env ?? {}) }, ownAgent, withoutEnv: E3_INHERITED_DROP };
 }
 
 function answered(road: FakeRoad, ssh: EntityMetadata, n: number, answer: RoadAnswer, jump: string | undefined): PreparedSsh {

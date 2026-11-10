@@ -5,7 +5,7 @@ import { PrepareOptions, PreparedSsh, ReadySsh, RefusedSsh, prepareSshSession, w
 import { offerTheFix } from './sshConnect';
 import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
 import { sshReaderShell } from './pinnedTerminal';
-import { NO_SSH_TO_SPAWN, spawnableSshProgram, sshSpawnLaunch } from './sshProgram';
+import { AGENT_SOCKET_ENV, E3_INHERITED_DROP, type EnvDrop, NO_SSH_TO_SPAWN, spawnableSshProgram, sshSpawnLaunch } from './sshProgram';
 import { NodeLookup, RemotePlan, SshLink, TypedLine, sshLinkOf, trustLineFor, typedLine } from './remoteLaunch';
 import { sendGuarded } from './terminalGuard';
 import type { EntryTerminalKey } from './terminalTitles';
@@ -29,16 +29,19 @@ export interface SshRoad {
    * <p>`use` is `'terminal'` (the default: the session's line is typed into a terminal, which reaches the extension's agent through
    * the window's environment collection) or `'spawn'` (E3-D4: Run with Secrets spawns the `ssh` itself, and a child of the extension
    * host does not reach that agent). For `'spawn'` the agent never serves the key: a stored key is always written to its isolated
-   * file and `-i` names it, never "whatever `SSH_AUTH_SOCK` the host process has" (the hazard `sshSession.ts` refuses on the relay
-   * route).</p>
+   * file and `-i` names it. The spawned ssh's environment is the one sentence of `spawnLaunch`, so the host process's own
+   * `SSH_AUTH_SOCK` is not handed on (the hazard `sshSession.ts` refuses on the relay route).</p>
    */
   prepare(accountId: string, ssh: EntityMetadata, use?: 'terminal' | 'spawn'): Promise<PreparedSsh>;
   /**
    * The program, folder and environment of the `ssh` that Run with Secrets spawns for `ssh` — the SNAPSHOT of a prepared session
    * (E3-D5). `env` is the askpass environment of a password session. The program is `sshSpawnLaunch`'s, made absolute on Windows
-   * (`spawnableSshProgram`, CWE-426); the folder is the extension's own `storageDir`, never the workspace; the environment holds
-   * `SSH_AUTH_SOCK` (when the entry forwards the agent) and the askpass variables, and no resolved value (E3-D8). `warning` is
-   * for the banner (E3-D12), not a toast. `refused` when no ssh client can be started: nothing was read and nobody was asked.
+   * (`spawnableSshProgram`, CWE-426); the folder is the extension's own `storageDir`, never the workspace. The environment (E3-D8,
+   * parent D17 (a)): the run ADDS only `env` — the askpass variables and, when the extension's agent serves the run (`ownAgent`: the
+   * entry forwards and the socket is up), its `SSH_AUTH_SOCK` — and no resolved value; it REMOVES what `withoutEnv` names (always
+   * `E3_INHERITED_DROP`: the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name); other ordinary variables (`PATH`, `HOME`, …) are
+   * inherited as by every spawned program. `warning` is for the banner (E3-D12), not a toast. `refused` when no ssh client can be
+   * started: nothing was read and nobody was asked.
    */
   spawnLaunch(ssh: EntityMetadata, env: Readonly<Record<string, string>> | undefined): SpawnLaunch;
   /**
@@ -50,7 +53,7 @@ export interface SshRoad {
 
 /** What `SshRoad.spawnLaunch` answers. */
 export type SpawnLaunch =
-  | { kind: 'spawn'; program: string; cwd: string; env: Record<string, string>; warning?: string }
+  | { kind: 'spawn'; program: string; cwd: string; env: Record<string, string>; warning?: string; ownAgent: boolean; withoutEnv: EnvDrop }
   | { kind: 'refused'; reason: string };
 
 /** What a road host is built from: the part of `SshUseDeps` that `extension.ts` already assembles. */
@@ -79,7 +82,8 @@ function spawnLaunchOf(deps: SshRoadDeps, ssh: EntityMetadata, env: Readonly<Rec
   if (program === undefined) {
     return { kind: 'refused', reason: NO_SSH_TO_SPAWN };
   }
-  const launch = { kind: 'spawn' as const, program, cwd: deps.storageDir, env: { ...base.env, ...env } as Record<string, string> };
+  const ownAgent = AGENT_SOCKET_ENV in base.env;
+  const launch = { kind: 'spawn' as const, program, cwd: deps.storageDir, env: { ...base.env, ...env } as Record<string, string>, ownAgent, withoutEnv: E3_INHERITED_DROP };
   return base.warning === undefined ? launch : { ...launch, warning: base.warning };
 }
 
