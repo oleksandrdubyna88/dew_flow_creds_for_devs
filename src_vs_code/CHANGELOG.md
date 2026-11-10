@@ -6,6 +6,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] — 2026-11-10 — Run with Secrets and an agent's run now work on a Terminal entry that runs over SSH
+
+### Added — Run with Secrets over SSH
+
+- ***Run with Secrets* on a Terminal entry that runs over SSH now runs the command on the server.** It asks the trust question
+  for the line that runs (`remoteLaunch.ts:422`, `secretsLaunch`), then connects with the SSH entry's key or password, pin and jump
+  host, as *Run in Terminal* does. **The values travel on ssh's standard input only**, as `export` lines for the server's login
+  shell, never on a command line and never in the shell history; each `creds://` reference in the line is read from the
+  environment there. On the server they are in the environment of the command, where the same user and root can read them (`ps e`,
+  `/proc/<pid>/environ`), as for a run on this computer. The output is masked as before, with `<CREDS_MASKED:NAME>`.
+- **The run is not interactive**: ssh is asked for no terminal (`-T`, also when your ssh config says `RequestTTY force`), and the
+  command reads an empty input, so a command that asks a question usually stops. A banner says so and names the way out: use *Run
+  in Terminal* (the values are not injected there). It works **only in a local VS Code window**; a WSL or Remote-SSH window, a
+  Windows server and a command with a line break are refused before anything is asked, each with a sentence that says nothing ran.
+- **The run is bounded**: ssh gives up connecting after 10 seconds, a password connection asks once and a key connection never
+  asks (`BatchMode`), and closing the run's terminal ends ssh here. A part of the script that ssh has not yet taken
+  (the values) is dropped, never written later.
+- **On Windows the run starts a known `ssh`**: the first `ssh.exe` in an absolute folder of `PATH`, else the built-in OpenSSH,
+  and it starts in the extension's own storage folder, never in your workspace (`sshProgram.ts:366`, `spawnableSshProgram`). A
+  repository that holds its own `ssh.exe` cannot receive the password or the values. If no `ssh` is found the run says so and
+  nothing starts.
+- **A command with no `creds://` reference** is told so before any PIN or host-key question, as for a local run. References are read
+  from the line that runs: a reference only in a disabled argument row is not in that line, so it is not read.
+
+### Added — an agent's run over SSH
+
+- **An agent's `creds_run` of a Terminal entry that runs over SSH now runs the bare command on the server**, over the same
+  connection preparation, but **only when the SSH entry itself is *Usable by agents*** (`agentUseActions.ts:257`, `linkedCall`,
+  the one gate; every entry point asks it first). Otherwise nothing runs and the agent reads one sentence that names only the
+  Terminal entry, with the code `denied` (1.20.0 answered `not_supported`); the real reason goes to the journal. The SSH entry's
+  own setting for when to ask you is not consulted.
+- **The consent names the SSH entry and where it connects**, and the run is refused if the SSH entry, its target or the link
+  changed while the dialog was open (`changedSince`, `agentUseActions.ts:336`).
+- **A one-use SSH entry is spent by the run**: if the SSH entry is set to last until an agent uses it once, the agent's run is that
+  use and the SSH entry is deleted after it, as after the agent's own `creds_exec` (`brokerCall.ts:280`, `burnInTurn`). The run
+  takes the turn of that entry like any use of it, so a direct `creds_exec` and a linked run at the same moment start ssh once.
+  An SSH entry whose delete failed stays spent, and a later run is refused with a sentence that names that one entry.
+- **The agent's output is masked with both entries' values**: the Terminal entry's and the SSH entry's password (a rotated SSH password that was still waiting to be stored is stored first, so it is masked too).
+- **A Remote Bridge never runs a linked entry**; it answers its usual sentence.
+
+### Added — what both roads send to ssh
+
+- **Run with Secrets over SSH and an agent's run over SSH ask ssh for no terminal (`-T`), also when your ssh config says
+  `RequestTTY force`**, so a forced terminal cannot echo the script or the values.
+- **No `-A` without the extension's own agent.** An SSH entry that forwards the agent sends `-A` on these two roads only while
+  the extension's agent is up; otherwise it sends `-o ForwardAgent=no` (the banner of Run with Secrets says nothing is forwarded).
+- **The agent of your own shell is not passed on.** The extension host's `SSH_AUTH_SOCK` and every `CREDS_REF_…` variable are
+  removed from the environment of the ssh these roads start (`sshProgram.ts:412`, `envWithout`); the roads add only the askpass
+  variables of a password connection and, when the extension's agent serves the run, its own `SSH_AUTH_SOCK`. Other ordinary
+  variables (`PATH`, `HOME`, …) are inherited as by every program you start. No resolved value is ever in that environment.
+
+### Changed
+
+- **The help says all of this in five languages**: Run with Secrets over SSH and its limits, the agent's run with its condition and
+  the one-use sentence, and a warning that an older CredsForDevs does not know *Runs over SSH* (it would run such an entry on its own
+  machine, and a save there removes the choice on every machine). The texts that said the secrets run is only for this machine, and
+  that an agent's run refuses such an entry, are gone.
+- **The README and the *Secret references* help no longer say** that a value reaches only the child process's environment: over SSH it
+  reaches the server's login shell on its standard input.
+
+### Not yet over SSH
+
+- **An agent's VPN start** whose launcher or chain step is linked still refuses with one clear sentence, and so does **a linked
+  script** (a script cannot carry a link written by this build). They never run on this computer. 1.20.0's *Not yet over SSH*
+  section is no longer true of Run with Secrets and `creds_run`.
+
+### Known limits
+
+- **A password connection with a jump host**: the askpass program answers the jump host's password prompt with the connection's
+  own password, as on SSH Connect (`todo/PLAN_askpass_answers_the_hop.md`, its own plan).
+- **Your own ssh config still applies.** An `IdentityAgent` line in it can still offer your own agent; `-T` and `ForwardAgent=no` are
+  requests to ssh, and the extension removes only the variable it can see. A password connection's askpass variables are in the
+  local ssh's environment: a `SendEnv` pattern of yours that matches them AND a server's `AcceptEnv` could send the password,
+  the limit written down in 1.19.0.
+- **Closing the run's terminal stops ssh here, and sends the server no hangup**: the command on the server has no terminal and can
+  keep running there until it ends.
+- **Observed by hand, not in CI**: how a real server answers a wrong password, an unreachable host and a jump host's helper after a
+  close are checks the owner runs (hand check 3 of the plan); the tests prove what is asked of ssh, not what a server does.
+
+### Update every machine
+
+- Unchanged from 1.20.0: an older version of the extension does not know the link and would run such an entry on its own machine.
+
 ## [1.20.0] — 2026-11-10 — A Terminal entry can run its command on a saved SSH connection
 
 ### Added — Runs over SSH
