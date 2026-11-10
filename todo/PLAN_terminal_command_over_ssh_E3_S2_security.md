@@ -23,11 +23,15 @@
 > Amended a third time 2026-11-10 (Fable), in the full stop of epoch 3 (parent entry 3.2), for the re-review that epoch 4
 > is approved on. Every `file:line` of this amendment was opened on 5b221602 (its code is 7c6e4ffb's). Six decisions, in
 > the table under §0: (A1) a one-use SSH entry is spent by a linked run as by its own `creds_exec` — the broker takes its
-> one-use turn and burns it (§2.5); (A2) every spawned, non-interactive ssh says `-T` (§18.1); (A3) `-A` reaches an ssh
+> one-use turn and burns it (§2.5); (A2) the ssh of Run with Secrets says `-T` (§18.1); (A3) `-A` reaches an ssh
 > that E3 spawns only together with the extension's own agent (§18.2); (A4) a linked run with no shown summary, or over
 > another SSH entry than the one the broker holds, is refused (§2.3 step 3); (A5) a waiting rotated value of the SSH entry
 > goes in before the mask table is read (§7); (A6) a password SSH entry with a jump host is not refused, and the limit is
 > recorded (§18.3). None of the six makes scope, the Definition of Done, the merge conditions or the release smaller (§19).
+> Corrected 2026-11-10 by the lead's decision on A2: `-T` goes on the argv of Run with Secrets only
+> (`SshExecOptions.noTty`, set by `secretsArgv` and by no other caller). The first text of this amendment put it into
+> `buildSshExecArgv` for all five callers; that changed shipped roads, which is outside this plan. `ssh:exec`, the agent's
+> linked run and the three clicks of `commands/agentCommands.ts` keep today's argv (§18.1, §18.4 T1 and T2, §19).
 
 ## 0. The decisions, in one table
 
@@ -50,7 +54,7 @@ A4 and A5.
 | # | Question | Decision |
 |---|---|---|
 | A1 | A one-use SSH entry (`burnPolicy: 'oneUse'`) behind a linked Terminal entry (parent entry 3.2) | **Burn it too (B), in the broker.** A linked run is an agent's use of S. The action names S to the broker (`UseAction.uses`, the gate first). The broker gives S the measures it gives the grant's entry: S's one-use turn in the same `OneUseLane` that `creds_exec` on S queues in, S's spent marker asked first, and S burned and marked after a call that answered 200. The turns of T and S are taken in ONE fixed order (ascending lane key), so no two calls can wait for each other. T's own one-use turn and burn are unchanged. Refusing a one-use S in the gate (A) is NOT chosen: it makes D2's road smaller and leaves the cause in place (§2.5). |
-| A2 | A remote pty for a spawned ssh (`RequestTTY force` in the person's ssh config) | `buildSshExecArgv` puts `-T` first, for every caller. No `-o EscapeChar=none`: with no pty ssh reads no escape, so the option would be inert, and an inert measure is deleted, not kept (§18.1). |
+| A2 | A remote pty for a spawned ssh (`RequestTTY force` in the person's ssh config) | **Run with Secrets only** (the lead's decision, 2026-11-10): `secretsArgv` passes `noTty: true`, a new `SshExecOptions.noTty?: boolean`, and `buildSshExecArgv` then puts `-T` first. No other caller sets it, so `ssh:exec`, the agent's linked run and the three person clicks keep today's argv. The danger is where a script goes on stdin, and only this road has one. No `-o EscapeChar=none`: with no pty ssh reads no escape, so the option would be inert, and an inert measure is deleted, not kept (§18.1). |
 | A3 | The spawned ssh inherits the extension host's `SSH_AUTH_SOCK` | Two facts, two answers. (a) Identities of the person's own agent can be offered: this is the person's own ssh setup, a recorded limit, and the false doc text is corrected. (b) `-A` with the extension's agent not up forwards the person's own agent while the banner says that nothing is forwarded: on E3's two roads (Run with Secrets, the agent's linked run) the argv then has NO `-A` and has `-o ForwardAgent=no`. `ssh:exec` keeps today's argv in this plan, by a REQUIRED per-call word (`ownAgentOnly: false`), and gets its own plan (§18.2). |
 | A4 | The summary compare is skipped when `ctx.summary` is absent | For a LINKED gate a missing summary refuses with `changedWhileAsking`, and so does a `ctx.uses` that is absent or names another SSH entry than the gate's (the id, so a relink to an entry that looks the same refuses too). The skip stays for a `local` gate only. The test worlds hand the run what the broker hands it, through one fixture function (§2.3 step 3, §12). |
 | A5 | The mask table holds S's STORED password while a rotated value of S waits | The broker releases a waiting value of the used entry (`releaseWaiting(call.uses)`) after the grant's own and before the table is read, so the table holds the value ssh will use (§7). |
@@ -738,8 +742,8 @@ table names every file the amendment touches.
 | `credsAgentServer.ts` (793 of 800) | After `:530`: `const uses = useAction.uses?.(grant);`, and `uses` joins the object of `:544`. `:583`: `await this.releaseWaiting(grant);` then `await this.releaseWaiting(call.uses);`, and the method (`:620-626`) takes `{ accountId: string; entityId: string } \| undefined`. `:683`: the `refuse` closure takes `why` (§2.5). `:687`: the `burn` closure takes `of = grant`. At most 797 lines after. If it would be more, `releaseWaiting` moves to `brokerCall.ts` as a function of the hook; the ceiling is not raised. |
 | `agentUseActions.ts` (644 lines) | `usedEntryOf(deps, target)` (the row of §2.2); `terminalRunAction` declares `uses`; `changedSince` (`:313-315`) becomes the two-part compare of §2.3 step 3; `overSshWithSlot` (`:382-391`) passes `ownAgentOnly: true`. |
 | `sshUseActions.ts` | `execOverSsh` (`:226-248`) passes `ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined` in the options of `buildSshExecArgv`; `sshExecAction` passes `ownAgentOnly: false` with a comment that names the plan of §18.2. |
-| `sshExecCommand.ts` | `-T` first in the argv (§18.1); `SshExecOptions.ownAgent?: boolean` and its rule (§18.2). This file leaves the "Not changed" list above. |
-| `remoteLaunch.ts`, `sshRoad.ts`, `commands/runCommands.ts`, `maskedTerminal.ts` (doc) | S1's part of §18.2: `SpawnLaunch.ownAgent`, `secretsLaunch(plan, prepared, ownAgent)`, `launchesOf` asks `spawnLaunch` first; the doc texts of §18.2 (a). |
+| `sshExecCommand.ts` | `SshExecOptions.noTty?: boolean`: when it is `true`, `-T` is the first element of the argv; absent or `false`, the argv is today's, element for element (§18.1). `SshExecOptions.ownAgent?: boolean` and its rule (§18.2). This file leaves the "Not changed" list above. |
+| `remoteLaunch.ts`, `sshRoad.ts`, `commands/runCommands.ts`, `maskedTerminal.ts` (doc) | S1's part of §18.1: `secretsArgv` (`remoteLaunch.ts:433-436`) passes `noTty: true`. S1's part of §18.2: `SpawnLaunch.ownAgent`, `secretsLaunch(plan, prepared, ownAgent)`, `launchesOf` asks `spawnLaunch` first; the doc texts of §18.2 (a). |
 | `test/agentSshWorld.ts` | `asBroker`, `oneUseStorage` (§12). |
 | `test/agentSshGate.test.ts` | G11 rewritten, G17 extended, G23, G24; the `run` helper (`:172`) hands the run what the broker hands it (§13). |
 | `test/agentSshRun.test.ts` | the `run` helper (`:19`) the same; no expected value changes. |
@@ -941,7 +945,8 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 | An agent that first lets a rotation of S fail to store (the value waits), and then prints S's password through a linked run | the waiting value went in before the table was read, so the output is masked | U8, U9 |
 | A link moved to a second SSH entry that looks the same (name, host, user, port), while the dialog stands | `changedWhileAsking`: the id is compared, and the broker holds the first entry's turn | G24 |
 | A caller that reaches `run` on a linked entry with no summary (a new door, a wrapper that forgets it) | `changedWhileAsking`; nothing ran | G11 |
-| The person's ssh config says `RequestTTY force` | the argv says `-T`: ssh asks for no pty, the script on stdin is not echoed, and a value with a control byte or a `~` at a line start is only data | T1, T2; the effect is hand check 3's (§18.1) |
+| The person's ssh config says `RequestTTY force`, and the person runs Run with Secrets over SSH | the argv says `-T`: ssh asks for no pty, the script on stdin is not echoed, and a value with a control byte or a `~` at a line start is only data | T1; the effect is hand check 3's (§18.1) |
+| The same config, and an agent's `creds_run` on a linked entry (or `creds_exec`) | today's argv, no `-T`: ssh asks for a pty; no script is on stdin, so nothing is echoed; `stdout` and `stderr` are joined and a value of more than one line is not masked. A recorded limit, shared with the shipped `ssh:exec` (§18.1, §16 item 11) | T2 (a guard that the argv is not changed) |
 | S forwards the agent, the extension's agent has no key, and the extension host has an `SSH_AUTH_SOCK` of the person's own | E3's two roads: no `-A`, and `-o ForwardAgent=no`; nothing is forwarded, as the banner says. `ssh:exec` on S: today's argv, its own plan (§18.2) | F1–F5 |
 
 ## 15. Opus review checklist
@@ -1002,8 +1007,11 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 - [ ] `releaseWaiting(call.uses)` stands after the grant's release and before `tableOrFail`; U9 was watched RED with the
       value in the answer.
 - [ ] `credsAgentServer.ts` is at most 797 lines; no ceiling and no lint rule was changed.
-- [ ] `buildSshExecArgv`'s first word is `-T` for every caller; no `-o EscapeChar=none` was added; no test says that `-T`
-      PREVENTS a pty — the tests say it is sent, and hand check 3 holds the effect.
+- [ ] `-T` is the first word of the argv of Run with Secrets and of no other argv: `noTty: true` stands at exactly one
+      production site, `secretsArgv` (grep `noTty`); `sshExecCommand.ts` writes the word, not the composer. The argv of
+      `ssh:exec`, of the linked run and of the three clicks of `commands/agentCommands.ts` is today's (T2). No
+      `-o EscapeChar=none` was added; no test says that `-T` PREVENTS a pty — the tests say it is sent, and hand check 3
+      holds the effect.
 - [ ] `ownAgentOnly` is a REQUIRED field of `OverSshCall`: the linked run says `true`, `ssh:exec` says `false` with the
       plan named beside it, and F5 finds exactly that one `false`. `secretsLaunch` has a required third parameter.
 - [ ] The doc of `sshRoad.ts` (`:29-33`, `:37-41`) and of E3-D4, E3-D5 and E3-D8 says what the child's environment
@@ -1059,10 +1067,13 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
     a person may use today. The three person clicks of `commands/agentCommands.ts` (`:197`, `:222`, `:351`) build the
     same argv and belong to the same plan. NOT the plan `PLAN_ssh_exec_absolute_program.md`: that one waits for E3 and
     is not exploitable today; this one should not wait.
-11. **`-T` changes the argv of shipped roads** (§18.1): `ssh:exec` and the three person clicks above, because the word
-    goes into the one builder. It takes nothing away: none of them has a terminal, and the answer of `ssh:exec` has
-    `stdout` and `stderr` apart, which a pty would join. Text for the CHANGELOG. In doubt it is part of what the
-    re-review approves.
+11. **A forced pty on the agent's roads is a recorded limit, not fixed here** (§18.1; the lead's decision, 2026-11-10).
+    With `RequestTTY force` in the person's ssh config, `ssh:exec` and the agent's linked run get a pty: `stdout` and
+    `stderr` are joined, line ends become CR LF, and a value of more than one line is then not masked in the agent's
+    answer. For the linked run this is a limit of D15's *masked with the SSH entry's values too*. `-T` is not sent
+    there, because it would change the shipped `ssh:exec` (a person may rely on a forced pty, for `sudo` for example).
+    It belongs to the plan of item 10, which already decides what a spawned ssh of the agent takes from the person's
+    ssh setup. For the lead to route; text for that plan, not for E3's CHANGELOG.
 12. **Parent §4.4 says of Run with Secrets: *the agent socket as the agent's `ssh:exec` chooses it*.** After A3 the two
     differ in one case (the entry forwards, the extension's agent is not up). The parent's words change.
 13. **`PLAN_askpass_answers_the_hop.md` names two paths; E1, E2 and E3 add roads to both** (§18.3). Its table and its
@@ -1106,19 +1117,36 @@ the promise holds only while the person's ssh config is silent. With `RequestTTY
 a pty. For Run with Secrets the script on stdin is then typed into a terminal: the server echoes it (the values come
 back in the output, and a value of more than one line comes back with CR LF, which the masker's needle does not have),
 a control byte in a value acts on the terminal, and a line that starts with `~` is read by ssh as an escape. For
-`ssh:exec` and the agent's linked run stdin is not used (`sshExecRunner.ts:134`), but `stdout` and `stderr` are joined
-and line ends become CR LF, so a value of more than one line is not masked in the agent's answer.
+`ssh:exec` and the agent's linked run stdin is not used (`sshExecRunner.ts:134`), so nothing is echoed and nothing is
+read as an escape; there `stdout` and `stderr` are joined and line ends become CR LF, so a value of more than one line
+is not masked in the agent's answer.
 
-**Decision.** `buildSshExecArgv` returns `-T` as its FIRST element, for both branches and for a bridged call:
-`['-T', '-o', 'BatchMode=yes' | 'NumberOfPasswordPrompts=1', …]`. In the builder and not in `secretsArgv`: the builder
-is the one road of every spawned, non-interactive ssh (five callers on 5b221602: `sshUseActions.ts:238`,
-`remoteLaunch.ts:435`, `commands/agentCommands.ts:197`, `:222`, `:351`), and a word added at two of five is the defect
-security.md names.
+**Decision (the lead's, 2026-11-10; it replaces this section's first text).** `-T` goes on the argv of Run with Secrets
+over SSH, and on no other argv. The first text put `-T` into `buildSshExecArgv` for all five callers
+(`sshUseActions.ts:238`, `remoteLaunch.ts:435`, `commands/agentCommands.ts:197`, `:222`, `:351`). The lead refused that:
+it changes the shipped `ssh:exec` and three shipped clicks, none of which puts a script on stdin; a person may rely on
+`RequestTTY force` there (for `sudo`, for example); and a change of shipped roads is outside this plan. The danger of
+the echo, of a control byte and of `~` exists only where a script goes on stdin, and that is this one road.
+
+**How: an option of the builder, not a word that the composer adds.** `SshExecOptions` (`sshExecCommand.ts`) gains
+`noTty?: boolean`. With `noTty: true`, `buildSshExecArgv` returns `-T` as its FIRST element:
+`['-T', '-o', 'BatchMode=yes' | 'NumberOfPasswordPrompts=1', …]`. Absent or `false`, the argv is today's, element for
+element. `secretsArgv` (`remoteLaunch.ts:433-436`) passes `{ jump, knownHostsFile, ownAgent, noTty: true }`, and no
+other caller names the option. Why the option and not `['-T', ...argv]` in `secretsArgv`: every ssh option word is
+written in ONE file today, and that file knows where a word may stand (before `--`, before the destination). A second
+place that adds a word to a finished argv is a second composer. With the option, K1 keeps its form (a deep-equal with
+`buildSshExecArgv`), and one grep for `noTty` shows who asks.
+
+**What is left open, on purpose.** With `RequestTTY force`, `ssh:exec` and the agent's linked run still get a pty.
+This is a measure at one of its sites, by decision and in the open: §16 item 11 records the limit and sends it to the
+plan that owns the shipped road, and T2 holds that this plan did not change those argvs.
 
 **No `-o EscapeChar=none`.** ssh reads an escape only in a session with a pty (ssh(1): *`-e` … Sets the escape
 character for sessions with a pty*; *When a pseudo-terminal has been requested, ssh supports a number of functions
-through the use of an escape character*). With `-T` there is no pty. So the option would change nothing that can be
-seen, and security.md says to delete such a measure: it is where the next reader stops looking.
+through the use of an escape character*). With `-T` there is no pty. So on the road that gets `-T` the option would
+change nothing that can be seen, and security.md says to delete such a measure: it is where the next reader stops
+looking. On the roads that do not get `-T` no script is on stdin (`stdio: ['ignore', …]`), so there is no line for ssh
+to read as an escape.
 
 **What was measured, and what was not.** On OpenSSH_10.2p1 (this machine, 2026-11-10), with `ssh -G` and a config file
 that says `RequestTTY force`: the config alone → `requesttty force`; with `-T` → `requesttty false`; with
@@ -1214,8 +1242,8 @@ Each says what is SENT. None says that an option protects: the two effects are h
 
 | # | File | Test | Assertion | RED today |
 |---|---|---|---|---|
-| T1 | `test/sshExecCommand.test.ts` | `every_spawned_ssh_says_no_tty_first` | for `'key'`, for `'askpass'` and for `{ bridged: true }`: `argv[0] === '-T'`; exactly one element is `-T`; no element is `-t` or `-tt`; no element is `EscapeChar=none` | `argv[0] === '-o'` |
-| T2 | `test/secretsLaunch.test.ts` (K1 gains it), `test/sshExecOver.test.ts` | K1: `launch.argv[0] === '-T'`, said by name beside the deep-equal with `buildSshExecArgv`. The linked run: `runs[0].argv[0] === '-T'` | `'-o'` |
+| T1 | `test/sshExecCommand.test.ts`; `test/secretsLaunch.test.ts` (K1 and K2 gain it) | `no_tty_is_said_first_and_only_when_the_caller_asks` | The builder: with `{ noTty: true }`, for `'key'` and for `'askpass'`: `argv[0] === '-T'`; exactly one element is `-T`; no element is `-t` or `-tt`; no element is `EscapeChar=none`; `argv.slice(1)` deep-equals the argv of the same call without `noTty` (the option adds one word and moves nothing). With no `noTty`, and with `noTty: false`: no element is `-T`, and `argv[0] === '-o'`. K1 and K2: `launch.argv[0] === '-T'`, said by name, and the expected argv of the deep-equal is `buildSshExecArgv(…, { jump, knownHostsFile, ownAgent, noTty: true })` | `argv[0] === '-o'` for `{ noTty: true }` (the option is not read); K1: `launch.argv[0] === '-o'` |
+| T2 | `test/sshExecOver.test.ts`; `test/launchRoadScan.test.ts` (with F5) | `the_agents_ssh_keeps_its_argv_no_tty_word_is_added` (a GUARD) | `execOverSsh` as the linked run calls it and as `ssh:exec` calls it: no element of `runs[0].argv` is `-T`, and `runs[0].argv[0] === '-o'`; the deep-equal of `:134` keeps its expected value but for `ownAgent`. The scan: `noTty` stands at exactly one production site outside `sshExecCommand.ts`, in `secretsArgv` of `remoteLaunch.ts`; a failure names file and line; companion: the scan finds that one | (green today, a guard: say so. Watch it RED once, with `noTty: true` passed in `execOverSsh`: `runs[0].argv[0] === '-T'`.) The scan half is RED before the build: the companion finds no site |
 | F1 | `test/sshExecCommand.test.ts` | `a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_no` | entity with `agentForward: true` and one `-L` forward. `{ ownAgent: false }`: no element is `-A`; the pair `-o`, `ForwardAgent=no` stands once; the `-L` is still there. `{ ownAgent: true }`: `-A`, and no `ForwardAgent=no`. No `ownAgent`: `-A` (today's argv). An entity that does not forward, `{ ownAgent: false }`: neither word. `{ bridged: true }`: the six options as before (`:125`), unchanged | `ownAgent` is not read: `-A` is in the argv of the first case |
 | F2 | `test/sshRoad.test.ts` (H7 gains it) | `spawn_launch_says_whether_the_agent_is_ours` | forwarding and a socket: `ownAgent === true`, `env.SSH_AUTH_SOCK` is the socket. Forwarding and no socket: `ownAgent === false`, `warning === NO_AGENT_TO_FORWARD`, `'SSH_AUTH_SOCK' in env` is false. Not forwarding, a socket: `ownAgent === false`, no warning | no such field |
 | F3 | `test/sshRoadSecrets.test.ts` | `a_run_with_secrets_that_forwards_with_no_agent_up_sends_no_dash_a` | the world of the warning test (`:233`): `masked[0].argv` holds no `-A` and holds the pair `-o`, `ForwardAgent=no`; the banner holds `Note: ${NO_AGENT_TO_FORWARD}.`; the trust line that was asked still holds ` -A ` (the approval is not changed). With the socket up: `-A` in the argv and `masked[0].env.SSH_AUTH_SOCK` is the socket | `-A` is in the argv while the banner says that nothing is forwarded |
@@ -1225,15 +1253,15 @@ Each says what is SENT. None says that an option protects: the two effects are h
 Two existing rows of the stories document change their NAME, because the name said more than the test sees: S9
 (`the_child_env_is_the_askpass_and_agent_variables_only_and_holds_no_value`) reads `masked[0].env`, which is what the
 run ADDS, not the child's whole environment; it becomes `the_run_adds_only_the_askpass_and_agent_variables_and_no_value`.
-Its assertions do not change. A test that pins a whole argv of `buildSshExecArgv` gains `-T` as its first element and
-changes nothing else.
+Its assertions do not change. No test that pins an argv of `ssh:exec`, of the linked run or of a click of
+`commands/agentCommands.ts` changes for `-T`: those argvs are today's.
 
 ## 19. What the third amendment does to scope, the Definition of Done, the merge conditions and the release
 
 | # | Decision | Smaller? | Why |
 |---|---|---|---|
 | A1 | a linked run spends a one-use S (B) | no | D2's road is as wide as before: a one-use S that is open to agents still runs, once, which is what its form says. The Definition of Done and the merge conditions GAIN rows (U1–U11, G23, G24). A — the refusal — would have been a narrowing, and is not chosen |
-| A2 | `-T` | no | it makes *no tty* true as the parent wrote it; no road loses anything |
+| A2 | `-T` on the argv of Run with Secrets only | no | it makes *no tty* true as the parent wrote it for that road; nothing of E3 is released, so nobody loses a thing they have; no shipped road changes (the lead's decision). The forced pty on the agent's roads is a recorded limit, not a smaller plan: the parent promised *no tty* for Run with Secrets only |
 | A3 | no `-A` without the extension's agent, on E3's two roads | no | nothing of E3 is released, so nobody loses a thing they have; the parent never promised that the person's own agent is forwarded, and the banner says the opposite. `ssh:exec` is not changed |
 | A4 | a linked run needs the shown summary and the used entry | no | the broker always gives both; only a call that no door makes is refused |
 | A5 | the waiting value of S goes in first | no | it makes §7 true as written |
