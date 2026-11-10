@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { BUSY_PLACE, LOCAL_DOOR, TokenlessCeilings } from '../aliasThrottle';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import { CONSENT_TIMED_OUT_ON_PLACE } from '../brokerProtocol';
@@ -315,4 +315,34 @@ test('F1g: a call whose own holding has already been given back marks nothing ei
   assert.equal(ceilings.admit(true, 2).refusal, undefined, 'the next holder\'s release freed it: a stale call marked nothing of it');
   q.settle();
   await turns();
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * `until` times out on the real clock, whatever a test has mocked (CodeRabbit on #323, the C20 hang)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const realSetTimeout = setTimeout;
+
+/** `body`'s outcome, or `'hung'` if it has not settled after two real seconds: a hang is a failure here, not a wait for the runner's limit. */
+async function settlesSoon(body: () => Promise<unknown>): Promise<string> {
+  const outcome = await Promise.race([body().then(() => 'resolved', (error: Error) => `rejected: ${error.message}`), new Promise<string>((resolve) => realSetTimeout(resolve, 2_000, 'hung'))]);
+  return outcome;
+}
+
+test('until fails on the real clock when `Date` is mocked: a condition that never comes does not wait for the runner', async () => {
+  mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  try {
+    assert.equal(await settlesSoon(() => until(() => false, 'a condition that never comes', 300)), 'rejected: timed out waiting for a condition that never comes');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('until fails on the real clock when `setTimeout` is mocked too', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  try {
+    assert.equal(await settlesSoon(() => until(() => false, 'a condition that never comes', 300)), 'rejected: timed out waiting for a condition that never comes');
+  } finally {
+    mock.timers.reset();
+  }
 });

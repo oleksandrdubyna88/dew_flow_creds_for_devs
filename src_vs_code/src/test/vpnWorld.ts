@@ -258,17 +258,20 @@ function isModal(options: unknown): boolean {
   return typeof options === 'object' && options !== null && (options as { modal?: boolean }).modal === true;
 }
 
-/** Poll until `ready`, failing with `what` rather than hanging the suite. */
+/** The real timer, taken at load: a test that mocks `setTimeout` or `Date` must not stop `until` from timing out. */
+const realSetTimeout = setTimeout;
+
+/** Poll until `ready`, failing with `what` rather than hanging the suite: on the real clock and the real timer, whatever the test has mocked. */
 export function until(ready: () => boolean, what: string, ms = 3000): Promise<void> {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   return new Promise((resolve, reject) => {
     const poll = (): void => {
       if (ready()) {
         resolve();
-      } else if (Date.now() > deadline) {
+      } else if (performance.now() > deadline) {
         reject(new assert.AssertionError({ message: `timed out waiting for ${what}` }));
       } else {
-        setTimeout(poll, 5);
+        realSetTimeout(poll, 5);
       }
     };
     poll();

@@ -546,14 +546,21 @@ export function normalised(reply: Reply): { status: number; body: string } {
   return { status: reply.status, body: reply.body.replace(/"durationMs":\d+/g, '"durationMs":0') };
 }
 
-/** Poll until `done` is true, or fail with `what`; the broker answers on its own schedule and a fixed sleep guesses it. */
+/** The real timer, taken at load: a test that mocks `setTimeout` or `Date` must not stop `until` from timing out. */
+const realSetTimeout = setTimeout;
+
+/**
+ * Poll until `done` is true, or fail with `what`; the broker answers on its own schedule and a fixed sleep guesses it.
+ * The deadline is on the REAL clock (`performance.now`) and the poll on the real timer: a test that mocks `Date` or `setTimeout` (the throttle's clock, the
+ * consent wait) and whose condition never comes fails here in `ms`, instead of waiting for the runner's 60-minute limit.
+ */
 export async function until(done: () => boolean, what: string, ms = 3_000): Promise<void> {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!done()) {
-    if (Date.now() > deadline) {
+    if (performance.now() > deadline) {
       throw new Error(`timed out waiting for ${what}`);
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 5));
   }
 }
 
