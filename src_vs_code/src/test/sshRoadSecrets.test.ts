@@ -6,7 +6,8 @@ import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD, NO_SSH_TO_SPAWN } from '../sshP
 import type { ReadySsh } from '../sshSession';
 import type { CommandArg, EntityMetadata, TreeNode } from '../types';
 import { ArrowOptions, ArrowWorld, MaskedRecord, arrowWorld, runCommandsModule, vaultOf } from './arrowWorld';
-import { FakeRoad, OUR_SOCKET, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
+import { OUR_SOCKET } from './fakePaths';
+import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
 import { hostOs, until } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 

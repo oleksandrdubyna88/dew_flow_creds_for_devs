@@ -14,6 +14,7 @@ import { pinRefusalFor } from '../pinGate';
 import { clampExecTimeout } from '../brokerProtocol';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { sshNode } from './sshRoadWorld';
+import { HOST_SOCKET, OUR_SOCKET } from './fakePaths';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -219,8 +220,6 @@ test('ssh_exec_still_resolves_its_chain_after_the_credential', async () => {
 
 // ---- E3.4 F-S2: -T and the child's environment on the agent's linked run (parent D16, D17; spec §18) ------------------------------------
 
-const HOST_SOCKET = '/tmp/host-agent.sock';
-const OUR_SOCKET = '/tmp/ours.sock';
 
 /** What the linked run sends: the call its action makes (`ownAgentOnly` and `noTty`), over a key entry. */
 const linkedCall = (over: Partial<OverSshCall> = {}): OverSshCall => callOf({ ownAgentOnly: true, noTty: true, ...over });

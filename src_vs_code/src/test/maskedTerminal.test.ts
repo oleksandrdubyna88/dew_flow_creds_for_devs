@@ -11,6 +11,7 @@ import { EntityMetadata } from '../types';
 import { fakeRoad, sshNode } from './sshRoadWorld';
 import { StubEventEmitter, loadWithVscode } from './vscodeStub';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { HOST_SOCKET, OUR_SOCKET } from './fakePaths';
 
 /**
  * The terminal whose output the extension owns, so a secret cannot appear in it (audit A3).
@@ -642,7 +643,6 @@ test('the_ssh_childs_environment_holds_no_secret_value', REAL_CHILD, async (t) =
 
 // ---- the whole child environment of E3's two roads (F6 (2); parent D17 (a)) -------------------------------------------------
 
-const HOST_SOCKET = '/tmp/host-agent.sock';
 const RESOLVED = 'correct-horse-battery-staple';
 const ASKPASS = { SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' };
 
@@ -686,9 +686,9 @@ test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', REAL_CHIL
     assert.ok(!password.some((entry) => entry.includes(RESOLVED)), 'no resolved value in any value');
     assert.deepEqual(changedKeys(password), Object.keys(ASKPASS).sort(), 'what the run added or changed is exactly the askpass variables');
 
-    const ours = await recordedEnv(t, false, { SSH_AUTH_SOCK: '/tmp/ours.sock' });
+    const ours = await recordedEnv(t, false, { SSH_AUTH_SOCK: OUR_SOCKET });
     assert.deepEqual(changedKeys(ours), ['SSH_AUTH_SOCK'], 'with our agent: only its socket');
-    assert.deepEqual(ours.filter((entry) => entry.startsWith('SSH_AUTH_SOCK=')), ['SSH_AUTH_SOCK=/tmp/ours.sock'], 'ours, exactly once');
+    assert.deepEqual(ours.filter((entry) => entry.startsWith('SSH_AUTH_SOCK=')), ['SSH_AUTH_SOCK=' + OUR_SOCKET], 'ours, exactly once');
     assert.ok(!ours.some((entry) => entry.includes(HOST_SOCKET)), 'and the host socket stands nowhere');
 
     assert.deepEqual(changedKeys(await recordedEnv(t, false, {})), [], 'a key session with no env adds and changes nothing');

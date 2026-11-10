@@ -15,6 +15,7 @@ import { ACCOUNT as VAULT_ACCOUNT, carried, clickVscode, memoryStorage, seedEntr
 import { fingerprintOf, holdRotated } from '../rotationQuarantine';
 import { trustLineFor } from '../remoteLaunch';
 import { loadEachWithVscode } from './vscodeStub';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /**
  * The SSH entry's one-use promise through the broker (E3.4 F-S2; security spec §2.5, scenarios U1-U11, A1 and A5): a linked run is an agent's
@@ -561,7 +562,7 @@ test('the_agents_output_masks_the_ssh_password_that_the_run_used', async () => {
   const trusted = [commandFingerprint('t1', trustLineFor(ssh, undefined, 'echo linked'))];
   const action = terminalRunAction({
     storage,
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => () => undefined,
     note: () => undefined,

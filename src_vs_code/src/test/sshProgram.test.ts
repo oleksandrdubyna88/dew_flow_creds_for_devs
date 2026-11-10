@@ -20,6 +20,7 @@ import {
   wslWindowsSshClient,
 } from '../sshProgram';
 import type { EntityMetadata } from '../types';
+import { fakePath } from './fakePaths';
 
 const present = (): boolean => true;
 const absent = (): boolean => false;
@@ -283,7 +284,7 @@ test('on_windows_the_spawned_program_is_never_a_bare_name', () => {
   const everything = recordingExists(() => true);
   const nothing = recordingExists(() => false);
   for (const agentForward of [true, false]) {
-    const program = sshSpawnLaunch({ ...SSH_ENTITY, agentForward }, '/tmp/a.sock', 'win32').program;
+    const program = sshSpawnLaunch({ ...SSH_ENTITY, agentForward }, fakePath('a.sock'), 'win32').program;
     assert.match(spawnableSshProgram(program, 'win32', WIN_PATH, everything.exists) ?? '', /^[A-Za-z]:[\\/]/, `agentForward ${String(agentForward)}`);
     assert.equal(spawnableSshProgram(program, 'win32', WIN_PATH, nothing.exists), undefined, 'never the bare word, however the client was named');
   }
@@ -291,9 +292,9 @@ test('on_windows_the_spawned_program_is_never_a_bare_name', () => {
 
 test('a_forwarding_entry_gets_the_agent_socket_and_a_missing_socket_is_a_warning', () => {
   const forwarding = { ...SSH_ENTITY, agentForward: true };
-  assert.deepEqual(sshSpawnLaunch(forwarding, '/tmp/a.sock', 'linux'), { program: 'ssh', env: { SSH_AUTH_SOCK: '/tmp/a.sock' } });
+  assert.deepEqual(sshSpawnLaunch(forwarding, fakePath('a.sock'), 'linux'), { program: 'ssh', env: { SSH_AUTH_SOCK: fakePath('a.sock') } });
   assert.deepEqual(sshSpawnLaunch(forwarding, undefined, 'linux'), { program: 'ssh', env: {}, warning: NO_AGENT_TO_FORWARD });
-  assert.deepEqual(sshSpawnLaunch(SSH_ENTITY, '/tmp/a.sock', 'linux'), { program: 'ssh', env: {} }, 'no forwarding: the socket is not handed over');
+  assert.deepEqual(sshSpawnLaunch(SSH_ENTITY, fakePath('a.sock'), 'linux'), { program: 'ssh', env: {} }, 'no forwarding: the socket is not handed over');
 });
 
 test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', () => {

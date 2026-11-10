@@ -13,6 +13,7 @@ import { L, folderWorld, named, session } from './folderWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /**
  * E1.S1 of `PLAN_terminal_command_over_ssh.md`: EVERY road that runs a Terminal entry refuses a linked one with the one
@@ -165,7 +166,7 @@ test('the_agent_run_refuses_a_linked_entry_whose_ssh_entry_is_missing_with_the_o
   let slotCalls = 0;
   const deps = {
     storage: { getNode: () => ({ details: LINKED }), getAccounts: () => [{ accountId: 'acct-1' }], getDbConnection: async () => '' },
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => {
       slotCalls += 1;

@@ -8,6 +8,7 @@ import {
   validateRemoteCommand,
 } from '../sshExecCommand';
 import { EntityMetadata } from '../types';
+import { KEY_FILE } from './fakePaths';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -31,7 +32,7 @@ test('the remote command is the last element, verbatim and unquoted', () => {
 });
 
 test('key auth gets BatchMode, so an unattended call fails instead of hanging', () => {
-  const argv = buildSshExecArgv(entity(), '/tmp/k.key', 'true', 'key') ?? [];
+  const argv = buildSshExecArgv(entity(), KEY_FILE, 'true', 'key') ?? [];
 
   assert.equal(argv.includes('BatchMode=yes'), true);
   assert.equal(argv.includes('StrictHostKeyChecking=accept-new'), true);
@@ -60,8 +61,8 @@ test('-i appears only with a key path, -p only for a non-default port', () => {
   assert.equal(plain.includes('-i'), false);
   assert.equal(plain.includes('-p'), false);
 
-  const keyed = buildSshExecArgv(entity({ port: 2222 }), '/tmp/k.key', 'true') ?? [];
-  assert.equal(keyed[keyed.indexOf('-i') + 1], '/tmp/k.key');
+  const keyed = buildSshExecArgv(entity({ port: 2222 }), KEY_FILE, 'true') ?? [];
+  assert.equal(keyed[keyed.indexOf('-i') + 1], KEY_FILE);
   assert.equal(keyed[keyed.indexOf('-p') + 1], '2222');
 
   // An empty key path is "no key", not `-i ""`.
@@ -140,7 +141,7 @@ test('C.1: BRIDGED_SSH_OPTIONS is the six options, in this order, and nothing el
 });
 
 test('F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination', () => {
-  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', '/tmp/k.key');
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', KEY_FILE);
   const joined = argv.join(' ');
   for (const forbidden of ['-A', '-L', '-R', '-D']) {
     assert.ok(!argv.includes(forbidden), `${forbidden} is not sent on a bridge: ${joined}`);
@@ -183,8 +184,8 @@ test('F2: { bridged: false } and {} send none of the six, and an entry that forw
 
 test('no_tty_is_said_first_and_only_when_the_caller_asks', () => {
   for (const auth of ['key', 'askpass'] as const) {
-    const asked = argvWith(everything, { noTty: true, jump: 'hop@jump.example.com' }, auth, '/tmp/k.key');
-    const plain = argvWith(everything, { jump: 'hop@jump.example.com' }, auth, '/tmp/k.key');
+    const asked = argvWith(everything, { noTty: true, jump: 'hop@jump.example.com' }, auth, KEY_FILE);
+    const plain = argvWith(everything, { jump: 'hop@jump.example.com' }, auth, KEY_FILE);
     assert.equal(asked[0], '-T', `${auth}: -T is the first word: ${asked.join(' ')}`);
     assert.equal(asked.filter((arg) => arg === '-T').length, 1, `${auth}: exactly one -T`);
     for (const forbidden of ['-t', '-tt', 'EscapeChar=none']) {
@@ -192,7 +193,7 @@ test('no_tty_is_said_first_and_only_when_the_caller_asks', () => {
     }
     assert.deepEqual(asked.slice(1), plain, `${auth}: the option adds one word and moves nothing`);
     for (const options of [{}, { noTty: false }]) {
-      const quiet = argvWith(everything, options, auth, '/tmp/k.key');
+      const quiet = argvWith(everything, options, auth, KEY_FILE);
       assert.ok(!quiet.includes('-T'), `${auth}: no -T unless asked: ${quiet.join(' ')}`);
       assert.equal(quiet[0], '-o', `${auth}: today's first word`);
     }

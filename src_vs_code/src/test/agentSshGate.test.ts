@@ -22,6 +22,7 @@ import { call, share, world } from './brokerWorld';
 import { ownerChain, startVpn, world as vpnWorldOf } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 import { loadWithVscode } from './vscodeStub';
+import { fakePath } from './fakePaths';
 
 const scope = cleanupScope();
 after(() => scope.close());
@@ -436,10 +437,10 @@ test('a_linked_run_with_no_shown_summary_is_refused_and_a_local_one_is_not_compa
 test('asks_after_consent_is_true_only_for_a_linked_entry_that_forwards_the_agent_while_the_socket_is_up', () => {
   const asked = (w: GateWorld): boolean => asksAfter(terminalRunAction(w.deps), w.ctx);
   assert.equal(typeof terminalRunAction(gateWorld().deps).asksAfterConsent, 'function');
-  assert.equal(asked(gateWorld({ terminal: { sshEntityId: undefined }, acct1: [], agentSocket: '/tmp/a.sock' })), false, 'unlinked');
-  assert.equal(asked(gateWorld({ agentSocket: '/tmp/a.sock' })), false, 'linked, no -A');
+  assert.equal(asked(gateWorld({ terminal: { sshEntityId: undefined }, acct1: [], agentSocket: fakePath('a.sock') })), false, 'unlinked');
+  assert.equal(asked(gateWorld({ agentSocket: fakePath('a.sock') })), false, 'linked, no -A');
   assert.equal(asked(gateWorld({ acct1: [usableSsh('s1', { agentForward: true })], withSocketFn: true, agentSocket: undefined })), false, '-A, the socket is down');
-  assert.equal(asked(gateWorld({ acct1: [usableSsh('s1', { agentForward: true })], agentSocket: '/tmp/a.sock' })), true, '-A and the socket is up');
+  assert.equal(asked(gateWorld({ acct1: [usableSsh('s1', { agentForward: true })], agentSocket: fakePath('a.sock') })), true, '-A and the socket is up');
   assert.equal(asked(gateWorld({ acct1: [usableSsh('s1', { agentForward: true })] })), false, 'deps with no agentSocket');
 });
 
@@ -606,7 +607,7 @@ test('after_the_gate_passes_plan_refusals_name_only_the_terminal_entry', async (
 /** G22: the six states of S that the gate refuses, each built with and without `-A`. */
 function refusedStates(forward: boolean): { name: string; options: GateOptions }[] {
   const ssh = (extra: Partial<EntityMetadata> = {}): Partial<EntityMetadata> => ({ agentForward: forward, ...extra });
-  const socket = '/tmp/a.sock';
+  const socket = fakePath('a.sock');
   return [
     { name: 'closed', options: { acct1: [sshNode('s1', ssh({ mcp: { view: true } }))], agentSocket: socket } },
     { name: 'no mcp', options: { acct1: [sshNode('s1', ssh())], agentSocket: socket } },
@@ -640,7 +641,7 @@ test('before_the_gate_passes_the_follow_up_flag_says_nothing_about_the_ssh_entry
   assert.equal(messages.size, 1, 'the twelve answers are byte-equal');
 
   // The positive control: a USABLE SSH entry that forwards the agent does raise the flag, and the same admission says busy.
-  const control = gateWorld({ acct1: [usableSsh('s1', { agentForward: true })], agentSocket: '/tmp/a.sock' });
+  const control = gateWorld({ acct1: [usableSsh('s1', { agentForward: true })], agentSocket: fakePath('a.sock') });
   const flag = asksAfter(terminalRunAction(control.deps), control.ctx);
   assert.equal(flag, true, 'the control: the flag can be true');
   const ceilings = new TokenlessCeilings();

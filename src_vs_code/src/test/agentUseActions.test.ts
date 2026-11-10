@@ -13,6 +13,7 @@ import {
   vpnAction,
 } from '../agentUseActions';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -42,7 +43,7 @@ function fakeDeps(over: Record<string, unknown> = {}) {
       getDbConnection: async () => 'postgresql://u:p@h:5432/db',
       getAccounts: () => [{ accountId: 'acct-1' }],
     },
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => () => undefined,
     note: () => undefined,

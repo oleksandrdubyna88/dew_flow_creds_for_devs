@@ -8,6 +8,7 @@ import type { AgentUseDeps } from '../agentUseActions';
 import type { OverSsh, OverSshCall, UseAction, UseActionContext } from '../useActions';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /**
  * The world of the agent's run over SSH (E3.S2 security spec §12): the SSH entry the gate reads, a storage that answers per account and
@@ -209,7 +210,7 @@ export function gateWorld(options: GateOptions = {}): GateWorld {
   const overSsh = recordingOverSsh(options.overSshRejects === true);
   const deps = {
     storage,
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: slotsOf(options.busy === true, slots),
     note: (message: string) => {

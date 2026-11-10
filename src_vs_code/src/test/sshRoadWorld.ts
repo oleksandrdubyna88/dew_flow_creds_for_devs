@@ -6,6 +6,7 @@ import type { SpawnLaunch, SshRoad } from '../sshRoad';
 import type { PreparedSsh, ReadySsh } from '../sshSession';
 import type { EntityMetadata, TreeNode } from '../types';
 import type { World } from './vpnWorld';
+import { OUR_SOCKET } from './fakePaths';
 
 /**
  * The world of the SSH roads (E2.S1 of `PLAN_terminal_command_over_ssh.md`): an SSH entry that passes the real link
@@ -132,7 +133,6 @@ function launchAnswer(ssh: EntityMetadata, env: Readonly<Record<string, string>>
 }
 
 /** The extension agent's socket, as a fake road's launch gives it when the entry forwards and no warning was scripted. */
-export const OUR_SOCKET = '/tmp/ours.sock';
 
 /** As the real road does: a forwarding entry is served by OUR agent unless the launch has the warning, and then its socket is in the environment. */
 function spawnedWith(ownAgent: boolean, env: Readonly<Record<string, string>> | undefined): Extract<SpawnLaunch, { kind: 'spawn' }> {
