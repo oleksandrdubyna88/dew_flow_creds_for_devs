@@ -21,9 +21,21 @@ janitor_said() { # <label> <root>: when the janitor left something, say why (its
   if [ "$(count "$2")" != 0 ]; then echo "$1 the janitor said: $(head -n 3 "$CTL/janitor.err" | tr '\n' '|')"; fi
 }
 age() { local p; for p in "$@"; do touch -t 200001010000 "$p"; done; }
+# The shared janitor is run as its callers run it: `bash` from PATH (its shebang is `#!/usr/bin/env bash`, and acme's run.sh calls it so),
+# NOT with "$BASH". On macOS "$BASH" is /bin/bash 3.2, which cannot parse janitor.sh:132 (a `case … esac` inside `$( )` inside `${…:-…}`:
+# "command substitution: line 132: syntax error"), while `bash` on the hosted macOS runner is Homebrew's bash 5. owned.sh itself stays
+# under "$BASH" (3.2 there): that is the point of this self-test. A `bash` older than 4 on PATH skips the janitor halves, visibly.
 run_janitor() { # <root>; sets J_RC, files $CTL/janitor.out and .err
-  (cd "$repo" && JANITOR_MIN_AGE_MINUTES=10 TMPDIR="$1" "$BASH" "$janitor" --token creds > "$CTL/janitor.out" 2> "$CTL/janitor.err")
+  (cd "$repo" && JANITOR_MIN_AGE_MINUTES=10 TMPDIR="$1" bash "$janitor" --token creds > "$CTL/janitor.out" 2> "$CTL/janitor.err")
   J_RC=$?
+}
+janitor_usable() { # <label>: 0 when `bash` on PATH can run the shared janitor (bash 4 or later); else a visible skip and 1
+  local major
+  major="$(bash -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null)"
+  if [ "${major:-0}" -ge 4 ] 2>/dev/null; then return 0; fi
+  echo "NOTE $1: \`bash\` on PATH is version ${major:-unknown}; the shared janitor needs bash 4 or later, so its half of this case is skipped"
+  skipped "$1 janitor" "bash on PATH older than 4"
+  return 1
 }
 run_node_sweep() { # <root>; prints R/L/P lines (removed, listed, preserved)
   ARG_TMP="$(native "$1")" ARG_REPO="$repo_native" LIB_DIR="$lib_native" TESTSTODELETE_OWNER='' TESTSTODELETE_RUN='' node --input-type=module -e "$NJS_PRE
@@ -65,10 +77,14 @@ kill_between_claim_and_mkdir_leaves_one_claim_the_sweeps_collect() {
   age "$CR/$claim"
   if [ "$osclass" = windows ]; then windows_listing "T13/T14" "$CR" "$claim"; return 0; fi
   local root_j="$CR"
-  run_janitor "$root_j"
-  case "$J_RC" in 0 | 3) ok "T13 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T13 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
-  eq "T13 the janitor leaves the root EMPTY" "$(count "$root_j")" 0
-  janitor_said T13 "$root_j"
+  if janitor_usable T13; then
+    run_janitor "$root_j"
+    case "$J_RC" in 0 | 3) ok "T13 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T13 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
+    eq "T13 the janitor leaves the root EMPTY" "$(count "$root_j")" 0
+    janitor_said T13 "$root_j"
+  else
+    rm -f "$CR/$claim" # the dead child's claim, in this case's own root: the Node half below starts from an empty root
+  fi
   # the Node sweep over a second root of the same shape
   premise "T13 scope again" scope_premise || return 0
   kill_between t13node
@@ -123,6 +139,7 @@ EOF
   fi
   age "$d" "$d.owner"
   if [ "$osclass" = windows ]; then windows_listing "T15" "$CR" "${d##*/}" "${d##*/}.owner"; return 0; fi
+  janitor_usable T15 || return 0
   run_janitor "$CR"
   case "$J_RC" in 0 | 3) ok "T15 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T15 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
   eq "T15 the janitor collects folder and claim (root empty)" "$(count "$CR")" 0
@@ -154,6 +171,7 @@ EOF
   fi
   age "$d" "$d.owner"
   if [ "$osclass" = windows ]; then skipped "T16 janitor" "Windows lists only (rows 10 and 12)"; return 0; fi
+  janitor_usable T16 || return 0
   run_janitor "$CR"
   case "$J_RC" in 0 | 3) ok "T16 the janitor exits 0 or 3 ($J_RC)" ;; *) bad "T16 janitor exit" "$J_RC: $(head -n 3 "$CTL/janitor.err")" ;; esac
   eq "T16 the janitor collects the kept folder and its claim" "$(count "$CR")" 0
