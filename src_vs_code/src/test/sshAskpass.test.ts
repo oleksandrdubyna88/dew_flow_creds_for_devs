@@ -1,14 +1,6 @@
 import assert from 'node:assert/strict';
-import { after, test } from 'node:test';
-import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { test } from 'node:test';
 import { askpassEnv, askpassScript } from '../sshAskpass';
-import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
-
-/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
-const scope = cleanupScope();
-after(() => scope.close());
 
 /**
  * Password login without retyping: ssh will not read a password from stdin — it asks
@@ -63,16 +55,5 @@ test('the windows script reads the password by delayed expansion, never by perce
   assert.match(content, /^echo\(!CREDS_SSH_PASSWORD!$/m);
 });
 
-test(
-  'a REAL cmd.exe prints a password full of cmd syntax unchanged and runs none of it',
-  { skip: process.platform !== 'win32' },
-  () => {
-    const dir = ownedDir(scope, 'askpass');
-    const script = path.join(dir, askpassScript('win32').name);
-    fs.writeFileSync(script, askpassScript('win32').content.replace(/\n/g, '\r\n'));
-    for (const password of ['a&echo PWNED&b', 'p"q%PATH%^r!s', '<x>|y', ' lead and trail ']) {
-      const run = spawnSync('cmd.exe', ['/d', '/c', script], { env: { ...process.env, CREDS_SSH_PASSWORD: password }, encoding: 'utf8', timeout: 20_000 });
-      assert.equal(run.stdout, `${password}\r\n`, JSON.stringify(password));
-    }
-  },
-);
+// The password through a REAL cmd.exe (the `.bat` run by the parser it is written for) is `windowsParsers.test.ts`: it runs on
+// Windows only, in the `runner-windows` job of `ci-extension.yml`.
