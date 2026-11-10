@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import { test } from 'node:test';
 import type { EntityMetadata } from '../types';
 import type { ReadySsh, RefusedSsh } from '../sshSession';
@@ -226,4 +227,111 @@ test('a_link_read_again_is_the_link_or_the_sentence_why_not', () => {
   const gone = linkedNow(entry({ sshEntityId: 'zz' }), lookup, 'changed');
   assert.equal(typeof gone, 'string');
   assert.notEqual(gone, 'changed', 'the link\'s own refusal is said as it is');
+});
+
+// ---- E3.S1: the spawn use of the road, the spawn launch and the hand-over to a run (H6-H10 of the E3 stories) ---------------
+
+const SSH_SESSION_MOCK = (calls: unknown[][]): Record<string, unknown> => ({
+  './sshSession': { prepareSshSession: (...a: unknown[]) => (calls.push(a), Promise.resolve({ kind: 'stopped', why: 'no-host' })), windowOf: (o: { remote?: unknown }) => o.remote },
+});
+
+test('a_spawn_preparation_never_relies_on_the_agent', async () => {
+  const calls: unknown[][] = [];
+  const road = loadRoad(closeEvents().vscode, SSH_SESSION_MOCK(calls)).sshRoadOf({ storage: {}, storageDir: '/dir', servesKeyForEntity: () => true } as never);
+
+  await road.prepare('a1', SSH, 'spawn');
+  await road.prepare('a1', SSH);
+
+  const optionsOf = (n: number): Record<string, unknown> => calls[n][2] as Record<string, unknown>;
+  assert.equal(optionsOf(0).agentServesKey, false, 'a child of the extension host does not reach the extension agent: its key is always written to a file');
+  assert.equal(optionsOf(0).isolate, true);
+  assert.equal(optionsOf(1).agentServesKey, true, 'a terminal still does');
+});
+
+test('spawn_launch_names_the_client_its_folder_and_the_extensions_agent_for_a_forwarding_entry', () => {
+  const sshProgram = require('../sshProgram') as typeof import('../sshProgram');
+  const road = loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => '/tmp/agent.sock' } as never);
+  const forwarding = { ...SSH, agentForward: true } as EntityMetadata;
+
+  const launch = road.spawnLaunch(forwarding, { SSH_ASKPASS: '/keys/askpass.sh' });
+
+  const program = sshProgram.spawnableSshProgram(sshProgram.openSshBinary('ssh', true, process.platform), process.platform, process.env.PATH, fs.existsSync);
+  assert.deepEqual(launch, { kind: 'spawn', program, cwd: '/storage', env: { SSH_AUTH_SOCK: '/tmp/agent.sock', SSH_ASKPASS: '/keys/askpass.sh' } });
+  const plain = road.spawnLaunch(SSH, undefined);
+  assert.equal(plain.kind === 'spawn' ? plain.env.SSH_AUTH_SOCK : 'refused', undefined, 'no forwarding: the extension agent is not handed over');
+  assert.equal(plain.kind === 'spawn' ? plain.cwd : '', '/storage', 'the extension\'s own folder, never the workspace (B1)');
+});
+
+test('spawn_launch_says_so_when_no_client_can_be_started_and_carries_the_agent_warning', () => {
+  const sshProgram = require('../sshProgram') as typeof import('../sshProgram');
+  const none = loadRoad(closeEvents().vscode, { './sshProgram': { ...sshProgram, spawnableSshProgram: () => undefined } }).sshRoadOf({ storage: {}, storageDir: '/storage' } as never);
+  assert.deepEqual(none.spawnLaunch(SSH, undefined), { kind: 'refused', reason: sshProgram.NO_SSH_TO_SPAWN });
+
+  const noAgent = loadRoad(closeEvents().vscode).sshRoadOf({ storage: {}, storageDir: '/storage', agentSocket: () => undefined } as never);
+  const launch = noAgent.spawnLaunch({ ...SSH, agentForward: true } as EntityMetadata, undefined);
+  assert.equal(launch.kind === 'spawn' ? launch.warning : 'refused', sshProgram.NO_AGENT_TO_FORWARD, 'the warning travels to the banner (E3-D12)');
+});
+
+/** A ready whose `cleanup()` counts EVERY call (the real one is idempotent: this one is not, so a double clean is visible). */
+function everyCall(): { ready: ReadySsh; calls(): number } {
+  let n = 0;
+  return { ready: { cleanup: () => void (n += 1) } as unknown as ReadySsh, calls: () => n };
+}
+
+test('hand_over_to_run_leaves_the_list_only_after_the_run_exists_and_shares_one_end', () => {
+  const { ownedSessions } = loadRoad(closeEvents().vscode);
+  const r = everyCall();
+  const owner = ownedSessions();
+  owner.own(r.ready);
+  let ended: (() => void) | undefined;
+  owner.handOverToRun(r.ready, (e) => {
+    ended = e;
+  });
+  owner.cleanAll();
+  assert.equal(r.calls(), 0, 'the run owns it now');
+  assert.ok(ended !== undefined);
+  ended();
+  ended();
+  assert.equal(r.calls(), 1, 'the run\'s end is once-only');
+});
+
+test('a_hand_over_of_a_session_never_owned_still_cleans_once', () => {
+  const { ownedSessions } = loadRoad(closeEvents().vscode);
+  const r = everyCall();
+  const owner = ownedSessions();
+  let ended: (() => void) | undefined;
+  owner.handOverToRun(r.ready, (e) => {
+    ended = e;
+  });
+  assert.ok(ended !== undefined);
+  ended();
+  ended();
+  assert.equal(r.calls(), 1);
+  owner.cleanAll();
+  assert.equal(r.calls(), 1);
+});
+
+test('a_throw_while_the_run_is_made_leaves_the_session_to_the_owner_once', () => {
+  const { ownedSessions } = loadRoad(closeEvents().vscode);
+
+  const a = everyCall();
+  const ownerA = ownedSessions();
+  ownerA.own(a.ready);
+  assert.throws(() => ownerA.handOverToRun(a.ready, () => { throw new Error('no run'); }), /no run/);
+  ownerA.cleanAll();
+  assert.equal(a.calls(), 1, '(a) the start threw: still on the list, cleaned by the owner');
+
+  const b = everyCall();
+  const ownerB = ownedSessions();
+  ownerB.own(b.ready);
+  assert.throws(() => ownerB.handOverToRun(b.ready, (e) => { e(); throw new Error('ended, then threw'); }), /ended, then threw/);
+  assert.equal(b.calls(), 1, '(b) the run ended and then threw: cleaned by the run\'s end');
+  ownerB.cleanAll();
+  assert.equal(b.calls(), 1, 'one shared once-only end: the owner does not clean it twice');
+
+  const c = everyCall();
+  const ownerC = ownedSessions();
+  assert.throws(() => ownerC.handOverToRun(c.ready, () => { throw new Error('no run'); }), /no run/);
+  ownerC.cleanAll();
+  assert.equal(c.calls(), 1, '(c) never owned: put on the list for the throw, cleaned once');
 });
