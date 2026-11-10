@@ -469,6 +469,39 @@ EOF
   eq "H2 one line says the hook is not a defined function" "$(grep -c "not a defined" "$CTL/th2.err")" 1
 }
 
+# case H3 - a caller's owned_trap function that calls owned_cleanup itself (S1 spec § 3: owned_cleanup is idempotent; acme's `cleanup`).
+# The function runs in a subshell, so its release is lost to the outer owned_cleanup: with the claim and the folder both gone, that
+# is not a fault, and no warning may say so. A claim that is gone while the folder stays IS one, and keeps its warning.
+cleanup_called_by_the_callers_function_leaves_no_false_warning() {
+  case_root th3
+  child th3 << 'EOF2'
+. "$T_OWNED_SH"
+cleanup() { owned_cleanup; }
+owned_trap cleanup || exit 97
+owned_dir d x || exit 96
+printf '%s\n' "$d" > "$T_CTL/th3.dir"
+exit 3
+EOF2
+  run_child th3
+  eq "H3 the script's own exit status survives" "$CH_RC" 3
+  eq "H3 no line says the claim is not what this run wrote" "$(grep -c "not what this run wrote" "$CTL/th3.err")" 0
+  eq "H3 nothing is said at all" "$(wc -c < "$CTL/th3.err" | tr -d ' ')" 0
+  eq "H3 folder and claim are gone" "$(count "$CR")" 0
+
+  case_root th3b
+  child th3b << 'EOF2'
+. "$T_OWNED_SH"
+owned_dir d x || exit 96
+printf '%s\n' "$d" > "$T_CTL/th3b.dir"
+rm -f "$d.owner"
+exit 4
+EOF2
+  run_child th3b
+  eq "H3b the exit status survives" "$CH_RC" 4
+  eq "H3b a claim gone while the folder stays keeps its warning" "$(grep -c "not what this run wrote" "$CTL/th3b.err")" 1
+  istrue "H3b and the folder is left, as the helper says" test -d "$(first_line "$CTL/th3b.dir")"
+}
+
 # --- run ---
-callers_set_no_trap_of_their_own; owned_trap_runs_the_function_then_the_cleanup; first_owned_dir_sets_the_traps; a_trap_set_after_the_call_replaces_the_helper_and_leaves_the_folder; squatter_folder_is_never_adopted_or_removed; owned_remove_refuses_other_runs_folders; owned_remove_refuses_an_unregistered_folder_with_our_own_record; owned_remove_removes_an_own_folder_once; owned_remove_gives_up_with_one_line_on_a_read_only_parent; exit_status_survives_the_chain_under_set_e; helper_works_under_set_u_with_nothing_registered; a_signal_during_mkdir_is_held_until_the_state_is_recorded; caller_function_that_exits_or_hits_unbound_does_not_stop_the_cleanup; second_signal_in_the_chain_does_not_cut_it_short; traps_exist_before_the_first_claim_is_written; hook_that_calls_owned_dir_leaves_both_entries_in_their_own_state; hook_seam_runs_a_defined_function_only
+callers_set_no_trap_of_their_own; owned_trap_runs_the_function_then_the_cleanup; first_owned_dir_sets_the_traps; a_trap_set_after_the_call_replaces_the_helper_and_leaves_the_folder; squatter_folder_is_never_adopted_or_removed; owned_remove_refuses_other_runs_folders; owned_remove_refuses_an_unregistered_folder_with_our_own_record; owned_remove_removes_an_own_folder_once; owned_remove_gives_up_with_one_line_on_a_read_only_parent; exit_status_survives_the_chain_under_set_e; helper_works_under_set_u_with_nothing_registered; a_signal_during_mkdir_is_held_until_the_state_is_recorded; caller_function_that_exits_or_hits_unbound_does_not_stop_the_cleanup; second_signal_in_the_chain_does_not_cut_it_short; traps_exist_before_the_first_claim_is_written; hook_that_calls_owned_dir_leaves_both_entries_in_their_own_state; hook_seam_runs_a_defined_function_only; cleanup_called_by_the_callers_function_leaves_no_false_warning
 owned_test_finish
