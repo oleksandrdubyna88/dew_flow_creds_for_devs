@@ -60,6 +60,51 @@ jobs:
       - name: Public hygiene
         run: node .github/scripts/public-hygiene.mjs
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+
+      # The shipped guard reads workflows through `yaml`, which lives in the mount's own lock file.
+      # --ignore-scripts: SonarCloud githubactions:S6505.
+      - name: The leftovers guard's dependencies
+        run: npm ci --ignore-scripts --prefix .claude/rules/shared
+
+      # What a clean run means (conventions release 37b9aa5, table D2 of todo/PLAN_F30_folding_reader.md there).
+      # The shipped Node guard reads one line's spellings, as D2 lists them by file kind. In .mjs .cjs .js .ts .tsx .jsx .mts
+      # .cts it removes // and /* */ comments, reads '...', "..." and a template whose holes hold only a quoted literal, joins
+      # +, .concat('a', 'b') and ['a', 'b'].join(<literal>) (spaces around the operator; a literal in its own parentheses),
+      # and decodes \uXXXX, \u{...}, \xXX and a one-character class [T]. In .sh, and in every .yml or .yaml file (read as
+      # .sh), it joins a word's touching pieces, quoted or not, and decodes \xXX, \uXXXX and octal inside $'...'. In .ps1 it
+      # joins + and a binary -join over a literal array. A literal that holds the whole word with no owner form after it (the
+      # bare word), or a piece of six or more characters that crosses the word's middle in the word's own form, is
+      # legacy-name; a pattern after the bare word is owner-blind, unless the legacy reading reads that same occurrence. It
+      # does not join a template nested in a hole, a literal in an expression hole, a unary -join or a comment between operands
+      # (each literal is still read alone, so only a split into three or more pieces is missed). It does not read an unquoted
+      # .sh or yaml word with no quote in it, an extensionless script, any other file kind, or a name built through a
+      # variable, across lines or at run time. Some text it does not tell from code, and there the joins up to the next closer
+      # are silently not read (a whole name or a piece in that text is still a finding): a .ps1 here-string or a .sh heredoc
+      # line, a nested "$(...)", a regex at a position D2 does not name (after ), else, +, %, throw, await or ...), and JSX
+      # text. So this repository's zero for legacy-name and owner-blind is zero for the guard's listed spellings, in the files
+      # its node profile reads; the .cs files, the harness folders and the test helpers are the C# guard's, which folds .cs
+      # only (a test of ServiceDefaults.Tests, run by ci-clients.yml, sonarcloud.yml and the release jobs).
+      - name: Test leftovers guard (shipped, node profile)
+        run: node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"
+
+      # A scan of nothing must be red, never clean [E2.1 plan gate 2]: an empty repository in an owned folder.
+      # owned.sh reads TMPDIR, never RUNNER_TEMP, so the root is handed over as the E2.4 steps do.
+      - name: The leftovers guard refuses a scan of nothing
+        shell: bash
+        run: |
+          export TMPDIR="$RUNNER_TEMP"
+          source .github/scripts/lib/owned.sh || exit 1
+          owned_dir scratch guard-empty || exit 1
+          git init -q "$scratch/repo"
+          if node .claude/rules/shared/tools/leftovers-check.mjs --repo "$scratch/repo" --profile node --token creds \
+              --identity "the developer-credentials server and extension" 2> "$scratch/stderr"; then code=0; else code=$?; fi
+          [ "$code" = 2 ] || { echo "expected exit 2 for a scan of nothing, got $code"; exit 1; }
+          grep -F "scanned nothing under $scratch/repo — discovery broke; the repository is not clean" "$scratch/stderr" \
+            || { echo "the sentence is missing:"; cat "$scratch/stderr"; exit 1; }
+
       # Every submodule pin must equal its remote's tip — "a rule change and the pin
       # bumps are one task" is a check, not a habit.
       - name: Pin check
