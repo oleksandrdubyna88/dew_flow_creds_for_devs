@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 3 open since 2026-11-10, by reviewers, after the whole re-review of entry 2.2's stop (`### Re-review for epoch 3`; nothing narrowed, nothing cut). E1 merged (#335), E2 merged (#337), the 1.20.0 CHANGELOG entry merged (#338); the 1.20.0 release is no longer blocked by the stop. Next: E3, its own plan round 2 on feat/terminal-command-over-ssh-e3; no E3 code yet.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 3 open since 2026-11-10, by reviewers, after the whole re-review of entry 2.2's stop (`### Re-review for epoch 3`; nothing narrowed, nothing cut); one change in epoch 3 (entry 3.1). E1 merged (#335), E2 merged (#337), the 1.20.0 CHANGELOG entry merged (#338); the 1.20.0 release is in progress (PR #341). E3's plan round 2 passed (coai session 8da9aab9, proceed) and its amendments are written into the E3 stories and the security spec. Next: build E3; no E3 code yet.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -85,6 +85,8 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
   empty; no harness drives the real extension UI; exit and exec were already rejected in epoch 2. With it, the lead's
   own Opus review: its six findings are applied in the follow-up commit. The dependency chain, an agent's VPN start, a
   chain with no lookup and the agent's local run join the no-local-sink proof of §4.5 (5); the rest are text fixes.)
+- 3.1 · 2026-11-10 · reviewer · approach — the lead's Opus review of E3 (B1, CWE-426): on Windows the masked run's ssh is spawned by an absolute path (`spawnableSshProgram`, PATH's first absolute `ssh.exe`, else the built-in OpenSSH, else the refusal `NO_SSH_TO_SPAWN`) with the cwd `storageDir`, not as the agent's `ssh:exec` chooses it
+  (In doubt it counts: §4.4 said the program is chosen as `ssh:exec` chooses it. The same client, hardened. `ssh:exec` itself is unchanged: it spawns in the extension host's own folder, not the workspace; its own hardening is a todo.)
 
 ## 1. Goal
 
@@ -128,7 +130,7 @@ guarantee (§4.5 (5)). The scan holds only who imports and who reads.
 | D9 | A Windows remote (*Runs on* = Windows with a link) is refused in v1: the remote shell (cmd or PowerShell) is unknown and stay-open is POSIX only. | lead + consultants |
 | D10 | A password SSH entry needs a fresh terminal (the password rides the terminal's environment, settable only at creation). A new terminal opens BESIDE any live one with the same title; nothing is disposed. | lead + consultants |
 | D11 | A dependency-chain step over SSH does not stay open (a step must end for the chain to go on); a password step in a chain is refused (one shared terminal has one environment). | lead |
-| D12 | Run with Secrets over SSH: values go to the child's STDIN as `export` lines for the remote LOGIN shell reading stdin, `"${SHELL:-sh}" -s` — the same shell that parses the line on every other road (re-review, epoch 2: a plain `sh -s` failed bash syntax, measured); never in argv, never in the remote `ps`, never in a history. | lead |
+| D12 | Run with Secrets over SSH: values go to the child's STDIN as `export` lines for the remote LOGIN shell reading stdin, `"${SHELL:-sh}" -s` — the same shell that parses the line on every other road (re-review, epoch 2: a plain `sh -s` failed bash syntax, measured); never on a command line (so in no argument list that `ps` shows, here or on the server), never in a history. On the server the values are in the remote command's environment (`ps e`, `/proc/<pid>/environ`, for the same user and root), as the help says. | lead |
 | D13 | Dropdown candidates: kind `ssh` entries with a host, not itself, not in Trash. A stored id that is no longer offered shows **(missing entry)** so a save does not drop it. At run time a missing or trashed SSH entry refuses. | lead |
 | D14 | With a link, *Runs on* describes the REMOTE system; the local terminal is chosen as SSH Connect chooses it (`composedShellPath()`, `src_vs_code/src/pinnedTerminal.ts:54`). | lead |
 | D15 | The agent's gate for D2 (the authorisation part, [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §0). The SSH entry must be usable for `exec` in the Terminal entry's account. The gate is checked before the consent dialog and again at run time. Before the gate passes, the agent reads one sentence, `linkedRunRefused`, which names only the Terminal entry, with code `denied`, whatever the reason. The mask table of the call also holds the linked SSH entry's values. | Fable security judgement, 2026-11-10 (entry 2.1) |
@@ -317,8 +319,10 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   every road; it is asked AFTER the host-key decision, so it names the host the values will reach) → dependencies →
   resolve the secret values → spawn. No child exists and no byte is written to any stdin before the trust is given;
   a declined trust cleans the session and spawns nothing. The child is `ssh` by argv
-  (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …)`, no `-t`, `shell:false`; the program and the agent socket
-  as the agent's `ssh:exec` chooses them, and a stored key always in its own file, E3-D4 and E3-D5); STDIN carries `secretsStdin` (D12), then
+  (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …)`, no `-t`, `shell:false`; the agent socket as the agent's
+  `ssh:exec` chooses it; the program on Windows by an absolute path — `spawnableSshProgram`: PATH's first absolute
+  `ssh.exe`, else the built-in OpenSSH, else the refusal `NO_SSH_TO_SPAWN` — and the working folder `storageDir`, never
+  the workspace (entry 3.1); a stored key always in its own file; E3-D4 and E3-D5); STDIN carries `secretsStdin` (D12), then
   is closed; output masked with the resolved values, as today. The ssh child's environment holds no resolved value:
   only the askpass variables of a password SSH entry and `SSH_AUTH_SOCK` (the values go on stdin only; the askpass
   password and a person's own `SendEnv` are the accepted limit of `research/PLAN_windows_shell_quoting_injection.md` §8).
@@ -671,7 +675,8 @@ Stories: [PLAN_terminal_command_over_ssh_E2.md](PLAN_terminal_command_over_ssh_E
 Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md).
 
 - **Goal.** The two roads that run a child process instead of typing into a terminal run a linked entry over SSH
-  without a secret in argv, in the remote `ps` or in a history; the agent road runs only when the SSH entry itself is
+  without a secret on a command line (in no argument list that `ps` shows) or in a history — on the server the values are
+  in the remote command's environment (`ps e`, `/proc/<pid>/environ`), as the help says; the agent road runs only when the SSH entry itself is
   open to the agent for `exec`, and otherwise refuses with the one sentence that names only the Terminal entry, code
   `denied` (D15). Neither road lets a linked entry reach a local sink (§4.5 (5)). Then every document describes the
   shipped system and the plan is promoted with its deviations.
