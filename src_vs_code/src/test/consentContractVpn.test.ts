@@ -46,6 +46,8 @@ interface Rig {
   readonly dir: string;
   /** The start gate each `open` was handed, in order: the request's own signal. */
   readonly gates: AbortSignal[];
+  /** Every `up` the test sent, so a failing test hangs up on all of them and the run can end. */
+  readonly calls: { abort(): void }[];
 }
 
 /** An agent `up` through the broker: the real action, the real opener, a vpn world that holds what the test asks it to. */
@@ -65,11 +67,12 @@ async function rig(nodes: Record<string, EntityMetadata>, exitCodes: Record<stri
   };
   const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: ['up', 'exec'], realActions: { up: vpnAction(deps, 'up') }, aliasMap: { one: TARGET }, mcpUse: 'usable', mcpPreConsented: quiet });
   const { port } = await share(bw);
-  return { bw, vw, port, dir, gates };
+  return { bw, vw, port, dir, gates, calls: [] };
 }
 
 /** Let every request still waiting go, whatever the test did, so no pending call holds the process open. */
 function settle(r: Rig): void {
+  r.calls.forEach((call) => call.abort());
   r.bw.openDialogs.forEach((answer) => answer('Deny'));
   r.vw.held.forEach((held) => held.answer(undefined));
   r.vw.executions.forEach(({ terminal, execution }) => r.vw.shell.end(terminal, execution, 0));
@@ -79,10 +82,18 @@ function settle(r: Rig): void {
 const upAsk: Ask = { path: '/v1/mcp/use/up', body: { entry: 'e1' } };
 const execAsk: Ask = { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } };
 
+/** An agent `up` through the main port's MCP door, remembered by the rig so `settle` can hang up on it. */
+function startUp(r: Rig): ReturnType<typeof sendAbortable> {
+  const call = sendAbortable(door(r.port), upAsk);
+  call.reply.catch(() => undefined);
+  r.calls.push(call);
+  return call;
+}
+
 /** An agent `up` through the main port's MCP door, hung up on by the test: its dialog is Allowed once it is open. */
 async function allowedUp(r: Rig): Promise<{ abort(): void; reply: Promise<Reply> }> {
   const dialogs = r.bw.openDialogs.length;
-  const call = sendAbortable(door(r.port), upAsk);
+  const call = startUp(r);
   call.reply.catch(() => undefined);
   await until(() => r.bw.openDialogs.length === dialogs + 1, 'the consent dialog of the up');
   r.bw.openDialogs[dialogs]('Allow');
@@ -214,7 +225,7 @@ test('F1a (runStep): the Continue question keeps the place after its client leav
   const r = await rig(chainOf('a', 'b'), {}, NO_INTEGRATION, CLI);
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
-    const call = sendAbortable(door(r.port), upAsk);
+    const call = startUp(r);
     call.reply.catch(() => undefined);
     await untilImmediate(() => r.bw.openDialogs.length === 1, 'the consent dialog of the up');
     r.bw.openDialogs[0]('Allow');
@@ -250,7 +261,7 @@ test('F1c: five never-ask ups, each hung up at its question — one question, fo
   const r = await rig(chainOf('a'), {}, NO_INTEGRATION, CLI, true);
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
-    const first = sendAbortable(door(r.port), upAsk);
+    const first = startUp(r);
     first.reply.catch(() => undefined);
     await untilImmediate(() => r.vw.terminals.some((t) => t.name === CHAIN_TERMINAL), 'the first up\'s chain terminal');
     mock.timers.tick(ACTIVATION_BUDGET_MS);
@@ -268,7 +279,7 @@ test('F1c: five never-ask ups, each hung up at its question — one question, fo
     assert.equal(lines(r, 'ABANDONED').length, 1);
     assert.equal(r.gates.length, 1, 'only one up reached its action');
     r.vw.held[0].answer('Stop');
-    const sixth = sendAbortable(door(r.port), upAsk);
+    const sixth = startUp(r);
     sixth.reply.catch(() => undefined);
     await untilImmediate(() => r.vw.terminals.filter((t) => t.name === CHAIN_TERMINAL).length === 2, 'the sixth up\'s own chain terminal');
     mock.timers.tick(ACTIVATION_BUDGET_MS);
@@ -412,7 +423,7 @@ test('C8 (b) and C12: a local down whose install offer stands for 400 ms with th
   const entity = { id: 'e1', name: 'prod', type: 'entity' as const, details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' as const } };
   const deps: VpnUseDeps = { storage: { getNode: () => entity }, open: (accountId, _entityId, action, gate, late) => open(accountId, 'vpn', action, gate, late) };
   const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, consentTimeoutMs: 100, supports: ['down', 'exec'], realActions: { down: vpnAction(deps, 'down') }, aliasMap: { one: TARGET }, mcpUse: 'usable' });
-  const r: Rig = { bw, vw, port: (await share(bw)).port, dir: '', gates: [] };
+  const r: Rig = { bw, vw, port: (await share(bw)).port, dir: '', gates: [], calls: [] };
   try {
     const first = send(door(r.port), { path: '/v1/alias/down', body: { alias: 'one' } });
     first.catch(() => undefined);
