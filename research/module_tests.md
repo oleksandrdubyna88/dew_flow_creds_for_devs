@@ -407,6 +407,19 @@ shipped guard reads the real file with 0 findings and each plant (a quoted remov
 logs` after the remover, a short name) with the finding it should have. What no test here can see is Docker itself: the hosted dispatches of the
 build record (part 3) do.
 
+**The acme harness owns its run (2026-11-10, E2.4.S4 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`deploy/acme-test/run.sh` makes an owned folder with `owned_dir STATE acme`; its lower-cased name, `PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`,
+is the compose project and nothing else is (there is no `name:` in the compose file). The compose file's `x-owned` label `testsToDelete.owner` is on the four services,
+the network and the four named volumes (`certs-conf`, `certs-www`, `data`, `logs`); no state is a bind mount, because a container writes root-owned files that a
+janitor running as the user cannot delete. The script sets its clean-up with `owned_trap cleanup` and no trap of its own: `cleanup` runs
+`docker compose -p "$PROJECT" … down -v --remove-orphans` only when `PROJECT` is set, then the helper removes the folder. The first act of a run is the shared
+janitor (`--token creds`, 10 minutes), which collects what a `kill -9` left. The issued certificate is checked through a one-shot `alpine` container that mounts
+`certs-conf` read-only, never from the host: certbot's live folder is `drwx------ root`. `src_vs_code/src/test/acmeRunLeftovers.test.ts` copies `run.sh` into a temp
+tree and RUNS it against a stub `docker`, `curl`, `openssl`, `sleep` and janitor (green; a stack that does not start; no certificate; SIGINT during the janitor call;
+SIGINT and SIGTERM during `compose up`; an owned folder that cannot be made), and reads the text for the `PROJECT` line, the trap and the compose labels; each rule has
+a planted fault it must refuse (`PROJECT=acme`, an unlabelled volume, an unguarded clean-up, a host-side certificate check, a trap of its own). Docker itself is seen only
+by the hosted dispatch of the build record (part 4).
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring

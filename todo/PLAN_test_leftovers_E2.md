@@ -2438,6 +2438,230 @@ Built by a Sonnet coder from [PLAN_test_leftovers_E2.4_brief.md](PLAN_test_lefto
 5. The two guard tests are skipped, not failed, when the guard cannot load `yaml` (see above): a failure would make `npm test` red on every machine without the mount's `node_modules`.
 6. `research/architecture.md:363` (the one-line smoke description) is S4's file in the brief and is not edited: it stays true.
 
+### E2.4 build record, part 4 — S4, acme (2026-11-10, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.4_brief.md](PLAN_test_leftovers_E2.4_brief.md) § 3.3, test first, on `a267d75` (creds `main` with the acme TLS fix #326 is merged in). Commits, oldest first: `9d5d958` RED (S4.5 and the run tests, `acmeRunLeftovers.test.ts`); `58ff29a` the compose file; `d959308` `run.sh`; `98dfec4` shellcheck of `run.sh` in `ci-server.yml` and the `.gitignore` line; `c76870d` `deploy/README.md` and `research/architecture.md`; `7f13a40` the two evidence lines of `run.sh`; this record with `research/module_tests.md`. S1 to S3 are not touched. **The hosted evidence of sc. 5, 6 and 7 is NOT yet gathered**: nothing runs Docker here. The throwaway dispatch is written out below for the coordinator.
+
+**The RED list** (text from the runs; `TMPDIR` a private empty folder; it was empty after every run).
+1. S4.5 and the run tests, `acmeRunLeftovers.test.ts`, against `run.sh` and the compose file of `a267d75`: 21 of 22 fail, 1 passes (the shipped guard reads both files with no finding: it is a pin that no finding is added, not a test of a missing feature). Text of the failures:
+   - E2.4-h: `PROJECT is assigned 0 times (besides the empty start), expected once: `, `PROJECT is not set empty before the clean-up is armed`, `COMPOSE is not docker compose -p "$PROJECT" -f docker-compose.acme-test.yml`.
+   - E2.4-f: `the compose file fixes a project name (`name:`)`, `x-owned does not carry testsToDelete.owner from ${TESTS_TO_DELETE_OWNER:?}`, `services without the owner label (<<: *owned): pebble, vault, nginx, certbot`, `networks without the owner label: edge`, `named volumes without the owner label, or not exactly certs-conf, certs-www, data, logs: … (declared: )`, `a bind mount of a state folder: - ./state/data:/data`, `0 service mounts of the four named volumes, expected 6`.
+   - the clean-up guard: `a teardown ran with no project:` with the calls `compose -f docker-compose.acme-test.yml down -v` twice (the old fixed-project clean-up runs when the owned folder cannot be made).
+   - the certificate: `run.sh does not read the certificate through a throwaway alpine container`.
+   - sc. 5 and sc. 7 under the stubs: the old script makes no owned folder and no labelled project, so the green run, the two failing runs and the three interrupts all fail their `assertCleaned`.
+2. The same file against the NEW files with one fault made in the real text, by hand (each then put back; the test names that go red):
+   - `PROJECT=acme` in `run.sh`: `E2.4-h: PROJECT is assigned once, from the owned folder's name…`, `…run under stubs, every compose call names the owner-form project…`, `…run under stubs, `PROJECT=acme` names a project that is not the folder's` (the plant test of that name is the one that passes when the rule refuses), and sc. 5 and sc. 7 (b), (c) (the teardown names `acme`, not the folder).
+   - the guard `if [ -n "${PROJECT:-}" ]` changed to `if true`: `a failure before PROJECT is set runs no compose teardown and leaves nothing`, `an unguarded clean-up runs …` and `sc. 7 (a)`.
+   - the certificate check made a host `[ -f ]`: `the certificate is asked for through a container: …`, `a certificate check from the host … the plant the test above refuses`, sc. 5 (the green run reports `no certificate was issued`).
+   - `trap cleanup EXIT` in place of `owned_trap cleanup`: `the script sets `owned_trap cleanup` once, sources owned.sh, and has no trap of its own`, and sc. 7 (a), (b), (c) (no 130 or 143).
+   - the `logs` volume without its label in the compose file: `E2.4-f: the compose file has no fixed name, the owner label on the four services, …` and `E2.4-f: the rule refuses a volume, a service or the network without the label…`.
+3. The planted faults are tests of their own (they pass when the rule refuses): `PROJECT=acme`; two assignments; `-p acme`; a second way to set the project; a volume, the network, a service without `<<: *owned`; a fixed `name:`; a `./state` bind mount; the guard replaced by `if true`; the certificate read from the host; a `trap` of its own; no `owned_trap`; no `source`; `sudo`; `rm -rf state`.
+
+**What the tests run.** `run.sh` is copied into a temp tree (with the real compose file and `owned.sh`), a stub `docker`, `curl`, `openssl`, `sleep` first on `PATH` and a stub janitor at the path `run.sh` calls, and RUN. Green: exit 0, the janitor is the first call (`--token creds`, `JANITOR_MIN_AGE_MINUTES=10`), every compose call names `teststodelete-u<uid>-creds-acme-<8 hex>` (the lower-cased name of the folder seen at `create`), one `down -v --remove-orphans` for it, the temp root empty. Failures (the stack does not start; no certificate in the volume): non-zero, the same teardown, the temp root empty. The janitor ending with 0 or 3 is silent; 127 names `git submodule update --init .claude/rules/shared`; any other code is one line; the run goes on. An interrupt (sc. 7): SIGINT during the janitor call ends with 130, no teardown, nothing made; SIGINT and SIGTERM during the first `compose up` end with 130 and 143 and the teardown and the folder removal run once. The owned folder that cannot be made (a temp root that does not exist) ends with 1 and no teardown against an empty name. The certificate is visible only to the stub container (never to the host): found; absent: `FAIL no certificate was issued`. **The shipped guard** (`node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"`): 0 findings in `deploy/acme-test` and in the new test file. The whole repository: 6 findings, none of S4's — `deploy/nginx/entrypoint.test.sh:39` (a `mktemp`, new with the merge of #326; S5's), `deploy/restore-archive.sh:61`, `deploy/restore.sh:102`, `install.sh:63`, `:76`, `commandParse.test.ts:40` (the five of the S3 record). The test file first had 5 findings of its own (a compose line with `-p "$PROJECT"` in a message, a regex for the folder name, a variable name, a `docker run` in a message, a lower-cased prefix regex); the names are now built from parts or matched without the prefix, so none is added.
+
+**What changes.** Compose: `name:` goes; `x-owned: &owned` carries `testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}"`, merged into the four services, `networks.edge` and four named volumes `certs-conf`, `certs-www`, `data`, `logs`; no `./state` bind mount. `run.sh`, in the brief's order: `source` of `owned.sh`; `owned_owner >/dev/null || exit 1`; `export TESTS_TO_DELETE_OWNER="$OWNED_OWNER"`; `STATE=""`, `PROJECT=""`; `cleanup` (`if [ -n "${PROJECT:-}" ]; then docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans … || true; fi`); `owned_trap cleanup` and no trap of its own; the janitor call (`JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token creds || rc=$?`; 0 and 3 silent, 127 and others one line, the run goes on); `owned_dir STATE acme || exit 1`; `PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`; `COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)`; the lines `owned folder: …` and `compose project: …`; `"${COMPOSE[@]}" create`; the chown of the `data` and `logs` volumes through `docker run --rm -v "${PROJECT}_data:/d" -v "${PROJECT}_logs:/l" alpine chown -R 10001:10001 /d /l`, before the first `up`. The certificate check is `docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine test -f /s/live/vaulthost/fullchain.pem` (no sudo), the known harness bug of hosted runs 42713538247 and 42714461289. `ci-server.yml` shellchecks it (`-x`); `.gitignore` loses the `state/` line; `deploy/README.md` and `research/architecture.md` say what the run leaves and who collects a killed one.
+
+**Checks run here.** `acmeRunLeftovers.test.ts`: 22 of 22 green, `eslint` clean (complexity 4), `tsc` clean. The whole extension suite through `scripts/run-tests.mjs "out/test/*.test.js"`: 7133 tests, 7125 pass, 0 fail, 8 skipped (`readmeClaims` included, with the README paragraph). `bash .github/scripts/lib/owned.test.sh` once: exit 0, `all areas passed`; T7a `no caller sets a trap of its own (8 scanned)` green over the new `run.sh`. `bash -n deploy/acme-test/run.sh` clean. NOT run here (no Docker, no shellcheck): the shellcheck of `run.sh`, any real compose call, the janitor against a real daemon.
+
+**What only the hosted runs can show** (the coordinator runs them: `git switch -c tmp/e24-acme feat/test-leftovers-e2.4`, add the one workflow below as `.github/workflows/tmp-e24-acme.yml`, push `tmp/e24-acme` (never merged, never a pull request, deleted after the owner's word), `gh workflow run tmp-e24-acme.yml --ref tmp/e24-acme`). It is the model of `tmp/e24-observe`'s workflow with the REAL `run.sh` and compose file in place of the prototype copies; its steps run in order and each later one has `if: always()` where it reads, so one run answers every row. **Pitfall for every signal step**: a background job of a non-interactive shell ignores SIGINT, and a signal ignored at entry cannot be trapped, so each signalling step starts with `set -m`.
+
+```yaml
+name: tmp e24 acme
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  acme:
+    name: E2.4.S4 · sc. 5, 6, 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VAULT_IMAGE_REF: ghcr.io/oleksandrdubyna88/cred-vault-server:edge
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fetch the shared rules (the janitor)
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      - name: Identities, images, the listing helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "uid: $(id -u) ($(id -un)); host: $(hostname); TMPDIR: ${TMPDIR:-unset}; pidns: $(readlink /proc/self/ns/pid); bash: $BASH_VERSION"
+          docker info --format 'docker: server {{.ServerVersion}} security {{.SecurityOptions}}'
+          echo "janitor pin: $(git -C .claude/rules/shared rev-parse HEAD)"
+          for i in ghcr.io/letsencrypt/pebble:latest nginx:1.27-alpine certbot/certbot:latest alpine; do docker pull -q "$i"; done
+          IMG="$VAULT_IMAGE_REF"
+          if docker pull -q "$IMG"; then echo "image: pulled $IMG anonymously"
+          elif echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin && docker pull -q "$IMG"; then echo "image: pulled $IMG after login"
+          else IMG=cred-vault-server:local; docker build -q -f src_minimalapi_server/Dockerfile -t "$IMG" .; echo "image: built $IMG in the job"; fi
+          echo "VAULT_IMAGE=$IMG" >> "$GITHUB_ENV"
+          # list.sh <project>: the three listings filtered by the PROJECT label (never the owner label), the temp root's entries;
+          # exit 1 when anything of the project, or any acme folder or claim, is left.
+          cat > "$RUNNER_TEMP/list.sh" <<'EOF'
+          project="${1:?project}"; bad=0; f="label=com.docker.compose.project=$project"
+          for what in "volume ls" "ps -a" "network ls"; do
+            out="$(docker $what -q --filter "$f")"
+            if [ -z "$out" ]; then echo "OBSERVED: docker $what --filter $f -> empty"; else echo "LEFT: docker $what --filter $f ->"; echo "$out"; bad=1; fi
+          done
+          for e in "${TMPDIR:-/tmp}"/testsToDelete-*-creds-acme-*; do [ -e "$e" ] || continue; echo "LEFT: $e"; bad=1; done
+          [ "$bad" = 0 ] && echo "OBSERVED: no acme folder or claim in ${TMPDIR:-/tmp}"
+          exit "$bad"
+          EOF
+
+      - name: S4.4 shellcheck on run.sh (the pinned image of ci-server.yml)
+        run: docker run --rm -v "$PWD":/mnt -w /mnt koalaman/shellcheck:v0.11.0 -x deploy/acme-test/run.sh
+
+      - name: S4.1 RED on main's run.sh (0ae0211 in a second checkout) — state/ stays; the second run stops at rm -rf state
+        continue-on-error: true
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/old" 0ae0211
+          cd "$RUNNER_TEMP/old/deploy/acme-test"
+          rc=0; ./run.sh > "$RUNNER_TEMP/old1.log" 2>&1 || rc=$?
+          tail -5 "$RUNNER_TEMP/old1.log"; echo "old run 1 exit: $rc"
+          echo "state/ after the first old run: $(ls -ld state 2>&1)"; ls -la state 2>&1 | head
+          rc=0; ./run.sh > "$RUNNER_TEMP/old2.log" 2>&1 || rc=$?
+          tail -5 "$RUNNER_TEMP/old2.log"; echo "old run 2 exit: $rc (expected: stops at rm -rf state)"
+
+      - name: S4.1 GREEN A — a green run, then nothing is left
+        run: |
+          cd deploy/acme-test
+          rc=0; ./run.sh 2>&1 | tee "$RUNNER_TEMP/a.log" || rc=$?
+          echo "run A exit: $rc"; grep -c 'ALL ISSUANCE CHECKS PASSED' "$RUNNER_TEMP/a.log"
+          project="$(sed -n 's/^compose project: //p' "$RUNNER_TEMP/a.log")"; echo "project: $project"
+          [ -n "$project" ] && bash "$RUNNER_TEMP/list.sh" "$project"
+          test ! -e state && echo "OBSERVED: no deploy/acme-test/state"
+          exit "$rc"
+
+      - name: S4.1 GREEN B — a failing run (VAULT_IMAGE=busybox), then nothing is left
+        run: |
+          cd deploy/acme-test
+          rc=0; VAULT_IMAGE=busybox ./run.sh 2>&1 | tee "$RUNNER_TEMP/b.log" || rc=$?
+          echo "run B exit: $rc (expected non-zero)"; [ "$rc" != 0 ] || exit 1
+          project="$(sed -n 's/^compose project: //p' "$RUNNER_TEMP/b.log")"; echo "project: $project"
+          [ -n "$project" ] && bash "$RUNNER_TEMP/list.sh" "$project"
+          test ! -e state && echo "OBSERVED: no deploy/acme-test/state"
+
+      - name: S4.2 run 1 — start, assert the labels, kill -9 at the first issuance line
+        run: |
+          cd deploy/acme-test
+          log="$RUNNER_TEMP/run1.log"
+          ./run.sh >"$log" 2>&1 &
+          pid=$!
+          for _ in $(seq 1 300); do grep -q -- '-- 2. issuance' "$log" && break; kill -0 "$pid" 2>/dev/null || { echo "run 1 ended early"; cat "$log"; exit 1; }; sleep 1; done
+          grep -q -- '-- 2. issuance' "$log" || { cat "$log"; exit 1; }
+          project="$(sed -n 's/^compose project: //p' "$log")"; state="$(sed -n 's/^owned folder: //p' "$log")"
+          rec="$(cat "$state.owner")"
+          echo "owner record: $rec"
+          n=0; bad=0
+          for v in $(docker volume ls -q --filter "label=com.docker.compose.project=$project"); do
+            l="$(docker volume inspect --format '{{index .Labels "testsToDelete.owner"}}' "$v")"
+            echo "volume $v owner-label=$l"; [ "$l" = "$rec" ] || { echo "UNLABELLED OR WRONG: $v"; bad=1; }; n=$((n + 1))
+          done
+          echo "project volumes: $n (expected 4), a wrong label: $bad (expected 0)"; [ "$n" = 4 ] && [ "$bad" = 0 ]
+          docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}} {{.Status}} owner={{.Label "testsToDelete.owner"}}'
+          docker network ls --filter "label=com.docker.compose.project=$project" --format '{{.Name}} owner={{.Label "testsToDelete.owner"}}'
+          echo "claim: $rec; the pid in it is run 1's: $(cut -d: -f3 "$state.owner") (\$! = $pid)"
+          kill -9 "$pid"; rc=0; wait "$pid" || rc=$?; echo "KILLED run 1; wait status $rc"
+          { echo "PROJECT1=$project"; echo "STATE1=$state"; echo "KILLED_AT=$(date -u +%s)"; } >> "$GITHUB_ENV"
+
+      - name: S4.2 after the kill — what is left (premise), then wait 11 minutes
+        run: |
+          bash "$RUNNER_TEMP/list.sh" "$PROJECT1" || true
+          echo "folder: $([ -d "$STATE1" ] && echo yes || echo NO); claim: $([ -f "$STATE1.owner" ] && echo yes || echo NO)"
+          now=$(date -u +%s); want=$((KILLED_AT + 660)); [ "$now" -ge "$want" ] || sleep $((want - now))
+          echo "waited until $(date -u +%T), $(( $(date -u +%s) - KILLED_AT )) s after the kill"
+          JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run || echo "janitor --dry-run exit: $?"
+
+      - name: S4.2 run 2 — the next run (its janitor call) is green and the killed project is gone
+        run: |
+          cd deploy/acme-test
+          ./run.sh 2>&1 | tee "$RUNNER_TEMP/run2.log"
+          bash "$RUNNER_TEMP/list.sh" "$PROJECT1"
+          test ! -e "$STATE1" && test ! -e "$STATE1.owner" && echo "OBSERVED: the killed run's folder and claim are gone"
+
+      - name: S4.2 concurrent RED on main — a second old run tears down the first one's stack
+        continue-on-error: true
+        run: |
+          set -m
+          cd "$RUNNER_TEMP/old/deploy/acme-test"
+          sudo rm -rf state
+          ./run.sh >"$RUNNER_TEMP/c1.log" 2>&1 & pid=$!
+          for _ in $(seq 1 120); do grep -q -- '-- 2. issuance' "$RUNNER_TEMP/c1.log" && break; sleep 1; done
+          ./run.sh >"$RUNNER_TEMP/c2.log" 2>&1 || true
+          rc=0; wait "$pid" || rc=$?
+          echo "old first run exit: $rc (RED: non-zero, its stack was taken down)"; tail -8 "$RUNNER_TEMP/c1.log"
+
+      - name: S4.2 concurrent GREEN — a second run beside a live first one leaves the first one alone
+        run: |
+          set -m
+          cd deploy/acme-test
+          ./run.sh >"$RUNNER_TEMP/g1.log" 2>&1 & pid=$!
+          for _ in $(seq 1 120); do grep -q -- '-- 2. issuance' "$RUNNER_TEMP/g1.log" && break; sleep 1; done
+          p1="$(sed -n 's/^compose project: //p' "$RUNNER_TEMP/g1.log")"
+          rc2=0; ./run.sh >"$RUNNER_TEMP/g2.log" 2>&1 || rc2=$?
+          echo "second run exit: $rc2 (expected non-zero: the fixed ports 18081 and 18444 are taken); its last lines:"; tail -6 "$RUNNER_TEMP/g2.log"
+          p2="$(sed -n 's/^compose project: //p' "$RUNNER_TEMP/g2.log")"
+          echo "first project still has $(docker ps -q --filter "label=com.docker.compose.project=$p1" | wc -l) running containers and $(docker volume ls -q --filter "label=com.docker.compose.project=$p1" | wc -l) volumes"
+          bash "$RUNNER_TEMP/list.sh" "$p2" || true
+          rc1=0; wait "$pid" || rc1=$?
+          echo "first run exit: $rc1 (expected 0)"; tail -4 "$RUNNER_TEMP/g1.log"
+          bash "$RUNNER_TEMP/list.sh" "$p1"
+          [ "$rc2" != 0 ] && [ "$rc1" = 0 ]
+
+      - name: S4.3 (a) SIGINT during the janitor call (the mounted janitor replaced by a 6-second wait)
+        run: |
+          set -m
+          cp .claude/rules/shared/tools/janitor.sh "$RUNNER_TEMP/janitor.real"
+          printf '#!/bin/bash\nsleep 6\n' > .claude/rules/shared/tools/janitor.sh
+          cd deploy/acme-test
+          ./run.sh >"$RUNNER_TEMP/s7a.log" 2>&1 & pid=$!
+          until grep -q -- '-- 0. what a killed run left' "$RUNNER_TEMP/s7a.log"; do sleep 0.2; done
+          sleep 1; kill -INT "$pid"; rc=0; wait "$pid" || rc=$?
+          echo "exit: $rc (expected 130)"; cat "$RUNNER_TEMP/s7a.log"
+          cp "$RUNNER_TEMP/janitor.real" ../../.claude/rules/shared/tools/janitor.sh
+          for e in "${TMPDIR:-/tmp}"/testsToDelete-*-creds-acme-*; do [ -e "$e" ] && { echo "LEFT: $e"; exit 1; }; done
+          [ -z "$(docker ps -aq --filter label=testsToDelete.owner)$(docker volume ls -q --filter label=testsToDelete.owner)$(docker network ls -q --filter label=testsToDelete.owner)" ] && echo "OBSERVED: nothing made"
+          ! grep -Eq 'No such|invalid|unknown shorthand' "$RUNNER_TEMP/s7a.log" && [ "$rc" = 130 ]
+
+      - name: S4.3 (b) SIGINT and (c) SIGTERM during the first compose up
+        run: |
+          set -m
+          cd deploy/acme-test
+          for sig in INT TERM; do
+            log="$RUNNER_TEMP/s7-$sig.log"
+            ./run.sh >"$log" 2>&1 & pid=$!
+            until grep -q -- '-- 1. before issuance' "$log"; do sleep 0.1; done
+            kill -"$sig" "$pid"; rc=0; wait "$pid" || rc=$?
+            echo "$sig: exit $rc (expected $([ "$sig" = INT ] && echo 130 || echo 143)); last line before the signal: $(grep -n -- '^--' "$log" | tail -1)"
+            project="$(sed -n 's/^compose project: //p' "$log")"; bash "$RUNNER_TEMP/list.sh" "$project"
+          done
+
+      - name: Everything the job's docker still holds (should be empty of acme)
+        if: always()
+        run: |
+          docker ps -a --format '  {{.Names}} {{.Status}}'; docker volume ls --format '  {{.Name}}'; docker network ls --format '  {{.Name}}'
+          ls -la "${TMPDIR:-/tmp}" | grep -i teststodelete || echo "  (no testsToDelete entry)"
+```
+
+Expect, and quote from each step: S4.4 shellcheck: exit 0, no output. S4.1 RED: the first old run leaves `state/` (`drwxr-xr-x` with root-owned subfolders) and the second old run stops at `rm -rf state` with `Permission denied` (the brief's measured reasoning; if the first old run is red on the stack, `state/` still exists). S4.1 GREEN A: exit 0, `ALL ISSUANCE CHECKS PASSED`, every `OBSERVED … empty`, no `state`. B: non-zero, the same listings empty. S4.2: `project volumes: 4 … wrong label: 0`; after the kill the premise shows the containers, the network, four volumes, the folder and the claim; the janitor dry run lists them; run 2 prints the janitor's removal lines (quote them) and ends green; the project-filtered listings are empty and the folder and claim are gone. Concurrent: RED on main: the old first run exits non-zero; GREEN: the second run exits non-zero at `compose up` (ports) and removes only its own project, the first project keeps its containers and volumes, the first run exits 0. S4.3: 130, 130, 143 and nothing left. A step that fails at its premise (no `-- 2. issuance` line, no `compose project:` line) proves nothing: read it first.
+
+**Differences from the brief.**
+1. `cleanup` does NOT call `owned_cleanup`. The helper's exit chain runs `cleanup` in a subshell, then `owned_cleanup` in the script's shell; a second `owned_cleanup` inside the subshell removes the folder and the claim but leaves the shell's entry in state `created`, so the chain then prints `the claim of … is not what this run wrote - the folder is left` on every run (measured). With one call the folder goes once and nothing is said. The guard of an unset `STATE` therefore has nothing to guard; the guard of `PROJECT` is as written.
+2. `owned_trap cleanup` is written without `|| exit 1`: under `set -e` a failing call ends the script anyway.
+3. The wait for the certificate is 150 tries of 2 seconds (the prototype of `tmp/e24-observe` used it) instead of 45: the control of run 42416565709 got its certificate just after the 90 seconds of the old wait. The check is one `docker run` per try.
+4. `run.sh` prints `owned folder: …` and `compose project: …` (not in the brief): the hosted checks need the exact project and folder afterwards, and a person who reads a failed log needs them too.
+5. The state of the run is only the owned folder, which stays empty: nothing of the run needs to be copied out of a volume, so the `cat > "$STATE/<file>"` form of the brief is not used.
+6. `deploy/README.md` is edited, although the brief says it does not describe `state/` (I1): it gets a paragraph on what the run leaves and who collects a killed run (the lead asked for it). `.gitignore` loses the two lines (the comment and `deploy/acme-test/state/`); a `state/` an old version left in a checkout is no longer ignored, and the README says to delete it.
+7. `ci-server.yml` already shellchecks `owned.sh` (S1); only `-x deploy/acme-test/run.sh` is added. shellcheck is not installed here and there is no `docker`: the line is read by eye for SC2154, SC2155 and SC2317, and the hosted dispatch above runs the pinned image.
+8. The test file is `src_vs_code/src/test/acmeRunLeftovers.test.ts` (the brief says "beside S3.3": S3.3 is `dockerSmokeLeftovers.test.ts`, and there is no `leftoversGuardFixtures.test.ts` here). The compose rules read the text (indentation), not parsed YAML, so they run on every machine; the YAML merge was checked once with a YAML loader (every volume, the network and every service carry the label).
+9. The brief's S4.2 premise check (the volumes carry the label before the kill) is in the hosted step, not in `run.sh`: a run that checks itself would add a failure path to the thing under test. `compose create` plus the compose file test make the labels; the hosted step reads them from the daemon.
+10. One thing to know for the hosted green run: the compose images `nginx:1.27-alpine`, `certbot/certbot:latest`, `pebble:latest` are not pinned by digest; the observation runs at `59e1fac` and `6258f3e` were on certbot with Python 3.14.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
