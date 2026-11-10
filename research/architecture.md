@@ -371,7 +371,7 @@ deploy/acme-test    by hand, never in CI: run.sh owns its run. The compose proje
                     volumes carry the owner label, `down -v` and the helper's folder removal run on
                     every exit, and the next run's janitor call collects a killed run's leftovers
 
-docs · plans        plan-lifecycle.mjs + pin-check.mjs from the shared submodule
+docs · plans        plan-lifecycle.mjs + pin-check.mjs + leftovers-check.mjs (--profile node) from the shared submodule
 
 release             tag-driven: server-v* -> image, extension-v* -> Marketplace,
                     cli-v* / mcp-v* -> the `creds` / `creds-mcp` binaries (Windows ones through the signing workflow, below)

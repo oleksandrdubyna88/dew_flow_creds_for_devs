@@ -99,6 +99,7 @@ mkdir -p "$DATA_DIR"
 # The archive stores its sources under the names the backup gave them (/src0,
 # /src1 for the manual path; data, certs for the scheduled one), so unpack into a
 # staging directory and take whichever member actually holds the vaults.
+# testsToDelete-exempt: raw-temp — a product script an operator runs on the server, not a test: its staging folder is the restore's own
 STAGE="$(mktemp -d)"
 tar -xzf "$ARCHIVE" -C "$STAGE"
 

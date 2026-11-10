@@ -35,7 +35,9 @@ public sealed class AgentRelayTests : IDisposable
     [Fact]
     public void WithoutOneTheUserIsInTheNameSoTwoAccountsCannotCollide()
     {
+        // testsToDelete-exempt: raw-temp — a path nothing creates: the product's default socket path is only compared as a string
         AgentRelay.DefaultSocketPath(null, "dev").Should().Be("/tmp/creds-agent-dev.sock");
+        // testsToDelete-exempt: raw-temp — a path nothing creates: the product's default socket path is only compared as a string
         AgentRelay.DefaultSocketPath("   ", "dev").Should().Be("/tmp/creds-agent-dev.sock");
     }
 
@@ -275,6 +277,7 @@ public sealed class AgentRelayTests : IDisposable
         var logs = _owned.Dir("relay-logs");
         Environment.SetEnvironmentVariable(
             AgentRelay.SocketOverrideVariable,
+            // testsToDelete-exempt: raw-temp — a path nothing creates: the refused path is only set in the environment, never made
             "/tmp/" + new string('x', AgentRelay.MaxSocketPathBytes) + ".sock");
         Environment.SetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable, logs);
         try

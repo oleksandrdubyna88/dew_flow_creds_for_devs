@@ -24,7 +24,7 @@ public sealed class TheAdaptedCopyTests
     public const string TemplateRepoVariable = "CREDS_TEMPLATE_REPO";
 
     private const string TemplateCommit = "197cc76af7c3c1d28f50e57533fa99d34682466d";
-    private const int TemplateEntries = 52;
+    private const int TemplateEntries = 53;
     private const string HelperFolder = "src_service_defaults/tests/Support/Leftovers/";
     private const string TestsFolder = "src_service_defaults/tests/Leftovers/";
 
@@ -41,6 +41,7 @@ public sealed class TheAdaptedCopyTests
         TestsFolder + "HostProcessAdapterTests.cs",
         TestsFolder + "WindowsHandoffTests.cs",
         TestsFolder + "ClientSitesScanTests.cs",
+        TestsFolder + "LeftoversGuardCredsTests.cs",
         HelperFolder + "SweepRanTests.cs",
         HelperFolder + "OwnedCreds.cs",
         HelperFolder + "LeftoversSocketRootSweepFixture.cs",
@@ -77,13 +78,13 @@ public sealed class TheAdaptedCopyTests
         var manifest = ReadManifest();
 
         manifest.Commit.Should().Be(TemplateCommit, "the copy is of one commit of the template");
-        manifest.Entries.Should().HaveCount(TemplateEntries, "the template's 51 files but LeftoversRepositoryGuardTests, plus DirectoryLinks and RepositoryRoot (F4)");
+        manifest.Entries.Should().HaveCount(TemplateEntries, "the template's 51 files, plus DirectoryLinks and RepositoryRoot (F4)");
         manifest.Entries.Select(e => e.Blob).Should().OnlyContain(b => IsLowerHex40(b), "a blob is a 40-digit lowercase hex git object id");
         manifest.Entries.Select(e => e.Target).Should().OnlyHaveUniqueItems("a target is copied once");
         manifest.Entries.Select(e => e.Target).Should().OnlyContain(t => CopiedUnder.Any(f => t.StartsWith(f, StringComparison.Ordinal)), "a copy lives in one of the two helper folders");
         manifest.Entries.Select(e => e.Upstream).Should().OnlyHaveUniqueItems("an upstream file is copied once");
         manifest.Entries.Select(e => e.Upstream).Should().OnlyContain(u => u.StartsWith("tests/Mcp.Tests/", StringComparison.Ordinal), "the template's helper lives under tests/Mcp.Tests/");
-        manifest.Entries.Select(e => e.Upstream).Should().NotContain(u => u.EndsWith("LeftoversRepositoryGuardTests.cs", StringComparison.Ordinal), "the repository guard test is E2.5's");
+        manifest.Entries.Select(e => e.Upstream).Should().Contain(u => u.EndsWith("LeftoversRepositoryGuardTests.cs", StringComparison.Ordinal), "the repository guard test is E2.5's, copied by file");
         foreach (var operation in manifest.Entries.SelectMany(e => e.Replace))
         {
             operation.Old.Should().NotBeNullOrEmpty();

@@ -44,6 +44,12 @@ public static class LeftoversGuard
     /// the guard scans them clean. A test pins that the list stays empty.</summary>
     public static IReadOnlyList<string> ExcludedFiles { get; } = [];
 
+    /// <summary>The workflows whose docker classes (<c>docker-run</c>, <c>docker-name</c>) this guard does not read: exactly one entry, pinned by a test. The
+    /// container carve-out of rule §5 (a smoke container started without the remove flag, then removed by one always-run remover) is read by the SHIPPED Node
+    /// guard, which is green on the file; this copy does not know the carve-out and would call both smoke starts a finding. Every other class still reads the
+    /// file, and the same text under another workflow name keeps both docker findings.</summary>
+    internal static IReadOnlyList<string> DockerJudgedByNodeGuard { get; } = [".github/workflows/docker.yml"];
+
     private const string HelperFile = "src_service_defaults/tests/Support/Leftovers/Owned.cs";
     private static readonly string[] HelperFolders = ["src_service_defaults/tests/Support/Leftovers/", "src_service_defaults/tests/Leftovers/"];
 
@@ -55,14 +61,16 @@ public static class LeftoversGuard
 
     /// <summary>The files that may spell the word in pieces, so the folded reading (<see cref="GuardLiterals"/>: joined literals, decoded
     /// escapes, single-character classes, pieces of the word) is not applied to them: the helper that owns the prefix, the guard that
-    /// holds the detector words, and the two files that build the guard's break-it fixtures out of the word. Pinned by a test; a fifth
-    /// file is a decision, not a convenience. Everything else names the word through <c>Owned</c> (a constant) or not at all.</summary>
+    /// holds the detector words, and the two files that build the guard's break-it fixtures out of the word. Pinned by a test; a sixth
+    /// file is a decision, not a convenience (the fifth, the Node wrapper, changes no answer here: the copy folds .cs only). Everything else names the word through <c>Owned</c> (a constant) or not at all.</summary>
     internal static IReadOnlyList<string> FoldingAllowances { get; } =
     [
         HelperFile,
         "src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs",
         "src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs",
         "src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs",
+        // The Node wrapper (D7). No effect at the pin: this copy folds .cs only (IsFolded), so the entry changes no answer; LeftoversGuardCredsTests pins that.
+        "src_vs_code/scripts/lib/leftovers.cjs",
     ];
 
     private static Regex Rx(string pattern, RegexOptions options = RegexOptions.None) => new(pattern, options | RegexOptions.CultureInvariant);
@@ -201,10 +209,15 @@ public static class LeftoversGuard
             ? []
             : Tag("raw-temp", RawTempHits(source.Extension, line))
                 .Concat(Tag("raw-worktree", Matches(RawWorktree, line).Take(1)))
-                .Concat(Tag("docker-run", ContainerWithoutRemoveFlag(line)))
-                .Concat(Tag("docker-name", GuardDocker.NameHits(line)))
+                .Concat(DockerHits(source, line))
                 .Concat(Tag("shared-store", SharedStoreHits(line)))
                 .Concat(Tag("ryuk-off", RyukOff.IsMatch(line) ? ["the reaper is switched off"] : []));
+
+    /// <summary>The two docker classes of a line, none for a workflow of <see cref="DockerJudgedByNodeGuard"/>.</summary>
+    private static IEnumerable<(string Class, string Text)> DockerHits(SourceFile source, string line) =>
+        DockerJudgedByNodeGuard.Contains(source.Relative)
+            ? []
+            : Tag("docker-run", ContainerWithoutRemoveFlag(line)).Concat(Tag("docker-name", GuardDocker.NameHits(line)));
 
     /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>
     private static IEnumerable<(string Class, string Text)> HitsOfCSharp(SourceFile source, string line) =>

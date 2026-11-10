@@ -150,3 +150,87 @@ test('a fetch step BELOW the tests is no fetch: the tests have already refused b
   assert.equal(lacksMountFirst(job), true, 'the fetch comes after npm test, so the job runs the tests with no mount');
   assert.equal(lacksMountFirst(fetchFirst), false, 'the companion: the fetch before the tests is the mount');
 });
+
+// --- E2.5 S2.4: where the guard-reading tests run, the mount's modules are installed and the flag makes a skip a failure --------------------
+//
+// `dockerSmokeLeftovers`, `acmeRunLeftovers` and `leftoversGuardFixtures` read the SHIPPED Node guard through `mountedGuard.ts`, and the guard reads
+// workflows through `yaml`, which lives in the mount's own `node_modules`. A job that runs those tests and does not install them skips them, and
+// a skipped test is green. So a job that runs the WHOLE unit suite installs the mount's modules BEFORE the step that runs it and sets
+// `CREDS_GUARD_TESTS_REQUIRED: "1"` on that step (then `mountedGuard.ts` fails with the reason instead of skipping). `runner lifecycle · windows`
+// names seven files, none of which reads the guard, so the rule does not name it (the brief's F5): it matches what a job RUNS, not the words `node --test`.
+
+/** What runs the WHOLE unit suite: the npm script, the runner, or `node --test` over the whole compiled folder (SonarCloud, through c8). */
+const RUNS_WHOLE_SUITE = /\bnpm test\b|scripts\/run-tests\.mjs|\bnode --test\b[^\n]*out\/test\/"?\*\.test\.js/;
+/** The mount's own dependencies, installed without lifecycle scripts (SonarCloud githubactions:S6505). */
+const INSTALLS_MOUNT_MODULES = /npm ci --ignore-scripts --prefix \S*\.agents\/conventions\b/;
+/** The flag, on the step that runs the tests. */
+const SETS_GUARD_FLAG = /CREDS_GUARD_TESTS_REQUIRED:\s*["']?1["']?/;
+
+/** A job's live text split into steps: a step starts at a six-space `- `. */
+function stepsOf(text: string): string[] {
+  const steps: string[][] = [];
+  for (const line of withoutComments(text).split('\n')) {
+    if (/^ {6}- /.test(line)) steps.push([line]);
+    else steps.at(-1)?.push(line);
+  }
+  return steps.map((step) => step.join('\n'));
+}
+
+/** Does this job run `runs` in a step that has the flag, with the mount's modules installed in a step BEFORE it (or earlier in the same step)? */
+function lacksGuardInstallOrFlag(text: string, runs: RegExp): boolean {
+  const steps = stepsOf(text);
+  const at = steps.findIndex((step) => runs.test(step));
+  if (at < 0) return false;
+  const installedBefore = steps.slice(0, at).some((step) => INSTALLS_MOUNT_MODULES.test(step)) || INSTALLS_MOUNT_MODULES.test(steps[at].slice(0, steps[at].search(runs)));
+  return !installedBefore || !SETS_GUARD_FLAG.test(steps[at]);
+}
+
+/** The base names of the compiled test files that read the guard: the `*.test.ts` of `src/test/` that import `./mountedGuard`. */
+function guardReadingTests(): string[] {
+  const folder = path.join(REPO, 'src_vs_code', 'src', 'test');
+  return fs
+    .readdirSync(folder)
+    .filter((name) => name.endsWith('.test.ts'))
+    .filter((name) => /from '\.\/mountedGuard'/.test(fs.readFileSync(path.join(folder, name), 'utf8')))
+    .map((name) => name.replace(/\.ts$/, ''))
+    .sort();
+}
+
+/** The job's `node --test` NAMES one of these files. */
+const namesGuardReader = (names: string[]): RegExp => new RegExp(`\\bnode --test\\b[^\\n]*\\b(?:${names.join('|')})\\.js`);
+
+const jobIds = (found: Array<[string, string, string]>): string[] => found.map(([file, job]) => `${file}:${job}`).sort();
+
+test('the jobs that run the whole unit suite are exactly the three that need the guard\'s modules, and the scan cannot pass for matching nothing [E2.5 S2.4]', () => {
+  const running = jobIds(jobs().filter(([, , text]) => RUNS_WHOLE_SUITE.test(withoutComments(text))));
+
+  assert.deepEqual(running, ['ci-extension.yml:build-test', 'release.yml:extension', 'sonarcloud.yml:sonar']);
+});
+
+test('every job that runs the whole unit suite installs the mount\'s modules before it and sets CREDS_GUARD_TESTS_REQUIRED on the step [E2.5 S2.4 a]', () => {
+  const missing = jobIds(jobs().filter(([, , text]) => lacksGuardInstallOrFlag(text, RUNS_WHOLE_SUITE)));
+
+  assert.deepEqual(missing, [], 'these jobs run the guard-reading tests without the modules or the flag, so the tests skip and a skip is green');
+});
+
+test('the guard-reading test files are the three, and no job names one of them in a `node --test` of its own today [E2.5 S2.4 b, F5]', () => {
+  const readers = guardReadingTests();
+
+  assert.deepEqual(readers, ['acmeRunLeftovers.test', 'dockerSmokeLeftovers.test', 'leftoversGuardFixtures.test']);
+  assert.deepEqual(jobIds(jobs().filter(([, , text]) => namesGuardReader(readers).test(withoutComments(text)))), [], 'a job that names a reader needs the same install and flag; none does');
+});
+
+test('a job that names a guard-reading file in its `node --test` needs the install and the flag too [E2.5 S2.4 b]', () => {
+  const job = (...steps: string[]): string => steps.join('\n');
+  const runs = namesGuardReader(['dockerSmokeLeftovers.test']);
+  const named = '      - run: node --test out/test/dockerSmokeLeftovers.test.js';
+  const install = '      - run: npm ci --ignore-scripts --prefix .agents/conventions';
+  const flagged = ['      - run: node --test out/test/dockerSmokeLeftovers.test.js', '        env:', '          CREDS_GUARD_TESTS_REQUIRED: "1"'].join('\n');
+
+  assert.equal(lacksGuardInstallOrFlag(job(named), runs), true, 'no install, no flag');
+  assert.equal(lacksGuardInstallOrFlag(job(install, named), runs), true, 'the install, no flag');
+  assert.equal(lacksGuardInstallOrFlag(job(flagged), runs), true, 'the flag, no install');
+  assert.equal(lacksGuardInstallOrFlag(job(flagged, install), runs), true, 'the install after the step comes too late');
+  assert.equal(lacksGuardInstallOrFlag(job(install, flagged), runs), false, 'the companion: the install first, the flag on the step');
+  assert.equal(lacksGuardInstallOrFlag(job('      - run: node --test out/test/leftoversRunner.test.js'), runs), false, 'a job that names no reader is not asked');
+});
