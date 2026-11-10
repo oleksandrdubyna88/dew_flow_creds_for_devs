@@ -64,6 +64,8 @@ npm test                    # node:test over out/test/*.test.js — 8 workers, l
 npm run package             # builds the .vsix
 npm run icon                # regenerates media/icon.png from the same glyph as icon.svg
 
+cd ..                       # back to the repository root: the commands below use root-relative paths
+
 # --- test leftovers: the janitor and the two guards (research/module_tests.md, "Test leftovers") ---
 # What a killed run left, for this token only (a dry run; from Git for Windows' bash on Windows, where it removes nothing until F9; bash 4 or newer on macOS, N20):
 JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run
