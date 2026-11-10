@@ -2399,7 +2399,7 @@ sends nothing (declined trust, cancelled dependency, a throw, a failed terminal 
 `cleanWhenClosed` makes that terminal's close clean it, and a `WeakMap` keeps ONE session per terminal (a reused terminal cleans the earlier
 session at the next hand-over, lead amendment A1). ONE SNAPSHOT: from `prepare` to the send nothing reads the SSH entry from storage again.
 A session that signs in with a password has an environment, which a terminal takes only at creation: its send opens a NEW terminal beside any
-live one and disposes nothing (D10). `sshReaderShell()` (`pinnedTerminal.ts`) is the shell that reads the typed line (only the PowerShell 5.1
+live one and disposes nothing (D10), and a terminal opened with an environment is NEVER found for reuse by any later run — the SSH finder, the local road's finder and the pinned finder all skip it (`carriesEnvironment`, read from `creationOptions.env`) — so a later key session or an unlinked local line never runs with a password's askpass variables. `sshReaderShell()` (`pinnedTerminal.ts`) is the shell that reads the typed line (only the PowerShell 5.1
 check). A linked launcher whose line uses `{config}` is refused before prepare (`linkedConfigRefusal`): the file is on this machine. The copies
 read `copiedLineOf` (`remoteLaunch.ts`): a linked entry shows `ssh … -- user@host '<line>'` with `COPY_NOTE` (it uses the person's own ssh
 setup, the vault's key and password are not in it) in Copy Command, the viewer's *Full command* and *About this line* rows and copy, and Copy

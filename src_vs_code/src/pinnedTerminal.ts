@@ -112,7 +112,17 @@ function reusableTerminal(name: string, shell: HostShell, options: PinnedOptions
     live.forEach((t) => t.dispose());
     return undefined;
   }
-  return options.env === undefined ? live.find((t) => shellPathOf(t) === shell.shellPath) : undefined;
+  return options.env === undefined ? live.find((t) => !carriesEnvironment(t) && shellPathOf(t) === shell.shellPath) : undefined;
+}
+
+/**
+ * True for a terminal opened WITH an environment (a password session's askpass variables, a script's resolved secrets). VS Code
+ * sets the environment only at creation, so such a terminal holds it for as long as it lives: any later line typed into it
+ * would run with those values. It is therefore NEVER found for reuse, by any road. Read from `creationOptions.env`, which the
+ * terminal carries whichever module opened it — not from a set kept here, which a second load of this module would not see.
+ */
+function carriesEnvironment(terminal: vscode.Terminal): boolean {
+  return (terminal.creationOptions as vscode.TerminalOptions).env !== undefined;
 }
 
 export type EntryTerminal =
@@ -150,11 +160,12 @@ export function openEntryTerminal(key: EntryTerminalKey, terminalOs: string | un
 /**
  * The terminal an SSH-linked line would be typed into, if one is LIVE (E2.S1): a live terminal of the entry's title
  * running SSH Connect's own shell (`composedShellPath`, D14) — in a WSL window both are `undefined`, so the default-profile
- * terminal matches. Found, never created, never shown. A terminal opened with an environment is never offered for reuse
- * by the caller (`sendGuarded` opens a new one for a password, D10).
+ * terminal matches. Found, never created, never shown. A terminal opened with an environment is NEVER found, by this or
+ * any other finder (`carriesEnvironment`): a key session of the same entry, or an unlinked entry's local line, would run
+ * with a password session's askpass variables. The caller opens a new one instead (D10).
  */
 export function findSshTerminal(key: EntryTerminalKey): vscode.Terminal | undefined {
-  return liveTerminalsOfEntry(key).find((t) => shellPathOf(t) === composedShellPath());
+  return liveTerminalsOfEntry(key).find((t) => !carriesEnvironment(t) && shellPathOf(t) === composedShellPath());
 }
 
 /**
@@ -192,7 +203,7 @@ function entryRefusal(choice: EntryShell): string | undefined {
 }
 
 function liveEntryTerminal(key: EntryTerminalKey, choice: EntryShell): vscode.Terminal | undefined {
-  const live = liveTerminalsOfEntry(key);
+  const live = liveTerminalsOfEntry(key).filter((t) => !carriesEnvironment(t));
   return choice.kind === 'pinned' ? live.find((t) => shellPathOf(t) === pinnedShell().shellPath) : live[0];
 }
 

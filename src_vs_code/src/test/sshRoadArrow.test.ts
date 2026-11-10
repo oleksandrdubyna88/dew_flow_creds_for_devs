@@ -7,7 +7,7 @@ import type { ReadySsh } from '../sshSession';
 import type { EntityMetadata, TreeNode } from '../types';
 import { ArrowOptions, ArrowWorld, arrowWorld } from './arrowWorld';
 import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
-import { filesUnder, hostOs, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, until, world } from './vpnWorld';
+import { filesUnder, hostOs, noteOurSend, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, until, world } from './vpnWorld';
 import { loadWithVscode } from './vscodeStub';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -348,4 +348,70 @@ test('an_agents_start_of_a_linked_launcher_stays_refused', async () => {
   assert.equal(started, false);
   assert.ok(w.warnings.some((t) => t.includes(refusal)), w.warnings.join('\n'));
   assert.deepEqual(w.terminals, []);
+});
+
+// P3 — an environment terminal is never found for reuse: it still holds the password's askpass variables.
+test('a_key_session_never_reuses_a_finished_terminal_that_carries_a_password_environment', async () => {
+  const { aw } = setup((_ssh, n) => (n === 1 ? { password: true } : {}));
+  await aw.run(LINKED);
+  const live = aw.live[TITLE];
+  const withEnv = only(aw.terminals.filter((t) => t.name === TITLE));
+  assert.ok(withEnv.env?.SSH_ASKPASS !== undefined, 'the first terminal carries the askpass environment');
+  aw.shell.end(live, aw.shell.start(live), 0);
+  await aw.run(LINKED);
+  const opened = aw.terminals.filter((t) => t.name === TITLE);
+  assert.equal(opened.length, 2, 'a NEW terminal opened');
+  assert.equal(withEnv.sent.length, 1, 'nothing more was typed into the environment terminal');
+  assert.equal(opened[1].env, undefined);
+  assert.equal(opened[1].sent.length, 1);
+});
+
+// P4
+test('an_unlinked_entry_never_runs_in_a_finished_terminal_that_carries_a_password_environment', async () => {
+  const { aw } = setup(() => ({ password: true }));
+  await aw.run(LINKED);
+  const live = aw.live[TITLE];
+  const withEnv = only(aw.terminals.filter((t) => t.name === TITLE));
+  aw.shell.end(live, aw.shell.start(live), 0);
+  await aw.run({ ...LINKED, sshEntityId: undefined, command: 'echo local', terminalOs: hostOs });
+  const opened = aw.terminals.filter((t) => t.name === TITLE);
+  assert.equal(opened.length, 2, `a NEW local terminal opened: ${aw.warnings.join(' | ')}`);
+  assert.equal(withEnv.sent.length, 1, 'the local command was not typed into the environment terminal');
+  assert.equal(opened[1].env, undefined);
+  assert.deepEqual(opened[1].sent, ['echo local']);
+});
+
+// P5
+test('a_linked_launcher_start_never_types_into_a_finished_terminal_that_carries_a_password_environment', async () => {
+  const nodes = launcherNodes({ command: 'openvpn --config /etc/vpn.conf' });
+  const w = world({});
+  const first = launcherRoad(nodes);
+  const passwordRoad = fakeRoad(() => ({ password: true }), (id) => first.storage.getNode('a1', id));
+  assert.equal((await startVpn(scope, w, nodes, { sshRoad: passwordRoad, storage: first.storage })).started, true, w.warnings.join('\n'));
+  const live = w.live[START_TITLE];
+  const withEnv = only(w.terminals.filter((t) => t.name === START_TITLE));
+  assert.ok(withEnv.env?.SSH_ASKPASS !== undefined, 'the first launcher terminal carries the askpass environment');
+  const finished = (): void => {
+    noteOurSend(live);
+    w.shell.end(live, w.shell.start(live), 0);
+  };
+  const second = launcherRoad(nodes);
+  const { started } = await startVpn(scope, w, nodes, { sshRoad: second.road, storage: second.storage, shellEvents: finished });
+  assert.equal(started, true, w.warnings.join('\n'));
+  const opened = w.terminals.filter((t) => t.name === START_TITLE);
+  assert.equal(opened.length, 2, 'a NEW terminal opened');
+  assert.equal(withEnv.sent.length, 1, 'nothing more was typed into the environment terminal');
+  assert.equal(opened[1].env, undefined);
+  assert.equal(opened[1].sent.length, 1);
+});
+
+// P6 — the pinned road's own finder follows the same rule.
+test('a_pinned_terminal_without_env_is_not_found_in_one_opened_with_env', () => {
+  const w = world({});
+  const { pinnedTerminal } = loadWithVscode<typeof import('../pinnedTerminal')>('../pinnedTerminal', w.vscode);
+  assert.equal(pinnedTerminal('Script', { env: { SECRET: 'x' } }).ok, true);
+  assert.equal(pinnedTerminal('Script').ok, true);
+  const opened = w.terminals.filter((t) => t.name === 'Script');
+  assert.equal(opened.length, 2, 'a second terminal opened');
+  assert.equal(opened[1].env, undefined);
 });
