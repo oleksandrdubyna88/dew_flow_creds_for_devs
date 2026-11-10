@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3: Run with Secrets, the agent's run, and the closing
 
-> Status: **stories of E3, nothing implemented yet, 2026-11-10. The parent is stopped for re-review (entry 2.2): no E3 code until epoch 3 opens.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
+> Status: **stories of E3, nothing implemented yet, 2026-11-10. The parent's epoch 3 is open (after the re-review of entry 2.2); next: E3's plan round 2, then the code.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
 > fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
 > `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
@@ -40,7 +40,7 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
   bounded: `ConnectTimeout=10`, and closing its terminal kills the child through `childKill`; no stdin write outlives it.
 - **Scope.** Parent §4.4 bullet "Run with Secrets"; build step 7; D12. Help ×5 for Run with Secrets over SSH.
 - **Depends on.** E1 (`SECRETS_REMOTE_COMMAND`, `secretsStdin`, `trustLineFor`, the seam), E2 (`SshRoad`, `ownedSessions`).
-- **Done when.** §S1.6 scenarios green, each watched RED first (LN1-LN6 by the temporary bypass of parent §4.5 (5));
+- **Done when.** §S1.6 scenarios green, each watched RED first (LN1-LN11 by the temporary bypass of every wall, parent §4.5 (5));
   the scan edits of §S1.3; typecheck and lint green; no file over its ceiling; `extension.ts` not one line longer.
 
 ### S2 — The agent's run over SSH
@@ -77,7 +77,7 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | E3-D8 | **The SSH child's environment never holds a value** (D12; round 1, item 4). `MaskedRunOptions.env` in argv mode is `spawnLaunch`'s answer only: the askpass variables of a password SSH entry (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `sshAskpass.ts:43-45`) and `SSH_AUTH_SOCK`; no `CREDS_REF_n` and no resolved value. The values reach the remote only in `stdinText`. The askpass variables carry the SSH entry's own password and are the ACCEPTED LIMIT of `research/PLAN_windows_shell_quoting_injection.md` §8 (owner, 2026-11-10; `research/module_extension.md:221`): a person's own `SendEnv` pattern that matches them, with a server `AcceptEnv` that matches too, sends the password to the server. E3 adds no `-o SendEnv=-NAME`: it was MEASURED not to remove a wildcard pattern (OpenSSH removes only a literally equal one; `ssh -G` on OpenSSH 10.2p1 and Windows OpenSSH 9.5p2 still listed `sendenv CREDS_*`), so it would only look like protection. | D12 promises the values never in argv, the remote `ps` or a history; nothing gains by putting them in the local ssh's environment, and there no `SendEnv` can reach them. The password limit is the same on SSH Connect and E2's password terminals today; this road does not widen it. |
 | E3-D11 | **The masked run is bounded** (round 1, item 1). (a) Connecting: the argv carries `-o ConnectTimeout=10` in both branches (`sshExecCommand.ts:115`), and the password branch `NumberOfPasswordPrompts=1` (`:106`), the key branch `BatchMode=yes` (`:107`): ssh answers no prompt from stdin. That is what we ASK ssh; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang). (b) Closing: the terminal's `close()` calls `killChild(child, { tree: true })` (`childKill.ts:81-87`) as today: on Windows `taskkill /pid <pid> /T /F` (`:32-37`) ends `ssh.exe` and a jump host's helper `ssh`; on POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` = 2000 (`:23`), to the child, which in argv mode IS `ssh` (no shell between). (c) Stdin: the script is written once, in `open()`, right after the spawn; when the run ends (E3-D7's once-only `ended()`), the child's stdin is DESTROYED, so a part of the script not yet taken by the child (it holds the values) is dropped, never written later; `open()` after the run ended spawns nothing and writes nothing. | Parent §4.4: no byte to stdin before trust, and the run must end. A child that never reads stdin (stalled before the server answers) would otherwise keep the script, values included, in the extension host's write buffer for as long as it lives. |
 | E3-D12 | **The launch's warning is a line of the banner, not a toast** (round 1, item 3). `maskedOverSshBanner(described, warning, target, secrets)` (pure, `remoteLaunch.ts`) joins with `\r\n`: `described`; `Note: <warning>.` when `warning` is set; `secretsOverSshBanner(target, secrets)`. Nothing calls `showWarningMessage` for it. | A one-argument toast is not awaited and races the launch: the run's output can be on screen before it, or the person closes the toast unread. The banner is written in `open()` before the first byte of output. |
-| E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Counted as parent entry 2.2; since the epoch-3 revision, parent §4.5 (1) names this list, and the guarantee that the import target served is held by the no-local-sink tests (parent §4.5 (5); §S1.6 LN1-LN6). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
+| E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Counted as parent entry 2.2; since the epoch-3 revision, parent §4.5 (1) names this list, and the guarantee that the import target served is held by the no-local-sink tests (parent §4.5 (5); §S1.6 LN1-LN11, §S2.5 AG8). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
 | E3-D9 | **The agent's SSH call is injected**, as `overSsh` on the deps of `terminalRunAction`. Its implementation `execOverSsh(deps)` lives in `sshUseActions.ts` (the `vscode` side) and is shared with `sshExecAction`. `sshDepsFor` (`sshUseActions.ts:383-405`) returns it, and `agentDeps` already spreads `sshDeps` (`extension.ts:629-637`). | `agentUseActions.ts` imports no `vscode` and its tests load it directly; `resolveExecAuth` and `materializeKnownHosts` reach `vscode` (`keyInstaller.ts:5`, `hostKeyTrust.ts:3`). And `extension.ts` is at its size ratchet (1003). |
 | E3-D10 | **No new two-argument prompt and no renamed prompt function** (as E2-D10). If `test/promptSites.test.ts` goes red, stop and report to the judge. | The prompt ledger keys rows by `file#function#…`. |
 
@@ -263,7 +263,7 @@ stay green unchanged).
 | `ALLOWED_SENDS['commands/runCommands.ts']` `:136-141` | Add `{ line: 'runInMaskedTerminal({', because: 'Run with Secrets: the local child through its shell (runMasked), and the linked child by argv with the script on stdin (E3.S1)', count: 2 }`. `runMasked(host, job, refs);` and its declaration stay (the local road). |
 | `ALLOWED_SENDS['maskedTerminal.ts']` `:178` | The spawn line's new text `const child = childProcess.spawn(launch.program, launch.args, {`, `because: 'the masked child of Run with Secrets: through a shell (local) or by argv with shell false (over SSH, E3.S1)'`; add `export function runInMaskedTerminal(options: MaskedRunOptions): vscode.Terminal {` (`because: 'the declaration'`). |
 | `REFUSAL_SITES` `:189-195` | Unchanged: `commands/runCommands.ts:secretsRefusal` STAYS (the script path). |
-| `RESOLVE_IMPORTERS` `:103` | Unchanged in S1, and `commands/runCommands.ts` STAYS in it after E3 (E3-D13: `LaunchPlan` is not changed; the local road's `parts` and E2's `arrowLine` resolve locally). S2 removes only `agentUseActions.ts`. Its failure message (`:107`) stays. |
+| `RESOLVE_IMPORTERS` `:103` | Unchanged in S1, and `commands/runCommands.ts` STAYS in it after E3 (E3-D13: `LaunchPlan` is not changed; the local road's `parts` and E2's `arrowLine` resolve locally). S2 removes only `agentUseActions.ts`. S1 rewrites the list's doc comment (`:99-102`) and the failure message (`:107`), which contradict parent §4.5 (1) after the re-review. The comment: `Sorted, compared whole, so a new importer and a vanished one both fail. After E3 the list is commands/runCommands.ts (its LOCAL roads only, E3-D13) and remoteLaunch.ts (parent §4.5 (1)). It proves who imports, not where a resolved line flows: that a linked entry reaches no local sink is linkedNeverLocal.test.ts (parent §4.5 (5)).` The message: `a new file imports resolveCommand: a linked entry must take its launch from remoteLaunch.ts (planLaunch); add the file's no-local-sink tests to linkedNeverLocal.test.ts and edit this list in the same commit`. |
 | self-check `:214-226` | Add `assert.equal(sitesIn('literal.ts', 'x = runInMaskedTerminal\n(\n {})', SENDS).length, 1);`. |
 
 **Existing tests whose expected values change**
@@ -450,12 +450,21 @@ spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); retur
 | Hp7 | `the_english_secrets_text_is_exact` | the EN `secret-references` body includes the EN `usage` text above, literally | absent |
 
 **`test/linkedNeverLocal.test.ts`** (new; parent §4.5 (5), added by the epoch-3 re-review). The road scan reads imports, not
-where a resolved line flows, and `commands/runCommands.ts` resolves the line before it reads the link (`runEntryLine` →
-`arrowLine` → `sshLinkOf`; `secretsJobAt` → `commandJob`). These tests hold the guarantee instead. The three links: VALID
+where a resolved line flows. Five roads resolve the line before they read the link, or treat the link as absent by
+construction (parent §4.4 table): the arrow (`runEntryLine` → `arrowLine` → `sshLinkOf`), *Run with Secrets*
+(`secretsJobAt` → `commandJob`), the dependency chain (`visitNode` → `executableLine` → `addStep` → `sshLinkOf`,
+`dependencyRun.ts:127`, `:148`), a chain planned with no lookup (`NO_LINK`, `:157`) and an agent's VPN start (`linkOf`,
+`vpnLauncherRun.ts:84-86`). These tests hold the guarantee instead. The three links: VALID
 (`S1` in storage, a fake road that answers ready), MISSING (no `S1`), REFUSED (`S1` is not an SSH entry, or has the host
 `-oProxyCommand=x`: `sshLinkOf` answers `refused`). `BARE` = `resolveCommand(LINKED)`'s line, read in the test. The local
 sinks: the arrow's `typeIntoEntryTerminal` (seen as a terminal whose `sent` holds `BARE` as one whole send) and the local
-masked run (seen as an `aw.masked` record with `commandLine` set).
+masked run (seen as an `aw.masked` record with `commandLine` set), the chain's typed step (`dependencyRunHost.ts`:
+`terminal.sendText(step.typed)`, or `executeCommand` with shell integration; seen in the chain world's terminal records
+as `BARE`), and the launcher's local send (seen as a terminal whose `sent` holds the launcher's bare line).
+
+**Trust in the fixture.** In every trusted case the trust store ALSO trusts `BARE` (the bare local line), not only the
+trust line. Without that, a bypassed road would stop at the local trust modal, and the test would stay green for the wrong
+reason.
 
 | # | Test | Assertion | RED proof |
 |---|---|---|---|
@@ -465,9 +474,15 @@ masked run (seen as an `aw.masked` record with `commandLine` set).
 | LN4 | `run_with_secrets_never_runs_a_valid_link_here` | VALID, trusted: no `aw.masked` record has `commandLine`; the one record has `argv` | RED with the bypass: `runWithSecrets` sends every link to `runSecretsHere` AND `secretsRefusal` skips `sshLinkRefusal` (both walls, parent §4.5 (5)) |
 | LN5 | `run_with_secrets_never_runs_a_missing_link_here` | MISSING: `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
 | LN6 | `run_with_secrets_never_runs_a_refused_link_here` | REFUSED (each case): `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
+| LN7 | `a_chain_never_types_the_bare_line_of_a_valid_linked_step` | a local entry that `dependsOn` a VALID linked step, `runDependencies: true`, trusted: no chain terminal record holds `BARE`; the linked step runs over SSH (E2.S3) | GREEN on E2's code; RED with the bypass of BOTH walls: `addStep` sends every step to `addLocalStep` AND `stepRefusal` skips `sshLinkRefusal` (`:203`) |
+| LN8 | `a_chain_never_types_the_bare_line_of_a_missing_linked_step` | MISSING: no chain terminal record holds `BARE`; the chain is refused before any step is typed | the same bypass |
+| LN9 | `a_chain_never_types_the_bare_line_of_a_refused_linked_step` | REFUSED (each case): as LN8 | the same bypass |
+| LN10 | `an_agents_vpn_start_never_types_a_linked_launcher_here` | an agent's start (no road, `linkOf` answers `none`) of a VPN whose launcher is linked, trusted: no terminal sent anything; the answer is E1's shared sentence | GREEN (E2-D2); RED with the bypass of its one wall: `launcherRefusal` skips `sshLinkRefusal` (`vpnLauncherRun.ts:157`) |
+| LN11 | `a_chain_with_no_lookup_never_types_a_linked_step_here` | the same agent start, the launcher unlinked, one chain step linked (the walk has no `lookup`, so `NO_LINK`): no terminal record holds that step's `BARE`; the answer is E1's shared sentence | GREEN; RED with the bypass of its one wall: `stepRefusal` skips `sshLinkRefusal` |
 
 Each bypass is a temporary local edit, run once, never committed. The summary of S1 names each RED message and the pass.
-LN1-LN3 are guards of E2's merged code, written in S1 because S1 changes the routing in the same file.
+LN1-LN3 and LN7-LN11 are guards of E2's merged code (tests only), written in S1 because S1 changes the routing of the same
+guarantee. The agent's run has its own test in S2 (AG8), because its routing is built there.
 
 ### S1.7 Commands
 
@@ -659,6 +674,7 @@ answer `{ status: 200, body: { exitCode: 0, stdout: 'ok', … } }`).
 | AG4 | `the_slot_is_released_when_the_ssh_call_throws` | `overSsh` rejects: the action rejects or answers `internal` as the Fable spec says; the release function was called once | E1's sentence |
 | AG5 | `snapshot_the_ssh_entry_is_read_once` | `getNode` counts reads of `s1`: exactly the two the gate makes (`linkTo` and `lookedUp`, spec §2.1), and none after the gate — `planLaunch` gets the gate's `link`, so it reads nothing | E1's sentence |
 | AG6 | `a_linked_entry_written_for_windows_is_refused_after_the_gate_naming_only_the_terminal_entry` | S usable (the gate passes), `terminalOs: 'windows'`: `not_supported`, message `=== refusalSaid(T, planLaunch(T, sshLinkOf(T, lookup), { stayOpen: false }).reason)`, which includes `"deploy"` and not `prod box` or `prod.example`; `overSsh` 0, slot 0. The same entry with S CLOSED answers the one sentence instead: that case is the spec's G20 | E1's sentence differs |
+| AG8 | `a_linked_entry_never_reaches_the_local_captured_run` (parent §4.5 (5)) | T's command is `echo local-run-probe-8`; a linked T with S usable and trusted on its trust line AND on the bare line, and a linked T with S closed: no answer's `stdout` holds `local-run-probe-8` (`capturedRun` really spawns, as in `the_agent_runs_the_resolved_line`, `test/agentUseActions.test.ts:377-382`, so a local run would print it); usable → exactly one `overSsh` call; closed → the one sentence, slot 0 | GREEN after S2; RED with the bypass of its one wall: the gate answers `local` for every entry, so `runHere` runs the bare line |
 | AG7 | `an_unlinked_entry_runs_here_as_before` | the existing tests `the_agent_runs_the_resolved_line` and the #103 pair (`agentUseActions.test.ts:214-229`, `:377-399`) green unchanged; and here: an unlinked entry never calls `overSsh` | (green; guard) |
 
 **`test/sshExecOver.test.ts`** (new; `loadWithVscode('../sshUseActions', stub, { './sshExecRunner': { runSshExec: recorder } })`)
@@ -736,11 +752,11 @@ The steps, in this order:
    **E3-D13 and entry 2.2: the first §4.5 (1) importer target was given up** — `commands/runCommands.ts` still imports
    `resolveCommand` for the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not
    widened (E3's plan round 1); the epoch-3 revision wrote the shipped list into §4.5 (1) and put the guarantee on the
-   no-local-sink tests (LN1-LN6), so this is history for the reader, not a gap; the `sshLinkRefusal` sentence's last callers (Flag 4); the CHANGELOG path; and, recorded as CHECKED and not
+   no-local-sink tests (LN1-LN11, AG8), so this is history for the reader, not a gap; the `sshLinkRefusal` sentence's last callers (Flag 4); the CHANGELOG path; and, recorded as CHECKED and not
    built, `-o SendEnv=-NAME` for the askpass variables (measured not to remove a wildcard pattern,
    `PLAN_windows_shell_quoting_injection.md` §8; the limit stays accepted). A deviation that records something as
    impossible names what was CHECKED.
-2. The parent's ledger: read it whole. Epoch 2 stopped at entry 2.2; E3 is built only after epoch 3 opens. A second
+2. The parent's ledger: read it whole. Epoch 2 stopped at entry 2.2 and epoch 3 opened after its re-review. A second
    entry of the CURRENT epoch is a new full stop of `plan-change-control.md`, before anything is promoted. A stories
    document keeps no ledger.
 3. Edit, still in `todo/`: every link of the table's last column, written for the DESTINATION; the two inbound paths;
@@ -828,7 +844,7 @@ The steps, in this order:
    the E3 epic true as written.
    (Decided 2026-11-10: (a) counted as parent entry 2.2, the second change of epoch 2, which stopped the plan. The
    epoch-3 revision rewrote parent §1, §4.4, §4.5, §6, the Definition of Done and the E1 and E3 epic texts; it moved
-   the guarantee from the import target to behavioural tests (parent §4.5 (5), here §S1.6 LN1-LN6). (b) and (c) are not
+   the guarantee from the import target to behavioural tests (parent §4.5 (5), here §S1.6 LN1-LN11 and §S2.5 AG8). (b) and (c) are not
    counted. The revision also wrote the round-1 bounds and the child's clean environment into parent §4.4, as the
    baseline of epoch 3, not as entries.)
 

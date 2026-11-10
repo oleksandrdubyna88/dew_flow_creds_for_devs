@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 2 stopped for re-review 2026-11-10 (entry 2.2). E1 merged (#335), E2 merged (#337), the 1.20.0 CHANGELOG entry merged (#338); E3 stories amended after its plan round 1, no E3 code. The whole plan is revised for epoch 3 (step 4 of the full stop) and the Opus judge's sort of the done work is written (`### Re-review for epoch 3`); both wait for the re-review round. Epoch 3's line is not written yet.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 3 open since 2026-11-10, by reviewers, after the whole re-review of entry 2.2's stop (`### Re-review for epoch 3`; nothing narrowed, nothing cut). E1 merged (#335), E2 merged (#337), the 1.20.0 CHANGELOG entry merged (#338); the 1.20.0 release is no longer blocked by the stop. Next: E3, its own plan round 2 on feat/terminal-command-over-ssh-e3; no E3 code yet.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -35,7 +35,7 @@ Narrowed: no — the Definition of Done is identical to epoch 1's; the trust lin
   (Sorted by an Opus judge, 2026-11-10. The stop commit was not pushed: the repository is public and the cut commit
   describes unreleased security defects; the push is the owner's decision.)
 
-> Epoch 2 · approved 2026-11-10 · by reviewers · state: stopped
+> Epoch 2 · approved 2026-11-10 · by reviewers · state: closed
 
   (The re-review round on branch feat/terminal-command-over-ssh-epoch2: verdict proceed, 1 of 2 reviewers answered —
   antigravity's answer was unparseable; the Update-it finding accepted (already E1 §S4 F2), the `exit` finding
@@ -47,12 +47,12 @@ Narrowed: no — the Definition of Done is identical to epoch 1's; the trust lin
 
 ### Re-review for epoch 3
 
-Narrowed: no — scope, the Definition of Done and the epics are not smaller: the DoD gains two rows (the no-local-sink tests and the agent's refusal and mask) and E3's Done-when gains the gate, mask and no-local-sink rows; §4.5 (1)'s import target is replaced by the importer list that ships, and its purpose (no linked run on this machine) moves to behavioural tests that are acceptance rows, so the execution safeguard stays a requirement; E3 is not split (three epics is the owner's limit, and its stories already separate the two boundaries); 1.20.0 ships E1 and E2 with E3's two roads still refused, which every epic boundary of this plan allows (D8)
+Narrowed: no — scope, the Definition of Done and the epics are not smaller: the DoD gains two rows (the no-local-sink tests and the agent's refusal and mask) and E3's Done-when gains the gate, mask and no-local-sink rows; §4.5 (1)'s import target is replaced by the importer list that ships, and its purpose (no linked run on this machine) moves to behavioural tests that are acceptance rows and cover every road that resolves a line or treats a link as absent (the arrow, Run with Secrets, the dependency chain, an agent's VPN start, a chain with no lookup, the agent's run), so the execution safeguard stays a requirement and is wider than the import target was; E3 is not split (three epics is the owner's limit, and its stories already separate the two boundaries); 1.20.0 ships E1 and E2 with E3's two roads still refused, which every epic boundary of this plan allows (D8)
 
 | Work | Where | Verdict | Action |
 |---|---|---|---|
 | f3b024b7 E1, #335 | main, merged 2026-11-10 | fits | kept; its importer list is S2-D6's, now §4.5 (1)'s text; E1's Done-when line fixed forward in this revision |
-| 44f3f3dc E2, #337 | main, merged 2026-11-10 | fits | kept; its arrow resolves before the link, and the routing is pinned by E3's no-local-sink tests (tests only, in E3.S1) |
+| 44f3f3dc E2, #337 | main, merged 2026-11-10 | fits | kept; its arrow and its dependency chain resolve before the link, and an agent's VPN start and a chain with no lookup treat the link as absent; each routing is pinned by E3's no-local-sink tests (tests only, in E3.S1) |
 | 454e990f SSH Connect tab title, #336 | main, merged 2026-11-10 | fits | kept; not this plan's work (the owner's own request, its own coai rounds, SSH Connect's title and owner lookup); E3 is rebased on it, and `prepareSshSession`'s contract is unchanged |
 | d1b4b88e CHANGELOG 1.20.0, #338 | main, merged 2026-11-10 | fits | kept; its text is true of E1 and E2 as merged, and it says that Run with Secrets and an agent's run still refuse |
 | bd4cc948 E3 stories and the lead's flag decisions | pushed, unmerged (feat/terminal-command-over-ssh-e3) | fits | kept |
@@ -62,18 +62,29 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
 | 4b43a373 E2 and E3 documents, rules and security plan paths | pushed, unmerged | fits | kept |
 | e782769c E3 stories with the round-1 amendments | pushed, unmerged | fits | kept; E3-D13, flags 1 and 7, the no-local-sink tests and the CHANGELOG row fixed forward in this revision |
 | f33e46f5 entry 2.2, the stop | pushed, unmerged | fits | kept |
+| 733923ab the revision for epoch 3 and this sort, and the follow-up commit after it (the lead's Opus review applied) | 733923ab pushed, unmerged; the follow-up local | fits | kept |
 
   (Sorted by an Opus judge, 2026-11-10. Nothing is cut: every merged PR is compatible with the revised plan, and no
   pushed commit contradicts it.)
-  (The stop was late. Entry 2.2's cause was accepted in 5f32ae71, written 2026-11-10 08:20 UTC. The stop was recorded
-  only in f33e46f5, 17:59 UTC. Between the two, #335 (15:45), #337 (16:09) and #338 (17:46) carried this plan's work to
-  `main`, and #336 (17:06) merged in the same area. Step 2 of the full stop forbids those merges. They are kept because
-  each fits the revised plan. Nothing is reverted, and the breach is recorded here, not hidden.)
+  (The stop was late. Entry 2.2's cause was accepted in 5f32ae71: authored 2026-11-10 08:20 UTC, and committed 17:31
+  UTC by a rebase, after #335, #336 and #337 had merged. The stop was recorded only in f33e46f5, 17:59 UTC. Between the
+  acceptance and the stop, #335 (15:45), #337 (16:09) and #338 (17:46) carried this plan's work to `main`; step 2 of the
+  full stop forbids those three merges. #336 (17:06) merged in the same area but is not this plan's work. The three are
+  kept because each fits the revised plan. Nothing is reverted, and the breach is recorded here, not hidden.)
   (Release decision: extension 1.20.0, by release-please with a version bump only, carries E1 (#335), E2 (#337), #336
   and the CHANGELOG (#338). It waits until epoch 3 opens and does NOT wait for E3. E3's two roads, Run with Secrets and
   an agent's creds_run, stay refused with E1's sentence until E3 ships in a later release. Source: two question
   consultants (2026-11-10) and the precedent in PLAN_remote_bridge_scoped.md (PR #307 fits, no merge until epoch 7
   opens). The owner ordered the release when E1 and E2 were ready and E3 had no code.)
+
+> Epoch 3 · approved 2026-11-10 · by reviewers · state: open
+
+  (The re-review round on branch feat/terminal-command-over-ssh-epoch3, coai session db4ae051: verdict proceed, 2 of 2
+  reviewers answered, five findings, each rejected with its reason: a multi-line secret was measured fine under
+  dash -s; the folder run's cleanup is already in the finally of sshRoad.ts; the banner already says the input is
+  empty; no harness drives the real extension UI; exit and exec were already rejected in epoch 2. With it, the lead's
+  own Opus review: its six findings are applied in the follow-up commit. The dependency chain, an agent's VPN start, a
+  chain with no lookup and the agent's local run join the no-local-sink proof of §4.5 (5); the rest are text fixes.)
 
 ## 1. Goal
 
@@ -88,16 +99,19 @@ connection entries, default **Do not use**. When one is chosen, running the entr
 entry, then runs the command inside that SSH session.
 
 Done when: every road that runs a Terminal entry either runs the command on the chosen SSH host, or refuses with a
-sentence. A person's road says why. An agent's refusal names only the Terminal entry and not the reason, because
-the SSH entry is not the agent's to read (§4.4 "Agent", entry 2.1). **No road of this build or a later one runs a
+sentence. A person's road says why. Before the agent's gate passes, an agent's refusal names only the Terminal entry
+and not the reason, because the SSH entry is not the agent's to read (§4.4 "Agent", entry 2.1). **No road of this build or a later one runs a
 linked entry's command on the local machine.** An OLDER build does not know the field; that exposure is risk 1, not
 covered by this guarantee.
 
 How the guarantee is held (re-review, epoch 3): a linked run uses only a launch that the composer (`planLaunch`)
-made. A road may still resolve the line itself (`resolveCommand`) to check the entry and to feed its LOCAL run, as the
-arrow and the local *Run with Secrets* do. Each such road must send a linked entry away from its local sinks before
-anything reaches them. An import scan cannot prove where a value flows, so behavioural tests hold this guarantee
-(§4.5 (5)). The scan holds only who imports and who reads.
+made. A road may still resolve the line itself to check the entry and to feed its LOCAL run: by `resolveCommand`, or
+through a helper that calls it (`shownCommandLine` in `commandLine.ts`, `executableLine` in `dependencyRun.ts`). The
+arrow, the local *Run with Secrets* and the dependency chain do this. Two roads also treat every entry as unlinked by
+construction (an agent's VPN start, and a chain planned with no vault lookup) and rely on their local road's own link
+refusal. After E3.S2, the agent's run sends an unlinked entry to a local run too. Each such road must keep a linked
+entry away from its local sinks. An import scan cannot prove where a value flows, so behavioural tests hold this
+guarantee (§4.5 (5)). The scan holds only who imports and who reads.
 
 ## 2. Decisions taken, and by whom
 
@@ -253,14 +267,21 @@ a refusal still shows its remedy, and the person runs the entry again.
 Order on every road a person starts: resolve and link → `prepareSshSession` (all awaits: PIN, host-key modal, route
 refusal) → `confirmTrusted(trustLine)` → dependencies → the synchronous find-and-send, or the spawn.
 
-**Where a line is resolved** (re-review, epoch 3). In `commands/runCommands.ts` two roads resolve the line BEFORE they
-read the link: the arrow (`runEntryLine` calls `arrowLine`, which calls `resolveCommand`, then `sshLinkOf`) and the
-local *Run with Secrets* (`commandJob`). That resolution may only check the entry (no command, the `{name}` refusal, in
-today's words) and feed the LOCAL road. For a linked entry, the road sends the entry to the SSH branch, and that branch
-reads only `planLaunch`'s plan. The local sinks of this file are `typeIntoEntryTerminal` (a send with the target
-`{kind:'entry'}`) and the local masked run (`runMasked`, `runInMaskedTerminal` with a `commandLine`). Nothing of a linked
-entry reaches them, whether its link is valid, its SSH entry is missing, or `sshLinkOf` refuses the link. §4.5 (5) and §6
-hold this with behavioural tests.
+**Where a line is resolved** (re-review, epoch 3). "Resolve" here means `resolveCommand`, called directly or through
+a helper (`shownCommandLine`, `commandLine.ts:96`; `executableLine`, `dependencyRun.ts:223`). Such a resolution may only
+check the entry (no command, the `{name}` refusal, in today's words) and feed the LOCAL road. For a linked entry, the
+road sends the entry to its SSH branch, and that branch reads only `planLaunch`'s plan. Every road below must keep a
+linked entry away from its local sinks, whether its link is valid, its SSH entry is missing, or `sshLinkOf` refuses the
+link. §4.5 (5) and §6 hold this with behavioural tests.
+
+| Road | Resolves, then routes | Local sink | Its walls before the sink |
+|---|---|---|---|
+| Arrow | `runEntryLine` → `arrowLine` (`resolveCommand`) → `sshLinkOf` → `link.kind === 'none'` → `runLocalLine` | `typeIntoEntryTerminal` (a send with the target `{kind:'entry'}`) | the routing branch |
+| *Run with Secrets* | `secretsJobAt` → `commandJob` (`resolveCommand`) → the link → the local road (after E3.S1) | the local masked run (`runMasked`, `runInMaskedTerminal` with a `commandLine`) | the routing branch; `secretsRefusal`'s `sshLinkRefusal` |
+| Dependency chain | `visitNode` → `executableLine` (`dependencyRun.ts:127`) → `addStep` → `sshLinkOf` (`:148`) → `link.kind === 'none'` → `addLocalStep` | the step typed by `dependencyRunHost.ts` (`terminal.sendText(step.typed)`, or `executeCommand` with shell integration) | the routing branch; `stepRefusal`'s `sshLinkRefusal` (`:203`) |
+| Chain planned with no vault lookup | `addStep` with `walk.lookup` undefined → `NO_LINK` (`:148`, `:157`): every step is unlinked by construction | the same | `stepRefusal`'s `sshLinkRefusal` only |
+| An agent's VPN start | `linkOf` (`vpnLauncherRun.ts:84-86`) answers `none` when there is no road → `runLocalLauncher` | the launcher's local send | `launcherRefusal`'s `sshLinkRefusal` (`:157`) only |
+| Agent's run (after E3.S2) | the gate `linkedCall` answers `local` or `linked` → `runHere` or `runThere` | `capturedRun` in `runHere` (a local shell, output captured) | the gate's routing (E3.S2 removes the `sshLinkRefusal` call from this road) |
 
 **One owner per prepared session.** The road that called `prepareSshSession` owns its `ready` result until the
 hand-over: the moment the line is sent into a terminal (the owner becomes that terminal's close handler) or the
@@ -310,7 +331,8 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   human PIN prompt runs inside `prepareSshSession` as for any road; its askpass env (`SSH_ASKPASS`,
   `SSH_ASKPASS_REQUIRE=force`, the password variable) goes into the CHILD's environment — never argv — with
   `NumberOfPasswordPrompts=1` from `buildSshExecArgv`'s askpass branch and its `ConnectTimeout=10`, so a wrong password
-  ends the child with ssh's error instead of a hang. `MaskedRunOptions` gains `argv`, `env` and `stdinText`.
+  ends the child with ssh's error instead of a hang. `MaskedRunOptions` gains `argv`, `env`, `stdinText` and `onEnded`
+  (the run's once-only end, which cleans the session, E3-D7).
 - **Agent** (D2, D15; the authorisation is the Fable spec
   [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md)): the gate comes
   FIRST. `findUsableEntry(…, sshEntityId, 'exec')`, looked up in the Terminal entry's own account only, must answer
@@ -319,8 +341,11 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   runs. So the agent reads only `not_found` (the Terminal entry is gone), the bridge's own refusal (on a bridge, for every
   linked entry), or ONE sentence, `linkedRunRefused(<Terminal entry>)`, code `denied`, which names only the Terminal entry
   (entry 2.1). It is the same sentence for every reason: closed, PIN-hidden, missing, another account, in the Trash, not
-  an SSH entry, an unsafe host, itself, and on such an entry also a line break or *Runs on* Windows. The real reason goes
-  to the agent journal. A switch, link or target that changed while the dialog was open is refused at run time. After
+  an SSH entry, an unsafe host, itself, and on such an entry also a line break, *Runs on* Windows, the `{name}` refusal
+  or an empty command. The real reason goes
+  to the agent journal. A switch, link or target that changed while the dialog was open is refused at run time. An
+  entry the gate answers `local` (no link) goes to `runHere`, whose local sink is `capturedRun` (a local shell, output
+  captured); a linked entry never reaches it (§4.5 (5)). After
   the gate: `planLaunch` with the gate's own link (its refusals name only the Terminal entry), then `resolveExecAuth`
   (refuses a PIN-locked or woven password), jump and pin as the agent exec does, `buildSshExecArgv` with the remote
   command WITHOUT stay-open, key deleted in `finally`. Trust uses the same trust line, so one approval covers the
@@ -338,19 +363,28 @@ Shape of `commandRoadScan.test.ts`: (1) outside `commandLine.ts` (which DEFINES 
 `resolveCommand` is imported only by the files on one sorted list (`RESOLVE_IMPORTERS`), compared whole, so a new
 importer and a vanished one both fail. The list shrinks per epic (E1.S2 spec S2-D6). After E3 it is
 `['commands/runCommands.ts', 'remoteLaunch.ts']`: `runCommands.ts` keeps its import for its two LOCAL uses (the arrow's
-`arrowLine` and the local *Run with Secrets*' `commandJob`), because `LaunchPlan` is not widened (E3-D13, entry 2.2);
+`arrowLine` and the local *Run with Secrets*' `commandJob`), because `LaunchPlan` is not widened (E3-D13, entry 2.2).
+The list shows only direct importers: a road that resolves through `shownCommandLine` or `executableLine` (the
+dependency chain) is not on it, which is one more reason (5) exists;
 (2) `.sshEntityId` is read only on an exact allow-list of lines, with a stale-entry check; (3) in the road files, each
 send or spawn call sits on an allow-listed line; (4) a self-check that every pattern still matches something.
 
 (5) **What the scan does not prove, and what does.** The scan reads text: it says who imports and who reads, not where a
-resolved line flows. So the guarantee of §1 is held by behavioural tests, on the two roads that resolve before they read
-the link (§4.4 "Where a line is resolved"): the arrow and *Run with Secrets*. For each road, three linked entries — a valid
-link, a missing SSH entry, and a link that `sshLinkOf` refuses (not an SSH entry, or no safe host) — reach neither local
-sink: no send with the target `{kind:'entry'}` and no masked run with a `commandLine`. Each test is watched RED by a
-temporary bypass of every wall between the link and the local sink on that road: the routing branch (the
-`link.kind === 'none'` test made always true) and, on *Run with Secrets*, also the local road's own link refusal
-(`secretsRefusal`'s `sshLinkRefusal`). The bypassed road reaches the local sink and the test fails on that. The bypass
-is never committed, and the RED message is named in the story's summary.
+resolved line flows. So the guarantee of §1 is held by behavioural tests, on every road of the table in §4.4 "Where a
+line is resolved":
+
+- the arrow, *Run with Secrets* and the dependency chain, each with three linked entries — a valid link, a missing SSH
+  entry, and a link that `sshLinkOf` refuses (not an SSH entry, or no safe host);
+- an agent's VPN start of a linked launcher, and a chain planned with no vault lookup that holds a linked step — the
+  roads that treat the link as absent by construction;
+- the agent's run (after E3.S2), with a linked entry whose SSH entry is usable and one whose SSH entry is closed.
+
+On each, nothing reaches the road's local sink. Each test is watched RED by a temporary bypass of EVERY wall that the
+table names for that road: the routing branch made to answer "no link" (or `local`) for every entry, and the local road's
+own `sshLinkRefusal` where it has one. A wall left in place would keep the test green and prove nothing. The bypassed
+road reaches the local sink and the test fails on that. The bypass is never committed, and the RED message is named in
+the story's summary. The trust fixtures trust the bare local line too, so a trust modal never stops a bypassed road
+before its sink.
 
 ### 4.6 Quoting, in two parses
 
@@ -416,7 +450,7 @@ refuse a linked entry with E1's sentence. Steps 7-9 (E3) ship in a later release
 | agent masking: the mask table of a call on a linked entry holds the SSH entry's password; an unlinked entry gives the Terminal entry's table only | `test/agentSshGate.test.ts` (`maskEntriesWithLink`) | D15, entry 2.1 |
 | secrets: the ssh child's environment holds no resolved value and no `CREDS_REF_` name (askpass and `SSH_AUTH_SOCK` only); the values are on stdin only | masked-run tests (a real child with a recording fake `ssh`, and the road world) | D12 |
 | secrets: the run is bounded — `ConnectTimeout=10` is sent; closing the terminal kills a stalled child; the end of the run drops the unwritten script; the session is cleaned exactly once on every exit | `test/maskedTerminal.test.ts`, `test/sshRoadSecrets.test.ts` | §4.4 one owner |
-| no local sink: arrow and *Run with Secrets*, each with a valid link, a missing SSH entry and a refused link — no send with the target `{kind:'entry'}`, no masked run with a `commandLine`; each watched RED by the temporary bypass of §4.5 (5) | arrow world, secrets world | §1, D7 |
+| no local sink: the arrow, *Run with Secrets* and the dependency chain, each with a valid link, a missing SSH entry and a refused link; an agent's VPN start of a linked launcher; a chain with no lookup holding a linked step; the agent's run with a usable and a closed SSH entry — nothing reaches the road's local sink (§4.4 table); each watched RED by the temporary bypass of every wall of §4.5 (5) | arrow world, secrets world, chain and launcher worlds, agent world | §1, D7 |
 | road scan: the importer list, the link readers and the send or spawn sites are each an exact allow-list | `test/launchRoadScan.test.ts` | D7 (who imports and reads; not where a value flows) |
 | help tests (5 languages) | existing help tests | rule 7 |
 
@@ -543,7 +577,7 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
 [E1.S2](PLAN_terminal_command_over_ssh_E1_S2_spec.md) and [E1.S3](PLAN_terminal_command_over_ssh_E1_S3_spec.md).
 
 - **Goal.** A Terminal entry can store an SSH link, the form round-trips it, every road refuses a linked entry with a
-  sentence, ONE pure module is the only way from "entry + link" to a launch (held there by a structural test), and
+  sentence, ONE pure module is the only way from "entry + link" to a launch (a structural test pins who imports and reads; since the epoch-3 re-review the behavioural no-local-sink tests of §4.5 (5) hold that no linked entry reaches a local sink), and
   `prepareSshSession` does everything `connectEntity` does before it opens a terminal. After E1 no road can run a
   linked line locally, built or not, and every road of E2 and E3 has its composer and its seam ready.
 - **Stories.**
@@ -621,7 +655,8 @@ Stories: [PLAN_terminal_command_over_ssh_E2.md](PLAN_terminal_command_over_ssh_E
   commit. Each story is complete alone; a road whose story is not yet built keeps E1's refusal.
 - **As built.** Merged on 2026-11-10 as #337 (44f3f3dc); `RESOLVE_IMPORTERS` lost `folderRun.ts`. The arrow resolves
   its line before it reads the link (`runEntryLine` → `arrowLine` → `sshLinkOf`); the routing that keeps a linked entry
-  away from `typeIntoEntryTerminal` is pinned by E3's no-local-sink tests (§4.5 (5)), tests only, no change to E2's code.
+  away from `typeIntoEntryTerminal` is pinned by E3's no-local-sink tests (§4.5 (5)), tests only, no change to E2's code;
+  so are the chain (`executableLine` before `sshLinkOf`), an agent's VPN start and a chain with no lookup.
   Hand check 4 is done (§10).
 - **Done when.** §6 rows "arrow", "folder" (both), "chain", "cleanup ownership" (declined trust, cancelled dependency,
   thrown error, failed terminal creation, unsent folder row), "folder: a `stopped` row", "folder: cancel after mixed
@@ -645,13 +680,15 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
     child is `ssh` by argv (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …)`, no `-t`, `shell:false`); STDIN carries
     `secretsStdin` then closes; askpass env in the CHILD's environment, never argv, and no resolved value in that
     environment; the non-interactive banner; output masked; the run bounded (connect timeout, a close kills the child);
-    Windows and a non-local window refused (step 7, D12). The no-local-sink tests of §4.5 (5) for the arrow and *Run
-    with Secrets* land here, because S1 changes the routing in `commands/runCommands.ts`. Help ×5 for Run with Secrets,
+    Windows and a non-local window refused (step 7, D12). The no-local-sink tests of §4.5 (5) for the arrow, *Run
+    with Secrets*, the dependency chain, an agent's VPN start and a chain with no lookup land here (S1 changes the
+    routing in `commands/runCommands.ts`; the others guard E2's merged code). Help ×5 for Run with Secrets,
     with the banner's way out.
   - **S2 — Agent.** The gate of D15 first (in `validate` and in `run`), else `linkedRunRefused(T)`, code `denied`, and
     nothing runs; then `planLaunch` with the gate's link; `resolveExecAuth`, jump and pin as the agent exec does;
     `buildSshExecArgv` with the bare line; key deleted in `finally`; the consent text names the SSH entry and its
-    target; the mask table holds the SSH entry's values (step 8, D2, D15). Help ×5 for the agent road.
+    target; the mask table holds the SSH entry's values; the no-local-sink test of the agent's run (`runHere`'s
+    `capturedRun`, §4.5 (5)) (step 8, D2, D15). Help ×5 for the agent road.
   - **S3 — Closing.** What the road stories did not already change: the remaining help ×5 lines (the limits — POSIX
     remote shells only, Windows remote refused, the risk-1 note), `README.md`, a new `src_vs_code/CHANGELOG.md` entry for
     E3's two roads (1.20.0's entry, #338, already holds E1 and E2 and says these two roads still refuse),
