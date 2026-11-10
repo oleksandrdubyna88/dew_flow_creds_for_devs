@@ -625,7 +625,8 @@ test('the janitor call: 0 and 3 are fine and silent; 127 names the command that 
   }
   const unmounted = runAcme(REAL_RUN, { STUB_JANITOR_RC: '127' });
   assert.equal(unmounted.status, 0, unmounted.output);
-  assert.match(unmounted.output, new RegExp(`janitor: exit code 127.*git submodule update --init ${MOUNT.replace(/[./]/g, '\\$&')}`));
+  const hint = unmounted.output.split('\n').find((line) => line.includes('janitor: exit code 127'));
+  assert.ok(hint?.includes(`git submodule update --init ${MOUNT}`), `the 127 line names the mount command: ${hint ?? '(no such line)'}`);
   const other = runAcme(REAL_RUN, { STUB_JANITOR_RC: '2' });
   assert.equal(other.status, 0, other.output);
   assert.equal(other.output.split('\n').filter((line) => /janitor/i.test(line)).length, 1, other.output);
