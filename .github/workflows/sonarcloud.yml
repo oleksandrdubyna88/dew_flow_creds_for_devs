@@ -165,7 +165,7 @@ jobs:
       # guard that cannot load into a failure. --ignore-scripts: SonarCloud githubactions:S6505.
       - name: The leftovers guard's dependencies
         working-directory: .
-        run: npm ci --ignore-scripts --prefix .claude/rules/shared
+        run: npm ci --ignore-scripts --prefix .agents/conventions
 
       # The extension is TypeScript and the .NET scanner does not run its tests, so every change to
       # src_vs_code arrived at the gate as 0 % coverage of new code — a number about the analysis

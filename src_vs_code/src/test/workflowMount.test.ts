@@ -162,7 +162,7 @@ test('a fetch step BELOW the tests is no fetch: the tests have already refused b
 /** What runs the WHOLE unit suite: the npm script, the runner, or `node --test` over the whole compiled folder (SonarCloud, through c8). */
 const RUNS_WHOLE_SUITE = /\bnpm test\b|scripts\/run-tests\.mjs|\bnode --test\b[^\n]*out\/test\/"?\*\.test\.js/;
 /** The mount's own dependencies, installed without lifecycle scripts (SonarCloud githubactions:S6505). */
-const INSTALLS_MOUNT_MODULES = /npm ci --ignore-scripts --prefix \S*\.claude\/rules\/shared\b/;
+const INSTALLS_MOUNT_MODULES = /npm ci --ignore-scripts --prefix \S*\.agents\/conventions\b/;
 /** The flag, on the step that runs the tests. */
 const SETS_GUARD_FLAG = /CREDS_GUARD_TESTS_REQUIRED:\s*["']?1["']?/;
 
@@ -224,7 +224,7 @@ test('a job that names a guard-reading file in its `node --test` needs the insta
   const job = (...steps: string[]): string => steps.join('\n');
   const runs = namesGuardReader(['dockerSmokeLeftovers.test']);
   const named = '      - run: node --test out/test/dockerSmokeLeftovers.test.js';
-  const install = '      - run: npm ci --ignore-scripts --prefix .claude/rules/shared';
+  const install = '      - run: npm ci --ignore-scripts --prefix .agents/conventions';
   const flagged = ['      - run: node --test out/test/dockerSmokeLeftovers.test.js', '        env:', '          CREDS_GUARD_TESTS_REQUIRED: "1"'].join('\n');
 
   assert.equal(lacksGuardInstallOrFlag(job(named), runs), true, 'no install, no flag');

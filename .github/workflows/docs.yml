@@ -71,15 +71,9 @@ jobs:
       - name: Public hygiene
         run: node .github/scripts/public-hygiene.mjs
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.x
-
-      # The shipped guard reads workflows through `yaml`, which lives in the mount's own lock file.
-      # --ignore-scripts: SonarCloud githubactions:S6505.
-      - name: The leftovers guard's dependencies
-        run: npm ci --ignore-scripts --prefix .claude/rules/shared
-
+      # The shipped guard reads workflows through `yaml`, which lives in the mount's own lock file: the step "Shared instruction
+      # dependencies and pin verification" above installed it (`npm ci --ignore-scripts --prefix .agents/conventions`, Node 22).
+      #
       # What a clean run means (conventions release 37b9aa5, table D2 of todo/PLAN_F30_folding_reader.md there).
       # The shipped Node guard reads one line's spellings, as D2 lists them by file kind. In .mjs .cjs .js .ts .tsx .jsx .mts
       # .cts it removes // and /* */ comments, reads '...', "..." and a template whose holes hold only a quoted literal, joins
@@ -99,7 +93,7 @@ jobs:
       # its node profile reads; the .cs files, the harness folders and the test helpers are the C# guard's, which folds .cs
       # only (a test of ServiceDefaults.Tests, run by ci-clients.yml, sonarcloud.yml and the release jobs).
       - name: Test leftovers guard (shipped, node profile)
-        run: node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"
+        run: node .agents/conventions/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"
 
       # A scan of nothing must be red, never clean [E2.1 plan gate 2]: an empty repository in an owned folder.
       # owned.sh reads TMPDIR, never RUNNER_TEMP, so the root is handed over as the E2.4 steps do.
@@ -110,7 +104,7 @@ jobs:
           source .github/scripts/lib/owned.sh || exit 1
           owned_dir scratch guard-empty || exit 1
           git init -q "$scratch/repo"
-          if node .claude/rules/shared/tools/leftovers-check.mjs --repo "$scratch/repo" --profile node --token creds \
+          if node .agents/conventions/tools/leftovers-check.mjs --repo "$scratch/repo" --profile node --token creds \
               --identity "the developer-credentials server and extension" 2> "$scratch/stderr"; then code=0; else code=$?; fi
           [ "$code" = 2 ] || { echo "expected exit 2 for a scan of nothing, got $code"; exit 1; }
           grep -F "scanned nothing under $scratch/repo — discovery broke; the repository is not clean" "$scratch/stderr" \

@@ -128,7 +128,7 @@ The map of what a test, a harness or a CI script of this repository makes outsid
 helper stays in the paragraph that built it: E2.1 (the unit suite, next section), E2.2 (the harnesses, *Prerequisites, timeouts and cleanup*),
 E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke and the acme harness; all in that same section).
 
-1. **The rule and the name.** The contract is `.claude/rules/shared/common/test-leftovers.md` and its detail
+1. **The rule and the name.** The contract is `.agents/conventions/common/test-leftovers.md` and its detail
    (`test-leftovers-detail.md`). The token of this repository is `creds`. A thing a test makes is named
    `testsToDelete-<owner>-creds-<what>-<id>`; a folder is claimed first, by the file `<folder>.owner` beside it (never inside).
 2. **The three helpers** (one per language; none is a second implementation of the rule's decisions):
@@ -154,8 +154,8 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
    | | The shipped Node guard | The copied C# guard |
    |---|---|---|
    | Reads | `*.test.*`, `.sh` and `.ps1` everywhere, `.github/scripts/*.{mjs,js,sh}`, workflows, the `scripts` of every `package.json` (`--profile node`) | `.cs` of the six test roots and six source roots (`tests/`, `src/` and the five projects' own); `.sh`, `.ps1`, `.py` everywhere; JavaScript in the script folders; the `src_vs_code/src/test/` helpers that are not `*.test.ts` (read as scripts); workflows; `owner-blind` in scripts and workflows through the mounted classifier (started through `node`) |
-   | Runs | `docs.yml` (the required job `plan lifecycle · submodule pin`), after `npm ci --ignore-scripts --prefix .claude/rules/shared` | `LeftoversRepositoryGuardTests` in `CredsForDevs.ServiceDefaults.Tests`: `ci-clients.yml` (Linux, macOS, Windows), `sonarcloud.yml`, and the release jobs `cli-binaries` and `mcp-binaries` on every runner they use |
-   | By hand | `npm ci --ignore-scripts --prefix .claude/rules/shared` once (a fresh checkout's mount has no `node_modules`, and the guard cannot load `yaml`), then `node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` | `./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"` (`.exe` on Windows); the plants are `LeftoversGuardCredsTests` |
+   | Runs | `docs.yml` (the required job `plan lifecycle · submodule pin`), after the step that installs the mount's modules (`npm ci --ignore-scripts --prefix .agents/conventions`) | `LeftoversRepositoryGuardTests` in `CredsForDevs.ServiceDefaults.Tests`: `ci-clients.yml` (Linux, macOS, Windows), `sonarcloud.yml`, and the release jobs `cli-binaries` and `mcp-binaries` on every runner they use |
+   | By hand | `npm ci --ignore-scripts --prefix .agents/conventions` once (a fresh checkout's mount has no `node_modules`, and the guard cannot load `yaml`), then `node .agents/conventions/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` | `./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"` (`.exe` on Windows); the plants are `LeftoversGuardCredsTests` |
    | A scan of nothing | exit 2 and `scanned nothing under <dir> — discovery broke; the repository is not clean`; a `docs.yml` step runs it on an empty repository | `FilesScanned == 0` and the same sentence (the copied test) |
 
    What a clean Node run means: zero for the guard's listed spellings (table D2 of `dew_flow_conventions` `todo/PLAN_F30_folding_reader.md` at
@@ -168,7 +168,7 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
 
    The tests that read the shipped Node guard (`dockerSmokeLeftovers`, `acmeRunLeftovers`, `leftoversGuardFixtures`) get its path and its load from
    `src_vs_code/src/test/mountedGuard.ts`: ONE constant for the mount path. The guard loads `yaml` from the mount's own `node_modules`, so a job that
-   runs the whole unit suite installs it (`npm ci --ignore-scripts --prefix .claude/rules/shared`) and sets `CREDS_GUARD_TESTS_REQUIRED=1` on the step:
+   runs the whole unit suite installs it (`npm ci --ignore-scripts --prefix .agents/conventions`) and sets `CREDS_GUARD_TESTS_REQUIRED=1` on the step:
    there a guard that cannot load FAILS the test with the reason; a person's `npm test` without the modules still skips with the reason.
    `workflowMount.test.ts` pins both for the three jobs (`ci-extension.yml`, `sonarcloud.yml`, the `release.yml` extension job).
 6. **What neither guard reads** (measured at E2.5): a split spelling in `src_vs_code/scripts/*.cjs` or `src_minimalapi_server/scripts/*.cjs` (the `node`
@@ -179,7 +179,7 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
    `ryuk-off`), a reason of at least ten characters and three words. List them with `git grep -n testsToDelete-exempt -- . ':!todo' ':!research'`. A new
    one is read by a reviewer; this page keeps no copy of the list. The product scripts `install.sh` (two), `deploy/restore.sh` and `deploy/restore-archive.sh`
    (one each) carry a marker for their own `mktemp`: their reasons do not say they clean up, because `install.sh` and `deploy/restore.sh` do not on every path.
-8. **The janitor.** `JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run` lists what a killed run left, for this token
+8. **The janitor.** `JANITOR_MIN_AGE_MINUTES=10 bash .agents/conventions/tools/janitor.sh --token creds --dry-run` lists what a killed run left, for this token
    only (without `--dry-run` it removes). On Windows run it from Git for Windows' bash: it removes nothing there until F9. On macOS it needs bash 4 or newer (N20).
 9. **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, the legacy prefix spelling) are not swept; a person removes them by hand once per machine.
 10. **What stays open.** `kill -9` runs no trap (the next run or the janitor collects); F16 (the Node sweep on Windows), F9 (the janitor on Windows), F31, N6

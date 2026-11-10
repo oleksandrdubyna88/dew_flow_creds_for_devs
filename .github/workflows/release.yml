@@ -873,7 +873,7 @@ jobs:
       # guard that cannot load into a failure. --ignore-scripts: SonarCloud githubactions:S6505.
       - name: The leftovers guard's dependencies
         working-directory: .
-        run: npm ci --ignore-scripts --prefix .claude/rules/shared
+        run: npm ci --ignore-scripts --prefix .agents/conventions
 
       # Never publish something that has not passed its own tests.
       - run: npm run typecheck

@@ -16,7 +16,7 @@ import { describeError } from '../describeError';
 import { REPO } from './repoFiles';
 
 /** Where the shared-rules mount lies, relative to the repository root, with forward slashes. */
-export const MOUNT = '.claude/rules/shared';
+export const MOUNT = '.agents/conventions';
 
 /** The environment variable a CI job sets where the guard-reading tests must RUN. */
 export const GUARD_REQUIRED_VARIABLE = 'CREDS_GUARD_TESTS_REQUIRED';
