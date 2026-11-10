@@ -402,7 +402,7 @@ check of `TheAdaptedCopyTests` stays green. No op touches ownership, liveness or
   - **E2.5-R1:** `gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=cli`. It runs `cli-binaries` on
     the six legs and `cli-sign` with `required: false`; `cli-release` is tag-only (`release.yml:537`), so nothing is
     published. Quote for each leg the line of `This_repository_passes_the_guard` (passed) and the run URL.
-  - **E2.5-R2:** `gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension`. ~~Its publish steps are
+  - **E2.5-R2:** ~~`gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension`~~ (**not a command to run** — see the correction below; the evidence for the `extension` job is the PR's `typecheck · test · package` job and the test step of run 42792112748, already recorded). ~~Its publish steps are
     tag-only (`:888`, `:923`, `:937`).~~ **[2026-11-10, corrected after run 42792112748: this dispatch PUBLISHES when the manifest version is new. The job `extension` runs on `target == 'extension'` and its Marketplace publish step has no tag guard (only the tag-match step and the two release steps do). The run was refused by the Marketplace (`v1.18.0 already exists`) and made no release. The safe evidence for that job is the PR's own `typecheck · test · package` job. Never dispatch `target=extension` for evidence.]** Quote that `dockerSmokeLeftovers`, `acmeRunLeftovers` and `leftoversGuardFixtures`
     ran (no skip line) under the flag.
   - If a dispatch is refused (an environment rule, or the auto-mode classifier), a throwaway workflow on a never-merged
