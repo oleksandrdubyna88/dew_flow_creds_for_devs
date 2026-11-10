@@ -19,9 +19,12 @@
 # a sentence saying why, which is the truth.
 set -eu
 
-CERT_LIVE="/etc/letsencrypt/live"
-TEMPLATE="/etc/cred-vault/vault.conf.template"
-CONF="/etc/nginx/conf.d/vault.conf"
+# The three paths and the render-only exit below are test seams (entrypoint.test.sh, and the
+# `nginx -t` step of ci-server.yml): unset, every one is the production value. compose never sets them.
+CERT_LIVE="${CRED_VAULT_CERT_LIVE:-/etc/letsencrypt/live}"
+TEMPLATE="${CRED_VAULT_TEMPLATE:-/etc/cred-vault/vault.conf.template}"
+CONF_DIR="${CRED_VAULT_CONF_DIR:-/etc/nginx/conf.d}"
+CONF="${CONF_DIR}/vault.conf"
 RELOAD_INTERVAL="${RELOAD_INTERVAL_SECONDS:-21600}" # 6h
 
 log() { echo "[cred-vault/nginx] $*"; }
@@ -29,7 +32,7 @@ log() { echo "[cred-vault/nginx] $*"; }
 # The stock image ships /etc/nginx/conf.d/default.conf, and conf.d loads alphabetically,
 # so "default" sorts before "vault" and its `listen 80` block becomes the default server
 # for any Host we do not name. Every request then lands on the nginx welcome page.
-rm -f /etc/nginx/conf.d/default.conf
+rm -f "${CONF_DIR}/default.conf"
 
 case "${TLS_MODE}" in
   domain|ip) CERT_NAME="${SERVER_NAME}" ;;
@@ -52,7 +55,12 @@ write_config() {
   # Defence in depth: the app rate-limits per authenticated caller, this limits per
   # source address, so a flood of UNAUTHENTICATED requests never reaches the app.
   cat >"${CONF}" <<'ZONES'
-# WHO THE CLIENT IS. Behind an outer terminator (TLS_MODE=none or custom) $remote_addr
+# WHO THE CLIENT IS. This block is the ONLY copy, and it is written here, not in the template: it is
+# http-level, nginx allows these directives once per context, and this heredoc runs for every TLS mode,
+# so each mode gets it exactly once. (It used to be in vault.conf.template as well, so on the TLS path
+# the config held it twice and `nginx -t` refused the reload — see entrypoint.test.sh.)
+#
+# Behind an outer terminator (TLS_MODE=none or custom) $remote_addr
 # is that proxy's address for every caller alive — so the zones below, which key on it,
 # become ONE bucket for the whole internet, and so does the application's own anonymous
 # partition. A live deployment was found in exactly that state on 2026-08-25.
@@ -161,6 +169,12 @@ HTTP
 }
 
 write_config
+
+# Test seam: render the config once and stop, before the reload loop starts.
+if [ -n "${CRED_VAULT_RENDER_ONLY:-}" ]; then
+  log "render only: ${CONF} written, reload loop not started"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Pick up an issued or renewed certificate without a human

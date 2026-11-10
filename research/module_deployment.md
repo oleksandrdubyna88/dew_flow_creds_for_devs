@@ -90,6 +90,29 @@ became the default server for any Host not explicitly named — every request la
 welcome page. The entrypoint removes it, and both server blocks are now explicit `default_server`s
 so ordering can never decide this again.
 
+### The real_ip block has ONE home: `write_config`, not the template (2026-11-09)
+
+`set_real_ip_from` ×4, `real_ip_header X-Forwarded-For` and `real_ip_recursive on` make the container
+see the caller behind an outer proxy instead of the proxy's own address (the 2026-08-25 finding: both
+rate limiters had collapsed into one bucket for the internet). They are http-level, and nginx allows
+`real_ip_header` and `real_ip_recursive` once per context.
+
+The block was written twice. `write_config` put it at the top of `vault.conf` for every mode
+(f7f83d1), and `vault.conf.template` carried it as well (4a00cb7) — appended after it on the TLS path.
+So `domain`, `ip` and `custom` ran fine until a certificate existed, and then `nginx -t` said
+`"real_ip_header" directive is duplicate in /etc/nginx/conf.d/vault.conf:61`, the reload loop restored
+the previous plain-HTTP 503 config, and HTTPS never opened (measured on a GitHub hosted runner, run
+42635403255). `TLS_MODE=none` never loads the template and was never hit. Affected: every TLS_MODE with
+nginx-owned TLS, from 2026-08-25 until the fix.
+
+The block now lives only in `write_config`, whose heredoc runs for every mode, so every mode gets it
+exactly once. The template is appended after it and says so. The reasoning (why private ranges only,
+why `X-Forwarded-For`) stays in that one place.
+
+Pinned by `deploy/nginx/entrypoint.test.sh` (renders the config for all four modes, with and without a
+certificate, through the entrypoint's own seams — see [module_tests.md](module_tests.md)) and, in CI, by
+an `nginx -t` run of the same rendered config inside `nginx:1.27-alpine`.
+
 ### The template lives outside `/etc/nginx/templates`
 
 The stock image renders everything in that directory *before* our hook runs, emitting a config with

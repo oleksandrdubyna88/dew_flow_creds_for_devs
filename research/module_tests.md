@@ -630,6 +630,20 @@ stopped"* as a fact about what reached `docker`. The round found the unfinished-
 after `docker compose down`; scenario 4 is what catches that class now, and it was watched failing
 against the old ordering.
 
+**And one for the nginx config the entrypoint renders: `deploy/nginx/entrypoint.test.sh`** (2026-11-09). It runs the
+real `entrypoint.sh` — through the seams `CRED_VAULT_CERT_LIVE`, `CRED_VAULT_TEMPLATE`,
+`CRED_VAULT_CONF_DIR` and `CRED_VAULT_RENDER_ONLY`, all unset in production — for `domain`, `ip`,
+`custom` and `none`, each with and without a certificate in a private folder, and asserts that
+`real_ip_header` and `real_ip_recursive` occur once, no `set_real_ip_from` range is listed twice, and
+the four private ranges are there (one home, never zero). It also asserts the intended state was the one
+rendered (a 443 listener only with a certificate and nginx-owned TLS). Needs only sh, bash, envsubst and
+grep, so it runs locally. **Watched RED** on main's template: 12 failures, all in the three TLS modes with
+a certificate — `real_ip_header occurs 2 times` (`13:` and `62:`) — and GREEN with the block in one place;
+RED again with main's template put back. The parser is the real authority, so the *compose · scripts* job
+also runs the shipped entrypoint in `nginx:1.27-alpine` (the stack's pin) per mode and then `nginx -t`;
+that step needs Docker and runs only in CI. The older `deploy/acme-test/run.sh` would also have caught this
+(it reaches the certificate state) but is not part of any workflow.
+
 **What none of it covers.** Nothing drives VS Code itself: the modal that shows the key once, the save
 dialog, the webview's own script and the tree menu are exercised only through their pure halves. So a
 command registered but never wired to a menu, or a `when` clause that stops matching, is caught by the
@@ -2192,6 +2206,7 @@ every other session lagged. How this repository follows it, entry point by entry
 | the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props`, except when `CI=true` | `node $LP <exe>`, one executable at a time |
 | `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
 | `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
+| `deploy/nginx/entrypoint.test.sh` | one bash process, `sh entrypoint.sh` once per case | the same self-re-run under `nice` as the harness above |
 | the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
 | a one-file run | one worker | `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` |
 
