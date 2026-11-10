@@ -920,6 +920,7 @@ What the S1, S2 and fix-forward coders built differently from the briefs and the
 | T2's scan and F5 | in `launchRoadScan.test.ts` "or a scan file of its own" | in `launchRoadScan.test.ts` itself (its helpers are private to it) |
 | the cast of `sshExecOver.test.ts` | a typed factory built against the real validators | a typed factory over `sshNode`, built against the real link validator at load |
 | `EN_BULLET` | exact text | its expected value carries the new one-use sentence because the text it pins changed |
+| F-S2, where `buildSshExecArgv` is called | the call inline at `execOverSsh` | the call stands in the helper `execArgv` (`sshUseActions.ts`) and the environment drop in the helper `childEnv`, split out of `execOverSsh` to stay at complexity 4. F5's scan reads the arguments of every `buildSshExecArgv(` call, not a function name, so it still finds the `ownAgent` key there (`the_ownAgent_scan_still_finds_its_sites` is green) |
 
 **S3 (this commit series).**
 
@@ -929,6 +930,21 @@ What the S1, S2 and fix-forward coders built differently from the briefs and the
 | the risk-1 note (§S3.1) | an Hp9 test | built: Hp9, five sentences exactly as the plan wrote them |
 | the CHANGELOG | four more lines (§E3.4 F-S3) | E3's block is `## [1.21.0]`, with the lines of S1, S2 and F-S1/F-S2 and a *Known limits* section; no line for `ssh:exec` (its argv and environment do not change), as the plan says; the promised *CHANGELOG path* is `src_vs_code/CHANGELOG.md` (flag 5) |
 | not built | — | **the promotion** (§S3.2), which comes after the code reviews; hand check 3 (handed to the owner, §S3.3) |
+
+**The review fixes (after the code reviews of E3).** Two accepted code-review findings and the typed-fixture rule (`typescript.doctrine` § 3); each fix was watched RED first (the messages are in the commit bodies).
+
+| Where | The plan or the code said | What was built, and what was checked |
+|---|---|---|
+| fix A, `maskedTerminal.ts` `openRun` | the masked run spawns after the banner, and a close before `open()` spawns nothing (`a_run_closed_before_it_started_never_spawns_or_writes`) | a close DURING the banner (a listener of the first write closes the terminal) found no child, only ended the run, and `openRun` went on to spawn and to write `stdinText` (the values) to a child nobody watches. After `run.child` is set, a run that is already over destroys stdin, kills the child tree and returns before the script is written. New file `maskedTerminalClosedDuringStart.test.ts` (a real `/bin/sh` child; `maskedTerminal.test.ts` sits at 795 of 800 lines). RED: kills `[]` against `[{ tree: true }]`; RED again with the guard removed |
+| fix B, `sshUseActions.ts` `execOverSsh` | F-S2: no `-A` without the extension's agent, decided from `deps.agentSocket()` | the socket was read twice (the argv's `ownAgent`, then `agentAwareLaunch` for `SSH_AUTH_SOCK`), with two rules (`!== undefined` and `present and not empty`). An agent that went away between the reads left `-A` with no socket in the environment; an empty socket counted as an agent for the argv only. One read, passed to `execArgv` and `agentAwareLaunch`; `hasAgentSocket` (`sshProgram.ts`) is the one rule, shared with `agentForwardEnv`. RED: with reads `[socket, undefined]` the argv had `-A` and the environment no `SSH_AUTH_SOCK`; with `''` the argv had `-A`. `sshRoad.ts` already reads once and is unchanged |
+| the `as never` casts | a typed factory (F-S3) | three more fixtures cast with `as never` (`agentSshOneUse.test.ts`, `agentSshGate.test.ts`, `sshRoad.test.ts`): now a `storage` option of `gateWorld`, typed `SshUseDeps` over the world's deps, and `roadDeps()`, a typed `Partial<SshRoadDeps>`. Left as they were: the recorder's storage tag and relays stub (`sshRoad.test.ts`), the mock terminals, and the world's one documented cast (`agentSshWorld.ts`) |
+
+**Recorded, not built: the mask table is read before the call waits in a lane.** The agent's linked run reads the mask table in
+`prepared`, BEFORE the call waits for its turn in a lane. A held rotation of the SSH entry's password that another call
+releases (stores) during that wait is therefore not in the table the output is masked with. This is the old design of
+`creds_exec`, which this plan shares (it is not new in E3), and the window is very narrow: it needs a rotation held for this very
+entry and a second call released during one wait. Nothing was changed; a fix would move the read of the table after the wait, which
+is a change of `creds_exec` too and has its own plan if the owner wants it.
 
 ### S3.2 The promotion — together, the `git mv` LAST (`planning-docs.md` § *The `git mv` goes LAST*)
 
@@ -945,17 +961,24 @@ in the shape of the multi-document row at `:41`, and that one row is the mention
 
 | # | Document | `todo/README.md` row removed (link text; line on this branch) | `research/README.md` mention (in the one row above) | Its own links that change (the three cases) |
 |---|---|---|---|---|
-| 1 | `PLAN_terminal_command_over_ssh.md` | `[PLAN_terminal_command_over_ssh.md]` — `:30` | the row's first link | case 1: `PLAN_askpass_answers_the_hop.md` (×2), `PLAN_terminal_runs_followups.md`, `PLAN_remote_bridge_scoped.md` gain `../todo/`; case 2: `../research/PLAN_windows_shell_quoting_injection.md` (×3) drops `../research/`; siblings unchanged; the path `todo/PLAN_terminal_command_over_ssh_E<n>.md` in the text (`:424`) becomes `research/…` |
+| 1 | `PLAN_terminal_command_over_ssh.md` | `[PLAN_terminal_command_over_ssh.md]` — `:30` | the row's first link | case 1: `PLAN_askpass_answers_the_hop.md` (×4), `PLAN_consent_coverage_per_door.md`, `PLAN_ssh_exec_absolute_program.md`, `PLAN_ssh_exec_own_agent_forwarding.md` (×4), `PLAN_terminal_runs_followups.md`, `PLAN_remote_bridge_scoped.md` gain `../todo/` (counted by grep of the links, review of 2026-11-10); case 2: `../research/PLAN_windows_shell_quoting_injection.md` (×3) drops `../research/`; siblings unchanged; the path `todo/PLAN_terminal_command_over_ssh_E<n>.md` in the text (`:424`) becomes `research/…` |
 | 2 | `PLAN_terminal_command_over_ssh_E1.md` | `[PLAN_terminal_command_over_ssh_E1.md]` — `:31` | `[E1]` | case 2: `../research/PLAN_windows_shell_quoting_injection.md` drops `../research/`; siblings unchanged |
 | 3 | `PLAN_terminal_command_over_ssh_E1_S2_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S2_spec.md]` — `:35` | `[S2]` after E1 | siblings only (none change) |
 | 4 | `PLAN_terminal_command_over_ssh_E1_S3_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S3_spec.md]` — `:36` | `[S3]` after E1 | siblings only; the path `todo/PLAN_terminal_…` in its F12 row (`:34`) becomes `research/…` |
 | 5 | `PLAN_terminal_command_over_ssh_E2.md` | `[PLAN_terminal_command_over_ssh_E2.md]` — `:32` | `[E2]` | siblings only |
-| 6 | `PLAN_terminal_command_over_ssh_E3.md` | `[PLAN_terminal_command_over_ssh_E3.md]` — `:33` | `[E3]` | siblings only; the backticked paths `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` in its text become `research/…` or links |
-| 7 | `PLAN_terminal_command_over_ssh_E3_S2_security.md` | `[PLAN_terminal_command_over_ssh_E3_S2_security.md]` — `:34` | `[S2]` after E3 | case 1: `PLAN_consent_coverage_per_door.md` (§3.2) gains `../todo/`; siblings unchanged |
+| 6 | `PLAN_terminal_command_over_ssh_E3.md` | `[PLAN_terminal_command_over_ssh_E3.md]` — `:33` | `[E3]` | case 1: `PLAN_ssh_exec_own_agent_forwarding.md` (×2) gains `../todo/`; siblings otherwise; the backticked paths `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` in its text become `research/…` or links |
+| 7 | `PLAN_terminal_command_over_ssh_E3_S2_security.md` | `[PLAN_terminal_command_over_ssh_E3_S2_security.md]` — `:34` | `[S2]` after E3 | case 1: `PLAN_askpass_answers_the_hop.md` (×2), `PLAN_consent_coverage_per_door.md` (§3.2, ×1) and `PLAN_ssh_exec_own_agent_forwarding.md` (×1) gain `../todo/`; siblings unchanged |
 
 Inbound references outside the seven (case 3, and the paths no renderer checks): `research/PLAN_windows_shell_quoting_injection.md:67`
-cites `todo/PLAN_terminal_command_over_ssh.md` → `research/…`; `src_vs_code/src/remoteLaunch.ts:11` cites
-`todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` → `research/…`. Find any others by
+cites `todo/PLAN_terminal_command_over_ssh.md` → `research/…`; `src_vs_code/src/remoteLaunch.ts:14` cites
+`todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` → `research/…`. The case 3 inbound links of the plans that stay in `todo/`
+(each a link TARGET that moves, so the checker reads it, and each is edited to `../research/…`):
+`todo/PLAN_askpass_answers_the_hop.md:19` (parent), `todo/PLAN_agent_refusal_names_unlisted_entry.md:5` (E3 security spec),
+`todo/PLAN_ssh_exec_absolute_program.md:4` (E3), `todo/PLAN_ssh_exec_own_agent_forwarding.md:6-7` (security spec and parent). The
+code and test paths that name a moved plan: `src_vs_code/src/agentUseActions.ts:193` and
+`src_vs_code/src/test/agentSshGate.test.ts:30` (the E3 security spec), and `remoteLaunch.ts:14` above (it read `:11` in an
+earlier draft: the line is now `:14`). Every number was read by grep on this branch after the review fixes; a later edit of
+those files moves them, so find each by the path. Find any others by
 `grep -rn "todo/PLAN_terminal_command_over_ssh" --include=*.ts --include=*.md --include=*.mjs --include=*.cjs .` (the
 bare name `PLAN_terminal_command_over_ssh.md` in a code comment names no folder and does not change), not from memory.
 
