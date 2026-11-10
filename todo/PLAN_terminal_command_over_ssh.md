@@ -352,7 +352,7 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 |---|---|---|
 | [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect | none; inherits the fix (risk 7) |
 | [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | none: item 5 is closed by the security plan below, not here; E2 adds the `ssh` target to `sendGuarded` |
-| [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
+| [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
 | [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | stored commands run by an agent ON a server through the bridge | none; the bridge keeps refusing `run` (§9). Disjoint: that plan runs a line on the server an agent lives on; this one runs a person's line on a server they connect to |
 
 The table is complete for plans open on 2026-11-09 that touch these files.
@@ -364,7 +364,7 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 
 ## 9. Not in this plan
 
-- The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), landing before E1.
+- The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md), landing before E1.
 
 - A Windows remote (D9) — a later plan, after a hand check of Windows OpenSSH's default shell.
 - Remapping references on external import (an existing gap for all four reference fields).
@@ -459,7 +459,7 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   `test/sshSession.test.ts`, `test/sshCommand.test.ts` additions; the five help files (the field's line), `README.md`,
   `research/module_extension.md`, `research/module_tests.md`. Risk 7 is inherited by S3 on purpose and not fixed here.
 - **Depends on.** The coai plan round at `proceed` and the one consultation of the cadence; since epoch 2 also the
-  security plan [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), which lands
+  security plan [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md), which lands
   first. S1 lands before S2 (D8); S3 can be built beside them; the three land in E1's one commit on E1's branch.
 - **As built and re-reviewed (epoch 2).** E1 was built as one local commit (782444a) and passed its coai code round
   (`proceed`, 8 of 8 reviewers). That commit also holds the security sweep, which moves to its own plan: E1 is

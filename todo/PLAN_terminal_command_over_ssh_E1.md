@@ -281,7 +281,7 @@ edit an expected value.
 From the repository root (`CLAUDE.md` §Commands; `common/local-cpu-budget.md`):
 
 ```bash
-LP=$PWD/.claude/rules/shared/tools/low-priority.mjs
+LP=$PWD/.agents/conventions/tools/low-priority.mjs
 cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint
@@ -336,7 +336,7 @@ The full `npm test` is run by the lead.
 E1 was built as one local commit, 782444a. Its coai code round answered `proceed` (8 of 8 reviewers). The lead's own
 three reviewers (Opus: simplicity, bugs, conventions) and the round's accepted findings leave these fixes. Each is
 RED-GREEN-RED. They are built on E1's branch AFTER it is rebased onto the security plan
-([PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md)), which takes the security sweep
+([PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md)), which takes the security sweep
 out of 782444a.
 
 | # | Fix | Source | Proof |
