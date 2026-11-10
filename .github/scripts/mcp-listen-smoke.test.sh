@@ -96,8 +96,10 @@ off_ci() {
   fi
 }
 
-printf '#!/usr/bin/env bash\nexit 0\n' > "$work/not-executable.sh"
-off_ci 'off CI: a binary that is not executable fails after the folder is made and leaves nothing' 1 'not an executable' "$work/not-executable.sh"
+# Plain text with no `#!` line and no .sh or .exe name: no operating system calls it executable. (Git Bash answers `[[ -x ]]` true for a file
+# whose first line is `#!`, which made an earlier plant a program on the Windows leg of CI.)
+printf 'not a program\n' > "$work/not-a-program"
+off_ci 'off CI: a binary that is not executable fails after the folder is made and leaves nothing' 1 'not an executable' "$work/not-a-program"
 off_ci 'off CI: a passing run leaves nothing' 0 'listen smoke passed' "$fake"
 
 if [[ "$failures" -eq 0 ]]; then
