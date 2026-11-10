@@ -3,9 +3,13 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 import {
+  AGENT_SOCKET_ENV,
+  E3_INHERITED_DROP,
+  NOTHING_DROPPED,
   NO_AGENT_TO_FORWARD,
   NO_SSH_TO_SPAWN,
   agentForwardEnv,
+  envWithout,
   openSshBinary,
   builtInOpenSsh,
   openSshProgram,
@@ -290,4 +294,18 @@ test('a_forwarding_entry_gets_the_agent_socket_and_a_missing_socket_is_a_warning
   assert.deepEqual(sshSpawnLaunch(forwarding, '/tmp/a.sock', 'linux'), { program: 'ssh', env: { SSH_AUTH_SOCK: '/tmp/a.sock' } });
   assert.deepEqual(sshSpawnLaunch(forwarding, undefined, 'linux'), { program: 'ssh', env: {}, warning: NO_AGENT_TO_FORWARD });
   assert.deepEqual(sshSpawnLaunch(SSH_ENTITY, '/tmp/a.sock', 'linux'), { program: 'ssh', env: {} }, 'no forwarding: the socket is not handed over');
+});
+
+test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', () => {
+  const base = { SSH_AUTH_SOCK: '/h', CREDS_REF_9: 'x', PATH: '/p' };
+  assert.deepEqual(envWithout(base, E3_INHERITED_DROP, 'linux'), { PATH: '/p' });
+  assert.deepEqual(base, { SSH_AUTH_SOCK: '/h', CREDS_REF_9: 'x', PATH: '/p' }, 'a copy: the argument still holds all three');
+
+  const windows = { Ssh_Auth_Sock: '/h', creds_ref_9: 'x', Path: 'p' };
+  assert.deepEqual(envWithout(windows, E3_INHERITED_DROP, 'win32'), { Path: 'p' }, 'a Windows environment does not tell the spellings apart');
+  assert.deepEqual(envWithout(windows, E3_INHERITED_DROP, 'linux'), windows, 'elsewhere they are other variables');
+
+  assert.deepEqual(envWithout(base, NOTHING_DROPPED, 'linux'), base, 'nothing dropped: every variable stays');
+  assert.deepEqual(E3_INHERITED_DROP, { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] });
+  assert.equal(AGENT_SOCKET_ENV, 'SSH_AUTH_SOCK');
 });

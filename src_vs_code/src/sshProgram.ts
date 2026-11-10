@@ -382,3 +382,37 @@ export function spawnableSshProgram(
 function builtInIfThere(exists: (candidate: string) => boolean): string | undefined {
   return exists(builtInOpenSsh('ssh')) ? builtInOpenSsh('ssh') : undefined;
 }
+
+// ---- what E3's two roads take out of the inherited environment (parent D17 (a)) --------------------------------------------
+
+/** The name of the variable through which an ssh finds an agent. */
+export const AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK';
+
+/** What is taken out of an inherited environment: the names, and every name that starts with one of the prefixes. */
+export interface EnvDrop {
+  readonly names: readonly string[];
+  readonly prefixes: readonly string[];
+}
+
+/** Nothing is taken out: the environment of a masked run that names no `withoutEnv`. */
+export const NOTHING_DROPPED: EnvDrop = { names: [], prefixes: [] };
+
+/**
+ * What E3's two roads (Run with Secrets over SSH, the agent's linked run) remove from the ssh child's inherited environment: the
+ * extension host's own `SSH_AUTH_SOCK`, so the person's own agent is not offered through the inherited variable, and every
+ * `CREDS_REF_` name, so no reference variable of another run reaches the remote through a `SendEnv` pattern (parent D17 (a)).
+ */
+export const E3_INHERITED_DROP: EnvDrop = { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] };
+
+/**
+ * A COPY of `base` without each key that equals one of `drop.names` or starts with one of `drop.prefixes`. On Windows both match in any
+ * letter case, because a Windows environment does not tell `SSH_AUTH_SOCK` from `Ssh_Auth_Sock`; on every other platform exactly.
+ * Pure, with no condition: the caller lays what it adds (askpass, its own socket) on top of the result.
+ */
+export function envWithout(base: NodeJS.ProcessEnv, drop: EnvDrop, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const fold = platform === 'win32' ? (text: string): string => text.toUpperCase() : (text: string): string => text;
+  const names = new Set(drop.names.map(fold));
+  const prefixes = drop.prefixes.map(fold);
+  const dropped = (key: string): boolean => names.has(fold(key)) || prefixes.some((prefix) => fold(key).startsWith(prefix));
+  return Object.fromEntries(Object.entries(base).filter(([key]) => !dropped(key)));
+}
