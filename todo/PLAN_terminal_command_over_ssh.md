@@ -42,7 +42,7 @@ machine.** An OLDER build does not know the field; that exposure is risk 1, not 
 | D1 | All human roads support SSH in v1: Run in Terminal (arrow), folder run, dependency-chain step, VPN launcher, Run with Secrets. | owner, 2026-11-09 |
 | D2 | Agent `creds_run` / CLI `run`: allowed only when the SSH entry itself is open to the agent for `exec`; else refused with a sentence. The consent dialog names the SSH entry and says the line runs there. | owner, 2026-11-09 |
 | D3 | After the remote command ends, the remote login shell stays open. The owner was told this works only on POSIX remotes. | owner, 2026-11-09 |
-| D4 | Share with… and Export remove the SSH link (Share strips it in `shareFormat.ts` as it strips `vpnLauncherEntityId`; Export strips it in `exportSecrets.ts` `exportedNode`, where no reference is stripped today). The recipient's copy then runs locally; accepted. | owner, 2026-11-09 |
+| D4 | Share with… and Export remove the SSH link (Share strips it in `shareFormat.ts` as it strips `vpnLauncherEntityId`; Export strips it in `exportSecrets.ts` `exportedNode`, where no reference is stripped today). The recipient's copy then runs locally; accepted. An in-place update of an entry the recipient already holds (*Update it*) keeps the RECIPIENT's own link: the sender's link never travels, the recipient's is never erased (re-review, epoch 2). | owner, 2026-11-09; update rule lead, 2026-11-10 |
 | D5 | One ssh line, never "connect, then type": text typed after ssh starts can land in a password, passphrase or host-key prompt. | lead |
 | D6 | Trust (the "run this stored command?" modal and its fingerprint) covers the SSH target, not only the line — else a synced host change runs a trusted line on a new machine without a question. | lead |
 | D7 | Structure: ONE pure module is the only road from "entry + link" to a launch, and a structural scan test fails if a road reads a line another way. | lead + consultants (2 of 2 answered: codex, gemini; 1 row refused on a config limit), 2026-11-09 |
@@ -50,7 +50,7 @@ machine.** An OLDER build does not know the field; that exposure is risk 1, not 
 | D9 | A Windows remote (*Runs on* = Windows with a link) is refused in v1: the remote shell (cmd or PowerShell) is unknown and stay-open is POSIX only. | lead + consultants |
 | D10 | A password SSH entry needs a fresh terminal (the password rides the terminal's environment, settable only at creation). A new terminal opens BESIDE any live one with the same title; nothing is disposed. | lead + consultants |
 | D11 | A dependency-chain step over SSH does not stay open (a step must end for the chain to go on); a password step in a chain is refused (one shared terminal has one environment). | lead |
-| D12 | Run with Secrets over SSH: values go to the child's STDIN as `export` lines for a remote `sh -s`; never in argv, never in the remote `ps`, never in a history. | lead |
+| D12 | Run with Secrets over SSH: values go to the child's STDIN as `export` lines for the remote LOGIN shell reading stdin, `"${SHELL:-sh}" -s` — the same shell that parses the line on every other road (re-review, epoch 2: a plain `sh -s` failed bash syntax, measured); never in argv, never in the remote `ps`, never in a history. | lead |
 | D13 | Dropdown candidates: kind `ssh` entries with a host, not itself, not in Trash. A stored id that is no longer offered shows **(missing entry)** so a save does not drop it. At run time a missing or trashed SSH entry refuses. | lead |
 | D14 | With a link, *Runs on* describes the REMOTE system; the local terminal is chosen as SSH Connect chooses it (`composedShellPath()`, `src_vs_code/src/pinnedTerminal.ts:54`). | lead |
 
@@ -135,10 +135,12 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
   not the command's). The chain step, Run with Secrets and the agent get the bare line, and ssh's exit status IS the
   remote command's.
 - `trustLineFor(ssh, jump, line)`: the canonical text trust is keyed on —
-  `ssh [-p port] [-J jump] -- user@host '<line>'`, built from the person's LINE, not from the wrapped remote command,
+  `ssh [-p port] [-J jump] [-A] [-L …] [-R …] [-D …] -- user@host '<line>'` — the jump, the agent forwarding and every
+  enabled forward exactly as `sshOptionArgv` composes them for the launch (re-review, epoch 2: a forward or `-A` applies
+  to the launch, so a synced change that adds one must ask again), built from the person's LINE, not from the wrapped remote command,
   so one approval covers every road (arrow, folder, chain, launcher, secrets, agent). No `-i`, no known_hosts path, no
-  program word, no env prefix (they hold per-window paths). A changed host, user, port or jump gives a new text, so
-  trust asks again (D6). Today's `commandFingerprint` is reused unchanged with this text as its `line`.
+  program word, no env prefix (they hold per-window paths). A changed host, user, port, jump, agent forwarding or forward gives a
+  new text, so trust asks again (D6). Today's `commandFingerprint` is reused unchanged with this text as its `line`.
 - **The remote serialization contract.** ssh joins its remote arguments with spaces and hands the one string to the
   remote login shell (`$SHELL -c`); argument boundaries do not survive. So the composer passes EXACTLY ONE remote
   argument, and the local quoting exists only to deliver that argument to ssh byte-for-byte. The remote shell then
@@ -159,13 +161,14 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
   shell cannot be known before connecting, so this is a documented limit, not a check.
 - `typedLine(plan, prepared, localFamily)`: `buildSshCommand` with a new optional `remote = {command, tty}` option:
   program, `-t`, the existing options, `--`, destination, then the remote command as ONE word quoted by
-  `quoteFor(localFamily, …)`. Without `remote` the builder's output is byte-identical to today.
+  `quoteFor(localFamily, …)`. Without `remote` the builder's output is byte-identical to today — "today" meaning after
+  the security plan, which changes the win32 words that hold `$`, a backtick or a double-quote character.
 - `secretsStdin(env, line)`: `NAME=<quoteFor('posix', value)>; export NAME` lines — `quoteFor` (`hostShell.ts:117`)
   closes, escapes and reopens around every `'` in a value, so a value is one literal word whatever it holds; a test
   runs the produced script under a real local `sh` and checks each variable equals its raw value for values holding
   `'`, `"`, `$`, `` ` ``, `\` and a newline — then the line inside a group
   with each brace on its own line — `{\n<line>\n} </dev/null` — then `exit $?`. The line holds no newline (refused
-  above), so a trailing `# comment` in it ends at its own line and cannot swallow the closing brace. `sh -s` reads its script from stdin as it goes, so a command that reads
+  above), so a trailing `# comment` in it ends at its own line and cannot swallow the closing brace. A shell's `-s` reads its script from stdin as it goes, so a command that reads
   stdin would otherwise swallow the rest of the script; a `{ … }` group is parsed whole before it runs, and its stdin
   is `/dev/null` (raised by a consultant, 2026-11-09). The exit code of the group is the exit code of the run.
 
@@ -217,7 +220,7 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   every road; it is asked AFTER the host-key decision, so it names the host the values will reach) → dependencies →
   resolve the secret values → spawn. No child exists and no byte is written to any stdin before the trust is given;
   a declined trust cleans the session and spawns nothing. The child is `ssh` by argv
-  (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`, no `-t`, `shell:false`); STDIN carries `secretsStdin` (D12), then
+  (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …)`, no `-t`, `shell:false`); STDIN carries `secretsStdin` (D12), then
   is closed; output masked as today. The run is NON-INTERACTIVE: no tty, and the command's stdin is `/dev/null`, so a
   command that asks a question (`terraform apply`, `apt-get install` without `-y`) reads end-of-input and usually
   stops. The banner says so before the output and names the way out: "Run in Terminal" (interactive, but the values
@@ -295,7 +298,7 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | arrow: typed line, password → new terminal with env beside a live one, nothing disposed; declined trust → cleanup; missing link → sentence, nothing typed | arrow world | D10 |
 | folder: one refused row among typed rows; prepare before the synchronous send | folder world | §4.4 |
 | chain: no wrapper, password step refused, key deleted at step end | dependency tests | D11 |
-| secrets: no value in argv, stdin has the exports, `sh -s`, no `-t`, output masked, Windows refused | masked-run test with a fake spawn | D12 |
+| secrets: no value in argv, stdin has the exports, the remote command is `"${SHELL:-sh}" -s`, no `-t`, output masked, Windows refused | masked-run test with a fake spawn | D12 |
 | agent: closed SSH entry → exact sentence; usable → argv via `buildSshExecArgv`; consent names the SSH entry | agent tests | D2 |
 | road scan fails on a road that reads a line another way | `test/launchRoadScan.test.ts` | D7 |
 | help tests (5 languages) | existing help tests | rule 7 |
@@ -326,7 +329,8 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | Plan | Touches | This plan's part |
 |---|---|---|
 | [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect | none; inherits the fix (risk 7) |
-| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | item 5 only: closed by E1 (b983b57) because the remote word of every linked launch goes through `quoteFor('powershell')`; no other item is closed or changed; E2 adds the `ssh` target to `sendGuarded` |
+| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | none: item 5 is closed by the security plan below, not here; E2 adds the `ssh` target to `sendGuarded` |
+| [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
 | [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | stored commands run by an agent ON a server through the bridge | none; the bridge keeps refusing `run` (§9). Disjoint: that plan runs a line on the server an agent lives on; this one runs a person's line on a server they connect to |
 
 The table is complete for plans open on 2026-11-09 that touch these files.
@@ -337,6 +341,8 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 `keys/<pid>/` purge on activate and deactivate (`keyInstaller.ts`).
 
 ## 9. Not in this plan
+
+- The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), landing before E1.
 
 - A Windows remote (D9) — a later plan, after a hand check of Windows OpenSSH's default shell.
 - Remapping references on external import (an existing gap for all four reference fields).
@@ -351,7 +357,7 @@ None new. Materialised key files already have an owner: deleted on terminal clos
    shell stays.
 2. The same with a password SSH entry; a second run opens a second terminal.
 3. Run with Secrets over SSH on a Linux host, once with a key entry and once with a password entry; the value is
-   masked; `ps` on the host shows `sh -s`; a wrong password ends with ssh's error, not a hang.
+   masked; `ps` on the host shows the login shell with `-s`; a bash-only line (`[[ … ]]`) runs under a bash login shell; a wrong password ends with ssh's error, not a hang.
 4. A real peer: a linked entry whose line is `printf '%s|' a\ b "c;d" '$(x)' && echo; echo "$HOME"` prints the same
    on the server as when typed at a remote prompt (bash and zsh login shells).
 
@@ -387,7 +393,7 @@ The question consultant was asked what is important (2 of 2 answered, 2026-11-09
 composer with the canonical trust line, two-shell quoting and fail-closed coverage of every road — a missed road runs
 a destructive command LOCALLY; (2) the SSH preparation seam cut from `connectEntity` — identity, host pin, route, the
 lifetime of the credential and the key, and the "one owner" and "one snapshot" rules of §4.4 — the largest regression
-radius on an existing security flow; (3) the non-interactive boundary — Run with Secrets over stdin to `sh -s`, and
+radius on an existing security flow; (3) the non-interactive boundary — Run with Secrets over stdin to the login shell's `-s`, and
 the agent gate. With three epics the quota is Q = ⌈2·3/5⌉ = 2, so areas (1) and (2) are the cornerstone areas. Both
 live in E1, so at most two E1 stories can be marked, and E2 and E3 carry no mark. Area (3) is watched without a mark:
 its agent gate is authorisation, which `subagent-models.md` gives to a Fable security judgement outside any quota; the
@@ -430,8 +436,13 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   `test/launchRoadScan.test.ts`, `test/remoteLaunch.test.ts`, `test/remoteLaunchDelivery.test.ts`,
   `test/sshSession.test.ts`, `test/sshCommand.test.ts` additions; the five help files (the field's line), `README.md`,
   `research/module_extension.md`, `research/module_tests.md`. Risk 7 is inherited by S3 on purpose and not fixed here.
-- **Depends on.** The coai plan round at `proceed` and the one consultation of the cadence. Nothing else in this
-  plan. S1 lands before S2 (D8); S3 can be built beside them; the three land in E1's one commit on E1's branch.
+- **Depends on.** The coai plan round at `proceed` and the one consultation of the cadence; since epoch 2 also the
+  security plan [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), which lands
+  first. S1 lands before S2 (D8); S3 can be built beside them; the three land in E1's one commit on E1's branch.
+- **As built and re-reviewed (epoch 2).** E1 was built as one local commit (782444a) and passed its coai code round
+  (`proceed`, 8 of 8 reviewers). That commit also holds the security sweep, which moves to its own plan: E1 is
+  rebased onto that plan's commit and keeps only its own changes. The fixes owed before E1 merges are listed in
+  [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E1.md) §S4.
 - **Done when.** §6 rows "guard", "`sshLinkField`", "post literal", "share strip", "candidates", "every road
   refuses", "export", "link none / linked / …", "`buildSshCommand` byte-identical", "PowerShell 5.1", "delivery",
   "stay-open wrapper text", "`secretsStdin`", "delivery corpus re-parsed", "road scan", "prepare opens no terminal" and
@@ -487,7 +498,7 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   shipped system and the plan is promoted with its deviations.
 - **Stories.**
   - **S1 — Run with Secrets.** Order prepare → `confirmTrusted(trustLine)` → dependencies → resolve values → spawn; the
-    child is `ssh` by argv (`buildSshExecArgv(ssh, keyPath, 'sh -s', …)`, no `-t`, `shell:false`); STDIN carries
+    child is `ssh` by argv (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …)`, no `-t`, `shell:false`); STDIN carries
     `secretsStdin` then closes; askpass env in the CHILD's environment, never argv; the non-interactive banner; output
     masked; Windows refused (step 7, D12). Help ×5 for Run with Secrets, with the banner's way out.
   - **S2 — Agent.** `findUsableEntry(…, sshEntityId, 'exec')` must answer `usable`, else the exact sentence and nothing
@@ -509,7 +520,7 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   exists). E3's branch starts from E2's commit and lands as one commit. S1 and S2 are each complete alone; S3 closes
   what the earlier stories left.
 - **Done when.** §6 rows "secrets" (both), "masking end to end", "snapshot" (the masked-run half), "agent" and "help
-  tests (5 languages)" are green: no value in argv, the exports and the `{ … } </dev/null` group on stdin, `sh -s`,
+  tests (5 languages)" are green: no value in argv, the exports and the `{ … } </dev/null` group on stdin, `"${SHELL:-sh}" -s`,
   no `-t`, output masked, Windows refused; the closed SSH entry gives the exact sentence, the usable one gives argv via
   `buildSshExecArgv`, the consent names the SSH entry; the `research/` pages and the README name the field, the trust
   line and the refusals; `helpEn.ts` no longer tells a person to write the ssh line by hand; the plan and its stories

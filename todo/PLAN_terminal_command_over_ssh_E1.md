@@ -330,3 +330,21 @@ The full `npm test` is run by the lead.
 6. `helpDe.ts:84` and `helpEs.ts:84` translate the *Runs on* label (*Läuft auf*, *Se ejecuta en*) against `CLAUDE.md`
    rule 7. Older than this plan; S1 does not fix it.
 7. The parent's §4.1 candidates rule ("host") is narrowed to `isSafeSshTarget` so S2's scenario R8 can hold.
+
+## S4 — Fixes owed before E1 merges (from the E1 code round and the own review, re-review of epoch 2)
+
+E1 was built as one local commit, 782444a. Its coai code round answered `proceed` (8 of 8 reviewers). The lead's own
+three reviewers (Opus: simplicity, bugs, conventions) and the round's accepted findings leave these fixes. Each is
+RED-GREEN-RED. They are built on E1's branch AFTER it is rebased onto the security plan
+([PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md)), which takes the security sweep
+out of 782444a.
+
+| # | Fix | Source | Proof |
+|---|---|---|---|
+| F1 | `trustLineFor` also carries `-A` and every enabled forward, exactly as `sshOptionArgv` composes them | coai (codex), accepted | a test changes ONLY a forward, then ONLY agent forwarding, and gets a new trust text each time |
+| F2 | *Update it* on a received share keeps the RECIPIENT's own `sshEntityId` (`shareUpdateSeal.ts` `rebuilt`), and still never takes the sender's | own review (bugs) | an existing linked node + an update payload keeps its link; a payload carrying a link does not set one |
+| F3 | The secrets script is read by the remote login shell: the remote command is `"${SHELL:-sh}" -s`, a named constant in `remoteLaunch.ts` | re-review consultation, measured | a bash-only line through the emulated remote with `SHELL=/bin/bash` succeeds; under `sh -s` it failed with 127 |
+| F4 | Export uses `withoutSshLink` (`exportSecrets.ts`); the candidate list filters with the link decision (`sshLinkOf`, or an exported `isLinkTarget`) instead of its own copy of the checks | coai (antigravity) + own review | R2 and C1/R8 stay green; a mutation in `sshLinkOf` now changes the candidates too |
+| F5 | ONE `withAcceptNew` in the pure `sshCommand.ts`, used by `sshSession.ts` and `remoteLaunch.ts`, one regex chosen and recorded | own review (simplicity) | a test with a non-bare program word |
+| F6 | Small duplicates: delete `test/sshLinkGate.test.ts` (a copy of R24); `isWindowsPowerShell51` next to `shellFamily` in `hostShell.ts`; `sshDestination`/`portArgv` shared from `sshCommand.ts`; `noHostSentence` shared; `launcherId` → `otherEntityId`; the `UNLINK` constant reused; one `entityPicker` for the two pickers; `vaultOf` exported from `test/arrowWorld.ts` | own review (simplicity) | existing tests stay green |
+| F7 | Text that no longer matches: comments naming `sshConnect.ts` for the password branch; "three controls" in `execFormFields.ts`; "eleven calls in eight files" → the real count; "fifteen hostile commands" → the real count; the dangling `b983b57` references; the status lines of this document, the specs and `todo/README.md`; `research/` sections for S1 (the field, its round trips, the refusal on every road) and the askpass row | own review (conventions) | `plan-lifecycle.mjs` clean; a reader can find each flow in `research/module_tests.md` |
