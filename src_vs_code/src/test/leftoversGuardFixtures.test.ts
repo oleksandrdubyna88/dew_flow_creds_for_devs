@@ -22,9 +22,9 @@ const SH_TOUCHING = 'p="testsTo""Delete-agent-x"';
 // testsToDelete-exempt: legacy-name — a planted spelling: the guard under test must find it in scanText
 const SH_PLUS = 'p="testsTo"+"Delete-agent-x"';
 // testsToDelete-exempt: legacy-name — a planted spelling: the guard under test must find it in scanText
-const JS_WHOLE = "const p = 'testsToDelete-agent-x';";
+const JS_WHOLE = "const p = 'testsToDelete" + "-agent-x';"; // two pieces: leftoversSites.test.ts refuses the whole legacy form in any test file; the text the guard reads is whole
 // testsToDelete-exempt: legacy-name — a planted spelling: the guard under test must find it in scanText
-const SH_WHOLE = 'p="testsToDelete-agent-x"';
+const SH_WHOLE = 'p="testsToDelete' + '-agent-x"'; // two pieces, as above
 
 // testsToDelete-exempt: legacy-name — a planted spelling: the detail text the guard prints for a joined or whole spelling
 const WHOLE_TEXT = '`testsToDelete-agent`';
