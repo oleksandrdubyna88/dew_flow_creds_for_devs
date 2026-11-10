@@ -1,13 +1,13 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **plan only, nothing implemented yet, 2026-11-09.** Scope: the extension (`src_vs_code`) — a new
+> Status: **E1 built locally (782444a, not pushed), stopped for re-review 2026-11-10 (second change, entry 1.2).** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-09 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-09 · by reviewers · state: stopped
 
   (Approval: the plan gate's round 2, verdict good_enough, committed in e468285 with that round's accepted findings
   and the three-epic split the same round's operator command ordered.)
@@ -15,12 +15,9 @@
   (Not counted, each only makes the plan true as written: the trust line built from the prepared snapshot per §4.4,
   the seam's range taking the password branch's preparation, `stopped` leaving nothing on disk, and the importer
   count of `resolveCommand(` repaired.)
-  (Also not counted, and flagged to the owner to rule otherwise: E1.S2's review found PowerShell reads the typographic
-  quotes as quotes, and the mandatory class sweep (security.md) then found three local-injection defects on this
-  plan's own launch line that SSH Connect already shipped with — the `-i` key path and the destination in
-  `shellQuote`'s double quotes (`$( )` and `$VAR` expand in PowerShell) and the askpass `.bat`'s `%VAR%` (cmd expands
-  it before parsing). Fixed in b983b57. Counted as making §4.2's delivery contract true, not as new scope; SSH Connect
-  gets the fix through the shared builder. The `.bat` fix has run on no Windows machine: hand check 2 covers it.)
+- 1.2 · 2026-11-10 · reviewer · scope, contract — the E1.S2 review and the security.md class sweep: PowerShell typographic quotes doubled in `quoteFor`, the win32 `shellQuote` words that carry vault data (`-i`, destination, jump and forwards) and the askpass `.bat` no longer expand vault data; SSH Connect's shipped win32 line changes; followups item 5 closed here
+  (First recorded as "not counted"; the E1 conventions review showed it is a change: its own cause, a shipped contract
+  changed, a slice of another plan taken. In doubt it is a change. This second change stopped the plan.)
 
 ## 1. Goal
 
