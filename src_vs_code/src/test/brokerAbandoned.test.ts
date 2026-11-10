@@ -103,6 +103,8 @@ test('a client that leaves while the modal is open: a late Allow grants nothing 
     assert.deepEqual(w.ran, [], 'the action ran for a request nobody was waiting for');
     assert.ok(!w.audit.some((line) => /ALLOWED/.test(line)), `the late click allowed the grant: ${w.audit.join(' | ')}`);
     assert.equal(abandonedLines(w).length, 1, `one ABANDONED line: ${w.audit.join(' | ')}`);
+    assert.ok(w.audit.some((line) => / ignored /.test(line) && line.includes('"Allow" answered after its call had ended; the answer changed nothing')), 'the late line, in the contract\'s words (E1.5)');
+    assert.deepEqual(w.notices, ['That request had already ended, so this answer changed nothing.'], 'and the person is told');
     assert.equal(w.presence, 0, 'a click on a dead prompt decides nothing, presence included');
 
     // The grant is still unanswered, so the next live call on it is ASKED rather than waved through.

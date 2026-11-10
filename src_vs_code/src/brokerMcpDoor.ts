@@ -1,9 +1,10 @@
 import * as http from 'node:http';
 import { CallerLabel, callerFrom } from './brokerCaller';
 import { ErrorCode } from './brokerProtocol';
-import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerRequests';
+import { McpUseLookup, McpUseTarget, consentRefusal, readMcpUse, readNamedBody } from './brokerRequests';
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
 import type { Slot } from './aliasThrottle';
+import type { CallTarget } from './useActions';
 import type { AuditDoor } from './agentAuditLog';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 
@@ -46,7 +47,12 @@ export interface BrokerDoor {
    * BACK rather than named again, because a route that says `prompts` twice can say it differently
    * the second time — and a slot released on the wrong ceiling frees another call's.</p>
    */
-  admit(res: http.ServerResponse, prompts: boolean): Slot | undefined;
+  admit(res: http.ServerResponse, prompts: boolean, followUp?: boolean): Slot | undefined;
+  /**
+   * Whether this action may put a prompt of its own on screen after its Allow, for THIS target (`asksAfter`): read before admission, so a
+   * quiet call that may prompt again takes the place for its length (D.3). The flag of `exec` is a function of the target.
+   */
+  asksAfter(kind: string, action: string, target: CallTarget): boolean;
   /**
    * This entry's policy has already answered: settle the grant so no modal is raised.
    *
@@ -131,9 +137,11 @@ export function mcpDoor(parts: BrokerDoor): BrokerDoor {
 
 /**
  * How a consent step ended. `abandoned` is the request's own client leaving before it was answered —
- * not a refusal by anybody, and never answered on the wire: there is nobody left to answer.
+ * not a refusal by anybody, and never answered on the wire: there is nobody left to answer. `timeout` is the
+ * CALL's wait running out (`CONSENT_TIMEOUT_MS`): the dialog stands and keeps the place. `dismissed` is the dialog
+ * resolving with neither button (Escape, or VS Code closing it): a person's act, so the place is freed.
  */
-export type ConsentOutcome = 'allowed' | 'denied' | 'timeout' | 'abandoned';
+export type ConsentOutcome = 'allowed' | 'denied' | 'timeout' | 'dismissed' | 'abandoned';
 
 /** Where on the path a request is dropped when its client leaves while it is being asked. */
 export const DURING_CONSENT = 'while consent was being asked';
@@ -153,8 +161,9 @@ export function consentNotGiven(
     door.abandon(where.grant, where.action, DURING_CONSENT, where.caller);
     return;
   }
-  const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-  door.refuse(res, code, message, where.grant, where.action, where.summary, where.caller);
+  // `create`, `delete` and the folder verbs are admitted on the place (`admit(res, true)`), so a timeout hears the place clause.
+  const refusal = consentRefusal(consent, message, true);
+  door.refuse(res, refusal.code, refusal.message, where.grant, where.action, where.summary, where.caller);
 }
 
 /**
@@ -211,7 +220,7 @@ export async function handleMcpUse(
   // The same throttle as the alias route, and for the same reason: everything below this line
   // can make the window ask a human, and the rate of prompts is what stops a local process
   // turning that into an attack on the person's patience.
-  const slot = door.admit(res, prompts);
+  const slot = door.admit(res, prompts, door.asksAfter(read.target.kind, action, read.target));
   if (slot === undefined) {
     return;
   }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { after, test } from 'node:test';
-import { World, noteOurSend, ownerChain, startVpn, terminalNamed, until, world } from './vpnWorld';
+import { chainTerminalTitle } from '../terminalTitles';
+import { World, noteOurSend, ownerChain, rootTitle, startVpn, terminalNamed, until, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -16,7 +17,7 @@ after(() => scope.close());
  * <p>The world is `vpnWorld.ts`; the launcher's terminal is the one `ownerChain().start` names.</p>
  */
 
-const S = 'CredsForDevs: start openvpn';
+const S = rootTitle('start openvpn');
 const QUESTION = /was not typed/;
 
 /** The launcher's terminal is open before the start and the extension has typed into it; `ran` says whether a command ran in it and ended with code 0. */
@@ -42,7 +43,7 @@ test('the_launcher_never_types_into_its_terminal_while_a_command_runs_there', as
   try {
     assert.equal(started, false);
     assert.deepEqual(terminalNamed(w, S).sent, []);
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['install-openvpn'], 'the installer ran before the launcher, as today');
+    assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['install-openvpn'], 'the installer ran before the launcher, as today');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

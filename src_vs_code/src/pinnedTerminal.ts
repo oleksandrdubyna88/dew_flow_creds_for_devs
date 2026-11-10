@@ -12,6 +12,7 @@ import {
   windowKind,
 } from './hostShell';
 import { onPath } from './installFlow';
+import { EntryTerminalKey, entryTerminalTitle } from './terminalTitles';
 
 /**
  * The `vscode` half of "which shell reads this line" (issue #103); the decisions are `hostShell.ts`.
@@ -115,45 +116,41 @@ export type EntryLookup =
 
 /**
  * The terminal a Terminal ENTRY's line would be typed into, if one is LIVE — found, never created, never shown.
- * Default road: the first live terminal of the entry's name. Pinned road: a live one of the name running the pinned
+ * Default road: the first live terminal of the key's title (`terminalTitles.ts`). Pinned road: a live one of the title running the pinned
  * shell (`reusableTerminal`'s rule). Live means `exitStatus === undefined` — a closed terminal still in the list is
  * not a target. See `entryShell` for the rule, and `family` for the shell that will read what is typed (what
  * `{config}` is quoted for).
  */
-export function findEntryTerminal(entryName: string, terminalOs: string | undefined): EntryLookup {
-  const usable = usableEntryShell(entryName, terminalOs);
-  return usable.ok ? { ok: true, terminal: liveEntryTerminal(entryName, usable.choice), family: usable.family } : usable;
+export function findEntryTerminal(key: EntryTerminalKey, terminalOs: string | undefined): EntryLookup {
+  const usable = usableEntryShell(key.entryName, terminalOs);
+  return usable.ok ? { ok: true, terminal: liveEntryTerminal(key, usable.choice), family: usable.family } : usable;
 }
 
 /** A NEW terminal for the entry, shown — created, never found. The guard calls it only when `findEntryTerminal` answered none. */
-export function openEntryTerminal(entryName: string, terminalOs: string | undefined): EntryTerminal {
-  const usable = usableEntryShell(entryName, terminalOs);
+export function openEntryTerminal(key: EntryTerminalKey, terminalOs: string | undefined): EntryTerminal {
+  const usable = usableEntryShell(key.entryName, terminalOs);
   if (!usable.ok) {
     return usable;
   }
-  const name = entryTerminalName(entryName);
+  const name = entryTerminalTitle(key);
   const terminal = vscode.window.createTerminal(usable.choice.kind === 'pinned' ? { name, shellPath: pinnedShell().shellPath } : { name });
   terminal.show();
   return { ok: true, terminal, family: usable.family };
 }
 
 /**
- * Every LIVE terminal of the entry's name, ANY shell, in list order: found, never created, never shown. The folder run's
+ * Every LIVE terminal of the key's title, ANY shell, in list order: found, never created, never shown. The folder run's
  * reading. The pinned road's same-shell test (`liveEntryTerminal`) would miss one running another shell, and that
  * terminal would then sit beside a second `tmux attach`, or survive a close the person asked for.
  */
-export function liveTerminalsOfEntry(entryName: string): readonly vscode.Terminal[] {
-  const name = entryTerminalName(entryName);
+export function liveTerminalsOfEntry(key: EntryTerminalKey): readonly vscode.Terminal[] {
+  const name = entryTerminalTitle(key);
   return vscode.window.terminals.filter((t) => t.name === name && t.exitStatus === undefined);
 }
 
 /** Why `openEntryTerminal` would refuse this entry in this window, or `undefined`. Opens nothing. */
 export function entryOpenRefusal(entryName: string, terminalOs: string | undefined): string | undefined {
   return entryRefusal(entryShell(entryName, terminalOs, shellContext()));
-}
-
-function entryTerminalName(entryName: string): string {
-  return `CredsForDevs: ${entryName}`;
 }
 
 /** Why the entry's shell cannot be had in this window — `entryShell`'s refusal, or a pinned shell's — or `undefined`. */
@@ -164,8 +161,8 @@ function entryRefusal(choice: EntryShell): string | undefined {
   return choice.kind === 'pinned' ? pinnedRefusal() : undefined;
 }
 
-function liveEntryTerminal(entryName: string, choice: EntryShell): vscode.Terminal | undefined {
-  const live = liveTerminalsOfEntry(entryName);
+function liveEntryTerminal(key: EntryTerminalKey, choice: EntryShell): vscode.Terminal | undefined {
+  const live = liveTerminalsOfEntry(key);
   return choice.kind === 'pinned' ? live.find((t) => shellPathOf(t) === pinnedShell().shellPath) : live[0];
 }
 

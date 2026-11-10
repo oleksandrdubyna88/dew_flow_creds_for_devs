@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { commandFingerprint } from '../commandTrust';
 import { loadWithVscode } from './vscodeStub';
 import { endedStage } from '../requestLife';
-import { EntityMetadata } from '../types';
+import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
+import { EntityMetadata, TreeNode } from '../types';
 import { ownedDir, type Scope } from '../../scripts/lib/leftovers.cjs';
 
 /**
@@ -37,6 +38,8 @@ export interface FakeTerminal {
 export interface HeldDialog {
   text: string;
   buttons: string[];
+  /** Whether the dialog was a modal (`{ modal: true }` as its options): a toast otherwise (E1.5, C10c, C11). */
+  modal: boolean;
   answer(button: string | undefined): void;
 }
 
@@ -74,6 +77,10 @@ export interface World {
   listReadsAfterDispose(): number;
   /** The `preopened` terminals and the ones a flow created, by name: the newest of each. */
   live: Record<string, LiveTerminal>;
+  /** Executions started with `holdExecutions`, oldest first: each ends only when the test ends it through `shell.end`. */
+  executions: { terminal: LiveTerminal; execution: object }[];
+  /** How many listeners the three terminal events hold right now: what an abandoned run must not leave behind (E1.5, C20). */
+  listenerCounts(): { ended: number; closed: number };
   shell: ShellEvents;
   /** How many times the start or stop told the vault the person is at the keyboard (`noteUserActivity`): the idle clock's one input from here. */
   userActivity: number;
@@ -82,7 +89,10 @@ export interface World {
 type Listener = (e: unknown) => void;
 
 export interface WorldOptions {
-  integration?: boolean;
+  /** `false`: the shell never starts (the terminal closes at once). `'absent'`: it starts and never reports shell integration, and never closes. */
+  integration?: boolean | 'absent';
+  /** Executions never end by themselves: `world.executions` lists them and the test ends each through `world.shell.end` (E1.5, C10). */
+  holdExecutions?: boolean;
   /** What the person clicks on a notification (Continue / Stop). */
   notification?: 'Continue' | 'Stop';
   /** A modal gets its first button unless the test dismisses it or asks for the last. */
@@ -105,12 +115,10 @@ export interface WorldOptions {
 
 export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}): World {
   const terminals: FakeTerminal[] = [];
-  const warnings: string[] = [];
-  const infos: string[] = [];
+  const [warnings, infos]: [string[], string[]] = [[], []];
   const held: HeldDialog[] = [];
-  const started: Listener[] = [];
-  const ended: Listener[] = [];
-  const closed: Listener[] = [];
+  const executions: { terminal: LiveTerminal; execution: object }[] = [];
+  const [started, ended, closed]: [Listener[], Listener[], Listener[]] = [[], [], []];
   const subscribe = (list: Listener[]) => (l: Listener) => {
     list.push(l);
     return { dispose: () => list.splice(list.indexOf(l), 1) };
@@ -139,12 +147,19 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
         record.sent.push(text);
       },
     };
-    if (opts.integration !== false) {
+    if (opts.integration === false) {
+      // A shell that could not start: the terminal closes before integration ever activates.
+      setImmediate(() => [...closed].forEach((l) => l(terminal)));
+    } else if (opts.integration !== 'absent') {
       terminal.shellIntegration = {
         executeCommand: (line: string) => {
           record.executed.push(line);
           opts.onExecute?.(line);
           const execution = { line };
+          if (opts.holdExecutions === true) {
+            executions.push({ terminal, execution });
+            return execution;
+          }
           setImmediate(() => {
             [...ended].forEach((l) => l({ terminal, execution, exitCode: exitCodes[line] ?? 0, shellIntegration: terminal.shellIntegration }));
             if (opts.closeAfterFirst === true) {
@@ -154,9 +169,6 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
           return execution;
         },
       };
-    } else {
-      // A shell that could not start: the terminal closes before integration ever activates.
-      setImmediate(() => [...closed].forEach((l) => l(terminal)));
     }
     return terminal;
   };
@@ -166,7 +178,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     sink.push(text);
     const buttons = rest.filter((r): r is string => typeof r === 'string');
     if (opts.holdDialogs?.test(text) === true) {
-      return new Promise<string | undefined>((resolve) => held.push({ text, buttons, answer: resolve }));
+      return new Promise<string | undefined>((resolve) => held.push({ text, buttons, modal: isModal(rest[0]), answer: resolve }));
     }
     return Promise.resolve(reply(opts, buttons, isModal(rest[0])));
   };
@@ -221,7 +233,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     [...closed].forEach((l) => l(terminal));
   };
   const open = (name: string, shellPath?: string): LiveTerminal => makeTerminal({ name, shellPath });
-  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell, userActivity: 0 };
+  return { vscode, terminals, warnings, infos, held, open, list, exit, listReadsAfterDispose: () => reads.afterDispose, live, shell, userActivity: 0, executions, listenerCounts: () => ({ ended: ended.length, closed: closed.length }) };
 }
 
 function reply(opts: WorldOptions, buttons: string[], modal: boolean): string | undefined {
@@ -246,17 +258,20 @@ function isModal(options: unknown): boolean {
   return typeof options === 'object' && options !== null && (options as { modal?: boolean }).modal === true;
 }
 
-/** Poll until `ready`, failing with `what` rather than hanging the suite. */
+/** The real timer, taken at load: a test that mocks `setTimeout` or `Date` must not stop `until` from timing out. */
+const realSetTimeout = setTimeout;
+
+/** Poll until `ready`, failing with `what` rather than hanging the suite: on the real clock and the real timer, whatever the test has mocked. */
 export function until(ready: () => boolean, what: string, ms = 3000): Promise<void> {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   return new Promise((resolve, reject) => {
     const poll = (): void => {
       if (ready()) {
         resolve();
-      } else if (Date.now() > deadline) {
+      } else if (performance.now() > deadline) {
         reject(new assert.AssertionError({ message: `timed out waiting for ${what}` }));
       } else {
-        setTimeout(poll, 5);
+        realSetTimeout(poll, 5);
       }
     };
     poll();
@@ -289,11 +304,31 @@ export function ownerChain(): Record<string, EntityMetadata> {
   return { install, start, vpn };
 }
 
+/** The title of the terminal of the entry `name` inside `parent` (none: a root entry), built by the real functions. The one composition under `src/test`. */
+export const titleIn = (parent: TreeNode | undefined, name: string): string => entryTerminalTitle(entryTerminalKey(name, parent));
+
+/** The title of the terminal of a ROOT entry (no parent folder) named `name`. */
+export const rootTitle = (name: string): string => titleIn(undefined, name);
+
 export const STORED_CONFIG = 'client\nremote vpn.example 1194\n';
 
-export function storageOf(nodes: Record<string, EntityMetadata>, config: () => Promise<string | undefined> = () => Promise.resolve(STORED_CONFIG)) {
+/** The folder of `placed` with this id, if any. */
+function folderIn(placed: Record<string, TreeNode>, id: string): TreeNode | undefined {
+  return Object.values(placed).find((folder) => folder.id === id);
+}
+
+/**
+ * The storage of a chain world: `nodes` are the entries by id; `placed[entryId]` is the folder node that entry sits in
+ * (none: the root). An id it does not know answers `undefined`.
+ */
+export function storageOf(
+  nodes: Record<string, EntityMetadata>,
+  config: () => Promise<string | undefined> = () => Promise.resolve(STORED_CONFIG),
+  placed: Record<string, TreeNode> = {},
+) {
   return {
-    getNode: (_account: string, id: string) => (nodes[id] === undefined ? undefined : { id, details: nodes[id] }),
+    getNode: (_account: string, id: string): TreeNode | undefined =>
+      nodes[id] === undefined ? folderIn(placed, id) : { id, name: nodes[id].name, type: 'entity', details: nodes[id], parentId: placed[id]?.id },
     getVpnConfig: config,
   };
 }

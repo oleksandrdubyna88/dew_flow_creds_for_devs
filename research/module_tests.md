@@ -678,6 +678,20 @@ stopped"* as a fact about what reached `docker`. The round found the unfinished-
 after `docker compose down`; scenario 4 is what catches that class now, and it was watched failing
 against the old ordering.
 
+**And one for the nginx config the entrypoint renders: `deploy/nginx/entrypoint.test.sh`** (2026-11-09). It runs the
+real `entrypoint.sh` — through the seams `CRED_VAULT_CERT_LIVE`, `CRED_VAULT_TEMPLATE`,
+`CRED_VAULT_CONF_DIR` and `CRED_VAULT_RENDER_ONLY`, all unset in production — for `domain`, `ip`,
+`custom` and `none`, each with and without a certificate in a private folder, and asserts that
+`real_ip_header` and `real_ip_recursive` occur once, no `set_real_ip_from` range is listed twice, and
+the four private ranges are there (one home, never zero). It also asserts the intended state was the one
+rendered (a 443 listener only with a certificate and nginx-owned TLS). Needs only sh, bash, envsubst and
+grep, so it runs locally. **Watched RED** on main's template: 12 failures, all in the three TLS modes with
+a certificate — `real_ip_header occurs 2 times` (`13:` and `62:`) — and GREEN with the block in one place;
+RED again with main's template put back. The parser is the real authority, so the *compose · scripts* job
+also runs the shipped entrypoint in `nginx:1.27-alpine` (the stack's pin) per mode and then `nginx -t`;
+that step needs Docker and runs only in CI. The older `deploy/acme-test/run.sh` would also have caught this
+(it reaches the certificate state) but is not part of any workflow.
+
 **What none of it covers.** Nothing drives VS Code itself: the modal that shows the key once, the save
 dialog, the webview's own script and the tree menu are exercised only through their pure halves. So a
 command registered but never wired to a menu, or a `when` clause that stops matching, is caught by the
@@ -1489,6 +1503,46 @@ value `folderContextValue` produces. The evaluator reads the five forms the mani
 read against VS Code's parser and evaluated by this suite's own, not VS Code's, so the arrow's place beside `+` is the parent plan's hand
 check 8. Translations are checked for facts, not for quality.
 
+## Terminal titles name the folder (2026-11-09, S1-S3 and S5 of PLAN_terminal_titles_folder.md)
+
+A terminal's title is both its creation name and the key it is found by, so every Creds title is built by the pure module
+`terminalTitles.ts` and the tests build their expected titles with its functions (`entryTerminalTitle`, `chainTerminalTitle`,
+`maskedRunTitle`, `vpnTerminalTitle`), never with a literal. The shared worlds changed to carry a parent: `arrowWorld` takes
+`parent` (the stored folder), `elementParentId` (what the menu's element still says) and `storageDir`, and answers `runScript`;
+`vpnWorld`'s `storageOf` takes `placed` (the folder of each entry) and exports `titleIn(parent, name)`, the one place under
+`src/test` that composes `entryTerminalTitle(entryTerminalKey(…))` (`rootTitle(name)` is `titleIn(undefined, name)`); `folderWorld`
+exports `FOLDER_NODE`, and `T(name)` is `titleIn(FOLDER_NODE, name)`, the real title of a direct child of it. Run from `src_vs_code`: `npm run compile`, then
+`node --import ./scripts/lower-priority.mjs --test out/test/terminalTitles.test.js out/test/terminalTitleRoads.test.js out/test/terminalTitleScan.test.js out/test/folderRunTitlesDuringTheWait.test.js`
+(9 + 12 + 4 + 10 tests).
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The pure module | `terminalTitles.test.ts` | a parent folder goes before the entry; no parent (undefined, null, a dangling id, an entry not in storage) gives the bare title; the Trash is a normal parent; only the direct parent is named; a control character in the folder name is escaped and the entry half is not; the three fixed titles; the key reads the stored parent; the module imports no `vscode` |
+| The arrow | `terminalTitleRoads.test.ts` | the title carries the STORED parent; an element with an old `parentId` still gives the current folder; a root entry keeps the bare title; a history row takes the live entry's folder and the revision's name; the arrow finds a terminal of that title (one, not two) |
+| The launcher | `terminalTitleRoads.test.ts` | a launcher in folder X with the VPN in Y is titled with X, nothing under Y; the launcher and the arrow share one terminal |
+| The folder run | `terminalTitleRoads.test.ts` | rows run under `Creds: <folder> / <entry>`; a terminal the arrow opened is closed by `Close Open Terminals and Run`; a terminal with the OLD title is not counted as open (the pinned one-time effect); a tab in a folder name is escaped in the title with no refusal |
+| The script run | `terminalTitleRoads.test.ts` | the script terminal carries the folder, and `fresh` disposes the one of the same title |
+| The other titles | `dependencyChain.test.ts`, `commandNameRoads.test.ts`, `vpnGoneRequest.test.ts`, `folderRunHelp.test.ts` | `Creds: before <owner>`, `Creds run: <node name>`, `Creds VPN: <name>`, and the help's `Creds: before <folder>` verbatim in five languages |
+| The folder run, during the wait | `folderRunTitlesDuringTheWait.test.ts` | every change happens while the modal (or the chain's dialog) is held, and a rename or move REPLACES the node object in `w.nodes` (an edit in place also edits the captured node and cannot go red). A folder renamed is typed under its new name; a terminal the arrow opened under the new name is left alone, one terminal, under `Run` and under `Close Open Terminals and Run`; an old-title terminal the modal listed is closed by object and the line goes to a new terminal under the new title; under `Run` that old terminal, still live, is left alone and reported `Left alone, terminal already open`, never "closed while the question was open"; an entry moved out is typed under its new parent; trashed, under `Creds: Trash / a`; a trashed folder keeps its title and runs (a guard); a folder or an entry removed for good is typed under the bare title |
+| The scan | `terminalTitleScan.test.ts` | no source builds a title outside `terminalTitles.ts`, and no test asserts an old entry-title literal with ANY name — one matcher per quote delimiter (so `"CredsForDevs: O'Brien"` is caught) and the regex form; a notification prefix such as `` `CredsForDevs: ${message}` `` is not a site; an allow-list keyed by file and exact trimmed line, each with a reason; a stale entry fails; the scan still finds its own shapes (fixtures for every quote style, and at least three sites in `terminalTitles.ts`) |
+
+**Teeth.** Written first and watched red on the tree before each story's production edit. S1: the test file did not compile
+(`Cannot find module '../terminalTitles'`), then against a stub returning `''` six of the nine cases failed with `actual ''
+expected 'Creds: ops / x'` and the like (`no_parent_gives_the_bare_title`, `an_entry_not_in_storage_has_no_folder` and
+`the_module_imports_no_vscode` did not: they hold with an empty module body too). S2: with the fakes and the new suite on S1's tree, `terminalTitleRoads` failed 12 of 12
+(`no terminal "Creds: ops / alert" — opened: CredsForDevs: alert`; `no terminal "Creds: X / start openvpn" — opened: CredsForDevs:
+before ops relay stage, CredsForDevs: start openvpn`; the arrow's second terminal, 2 against 1), and the suites that go through
+`T` and `rootTitle` failed with it. S3: the scan named the three sites (`runCommands.ts:374`, `dependencyRunHost.ts:169`,
+`vpnRun.ts:240`), the masked run answered `'CredsForDevs run: node-alert'`, and the chain title was missing. S5: nine of the ten
+`folderRunTitlesDuringTheWait` tests were red on the tree before the production edit and red again with only
+`folderRunCommand.ts` reverted (the arrow's second terminal under the old title; `actual 'Creds: claude sessions / a'` against
+`'Creds: g / a'`, `'Creds: Trash / a'`, `'Creds: a'`); the tenth, the trashed folder, is a guard. With the key change alone the
+`Run` case answered `Not run: a — its terminal closed while the question was open`, which pins the snapshot reading. The scan's
+per-delimiter matchers were red on the four quoted lines of other suites until they were allow-listed, and the `O'Brien`
+fixture goes red against one shared matcher. One lesson: a
+regex over a terminal name such as `/: b$/` in `failCreate` no longer matches once the folder stands between the colon and the
+name; those became `/ \/ b$/`.
+
 ## A gone request reaches no SSH prompt (2026-10-10, E4.S4)
 
 The flows story E4.S4 of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)
@@ -2201,6 +2255,7 @@ every other session lagged. How this repository follows it, entry point by entry
 | the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props`, except when `CI=true` | `node $LP <exe>`, one executable at a time |
 | `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
 | `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
+| `deploy/nginx/entrypoint.test.sh` | one bash process, `sh entrypoint.sh` once per case | the same self-re-run under `nice` as the harness above |
 | the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
 | a one-file run | one worker | `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` |
 

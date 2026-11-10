@@ -3,8 +3,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { chainTerminalTitle } from '../terminalTitles';
 import { EntityMetadata } from '../types';
-import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
+import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, rootTitle, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -24,9 +25,9 @@ test('the owner\'s chain: the installer runs and is AWAITED, then the launcher i
   const w = world({});
   const { started } = await startVpn(scope, w, ownerChain());
   assert.equal(started, true, w.warnings.join('\n'));
-  const chain = terminalNamed(w, 'CredsForDevs: before ops relay stage');
+  const chain = terminalNamed(w, chainTerminalTitle('ops relay stage'));
   assert.deepEqual(chain.executed, ['install-openvpn'], 'the installer ran; the launcher did NOT run twice');
-  const launcher = terminalNamed(w, 'CredsForDevs: start openvpn');
+  const launcher = terminalNamed(w, rootTitle('start openvpn'));
   assert.equal(launcher.sent.length, 1);
   assert.match(launcher.sent[0], /^openvpn --config '.*ops_relay_stage\.ovpn'$/);
   assert.equal(fs.readFileSync(quotedPath(launcher.sent[0]), 'utf8'), 'client\nremote vpn.example 1194\n', 'the config the line names was written');
@@ -34,11 +35,17 @@ test('the owner\'s chain: the installer runs and is AWAITED, then the launcher i
   assert.ok(w.warnings.some((t) => /Before "ops relay stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
 });
 
+test('the_chain_terminal_is_titled_creds_before_owner', async () => {
+  const w = world({});
+  await startVpn(scope, w, ownerChain());
+  assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['install-openvpn']);
+});
+
 test('a failed installer ASKS, and Stop stops — the launcher is never typed, and the caller hears FALSE', async () => {
   const w = world({ 'install-openvpn': 1 }, { notification: 'Stop' });
   const { started } = await startVpn(scope, w, ownerChain());
   assert.equal(started, false);
-  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined);
+  assert.equal(w.terminals.find((t) => t.name === rootTitle('start openvpn')), undefined);
   assert.ok(w.infos.some((t) => /"install openvpn" exited with code 1/.test(t)), w.infos.join('\n'));
 });
 
@@ -48,7 +55,7 @@ test('an installer that exits non-zero because the tool is already there: Contin
   const w = world({ 'install-openvpn': -1978335189 }, { notification: 'Continue' });
   const { started } = await startVpn(scope, w, ownerChain());
   assert.equal(started, true, w.warnings.join('\n'));
-  assert.equal(terminalNamed(w, 'CredsForDevs: start openvpn').sent.length, 1);
+  assert.equal(terminalNamed(w, rootTitle('start openvpn')).sent.length, 1);
 });
 
 test('the chain modal dismissed: nothing runs and the caller hears FALSE', async () => {
@@ -79,7 +86,8 @@ test('a launcher in the Trash is not run — the built-in launcher is used, with
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust());
   assert.ok(w.warnings.some((t) => /The launcher of "ops relay stage" no longer exists/.test(t)), w.warnings.join('\n'));
-  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined, 'the trashed launcher never ran');
+  // The trashed launcher's own title would name the Trash folder, so the check looks for the entry half under any folder.
+  assert.deepEqual(w.terminals.filter((t) => t.name.endsWith('start openvpn')).map((t) => t.name), [], 'the trashed launcher never ran');
 });
 
 test('a launcher without {config} writes no file and types its line as it is', async () => {
@@ -89,7 +97,7 @@ test('a launcher without {config} writes no file and types its line as it is', a
   const w = world({});
   const { started, dir } = await startVpn(scope, w, nodes);
   assert.equal(started, true);
-  assert.deepEqual(terminalNamed(w, 'CredsForDevs: start openvpn').sent, ['rasdial "Work VPN"']);
+  assert.deepEqual(terminalNamed(w, rootTitle('start openvpn')).sent, ['rasdial "Work VPN"']);
   assert.equal(fs.existsSync(path.join(dir, 'keys')), false, 'no config was materialized');
 });
 
@@ -107,8 +115,8 @@ test('without the execute mark nothing runs first — the launcher alone is type
   const w = world({});
   const { started } = await startVpn(scope, w, nodes);
   assert.equal(started, true);
-  assert.equal(w.terminals.find((t) => t.name.startsWith('CredsForDevs: before')), undefined);
-  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn')?.sent.length, 1);
+  assert.equal(w.terminals.find((t) => t.name === chainTerminalTitle('ops relay stage')), undefined);
+  assert.equal(w.terminals.find((t) => t.name === rootTitle('start openvpn'))?.sent.length, 1);
 });
 
 test('the chain terminal closed between two steps: the second is refused, never typed into a dead terminal', async () => {
@@ -128,6 +136,6 @@ test('the chain terminal closed between two steps: the second is refused, never 
   const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
 
   assert.equal(started, false);
-  assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['first-step']);
+  assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['first-step']);
   assert.ok(w.warnings.some((t) => /closed before "second" could run/.test(t)), w.warnings.join('\n'));
 });

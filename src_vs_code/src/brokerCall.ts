@@ -53,6 +53,8 @@ export interface CallDeps {
    * is to read it. Absent on a build with no bridge.
    */
   atLaunch?(): Refusal | undefined;
+  /** A follow-up prompt of the action's own is on screen: the one dialog place is that prompt's until it settles (F1). */
+  standing?(prompt: PromiseLike<unknown>): void;
 }
 
 export interface CallSubject {
@@ -144,7 +146,7 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
   if (launchRefused(deps) || !reservedNow(deps, call)) {
     return Promise.resolve();
   }
-  const started = startNow(call);
+  const started = startNow(deps, call);
   return deliver(deps, call, started);
 }
 
@@ -195,11 +197,18 @@ function spentToken(deps: CallDeps, call: CallSubject, now: number, limits: Gran
  * <p>The executor of `new Promise` runs synchronously, so the action starts on this line and not a
  * microtask later; a throw inside it becomes the rejection `runAndDeliver` already handles.</p>
  */
-function startNow(call: CallSubject): Promise<UseActionResult> {
+function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
   return new Promise<UseActionResult>((resolve) => {
-    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context }, body));
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing }, body));
   });
+}
+
+/** The seam for a late click on a prompt an action raised itself (E1.5): the journal says so, with the grant, action and door only `log` knows. */
+function lateAnswerOf(deps: CallDeps, call: CallSubject): (what: string) => void {
+  const { grant, action, via, caller } = call;
+  const detail = (what: string): string => `"${what}" answered after its call had ended; the answer changed nothing`;
+  return (what) => deps.log({ grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, outcome: 'ignored', detail: detail(what), caller });
 }
 
 function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionResult>): Promise<void> {

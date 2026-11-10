@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import type { ConsentQuestion } from '../brokerConsent';
 import type { Grant } from '../grantRegistry';
 import { loadWithVscode } from './vscodeStub';
@@ -24,31 +24,70 @@ interface Seen {
   promptedWhenShown: number[];
 }
 
-function gateOver(grants: object): { gate: InstanceType<Gate['ConsentGate']>; seen: Seen; answer(choice: string | undefined): void } {
+interface GateOptions {
+  /** The consent timeout the gate waits (mocked `CONSENT_TIMEOUT_MS`), in place of five minutes. */
+  readonly timeoutMs?: number;
+  /** What `deps.log` hears: the journal lines of the gate itself. */
+  readonly lines?: object[];
+  /** Calls to `onUserPresent`. */
+  readonly presence?: { count: number };
+  /** `log` and `dialogClosed` throw, as a journal that cannot be written does. */
+  readonly throwing?: boolean;
+}
+
+/** A collaborator that fails when the test says the journal cannot be written. */
+function mayThrow(throwing: boolean | undefined): void {
+  if (throwing === true) {
+    throw new Error('the journal could not be written');
+  }
+}
+
+/** One person-present call, counted when the test asked to count them. */
+function countPresence(presence: { count: number } | undefined): void {
+  if (presence !== undefined) {
+    presence.count += 1;
+  }
+}
+
+function gateOver(grants: object, options: GateOptions = {}): { gate: InstanceType<Gate['ConsentGate']>; seen: Seen; answer(choice: string | undefined): void; fail(error: unknown): void; notices: string[] } {
   const seen: Seen = { dialogs: [], prompted: [], closed: [], promptedWhenShown: [] };
+  const notices: string[] = [];
+  let fail: (error: unknown) => void = () => undefined;
   let answer: (choice: string | undefined) => void = () => undefined;
   const stub = {
     window: {
       showWarningMessage: (text: string): Promise<string | undefined> => {
         seen.dialogs.push(text);
         seen.promptedWhenShown.push(seen.prompted.length);
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           answer = resolve;
+          fail = reject;
         });
+      },
+      showInformationMessage: (text: string): Promise<undefined> => {
+        notices.push(text);
+        return Promise.resolve(undefined);
       },
     },
     workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }) },
   };
-  const { ConsentGate } = loadWithVscode<Gate>('../brokerConsent', stub);
+  const mocks = options.timeoutMs === undefined ? undefined : { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: options.timeoutMs } };
+  const { ConsentGate } = loadWithVscode<Gate>('../brokerConsent', stub, mocks);
   const gate = new ConsentGate({
     grants: grants as never,
     actions: { actionsFor: () => [{ verb: 'run a command on' }] } as never,
-    onUserPresent: () => undefined,
-    log: () => undefined,
+    onUserPresent: () => countPresence(options.presence),
+    log: (entry) => {
+      mayThrow(options.throwing);
+      options.lines?.push(entry);
+    },
     prompted: (question) => void seen.prompted.push(question),
-    dialogClosed: (_question, keep) => void seen.closed.push(keep),
+    dialogClosed: (_question, keep) => {
+      mayThrow(options.throwing);
+      seen.closed.push(keep);
+    },
   });
-  return { gate, seen, answer: (choice) => answer(choice) };
+  return { gate, seen, answer: (choice) => answer(choice), fail: (error) => fail(error), notices };
 }
 
 /** A registry that knows one grant and what it says. */
@@ -173,7 +212,7 @@ test('K7 (change 6.1): a follow-up given as a function is asked when the dialog 
   assert.deepEqual(await closed('Allow', () => { throw new Error('the flag could not be read'); }), [false], 'a flag that throws keeps nothing and the place is still given back');
 });
 
-test('K7: an unanswered dialog (the five-minute timeout) frees the place although the call declares a follow-up', async () => {
+test('K7 (E1.5): an unanswered dialog (the call\'s timeout) frees NOTHING although the call declares a follow-up — the place is freed by whatever ends the dialog, with keep false', async () => {
   const stub = { window: { showWarningMessage: (): Promise<string | undefined> => new Promise(() => undefined) }, workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }) } };
   const closed: boolean[] = [];
   const { ConsentGate } = loadWithVscode<Gate>('../brokerConsent', stub, { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: 30 } });
@@ -183,8 +222,131 @@ test('K7: an unanswered dialog (the five-minute timeout) frees the place althoug
   const keepAlive = setInterval(() => undefined, 1_000);
   try {
     assert.equal(await gate.consent({ ...question('mcp'), followUp: true }, never), 'timeout');
-    assert.deepEqual(closed, [false]);
+    assert.deepEqual(closed, [], 'the timer told the throttle nothing: the dialog is still on screen');
   } finally {
     clearInterval(keepAlive);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.5 — a late answer is read by one road, and the arbitration between the timer and the answer is explicit
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const LATE_NOTICE = 'That request had already ended, so this answer changed nothing.';
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** One late case of C16: a click after the call timed out (`leaving` false), or after the only waiter left (`leaving` true). */
+async function lateClick(leaving: boolean): Promise<void> {
+  const lines: object[] = [];
+  const presence = { count: 0 };
+  const grants = registry('pending');
+  const allowed: string[] = [];
+  grants.allow = () => void allowed.push('allow');
+  const { gate, seen, answer, notices } = gateOver(grants, { timeoutMs: leaving ? 5_000 : 30, lines, presence });
+  const waiter = new AbortController();
+  const outcome = gate.consent({ ...question('mcp'), followUp: true }, waiter.signal);
+  await settle();
+  if (leaving) {
+    waiter.abort();
+  }
+  assert.equal(await outcome, leaving ? 'abandoned' : 'timeout');
+  assert.deepEqual(seen.closed, [], 'nothing was told to the throttle before the click');
+  answer('Allow');
+  await settle();
+  assert.deepEqual(seen.closed, [false], 'the click frees the place and never keeps it');
+  assert.deepEqual(lines.map((line) => (line as { outcome: string; detail: string }).detail), ['"Allow" answered after its call had ended; the answer changed nothing']);
+  assert.deepEqual(lines.map((line) => (line as { outcome: string }).outcome), ['ignored']);
+  assert.deepEqual(notices, [LATE_NOTICE]);
+  assert.equal(presence.count, 0, 'onUserPresent was not called');
+  assert.deepEqual(allowed, [], 'grants.allow was not called');
+}
+
+test('C16: the two late cases share one road — a click after the call timed out, and a click after every waiter left: one ignored line, one notice, nothing decided, and closed is [] until the click', async () => {
+  const keepAlive = setInterval(() => undefined, 1_000);
+  try {
+    await lateClick(false);
+    await lateClick(true);
+  } finally {
+    clearInterval(keepAlive);
+  }
+});
+
+test('C21: arbitration, both orders — the timer and the answer, the waiter and the answer', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    // (a) an answer before the timer: allowed, and the flag is read at the close
+    {
+      const a = gateOver(registry('pending'), { timeoutMs: 30 });
+      const outcome = a.gate.consent({ ...question('mcp'), followUp: true }, never);
+      await settle();
+      mock.timers.tick(29);
+      a.answer('Allow');
+      assert.equal(await outcome, 'allowed');
+      assert.deepEqual(a.seen.closed, [true], '(a) kept: the flag was read at the close');
+    }
+    // (b) the timer, then an answer in the next microtask: the late road
+    {
+      const lines: object[] = [];
+      const b = gateOver(registry('pending'), { timeoutMs: 30, lines });
+      const outcome = b.gate.consent({ ...question('mcp'), followUp: true }, never);
+      await settle();
+      mock.timers.tick(30);
+      assert.equal(await outcome, 'timeout');
+      b.answer('Allow');
+      await settle();
+      assert.deepEqual(b.seen.closed, [false], '(b) freed, never kept');
+      assert.deepEqual(lines.map((line) => (line as { outcome: string }).outcome), ['ignored'], '(b) one ignored line, and no ALLOWED');
+    }
+    // (c) the waiter leaves at 29 ms, then Allow at 29.5: no live waiter, so keep was never computed
+    {
+      const c = gateOver(registry('pending'), { timeoutMs: 30 });
+      const waiter = new AbortController();
+      const outcome = c.gate.consent({ ...question('mcp'), followUp: true }, waiter.signal);
+      await settle();
+      mock.timers.tick(29);
+      waiter.abort();
+      assert.equal(await outcome, 'abandoned');
+      c.answer('Allow');
+      await settle();
+      assert.deepEqual(c.seen.closed, [false], '(c) never [true]: no live waiter');
+    }
+    // (d) the answer resolves and the timer ticks in the same macrotask, the tick first: the late road, because the timer had settled the call
+    {
+      const lines: object[] = [];
+      const d = gateOver(registry('pending'), { timeoutMs: 30, lines });
+      const outcome = d.gate.consent({ ...question('mcp'), followUp: true }, never);
+      await settle();
+      mock.timers.tick(30);
+      d.answer('Allow');
+      assert.equal(await outcome, 'timeout');
+      await settle();
+      assert.deepEqual(d.seen.closed, [false], '(d) the late road');
+      assert.deepEqual(lines.map((line) => (line as { outcome: string }).outcome), ['ignored']);
+    }
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('F8b: a journal that throws on the late road is not an unhandled rejection — the call was answered `timeout`, and the late answer decided nothing', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => void escaped.push(reason);
+  process.on('unhandledRejection', spy);
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const g = gateOver(registry('pending'), { timeoutMs: 30, throwing: true });
+    const outcome = g.gate.consent({ ...question('mcp'), followUp: true }, never);
+    await settle();
+    mock.timers.tick(30);
+    assert.equal(await outcome, 'timeout');
+    g.answer('Allow');
+    mock.timers.reset();
+    for (let turn = 0; turn < 20; turn += 1) {
+      await settle();
+    }
+    assert.deepEqual(escaped, [], 'the throw from the late road was dropped, not left unhandled');
+  } finally {
+    mock.timers.reset();
+    process.off('unhandledRejection', spy);
   }
 });

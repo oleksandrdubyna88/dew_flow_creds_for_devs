@@ -29,7 +29,7 @@ import { abandonedWhenClosed } from './requestLife';
 import { consentRecordOf, recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, consentRefusal, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
@@ -41,7 +41,7 @@ import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, sweepStaleEndpoints, writeEndpoint } from './cliEndpoint';
-import { type Slot, TokenlessCeilings } from './aliasThrottle';
+import { type Slot, TokenlessCeilings, countedOnPlace } from './aliasThrottle';
 import { ExecSlots } from './execSlots';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
@@ -213,8 +213,8 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse, prompts: boolean, bridge?: BridgeContext): Slot | undefined {
-    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId);
+  private admitAliasCall(res: http.ServerResponse, prompts: boolean, bridge?: BridgeContext, followUp?: boolean): Slot | undefined {
+    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId, followUp, res);
     const refused = admission.refusal;
     if (refused === undefined) {
       return admission;
@@ -269,7 +269,8 @@ export class CredsAgentServer implements vscode.Disposable {
     return mcpDoor({
       refuse: (res, code, message, grant, action, detail, caller) =>
         this.respondError(res, code, message, grant as Grant | undefined, action, detail, via, caller),
-      admit: (res, prompts) => this.admitAliasCall(res, prompts, view.bridge),
+      admit: (res, prompts, followUp) => this.admitAliasCall(res, prompts, view.bridge, followUp),
+      asksAfter: (kind, action, target) => { const a = this.actions.resolve(kind, action); return a !== undefined && asksAfter(a, target); },
       // The grant a policy already answered for. `consent` short-circuits on an allowed grant, so
       // the modal is skipped by machinery that was already there rather than by a second path —
       // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
@@ -660,8 +661,8 @@ export class CredsAgentServer implements vscode.Disposable {
       this.abandoned(where.grant, where.action, DURING_CONSENT, who);
       return;
     }
-    const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    this.respondError(res, code, GRANT_NOT_ALLOWED, where.grant, where.action, where.summary, who.via, who.caller);
+    const refusal = consentRefusal(consent, GRANT_NOT_ALLOWED, countedOnPlace(where.grant.bridge?.context.bridgeId, who.via));
+    this.respondError(res, refusal.code, refusal.message, where.grant, where.action, where.summary, who.via, who.caller);
   }
 
   /** A person answered a dialog for an MCP use call: let the vault remember it. Which answers count, and what a slow or failed write costs, are `brokerConsentMemory.ts`'s. */
@@ -686,6 +687,7 @@ export class CredsAgentServer implements vscode.Disposable {
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
         atLaunch,
+        standing: (prompt) => this.ceilings.followUpStands(res, grant, via, prompt),
       },
       call,
     );

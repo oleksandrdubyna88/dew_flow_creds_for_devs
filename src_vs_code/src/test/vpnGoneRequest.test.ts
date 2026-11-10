@@ -31,7 +31,7 @@ type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown,
 /** The built-in launcher found on PATH — the question is what happens around it, not where it lives. */
 const CLI = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'wg-quick' }) } };
 
-const VPN_TERMINAL = /^CredsForDevs VPN: /;
+const VPN_TERMINAL = /^Creds VPN: /;
 
 function wireguard(extra: Partial<EntityMetadata> = {}): Record<string, EntityMetadata> {
   return { vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard', ...extra } };
@@ -164,6 +164,7 @@ test('OpenVPN Connect: a client gone while its import question is open imports n
   const nodes = wireguard({ vpnType: 'openvpn' });
   const run = startVpn(scope, w, nodes, { startGate: request.signal, mocks });
   await until(() => w.held.length === 1, 'the import question');
+  assert.equal(w.held[0].modal, true, 'a modal on an agent call (E1.5, D14)');
 
   request.abort();
   w.held[0].answer('Import profile');

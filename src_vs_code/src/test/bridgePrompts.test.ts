@@ -1,7 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { code, message, pause } from './bridgeDoorHarness';
+import { CONSENT_TIMED_OUT_ON_PLACE } from '../brokerProtocol';
+import { code, message } from './bridgeDoorHarness';
 import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, answeredAtOnce, registryOf, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { BUSY_PLACE } from '../aliasThrottle';
 
 /**
  * Prompts per bridge (S26): each bridge has its own sliding window of dialogs, one dialog is in flight for the whole
@@ -14,7 +16,7 @@ import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, answeredAtOnce, registryOf, s
 const CONTEXT_B = { ...CONTEXT_1, bridgeId: 'bridge-B', serverEntityId: 'server-B', serverName: 'other' };
 const BRIDGE_SENTENCE = 'Too many requests: this Remote Bridge may prompt at most 5 times a minute.';
 const LOCAL_SENTENCE = 'Too many requests: a caller without a token may prompt at most 5 times a minute.';
-const BUSY = 'Another request is already waiting for the person to answer. Try again once they have.';
+const BUSY = BUSY_PLACE;
 
 const alias = (command = 'id'): Ask => ({ path: '/v1/alias/exec', body: { alias: 'one', command } });
 const mcp = (command = 'id'): Ask => ({ path: '/v1/mcp/use/exec', body: { entry: 'e1', command } });
@@ -460,58 +462,27 @@ test('P2: an action that ends while ANOTHER call\'s dialog is open frees nothing
   }
 });
 
-test('P3 through the main port: an unanswered LOCAL dialog times out with the sentence main spells, and the next LOCAL call is asked', async () => {
+test('P3 through the main port (E1.5): an unanswered LOCAL dialog times out with the place sentence, and the next LOCAL call is busy — not asked — until the dialog is answered', async () => {
   const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 300 });
   try {
     const first = await send(viaMain(ww), alias());
-    assert.deepEqual([first.status, code(first), message(first)], [504, 'consent_timeout', 'The human did not allow this grant.']);
-    const second = send(viaMain(ww), alias());
-    await until(() => ww.w.openDialogs.length === 2, 'the next local call to be asked: the timeout freed the place');
+    assert.deepEqual([first.status, code(first), message(first)], [504, 'consent_timeout', CONSENT_TIMED_OUT_ON_PLACE]);
+    const second = await answeredAtOnce(send(viaMain(ww), alias()), 'the next local call was let in over the standing dialog');
+    assert.deepEqual([second.status, message(second)], [429, BUSY]);
+    assert.equal(ww.w.dialogs.length, 1, 'no second modal');
+    ww.w.openDialogs[0]('Allow');
+    await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the click to be read');
+    const third = send(viaMain(ww), alias());
+    await until(() => ww.w.openDialogs.length === 2, 'the next local call to be asked once the dialog was answered');
     ww.w.openDialogs[1]('Allow');
-    assert.equal((await second).status, 200);
+    assert.equal((await third).status, 200);
   } finally {
     settleAll(ww);
     ww.dispose();
   }
 });
 
-/** Wait for `done` on the event loop's immediates, which a mocked `setTimeout` leaves alone. */
-async function untilImmediate(done: () => boolean, what: string): Promise<void> {
-  for (let turn = 0; !done(); turn += 1) {
-    assert.ok(turn < 20_000, `timed out waiting for ${what}`);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  }
-}
-
-test('P3 through the main port, the REAL path: no answer at 299 s, 504 at 300.1 s with main\'s sentence, and the next local call raises a second modal and runs', async () => {
-  const ww = await wallWorld({ holdDialogs: true });
-  mock.timers.enable({ apis: ['setTimeout'] });
-  try {
-    let settled = false;
-    const first = send(viaMain(ww), alias()).then((reply) => {
-      settled = true;
-      return reply;
-    });
-    await untilImmediate(() => ww.w.openDialogs.length === 1, 'the first local dialog');
-    mock.timers.tick(299_000);
-    for (let turn = 0; turn < 300; turn += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve)); // long enough for an answer to cross the socket, if one were sent
-    }
-    assert.equal(settled, false, 'at 299 s nobody has been answered: the consent timeout is five minutes, not less');
-    mock.timers.tick(1_100);
-    const timedOut = await first;
-    assert.deepEqual([timedOut.status, code(timedOut), message(timedOut)], [504, 'consent_timeout', 'The human did not allow this grant.']);
-    const second = send(viaMain(ww), alias());
-    await untilImmediate(() => ww.w.openDialogs.length === 2, 'the re-ask: a second modal while the first was never answered');
-    assert.equal(ww.w.dialogs.length, 2);
-    ww.w.openDialogs[1]('Allow');
-    assert.equal((await second).status, 200);
-  } finally {
-    mock.timers.reset();
-    settleAll(ww);
-    ww.dispose();
-  }
-});
+// The real five-minute path (the former "P3 through the main port, the REAL path") is C2r of `consentContract.test.ts`, rewritten for E1.5.
 
 test('P2 through the main port: a local alias exec that is running holds nothing — a second local alias call is asked and runs while it does', async () => {
   const ww = await wallWorld();
@@ -554,20 +525,21 @@ test('L8 through the main port: a token dialog that closes frees nothing of an a
   }
 });
 
-test('P3: an unanswered dialog times out, frees the place, and a late click frees nothing of the next dialog\'s', async () => {
+test('P3 (E1.5): an unanswered dialog times out and keeps the place — the next call is busy; the click on it frees the place and decides nothing; the next call is then asked', async () => {
   const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 300 });
   try {
     const first = await send(viaBridge(ww.bridge), alias());
-    assert.deepEqual([first.status, code(first)], [504, 'consent_timeout'], 'nobody answered: the caller is told so');
+    assert.deepEqual([first.status, code(first), message(first)], [504, 'consent_timeout', CONSENT_TIMED_OUT_ON_PLACE], 'nobody answered: the caller is told so, in the place sentence');
+
+    const refused = await answeredAtOnce(send(viaBridge(ww.bridge), alias()), 'the next call was let in behind the standing dialog');
+    assert.deepEqual([refused.status, message(refused)], [429, BUSY]);
+    assert.equal(ww.w.dialogs.length, 1, 'and nobody raised a second one');
+    ww.w.openDialogs[0]('Allow'); // the click on the first dialog, long after the broker stopped waiting for it
+    await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the late click to be read');
+    assert.equal(ww.w.audit.some((line) => line.includes('ALLOWED')), false, 'and it decided nothing');
 
     const second = send(viaBridge(ww.bridge), alias());
-    await until(() => ww.w.openDialogs.length === 2, 'the next call to be asked: the timeout freed the place');
-    ww.w.openDialogs[0]('Allow'); // the click on the first dialog, long after the broker stopped waiting for it
-    await pause(30);
-    assert.equal(ww.w.audit.some((line) => line.includes('ALLOWED')), false, 'and it decided nothing');
-    const third = await answeredAtOnce(send(viaBridge(ww.bridge), alias()), 'the third call was let in behind the second dialog: the late click freed its place');
-    assert.deepEqual([third.status, message(third)], [429, BUSY]);
-    assert.equal(ww.w.dialogs.length, 2);
+    await until(() => ww.w.openDialogs.length === 2, 'the next call to be asked: the click freed the place');
     ww.w.openDialogs[1]('Allow');
     assert.equal((await second).status, 200);
     assert.deepEqual(ww.w.ran.length, 1, 'only the second call ran');
