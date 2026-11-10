@@ -25,6 +25,7 @@ import { offerToInstall } from './toolEnsure';
 import { EntityMetadata, VpnType } from './types';
 import { saveTextAs } from './saveTextAs';
 import { pinnedRefusal, sendPinned } from './pinnedTerminal';
+import { vpnTerminalTitle } from './terminalTitles';
 import { clickedSecret, outsidePinNote } from './pinClick';
 
 /**
@@ -252,7 +253,7 @@ function sendToVpnTerminal(ctx: VpnRunContext, line: string, note: string): bool
   if (requestGone(ctx.startGate)) {
     return false;
   }
-  const sent = sendPinned(`CredsForDevs VPN: ${ctx.details.name}`, line);
+  const sent = sendPinned(vpnTerminalTitle(ctx.details.name), line);
   if (sent && note !== '') {
     void vscode.window.showInformationMessage(note);
   }

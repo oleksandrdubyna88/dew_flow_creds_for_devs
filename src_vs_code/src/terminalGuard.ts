@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ShellFamily } from './hostShell';
 import { findEntryTerminal, openEntryTerminal } from './pinnedTerminal';
 import { activityOf, noteSent } from './terminalActivityTracker';
+import { EntryTerminalKey } from './terminalTitles';
 import { Activity, TYPE_ANYWAY, agentRefusal, busyQuestion, closedMeanwhile } from './terminalActivity';
 
 /**
@@ -30,17 +31,17 @@ const asking = new WeakSet<vscode.Terminal>();
  * (`{config}` is quoted for it). With a `startGate` there is no await at all.
  */
 export async function sendGuarded(
-  entryName: string,
+  key: EntryTerminalKey,
   terminalOs: string | undefined,
   lineFor: (family: ShellFamily) => string,
   startGate?: AbortSignal,
 ): Promise<GuardedSend> {
-  const found = findEntryTerminal(entryName, terminalOs); // synchronous from here ...
+  const found = findEntryTerminal(key, terminalOs); // synchronous from here ...
   if (!found.ok) {
     return { kind: 'refused', reason: found.reason };
   }
   if (found.terminal === undefined) {
-    return typeIntoNew(entryName, terminalOs, lineFor);
+    return typeIntoNew(key, terminalOs, lineFor);
   }
   const verdict = verdictOf(found.terminal);
   const line = lineFor(found.family);
@@ -51,8 +52,8 @@ export async function sendGuarded(
  * A NEW terminal for the entry, and the line typed into it: never a find, and nothing is disposed. The no-terminal path
  * of `sendGuarded`, and each line of a folder run.
  */
-export function typeIntoNew(entryName: string, terminalOs: string | undefined, lineFor: (family: ShellFamily) => string): NewTerminalSend {
-  const opened = openEntryTerminal(entryName, terminalOs);
+export function typeIntoNew(key: EntryTerminalKey, terminalOs: string | undefined, lineFor: (family: ShellFamily) => string): NewTerminalSend {
+  const opened = openEntryTerminal(key, terminalOs);
   return opened.ok ? typed(opened.terminal, lineFor(opened.family)) : { kind: 'refused', reason: opened.reason };
 }
 

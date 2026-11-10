@@ -15,6 +15,7 @@ import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
 import { pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
 import { sendGuarded } from '../terminalGuard';
+import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { registerFolderRun } from './folderRunCommand';
 import { trackTerminalActivity } from '../terminalActivityTracker';
 import { confirmTrusted } from '../trustPrompt';
@@ -52,6 +53,8 @@ interface Entry {
   readonly id: string;
   readonly name: string;
   readonly details: EntityMetadata;
+  /** The entry's terminal key, read from storage as it is NOW (the element's `parentId` may be old). */
+  readonly key: EntryTerminalKey;
 }
 
 async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | undefined> {
@@ -60,7 +63,9 @@ async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | 
   if (element?.kind !== 'node' || element.node.details === undefined) {
     return undefined;
   }
-  return { accountId: element.accountId, id: element.node.id, name: element.node.name, details: element.node.details };
+  const { accountId, node } = element;
+  const key = entryTerminalKeyOf(host.storage, accountId, node.id, element.node.details.name);
+  return { accountId, id: node.id, name: node.name, details: element.node.details, key };
 }
 
 function scriptOf(details: EntityMetadata): string {
@@ -131,10 +136,11 @@ function arrowLine(entry: Entry): string | undefined {
  * A dedicated terminal per entry, reused only when its last command is known to have finished — otherwise the person
  * is shown the terminal and asked (`terminalGuard.ts`; parent decision B). The line runs with Enter: the operator asked
  * for the button to do the whole job, and `Copy Command` remains for the times you want to edit before running. The title is
- * `details.name`, as the folder run's and the launcher's are, so a share that split the names cannot part their terminals.
+ * `entryTerminalTitle(key)`: the folder and `details.name`, as the folder run's and the launcher's are, so a share that split
+ * the names cannot part their terminals.
  */
 async function typeIntoEntryTerminal(entry: Entry, line: string): Promise<void> {
-  const sent = await sendGuarded(entry.details.name, entry.details.terminalOs, () => line);
+  const sent = await sendGuarded(entry.key, entry.details.terminalOs, () => line);
   if (sent.kind === 'refused') {
     warn(sent.reason);
   }
@@ -218,7 +224,7 @@ async function printsConfirmed(host: RunCommandsHost, ready: ReadyScript): Promi
  */
 function launchScript(host: RunCommandsHost, ready: ReadyScript): void {
   const resolved = resolveScriptEnv(ready.script, ready.entry.details.scriptVars, ready.language);
-  const opened = pinnedTerminal(`CredsForDevs: ${ready.entry.name}`, { env: resolved.env, fresh: true });
+  const opened = pinnedTerminal(entryTerminalTitle(ready.entry.key), { env: resolved.env, fresh: true });
   if (!opened.ok) {
     warn(opened.reason);
     return;
@@ -365,7 +371,7 @@ function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): 
     .map((ref) => `${refs.plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
     .join('; ');
   runInMaskedTerminal({
-    name: `CredsForDevs run: ${job.entry.name}`,
+    name: maskedRunTitle(job.entry.name),
     commandLine: maskedCommandLine(host, job, refs),
     env: refs.env,
     secrets: refs.secrets,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EntityMetadata } from '../types';
 import { ArrowWorld, arrowWorld } from './arrowWorld';
-import { WorldOptions, noteOurSend, terminalNamed, until } from './vpnWorld';
+import { WorldOptions, noteOurSend, rootTitle, terminalNamed, until } from './vpnWorld';
 
 /**
  * The green arrow never types into a terminal whose command may still be running (parent
@@ -11,7 +11,7 @@ import { WorldOptions, noteOurSend, terminalNamed, until } from './vpnWorld';
  */
 
 /** The terminal the arrow's entry names, and the line it would type. */
-const A = 'CredsForDevs: alert';
+const A = rootTitle('alert');
 const L = 'tmux attach -t alert';
 
 const entry: EntityMetadata = {
@@ -93,7 +93,7 @@ test('a_live_terminal_with_no_evidence_asks_and_cancel_types_nothing', async () 
   const aw = arrow({ preopened: [A] });
   const p = aw.run(entry);
   await asked(aw);
-  assert.match(aw.held[0].text, /cannot tell whether "CredsForDevs: alert"/);
+  assert.match(aw.held[0].text, new RegExp(`cannot tell whether "${A}"`));
   assert.ok(aw.held[0].text.includes(L));
   assert.deepEqual(aw.held[0].buttons, ['Type It Anyway']);
   assert.equal(terminalNamed(aw, A).shown, 1, 'the terminal is shown while it is asked about');

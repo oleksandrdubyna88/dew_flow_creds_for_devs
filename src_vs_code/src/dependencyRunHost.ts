@@ -6,6 +6,7 @@ import { pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
 import { endedAfter, requestGone, untilGone } from './requestLife';
+import { chainTerminalTitle } from './terminalTitles';
 
 /**
  * Running an entry's executable dependencies before it is used (issue #103) — the `vscode` half.
@@ -177,7 +178,7 @@ async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[]
   if (steps.length === 0) {
     return NO_CHAIN;
   }
-  const opened = chainTerminal(`CredsForDevs: before ${request.ownerName}`, pinned);
+  const opened = chainTerminal(chainTerminalTitle(request.ownerName), pinned);
   if (!opened.ok) {
     return refused(opened.reason);
   }

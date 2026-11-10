@@ -10,6 +10,7 @@ import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
 import { shellContext } from './pinnedTerminal';
 import { sendGuarded } from './terminalGuard';
+import { EntryTerminalKey, entryTerminalKeyOf } from './terminalTitles';
 import { confirmTrusted } from './trustPrompt';
 import { clickedSecret } from './pinClick';
 import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig } from './vpnLauncher';
@@ -109,6 +110,11 @@ export function afterTheChain(ctx: VpnRunContext, chain: ChainEnd, started: bool
   throw endedAfter('a dependency step had been typed');
 }
 
+/** The LAUNCHER's own key, read from its own node: it may sit in another folder than the VPN, and its own arrow must find this terminal. */
+function launcherKey(ctx: VpnRunContext, launcher: EntityMetadata): EntryTerminalKey {
+  return entryTerminalKeyOf(ctx.storage, ctx.accountId, launcher.id, launcher.name);
+}
+
 async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string): Promise<boolean> {
   const configPath = await configFor(ctx, line);
   if (configPath === undefined) {
@@ -117,7 +123,7 @@ async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string
   // `{config}` quoted for the shell that will READ the line (`readerFamily`) — quoting for another one would be #103
   // again. With a request behind the start, the guard refuses a busy terminal instead of asking, so no await stands
   // between `configFor`'s last read of the request and the send (E4.S3).
-  const sent = await sendGuarded(launcher.name, launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);
+  const sent = await sendGuarded(launcherKey(ctx, launcher), launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);
   if (sent.kind === 'refused') {
     void vscode.window.showWarningMessage(sent.reason);
   }

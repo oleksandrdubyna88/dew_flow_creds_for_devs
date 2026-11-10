@@ -5,12 +5,13 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { parseAuditLine } from '../agentAuditLog';
 import { BUSY_PLACE } from '../aliasThrottle';
 import { VpnUseDeps, vpnAction } from '../agentUseActions';
+import { chainTerminalTitle, vpnTerminalTitle } from '../terminalTitles';
 import { EntityMetadata } from '../types';
 import { Reply, message, pause } from './bridgeDoorHarness';
 import { Ask, Door, answeredAtOnce, send, sendAbortable, until } from './bridgeWallWorld';
 import { World as BrokerWorld, share, world as brokerWorld } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
-import { World as VpnWorld, WorldOptions, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, world as vpnWorld } from './vpnWorld';
+import { World as VpnWorld, WorldOptions, filesUnder, hostOs, memoryTrust, ownerChain, rootTitle, startVpn, storageOf, world as vpnWorld } from './vpnWorld';
 
 /**
  * D14 (parent §4.10, E1.5): an agent's `up` is not held by a request nobody is waiting on. The OpenVPN Connect import question and the dependency
@@ -29,8 +30,9 @@ const door = (port: number): Door => ({ port, headers: { Host: `127.0.0.1:${port
 const TARGET = { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'vpn' };
 const CLI = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'wg-quick' }) } };
 const CONNECT = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'openvpn-connect', exe: 'C:\\OpenVPN Connect\\OpenVPNConnect.exe' }) } };
-const VPN_TERMINAL = /^CredsForDevs VPN: /;
-const CHAIN_TERMINAL = 'CredsForDevs: before ops relay stage';
+// The titles come from the real functions (`terminalTitles.ts`), never retyped: a rename must not leave a test looking for a terminal that no longer exists.
+const VPN_TERMINAL = new RegExp(`^${vpnTerminalTitle('')}`);
+const CHAIN_TERMINAL = chainTerminalTitle('ops relay stage');
 
 const step = (id: string, line: string): EntityMetadata => ({ id, name: id, isSshEnabled: false, isTerminal: true, command: line, terminalOs: hostOs });
 const vpn = (extra: Partial<EntityMetadata> = {}): EntityMetadata => ({ id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard', ...extra });
@@ -144,7 +146,7 @@ test('C10b: the same through the launcher path — the launcher\'s chain has the
     assert.ok(lines(r, 'ABANDONED')[0].includes('after a dependency step had been typed'));
     await assertPlaceFree(r, 'after the hang-up');
     assert.deepEqual(filesUnder(r.dir), []);
-    assert.equal(r.vw.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined, 'the launcher was never typed');
+    assert.equal(r.vw.terminals.find((t) => t.name === rootTitle('start openvpn')), undefined, 'the launcher was never typed');
   } finally {
     settle(r);
   }
