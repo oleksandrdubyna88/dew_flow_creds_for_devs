@@ -40,6 +40,8 @@ Narrowed: no — the Definition of Done is identical to epoch 1's; the trust lin
   (The re-review round on branch feat/terminal-command-over-ssh-epoch2: verdict proceed, 1 of 2 reviewers answered —
   antigravity's answer was unparseable; the Update-it finding accepted (already E1 §S4 F2), the `exit` finding
   rejected with its reason.)
+- 2.1 · 2026-11-10 · reviewer · contract — the E3.S2 security judgement (Fable): the agent's refusal of a linked run names only the Terminal entry (not the SSH entry), its code is `denied`, and the captured output is also masked with the linked SSH entry's values
+  (One cause, one entry. Not counted: the internal widening of `summarize`/`validate` to take the call target, E3.L flag 2.)
 
 ## 1. Goal
 
@@ -252,7 +254,7 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   `NumberOfPasswordPrompts=1` from `buildSshExecArgv`'s askpass branch and its `ConnectTimeout=10`, so a wrong password
   ends the child with ssh's error instead of a hang. `MaskedRunOptions` gains `argv`, `env` and `stdinText`.
 - **Agent**: `findUsableEntry(…, sshEntityId, 'exec')` must answer `usable`, else
-  `"<entry>" runs over the SSH connection "<ssh>", which is not open to agents. Nothing ran.` Then `resolveExecAuth`
+  one sentence that names only the Terminal entry (entry 2.1: the agent learns nothing about the SSH entry; exact text in `PLAN_terminal_command_over_ssh_E3_S2_security.md`), code `denied`. Then `resolveExecAuth`
   (refuses a PIN-locked or woven password), jump and pin as the agent exec does, `buildSshExecArgv` with the remote
   command WITHOUT stay-open, key deleted in `finally`. Trust uses the same trust line, so one approval covers the
   arrow and the agent. Consent text names the SSH entry and its target.
