@@ -52,22 +52,23 @@ test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_tru
   assert.deepEqual(aw.terminals, []);
 });
 
-test('run_with_secrets_refuses_a_linked_entry_and_reads_no_secret', async () => {
+// E3.S1: Run with Secrets has a road for a linked command; `s1` is not in this world, so the entry says `sshLinkOf`'s missing-entry sentence.
+test('run_with_secrets_refuses_a_linked_entry_whose_ssh_entry_is_missing_and_reads_no_secret', async () => {
   const vault = vaultOf(['alert']);
   const aw = arrowWorld({}, [['e1', 'echo linked creds://me/alert/password']], vault.source);
   const args: CommandArg[] = [{ value: 'creds://me/alert/password' }];
   await aw.runWithSecrets({ ...LINKED, commandArgs: args });
   assert.deepEqual(aw.masked, []);
   assert.deepEqual(vault.calls, []);
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)]);
 });
 
-test('run_with_secrets_refuses_a_linked_entry_before_the_trust_question_and_reads_no_secret', async () => {
+test('run_with_secrets_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_trust_question_and_reads_no_secret', async () => {
   const vault = vaultOf(['alert']);
   const aw = arrowWorld({}, [], vault.source);
   const args: CommandArg[] = [{ value: 'creds://me/alert/password' }];
   await aw.runWithSecrets({ ...LINKED, commandArgs: args });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')], 'the sentence is the only thing shown');
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)], 'the sentence is the only thing shown');
   assert.deepEqual(aw.warnings.filter((t) => RUN_THIS.test(t)), [], 'no trust modal');
   assert.deepEqual(aw.masked, []);
   assert.deepEqual(vault.calls, []);

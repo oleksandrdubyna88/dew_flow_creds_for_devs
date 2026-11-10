@@ -17,7 +17,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 const RESOLVE_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bresolveCommand\b[^}]*\}\s*from/g;
 const SSH_LINK_READS = [/\.\s*sshEntityId\b/g, /\{[^{}]*\bsshEntityId\b[^{}]*\}\s*=[^=>]/g, /\[\s*['"`]sshEntityId['"`]\s*\]/g];
-const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
+const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g, /\brunInMaskedTerminal\s*\(/g];
 const REFUSAL_CALL = /\bsshLinkRefusal\s*\(/g;
 
 /** The road files of spec §S2.7 scan 3: where a line is typed into a terminal or handed to a child. */
@@ -97,14 +97,15 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
 // ---- scan 1: who imports resolveCommand -----------------------------------------------------------------------------
 
 /**
- * Sorted, compared whole, so a new importer and a vanished one both fail. The target state (parent §4.5 (1)) is
- * `commandLine.ts`' own users, `remoteLaunch.ts`, and the display-only readers; each of E2 and E3 removes road files.
+ * Sorted, compared whole, so a new importer and a vanished one both fail. After E3 the list is commands/runCommands.ts (its LOCAL roads only,
+ * E3-D13) and remoteLaunch.ts (parent §4.5 (1)). It proves who imports, not where a resolved line flows: that a linked entry reaches no
+ * local sink is linkedNeverLocal.test.ts (parent §4.5 (5)).
  */
 const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
-  assert.deepEqual(importers, RESOLVE_IMPORTERS, 'a road that resolves its own line skips the link: ask remoteLaunch.ts (and edit this list in the same commit)');
+  assert.deepEqual(importers, RESOLVE_IMPORTERS, 'a new file imports resolveCommand: a linked entry must take its launch from remoteLaunch.ts (planLaunch); add the file\'s no-local-sink tests to linkedNeverLocal.test.ts and edit this list in the same commit');
 });
 
 // ---- scan 2: who reads the SSH link ---------------------------------------------------------------------------------
@@ -136,8 +137,13 @@ const ALLOWED_SENDS: AllowList = {
   'commands/runCommands.ts': [
     { line: "const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);", because: 'Run in Terminal, an entry with no link: the local road, unchanged' },
     { line: "opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);", because: 'Run Script in a terminal: a script, never linked (E1.S1 scrub)' },
-    { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: E3 switches it to the remote script on stdin' },
-    { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
+    { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: the local road (an unlinked command or a script); a linked command goes through maskedOverSsh (E3.S1)' },
+    { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: the local road (E3.S1)' },
+    {
+      line: 'runInMaskedTerminal({',
+      because: 'Run with Secrets: the local child through its shell (runMasked), and the linked child by argv with the script on stdin (E3.S1)',
+      count: 2,
+    },
   ],
   'commands/folderRunCommand.ts': [
     { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));', because: 'Run Folder, the call (E2.S2): after every linked row is prepared and the run-level stop is read' },
@@ -180,6 +186,7 @@ const ALLOWED_SENDS: AllowList = {
       line: 'const child = childProcess.spawn(launch.program, launch.args, {',
       because: 'the masked child of Run with Secrets: through a shell (local) or by argv with shell false (over SSH, E3.S1)',
     },
+    { line: 'export function runInMaskedTerminal(options: MaskedRunOptions): vscode.Terminal {', because: 'the declaration' },
   ],
 };
 
@@ -228,4 +235,5 @@ test('the_scan_still_finds_what_it_is_about', () => {
   assert.equal(sitesIn('literal.ts', sendLiteral, SENDS).length, 1);
   assert.equal(sitesIn('literal.ts', 'x = sshLinkRefusal\n(\n  d)', [REFUSAL_CALL]).length, 1);
   assert.equal(sitesIn('literal.ts', 'x\n  .executeCommand(\n y)', SENDS).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x = runInMaskedTerminal\n(\n {})', SENDS).length, 1);
 });

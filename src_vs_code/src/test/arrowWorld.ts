@@ -10,6 +10,19 @@ import { loadWithVscode } from './vscodeStub';
  * <p>The one module stood in for is `../extension` (`runCommands` imports `maskingBanner` from it, which would
  * otherwise load the whole extension). Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
+/** What `runInMaskedTerminal` was asked to run (the mock records the whole options): the shell variant has `commandLine`, the argv variant has `argv` and `cwd`. */
+export interface MaskedRecord {
+  name: string;
+  commandLine?: string;
+  argv?: readonly string[];
+  cwd?: string;
+  env: Record<string, string>;
+  stdinText?: string;
+  secrets: readonly { value: string; label: string }[];
+  banner: string;
+  onEnded?: () => void;
+}
+
 export interface ArrowWorld extends World {
   /** Invoke the green arrow's handler on `entry`, exactly as a click does. `nodeName` is the tree node's own name. */
   run(entry: EntityMetadata, nodeName?: string): Promise<void>;
@@ -19,8 +32,8 @@ export interface ArrowWorld extends World {
   runWithSecrets(entry: EntityMetadata, nodeName?: string): Promise<void>;
   /** The trust store the handlers read and write, so a test can ask `isCommandTrusted`. */
   trust: ReturnType<typeof memoryTrust>;
-  /** What `runInMaskedTerminal` was asked to run: the line and the environment of each child. */
-  masked: { name: string; commandLine: string; env: Record<string, string> }[];
+  /** What `runInMaskedTerminal` was asked to run, in order. */
+  masked: MaskedRecord[];
   /** What `registerRunCommands` pushed into `context.subscriptions`. */
   subscriptions: unknown[];
   /** Invoke the green arrow's handler on version `index` of `entry`, as a click on a history row does. */
@@ -101,6 +114,12 @@ export interface ArrowOptions extends WorldOptions {
   sshRoad?: unknown;
   /** Other nodes storage holds from the start (an SSH entry, a dependency): seeded once, by id. */
   others?: TreeNode[];
+  /** `vscode.env.remoteName`: absent is a local window. */
+  remoteName?: string;
+  /** The mock of `runInMaskedTerminal` pushes `'spawn'` here when the test passes one, so a test can read the order of a road's steps. */
+  events?: string[];
+  /** Called by the mock AFTER it records a run: a test throws from it (a failed terminal creation) or calls `options.onEnded?.()` in it (a run that ended while being created). */
+  onMasked?: (options: MaskedRecord) => void;
 }
 
 /** The tree element a click hands over: the node as the menu drew it, its `parentId` possibly old. */
@@ -115,6 +134,7 @@ function elementOf(opts: ArrowOptions, entry: EntityMetadata, nodeName: string):
  */
 export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly [string, string])[] = [], refSource: unknown = {}): ArrowWorld {
   const w = world({}, opts);
+  (w.vscode.env as { remoteName?: string }).remoteName = opts.remoteName;
   const masked: ArrowWorld['masked'] = [];
   const store = memoryTrust();
   seedTrusted(store, trusted);
@@ -131,7 +151,15 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
       },
       getHistory: () => Promise.resolve(history),
     },
-    mocks: { '../maskedTerminal': { runInMaskedTerminal: (o: { name: string; commandLine: string; env: Record<string, string> }) => void masked.push(o) } },
+    mocks: {
+      '../maskedTerminal': {
+        runInMaskedTerminal: (o: MaskedRecord): void => {
+          masked.push(o);
+          opts.events?.push('spawn');
+          opts.onMasked?.(o);
+        },
+      },
+    },
     refSource,
     subscriptions,
     storageDir: opts.storageDir,
@@ -168,4 +196,9 @@ export function vaultOf(names: readonly string[], reading: () => FieldReading = 
     },
   };
   return { source, calls };
+}
+
+/** The module `registerRunWorld` loads, for a test that compares with one of its exports (`NO_REFERENCE`). */
+export function runCommandsModule(): { NO_REFERENCE(name: string): string } {
+  return loadWithVscode<{ NO_REFERENCE(name: string): string }>('../commands/runCommands', world({}).vscode, { '../extension': { maskingBanner: () => '' } });
 }
