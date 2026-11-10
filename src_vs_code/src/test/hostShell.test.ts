@@ -45,6 +45,19 @@ test('PowerShell quoting: single quotes are literal, an apostrophe is doubled', 
   assert.equal(quoteFor('powershell', "a'b $x"), "'a''b $x'");
 });
 
+// PowerShell (5.1 and 7) reads all four of these as a single quote (about_Quoting_Rules): a value holding one closes the
+// literal early, and what follows runs LOCALLY. One case per character, each with the text a hostile entry would send.
+for (const [name, quote] of [['U+2018', '\u2018'], ['U+2019', '\u2019'], ['U+201A', '\u201A'], ['U+201B', '\u201B']] as const) {
+  test(`PowerShell quoting: ${name} is a single quote to PowerShell, so it is doubled with the same character`, () => {
+    assert.equal(quoteFor('powershell', `x${quote}; calc; ${quote}`), `'x${quote}${quote}; calc; ${quote}${quote}'`);
+    assert.equal(quoteFor('powershell', quote), `'${quote}${quote}'`);
+  });
+}
+
+test('PowerShell quoting: the double-quote look-alikes need no doubling inside a single-quoted word', () => {
+  assert.equal(quoteFor('powershell', 'a\u201Cb\u201D\u201E "c" $d `e`'), `'a\u201Cb\u201D\u201E "c" $d \`e\`'`);
+});
+
 test('POSIX quoting: single quotes are literal, an apostrophe closes, escapes and reopens', () => {
   assert.equal(quoteFor('posix', "a'b $x"), `'a'"'"'b $x'`);
 });

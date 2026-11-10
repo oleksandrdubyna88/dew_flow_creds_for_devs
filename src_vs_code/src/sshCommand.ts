@@ -26,6 +26,7 @@
 
 import { EntityMetadata } from './types';
 import { canConnectSsh } from './entityKind';
+import { quoteFor } from './hostShell';
 import { sshOptionArgv } from './sshOptions';
 import { PathProbe, openSshProgram } from './sshProgram';
 
@@ -89,16 +90,36 @@ export function isSafeSshTarget(entity: EntityMetadata): boolean {
 }
 
 /**
+ * Inside a double-quoted PowerShell word: the characters that END it (`"` and U+201C, U+201D, U+201E, which PowerShell
+ * reads as double quotes — about_Quoting_Rules) and the ones that EXPAND (`$`, and the backtick).
+ */
+const POWERSHELL_DOUBLE_QUOTED_UNSAFE = /["\u201C\u201D\u201E$`]/;
+
+/**
+ * A bare PowerShell word that needs no quoting: letters, digits and the punctuation a host, a login, a port, a jump value
+ * or an option name is made of. Anything else — `$` first of all — is quoted, because the line is typed into PowerShell.
+ */
+const POWERSHELL_BARE_SAFE = /^[A-Za-z0-9._:@\\/[\]=+,-]+$/;
+
+/**
  * Quote a value for the integrated terminal's shell. On Windows shells
- * (PowerShell/cmd) backslashes are path separators, not escapes â€” only
- * embedded double quotes need care there. On POSIX shells escape the
- * characters that are special inside double quotes.
+ * (PowerShell/cmd) backslashes are path separators, not escapes.
+ *
+ * <p>On win32 the ordinary value is a `"…"` word, which PowerShell and cmd both read. A value that PowerShell would
+ * EXPAND or that could END the word (`$`, the backtick, any double-quote character, see above) is a PowerShell
+ * single-quoted word instead, built by the one PowerShell quoter (`hostShell.quoteFor`): a sync, share or import can
+ * write such a value into an entry. On POSIX shells escape the characters that are special inside double quotes.</p>
  */
 function shellQuote(value: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === 'win32') {
-    return `"${value.replace(/"/g, '""')}"`;
+    return POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(value) ? quoteFor('powershell', value) : `"${value}"`;
   }
   return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
+}
+
+/** One argument the options composer made, as the line must carry it: on win32 quoted unless it is a plain word. */
+function lineWord(word: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' && !POWERSHELL_BARE_SAFE.test(word) ? quoteFor('powershell', word) : word;
 }
 
 /** `user@host:port` (port omitted when default) â€” the connection identity. */
@@ -147,10 +168,10 @@ export function buildSshCommand(
   }
   // The connection-manager options (jump host, forwards, agent forwarding) are composed by
   // `sshOptions.ts` — the SAME function the agent's argv builder calls, so the two surfaces
-  // cannot reach a host by different routes. Every element is already refused-or-safe there,
-  // which is why they are appended rather than quoted: quoting would be answering the wrong
-  // parser, as this file's header explains.
-  parts.push(...sshOptionArgv(entity, options.jump));
+  // cannot reach a host by different routes. Every element is already refused-or-safe there for a
+  // POSIX shell and the ssh client, so they are appended as they are; on win32 `lineWord` quotes the
+  // one that PowerShell would still read (a `$` in a login), because PowerShell is the parser there.
+  parts.push(...sshOptionArgv(entity, options.jump).map((word) => lineWord(word, platform)));
   parts.push(...hostKeyArgv(options.knownHostsFile, platform));
   parts.push(quotedDestination(entity.user ? `${entity.user}@${host}` : host, platform));
   return parts.join(' ');
@@ -195,8 +216,18 @@ export function sshLineFor(entity: EntityMetadata): string | undefined {
  * text survives the round trip unchanged, which is the same question the quoting would answer.</p>
  */
 function quotedDestination(destination: string, platform: NodeJS.Platform): string {
-  const survives = platform === 'win32' ? !/["]/.test(destination) : !/[\\"$`]/.test(destination);
-  return survives ? destination : shellQuote(destination, platform);
+  if (platform === 'win32') {
+    // PowerShell expands `$` in a bare word: a login may hold one (`isSafeSshUser`), a machine account ends in it.
+    return lineWord(destination, platform);
+  }
+  return /[\\"$`]/.test(destination) ? shellQuote(destination, platform) : destination;
+}
+
+/** The `UserKnownHostsFile=<path>` word: on win32 a path PowerShell would expand is ONE single-quoted word, `=` included. */
+function knownHostsOption(file: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' && POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(file)
+    ? quoteFor('powershell', `UserKnownHostsFile=${file}`)
+    : `UserKnownHostsFile=${shellQuote(file, platform)}`;
 }
 
 function hostKeyArgv(knownHostsFile: string | undefined, platform: NodeJS.Platform): string[] {
@@ -209,12 +240,7 @@ function hostKeyArgv(knownHostsFile: string | undefined, platform: NodeJS.Platfo
     // host-key question would otherwise be answered by the askpass program — with the password.
     return [];
   }
-  return [
-    '-o',
-    'StrictHostKeyChecking=yes',
-    '-o',
-    `UserKnownHostsFile=${shellQuote(knownHostsFile, platform)}`,
-  ];
+  return ['-o', 'StrictHostKeyChecking=yes', '-o', knownHostsOption(knownHostsFile, platform)];
 }
 
 /**

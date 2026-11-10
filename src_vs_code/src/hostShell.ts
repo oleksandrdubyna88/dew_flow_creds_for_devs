@@ -106,6 +106,17 @@ export function hostShell(platform: NodeJS.Platform, exists: (path: string) => b
 }
 
 /**
+ * Every character PowerShell (5.1 and 7) reads as a single quote: the ASCII one and U+2018, U+2019, U+201A, U+201B
+ * (Microsoft about_Quoting_Rules). Inside a single-quoted word each one is doubled, with ITSELF, to be literal.
+ */
+const POWERSHELL_SINGLE_QUOTES = /['\u2018\u2019\u201A\u201B]/g;
+
+/** Whether PowerShell would read a character of `value` as a single quote — a word that holds one cannot go inside `'…'` unchanged. */
+export function hasPowerShellSingleQuote(value: string): boolean {
+  return new RegExp(POWERSHELL_SINGLE_QUOTES.source).test(value);
+}
+
+/**
  * One word, quoted so the given shell passes it through unchanged — spaces, `$`, backticks,
  * apostrophes and double quotes included.
  *
@@ -116,7 +127,7 @@ export function hostShell(platform: NodeJS.Platform, exists: (path: string) => b
  */
 export function quoteFor(family: ShellFamily, value: string): string {
   if (family === 'powershell') {
-    return "'" + value.replace(/'/g, "''") + "'";
+    return "'" + value.replace(POWERSHELL_SINGLE_QUOTES, '$&$&') + "'";
   }
   if (family === 'posix') {
     return "'" + value.replace(/'/g, `'"'"'`) + "'";
