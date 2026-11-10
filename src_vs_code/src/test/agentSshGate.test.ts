@@ -1,6 +1,12 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal } from '../bridgeAllowList';
+import { MaskSourceUnavailable, maskEntriesWithLink } from '../maskEntries';
+import type { LinkedSecretSource } from '../maskEntries';
+import { stored } from '../storedSecret';
+import type { StoredSecret } from '../storedSecret';
+import type { EntityMetadata, TreeNode } from '../types';
+import { sshNode } from './sshRoadWorld';
 import { call, share, world } from './brokerWorld';
 
 /**
@@ -83,4 +89,52 @@ test('the_bridge_allow_list_says_run_is_decided_and_the_other_refused_rows_do_no
       assert.ok(!/\brun\b/.test(route.decision.why), `${route.path} must not talk about run: ${route.decision.why}`);
     }
   }
+});
+
+// ---- G14: the mask table of a call on a linked entry ----------------------------------------------------------------------------
+
+const SSH_PASSWORD = 'correct-horse-battery-staple';
+const OWN_PASSWORD = 'own-password-of-the-terminal';
+
+function terminalNode(link: string | undefined): TreeNode {
+  const details = { id: 'e1', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'echo linked', sshEntityId: link } as EntityMetadata;
+  return { id: 'e1', name: 'deploy', type: 'entity', details, parentId: null };
+}
+
+/** A `LinkedSecretSource` over the nodes given; `reads` records the entity ids whose password was read. */
+function linkedSource(nodes: readonly TreeNode[], passwords: Readonly<Record<string, string>>): LinkedSecretSource & { reads: string[] } {
+  const reads: string[] = [];
+  const nothing = (): Promise<StoredSecret | undefined> => Promise.resolve(stored(undefined));
+  return {
+    reads,
+    getNode: (_account, id) => nodes.find((node) => node.id === id),
+    getPassword: (_account, id) => {
+      reads.push(id);
+      return Promise.resolve(stored(passwords[id]));
+    },
+    getPrivateKey: nothing,
+    getVpnConfig: nothing,
+    getDbConnection: nothing,
+    getNotes: nothing,
+    getSecondRaw: nothing,
+  };
+}
+
+test('the_mask_table_of_a_linked_entry_holds_the_ssh_entrys_password', async () => {
+  const linked = linkedSource([terminalNode('s1'), sshNode('s1')], { s1: SSH_PASSWORD });
+  const table = await maskEntriesWithLink(linked, 'acct-1', 'e1');
+  assert.deepEqual(table.filter((entry) => entry.value === SSH_PASSWORD), [{ value: SSH_PASSWORD, label: 'PASSWORD' }], 'the SSH entry password is in the table');
+
+  const unlinked = linkedSource([terminalNode(undefined), sshNode('s1')], { e1: OWN_PASSWORD, s1: SSH_PASSWORD });
+  assert.deepEqual(await maskEntriesWithLink(unlinked, 'acct-1', 'e1'), [{ value: OWN_PASSWORD, label: 'PASSWORD' }], 'an unlinked entry gives its own table only');
+  assert.deepEqual(unlinked.reads, ['e1'], 'and the SSH entry was never read');
+
+  const missing = linkedSource([terminalNode('s1')], { e1: OWN_PASSWORD });
+  assert.deepEqual(await maskEntriesWithLink(missing, 'acct-1', 'e1'), [{ value: OWN_PASSWORD, label: 'PASSWORD' }], 'a missing SSH entry adds nothing and throws nothing');
+
+  const notSsh = linkedSource([terminalNode('s1'), sshNode('s1', { isSshEnabled: false, dbType: 'postgres' })], { e1: OWN_PASSWORD, s1: SSH_PASSWORD });
+  assert.deepEqual(await maskEntriesWithLink(notSsh, 'acct-1', 'e1'), [{ value: OWN_PASSWORD, label: 'PASSWORD' }], 'an entry sshLinkOf refuses adds nothing');
+
+  const gone = linkedSource([sshNode('s1')], { s1: SSH_PASSWORD });
+  await assert.rejects(maskEntriesWithLink(gone, 'acct-1', 'e1'), MaskSourceUnavailable, 'a missing Terminal entry still throws, as before');
 });

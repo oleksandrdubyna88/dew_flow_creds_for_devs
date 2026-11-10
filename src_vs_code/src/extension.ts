@@ -66,7 +66,7 @@ import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManage
 import { AliasMap, aliasEntry, aliasFor, listAliases } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { oneUseIn } from './entityExpiry';
-import { maskEntriesFor } from './maskEntries';
+import { maskEntriesFor, maskEntriesWithLink } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
@@ -513,7 +513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     storageDir,
     // What makes masking live: the broker asks for the grant entity's own secret values and
     // redacts them out of whatever the agent is about to read.
-    maskEntriesFor: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    maskEntriesFor: (accountId, entityId) => maskEntriesWithLink(storage, accountId, entityId),
     releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId), // before the table: brokerHooks.ts
     // What makes "until an agent uses it once" real: a successful call destroys the entry through
     // the one deletion path, tombstone and revision history included.
