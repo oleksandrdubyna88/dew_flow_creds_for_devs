@@ -33,7 +33,7 @@ test('every_language_explains_the_arrow_over_ssh_with_english_labels', () => {
 });
 
 const EN_BULLET =
-  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs. A share and an export leave the choice out.";
+  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs. If that SSH entry is set to last until an agent uses it once, the agent's run is that use, and the SSH entry is deleted after it. A share and an export leave the choice out.";
 
 const EN_ADVICE =
   "To run a line on a server, choose its **ssh** entry under *Runs over SSH* instead of writing `ssh` into the line. The arrow then connects with that entry — its key or password, its pinned host key, its jump host — and the line runs in your login shell there, which stays open after the line ends; a line that fails says its exit code first. Write the line for the server, such as `tmux new -A -s {name}` with *Runs on* set to Linux or macOS; a Windows server is refused. The login shell must be sh, bash, zsh, ksh or dash; fish and csh are not supported. The approval names the host, so a changed host, user, port, jump host, agent forwarding or port forward asks again. If the SSH entry signs in with a password, every run opens a new terminal beside any open one. Windows PowerShell 5.1 cannot pass a double quote or a final backslash to ssh, so such a line is refused there; install PowerShell 7 (`pwsh`). After a run, the arrow asks before it types into that terminal again, because the login shell is still open. A VPN's *Started by* runs over SSH the same way, but a launcher line with `{config}` is refused, because the config is a file on this machine, and an agent's VPN start with such a launcher is refused. *Copy Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent, `~/.ssh/config`), and the vault's key and password are not in it.";
@@ -171,4 +171,19 @@ test('every_language_says_the_agents_run_needs_the_ssh_entry_usable_by_agents', 
     assert.ok(whole(language).includes('*Usable by agents*'), `${language}: the label stays English`);
   }
   assert.ok(!whole('en').includes('an agent\'s run still refuses'), 'the E1 sentence is gone');
+});
+
+// Hp10 (E3.4 F-S2): a linked run spends a one-use SSH entry, said right after the sentence that says the agent's run needs the SSH entry *Usable by agents*.
+const ONE_USE_SENTENCE: Record<HelpLanguage, string> = {
+  en: "If that SSH entry is set to last until an agent uses it once, the agent's run is that use, and the SSH entry is deleted after it.",
+  de: 'Ist dieser SSH-Eintrag auf „bis ein Agent ihn einmal benutzt hat“ eingestellt, ist der Lauf des Agenten diese Benutzung, und der SSH-Eintrag wird danach gelöscht.',
+  es: 'Si esa entrada SSH está configurada para durar hasta que un agente la use una vez, la ejecución del agente es ese uso, y la entrada SSH se borra después.',
+  ru: 'Если эта запись SSH настроена жить, пока агент не использует её один раз, запуск агентом и есть это использование, и запись SSH после него удаляется.',
+  uk: 'Якщо цей запис SSH налаштовано жити, доки агент не використає його один раз, запуск агентом і є цим використанням, і запис SSH після нього видаляється.',
+};
+
+test('every_language_says_a_linked_run_spends_a_one_use_ssh_entry', () => {
+  for (const language of HELP_LANGUAGES) {
+    assert.ok(whole(language).includes(`${AGENT_RUN_SENTENCE[language]} ${ONE_USE_SENTENCE[language]}`), `${language}: the terminal bullet does not say, after the Usable by agents sentence, that a linked run spends a one-use SSH entry`);
+  }
 });
