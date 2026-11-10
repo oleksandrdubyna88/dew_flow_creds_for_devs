@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 3 open since 2026-11-10, by reviewers, after the whole re-review of entry 2.2's stop (`### Re-review for epoch 3`; nothing narrowed, nothing cut); one change in epoch 3 (entry 3.1). E1 merged (#335), E2 merged (#337), the 1.20.0 CHANGELOG entry merged (#338); the 1.20.0 release is in progress (PR #341). E3's plan round 2 passed (coai session 8da9aab9, proceed) and its amendments are written into the E3 stories and the security spec. Next: build E3; no E3 code yet.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 3 stopped for re-review 2026-11-10 (entry 3.2). E1 (#335) and E2 (#337) merged and released in 1.20.0; E3 S1 and S2 built on feat/terminal-command-over-ssh-e3 (pushed, unmerged), S3 not built; no new E3 code until epoch 4 opens.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -77,7 +77,7 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
   consultants (2026-11-10) and the precedent in PLAN_remote_bridge_scoped.md (PR #307 fits, no merge until epoch 7
   opens). The owner ordered the release when E1 and E2 were ready and E3 had no code.)
 
-> Epoch 3 · approved 2026-11-10 · by reviewers · state: open
+> Epoch 3 · approved 2026-11-10 · by reviewers · state: stopped
 
   (The re-review round on branch feat/terminal-command-over-ssh-epoch3, coai session db4ae051: verdict proceed, 2 of 2
   reviewers answered, five findings, each rejected with its reason: a multi-line secret was measured fine under
@@ -87,6 +87,8 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
   chain with no lookup and the agent's local run join the no-local-sink proof of §4.5 (5); the rest are text fixes.)
 - 3.1 · 2026-11-10 · reviewer · approach — the lead's Opus review of E3 (B1, CWE-426): on Windows the masked run's ssh is spawned by an absolute path (`spawnableSshProgram`, PATH's first absolute `ssh.exe`, else the built-in OpenSSH, else the refusal `NO_SSH_TO_SPAWN`) with the cwd `storageDir`, not as the agent's `ssh:exec` chooses it
   (In doubt it counts: §4.4 said the program is chosen as `ssh:exec` chooses it. The same client, hardened. `ssh:exec` itself is unchanged: it spawns in the extension host's own folder, not the workspace; its own hardening is a todo.)
+- 3.2 · 2026-11-10 · reviewer · contract — the lead's Opus security review of the E3 code: the gate checks only the SSH entry's use rung, while the one-use burn and its lane follow the Terminal entry, so a one-use SSH entry opened to agents can be used again and again through a linked Terminal entry; the gate must also honour the SSH entry's one-use policy (refuse it, or burn it too)
+  (A consultant (coai consultation 5b2cc40c) read the fix as a new gate condition, not a fix of the plan as written: D2 says "only if", it says nothing of consumption. In doubt it is a change. This second change stopped the plan.)
 
 ## 1. Goal
 
