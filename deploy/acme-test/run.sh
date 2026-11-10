@@ -149,16 +149,34 @@ echo "-- 2. issuance -------------------------------------------------"
 # `[ -f ]` said "no certificate" while certbot had one). A one-shot container reads the volume as root.
 have_cert() { docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine test -f /s/live/vaulthost/fullchain.pem; }
 tries=150
+# `test -f` inside the container says 1 when the file is not there yet. Any other code is docker's own (125 daemon, 126, 127, a failed
+# pull): that is not "no certificate yet", and it is told apart below. The last try's code and words are kept.
+cert_rc=0
+cert_err=""
+docker_failures=0
+try_cert() {
+  cert_rc=0
+  cert_err=$(have_cert 2>&1 >/dev/null) || cert_rc=$?
+}
 for n in $(seq 1 "$tries"); do
-  have_cert 2>/dev/null && break
+  try_cert
+  [ "$cert_rc" = 0 ] && break
+  if [ "$cert_rc" = 1 ]; then docker_failures=0; else docker_failures=$((docker_failures + 1)); fi
+  # Docker failing five times in a row will not turn into a certificate: stop and say why.
+  [ "$docker_failures" -ge 5 ] && break
   # The wait can last five minutes: say so every 15 tries, so a hosted log or a person does not look at a silent job.
   if [ $((n % 15)) = 0 ]; then echo "  still waiting for the certificate: try $n of $tries"; fi
   sleep 2
 done
-if have_cert 2>/dev/null; then
+# One more look after the last sleep, unless docker itself was what failed.
+if [ "$cert_rc" != 0 ] && [ "$docker_failures" -lt 5 ]; then try_cert; fi
+if [ "$cert_rc" = 0 ]; then
   pass "certbot obtained a certificate through a real HTTP-01 challenge"
+elif [ "$cert_rc" != 1 ]; then
+  fail "the certificate check failed in docker, not for want of a file (exit code $cert_rc, after $n tries): $(printf '%s\n' "$cert_err" | head -n 3 | tr '\n' ' ')"
+  "${COMPOSE[@]}" logs certbot | tail -25
 else
-  fail "no certificate was issued after $tries tries"
+  fail "no certificate was issued after $tries tries (the last try found no file)"
   "${COMPOSE[@]}" logs certbot | tail -25
 fi
 
