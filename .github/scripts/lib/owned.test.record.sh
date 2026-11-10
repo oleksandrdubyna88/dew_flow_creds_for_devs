@@ -237,7 +237,9 @@ owned_dir d x || exit 1
 hold "$T_CTL/tf5.stop"
 EOF
   local wsl cpid d line expected pid_for_ref idx=0
-  for wsl in "   " "My Distro"; do
+  local long="" k=0
+  while [ "$k" -lt 25 ]; do k=$((k + 1)); long="$long seg$k@:  "; done
+  for wsl in "   " "My Distro" "My  Dis@:tro--x  " "$long"; do
     idx=$((idx + 1))
     rm -f "$CTL/tf5.ready" "$CTL/tf5.stop"
     start_child tf5 WSL_DISTRO_NAME="$wsl"
@@ -373,6 +375,7 @@ a_minimal_proc_gives_a_record_without_start_and_ns() {
   child tg4 << 'EOF'
 . "$T_OWNED_SH"
 FP="$T_CTL/fakeproc-$FP_NAME"
+if [ -n "$FP_CWD" ]; then cd "$FP_CWD" || exit 90; fi
 mkdir -p "$FP/$$" "$FP/self/ns"
 printf '%s\n' "$$ ($FP_COMM) $FP_REST" > "$FP/$$/stat"
 if [ -n "$FP_BTIME" ]; then printf 'cpu 1 2\nbtime %s\nprocesses 5\n' "$FP_BTIME" > "$FP/stat"; else printf 'cpu 1 2\n' > "$FP/stat"; fi
@@ -381,21 +384,25 @@ OWNED_PROC="$FP"
 owned_dir d x || exit 1
 cp "$d.owner" "$T_CTL/tg4-$FP_NAME.claim"
 EOF
-  local good='S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 250' tick line re_end n
+  local good='S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 250' star='S 0 0 0 * 0 0 0 0 0 0 0 0 0 0 0 0 0 0 250' tick line n
   tick="$(getconf CLK_TCK)"
-  # name | btime | rest of the stat line after the command | no-ns
-  local cases="nobtime||$good|
-badbtime|x1|$good|
-badfield|1000|S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 abc|
-shortstat|1000|S 0 0|
-nons|1000|$good|1
-good|1000|$good|"
-  local c_name c_btime c_rest c_nons
-  while IFS='|' read -r c_name c_btime c_rest c_nons; do
-    run_child tg4 FP_NAME="$c_name" FP_BTIME="$c_btime" FP_REST="$c_rest" FP_NO_NS="$c_nons" FP_COMM="a b) c"
+  # a folder of files whose names could be stat fields or, with a *, shift them (pathname expansion must never touch the fields)
+  mkdir "$CTL/globdir"; : > "$CTL/globdir/a"; : > "$CTL/globdir/b"; : > "$CTL/globdir/c"; : > "$CTL/globdir/S"; : > "$CTL/globdir/R"; : > "$CTL/globdir/0"
+  # name | btime | rest of the stat line after the command | no-ns | start in a folder of files | expect
+  local cases="nobtime||$good|||none
+badbtime|x1|$good|||none
+badfield|1000|S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 abc|||none
+shortstat|1000|S 0 0|||none
+nons|1000|$good|1||none
+good|1000|$good|||start
+globfiles|1000|$good||$CTL/globdir|start
+globstar|1000|$star||$CTL/globdir|start"
+  local c_name c_btime c_rest c_nons c_cwd c_expect
+  while IFS='|' read -r c_name c_btime c_rest c_nons c_cwd c_expect; do
+    run_child tg4 FP_NAME="$c_name" FP_BTIME="$c_btime" FP_REST="$c_rest" FP_NO_NS="$c_nons" FP_CWD="$c_cwd" FP_COMM="a b) c"
     eq "G4 $c_name: the child exits 0" "$CH_RC" 0
     line="$(first_line "$CTL/tg4-$c_name.claim")"
-    if [ "$c_name" = good ]; then
+    if [ "$c_expect" = start ]; then
       eq "G4 $c_name: the start is btime + field 22 / CLK_TCK, the ns is the link's (a command name with ') ')" "${line#*@linux:*:}" "$((1000 + 250 / tick)):4242"
     else
       [[ "$line" =~ ^[uw][0-9]{1,10}:[^@:[:space:]]+@linux:[1-9][0-9]*$ ]] && ok "G4 $c_name: the record ends after the pid ($line)" || bad "G4 $c_name" "record: $line"
@@ -406,6 +413,23 @@ good|1000|$good|"
 }
 
 
+# case G5 - a uname that fails stops owned_dir early, with a line that names uname
+uname_failure_stops_owned_dir_early_and_says_so() {
+  case_root tg5
+  child tg5 << 'EOF'
+. "$T_OWNED_SH"
+uname() { return 1; }
+d=UNTOUCHED
+owned_dir d x 2> "$T_CTL/tg5.msg"; echo "$?" > "$T_CTL/tg5.rc"
+echo "$d" > "$T_CTL/tg5.d"
+EOF
+  run_child tg5
+  eq "G5 owned_dir returns 1 when uname fails" "$(first_line "$CTL/tg5.rc")" 1
+  eq "G5 the variable is untouched" "$(first_line "$CTL/tg5.d")" UNTOUCHED
+  eq "G5 nothing is made" "$(count "$CR")" 0
+  eq "G5 the message names uname" "$(grep -c uname "$CTL/tg5.msg")" 1
+}
+
 # --- run ---
-name_has_the_owner_form_and_the_reference_token; record_equals_the_reference_format_owner_byte_for_byte; claim_exists_before_the_folder; taken_claim_is_kept_and_the_create_is_exclusive; bad_arguments_make_nothing; windows_without_node_makes_nothing; wsl_distro_name_is_normalised_like_the_reference; relative_tmpdir_is_made_absolute; a_set_seam_is_named_on_stderr_once; a_token_that_cannot_be_had_makes_nothing; caller_variable_names_never_collide_with_internal_ones; a_minimal_proc_gives_a_record_without_start_and_ns
+name_has_the_owner_form_and_the_reference_token; record_equals_the_reference_format_owner_byte_for_byte; claim_exists_before_the_folder; taken_claim_is_kept_and_the_create_is_exclusive; bad_arguments_make_nothing; windows_without_node_makes_nothing; wsl_distro_name_is_normalised_like_the_reference; relative_tmpdir_is_made_absolute; a_set_seam_is_named_on_stderr_once; a_token_that_cannot_be_had_makes_nothing; caller_variable_names_never_collide_with_internal_ones; a_minimal_proc_gives_a_record_without_start_and_ns; uname_failure_stops_owned_dir_early_and_says_so
 owned_test_finish
