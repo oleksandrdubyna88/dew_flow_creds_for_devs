@@ -385,7 +385,7 @@ async function overSshWithSlot(deps: AgentUseDeps & { overSsh: OverSsh }, ctx: U
     return fail('too_many_requests', 'Too many commands are already running.');
   }
   try {
-    return await deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined) });
+    return await deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined), ownAgentOnly: true, noTty: true });
   } finally {
     release();
   }

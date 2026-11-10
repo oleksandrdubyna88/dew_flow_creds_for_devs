@@ -104,6 +104,14 @@ export interface OverSshCall {
   readonly jump: () => JumpChain;
   readonly remoteCommand: string;
   readonly timeoutMs: number;
+  /**
+   * The extension's own agent is the only one this call may use or forward (parent D17): its environment loses the host's `SSH_AUTH_SOCK` and every
+   * `CREDS_REF_` name, and a forwarding entry sends no `-A` while that agent is not up. REQUIRED, so each caller decides where it is written;
+   * `ssh:exec` says `false` (todo/PLAN_ssh_exec_own_agent_forwarding.md), the agent's linked run `true`.
+   */
+  readonly ownAgentOnly: boolean;
+  /** Ask ssh for no remote pty (`-T` first, parent D16): only the agent's linked run says it; `ssh:exec` keeps today's argv. */
+  readonly noTty?: boolean;
 }
 
 /**

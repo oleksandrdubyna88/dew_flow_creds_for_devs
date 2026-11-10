@@ -30,6 +30,8 @@ test('a_usable_trusted_linked_entry_runs_the_bare_line_over_ssh', async () => {
   assert.equal(call.remoteCommand, 'echo linked', 'the bare line: no eval, no exec, no wrapper');
   assert.deepEqual(call.jump(), resolveJumpChain(detailsOf(w, 's1'), () => undefined));
   assert.equal(call.timeoutMs, clampExecTimeout(undefined));
+  assert.equal(call.ownAgentOnly, true, 'the linked run may use only the extension\'s own agent (D17)');
+  assert.equal(call.noTty, true, 'and asks ssh for no remote pty (D16)');
   assert.deepEqual(result, { status: 200, body: OK_BODY }, 'the answer is overSsh\'s');
   assert.equal(w.slots.taken, 1);
   assert.equal(w.slots.released, 1, 'and the slot was given back');

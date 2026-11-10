@@ -4,15 +4,16 @@ import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { locked, memoryStorage, seedEntry } from './pinWorld';
-import { EntityMetadata } from '../types';
+import type { EntityMetadata } from '../types';
 import type { OverSshCall, UseActionContext } from '../useActions';
 import type { SshUseDeps } from '../sshUseActions';
 import { buildSshExecArgv } from '../sshExecCommand';
 import { resolveJumpChain } from '../sshOptions';
-import { sshSpawnLaunch } from '../sshProgram';
+import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD, envWithout, sshSpawnLaunch } from '../sshProgram';
 import { pinRefusalFor } from '../pinGate';
 import { clampExecTimeout } from '../brokerProtocol';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { sshNode } from './sshRoadWorld';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -47,13 +48,14 @@ interface World {
   readonly knownHosts: string;
 }
 
-const SSH = {
-  id: 's1',
-  name: 'prod box',
-  isSshEnabled: true,
-  host: 'prod.example',
-  user: 'deploy',
-} as unknown as EntityMetadata;
+/** The SSH entry of this file: `sshNode` is built against the real link validator at load (testing.md), so no cast stands in for the type. */
+function sshEntity(extra: Partial<EntityMetadata> = {}): EntityMetadata {
+  const details = sshNode('s1', extra).details;
+  assert.ok(details !== undefined, 'sshNode() always carries details');
+  return details;
+}
+
+const SSH = sshEntity();
 
 const KEY = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY BODY' };
 const CTX: UseActionContext = { accountId: 'a1', entityId: 't1', entityName: 'deploy', signal: new AbortController().signal };
@@ -117,21 +119,21 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
 }
 
 function callOf(over: Partial<OverSshCall> = {}): OverSshCall {
-  return { ssh: SSH, jump: () => ({ ok: true, value: undefined }), remoteCommand: 'echo linked', timeoutMs: clampExecTimeout(undefined), ...over };
+  return { ssh: SSH, jump: () => ({ ok: true, value: undefined }), remoteCommand: 'echo linked', timeoutMs: clampExecTimeout(undefined), ownAgentOnly: false, ...over };
 }
 
 type Answer = { status: number; body: Record<string, unknown> };
 
 test('the_argv_is_buildSshExecArgv_with_the_snapshots_jump_and_pin', async () => {
   const w = await world({ source: KEY });
-  const jumped = callOf({ jump: () => ({ ok: true, value: 'hop@jump.example' }) });
+  const jumped = callOf({ jump: () => ({ ok: true, value: 'hop@jump.example' }), ownAgentOnly: true });
 
   const answer = (await w.mod.execOverSsh(w.deps)(CTX, jumped)) as Answer;
 
   assert.equal(w.runs.length, 1, `the spawn recorder was called ${w.runs.length} times; the answer was ${JSON.stringify(answer.body)}`);
   assert.equal(answer.status, 200);
   assert.equal(w.materialised.length, 1, 'the stored key was written once, for this call');
-  const expected = buildSshExecArgv(SSH, w.materialised[0], 'echo linked', 'key', { jump: 'hop@jump.example', knownHostsFile: w.knownHosts, bridged: false });
+  const expected = buildSshExecArgv(SSH, w.materialised[0], 'echo linked', 'key', { jump: 'hop@jump.example', knownHostsFile: w.knownHosts, bridged: false, ownAgent: false });
   assert.deepEqual(w.runs[0].argv, expected);
   assert.equal(w.runs[0].program, sshSpawnLaunch(SSH, undefined, process.platform).program);
   assert.equal(w.runs[0].timeoutMs, clampExecTimeout(undefined));
@@ -195,7 +197,7 @@ test('a_chain_that_does_not_resolve_is_refused_after_the_credential_and_the_key_
 test('ssh_exec_still_resolves_its_chain_after_the_credential', async () => {
   // A guard (green before and after): `ssh:exec` hands `execOverSsh` a THUNK, so a looping chain on an entry with no credential is
   // refused with the CREDENTIAL's sentence, as it was when the body lived in `sshExecAction`.
-  const looping = { ...SSH, id: 'e1', name: 'prod', jumpHostEntityId: 'e1' } as unknown as EntityMetadata;
+  const looping = sshEntity({ id: 'e1', name: 'prod', jumpHostEntityId: 'e1' });
   assert.equal(resolveJumpChain(looping, () => looping).ok, false, 'the fixture is a loop');
   const w = await world({ source: { kind: 'none' } }, [looping]);
 
@@ -205,4 +207,94 @@ test('ssh_exec_still_resolves_its_chain_after_the_credential', async () => {
   assert.equal((result.body.error as { message: string }).message, '"prod" has no stored password or key any more.');
   assert.deepEqual(w.runs, []);
   assert.equal(w.slots.taken, 0, 'the slot came back');
+});
+
+// ---- E3.4 F-S2: -T and the child's environment on the agent's linked run (parent D16, D17; spec §18) ------------------------------------
+
+const HOST_SOCKET = '/tmp/host-agent.sock';
+const OUR_SOCKET = '/tmp/ours.sock';
+
+/** What the linked run sends: the call its action makes (`ownAgentOnly` and `noTty`), over a key entry. */
+const linkedCall = (over: Partial<OverSshCall> = {}): OverSshCall => callOf({ ownAgentOnly: true, noTty: true, ...over });
+
+/** Run `body` with the host's agent socket and a `CREDS_REF_` name in `process.env`, and put both back (a test must leave the environment as it found it). */
+async function withHostEnv(body: () => Promise<void>): Promise<void> {
+  const saved = { sock: process.env.SSH_AUTH_SOCK, ref: process.env.CREDS_REF_7 };
+  process.env.SSH_AUTH_SOCK = HOST_SOCKET;
+  process.env.CREDS_REF_7 = 'seeded';
+  try {
+    await body();
+  } finally {
+    for (const [name, value] of [['SSH_AUTH_SOCK', saved.sock], ['CREDS_REF_7', saved.ref]] as const) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
+
+test('the_linked_run_says_no_tty_and_ssh_exec_does_not', async () => {
+  const linked = await world({ source: KEY });
+  await linked.mod.execOverSsh(linked.deps)(CTX, linkedCall());
+
+  assert.equal(linked.runs[0].argv[0], '-T', linked.runs[0].argv.join(' '));
+  assert.equal(linked.runs[0].argv.filter((arg) => arg === '-T').length, 1, 'exactly one -T');
+  const without = buildSshExecArgv(SSH, linked.materialised[0], 'echo linked', 'key', { jump: undefined, knownHostsFile: linked.knownHosts, bridged: false, ownAgent: false });
+  assert.deepEqual(linked.runs[0].argv.slice(1), without, 'the option adds one word and moves nothing: the rest is the same call without noTty');
+
+  // The GUARD half: ssh:exec (no noTty) keeps today's argv. Green before and after the build.
+  const exec = await world({ source: KEY }, [sshEntity({ id: 'e1', name: 'prod' })]);
+  await exec.mod.sshExecAction(exec.deps).run({ ...CTX, entityId: 'e1', entityName: 'prod' }, { command: 'uptime' });
+  assert.equal(exec.runs.length, 1);
+  assert.ok(!exec.runs[0].argv.includes('-T'), exec.runs[0].argv.join(' '));
+  assert.equal(exec.runs[0].argv[0], '-o');
+});
+
+test('the_linked_run_never_sends_dash_a_without_our_agent_and_ssh_exec_is_not_changed', async () => {
+  const forwarding = sshEntity({ agentForward: true });
+
+  const noAgent = await world({ source: KEY });
+  await noAgent.mod.execOverSsh(noAgent.deps)(CTX, linkedCall({ ssh: forwarding }));
+  assert.ok(!noAgent.runs[0].argv.includes('-A'), noAgent.runs[0].argv.join(' '));
+  assert.ok(noAgent.runs[0].argv.includes('ForwardAgent=no'), noAgent.runs[0].argv.join(' '));
+  assert.ok(noAgent.notes.some((note) => note.includes(NO_AGENT_TO_FORWARD)), noAgent.notes.join(' | '));
+
+  const withAgent = await world({ source: KEY, agentSocket: OUR_SOCKET });
+  await withAgent.mod.execOverSsh(withAgent.deps)(CTX, linkedCall({ ssh: forwarding }));
+  assert.ok(withAgent.runs[0].argv.includes('-A'), withAgent.runs[0].argv.join(' '));
+  assert.equal(withAgent.runs[0].env.SSH_AUTH_SOCK, OUR_SOCKET);
+
+  // The guard: ssh:exec's own word (`ownAgentOnly: false`) keeps `-A` with no socket of ours, as the shipped road does.
+  const shipped = await world({ source: KEY });
+  await shipped.mod.execOverSsh(shipped.deps)(CTX, callOf({ ssh: forwarding, ownAgentOnly: false }));
+  assert.ok(shipped.runs[0].argv.includes('-A'), shipped.runs[0].argv.join(' '));
+  assert.ok(!shipped.runs[0].argv.includes('ForwardAgent=no'));
+});
+
+test('the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads', async () => {
+  await withHostEnv(async () => {
+    const forwarding = sshEntity({ agentForward: true });
+
+    const bare = await world({ source: KEY });
+    await bare.mod.execOverSsh(bare.deps)(CTX, linkedCall());
+    assert.ok(!('SSH_AUTH_SOCK' in bare.runs[0].env), 'the host socket was removed');
+    assert.deepEqual(Object.keys(bare.runs[0].env).filter((name) => name.toUpperCase().startsWith('CREDS_REF_')), [], 'and every inherited CREDS_REF_ name');
+    assert.equal(bare.runs[0].env.PATH, process.env.PATH, 'ordinary variables are inherited (the positive control)');
+    assert.deepEqual(envWithout(process.env, E3_INHERITED_DROP, process.platform), Object.fromEntries(Object.entries(bare.runs[0].env)), 'the child has the inherited environment less the drop, and adds nothing for a key entry');
+
+    const served = await world({ source: KEY, agentSocket: OUR_SOCKET });
+    await served.mod.execOverSsh(served.deps)(CTX, linkedCall({ ssh: forwarding }));
+    assert.equal(served.runs[0].env.SSH_AUTH_SOCK, OUR_SOCKET, 'when our agent serves the run its socket is laid on top');
+
+    const quiet = await world({ source: KEY, agentSocket: OUR_SOCKET });
+    await quiet.mod.execOverSsh(quiet.deps)(CTX, linkedCall());
+    assert.ok(!('SSH_AUTH_SOCK' in quiet.runs[0].env), 'an entry that does not forward gets no socket');
+
+    // The GUARD: ssh:exec keeps the host's socket. Green before and after.
+    const exec = await world({ source: KEY }, [sshEntity({ id: 'e1', name: 'prod' })]);
+    await exec.mod.sshExecAction(exec.deps).run({ ...CTX, entityId: 'e1', entityName: 'prod' }, { command: 'uptime' });
+    assert.equal(exec.runs[0].env.SSH_AUTH_SOCK, HOST_SOCKET);
+  });
 });

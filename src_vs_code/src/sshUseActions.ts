@@ -10,13 +10,13 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { StorageManager } from './storageManager';
-import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
+import { CallTarget, OverSsh, OverSshCall, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
 import { notStarted } from './requestLife';
-import { sshSpawnLaunch } from './sshProgram';
+import { E3_INHERITED_DROP, envWithout, sshSpawnLaunch } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { RemoteWindowDeps, connectEntity } from './sshConnect';
@@ -218,6 +218,24 @@ function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
 }
 
 /**
+ * The argv of one call. The options are written HERE, at the call of `buildSshExecArgv`, and not inside `connectionArgvOptions`, so the scan of
+ * `launchRoadScan.test.ts` (F5) finds the `ownAgent` key without reading a second function. `ownAgentOnly` says whether the extension's own agent
+ * is the only one this call may forward (E3's linked run); `noTty` puts `-T` first (parent D16, D17 (b)).
+ */
+function execArgv(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, prepared: { keyPath?: string; auth: SshExecAuth }, jump: string | undefined): string[] {
+  return buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, {
+    ...connectionArgvOptions(deps, call.ssh, jump, ctx.bridge !== undefined),
+    ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined,
+    noTty: call.noTty,
+  }) as string[]; // the host was checked by the caller
+}
+
+/** The environment ssh starts with: the credential's, and for a call that may use only the extension's own agent less what E3's roads never inherit (parent D17 (a)). */
+function childEnv(call: OverSshCall, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return call.ownAgentOnly ? envWithout(env, E3_INHERITED_DROP, process.platform) : env;
+}
+
+/**
  * One command run over SSH: the credential, the argv from `buildSshExecArgv`, the spawn, the answer, and the key file removed in
  * `finally` (E3-D9). The body `ssh:exec` always had, taken out so the agent's run of a linked Terminal entry reaches the same
  * code with its own command: the caller decides WHICH entry, WHICH command and WHAT jump chain (a thunk, so `ssh:exec` still
@@ -235,8 +253,8 @@ export function execOverSsh(deps: SshUseDeps): OverSsh {
       if (!chain.ok) {
         return refuse('no_credential', chain.reason);
       }
-      const argv = buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, connectionArgvOptions(deps, call.ssh, chain.value, ctx.bridge !== undefined)) as string[]; // the host was checked by the caller
-      const launch = agentAwareLaunch(deps, call.ssh, prepared.env);
+      const argv = execArgv(deps, ctx, call, prepared, chain.value);
+      const launch = agentAwareLaunch(deps, call.ssh, childEnv(call, prepared.env));
       const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });
       const response: ExecResponseBody = outcome;
       return { status: 200, body: response };
@@ -296,6 +314,9 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
           jump: () => resolveJumpChain(entity, (id) => deps.storage.getNode(ctx.accountId, id)?.details),
           remoteCommand: String((body as { command: string }).command),
           timeoutMs: clampExecTimeout((body as { timeoutMs?: unknown }).timeoutMs),
+          // The shipped road keeps today's argv and environment: the person's own agent may still be forwarded here. The plan that turns this to
+          // `true` is todo/PLAN_ssh_exec_own_agent_forwarding.md; it needs the owner, because a person may rely on it today (parent D17).
+          ownAgentOnly: false,
         });
       } finally {
         release();
