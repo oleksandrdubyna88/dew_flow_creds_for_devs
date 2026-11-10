@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 3 stopped for re-review 2026-11-10 (entry 3.2); still stopped. The whole-plan revision for epoch 4 is written (the record under the ledger) and awaits the re-review round. E1 (#335) and E2 (#337) merged and released in 1.20.0; E3 S1 and S2 built on feat/terminal-command-over-ssh-e3 (pushed, unmerged), their fix forward of this revision and S3 not built; no new E3 code until epoch 4 opens.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 4 open 2026-11-10, 0 changes (after the whole re-review of entry 3.2's stop: nothing narrowed, nothing cut). E1 (#335) and E2 (#337) merged and released in 1.20.0 (#341); E3 S1 and S2 built on feat/terminal-command-over-ssh-e3 (pushed, unmerged); next: build F-S1 and F-S2 (the fix forward, E3 stories §E3.4), then S3 with F-S3.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -77,7 +77,7 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
   consultants (2026-11-10) and the precedent in PLAN_remote_bridge_scoped.md (PR #307 fits, no merge until epoch 7
   opens). The owner ordered the release when E1 and E2 were ready and E3 had no code.)
 
-> Epoch 3 · approved 2026-11-10 · by reviewers · state: stopped
+> Epoch 3 · approved 2026-11-10 · by reviewers · state: closed
 
   (The re-review round on branch feat/terminal-command-over-ssh-epoch3, coai session db4ae051: verdict proceed, 2 of 2
   reviewers answered, five findings, each rejected with its reason: a multi-line secret was measured fine under
@@ -92,7 +92,20 @@ Narrowed: no — scope, the Definition of Done and the epics are not smaller: th
 
 ### Re-review for epoch 4
 
-Narrowed: no — every decision of the revision only adds to the plan or makes it true as written: a linked run spends a one-use SSH entry once (B), not the refusal (A), so D2's road keeps its width; the agent's run also needs the shown summary and the used entry, which every door of the broker gives; a waiting rotated value of S goes in before the mask table; `-T` goes only on Run with Secrets, the one road with a script on stdin, so no shipped argv changes; no `-A` without the extension's own agent only on E3's two roads, which are not released; a password SSH entry with a jump host is not refused (the limit is recorded); the Definition of Done and the merge conditions gain rows; nothing released is taken away
+Narrowed: no — every decision of the revision only adds to the plan or makes it true as written: a linked run spends a one-use SSH entry once (B), not the refusal (A), so D2's road keeps its width; the agent's run also needs the shown summary and the used entry, which every door of the broker gives; a waiting rotated value of S goes in before the mask table; a password SSH entry with a jump host is not refused (the limit is recorded); the Definition of Done and the merge conditions gain rows; nothing released is taken away. Two approved texts changed, and neither is smaller: (1) the child's environment on E3's two roads — the approved §4.4 promised it holds only the askpass variables and `SSH_AUTH_SOCK`; the first draft of this revision withdrew that as a recorded limit, which the step-3 consultation read as a narrowing, and the final revision KEEPS the protection and builds it (`envWithout` removes the host's `SSH_AUTH_SOCK`; the extension's own is added only when its agent serves the run, D17); (2) "no tty" — approved for Run with Secrets, it is now true by `-T` there AND on the agent's linked run (D16), so the forced-pty limit no longer touches E3's roads; `ssh:exec` and the person's clicks keep today's argv and environment, so no shipped road changes and no released behaviour is taken away
+  (The reading of "not narrowed" was disputed, and the record says so. The approved sentence is "The ssh child's
+  environment holds no resolved value: only the askpass variables of a password SSH entry and SSH_AUTH_SOCK" (this
+  plan at 190acefb, §4.4 "Run with Secrets", lines 322-324, and its §6 row at line 451). coai consultation b73776c0
+  (codex) and question consultation f778e98d (its codex row) read it as an allow-list of the WHOLE environment: then
+  the inherited environment is a narrowing. The lead's Opus reviewer and the antigravity row of f778e98d read it as
+  "no resolved value; the only credential plumbing the run adds is askpass and SSH_AUTH_SOCK": then nothing is
+  narrowed. The lead decided NOT narrowed, on evidence inside the approved text: the same sentence names "a person's
+  own SendEnv" as an accepted limit, and SendEnv forwards variables of the ssh client's LOCAL environment, so the
+  approved text assumes an inherited environment; and the same paragraph chose the program and the agent socket as the
+  agent's ssh:exec chooses them, and ssh:exec spawns with the host's environment plus its additions. The revision also
+  makes the approved test row hold literally for the whole environment (D17 (a): no CREDS_REF_ name, no host
+  SSH_AUTH_SOCK, no resolved value; the keys added or changed are exactly askpass and our SSH_AUTH_SOCK; F6). The owner
+  may override this reading: the record then becomes "Narrowed: yes", and epoch 4 waits for the owner's approval.)
 
 | Work | Where | Verdict | Action |
 |---|---|---|---|
@@ -118,16 +131,39 @@ Narrowed: no — every decision of the revision only adds to the plan or makes i
 | 7c6e4ffb the help for the agent's run ×5 (E3.S2, Hp8) | pushed, unmerged | fits | kept; fixed forward: one sentence on the one-use SSH entry ×5; the S2 documents (`README.md`, `research/`) |
 | 5b221602 entry 3.2, the stop | pushed, unmerged | fits | kept |
 | 81b7014d the security spec's third amendment (A1-A6) | local, not pushed | fits | kept; its A2 scope is corrected by 9776bd03 |
-| 9776bd03 the security spec: `-T` on Run with Secrets only, by the lead's decision | local, not pushed | fits | kept |
-| this revision (parent, E3 stories, `todo/README.md`, `PLAN_askpass_answers_the_hop.md`, the new `PLAN_ssh_exec_own_agent_forwarding.md`) | local, not pushed | fits | kept |
+| 9776bd03 the security spec: `-T` on Run with Secrets only, by the lead's decision | local, not pushed | fits | kept; its scope is widened again by 21b8f5ce |
+| #341 release extension 1.20.0 (E1, E2, #336, #338) | main, merged 2026-11-10 20:04 | fits | kept; it ships no E3 code, and its CHANGELOG says Run with Secrets and an agent's run still refuse |
+| f3b38b36 the first text of this revision (parent, E3 stories, `todo/README.md`, `PLAN_askpass_answers_the_hop.md`, the new `PLAN_ssh_exec_own_agent_forwarding.md`) | local, not pushed | fits | kept; its child-environment text and its `-T` scope are corrected by the commit after 21b8f5ce |
+| 21b8f5ce the security spec: `-T` on the linked run too; the host's `SSH_AUTH_SOCK` removed on E3's two roads; the marker's place; `burnInTurn` in a `finally`; RED after a no-op type | local, not pushed | fits | kept |
+| the commit after 21b8f5ce: this revision made to agree with it, the reviewer's findings, and the epoch 4 line | local, not pushed | fits | kept |
 
   (Sorted by an Opus judge, 2026-11-10. Nothing is cut. No pushed commit contradicts the revised plan: each S1 and S2
   commit is a part the revision keeps, and what the revision adds is fixed forward by new items of the E3 stories
   document (§E3.4), never by a history rewrite. Nothing of E3 is merged or released. The S1 and S2 code was written in
   epoch 3 before the stop, so step 2 of the full stop was not broken; since 5b221602 no code was written.)
+  (Step 3 of the full stop, the consultations. coai consultation 5b2cc40c (2026-11-10) read entry 3.2's fix as a new
+  gate condition and so a change that counts; it preferred spending the SSH entry (B) to refusing it (A), and said the
+  proof must drive the real broker, because the action does not pass through the one-use lane (here: U1-U7 through
+  `brokerWorld` and `performCall`). coai consultation b73776c0 (2026-11-10), for the re-review, had entries 3.1 and 3.2
+  quoted as evidence. It said: keep E3 together, no split. It named the drift: reuse of `ssh:exec`'s road was treated as
+  inheritance of its guarantees, so each guarantee must be checked per entry (here: the acceptance matrix of §6, consent,
+  consumption, authentication and masking for the Terminal entry and for the SSH entry). And it read the first draft's
+  withdrawn child-environment text as a narrowing. The lead removed that cause instead of approving a narrowing: the
+  environment protection is kept and built (`envWithout`, D17), and the linked run says `-T` too (D16), so its masking
+  is not weakened by a forced pty. The consultant was told the outcome.)
   (Not counted, the baseline of epoch 4: the used entry and its turns, the burn of S, the two-part compare, the
-  release of a waiting value of S, `-T` on Run with Secrets, the agent socket rule of E3's two roads, the recorded
-  limits of §7, the new neighbour plan of §7a.)
+  release of a waiting value of S, `-T` on E3's two roads, the agent socket rule and the removal of the host's
+  `SSH_AUTH_SOCK` on E3's two roads, the acceptance matrix of §6, the recorded limits of §7, the new neighbour plan of
+  §7a.)
+
+> Epoch 4 · approved 2026-11-10 · by reviewers · state: open
+
+  (The interim re-review round of plan-change-control, because this branch's plan round had already passed: coai
+  review_document on branch feat/terminal-command-over-ssh-e3, document todo/PLAN_terminal_command_over_ssh.md, verdict
+  proceed, 4 of 4 reviewers answered, one finding, accepted: where the spent marker of the used entry lives and its
+  limits (D15, §4.4 "Agent"). With it, the lead's own Opus review of the revision: no blocker; its findings M1 and m1 to
+  m8 are applied in the same commit as this line. The step-3 consultation is b73776c0 (above). Not narrowed, so
+  approved by reviewers. Epoch 4 starts at 0 changes.)
 
 ## 1. Goal
 
@@ -177,9 +213,9 @@ guarantee (§4.5 (5)). The scan holds only who imports and who reads.
 | D12 | Run with Secrets over SSH: values go to the child's STDIN as `export` lines for the remote LOGIN shell reading stdin, `"${SHELL:-sh}" -s` — the same shell that parses the line on every other road (re-review, epoch 2: a plain `sh -s` failed bash syntax, measured); never on a command line (so in no argument list that `ps` shows, here or on the server), never in a history. On the server the values are in the remote command's environment (`ps e`, `/proc/<pid>/environ`, for the same user and root), as the help says. | lead |
 | D13 | Dropdown candidates: kind `ssh` entries with a host, not itself, not in Trash. A stored id that is no longer offered shows **(missing entry)** so a save does not drop it. At run time a missing or trashed SSH entry refuses. | lead |
 | D14 | With a link, *Runs on* describes the REMOTE system; the local terminal is chosen as SSH Connect chooses it (`composedShellPath()`, `src_vs_code/src/pinnedTerminal.ts:54`). | lead |
-| D15 | The agent's gate for D2 (the authorisation part, [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §0). The SSH entry must be usable for `exec` in the Terminal entry's account. The gate is checked before the consent dialog and again at run time. Before the gate passes, the agent reads one sentence, `linkedRunRefused`, which names only the Terminal entry, with code `denied`, whatever the reason. The mask table of the call also holds the linked SSH entry's values. **A linked run is an agent's use of the SSH entry** (security spec §2.5, A1, decision B): the action names the SSH entry to the broker (`UseAction.uses`, the gate first); the broker takes its one-use turn in the same lane as a `creds_exec` on it, asks its spent marker first, and after a call that answered 200 burns it (the marker is set even when the delete fails), so a one-use SSH entry is spent once. A linked run needs BOTH the summary the dialog showed AND the used entry the broker holds (`ctx.uses`, compared by id, so a relink to an SSH entry that looks the same refuses); either one absent refuses (A4). A waiting rotated value of the SSH entry is released before the mask table is read (A5). | Fable security judgement, 2026-11-10 (entry 2.1); the one-use promise, the two-part compare and the release: the re-review of epoch 4 (spec third amendment, A1, A4, A5; entry 3.2's cause) |
-| D16 | Run with Secrets over SSH asks ssh for no remote pty: its argv starts with `-T` (`buildSshExecArgv`'s new `noTty: true`, passed only by `secretsArgv`), so the script on stdin is never typed into a remote terminal, also when the person's ssh config says `RequestTTY force`. ONLY this road: `ssh:exec`, the person's clicks of `commands/agentCommands.ts` and the agent's linked run keep today's argv (no script is on stdin there); their forced pty is a recorded limit (§7 risk 9). No `-o EscapeChar=none` (inert without a pty). | Fable security judgement (spec §18.1, A2); the scope by the lead, 2026-11-10 (re-review of epoch 4) |
-| D17 | The agent socket of E3's two roads (Run with Secrets over SSH, the agent's linked run): when the SSH entry asks for agent forwarding and the extension's own agent is NOT up, the argv has no `-A` and has `-o ForwardAgent=no` (`SshExecOptions.ownAgent`), so the person's own agent is never forwarded while the banner or the journal says nothing is. `ssh:exec` keeps today's argv by a required per-call word (`ownAgentOnly: false`); its own plan is [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (§7a). The trust line and the consent still show `-A`: the launch does less than was approved. | Fable security judgement (spec §18.2 (b), A3), re-review of epoch 4 |
+| D15 | The agent's gate for D2 (the authorisation part, [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §0). The SSH entry must be usable for `exec` in the Terminal entry's account. The gate is checked before the consent dialog and again at run time. Before the gate passes, the agent reads one sentence, `linkedRunRefused`, which names only the Terminal entry, with code `denied`, whatever the reason. The mask table of the call also holds the linked SSH entry's values. **A linked run is an agent's use of the SSH entry** (security spec §2.5, A1, decision B): the action names the SSH entry to the broker (`UseAction.uses`, the gate first); the broker takes its one-use turn in the same lane as a `creds_exec` on it, asks its spent marker first, and after a call that answered 200 burns it (the marker is set even when the delete fails; the used entry is burned in a `finally` after the grant's entry, so a throw for the grant's entry cannot leave it unburned), so a one-use SSH entry is spent once. Its spent marker is a member of the lane's EXISTING per-window set, at most 512 keys, the oldest dropped first: the same set, key form and cap as the marker of a `creds_exec` on a one-use entry, so its limits are the same (another window, a reload, past 512 keys; each matters only when the delete failed). A linked run needs BOTH the summary the dialog showed AND the used entry the broker holds (`ctx.uses`, compared by id, so a relink to an SSH entry that looks the same refuses); either one absent refuses (A4). A waiting rotated value of the SSH entry is released before the mask table is read (A5). | Fable security judgement, 2026-11-10 (entry 2.1); the one-use promise, the two-part compare and the release: the re-review of epoch 4 (spec third amendment, A1, A4, A5; entry 3.2's cause) |
+| D16 | E3's two roads ask ssh for no remote pty: their argv starts with `-T` (`buildSshExecArgv`'s new `noTty: true`), also when the person's ssh config says `RequestTTY force`. `noTty: true` stands at exactly two production sites: `secretsArgv` (Run with Secrets: the script on stdin is never typed into a remote terminal) and the linked run's call `overSshWithSlot` (`OverSshCall.noTty`, which `execOverSsh` hands on: stdout and stderr stay apart, so D15's masking holds for a value of more than one line). `ssh:exec` and the person's clicks of `commands/agentCommands.ts` keep today's argv; their forced pty is a recorded limit of the shipped road (§7 risk 9). No `-o EscapeChar=none` (inert without a pty). | Fable security judgement (spec §18.1, A2); the scope by the lead, 2026-11-10 (re-review of epoch 4, after coai b73776c0) |
+| D17 | The agent socket and the child's environment on E3's two roads (Run with Secrets over SSH, the agent's linked run). (a) The child's environment: the run ADDS only the askpass variables and, when the extension's agent serves the run, its `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every inherited name that starts with `CREDS_REF_`; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. The removal is pure and has no condition: `envWithout(base, drop, platform)` in `sshProgram.ts`, with `drop: { names: readonly string[]; prefixes: readonly string[] }` (one shape, used by both roads), and the constant `E3_INHERITED_DROP = { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] }` (`AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK'`); on Windows a name or a prefix matches in any letter case. The extension's socket is laid on top only when its agent serves (the entry forwards and the socket is up). So the approved test row holds for the WHOLE environment: no `CREDS_REF_` name, no host `SSH_AUTH_SOCK`, no resolved value, and the keys added or changed over the base environment are exactly the askpass variables and our `SSH_AUTH_SOCK` (F6). The `CREDS_REF_` prefix is the lead's extension of the security spec's §18.2 (a). (b) When the SSH entry asks for agent forwarding and the extension's own agent is NOT up, the argv has no `-A` and has `-o ForwardAgent=no` (`SshExecOptions.ownAgent`), so the person's own agent is never forwarded while the banner or the journal says nothing is. `ssh:exec` keeps today's environment and argv by a required per-call word (`ownAgentOnly: false`); its own plan is [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (§7a). The trust line and the consent still show `-A`: the launch does less than was approved. No `-o IdentityAgent` word: a person's own config line `IdentityAgent` still wins (§7 risk 8). | Fable security judgement (spec §18.2, A3), re-review of epoch 4; (a) by the lead's decision after coai b73776c0 |
 | D18 | A password SSH entry with a jump host is NOT refused on E3's roads: askpass can answer the hop's prompt with the SSH entry's password on every road that uses that entry, so a refusal on one road would protect nothing and make D2's road smaller. The fix belongs to [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md), the next plan on the SSH roads after E3 (§7 risk 7). | Fable security judgement (spec §18.3, A6), re-review of epoch 4 |
 
 ## 3. What the code does today (verified 2026-11-09 at `origin/main` 16975d0)
@@ -367,19 +403,22 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   resolve the secret values → spawn. No child exists and no byte is written to any stdin before the trust is given;
   a declined trust cleans the session and spawns nothing. The child is `ssh` by argv
   (`buildSshExecArgv(ssh, keyPath, '"${SHELL:-sh}" -s', …, { …, noTty: true })`: `-T` is the first word, so ssh asks for
-  no pty also when the person's ssh config says `RequestTTY force` (D16; this road only); no `-t`; `shell:false`; the
+  no pty also when the person's ssh config says `RequestTTY force` (D16); no `-t`; `shell:false`; the
   agent socket by the rule of D17 — the extension's own agent's socket when the SSH entry forwards and that agent is up,
   else, for a forwarding entry, no `-A` and `-o ForwardAgent=no` (`ownAgent`, from `SpawnLaunch.ownAgent`); the program on
   Windows by an absolute path — `spawnableSshProgram`: PATH's first absolute
   `ssh.exe`, else the built-in OpenSSH, else the refusal `NO_SSH_TO_SPAWN` — and the working folder `storageDir`, never
   the workspace (entry 3.1); a stored key always in its own file; E3-D4 and E3-D5); STDIN carries `secretsStdin` (D12), then
-  is closed; output masked with the resolved values, as today. The run ADDS to the ssh child's environment only the
-  askpass variables of a password SSH entry and, for a forwarding entry with the extension's agent up, `SSH_AUTH_SOCK`;
-  no resolved value and no `CREDS_REF_` name (the values go on stdin only). The child also inherits the extension
-  host's own environment (`maskedTerminal.ts` spawns with `process.env` under the added variables): there `SSH_AUTH_SOCK`
-  may be the person's own agent, whose keys ssh can offer before the `-i` key. That is the person's own ssh setup, as
-  `~/.ssh/config` is, and a recorded limit (§7 risk 8; security spec §18.2 (a)). The askpass password and a person's own
-  `SendEnv` are the accepted limit of `research/PLAN_windows_shell_quoting_injection.md` §8.
+  is closed; output masked with the resolved values, as today. The ssh child's environment (D17 (a)): the run ADDS
+  only the askpass variables of a password SSH entry and, when the extension's agent serves the run, its
+  `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every inherited `CREDS_REF_` name (`SpawnLaunch.withoutEnv`,
+  always `E3_INHERITED_DROP`; `MaskedRunOptions.withoutEnv`; `spawnChild` spawns with `{ ...envWithout(process.env,
+  options.withoutEnv ?? NOTHING_DROPPED, process.platform), ...options.env }`); other ordinary variables (`PATH`,
+  `HOME`, …) are inherited as by every spawned program. No resolved value and no `CREDS_REF_` name is in it (the values
+  go on stdin only), and the keys added or changed over the base environment are exactly the askpass variables and our
+  `SSH_AUTH_SOCK` (F6, on a real recording child). A person's own ssh config
+  can still name an agent (`IdentityAgent`), which wins over the variable (§7 risk 8). The askpass password and a
+  person's own `SendEnv` are the accepted limit of `research/PLAN_windows_shell_quoting_injection.md` §8.
   A local VS Code window only: a WSL or Remote-SSH window refuses before prepare. The run is bounded: `ConnectTimeout=10`
   while it connects, and closing its terminal kills the child; the end of the run drops any part of the script not yet
   written. The run is NON-INTERACTIVE: no tty (`-T`, D16), and the command's stdin is `/dev/null`, so a
@@ -411,10 +450,14 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   captured); a linked entry never reaches it (§4.5 (5)). After
   the gate: `planLaunch` with the gate's own link (its refusals name only the Terminal entry), then `resolveExecAuth`
   (refuses a PIN-locked or woven password), jump and pin as the agent exec does, `buildSshExecArgv` with the remote
-  command WITHOUT stay-open, through `execOverSsh` with `ownAgentOnly: true` (D17: no `-A` and `-o ForwardAgent=no` when
-  the SSH entry forwards and the extension's agent is not up), key deleted in `finally`. The argv is `ssh:exec`'s own,
-  with no `-T`: no script is on stdin there. A forced pty (`RequestTTY force` in the person's ssh config) is a recorded
-  limit of the agent's roads (security spec §16 item 11; §7 risk 9). Trust uses the same trust line, so one approval covers the
+  command WITHOUT stay-open, through `execOverSsh` with `ownAgentOnly: true` and `noTty: true`, key deleted in
+  `finally`. `noTty: true` puts `-T` first (D16), so a forced pty (`RequestTTY force` in the person's ssh config) cannot
+  join stdout and stderr in the agent's answer. `ownAgentOnly: true` gives D17: `execOverSsh` hands `agentAwareLaunch`
+  `envWithout(prepared.env, E3_INHERITED_DROP, process.platform)`, so the host's `SSH_AUTH_SOCK` and any inherited
+  `CREDS_REF_` name are removed and the
+  extension's own is laid on top only when its agent serves; no `-A` and `-o ForwardAgent=no` when the SSH entry
+  forwards and the extension's agent is not up. `ssh:exec` passes `ownAgentOnly: false` and no `noTty`, and keeps
+  today's argv and environment. Trust uses the same trust line, so one approval covers the
   arrow and the agent. The consent text names the SSH entry and its target, and shows the trust line. The mask table of
   the call holds the Terminal entry's values and the linked SSH entry's values (entry 2.1), so the agent's captured output
   is masked with both; a waiting rotated value of the SSH entry is released before that table is read, so the table
@@ -430,7 +473,13 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   it is one-use, and its spent marker set after the 200 even when the delete fails. What counts as the one use is what
   counts for `creds_exec` on it: a call that answered 200 (ssh started and ended). A refusal, an untrusted line, a full
   slot or `Could not run ssh` spends nothing. A person's own run of the Terminal entry never burns the SSH entry (only the
-  broker spends an entry). The marker is per window, as for every one-use entry today.
+  broker spends an entry). The used entry is burned in a `finally` after the grant's entry (`burnInTurn`), so a throw
+  while the grant's entry burns cannot leave a used SSH entry unburned and unmarked. Its spent marker is a member of the
+  lane's EXISTING `spent` set (`oneUseLane.ts`): one set per window, in memory, at most 512 keys, the oldest dropped
+  first — the same set, key form and cap as the marker of a `creds_exec` on a one-use entry, so its limits are the
+  same: another window whose storage still holds the entry does not know the marker, a reload forgets it, and past 512
+  spent entries the oldest falls out. Each matters only for an entry whose delete FAILED (the accepted finding of the
+  re-review round).
 - **Copy Command / viewer** (both copy roads: the Copy Command command and the viewer's full-command row, `entityViewCopy.ts`): show and copy the trust line for a linked entry, with one sentence beside it: "This line
   uses your own ssh setup (agent, `~/.ssh/config`); the vault's key and password are not in it — use Run to connect
   with them." The composed launch line is never copied: it holds a per-window key path and, on the relay route, a
@@ -495,9 +544,11 @@ Steps 7 and 8 as built in epoch 3, and what the re-review of epoch 4 adds (E3 st
 branch, before E3 merges):
 
 - 7 (built, E3.S1) gains `-T` (D16) and the agent socket rule (D17): `SshExecOptions.noTty` and `.ownAgent`,
-  `secretsArgv` passes both, `SpawnLaunch.ownAgent`, `launchesOf` asks `spawnLaunch` first; the true environment text.
+  `secretsArgv` passes both, `SpawnLaunch.ownAgent` and `.withoutEnv`, `envWithout`, `AGENT_SOCKET_ENV` and `E3_INHERITED_DROP`,
+  `MaskedRunOptions.withoutEnv`, `launchesOf` asks `spawnLaunch` first; the true environment text.
 - 8 (built, E3.S2) gains the used entry, the turns and the burn of D15 in the broker, the two-part compare, the release
-  of a waiting value of S, `OverSshCall.ownAgentOnly` (the linked run `true`, `ssh:exec` `false`), and the bridged
+  of a waiting value of S, `OverSshCall.ownAgentOnly` and `.noTty` (the linked run `true` for both, `ssh:exec`
+  `ownAgentOnly: false` and no `noTty`), the removal of the host's `SSH_AUTH_SOCK` for the linked run, and the bridged
   journal line.
 - 9 gains the S2 documents the S2 commits left stale, the help sentence on a one-use SSH entry ×5, and the CHANGELOG
   lines of D15-D17.
@@ -541,9 +592,10 @@ ship entry 3.2's defect.
 | agent gate: every pre-gate outcome (closed, PIN-hidden, missing, another account, unsafe host, and on such an entry a line break, *Runs on* Windows, `{name}`, no command) answers `linkedRunRefused(T)` with code `denied`, in `validate` and in `run`; no message names the SSH entry or its host; nothing spawned, no slot, no trust read; the gate runs before `planLaunch` | `test/agentSshGate.test.ts` (the security spec's G-rows) | D15, entry 2.1 |
 | agent gate: a switch turned off, or a link or target changed while the dialog was open, refuses at run time; on a bridge every linked entry is refused | `test/agentSshGate.test.ts` | D15 |
 | agent masking: the mask table of a call on a linked entry holds the SSH entry's password; an unlinked entry gives the Terminal entry's table only | `test/agentSshGate.test.ts` (`maskEntriesWithLink`) | D15, entry 2.1 |
-| secrets: the run ADDS to the ssh child's environment only the askpass variables and `SSH_AUTH_SOCK`, and no resolved value and no `CREDS_REF_` name; the values are on stdin only (S9 `the_run_adds_only_the_askpass_and_agent_variables_and_no_value`, M11) | masked-run tests (a real child with a recording fake `ssh`, and the road world) | D12 |
-| Run with Secrets: the argv starts with `-T`; the agent's ssh argv is not changed | `test/sshExecCommand.test.ts`, `test/secretsLaunch.test.ts` (T1); `test/sshExecOver.test.ts`, the scan (T2, a guard) | D16 (A2) |
-| agent socket: a forwarding entry with no agent of ours gets no `-A` and `-o ForwardAgent=no` (builder, F1); `spawnLaunch` says whether the agent is ours (F2); Run with Secrets sends no `-A` while its banner says nothing is forwarded, and the trust line still shows `-A` (F3); the linked run with `ownAgentOnly: true` sends no `-A`, and `ssh:exec` with `false` keeps it (F4); `ownAgentOnly: false` stands at exactly one site, `ssh:exec`, and the calls of `buildSshExecArgv` with no `ownAgent` are exactly the three of `commands/agentCommands.ts` (F5, a scan with its companion) | `test/sshExecCommand.test.ts`, `test/sshRoad.test.ts`, `test/sshRoadSecrets.test.ts`, `test/sshExecOver.test.ts`, `test/launchRoadScan.test.ts` | D17 (A3) |
+| secrets: the run ADDS to the ssh child's environment only the askpass variables and our `SSH_AUTH_SOCK`, and no resolved value and no `CREDS_REF_` name; the values are on stdin only (S9 `the_run_adds_only_the_askpass_and_agent_variables_and_no_value`, M11) | masked-run tests (a real child with a recording fake `ssh`, and the road world) | D12 |
+| the WHOLE child environment on E3's two roads (F6): `envWithout` takes the names and the prefixes out of a copy (any letter case on win32); on the real recording child, with a `CREDS_REF_` name and a host `SSH_AUTH_SOCK` seeded into `process.env` for the test: no `CREDS_REF_` key at all, no host `SSH_AUTH_SOCK`, no resolved value in any value, a `PATH=` entry (ordinary variables are inherited), and the keys added or changed over the base environment are exactly the askpass variables (password entry) and our `SSH_AUTH_SOCK` (when our agent serves); Run with Secrets passes `E3_INHERITED_DROP`; the linked run's environment lacks the host socket; `ssh:exec` keeps it (a guard) | `test/sshProgram.test.ts`, `test/maskedTerminal.test.ts`, `test/sshRoadSecrets.test.ts`, `test/sshExecOver.test.ts` | D12, D17 (a) |
+| `-T` on E3's two roads: the builder says `-T` first only when asked (T1); Run with Secrets' argv starts with `-T` (K1, K2); the linked run's argv starts with `-T` and `ssh:exec`'s does not (T2, its guard half); `noTty: true` stands at exactly two production sites, `secretsArgv` and `overSshWithSlot` (T2's scan, with its companion) | `test/sshExecCommand.test.ts`, `test/secretsLaunch.test.ts`, `test/sshExecOver.test.ts`, `test/launchRoadScan.test.ts` | D16 (A2) |
+| agent socket: a forwarding entry with no agent of ours gets no `-A` and `-o ForwardAgent=no` (builder, F1); `spawnLaunch` says whether the agent is ours (F2); Run with Secrets sends no `-A` while its banner says nothing is forwarded, and the trust line still shows `-A` (F3); the linked run with `ownAgentOnly: true` sends no `-A`, and `ssh:exec` with `false` keeps it (F4); `ownAgentOnly: false` stands at exactly one site, `ssh:exec`, and the calls of `buildSshExecArgv` with no `ownAgent` are exactly the three of `commands/agentCommands.ts` (F5, a scan with its companion; the `ownAgent` key is written at the call site of `buildSshExecArgv` in `execOverSsh`, not hidden in `connectionArgvOptions`, so the scan reads it); the host's socket does not reach the child (F6, the row above) | `test/sshExecCommand.test.ts`, `test/sshRoad.test.ts`, `test/sshRoadSecrets.test.ts`, `test/sshExecOver.test.ts`, `test/launchRoadScan.test.ts` | D17 (A3) |
 | one-use: two linked runs in a row use a one-use SSH entry once (U1); a direct exec and two linked runs at once start ssh once, each road winning once (U2); a failed delete stays spent on both roads (U3); an ordinary SSH entry is not queued and burns nothing (U4); a one-use Terminal entry burns as before, both burn when both are one-use (U5); a run that did not answer 200 spends nothing (U6); the turns in key order, so two calls that use each other's entry both end (U7); every per-entry hook of the broker has a decision for the used entry (U10, a sweep left as a test); `usedEntrySpent` names one entry (U11) | `test/agentSshOneUse.test.ts` (the REAL broker, `brokerWorld` with its `vault` option; U7 through `performCall`) | D15 (A1), entry 3.2 |
 | release: a waiting value of the SSH entry goes in before the table is read (U8); the agent's output masks the SSH password the run used (U9) | `test/agentSshOneUse.test.ts` | D15 (A5) |
 | compare: a linked run with no shown summary or no `ctx.uses` is refused, and a local one is not compared (G11, rewritten); a linked run over another SSH entry than the one the broker holds, with the same name and address, is refused (G24) | `test/agentSshGate.test.ts` | D15 (A4) |
@@ -552,6 +604,17 @@ ship entry 3.2's defect.
 | no local sink: the arrow, *Run with Secrets* and the dependency chain, each with a valid link, a missing SSH entry and a refused link; an agent's VPN start of a linked launcher; a chain with no lookup holding a linked step; the agent's run with a usable and a closed SSH entry — nothing reaches the road's local sink (§4.4 table); each watched RED by the temporary bypass of every wall of §4.5 (5) | arrow world, secrets world, chain and launcher worlds, agent world | §1, D7 |
 | road scan: the importer list, the link readers and the send or spawn sites are each an exact allow-list | `test/launchRoadScan.test.ts` | D7 (who imports and reads; not where a value flows) |
 | help tests (5 languages) | existing help tests | rule 7 |
+
+**The acceptance matrix per entry** (re-review, epoch 4; the step-3 consultation b73776c0 named the drift: reuse of
+`ssh:exec`'s road was taken as inheritance of its guarantees). An agent's linked run uses TWO entries, the Terminal
+entry T (the grant's) and the SSH entry S (the used entry). Each guarantee is decided and tested for each:
+
+| Guarantee | T (the Terminal entry) | S (the SSH entry) |
+|---|---|---|
+| consent | T's grant and T's ask policy decide the dialog; the dialog names S and its target and shows the trust line (D2, D15) | S's own *Usable by agents* switch is required at every call (the gate, in `validate` and in `run`); S's ask policy is not consulted, by decision (security spec §3.2); a switch flipped while the dialog stood refuses (G2-G10, G20, G22) |
+| consumption | T's own one-use turn and burn, as today (U5) | S's one-use turn in the same lane as `creds_exec` on S, spent marker first, burned after a 200 in a `finally` (U1-U7, U10, U11) |
+| authentication | T holds no credential of the connection; the trust line, keyed on T, decides whether the line may run (AG2) | S's credential through `resolveExecAuth` (a PIN-locked or woven password refused, X3, X4); the host's agent socket removed, ours only when it serves; no `-A` without our agent (F1-F6) |
+| masking | T's values in the mask table, as today | S's values in the same table (G14), with a waiting rotated value released first (U8, U9); `-T`, so a forced pty cannot join the streams (T2) |
 
 ## 7. Risks
 
@@ -579,19 +642,29 @@ ship entry 3.2's defect.
    refusal here would be a measure at one of its sites and would make D2's road smaller for no gain. The limit is
    recorded, and that plan's priority rose: it becomes the next plan on the SSH roads after E3. It is not a condition of
    E3's merge or release: no road of E3 adds a new way to reach the defect.
-8. **A spawned ssh takes the person's own ssh setup** (security spec §18.2 (a)). The ssh of Run with Secrets and of the
-   agent's run inherits the extension host's environment: its `SSH_AUTH_SOCK` may be the person's own agent, whose keys
-   ssh can offer before the stored key that `-i` names, and the person's `~/.ssh/config` applies (`SendEnv`,
-   `ProxyCommand`, `ForwardAgent`). Recorded, not changed: `-o IdentitiesOnly=yes` or `-o IdentityAgent=none` would also
-   stop an SSH entry that holds no key and no password and signs in with the person's own agent, which works today on
-   every road. Whether the person's ssh setup applies to a spawned ssh is one question for all its parts, and
-   `PLAN_askpass_answers_the_hop.md` owns it (§9). The one part that this plan does decide is `-A` with the extension's
-   agent not up, on E3's two roads (D17).
-9. **A forced pty on the agent's roads** (security spec §16 item 11; D16). With `RequestTTY force` in the person's ssh
-   config, `ssh:exec` and the agent's linked run get a remote pty: `stdout` and `stderr` are joined, line ends become
-   CR LF, and a value of more than one line is then not masked in the agent's answer. For the linked run this is a limit
-   of D15's "masked with the SSH entry's values too". `-T` is not sent there, because it would change the shipped
-   `ssh:exec` (a person may rely on a forced pty, for `sudo` for example). Routed to
+8. **What of the person's own ssh setup still reaches a spawned ssh on E3's two roads** (security spec §16 items 15-17,
+   §18.2 (a)). The run removes the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name (D17 (a)), so no agent key comes
+   from the inherited variable. Still recorded, not changed:
+   - the person's `~/.ssh/config` applies (`SendEnv`, `ProxyCommand`, `ForwardAgent` less what D17 (b) takes away), and
+     an `IdentityAgent` line there wins over the variable (measured with `ssh -G`, OpenSSH 10.2p1), so ssh then uses
+     that agent. `-o IdentityAgent=none` (or `=SSH_AUTH_SOCK` when our agent serves) would override it and was measured
+     to win over the config; it is not sent, because it overrides a line the person wrote;
+   - Windows is NOT checked: with no `SSH_AUTH_SOCK` the Windows OpenSSH client may use the Windows agent service's
+     default pipe, and a key of that service could still be offered. Hand check 3's third line, run on Windows, answers
+     it; if a key of the service signs in, the option above is the fix and the lead decides;
+   - the host's ambient `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE` and `DISPLAY` are inherited when the SSH entry does not use
+     askpass. A key entry runs with `BatchMode=yes`, so ssh asks no askpass helper and they change nothing there; a
+     password entry's own askpass variables are laid on top of them;
+   - an SSH entry with no stored key and no password signs in on these two roads only with the person's default key
+     files and their ssh config (not the inherited agent). Nothing of E3 is released, so nothing that works today stops.
+
+   Whether the person's ssh setup applies to a spawned ssh is one question for all its parts, and
+   `PLAN_askpass_answers_the_hop.md` owns it (§9).
+9. **A forced pty on `ssh:exec`** (security spec §16 item 11; D16). With `RequestTTY force` in the person's ssh config,
+   `ssh:exec` and the three clicks of `commands/agentCommands.ts` get a remote pty: `stdout` and `stderr` are joined,
+   line ends become CR LF, and a value of more than one line is then not masked in the agent's answer. E3's two roads
+   say `-T` (D16) and do not have this limit. `-T` is not sent on `ssh:exec`, because it would change a shipped road
+   (a person may rely on a forced pty, for `sudo` for example). Routed to
    [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), which decides what an agent's spawned
    ssh takes from the person's ssh setup.
 
@@ -600,7 +673,7 @@ ship entry 3.2's defect.
 | Plan | Touches | This plan's part |
 |---|---|---|
 | [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect, on both its paths; whether the person's ssh setup applies to a spawned ssh | none: E3 does not refuse a password SSH entry with a jump (D18) and inherits the fix (risk 7). Its table names this plan's roads on each path. It goes FIRST among the SSH-road plans after E3 (its priority rose, security spec §18.3); it is not a condition of E3's merge |
-| [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (new, re-review of epoch 4) | `ssh:exec` on a forwarding SSH entry forwards the person's OWN agent when the extension's agent has no key; the three clicks of `commands/agentCommands.ts`; a forced pty on the agent's roads (risk 9) | none in code: this plan makes `ownAgentOnly` a required per-call word, the linked run says `true`, `ssh:exec` says `false` with a comment naming that plan, and the F5 scan pins the one `false`. That plan turns it to `true` (one word) after E3, with the owner's yes. Disjoint: this plan changes no shipped argv |
+| [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (new, re-review of epoch 4) | `ssh:exec` on a forwarding SSH entry forwards the person's OWN agent when the extension's agent has no key; the three clicks of `commands/agentCommands.ts`; a forced pty on `ssh:exec` (risk 9) | none in code: this plan makes `ownAgentOnly` a required per-call word, the linked run says `true`, `ssh:exec` says `false` with a comment naming that plan, and the F5 scan pins the one `false`. That plan turns it to `true` (one word) after E3, with the owner's yes. Disjoint: this plan changes no shipped argv |
 | [PLAN_ssh_exec_absolute_program.md](PLAN_ssh_exec_absolute_program.md) | `ssh:exec`'s program on Windows and its folder (CWE-426, entry 3.1's class) | none: E3 adds `spawnableSshProgram` for the masked run only; that plan applies it to `ssh:exec` (and so to the agent's linked run) after E3 merges |
 | [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | none: item 5 is closed by the security plan below, not here; E2 adds the `ssh` target to `sendGuarded` |
 | [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
@@ -670,14 +743,18 @@ login shell. Hand checks 1-3 (the UI) stay the owner's.
 2. The same with a password SSH entry; a second run opens a second terminal.
 3. Run with Secrets over SSH on a Linux host, once with a key entry and once with a password entry; the value is
    masked; `ps` on the host shows the login shell with `-s`; a bash-only line (`[[ … ]]`) runs under a bash login shell; a wrong password ends with ssh's error, not a hang.
-   Two lines added by the re-review of epoch 4 (D16, D17; security spec §18.1, §18.2). Each observes an effect that
-   the unit tests only see SENT:
+   Three lines added by the re-review of epoch 4 (D16, D17; security spec §18.1, §18.2). Each observes an effect on a
+   real session that the unit tests cannot see:
    - with `RequestTTY force` in `~/.ssh/config`, Run with Secrets of a line that runs `tty` prints `not a tty`, and the
      script is not echoed;
    - with `ForwardAgent yes` in `~/.ssh/config`, a forwarding SSH entry and no key in the extension's agent, Run with
-     Secrets of `echo "${SSH_AUTH_SOCK:-none}"` prints `none`.
+     Secrets of `echo "${SSH_AUTH_SOCK:-none}"` prints `none`;
+   - with a key that is ONLY in the person's own agent (not a default key file) and that the server accepts, an
+     `SSH_AUTH_SOCK` of that agent in the extension host, and an SSH entry whose stored key the server does NOT accept:
+     Run with Secrets ends with ssh's `Permission denied` (before the build it signs in with the agent's key). On
+     Windows the same line, with the key in the Windows agent service, answers risk 8's Windows question.
 
-   If either fails: stop and report. The measure is then a comment, not a protection (`security.md`).
+   If any of the three fails: stop and report. The measure is then a comment, not a protection (`security.md`).
 4. A real peer: a linked entry whose line is `printf '%s|' a\ b "c;d" '$(x)' && echo; echo "$HOME"` prints the same
    on the server as when typed at a remote prompt (bash and zsh login shells).
 
@@ -691,16 +768,21 @@ login shell. Hand checks 1-3 (the UI) stay the owner's.
 - [ ] The one-use promise holds through the REAL broker (D15, entry 3.2): two linked runs in a row use a one-use SSH
       entry once (U1); a direct exec and two linked runs at once start ssh once (U2); an SSH entry whose delete failed
       stays spent on both roads (U3); and U4-U11, G11, G17, G23 and G24 green, each watched RED first.
-- [ ] Run with Secrets' argv starts with `-T` and the agent's ssh argv is unchanged (T1, T2); no `-A` without the
-      extension's agent on E3's two roads, and `ssh:exec` unchanged (F1-F5).
+- [ ] `-T` first on the argv of E3's two roads and of no other (T1, K1, K2, T2 with its scan of the two `noTty: true`
+      sites); no `-A` without the extension's agent on E3's two roads (F1-F5); the whole child environment on E3's two
+      roads holds no host `SSH_AUTH_SOCK`, no `CREDS_REF_` name and no resolved value, and adds only askpass and our
+      socket (F6); `ssh:exec`'s argv and environment unchanged (the guard halves of T2, F4 and F6).
+- [ ] The acceptance matrix of §6 (consent, consumption, authentication, masking, for T and for S) has a green test in
+      every cell.
 - [ ] `launchRoadScan.test.ts` and `commandRoadScan.test.ts` green.
 - [ ] `npm run typecheck`, `npm test` and lint in `src_vs_code` green, at lowered priority.
 - [ ] SSH Connect's existing tests green, unchanged.
 - [ ] Help changed in all five languages, English first; README, CHANGELOG, `research/module_extension.md`,
       `research/module_tests.md` updated.
-- [ ] Hand check 3's two observations of §10 are handed to the owner with it (with `RequestTTY force`, `tty` prints
+- [ ] Hand check 3's three observations of §10 are handed to the owner with it (with `RequestTTY force`, `tty` prints
       `not a tty` and the script is not echoed; with `ForwardAgent yes` and no key in the extension's agent,
-      `SSH_AUTH_SOCK` is `none`); if either fails, stop and report. Owed, not a gate for the merge, like the rest of
+      `SSH_AUTH_SOCK` is `none`; a key only in the person's own agent is not used, so a stored key the server refuses
+      ends with `Permission denied`); if any fails, stop and report. Owed, not a gate for the merge, like the rest of
       hand check 3.
 - [ ] coai: a plan round reached `proceed`; a code round ran; every finding resolved; verdicts and reviewer counts in
       the summary.
@@ -842,8 +924,9 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
   in the remote command's environment (`ps e`, `/proc/<pid>/environ`), as the help says; the agent road runs only when the SSH entry itself is
   open to the agent for `exec`, and otherwise refuses with the one sentence that names only the Terminal entry, code
   `denied` (D15). A linked run is an agent's use of the SSH entry: it spends a one-use SSH entry once, through the
-  broker's own turn and burn (D15). Run with Secrets asks ssh for no pty (`-T`, D16); neither road forwards the person's
-  own agent while it says nothing is forwarded (D17). Neither road lets a linked entry reach a local sink (§4.5 (5)).
+  broker's own turn and burn (D15). Both roads ask ssh for no pty (`-T`, D16); neither road's ssh gets the host's agent
+  socket, and neither forwards the person's own agent while it says nothing is forwarded (D17). Neither road lets a
+  linked entry reach a local sink (§4.5 (5)).
   Then every document describes the shipped system and the plan is promoted with its deviations.
 - **Stories.**
   - **S1 — Run with Secrets.** Order prepare → `confirmTrusted(trustLine)` → dependencies → resolve values → spawn; the
@@ -854,7 +937,8 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
     with Secrets*, the dependency chain, an agent's VPN start and a chain with no lookup land here (S1 changes the
     routing in `commands/runCommands.ts`; the others guard E2's merged code). Help ×5 for Run with Secrets,
     with the banner's way out. Built in epoch 3 (d4ebcab9 … 320297b8). Fixed forward in epoch 4 (stories §E3.4):
-    `-T` first in its argv (D16), the agent socket rule (D17), the true text of the child's environment.
+    `-T` first in its argv (D16), the agent socket rule and the removal of the host's `SSH_AUTH_SOCK` and of any
+    `CREDS_REF_` name from the child's environment (D17).
   - **S2 — Agent.** The gate of D15 first (in `validate` and in `run`), else `linkedRunRefused(T)`, code `denied`, and
     nothing runs; then `planLaunch` with the gate's link; `resolveExecAuth`, jump and pin as the agent exec does;
     `buildSshExecArgv` with the bare line; key deleted in `finally`; the consent text names the SSH entry and its
@@ -862,8 +946,9 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
     `capturedRun`, §4.5 (5)) (step 8, D2, D15). Help ×5 for the agent road. Built in epoch 3 (757bf3a3 … 7c6e4ffb).
     Fixed forward in epoch 4 (stories §E3.4): the used entry, its turn and its burn in the broker (`uses`,
     `CallSubject.uses`, the turns in key order, `burnInTurn`, `usedEntrySpent`), the two-part compare, the release of a
-    waiting value of S, `OverSshCall.ownAgentOnly` (the linked run `true`, `ssh:exec` `false`), the bridged journal line,
-    and the help sentence on a one-use SSH entry ×5.
+    waiting value of S, `OverSshCall.ownAgentOnly` and `.noTty` (the linked run `true` for both, so `-T` and no host
+    agent socket; `ssh:exec` `ownAgentOnly: false` and no `noTty`), the bridged journal line, and the help sentence on a
+    one-use SSH entry ×5.
   - **S3 — Closing.** What the road stories did not already change: the remaining help ×5 lines (the limits — POSIX
     remote shells only, Windows remote refused, the risk-1 note), `README.md`, a new `src_vs_code/CHANGELOG.md` entry for
     E3's two roads (1.20.0's entry, #338, already holds E1 and E2 and says these two roads still refuse) with the lines
@@ -875,7 +960,8 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
 - **Scope.** §4.4 bullets "Run with Secrets" and "Agent"; §4.5 (5); build steps 7, 8, 9; D2, D12, D15; DoD rows
   "no-local-sink tests", "agent's refusal", "Help changed in all five languages" and "Plan promoted". Files:
   `maskedTerminal.ts` (`MaskedRunOptions` gains `argv`, `env`, `stdinText` and `onEnded`; `shell:false`),
-  `commands/runCommands.ts` (Run with Secrets), `remoteLaunch.ts`, `sshRoad.ts`, `sshProgram.ts`, `outputMask.ts`,
+  `commands/runCommands.ts` (Run with Secrets), `remoteLaunch.ts`, `sshRoad.ts`, `sshProgram.ts` (since epoch 4 also
+  `envWithout`, `AGENT_SOCKET_ENV`, `E3_INHERITED_DROP`), `outputMask.ts`,
   `runPlan.ts`, `agentUseActions.ts` (`terminalRunAction`), `useActions.ts` (`validate`/`summarize` take the call
   target; `UseActionContext.summary`), `brokerCall.ts`, `mcpEntries.ts` (`findUsableEntry` on the SSH entry),
   `maskEntries.ts` (`maskEntriesWithLink`), `sshUseActions.ts` (`execOverSsh`, `ownAgentOnly`), `sshExecCommand.ts`
@@ -894,15 +980,16 @@ Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E
   S2 are each complete alone; their fix forward of epoch 4 is part of E3's one unit (§5): E3 does not merge without it.
   S3 closes what the earlier stories left.
 - **Done when.** §6 rows "secrets" (all), "masking end to end", "snapshot" (the masked-run half), "agent", "agent gate"
-  (both), "agent masking", "Run with Secrets: the argv starts with `-T`", "agent socket", "one-use", "release",
-  "compare", "`uses`", "no local sink" and "help tests (5 languages)" are green: no value in argv or added to the child's
-  environment, the exports and the `{ … } </dev/null` group on stdin, `"${SHELL:-sh}" -s`, `-T` first and no `-t`, output
+  (both), "agent masking", "the WHOLE child environment", "`-T` on E3's two roads", "agent socket", "one-use",
+  "release", "compare", "`uses`", "no local sink" and "help tests (5 languages)" are green, and every cell of the
+  acceptance matrix of §6 has its test: no value in argv or anywhere in the child's environment, no host
+  `SSH_AUTH_SOCK` and no `CREDS_REF_` name there, `-T` first on both roads, the exports and the `{ … } </dev/null` group on stdin, `"${SHELL:-sh}" -s`, `-T` first and no `-t`, output
   masked, the run bounded, Windows and a non-local window refused; no `-A` without the extension's agent on the two
   roads; a one-use SSH entry spent once by a linked run, through the real broker; every pre-gate outcome gives `linkedRunRefused(T)` with code
   `denied` and names no SSH entry, the usable one gives argv via `buildSshExecArgv`, the consent names the SSH entry, the
   mask table holds its values; each no-local-sink test was watched RED by its bypass; the `research/` pages and the
   README name the field, the trust line and the refusals; `helpEn.ts` no longer tells a person to write the ssh line by
-  hand; the plan and its stories documents are promoted together with the deviations recorded; hand check 3 of §10, with its two lines of epoch 4, is
+  hand; the plan and its stories documents are promoted together with the deviations recorded; hand check 3 of §10, with its three lines of epoch 4, is
   handed to the owner.
 - **Cornerstone areas.** None within the quota: this is consultant area (3), ranked below (1) and (2). The agent gate
   (the SSH entry's own `exec` eligibility, no confused deputy, no leak in the refusal text) and, since epoch 4, the
