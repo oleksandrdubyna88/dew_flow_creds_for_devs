@@ -109,6 +109,14 @@ test('a_linked_step_refuses_the_whole_chain_in_the_planner', () => {
   assert.deepEqual(planDependencyRun([root], (id) => byId.get(id), here), { ok: false, reason: SENTENCE('step') });
 });
 
+test('a_linked_step_whose_line_uses_config_gets_the_one_shared_sentence_not_the_vpn_one', () => {
+  // Refusal order: the link comes first, so a linked step always says the same sentence, whatever its line holds.
+  const step = terminalEntity('step', 'openvpn --config {config}', { sshEntityId: 's1' });
+  const root = terminalEntity('root', 'y', { dependsOn: ['step'], runDependencies: true });
+  const byId = new Map([step, root].map((n) => [n.id, n]));
+  assert.deepEqual(planDependencyRun([root], (id) => byId.get(id), here), { ok: false, reason: SENTENCE('step') });
+});
+
 test('a_linked_step_types_nothing_anywhere', async () => {
   const nodes = ownerChain();
   nodes.install = { ...nodes.install, sshEntityId: 's1' };

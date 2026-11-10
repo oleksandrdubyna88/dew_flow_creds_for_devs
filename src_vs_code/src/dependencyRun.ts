@@ -142,15 +142,20 @@ function addStep(walk: Walk, node: EntityMetadata, line: string): void {
 }
 
 /**
- * A step that cannot run here: written for another system, or asking for `{config}` — which only a
+ * A step that cannot run here: linked to an SSH entry (said first), written for another system, or asking for `{config}` — which only a
  * VPN's *Started by* fills in. Run as a plain dependency it would be typed literally (the owner's
  * example entered through Depends on alone), so it is refused with the way to do it instead.
  */
 function stepRefusal(walk: Walk, node: EntityMetadata, line: string): string | undefined {
+  // The link comes first: a linked step always says the one shared sentence, whatever its line holds (E1 code round 2).
+  const linked = sshLinkRefusal(node);
+  if (linked !== undefined) {
+    return linked;
+  }
   if (usesConfig(line)) {
     return `"${node.name}" ${USES_CONFIG}. Pick it as the VPN's launcher there instead of running it as a dependency.`;
   }
-  return sshLinkRefusal(node) ?? nameStepRefusal(node) ?? walk.refusalOf(node.name, node.terminalOs);
+  return nameStepRefusal(node) ?? walk.refusalOf(node.name, node.terminalOs);
 }
 
 /** A step whose `{name}` cannot be filled refuses the whole chain, with the reason. */
