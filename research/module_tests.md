@@ -376,6 +376,21 @@ whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two 
 where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
 (the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE. A seam `OWNED_PROC` (the /proc root) lets a test give the helper a minimal /proc: the record then ends after the pid (T G4).
 
+**The shell scripts take their scratch from `owned.sh` (2026-11-10, E2.4.S2 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`mcp-listen-smoke.test.sh`, `version-smoke.test.sh`, `start-server-and-wait.test.sh` and `deploy/restore-archive-itest.sh` make their
+folders with `owned_dir` (the test with its own clean-up function sets it with `owned_trap` first); none of them sets a trap of its
+own, and `owned.test.sh`'s caller scan (T7a) reads all of them. The two smoke scripts, with no log root and no `RUNNER_TEMP`, make
+their scratch with `owned_dir` too (a given root is unchanged, so the release jobs need no `owned.sh`); each smoke self-test has two
+new cases that run the smoke that way, with a private `TMPDIR`, once failing after the folder is made and once passing, and ask for an empty root.
+`start-server-and-wait.sh` with no `START_SERVER_LOG` writes `server.log` in a claimed, KEPT owned folder (case `j` reads the folder, the
+claim, the record's pid and that the old `start-server-*.log` is gone); its own trap became the `owned_trap` clean-up function, so an
+interrupt ends it with 128 plus the signal. `restore-archive-itest.sh` makes its nine worlds with `owned_dir` and gives the restore child
+`TMPDIR="$WORLD"`. Each of the four CI steps runs its script with `TMPDIR="$RUNNER_TEMP/leftovers-<step>"` and fails when anything is left in that root.
+Watched RED first (a private `TMPDIR`): a stub `chmod` that fails before the old removal left one `tmp.*` in each smoke self-test;
+the smoke scripts off CI left `creds-mcp-listen-smoke-<pid>` and `creds-version-smoke-<pid>`; `start-server-and-wait.sh` left
+`start-server-<id>.log`; the itest left nine `tmp.*`; a SIGTERM or SIGHUP to the process group of `mcp-listen-smoke.test.sh` left its `tmp.*`
+(a SIGINT does not, on the old script: bash waits for the child, which ends normally, and goes on). With `owned.sh` every root is empty, and INT, TERM and HUP give 130, 143 and 129.
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
@@ -1635,6 +1650,7 @@ server's first log line. On this PR's first run the build step took 27 s and the
 | g. TERM to the script while it waits | exit non-zero, `interrupted`, and the server it started is gone — a cancelled step leaves nothing behind |
 | h. accepts the connection, never answers, deadline 2 s | exit 1 within 4.5 s — no probe runs past the deadline |
 | i. the start line (on c's run) | names the program only, never its arguments, which may carry a secret |
+| j. no `START_SERVER_LOG`, no `RUNNER_TEMP`, a private `TMPDIR` (E2.4.S2) | the root holds one `testsToDelete-<owner>-creds-server-log-<id>` folder with `server.log` and its claim (a well-formed record, the script's own gone pid), and no loose `start-server-*.log` |
 
 Runs in the contract job before the build, and the pinned shellcheck of *compose · scripts* reads both scripts.
 **Watched RED** with the old inline loop as the implementation (`START_SERVER_SCRIPT`): all six cases failed, and

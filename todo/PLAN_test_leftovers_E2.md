@@ -2366,6 +2366,33 @@ Commits: `95052ea` the tests (RED against the helper of `e9a2677`), `7c8f328` th
 **Effect of item 1:** the caller's function runs in a subshell, so a variable it sets is not seen by `owned_cleanup`; the function must act on files or processes, which is what a clean-up does.
 **Not run here:** shellcheck (item 8 and the new directives are unmeasured), macOS bash 3.2 and Git for Windows (CI). Totals on Linux: 138 asserts, 0 failed, ten runs in a row (see the report).
 
+### E2.4 build record, part 2 — S2, the shell scripts (2026-11-10, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.4_brief.md](PLAN_test_leftovers_E2.4_brief.md) § 3.1, test first, on `092bad8`. Commits, oldest first: `9608b43` RED (S2.4, the two smoke self-tests);
+`232bef2` the two smoke scripts and their self-tests; `4da990b` RED (S2.5, case `j`); `aba13a5` `start-server-and-wait.sh`, its self-test and `http/README.md`; `a0ab9df` `restore-archive-itest.sh`; `57cc72b` the four CI steps and the `-x` of shellcheck; this record with `module_tests.md`. S3 and S4 are not touched.
+
+**The RED list** (every run by hand with `TMPDIR` a private empty folder; text is from the run).
+1. S2.1, `mcp-listen-smoke.test.sh`, a stub `chmod` first on `PATH` that writes a marker and exits 1. Premise: `marker exists: yes; script exit: 1`. RED on `092bad8`: `after: 1 entries: tmp.qhQfmehkSb`. GREEN: `after: 0 entries`.
+2. S2.2, `version-smoke.test.sh`, the same: RED `after: 1 entries: tmp.jFAOO3XIds`; GREEN 0.
+3. S2.4, the new cases of each smoke self-test, against the old smoke scripts: `FAIL off CI: a binary that is not executable fails after the folder is made and leaves nothing — expected exit 1 saying 'not an executable' and an empty root; exit 1, left: [creds-mcp-listen-smoke-1594450]`; `FAIL off CI: a passing run leaves nothing — … left: [creds-mcp-listen-smoke-1594460]`; and `FAIL off CI, cli: a run that writes no log … left: [creds-version-smoke-1594946]`, `… a passing run leaves nothing … left: [creds-version-smoke-1594960]`. GREEN with the migrated scripts. Taken out again (the two smoke scripts of `9608b43` with the migrated self-tests): the same four FAIL lines.
+4. S2.5, case `j`, against the old `start-server-and-wait.sh`: `the root holds: [start-server-y3mEbg.log]; the claim reads: []` and `FAIL j. with no START_SERVER_LOG the log is in an owned folder with a claim, kept for a sweep`. GREEN: one `testsToDelete-u1000-creds-server-log-<8 hex>` folder with `server.log`, its `.owner`, the record's pid the script's own and gone. The old script put back: red again.
+5. S2.6, nine worlds, one run of `restore-archive-itest.sh` on `092bad8`: `after: 9` (`tmp.DmM5sh9ZFP` and eight more); GREEN `after: 0` (the run takes about 3.5 minutes: the restore script's health waits).
+6. S2.7, the interrupt: `perl -e '$SIG{INT}="DEFAULT"; setpgrp(0,0); exec @ARGV' bash mcp-listen-smoke.test.sh`, a signal to the group after the first `ok` line. RED on `092bad8`: SIGTERM, exit 143, `after: 1 entries: tmp.Oo2xsY5yHo`; SIGHUP, exit 129, one `tmp.*`. GREEN: INT 130, TERM 143, HUP 129, each `after: 0 entries`, no survivor.
+7. S2.3, positive only: `start-server-and-wait.test.sh` with a private `TMPDIR` (all cases, and `START_SERVER_CASES=g`) leaves 0 entries. A signal while the script waits: INT exit 130, HUP exit 129, the server stopped, the kept log folder and its claim stay (by design).
+
+**The guard.** `leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"`: 16 findings before, 11 after. The five shell `raw-temp` lines S2 owns are gone (`mcp-listen-smoke.test.sh:19`, `start-server-and-wait.sh:107`, `start-server-and-wait.test.sh:28`, `version-smoke.test.sh:14`, `deploy/restore-archive-itest.sh:45`). Left: `restore-archive.sh:61`, `restore.sh:102`, `install.sh:63`, `:76` (product scripts, E2.5), six in `docker.yml` (S3), `commandParse.test.ts:40`.
+`owned.test.sh` after S2: `90 + 93 + 26` asserts, `0 failed`; T7a `no caller sets a trap of its own (7 scanned)`.
+
+**What only CI runs.** macOS (bash 3.2) and Git for Windows legs of the self-tests and of the new off-CI cases; the four `RUNNER_TEMP` root checks; shellcheck (not installed here, nothing measured: the `# shellcheck source=` lines, `-x` on two CI lines, `disable=SC2317,SC2329` on `on_exit`); actionlint (not installed; the two workflow files were parsed with PyYAML). `restore-archive-itest.sh` ran here under its own `nice` re-exec; the CI run has `CI=true`.
+
+**Differences from the brief.**
+1. `start-server-and-wait.sh` had its own `trap interrupted INT TERM HUP` (and `trap - INT TERM HUP`), which T7a flags in any caller. The trap became `owned_trap on_exit`, set before the first step that can fail; `on_exit` stops the server only while `waiting=1`, and every path that ends the wait itself sets `waiting=0` first. Effect: an interrupt now ends with 128 plus the signal (130, 143, 129), not always 143; the clean-up runs in a subshell, so it acts on the process by pid only. The script now sources `owned.sh` on every run, also with `START_SERVER_LOG` set (the helper needs no node and no mount on Linux or macOS unless `owned_dir` is called).
+2. Row 9 says `git grep 'creds-mcp-listen-smoke-\|creds-version-smoke-'` is 0 after S2. It is 2 (the given-root branches, which the brief § 3.1 item 2 keeps unchanged); the off-CI leaf is gone.
+3. `restore-archive-itest.sh`: `source … || exit 1` (a failed `source` without `set -e` goes on to `owned_dir: command not found`, found by running a copy). The script has no `set -e`, so no stubbed-failure RED applies to it; its RED is S2.6's nine entries.
+4. S2.7 as written ("RED on `main`: its `tmp.*` stays") is true for SIGTERM and SIGHUP only. SIGINT on `092bad8`: the run goes on to its summary and removes its folder (bash waits for the child, which ends normally). A `&` child ignores SIGINT from the start and bash cannot trap that, so the signal test starts the script through `perl` with SIGINT at its default.
+5. `ci-server.yml`: `-x` added to the shellcheck lines of `start-server-and-wait*.sh` and `restore-archive-itest.sh` (the `source`); `restore-archive-itest.sh` moved to its own line. The smoke scripts and their tests are still not shellchecked in CI (I16, a todo, not built).
+6. `http/README.md` and the two smoke scripts' headers say what the new default does, in the places the brief names.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
