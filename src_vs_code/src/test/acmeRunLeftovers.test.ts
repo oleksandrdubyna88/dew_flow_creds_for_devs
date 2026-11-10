@@ -625,7 +625,7 @@ test('the janitor call: 0 and 3 are fine and silent; 127 names the command that 
   }
   const unmounted = runAcme(REAL_RUN, { STUB_JANITOR_RC: '127' });
   assert.equal(unmounted.status, 0, unmounted.output);
-  assert.match(unmounted.output, /janitor: exit code 127.*git submodule update --init \.claude\/rules\/shared/);
+  assert.match(unmounted.output, /janitor: exit code 127.*git submodule update --init \.agents\/conventions/);
   const other = runAcme(REAL_RUN, { STUB_JANITOR_RC: '2' });
   assert.equal(other.status, 0, other.output);
   assert.equal(other.output.split('\n').filter((line) => /janitor/i.test(line)).length, 1, other.output);
