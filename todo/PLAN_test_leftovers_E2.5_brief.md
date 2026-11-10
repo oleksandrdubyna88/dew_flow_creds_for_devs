@@ -199,7 +199,7 @@ lines; the gate's G2 and G3. No row is unmapped since the coordinator's answers.
 | `src_service_defaults/tests/Leftovers/LeftoversRepositoryGuardTests.cs` (new) | the template's file at `197cc76`, namespace op only | S1.4 |
 | `src_service_defaults/tests/Leftovers/LeftoversGuardCredsTests.cs` (new, creds' own) | the plants of S1.1, the F10 pin of S1.5, the scans-clean check | S1.1, S1.5 |
 | `src_service_defaults/tests/Support/Leftovers/template-manifest.json` | entry 53 (`LeftoversRepositoryGuardTests.cs`) and the ops of S1.2, S1.3, S1.5 | S1 |
-| `src_service_defaults/tests/Leftovers/TheAdaptedCopyTests.cs:27`, `:80`, `:37-47` | `TemplateEntries` 52 → 53 and its message; `LeftoversGuardCredsTests.cs` on `CredsOwn` | S1 |
+| `src_service_defaults/tests/Leftovers/TheAdaptedCopyTests.cs:27`, `:80`, `:37-47` | `TemplateEntries` 52 → 53, its message, and the `NotContain` line that says the repository guard test is E2.5's (it becomes the opposite: the entry is there); `LeftoversGuardCredsTests.cs` on `CredsOwn` | S1 |
 | `.gitattributes`; `.github/workflows/sonarcloud.yml:128` | one `-text` line and one `sonar.exclusions` entry for the copied file | S1.4 |
 | `install.sh:63`, `:76`; `deploy/restore.sh:102`; `deploy/restore-archive.sh:61`; `src_vs_code/src/test/commandParse.test.ts:40` | one marker line above each (§ 6) | S2.1 |
 | `src_cli/tests/AgentRelayTests.cs:38`, `:39`, `:278` | one marker line above each (Q3) | S2.2 |
@@ -294,7 +294,7 @@ check of `TheAdaptedCopyTests` stays green. No op touches ownership, liveness or
   temp site.
 - **S1.4 — `LeftoversRepositoryGuardTests.cs`.** The template's file at `197cc76` (one `[Fact]`,
   `This_repository_passes_the_guard`: `FilesScanned > 0` and no finding, the message `report.Describe(root)`), manifest
-  entry 53 with the namespace op only; `TemplateEntries` 53 (`TheAdaptedCopyTests.cs:27`) and the message at `:80`; a
+  entry 53 with the namespace op only; `TemplateEntries` from 52 to 53 (`TheAdaptedCopyTests.cs:27`), the message at `:80` and the `NotContain` line below it; a
   `-text` line in `.gitattributes`; the path in `sonar.exclusions`. **RED in this story**: the test fails on the branch
   with the 10 findings of § 0 minus S1.2's two, quoted in the commit. GREEN after S2.1–S2.2.
 - **S1.5 — the wrapper's folding allowance (Q2 (B)) and its pin (F10).** The fifth entry
