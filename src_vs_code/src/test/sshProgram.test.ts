@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 import {
   NO_AGENT_TO_FORWARD,
+  NO_SSH_TO_SPAWN,
   agentForwardEnv,
   openSshBinary,
   builtInOpenSsh,
   openSshProgram,
   pathDirsOf,
   pathSshIsBuiltIn,
+  spawnableSshProgram,
+  sshSpawnLaunch,
   wslWindowsSshClient,
 } from '../sshProgram';
+import type { EntityMetadata } from '../types';
 
 const present = (): boolean => true;
 const absent = (): boolean => false;
@@ -216,4 +221,73 @@ test('a Windows without it lends nothing, and says so as an empty string', () =>
 test('and no other host has one to lend — WSL runs on Windows or nowhere', () => {
   assert.equal(wslWindowsSshClient('linux', present), '');
   assert.equal(wslWindowsSshClient('darwin', present), '');
+});
+
+// ---- the spawn of Run with Secrets over SSH (E3.S1, P1-P7) -------------------------------------------------------------------
+//
+// Any host: the platform, the PATH value and `exists` are injected, so a Linux runner decides for Windows.
+
+/** In each string one backslash per `\\`: a relative folder, a drive-relative one, an absolute one and the built-in client's. */
+const WIN_PATH = '.;tools;\\rooted;C:\\Git\\usr\\bin;C:\\Windows\\System32\\OpenSSH';
+
+const SSH_ENTITY = { id: 's1', name: 'box', isSshEnabled: true, host: 'h', user: 'u' } as EntityMetadata;
+
+/** An `exists` that says yes to every candidate and records what it was asked. */
+function recordingExists(answer: (candidate: string) => boolean): { exists: (candidate: string) => boolean; asked: string[] } {
+  const asked: string[] = [];
+  return {
+    exists: (candidate) => {
+      asked.push(candidate);
+      return answer(candidate);
+    },
+    asked,
+  };
+}
+
+test('on_windows_a_bare_ssh_becomes_the_first_absolute_path_folder_that_holds_it', () => {
+  const seen = recordingExists((candidate) => candidate.endsWith('ssh.exe'));
+  assert.equal(spawnableSshProgram('ssh', 'win32', WIN_PATH, seen.exists), path.win32.join('C:\\Git\\usr\\bin', 'ssh.exe'));
+  assert.deepEqual(seen.asked, [path.win32.join('C:\\Git\\usr\\bin', 'ssh.exe')], '`.`, `tools` and the drive-relative `\\rooted` are skipped, never asked');
+});
+
+test('on_windows_with_no_ssh_on_the_path_the_built_in_is_used', () => {
+  assert.equal(spawnableSshProgram('ssh', 'win32', 'C:\\bin', (candidate) => candidate === builtInOpenSsh('ssh')), builtInOpenSsh('ssh'));
+});
+
+test('on_windows_with_no_client_at_all_the_answer_is_undefined', () => {
+  assert.equal(spawnableSshProgram('ssh', 'win32', WIN_PATH, absent), undefined);
+  assert.ok(NO_SSH_TO_SPAWN.includes('ssh.exe'), 'the refusal sentence exists and names what was missing');
+});
+
+test('on_windows_an_absolute_program_is_kept_and_nothing_is_searched', () => {
+  const seen = recordingExists(() => true);
+  assert.equal(spawnableSshProgram(builtInOpenSsh('ssh'), 'win32', WIN_PATH, seen.exists), builtInOpenSsh('ssh'));
+  assert.deepEqual(seen.asked, []);
+  assert.equal(spawnableSshProgram('\\\\server\\share\\ssh.exe', 'win32', WIN_PATH, seen.exists), '\\\\server\\share\\ssh.exe', 'a \\\\ prefix is absolute too');
+  assert.deepEqual(seen.asked, []);
+});
+
+test('off_windows_the_bare_name_is_kept_and_nothing_is_searched', () => {
+  const seen = recordingExists(() => true);
+  for (const platform of ['linux', 'darwin'] as const) {
+    assert.equal(spawnableSshProgram('ssh', platform, '/usr/bin:.:', seen.exists), 'ssh');
+  }
+  assert.deepEqual(seen.asked, []);
+});
+
+test('on_windows_the_spawned_program_is_never_a_bare_name', () => {
+  const everything = recordingExists(() => true);
+  const nothing = recordingExists(() => false);
+  for (const agentForward of [true, false]) {
+    const program = sshSpawnLaunch({ ...SSH_ENTITY, agentForward }, '/tmp/a.sock', 'win32').program;
+    assert.match(spawnableSshProgram(program, 'win32', WIN_PATH, everything.exists) ?? '', /^[A-Za-z]:[\\/]/, `agentForward ${String(agentForward)}`);
+    assert.equal(spawnableSshProgram(program, 'win32', WIN_PATH, nothing.exists), undefined, 'never the bare word, however the client was named');
+  }
+});
+
+test('a_forwarding_entry_gets_the_agent_socket_and_a_missing_socket_is_a_warning', () => {
+  const forwarding = { ...SSH_ENTITY, agentForward: true };
+  assert.deepEqual(sshSpawnLaunch(forwarding, '/tmp/a.sock', 'linux'), { program: 'ssh', env: { SSH_AUTH_SOCK: '/tmp/a.sock' } });
+  assert.deepEqual(sshSpawnLaunch(forwarding, undefined, 'linux'), { program: 'ssh', env: {}, warning: NO_AGENT_TO_FORWARD });
+  assert.deepEqual(sshSpawnLaunch(SSH_ENTITY, '/tmp/a.sock', 'linux'), { program: 'ssh', env: {} }, 'no forwarding: the socket is not handed over');
 });

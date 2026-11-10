@@ -16,7 +16,7 @@ import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
 import { notStarted } from './requestLife';
-import { agentForwardEnv, openSshBinary } from './sshProgram';
+import { sshSpawnLaunch } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { RemoteWindowDeps, connectEntity } from './sshConnect';
@@ -97,15 +97,14 @@ function agentAwareLaunch(
   entity: EntityMetadata,
   env: NodeJS.ProcessEnv,
 ): { program: string; env: NodeJS.ProcessEnv } {
-  const wanted = entity.agentForward === true;
-  const forwarding = agentForwardEnv(env, wanted, deps.agentSocket());
-  if (forwarding.warning !== undefined) {
-    deps.note(`ssh:exec — ${forwarding.warning}`);
-  }
-  // `openSshBinary`, not `openSshProgram`: this string is SPAWNED with `shell: false`, and on
-  // Windows a relative name is resolved by `CreateProcess`, which searches the current directory
+  // `sshSpawnLaunch` (shared with Run with Secrets over SSH, E3.S1): `openSshBinary`, not `openSshProgram`, because this string is
+  // SPAWNED with `shell: false`, and on Windows a relative name is resolved by `CreateProcess`, which searches the current directory
   // before `PATH`. The viewer's copyable bare word belongs to the other function.
-  return { program: openSshBinary('ssh', wanted, process.platform), env: forwarding.env };
+  const launch = sshSpawnLaunch(entity, deps.agentSocket(), process.platform);
+  if (launch.warning !== undefined) {
+    deps.note(`ssh:exec — ${launch.warning}`);
+  }
+  return { program: launch.program, env: { ...env, ...launch.env } };
 }
 
 function fail(code: ErrorCode, message: string): UseActionResult {
