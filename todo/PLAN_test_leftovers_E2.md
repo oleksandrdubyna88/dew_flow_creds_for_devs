@@ -1,6 +1,7 @@
 # PLAN — Test leftovers, E2: creds names, claims, removes and collects what its tests, harnesses and CI smoke make
 
-> Status: **E2.5 built, PR #330 open; E2 ships with its merge.** The epics E2.1 to E2.4 are merged (#294, #310, #311, #329); E2.5 is built on
+> Status: **E2 shipped, 2026-11-10; promotes with its parent.** All five epics are merged: E2.1 #294, E2.2 #310, E2.3 #311, E2.4 #329, E2.5 #330
+> (`b6cc6b3`, 2026-11-10 19:48 UTC). Was: E2.5 built, PR #330 open; E2 ships with its merge. E2.5 was built on
 > `feat/test-leftovers-e2.5` and its build record is § *E2.5 build record*, with the merge conditions of D8 for the five pull requests in one list.
 > At E2.5's merge this line becomes `E2 shipped, <date>; promotes with its parent` (the coordinator sets the date), and the stories and the parent plan
 > promote together. The hosted evidence of E2.5 (the release dispatches, the Windows leg of the clients job) is in the last part of that record.
