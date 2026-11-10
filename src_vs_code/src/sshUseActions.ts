@@ -10,7 +10,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { StorageManager } from './storageManager';
-import { CallTarget, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
+import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
@@ -217,7 +217,42 @@ function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
   }
 }
 
-// eslint-disable-next-line max-lines-per-function
+/**
+ * One command run over SSH: the credential, the argv from `buildSshExecArgv`, the spawn, the answer, and the key file removed in
+ * `finally` (E3-D9). The body `ssh:exec` always had, taken out so the agent's run of a linked Terminal entry reaches the same
+ * code with its own command: the caller decides WHICH entry, WHICH command and WHAT jump chain (a thunk, so `ssh:exec` still
+ * resolves it after the credential), and holds the exec slot; nothing here reads the vault for the target.
+ */
+export function execOverSsh(deps: SshUseDeps): OverSsh {
+  return async (ctx, call) => {
+    const refuse = bridgedRefusal(deps, ctx);
+    const prepared = await prepareAuth(deps, ctx, call.ssh, refuse);
+    if (!prepared.ok) {
+      return prepared.result;
+    }
+    try {
+      const chain = call.jump();
+      if (!chain.ok) {
+        return refuse('no_credential', chain.reason);
+      }
+      const argv = buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, connectionArgvOptions(deps, call.ssh, chain.value, ctx.bridge !== undefined)) as string[]; // the host was checked by the caller
+      const launch = agentAwareLaunch(deps, call.ssh, prepared.env);
+      const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });
+      const response: ExecResponseBody = outcome;
+      return { status: 200, body: response };
+    } catch (error) {
+      return refuse('internal', `Could not run ssh: ${describeError(error)}`);
+    } finally {
+      removeKeyFile(deps, prepared.materialized);
+    }
+  };
+}
+
+/** What stops an exec before it takes a slot: an entity that cannot be connected to, or a bridged call with no per-call file. */
+function refusedBeforeSlot(deps: SshUseDeps, ctx: UseActionContext, entity: EntityMetadata): UseActionResult | undefined {
+  return unusableEntity(ctx, entity) ?? unguardedBridge(deps, ctx, bridgedRefusal(deps, ctx));
+}
+
 export function sshExecAction(deps: SshUseDeps): UseAction {
   return {
     kind: 'ssh',
@@ -241,14 +276,12 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
     summarize(body) {
       return String((body as { command?: unknown }).command ?? '');
     },
-    // eslint-disable-next-line complexity
     async run(ctx, body): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      const refuse = bridgedRefusal(deps, ctx);
-      const unusable = unusableEntity(ctx, entity) ?? unguardedBridge(deps, ctx, refuse);
+      const unusable = refusedBeforeSlot(deps, ctx, entity);
       if (unusable !== undefined) {
         return unusable;
       }
@@ -256,36 +289,15 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       if (release === undefined) {
         return fail('too_many_requests', 'Too many SSH commands are already running.');
       }
-      const prepared = await prepareAuth(deps, ctx, entity, refuse).catch((error: unknown) => { release(); throw error; });
-      if (!prepared.ok) {
-        release();
-        return prepared.result;
-      }
       try {
-        const chain = resolveJumpChain(entity, (id) => deps.storage.getNode(ctx.accountId, id)?.details);
-        if (!chain.ok) {
-          return refuse('no_credential', chain.reason);
-        }
-        const argv = buildSshExecArgv(
-          entity,
-          prepared.keyPath,
-          String((body as { command: string }).command),
-          prepared.auth,
-          connectionArgvOptions(deps, entity, chain.value, ctx.bridge !== undefined),
-        ) as string[]; // the host was checked above
-        const launch = agentAwareLaunch(deps, entity, prepared.env);
-        const outcome = await runSshExec(argv, {
-          program: launch.program,
-          env: launch.env,
+        return await execOverSsh(deps)(ctx, {
+          ssh: entity,
+          // The chain is resolved AFTER the credential, as it always was for `ssh:exec`.
+          jump: () => resolveJumpChain(entity, (id) => deps.storage.getNode(ctx.accountId, id)?.details),
+          remoteCommand: String((body as { command: string }).command),
           timeoutMs: clampExecTimeout((body as { timeoutMs?: unknown }).timeoutMs),
-          ...launchGuards(deps.signal, ctx),
         });
-        const response: ExecResponseBody = outcome;
-        return { status: 200, body: response };
-      } catch (error) {
-        return refuse('internal', `Could not run ssh: ${describeError(error)}`);
       } finally {
-        removeKeyFile(deps, prepared.materialized);
         release();
       }
     },
@@ -371,6 +383,9 @@ function brokerWindow(deps: SshUseDeps): RemoteWindowDeps | undefined {
 // `extension.ts` is under the size ratchet, so it imports the road host from the module that already assembles the SSH deps (E2-D9).
 export { sshRoadOf } from './sshRoad';
 
+/** What `sshDepsFor` answers: the deps of the two SSH actions, and the run over SSH the agent's `run` of a linked Terminal entry is handed (E3-D9). */
+export type SshWiredDeps = SshUseDeps & { readonly overSsh: OverSsh };
+
 /**
  * Everything the two SSH actions need, assembled in one place instead of in `activate()`.
  *
@@ -385,8 +400,8 @@ export function sshDepsFor(parts: {
   agentServer: { signal: AbortSignal; acquireExecSlot(): (() => void) | undefined; note(message: string): void };
   sshAgent: { socketPath: string | undefined; servesKeyForEntity(entity: EntityMetadata): boolean };
   relays: WslRelayManager;
-}): SshUseDeps {
-  return {
+}): SshWiredDeps {
+  const deps: SshUseDeps = {
     storage: parts.storage,
     storageDir: parts.storageDir,
     signal: parts.agentServer.signal,
@@ -401,4 +416,5 @@ export function sshDepsFor(parts: {
     relays: parts.relays,
     servesKeyForEntity: (entity): boolean => parts.sshAgent.servesKeyForEntity(entity),
   };
+  return { ...deps, overSsh: execOverSsh(deps) };
 }

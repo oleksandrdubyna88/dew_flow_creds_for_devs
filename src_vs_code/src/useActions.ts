@@ -12,6 +12,8 @@
 
 import type { BridgeContext } from './bridgeContext';
 import type { ErrorCode } from './brokerProtocol';
+import type { JumpChain } from './sshOptions';
+import type { EntityMetadata } from './types';
 
 /** What a call is aimed at, as a grant names it: enough to read the live entity. */
 export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
@@ -84,6 +86,24 @@ export interface UseActionResult {
   readonly status: number;
   readonly body: unknown;
 }
+
+/**
+ * One command run over SSH, as the caller decided it (E3.S2, E3-D9): the SSH entry AS THE CALLER READ IT (one snapshot), the chain of
+ * its jump hosts as a thunk (so `ssh:exec` keeps resolving it AFTER the credential, as it always did), the ONE remote argument,
+ * and the bound on the run.
+ */
+export interface OverSshCall {
+  readonly ssh: EntityMetadata;
+  readonly jump: () => JumpChain;
+  readonly remoteCommand: string;
+  readonly timeoutMs: number;
+}
+
+/**
+ * `execOverSsh`'s shape (`sshUseActions.ts`): credential, argv, spawn, answer, key file removed. Injected into the actions that
+ * run over SSH, so a module that imports no `vscode` can start an ssh without importing the one that does.
+ */
+export type OverSsh = (ctx: UseActionContext, call: OverSshCall) => Promise<UseActionResult>;
 
 export interface UseAction {
   readonly kind: string;

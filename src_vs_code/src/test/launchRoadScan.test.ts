@@ -17,7 +17,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 const RESOLVE_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bresolveCommand\b[^}]*\}\s*from/g;
 const SSH_LINK_READS = [/\.\s*sshEntityId\b/g, /\{[^{}]*\bsshEntityId\b[^{}]*\}\s*=[^=>]/g, /\[\s*['"`]sshEntityId['"`]\s*\]/g];
-const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g, /\brunInMaskedTerminal\s*\(/g];
+const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g, /\brunInMaskedTerminal\s*\(/g, /\brunSshExec\s*\(/g];
 const REFUSAL_CALL = /\bsshLinkRefusal\s*\(/g;
 
 /** The road files of spec §S2.7 scan 3: where a line is typed into a terminal or handed to a child. */
@@ -30,6 +30,7 @@ const ROAD_FILES = [
   'vpnLauncherRun.ts',
   'sshRoad.ts',
   'agentUseActions.ts',
+  'sshUseActions.ts',
   'terminalGuard.ts',
   'pinnedTerminal.ts',
   'maskedTerminal.ts',
@@ -168,6 +169,12 @@ const ALLOWED_SENDS: AllowList = {
     },
   ],
   'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
+  'sshUseActions.ts': [
+    {
+      line: 'const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });',
+      because: "ssh:exec and the agent's run over SSH (E3.S2): the argv comes from buildSshExecArgv, no shell",
+    },
+  ],
   'terminalGuard.ts': [
     { line: 'export async function sendGuarded(', because: 'the guarded send: the road under Run in Terminal and the VPN launcher' },
     { line: 'return typeIntoNew(key, target, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable (always, for a password session)' },
@@ -236,4 +243,5 @@ test('the_scan_still_finds_what_it_is_about', () => {
   assert.equal(sitesIn('literal.ts', 'x = sshLinkRefusal\n(\n  d)', [REFUSAL_CALL]).length, 1);
   assert.equal(sitesIn('literal.ts', 'x\n  .executeCommand(\n y)', SENDS).length, 1);
   assert.equal(sitesIn('literal.ts', 'x = runInMaskedTerminal\n(\n {})', SENDS).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x = runSshExec\n(\n a)', SENDS).length, 1);
 });
