@@ -190,7 +190,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
 //
 // An entry with no SSH link runs HERE (`runHere`, the local shell). An entry linked to an SSH entry runs there (`runThere`, over `execOverSsh`),
 // and only when THE GATE lets it through: the SSH entry must itself be usable by agents (`findUsableEntry`, in the Terminal entry's own
-// account). Everything below is the decision of `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md`; each function is named there.
+// account). Everything below is the decision of `research/PLAN_terminal_command_over_ssh_E3_S2_security.md`; each function is named there.
 
 /** Said whenever the gate refuses, for every reason: it names the Terminal entry only — the SSH entry is not the agent's to read (spec §4). */
 export function linkedRunRefused(name: string): string {

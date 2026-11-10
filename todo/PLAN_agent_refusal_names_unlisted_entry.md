@@ -2,7 +2,7 @@
 
 > Status: **not started, 2026-11-10.** The owner said yes to fix it as its own item. Scope: the extension's broker
 > refusal (`src_vs_code/src/brokerRequests.ts`) and its tests. Found as F7 of
-> [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §16, item 7.
+> [PLAN_terminal_command_over_ssh_E3_S2_security.md](../research/PLAN_terminal_command_over_ssh_E3_S2_security.md) §16, item 7.
 
 ## Symptom
 

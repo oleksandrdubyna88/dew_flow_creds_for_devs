@@ -11,7 +11,7 @@ import { isInTrash } from './trash';
 
 /**
  * The ONE road from a Terminal entry and its SSH link to a launch (E1.S2 of PLAN_terminal_command_over_ssh.md; spec
- * `todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md`). Pure (it imports no editor API), so every row of the decision tables is a unit
+ * `research/PLAN_terminal_command_over_ssh_E1_S2_spec.md`). Pure (it imports no editor API), so every row of the decision tables is a unit
  * test, and `launchRoadScan.test.ts` pins who may reach a terminal or a child without it.
  *
  * <p>Three questions, asked in this order by every road that runs a Terminal entry:</p>

@@ -1,7 +1,7 @@
 # PLAN — `ssh:exec` spawns its ssh by an absolute path on Windows
 
 > Status: **not started, 2026-11-10.** Scope: the extension's `ssh:exec` road (`src_vs_code/src/sshUseActions.ts`) and
-> its tests. Found while writing B1 of [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md)
+> its tests. Found while writing B1 of [PLAN_terminal_command_over_ssh_E3.md](../research/PLAN_terminal_command_over_ssh_E3.md)
 > (flag 8); waits for E3, which adds `spawnableSshProgram`.
 
 ## Symptom

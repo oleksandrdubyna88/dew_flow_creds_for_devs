@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3.S2: the authorisation of the agent's run (security spec)
 
-> Status: **spec, 2026-11-10. The first two amendments are built on `feat/terminal-command-over-ssh-e3` in 757bf3a3..7c6e4ffb, and the third (the re-review for epoch 4) in 9a47c56c..cdfe769c. The code reviews and the promotion are next.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
+> Status: **IMPLEMENTED, 2026-11-11.** The first two amendments were built in 757bf3a3..7c6e4ffb and the third (the re-review for epoch 4) in 9a47c56c..cdfe769c, on feat/terminal-command-over-ssh-e3; shipped in extension 1.21.0, pending its release PR. Deviations: the E3 stories document, "Deviations of S1 and S2" and "The review fixes", and the parent's §12. Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
 > §2 D2, §4.4 "Agent", §9. Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md) §S2, whose §S2.1
 > lists the ten questions this file answers. A Fable security judgement (`subagent-models.md` "Security judgement", outside
 > the cornerstone quota). It owns the gate, the refusal texts, the consent text, `asksAfterConsent`, the mask table, the
@@ -64,7 +64,7 @@ A4 and A5.
 | A3 | The spawned ssh inherits the extension host's `SSH_AUTH_SOCK` | On E3's two roads (Run with Secrets, the agent's linked run) the host's variable does NOT reach ssh (the lead's decision, 2026-11-10: the approved text promised it). (a) The child's environment: the run REMOVES the host's `SSH_AUTH_SOCK`; it ADDS only the askpass variables and, when the extension's agent serves the run, its own `SSH_AUTH_SOCK`; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. The mechanism is the environment, which is ours to set and to observe (F6). `-o IdentityAgent=none` is NOT sent (§18.2 (a) says why, and what was measured). (b) When the SSH entry asks for forwarding and the extension's agent is not up, the argv has NO `-A` and has `-o ForwardAgent=no`. `ssh:exec` keeps today's environment and argv in this plan, by a REQUIRED per-call word (`ownAgentOnly: false`), and has its own plan (§18.2). |
 | A4 | The summary compare is skipped when `ctx.summary` is absent | For a LINKED gate a missing summary refuses with `changedWhileAsking`, and so does a `ctx.uses` that is absent or names another SSH entry than the gate's (the id, so a relink to an entry that looks the same refuses too). The skip stays for a `local` gate only. The test worlds hand the run what the broker hands it, through one fixture function (§2.3 step 3, §12). |
 | A5 | The mask table holds S's STORED password while a rotated value of S waits | The broker releases a waiting value of the used entry (`releaseWaiting(call.uses)`) after the grant's own and before the table is read, so the table holds the value ssh will use (§7). |
-| A6 | askpass answers a jump host's prompt with S's password ([PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md)) | E3 does not refuse a password S with a jump on the agent road: the same agent reaches the same defect by `creds_exec` on the same S, which the gate requires to be usable, so a refusal here would be a measure at one of its many sites and would make the road smaller for no gain. The limit is recorded; that plan gains E3's roads in its table and moves up to the next plan on the SSH roads (§18.3). |
+| A6 | askpass answers a jump host's prompt with S's password ([PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md)) | E3 does not refuse a password S with a jump on the agent road: the same agent reaches the same defect by `creds_exec` on the same S, which the gate requires to be usable, so a refusal here would be a measure at one of its many sites and would make the road smaller for no gain. The limit is recorded; that plan gains E3's roads in its table and moves up to the next plan on the SSH roads (§18.3). |
 
 ## 1. Words
 
@@ -423,7 +423,7 @@ marked. With an ordinary S nothing else happens (U5). With a one-use S both are 
   untrusted until a person runs T over S from the tree on this machine. That person's run is the moment a person sees the
   target. So the quiet window alone cannot run a line on a host nobody here approved. Putting the link into the stamp's
   fingerprint is the same class as *A change of the entry's type keeps the window*
-  ([PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) §5.1): a stamp behaviour change with its own plan.
+  ([PLAN_consent_coverage_per_door.md](../todo/PLAN_consent_coverage_per_door.md) §5.1): a stamp behaviour change with its own plan.
 - **S's one-use promise is kept** (third amendment, A1). The first version asked only S's switch, and S's
   *until an agent uses it once* did not hold for a linked run (parent entry 3.2). S's ask policy answers *how often is a
   person asked*, and T's answer is enough for a fixed line. S's one-use answers *how many times may an agent use this
@@ -1109,7 +1109,7 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
     than one line is then not masked in the agent's answer. E3's two roads say `-T` and do NOT have this limit (the
     first correction of this amendment left the linked run with it; the second one took it away). `-T` is not sent on
     `ssh:exec`, because it would change a shipped road (a person may rely on a forced pty, for `sudo` for example). It
-    belongs to [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), which decides what a
+    belongs to [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md), which decides what a
     spawned ssh of the agent takes from the person's ssh setup; that plan's text must say `ssh:exec` only, not *and an
     agent's linked run*. Text for that plan, not for E3's CHANGELOG.
 12. **Parent §4.4 says of Run with Secrets: *the agent socket as the agent's `ssh:exec` chooses it*.** After A3 the two
@@ -1340,7 +1340,7 @@ extension's agent, Run with Secrets of `echo "${SSH_AUTH_SOCK:-none}"` prints `n
 
 ### 18.3 A password SSH entry with a jump host (A6)
 
-[PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md): the hop's nested ssh inherits the askpass
+[PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md): the hop's nested ssh inherits the askpass
 environment, so a hop that asks for a password is answered with S's. That plan names two paths: the agent's local
 `exec`, and the person's Connect.
 

@@ -16,7 +16,7 @@ authentication, the nested ssh answers with the DESTINATION entry's password, an
 is the server's, so filtering by prompt text in the script would be spoofable.
 
 Two paths have it, and the terminal-over-SSH plan
-([PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md), risk 7 and §7a; its E3.S2 security spec §18.3)
+([PLAN_terminal_command_over_ssh.md](../research/PLAN_terminal_command_over_ssh.md), risk 7 and §7a; its E3.S2 security spec §18.3)
 puts more roads on each (added 2026-11-10, the both-sides rule):
 
 | Path | Where | Roads on it |

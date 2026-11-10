@@ -27,7 +27,7 @@ const scope = cleanupScope();
 after(() => scope.close());
 
 /**
- * The authorisation of the agent's run over SSH (E3.S2; spec `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md`, scenarios G1-G22).
+ * The authorisation of the agent's run over SSH (E3.S2; spec `research/PLAN_terminal_command_over_ssh_E3_S2_security.md`, scenarios G1-G22).
  * Each test is named for the guarantee; each was watched RED first, and the commit that builds the guarantee says what the failure read.
  */
 

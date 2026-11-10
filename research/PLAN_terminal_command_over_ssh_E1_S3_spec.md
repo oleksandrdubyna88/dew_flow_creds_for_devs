@@ -1,6 +1,6 @@
 # PLAN — E1.S3 spec: the seam, `prepareSshSession` (CORNERSTONE)
 
-> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e1 (local), promotes with the parent.** Spec by Fable, written before the code.
+> Status: **IMPLEMENTED, 2026-11-11.** Merged with E1 (#335) and released in extension 1.20.0 (#341), with the parent. Deviations: D10 of this spec, E1's §S4 (F5 and F6) and the parent's §12. Where this text and the code differ, the code and those tables win. Spec by Fable, written before the code.
 > Story E1.S3 of [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) — parent §4.3 (the seam),
 > §4.4 (the "one owner" and "one snapshot" rules), §6 (rows "prepare opens no terminal" and "existing SSH Connect
 > suites green, unchanged"), risk 7, `## Epics` › E1 › S3. Its own file because the E1 stories document goes whole to
@@ -31,7 +31,7 @@ commit `e468285` (branch `feat/terminal-command-over-ssh`; the source files are 
 | F9 | `RemoteWindowDeps` is imported from `'./sshConnect'` by `remoteConnectHost.ts:6` and `sshUseActions.ts:22`; `connectEntity` is called by `commands/agentCommands.ts:557` and `sshUseActions.ts:316`. `test/remoteConnectParity.test.ts:62` finds every file (not `sshConnect.ts`, not tests) that writes `connectEntity(`. | The types move to `sshSession.ts` and `sshConnect.ts` re-exports them; the two callers and the parity scan do not change. `sshSession.ts` never writes `connectEntity(`. |
 | F10 | ESLint: `max-lines` 800, `max-lines-per-function` 50 code lines, `complexity` 4, and `reportUnusedDisableDirectives: 'error'` (`eslint.config.mjs:20,30-32`). `connectEntity` carries `// eslint-disable-next-line complexity, max-lines-per-function` (`sshConnect.ts:135`). `tsconfig.json:11-12` has `noUnusedLocals` and `noUnusedParameters`. | After the cut, `connectEntity` is small and that disable MUST be removed, or lint fails. `sshSession.ts` carries no disable. Unused imports left in `sshConnect.ts` fail `typecheck`. |
 | F11 | `sshConnect.test.ts` has 24 tests, `sshConnectRemote.test.ts` 25 (`grep -c '^test('`). `research/module_tests.md:1021` says "(32)" — a stale count from before the split. | The parity row in §S3.8 names 24 + 25. The coder corrects the count in the research row it touches. |
-| F12 | The plan's ledger reads `Cornerstones: 0 of 2 — none marked yet` (parent, last line) and `todo/PLAN_terminal_command_over_ssh_E1.md` does not exist yet. `subagent-models.md` DoD: "a cornerstone was in the ledger before Fable wrote its spec". | Owed before this spec's commit lands: the E1 stories document, with S2 and S3 marked `model: fable`, and the ledger line `Cornerstones: 2 of 2 — E1.S2, E1.S3`. This spec does not write them (one file only). |
+| F12 | The plan's ledger reads `Cornerstones: 0 of 2 — none marked yet` (parent, last line) and `research/PLAN_terminal_command_over_ssh_E1.md` does not exist yet. `subagent-models.md` DoD: "a cornerstone was in the ledger before Fable wrote its spec". | Owed before this spec's commit lands: the E1 stories document, with S2 and S3 marked `model: fable`, and the ledger line `Cornerstones: 2 of 2 — E1.S2, E1.S3`. This spec does not write them (one file only). |
 
 ## S3.1 — The parent plan's wording, judged
 

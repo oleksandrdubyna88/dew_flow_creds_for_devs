@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 4 open 2026-11-10, 0 changes (after the whole re-review of entry 3.2's stop: nothing narrowed, nothing cut). E1 (#335) and E2 (#337) merged and released in 1.20.0 (#341); E3 S1, S2 and the fix forward F-S1 and F-S2 built, and S3 with F-S3 built except the promotion, on feat/terminal-command-over-ssh-e3 (local, unmerged); next: the code reviews, then the promotion of the seven documents LAST (E3 stories §S3.2); hand check 3 is the owner's.** Scope: the extension (`src_vs_code`) — a new
+> Status: **IMPLEMENTED, 2026-11-11.** Shipped: E1 (#335) and E2 (#337) in extension 1.20.0 (#341); E3 in extension 1.21.0, pending its release PR (branch feat/terminal-command-over-ssh-e3). Deviations: §12. Ledger at promotion: epoch 4, 0 changes. Hand checks 1-3 of §10 are owed to the owner. Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
@@ -159,7 +159,7 @@ Narrowed: no — every decision of the revision only adds to the plan or makes i
 > Epoch 4 · approved 2026-11-10 · by reviewers · state: open
 
   (The interim re-review round of plan-change-control, because this branch's plan round had already passed: coai
-  review_document on branch feat/terminal-command-over-ssh-e3, document todo/PLAN_terminal_command_over_ssh.md, verdict
+  review_document on branch feat/terminal-command-over-ssh-e3, document PLAN_terminal_command_over_ssh.md (then in todo/), verdict
   proceed, 4 of 4 reviewers answered, one finding, accepted: where the spent marker of the used entry lives and its
   limits (D15, §4.4 "Agent"). With it, the lead's own Opus review of the revision: no blocker; its findings M1 and m1 to
   m8 are applied in the same commit as this line. The step-3 consultation is b73776c0 (above). Not narrowed, so
@@ -215,8 +215,8 @@ guarantee (§4.5 (5)). The scan holds only who imports and who reads.
 | D14 | With a link, *Runs on* describes the REMOTE system; the local terminal is chosen as SSH Connect chooses it (`composedShellPath()`, `src_vs_code/src/pinnedTerminal.ts:54`). | lead |
 | D15 | The agent's gate for D2 (the authorisation part, [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §0). The SSH entry must be usable for `exec` in the Terminal entry's account. The gate is checked before the consent dialog and again at run time. Before the gate passes, the agent reads one sentence, `linkedRunRefused`, which names only the Terminal entry, with code `denied`, whatever the reason. The mask table of the call also holds the linked SSH entry's values. **A linked run is an agent's use of the SSH entry** (security spec §2.5, A1, decision B): the action names the SSH entry to the broker (`UseAction.uses`, the gate first); the broker takes its one-use turn in the same lane as a `creds_exec` on it, asks its spent marker first, and after a call that answered 200 burns it (the marker is set even when the delete fails; the used entry is burned in a `finally` after the grant's entry, so a throw for the grant's entry cannot leave it unburned), so a one-use SSH entry is spent once. Its spent marker is a member of the lane's EXISTING per-window set, at most 512 keys, the oldest dropped first: the same set, key form and cap as the marker of a `creds_exec` on a one-use entry, so its limits are the same (another window, a reload, past 512 keys; each matters only when the delete failed). A linked run needs BOTH the summary the dialog showed AND the used entry the broker holds (`ctx.uses`, compared by id, so a relink to an SSH entry that looks the same refuses); either one absent refuses (A4). A waiting rotated value of the SSH entry is released before the mask table is read (A5). | Fable security judgement, 2026-11-10 (entry 2.1); the one-use promise, the two-part compare and the release: the re-review of epoch 4 (spec third amendment, A1, A4, A5; entry 3.2's cause) |
 | D16 | E3's two roads ask ssh for no remote pty: their argv starts with `-T` (`buildSshExecArgv`'s new `noTty: true`), also when the person's ssh config says `RequestTTY force`. `noTty: true` stands at exactly two production sites: `secretsArgv` (Run with Secrets: the script on stdin is never typed into a remote terminal) and the linked run's call `overSshWithSlot` (`OverSshCall.noTty`, which `execOverSsh` hands on: stdout and stderr stay apart, so D15's masking holds for a value of more than one line). `ssh:exec` and the person's clicks of `commands/agentCommands.ts` keep today's argv; their forced pty is a recorded limit of the shipped road (§7 risk 9). No `-o EscapeChar=none` (inert without a pty). | Fable security judgement (spec §18.1, A2); the scope by the lead, 2026-11-10 (re-review of epoch 4, after coai b73776c0) |
-| D17 | The agent socket and the child's environment on E3's two roads (Run with Secrets over SSH, the agent's linked run). (a) The child's environment: the run ADDS only the askpass variables and, when the extension's agent serves the run, its `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every inherited name that starts with `CREDS_REF_`; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. The removal is pure and has no condition: `envWithout(base, drop, platform)` in `sshProgram.ts`, with `drop: { names: readonly string[]; prefixes: readonly string[] }` (one shape, used by both roads), and the constant `E3_INHERITED_DROP = { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] }` (`AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK'`); on Windows a name or a prefix matches in any letter case. The extension's socket is laid on top only when its agent serves (the entry forwards and the socket is up). So the approved test row holds for the WHOLE environment: no `CREDS_REF_` name, no host `SSH_AUTH_SOCK`, no resolved value, and the keys added or changed over the base environment are exactly the askpass variables and our `SSH_AUTH_SOCK` (F6). The `CREDS_REF_` prefix is the lead's extension of the security spec's §18.2 (a). (b) When the SSH entry asks for agent forwarding and the extension's own agent is NOT up, the argv has no `-A` and has `-o ForwardAgent=no` (`SshExecOptions.ownAgent`), so the person's own agent is never forwarded while the banner or the journal says nothing is. `ssh:exec` keeps today's environment and argv by a required per-call word (`ownAgentOnly: false`); its own plan is [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (§7a). The trust line and the consent still show `-A`: the launch does less than was approved. No `-o IdentityAgent` word: a person's own config line `IdentityAgent` still wins (§7 risk 8). | Fable security judgement (spec §18.2, A3), re-review of epoch 4; (a) by the lead's decision after coai b73776c0 |
-| D18 | A password SSH entry with a jump host is NOT refused on E3's roads: askpass can answer the hop's prompt with the SSH entry's password on every road that uses that entry, so a refusal on one road would protect nothing and make D2's road smaller. The fix belongs to [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md), the next plan on the SSH roads after E3 (§7 risk 7). | Fable security judgement (spec §18.3, A6), re-review of epoch 4 |
+| D17 | The agent socket and the child's environment on E3's two roads (Run with Secrets over SSH, the agent's linked run). (a) The child's environment: the run ADDS only the askpass variables and, when the extension's agent serves the run, its `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every inherited name that starts with `CREDS_REF_`; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. The removal is pure and has no condition: `envWithout(base, drop, platform)` in `sshProgram.ts`, with `drop: { names: readonly string[]; prefixes: readonly string[] }` (one shape, used by both roads), and the constant `E3_INHERITED_DROP = { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] }` (`AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK'`); on Windows a name or a prefix matches in any letter case. The extension's socket is laid on top only when its agent serves (the entry forwards and the socket is up). So the approved test row holds for the WHOLE environment: no `CREDS_REF_` name, no host `SSH_AUTH_SOCK`, no resolved value, and the keys added or changed over the base environment are exactly the askpass variables and our `SSH_AUTH_SOCK` (F6). The `CREDS_REF_` prefix is the lead's extension of the security spec's §18.2 (a). (b) When the SSH entry asks for agent forwarding and the extension's own agent is NOT up, the argv has no `-A` and has `-o ForwardAgent=no` (`SshExecOptions.ownAgent`), so the person's own agent is never forwarded while the banner or the journal says nothing is. `ssh:exec` keeps today's environment and argv by a required per-call word (`ownAgentOnly: false`); its own plan is [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md) (§7a). The trust line and the consent still show `-A`: the launch does less than was approved. No `-o IdentityAgent` word: a person's own config line `IdentityAgent` still wins (§7 risk 8). | Fable security judgement (spec §18.2, A3), re-review of epoch 4; (a) by the lead's decision after coai b73776c0 |
+| D18 | A password SSH entry with a jump host is NOT refused on E3's roads: askpass can answer the hop's prompt with the SSH entry's password on every road that uses that entry, so a refusal on one road would protect nothing and make D2's road smaller. The fix belongs to [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md), the next plan on the SSH roads after E3 (§7 risk 7). | Fable security judgement (spec §18.3, A6), re-review of epoch 4 |
 
 ## 3. What the code does today (verified 2026-11-09 at `origin/main` 16975d0)
 
@@ -634,7 +634,7 @@ entry T (the grant's) and the SSH entry S (the used entry). Each guarantee is de
 6. **Non-POSIX remote login shells** (fish) break the wrapper.
 7. **A password SSH entry with a jump host** hands the askpass environment to the hop's nested ssh, so a hop that asks
    for a password is answered with the destination's password. This is the open defect of
-   [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md). Its two paths now carry this plan's roads too
+   [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md). Its two paths now carry this plan's roads too
    (security spec §18.3): the SSH Connect preparation and `-J` (the arrow, a VPN's launcher and the folder run, E2,
    released in 1.20.0), and `buildSshExecArgv` with `auth: 'askpass'` and `jump` (Run with Secrets over SSH, E3.S1, and
    the agent's linked run, E3.S2). (The dependency chain refuses a password SSH entry at plan time.) E3 does NOT refuse a
@@ -665,21 +665,21 @@ entry T (the grant's) and the SSH entry S (the used entry). Each guarantee is de
    line ends become CR LF, and a value of more than one line is then not masked in the agent's answer. E3's two roads
    say `-T` (D16) and do not have this limit. `-T` is not sent on `ssh:exec`, because it would change a shipped road
    (a person may rely on a forced pty, for `sudo` for example). Routed to
-   [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), which decides what an agent's spawned
+   [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md), which decides what an agent's spawned
    ssh takes from the person's ssh setup.
 
 ## 7a. Neighbour plans
 
 | Plan | Touches | This plan's part |
 |---|---|---|
-| [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect, on both its paths; whether the person's ssh setup applies to a spawned ssh | none: E3 does not refuse a password SSH entry with a jump (D18) and inherits the fix (risk 7). Its table names this plan's roads on each path. It goes FIRST among the SSH-road plans after E3 (its priority rose, security spec §18.3); it is not a condition of E3's merge |
-| [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) (new, re-review of epoch 4) | `ssh:exec` on a forwarding SSH entry forwards the person's OWN agent when the extension's agent has no key; the three clicks of `commands/agentCommands.ts`; a forced pty on `ssh:exec` (risk 9) | none in code: this plan makes `ownAgentOnly` a required per-call word, the linked run says `true`, `ssh:exec` says `false` with a comment naming that plan, and the F5 scan pins the one `false`. That plan turns it to `true` (one word) after E3, with the owner's yes. Disjoint: this plan changes no shipped argv |
-| [PLAN_ssh_exec_absolute_program.md](PLAN_ssh_exec_absolute_program.md) | `ssh:exec`'s program on Windows and its folder (CWE-426, entry 3.1's class) | none: E3 adds `spawnableSshProgram` for the masked run only; that plan applies it to `ssh:exec` (and so to the agent's linked run) after E3 merges |
-| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | none: item 5 is closed by the security plan below, not here; E2 adds the `ssh` target to `sendGuarded` |
-| [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | stored commands run by an agent ON a server through the bridge | none; the bridge keeps refusing `run` (§9). Disjoint: that plan runs a line on the server an agent lives on; this one runs a person's line on a server they connect to |
+| [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect, on both its paths; whether the person's ssh setup applies to a spawned ssh | none: E3 does not refuse a password SSH entry with a jump (D18) and inherits the fix (risk 7). Its table names this plan's roads on each path. It goes FIRST among the SSH-road plans after E3 (its priority rose, security spec §18.3); it is not a condition of E3's merge |
+| [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md) (new, re-review of epoch 4) | `ssh:exec` on a forwarding SSH entry forwards the person's OWN agent when the extension's agent has no key; the three clicks of `commands/agentCommands.ts`; a forced pty on `ssh:exec` (risk 9) | none in code: this plan makes `ownAgentOnly` a required per-call word, the linked run says `true`, `ssh:exec` says `false` with a comment naming that plan, and the F5 scan pins the one `false`. That plan turns it to `true` (one word) after E3, with the owner's yes. Disjoint: this plan changes no shipped argv |
+| [PLAN_ssh_exec_absolute_program.md](../todo/PLAN_ssh_exec_absolute_program.md) | `ssh:exec`'s program on Windows and its folder (CWE-426, entry 3.1's class) | none: E3 adds `spawnableSshProgram` for the masked run only; that plan applies it to `ssh:exec` (and so to the agent's linked run) after E3 merges |
+| [PLAN_terminal_runs_followups.md](../todo/PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | none: item 5 is closed by the security plan below, not here; E2 adds the `ssh` target to `sendGuarded` |
+| [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md) | `quoteFor('powershell')`, the win32 `shellQuote` words, the askpass `.bat`, `envPrefix` — shipped local-injection defects found by E1's class sweep (entry 1.2) | none: that plan owns the fix and ships FIRST, as its own PR on its own clock; E1 is rebased onto it and keeps only its own changes |
+| [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) | stored commands run by an agent ON a server through the bridge | none; the bridge keeps refusing `run` (§9). Disjoint: that plan runs a line on the server an agent lives on; this one runs a person's line on a server they connect to |
 
-| [PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) | `credsAgentServer.ts` (the stamp write, its gate), built on its own branch, unmerged | none: E3 changes other lines of `credsAgentServer.ts` (`perform`'s `uses`, `prepared`'s release, the `refuse` and `burn` closures, spec §11) and not the stamp; E3 keeps the stamp keyed on the Terminal entry (spec §3.2). Whichever merges second re-reads the file after the merge (the file is at 793 of its 800-line ceiling) |
+| [PLAN_consent_coverage_per_door.md](../todo/PLAN_consent_coverage_per_door.md) | `credsAgentServer.ts` (the stamp write, its gate), built on its own branch, unmerged | none: E3 changes other lines of `credsAgentServer.ts` (`perform`'s `uses`, `prepared`'s release, the `refuse` and `burn` closures, spec §11) and not the stamp; E3 keeps the stamp keyed on the Terminal entry (spec §3.2). Whichever merges second re-reads the file after the merge (the file is at 793 of its 800-line ceiling) |
 
 The table is complete for plans open on 2026-11-10 that touch the files of the roads (§4.4) or the broker lines E3
 changes. Checked by `grep` for `brokerCall.ts`, `credsAgentServer.ts`, `oneUseLane`, `sshExecCommand.ts` and
@@ -702,7 +702,7 @@ on failure as on success (`keyedQueue.ts`). At most one more marker per linked r
   stays REFUSED with the shared sentence (fail closed, which meets §1). D2 opens only `creds_run`; opening this road is
   an authorisation decision for a later plan with its own security judgement (raised by the E2 stories, 2026-11-10).
 
-- The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md), landing before E1.
+- The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), landing before E1.
 
 - A Windows remote (D9) — a later plan, after a hand check of Windows OpenSSH's default shell.
 - Remapping references on external import (an existing gap for all four reference fields).
@@ -723,11 +723,11 @@ on failure as on success (`keyedQueue.ts`). At most one more marker per linked r
   host has an `SSH_AUTH_SOCK`: `ssh:exec` sends `-A`, the child inherits the host's socket, and the person's OWN agent is
   forwarded and signs with no prompt, while the journal says nothing is forwarded (security spec §16 item 10). Shipped
   before this plan; E3 does not change it (`ownAgentOnly: false`, D17). Owner:
-  [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), which needs the owner's yes, because
+  [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md), which needs the owner's yes, because
   its fix takes away something a person may use today.
 - **Whether the person's ssh config applies to a spawned ssh** (`SendEnv`, `ForwardAgent`, the agent's keys,
   `ProxyCommand`, `RequestTTY`): one question for all its parts (risk 8, risk 9). Owner:
-  [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) (its Definition of Done, third row).
+  [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md) (its Definition of Done, third row).
 
 ## 10. Hand checks (owner)
 
@@ -788,6 +788,74 @@ login shell. Hand checks 1-3 (the UI) stay the owner's.
       the summary.
 - [ ] Plan promoted with its deviations when shipped.
 
+## 12. Deviations — what shipped differently from this plan (promoted 2026-11-11)
+
+Shipped: E1 and E2 in extension 1.20.0 (#341; E1 #335, E2 #337); E3 in extension 1.21.0 (`src_vs_code/CHANGELOG.md`, `## [1.21.0]`),
+pending its release PR (E3 is on `feat/terminal-command-over-ssh-e3`). Each stories document keeps its own table of
+deviations; this section lists what a reader of the PARENT needs first and cites those tables instead of copying them.
+Where a line records something as not done or not possible, it says what was CHECKED.
+
+**Plan changes (the ledger above is the record).** Three stops, three whole re-reviews, nothing narrowed: entry 1.2
+(the security sweep left E1 for its own plan), entry 2.2 (below) and entry 3.2 (the one-use burn). Epoch 4 stood at
+0 entries when the ledger was read whole at promotion (it is still open there; the ledger is append-only).
+
+**E1** ([PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E1.md) §S4, F1-F7, fixed before E1 merged):
+F1 `trustLineFor` also carries `-A` and every enabled forward; F2 *Update it* on a received share keeps the RECIPIENT's own
+link; F3 the secrets script is read by the remote login shell, `"${SHELL:-sh}" -s`; F4 Export uses `withoutSshLink` and the
+candidate list uses the link decision; F5 ONE `withAcceptNew`, in the pure `sshCommand.ts`; F6 small duplicates removed;
+F7 stale text corrected. E1 was built as one commit with the security sweep inside it; the sweep was cut out and
+promoted as [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md) (the epoch 2 record above).
+
+**E2** ([PLAN_terminal_command_over_ssh_E2.md](PLAN_terminal_command_over_ssh_E2.md)): its four recorded deviations (the text of
+`sshStopped`; the `carriesEnvironment` rule; A1 corrected after the code round; the one owner and the one re-check moved
+into `sshRoad.ts` and serving four roads) and its flags 2-5: flag 2, a password step is refused AFTER the chain's
+preparation and before any step runs, not "at plan time" as §4.4 said (the credential kind is known only inside
+`prepareSshSession`), so the PIN may be asked first; flag 3, the road scan did not see `executeCommand(`, and S3 added it;
+flag 4, Copy All is a third copy road, and `typedLine` takes `localShell: HostShell`; flag 5, files the E2 list did not
+name. Flag 1 (an agent's `creds_vpn_up` on a linked launcher or chain step) stays refused (§9).
+
+**E3** ([PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md)):
+
+- **E3-D2.** Over SSH the references come only from the line that runs (`planRefs([plan.line])`); a reference that is only
+  in a disabled argument row is not read. The local road still reads disabled rows.
+- **E3-D4.** A spawn always writes the key file (`prepare(…, 'spawn')`): a spawned child does not reach the window's agent.
+- **E3-D5 (round 2, B1, entry 3.1).** The masked ssh child is an absolute program on Windows and starts in the extension's
+  storage folder, never in the workspace (CWE-426). `ssh:exec` and the agent's run keep their own program and folder
+  (flag 8); that hardening is [PLAN_ssh_exec_absolute_program.md](../todo/PLAN_ssh_exec_absolute_program.md).
+- **E3-D13 and entry 2.2: the first §4.5 (1) importer target was given up.** `commands/runCommands.ts` still imports
+  `resolveCommand` for the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not
+  widened (E3's plan round 1). The epoch 3 revision wrote the shipped list into §4.5 (1) and put the guarantee on the
+  no-local-sink tests (LN1-LN11, AG8). This is history for the reader, not a gap.
+- **Flag 4.** The sentence of `sshLinkRefusal`, "…which this version cannot do yet…", was not reworded. Checked: the
+  non-test callers of `sshLinkRefusal(` at the last commit before promotion are `vpnLauncherRun.ts`, `dependencyRun.ts` and
+  `commands/runCommands.ts`; whether "yet" misleads a person there was not decided.
+- **The CHANGELOG path** is `src_vs_code/CHANGELOG.md`, not `CHANGELOG.md` (flag 5); E3-D5 also chooses the program and the
+  agent socket of the secrets child, which §4.4 did not name.
+- **`-o SendEnv=-NAME` for the askpass variables: checked, NOT built.** Measured in
+  [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md) §8: OpenSSH removes only a pattern that is
+  literally equal, not a wildcard, so the flag would look like protection and give none. The limit stays as the owner
+  accepted it on 2026-11-10 (`research/module_extension.md`, `src_vs_code/CHANGELOG.md` 1.19.0, *Known limits*): a person's own
+  `SendEnv` together with a server's `AcceptEnv` could send an askpass password. The resolved VALUES are never in that
+  environment (stdin only), so no `SendEnv` can carry them.
+- **Recorded, not built.** The agent's linked run reads the mask table BEFORE it waits for its lane, so a rotation released
+  during that wait is not in the table (the old design of `creds_exec`; E3 stories, after the S3 table, "the mask table is read
+  before the call waits in a lane").
+
+**The epoch 4 decisions, shipped as written** (D15-D18; the baseline of epoch 4, not ledger entries): D15 a linked run is an
+agent's use of the SSH entry (the used entry, its turn and its burn in the broker, the two-part compare, the waiting value
+released first, the bridged journal line); D16 `-T` on E3's two roads only; D17 the host's `SSH_AUTH_SOCK` and every
+`CREDS_REF_` name removed from the child's environment, and no `-A` without the extension's own agent; D18 a password SSH
+entry with a jump host is NOT refused ([PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md) owns the fix).
+The deviations of S1, S2 and the fix forward (the table of RED evidence, `linkedSummary`'s signature, G19, G10 (b), G4,
+U7's measured deadlock, F6's ignored keys, the bridged journal line) are in the E3 stories document, **"Deviations of S1
+and S2"**; the two accepted code-review fixes (a masked run closed during its banner kills the child and writes no script;
+`execOverSsh` reads the agent socket once) and the typed fixtures that replaced the `as never` casts are in its
+**"The review fixes"** table. The CHANGELOG of 1.21.0 also says that a spent SSH entry stays spent in this window and names
+the Windows ssh-agent pipe as a known limit (commit 8c2bd268, from the same review).
+
+**Owed, not done.** Hand checks 1-3 of §10 are the owner's (3 with the three lines of epoch 4 and E3's two observations of
+E3-D11); hand check 4 was done on 2026-11-10. The merge and the release PR of E3 are not part of this promotion.
+
 ## Epics
 
 Three epics over the nine build-order steps of §5, each of three stories. The split was five epics until the plan
@@ -801,7 +869,7 @@ keeps E1's refusal (D8), so no build between two epics runs a linked command loc
 
 The gate runs once per epic, declared with `plan` and `epic: "k/3"`. The consultation cadence is once per three
 epics, so one consultation runs before E1 is built and none is owed before E2 or E3. The stories below carry one line
-of scope each; each epic's stories document, `todo/PLAN_terminal_command_over_ssh_E<n>.md`, is written by Opus when
+of scope each; each epic's stories document, `research/PLAN_terminal_command_over_ssh_E<n>.md`, is written by Opus when
 that epic starts, and this section gets the link to it then (the both-sides rule of `planning-docs.md`).
 
 The question consultant was asked what is important (2 of 2 answered, 2026-11-09). Ranked: (1) the single launch
@@ -852,7 +920,7 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   `test/sshSession.test.ts`, `test/sshCommand.test.ts` additions; the five help files (the field's line), `README.md`,
   `research/module_extension.md`, `research/module_tests.md`. Risk 7 is inherited by S3 on purpose and not fixed here.
 - **Depends on.** The coai plan round at `proceed` and the one consultation of the cadence; since epoch 2 also the
-  security plan [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md), which lands
+  security plan [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md), which lands
   first. S1 lands before S2 (D8); S3 can be built beside them; the three land in E1's one commit on E1's branch.
 - **As built and re-reviewed (epoch 2).** E1 was built as one local commit (782444a) and passed its coai code round
   (`proceed`, 8 of 8 reviewers). That commit also holds the security sweep, which moves to its own plan: E1 is

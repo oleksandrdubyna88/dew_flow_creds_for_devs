@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3: Run with Secrets, the agent's run, and the closing
 
-> Status: **S1, S2 and the fix forward of §E3.4 (F-S1, F-S2) are built (d4ebcab9 … cdfe769c), and S3 with F-S3 is built except the promotion (local on feat/terminal-command-over-ssh-e3, 2026-11-10; the earlier commits are pushed, unmerged). The parent's epoch 4 is open (after the re-review of entry 3.2's stop). Next: the code reviews; the promotion of §S3.2 comes LAST, after them; hand check 3 is the owner's.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
+> Status: **IMPLEMENTED, 2026-11-11.** Built on feat/terminal-command-over-ssh-e3 and shipped in extension 1.21.0, pending its release PR: S1, S2 and the fix forward of §E3.4 (F-S1, F-S2) in d4ebcab9 … cdfe769c, S3 with F-S3, and the fixes of the code reviews. Deviations: "Deviations of S1 and S2" (its S1, S2, epoch 4 and S3 tables) and "The review fixes", and the parent's §12. Hand check 3 is the owner's. Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
 > fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
 > `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
@@ -929,7 +929,7 @@ What the S1, S2 and fix-forward coders built differently from the briefs and the
 | the one-use sentence in DE, RU and UK | written from the English by the coder, checked by the Opus reviewer | reviewed here: DE quoted a translated label in typographic quotes (the UI label is English, `CLAUDE.md` rule 7), and RU and UK said the SSH entry was "set to live"; reworded to the paraphrase the lifetime article of each language uses. ES was natural and stays. Hp10's table carries the new words |
 | the risk-1 note (§S3.1) | an Hp9 test | built: Hp9, five sentences exactly as the plan wrote them |
 | the CHANGELOG | four more lines (§E3.4 F-S3) | E3's block is `## [1.21.0]`, with the lines of S1, S2 and F-S1/F-S2 and a *Known limits* section; no line for `ssh:exec` (its argv and environment do not change), as the plan says; the promised *CHANGELOG path* is `src_vs_code/CHANGELOG.md` (flag 5) |
-| not built | — | **the promotion** (§S3.2), which comes after the code reviews; hand check 3 (handed to the owner, §S3.3) |
+| the promotion | §S3.2, after the code reviews | done 2026-11-11 in one commit (`docs(plans): terminal over SSH is implemented …`): the seven documents moved together, the parent got its deviations section (§12), and the links were walked (S3.3). Hand check 3 is handed to the owner (§S3.3) |
 
 **The review fixes (after the code reviews of E3).** Two accepted code-review findings and the typed-fixture rule (`typescript.doctrine` § 3); each fix was watched RED first (the messages are in the commit bodies).
 
@@ -948,6 +948,8 @@ is a change of `creds_exec` too and has its own plan if the owner wants it.
 
 ### S3.2 The promotion — together, the `git mv` LAST (`planning-docs.md` § *The `git mv` goes LAST*)
 
+**Done 2026-11-11.** What follows is the plan of the promotion as it was written, with the folders as they were before the move; the parent's §12 is the deviations section it asks for in step 1, and its ledger was read whole (step 2: epoch 4, 0 entries).
+
 The documents are SEVEN, listed in the table below. NOT `research/PLAN_windows_shell_quoting_injection.md` (its own
 plan, already promoted by #334, parent §7a).
 
@@ -961,17 +963,17 @@ in the shape of the multi-document row at `:41`, and that one row is the mention
 
 | # | Document | `todo/README.md` row removed (link text; line on this branch) | `research/README.md` mention (in the one row above) | Its own links that change (the three cases) |
 |---|---|---|---|---|
-| 1 | `PLAN_terminal_command_over_ssh.md` | `[PLAN_terminal_command_over_ssh.md]` — `:30` | the row's first link | case 1: `PLAN_askpass_answers_the_hop.md` (×4), `PLAN_consent_coverage_per_door.md`, `PLAN_ssh_exec_absolute_program.md`, `PLAN_ssh_exec_own_agent_forwarding.md` (×4), `PLAN_terminal_runs_followups.md`, `PLAN_remote_bridge_scoped.md` gain `../todo/` (counted by grep of the links, review of 2026-11-10); case 2: `../research/PLAN_windows_shell_quoting_injection.md` (×3) drops `../research/`; siblings unchanged; the path `todo/PLAN_terminal_command_over_ssh_E<n>.md` in the text (`:424`) becomes `research/…` |
+| 1 | `PLAN_terminal_command_over_ssh.md` | `[PLAN_terminal_command_over_ssh.md]` — `:30` | the row's first link | case 1: `PLAN_askpass_answers_the_hop.md` (×4), `PLAN_consent_coverage_per_door.md`, `PLAN_ssh_exec_absolute_program.md`, `PLAN_ssh_exec_own_agent_forwarding.md` (×4), `PLAN_terminal_runs_followups.md`, `PLAN_remote_bridge_scoped.md` gain `../todo/` (counted by grep of the links, review of 2026-11-10); case 2: `../research/PLAN_windows_shell_quoting_injection.md` (×3) drops `../research/`; siblings unchanged; the path of `PLAN_terminal_command_over_ssh_E<n>.md` under `todo/` in the text (`:424`) becomes `research/…` |
 | 2 | `PLAN_terminal_command_over_ssh_E1.md` | `[PLAN_terminal_command_over_ssh_E1.md]` — `:31` | `[E1]` | case 2: `../research/PLAN_windows_shell_quoting_injection.md` drops `../research/`; siblings unchanged |
 | 3 | `PLAN_terminal_command_over_ssh_E1_S2_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S2_spec.md]` — `:35` | `[S2]` after E1 | siblings only (none change) |
 | 4 | `PLAN_terminal_command_over_ssh_E1_S3_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S3_spec.md]` — `:36` | `[S3]` after E1 | siblings only; the path `todo/PLAN_terminal_…` in its F12 row (`:34`) becomes `research/…` |
 | 5 | `PLAN_terminal_command_over_ssh_E2.md` | `[PLAN_terminal_command_over_ssh_E2.md]` — `:32` | `[E2]` | siblings only |
-| 6 | `PLAN_terminal_command_over_ssh_E3.md` | `[PLAN_terminal_command_over_ssh_E3.md]` — `:33` | `[E3]` | case 1: `PLAN_ssh_exec_own_agent_forwarding.md` (×2) gains `../todo/`; siblings otherwise; the backticked paths `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` in its text become `research/…` or links |
+| 6 | `PLAN_terminal_command_over_ssh_E3.md` | `[PLAN_terminal_command_over_ssh_E3.md]` — `:33` | `[E3]` | case 1: `PLAN_ssh_exec_own_agent_forwarding.md` (×2) gains `../todo/`; siblings otherwise; a backticked path of the security spec under `todo/`, if any, becomes `research/…` or a link |
 | 7 | `PLAN_terminal_command_over_ssh_E3_S2_security.md` | `[PLAN_terminal_command_over_ssh_E3_S2_security.md]` — `:34` | `[S2]` after E3 | case 1: `PLAN_askpass_answers_the_hop.md` (×2), `PLAN_consent_coverage_per_door.md` (§3.2, ×1) and `PLAN_ssh_exec_own_agent_forwarding.md` (×1) gain `../todo/`; siblings unchanged |
 
 Inbound references outside the seven (case 3, and the paths no renderer checks): `research/PLAN_windows_shell_quoting_injection.md:67`
-cites `todo/PLAN_terminal_command_over_ssh.md` → `research/…`; `src_vs_code/src/remoteLaunch.ts:14` cites
-`todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` → `research/…`. The case 3 inbound links of the plans that stay in `todo/`
+cited `PLAN_terminal_command_over_ssh.md` under `todo/` → `research/…`; `src_vs_code/src/remoteLaunch.ts:14` cites
+`PLAN_terminal_command_over_ssh_E1_S2_spec.md` (under `todo/`, in a code comment) → `research/…`. The case 3 inbound links of the plans that stay in `todo/`
 (each a link TARGET that moves, so the checker reads it, and each is edited to `../research/…`):
 `todo/PLAN_askpass_answers_the_hop.md:19` (parent), `todo/PLAN_agent_refusal_names_unlisted_entry.md:5` (E3 security spec),
 `todo/PLAN_ssh_exec_absolute_program.md:4` (E3), `todo/PLAN_ssh_exec_own_agent_forwarding.md:6-7` (security spec and parent). The
@@ -979,7 +981,7 @@ code and test paths that name a moved plan: `src_vs_code/src/agentUseActions.ts:
 `src_vs_code/src/test/agentSshGate.test.ts:30` (the E3 security spec), and `remoteLaunch.ts:14` above (it read `:11` in an
 earlier draft: the line is now `:14`). Every number was read by grep on this branch after the review fixes; a later edit of
 those files moves them, so find each by the path. Find any others by
-`grep -rn "todo/PLAN_terminal_command_over_ssh" --include=*.ts --include=*.md --include=*.mjs --include=*.cjs .` (the
+`grep -rn "todo/PLAN_terminal_command_over_ss[h]" --include=*.ts --include=*.md --include=*.mjs --include=*.cjs .` (the
 bare name `PLAN_terminal_command_over_ssh.md` in a code comment names no folder and does not change), not from memory.
 
 The steps, in this order:
@@ -1014,7 +1016,7 @@ The steps, in this order:
 
 - [ ] The help tests pass, five languages, English first; no help text says a road refuses that runs.
 - [ ] README, CHANGELOG, `module_extension.md`, `module_tests.md` describe the shipped system.
-- [ ] The seven documents promoted together, each with its `todo/README.md` row removed and its mention in the one
+- [x] The seven documents promoted together, each with its `todo/README.md` row removed and its mention in the one
       `research/README.md` row (§S3.2 table), deviations recorded (E3-D13 and entry 2.2 among them), links walked, then
       `plan-lifecycle.mjs` clean.
 - [ ] Hand check 3 handed to the owner, with its two lines of epoch 4; hand checks 1, 2 and 4 still listed as owed if not done.
@@ -1094,7 +1096,7 @@ still holds both names; (2) the record holds `SSH_AUTH_SOCK=/tmp/host-agent.sock
 |---|---|
 | `useActions.ts` | `export interface UsedEntry { accountId; entityId; entityName }`; the OPTIONAL `UseAction.uses?(target: CallTarget): UsedEntry \| undefined`; `UseActionContext.uses?: UsedEntry`; `OverSshCall.ownAgentOnly: boolean`, REQUIRED, and `OverSshCall.noTty?: boolean` (spec §2.5, §18.1, §18.2). |
 | `agentUseActions.ts` | `usedEntryOf(deps, target)` (the gate first: S only when the gate answers `linked`); `terminalRunAction` declares `uses`; `changedSince` (`:313-315`) becomes the two-part compare of spec §2.3 step 3; `overSshWithSlot` (`:382-391`) passes `ownAgentOnly: true` and `noTty: true`. The bridged gate refusal writes a journal line that is true for the bridge: today `journalLine` (`:206-208`) always ends *(the agent was told only that the SSH connection is not open to it)*, which is the spec's literal text and false on a bridge, where the agent was told `BRIDGE_NOT_SERVED`; the bridged line says what the agent was told (a test asserts each of the two endings). |
-| `sshUseActions.ts` | `execOverSsh` (`:226-248`). **The options are written at the call site** (the reviewer's m5): the call at `:238` becomes `buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, { ...connectionArgvOptions(deps, call.ssh, chain.value, ctx.bridge !== undefined), ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined, noTty: call.noTty })`, so F5's scan finds the `ownAgent` key at that call and needs no reading of `connectionArgvOptions` (`:192-199`, which is not changed). For `ownAgentOnly` it hands `agentAwareLaunch` `envWithout(prepared.env, E3_INHERITED_DROP, process.platform)`; `agentAwareLaunch` lays the extension's socket on top when it serves, as today (`:107`). `sshExecAction` passes `ownAgentOnly: false`, with a comment that names [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), and no `noTty`; its environment and argv are today's. |
+| `sshUseActions.ts` | `execOverSsh` (`:226-248`). **The options are written at the call site** (the reviewer's m5): the call at `:238` becomes `buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, { ...connectionArgvOptions(deps, call.ssh, chain.value, ctx.bridge !== undefined), ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined, noTty: call.noTty })`, so F5's scan finds the `ownAgent` key at that call and needs no reading of `connectionArgvOptions` (`:192-199`, which is not changed). For `ownAgentOnly` it hands `agentAwareLaunch` `envWithout(prepared.env, E3_INHERITED_DROP, process.platform)`; `agentAwareLaunch` lays the extension's socket on top when it serves, as today (`:107`). `sshExecAction` passes `ownAgentOnly: false`, with a comment that names [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md), and no `noTty`; its environment and argv are today's. |
 | `brokerCall.ts` | `CallSubject.uses: UsedEntry \| undefined` (the key REQUIRED); `CallDeps.burn(status, of?: UsedEntry)`; `CallDeps.refuse(code, message, why?)`; `export function usedEntrySpent(name: string): string`; the turns of spec §2.5 in place of `queuedIfOneUse` and `takesItsTurn` (`:108-123`): spent markers first, the grant's entry first; the one-use turns sorted by lane key, ascending, plain compare; nested. `burnInTurn` is `try { await deps.burn(status); } finally { if (call.uses !== undefined) { await deps.burn(status, call.uses); } }` (the reviewer's m7: `burnAndMark`'s one-use question reads storage and can throw, and a throw for the grant's entry must not leave a USED S unburned and unmarked). `startNow` (`:203`) adds `uses: call.uses`; the doc block `:93-107` says the fixed order and why, and where the spent marker lives (the lane's existing per-window set, at most 512 keys, as for `creds_exec`). |
 | `credsAgentServer.ts` | In place (spec §11): `const uses = useAction.uses?.(grant);` after `:530` and into the object of `:544`; `releaseWaiting(grant)` then `releaseWaiting(call.uses)` before `tableOrFail` (`:583`, the method `:620-626` takes `undefined`); the `refuse` closure (`:683`) appends `why`; the `burn` closure (`:687`) takes `of = grant`. |
 | `test/agentSshWorld.ts` | `asBroker(action, ctx)` (the context a broker hands `run`: the shown summary and `uses`) and `oneUseStorage` (spec §12). |
@@ -1145,7 +1147,7 @@ lead runs the full `npm test`.
 - **No change to `ssh:exec`'s behaviour**: its body moves into `execOverSsh`, in the same order, with its own program and
   folder (B1's absolute program and storage folder are the masked run's, E3-D5; flag 8). Its argv and environment are
   today's: `ownAgentOnly: false` (its `-A` with no agent of ours, and the host's `SSH_AUTH_SOCK`, are
-  [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md)'s). The person's clicks of
+  [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md)'s). The person's clicks of
   `commands/agentCommands.ts` keep their argv too.
 - **No `-T` on `ssh:exec`** and on the three clicks (the lead, epoch 4): E3's two roads say `-T`; a forced pty on the
   shipped `ssh:exec` is a recorded limit (parent risk 9), routed to that plan.

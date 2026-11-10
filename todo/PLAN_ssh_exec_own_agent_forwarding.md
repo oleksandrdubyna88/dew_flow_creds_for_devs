@@ -3,8 +3,8 @@
 > Status: **not started; needs the owner's yes, 2026-11-10.** Scope: the extension's `ssh:exec` road
 > (`src_vs_code/src/sshUseActions.ts`), the three person clicks of `src_vs_code/src/commands/agentCommands.ts` that build
 > the same argv, and their tests. Found by the E3.S2 security spec's third amendment
-> ([PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §16 items 10
-> and 11, §18.2), in the re-review of epoch 4 of [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
+> ([PLAN_terminal_command_over_ssh_E3_S2_security.md](../research/PLAN_terminal_command_over_ssh_E3_S2_security.md) §16 items 10
+> and 11, §18.2), in the re-review of epoch 4 of [PLAN_terminal_command_over_ssh.md](../research/PLAN_terminal_command_over_ssh.md)
 > (D17, risk 9, §7a, §9). Read in the code on 5b221602, **not observed on a host**.
 
 ## Symptom
