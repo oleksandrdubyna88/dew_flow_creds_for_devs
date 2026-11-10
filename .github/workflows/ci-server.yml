@@ -315,8 +315,8 @@ jobs:
           $SHELLCHECK -x deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
-          # Its harness is bash, like the other two.
-          $SHELLCHECK deploy/nginx/entrypoint.test.sh
+          # Its harness is bash, like the other two; -x follows its one `source` of owned.sh (E2.4).
+          $SHELLCHECK -x deploy/nginx/entrypoint.test.sh
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
           # -x follows the one `source` of owned.sh each of them has (E2.4.S2).
           $SHELLCHECK -x .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
@@ -354,7 +354,18 @@ jobs:
           # Runs the real entrypoint.sh against a private folder, with and without a certificate. A
           # block written twice (the real_ip block, once by the entrypoint and once by the TLS
           # template) is invisible until a certificate exists, and then nginx refuses the config.
-          bash deploy/nginx/entrypoint.test.sh
+          # E2.4: its own temp root, and the step fails when anything is left in it.
+          root="$RUNNER_TEMP/leftovers-nginx-entrypoint-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" bash deploy/nginx/entrypoint.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "entrypoint.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
 
       - name: nginx itself accepts the config the entrypoint renders
         run: |
