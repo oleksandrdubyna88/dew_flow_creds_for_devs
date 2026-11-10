@@ -6,7 +6,11 @@
 > the cornerstone quota). It owns the gate, the refusal texts, the consent text, `asksAfterConsent`, the mask table, the
 > bridge, the audit line and the agent's VPN start. Everything else of S2 (`execOverSsh`, the road scan, the help ×5, the
 > line budget) is §S2.2–§S2.6 of the stories document and is not repeated here.
-> Every path is relative to `src_vs_code/src/`; every `file:line` was opened on `de15db8` (branch `feat/terminal-command-over-ssh-e3`).
+> Every path is relative to `src_vs_code/src/`; every `file:line` was opened on `de15db8` (branch `feat/terminal-command-over-ssh-e3`)
+> and checked again on 454e990 (`origin/main` with E1 #335, E2 #337 and #336), where no file this spec cites moved.
+> Amended 2026-11-10 by E3's plan round 1, item 6 (an Opus judge, inside this spec's own decisions): the gate is answered
+> before ANY refusal that reads the link or the SSH entry, the bridge test moved before the link is read, and every
+> outcome before the gate passes is the one sentence (§2.1, §2.3, §4, G13, G20, G21).
 
 ## 0. The decisions, in one table
 
@@ -15,7 +19,7 @@
 | 1 | The gate | `findUsableEntry(accountOnly(storage, ctx.accountId), ssh.id, 'exec')` must answer `usable`. The lookup is kept to the Terminal entry's account, so the answer's account is the Terminal entry's by construction. `'exec'` is right: it maps to the `use` rung, as `run` does (`mcpEntries.ts:404-420`); a test pins both. A PIN-protected SSH entry answers `undefined`, as a made-up id does (`:376-391`); the agent hears the one sentence of §4, the same as for a closed one. |
 | 2 | No confused deputy | The SSH entry's own `Usable by agents` switch is required at EVERY call (validate and run). Its ask policy is NOT consulted: the Terminal entry's grant and policy decide how often the person is asked (§3.2 says why). A remembered Allow is not keyed on the link: the per-machine trust store is what notices a link a sync added (§3.2); keying the stamp on the link is recorded as a follow-up, not built. |
 | 3 | Order and TOCTOU | The gate runs in `validate(body, target)` — before the dialog, so nobody is asked to Allow a run that will be refused and no prompt of the throttle is spent — and again in `run`. The summary the person saw is handed to `run` (`ctx.summary`, internal) and compared with the summary rebuilt at run time: a switch flipped while the dialog was open refuses with the one sentence; a link or target changed refuses with the "changed while the question was open" sentence. Nothing runs in either case. |
-| 4 | The refusal texts | ONE sentence for every reason the gate refuses (closed, PIN-hidden, missing, in the Trash, not an SSH entry, unsafe host, self, another account): it names the Terminal entry only. The real reason goes to the agent journal (`deps.note`). `sshLinkOf`'s sentences, which name the SSH entry, never reach an agent. After the gate has passed, the SSH entry is open to the agent (`use`), and the road says what `ssh:exec` says: the jump chain's reason, `pinRefusalFor`, the woven refusal, `Could not run ssh`. `planLaunch`'s own refusals (`{name}`, D9 Windows, the line break) name only the Terminal entry and come AFTER the gate. |
+| 4 | The refusal texts | ONE sentence for every reason the gate refuses (closed, PIN-hidden, missing, in the Trash, not an SSH entry, unsafe host, self, another account): it names the Terminal entry only. The real reason goes to the agent journal (`deps.note`). `sshLinkOf`'s sentences, which name the SSH entry, never reach an agent. **The gate is answered first** (round 1, item 6): for a linked entry nothing that reads the link or the SSH entry — and no `planLaunch` — runs before it, so until the gate passes the agent reads only `not_found` (the Terminal entry is gone), `BRIDGE_NOT_SERVED` (on a bridge, for every linked entry alike) or the one sentence; a malformed line or a Windows remote on an entry whose SSH entry is not usable is the one sentence too. After the gate has passed, the SSH entry is open to the agent (`use`), and the road says what `ssh:exec` says: the jump chain's reason, `pinRefusalFor`, the woven refusal, `Could not run ssh`. `planLaunch`'s own refusals (`{name}`, D9 Windows, the line break) name only the Terminal entry and come AFTER the gate. |
 | 5 | The consent text | `UseAction.summarize(body, target)` — `target: CallTarget`, an internal widening of `useActions.ts:139` (the `Grant` passed at `credsAgentServer.ts:530` already satisfies `CallTarget`). The linked summary is `the stored command, on the SSH connection "<ssh>" (<target>), as: <trust line>` (§5). A changed link between the dialog and the run is refused (question 3). |
 | 6 | `asksAfterConsent` | Declared as a function, as `sshExecAction` does (`sshUseActions.ts:228`): true for a linked entry whose SSH entry forwards the agent while the agent socket is up. Forwards (`-L`/`-R`) raise no prompt and are in the trust line the person approved: no refusal, no flag. `test/agentUseActions.test.ts:347` C.3 changes (§13). |
 | 7 | Masking | Yes: the mask table of a call on a linked Terminal entry holds the SSH entry's values too (`maskEntriesWithLink`, §7). The SSH password can reach the remote only through the person's own `SendEnv`; the table is widened in the safe direction and at one place (the table builder), never in an action. |
@@ -45,21 +49,31 @@ type LinkedCall =
   | { kind: 'refused'; code: ErrorCode; message: string; why: string };   // `message` to the agent, `why` to the journal
 ```
 
-In this order, and nothing else is read:
+In this order, and nothing else is read. **Nothing that reads the link's target or the SSH entry — and no `planLaunch` —
+runs before `linkedCall` has answered** (round 1, item 6): `validate`, `summarize` and `run` call it first, and only its
+`linked` answer lets anything else read the link.
 
 1. `const entity = entityFor(deps, target)`; `undefined` → `local`.
-2. `const link = sshLinkOf(entity, (id) => deps.storage.getNode(target.accountId, id))` (`remoteLaunch.ts:100-106`).
-   `none` → `local`. `refused` → `refused` with `denied`, the one sentence, `why: link.reason`. This covers rows L2–L6: self,
-   missing, in the Trash, not an SSH entry, unsafe address — and an S that lives in ANOTHER account, because the lookup is bound
-   to T's account and answers `undefined` for it (row L3).
+2. `sshLinkOf(entity, () => undefined).kind === 'none'` → `local`. A lookup that finds nothing reads NO node: this asks
+   only T's own field, "is T linked at all", the way `sshLinkRefusal` does (`remoteLaunch.ts:125-129`), through the one
+   reader of the link.
 3. `bridge !== undefined` → `refused` with `not_supported` and `BRIDGE_NOT_SERVED` (`bridgeAllowList.ts:22`),
-   `why: 'a Remote Bridge does not serve run'`. Read only in `run` (§2.2).
-4. `const found = findUsableEntry(accountOnly(deps.storage, target.accountId), link.ssh.id, 'exec')`
+   `why: 'a Remote Bridge does not serve run'`. Read only in `run` (§2.2). It stands BEFORE the link is resolved, so a
+   bridged call gets the same answer whether S is missing, closed or usable: a bridge cannot probe S either.
+4. `const link = sshLinkOf(entity, (id) => deps.storage.getNode(target.accountId, id))` (`remoteLaunch.ts:100-106`).
+   `refused` → `refused` with `denied`, the one sentence, `why: link.reason`. This covers rows L2–L6: self,
+   missing, in the Trash, not an SSH entry, unsafe address — and an S that lives in ANOTHER account, because the lookup is bound
+   to T's account and answers `undefined` for it (row L3). (`none` cannot happen here: step 2 answered it.)
+5. `const found = findUsableEntry(accountOnly(deps.storage, target.accountId), link.ssh.id, 'exec')`
    (`mcpEntries.ts:344-356`, `:363-371`). `found?.kind !== 'usable'` → `refused` with `denied`, the one sentence,
    `why`: `undefined` → `the SSH entry is hidden from agents (PIN) or is not in this account`; `closed` →
    `the SSH entry's "Usable by agents" switch is off`.
-5. `linked` with `link` and `found`. `found.accountId === target.accountId` holds by construction (step 4's `accountOnly`);
+6. `linked` with `link` and `found`. `found.accountId === target.accountId` holds by construction (step 5's `accountOnly`);
    a test asserts it anyway.
+
+T's own command is not looked at by the gate: an empty command, a `{name}` the composer refuses, a line break or *Runs on*
+Windows on a T whose S is refused at steps 4–5 answers the one sentence (G20). They are said, naming T only, after the gate
+has passed (§2.3 step 4, G21).
 
 What is checked, said once: the Terminal entry's own grant is the door's (the MCP door's `findUsableEntry(T, 'run')` at
 `mcpHooks.ts:157`; a token the person minted; an alias the person enabled). The gate adds S's own `use` switch, resolved by
@@ -84,6 +98,10 @@ The bridge test of step 3 is read in `run` only: `CallTarget` carries no bridge,
 
 ### 2.3 The order inside `run`, for a linked entry
 
+Steps 1–2 are the only ones before the gate's answer, and neither reads the link's target, S, or `planLaunch`: until step 2
+answers `linked`, the agent reads `not_found`, `BRIDGE_NOT_SERVED` or `linkedRunRefused(T)` and nothing else (§4,
+*Before the gate*).
+
 1. `entityFor` → gone → `not_found`, today's words (`agentUseActions.ts:200-202`).
 2. **The gate** (§2.1, with `ctx.bridge`). Refused → its result, after `deps.note(journalLine(ctx.entityName, why))`.
 3. **The compare.** `const shown = ctx.summary; const now = linkedSummary(linked, entity)`. `shown !== undefined && shown !== now`
@@ -99,7 +117,10 @@ The bridge test of step 3 is read in `run` only: `CallTarget` carries no bridge,
 8. `deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined) })`
    in `try … finally release()` (§S2.2). Everything from `resolveExecAuth` on is `execOverSsh`'s and is `ssh:exec`'s body.
 
-For an UNLINKED entry (`local`) steps 2–3 are skipped and the road is today's `runHere` (§S2.2), byte for byte in behaviour.
+For an UNLINKED entry (`local`) step 3 still runs — `linkedSummary` answers today's words for it, so it passes for an
+entry that was unlinked when the dialog stood, and refuses one whose link was removed while it stood (§2.4 row 4,
+G10 (c)) — and then the road is today's `runHere` (§S2.2), byte for byte in behaviour. (Corrected 2026-11-10 while
+applying round 1: this line said steps 2–3 are skipped, which contradicted §2.4 and G10 (c).)
 
 ### 2.4 A switch or a link flipped while the dialog is open
 
@@ -198,6 +219,17 @@ Each lives once, as an exported function in `agentUseActions.ts`; tests compare 
 
 Rules the texts obey:
 
+- **Before the gate** (round 1, item 6). For a linked T, every outcome decided before `linkedCall` answers `linked` is
+  one of exactly three, whatever else is wrong with T or S:
+
+  | Outcome before the gate passes | Code | Message | Test |
+  |---|---|---|---|
+  | T is gone | `not_found` | today's `"<T>" no longer exists in the vault.` | (today) |
+  | the call is bridged (`run` only) | `not_supported` | `BRIDGE_NOT_SERVED` | G13 |
+  | anything else: S missing, in another account, in the Trash, not an SSH entry, an unsafe host, self, closed, PIN-hidden — and, on such an S, T's empty command, its `{name}` refusal, a line break or *Runs on* Windows | `denied` | `linkedRunRefused(T)` | G2–G5, G20 |
+
+  No `sshLinkOf` sentence, no `planLaunch` sentence and no `chain.reason` is reachable before the gate passes. In
+  `validate` (no bridge) only the first and the third exist.
 - `linkedRunRefused` has ONE parameter and names ONE entry. A structural test asserts `linkedRunRefused.length === 1` and
   that the text holds exactly two quoted names, both `<name>`.
 - The code is `denied` (403), not E1's `not_supported` (404): the CLI reads a 404 as *this window does not have the entry*
@@ -209,7 +241,8 @@ Rules the texts obey:
   the agent's to read; a hop's name is what `ssh:exec` already says to an agent holding a grant on S. Parity, recorded.
 - `planLaunch`'s sentences (`{name}`: `"<T>" will not run: <reason>`; D9: `"<T>" is written for Windows and is set to run
   over SSH. …`; the line break: `"<T>" has a line break in its command, …`, `remoteLaunch.ts:174-184`) name T only and come
-  after the gate (§2.3 step 4). Code `not_supported`, as today for `{name}`.
+  after the gate (§2.3 step 4). Code `not_supported`, as today for `{name}`. Each is said ONLY when S is usable (G21);
+  on an S the gate refuses, the same T reads the one sentence (G20).
 - `sshLinkRefusal`'s sentence (`remoteLaunch.ts:125-129`) is no longer said by this road; `launchRoadScan.test.ts:189-195`
   loses `agentUseActions.ts:terminalRunAction` (§S2.3).
 
@@ -268,7 +301,8 @@ not in it.
 **Decision: the table of a call on a linked T holds S's values too.** Why: (a) parity — a `creds_exec` on S masks S's
 password; T-over-S uses the same credential and must not mask less; (b) the SSH password rides the LOCAL ssh child's
 environment through askpass (`sshExecAuth.ts:88-97`), which ssh sends nowhere by default, but a person's own `~/.ssh/config`
-with `SendEnv` can forward it (E3 "What E3 does NOT do": no `SendEnv` control), and a stored line could then print it; (c) it
+with `SendEnv` can forward it (E3 "What E3 does NOT do": no `SendEnv` control; `-o SendEnv=-NAME` was measured not to
+remove a wildcard, `research/PLAN_windows_shell_quoting_injection.md` §8, the owner's accepted limit, E3-D8), and a stored line could then print it; (c) it
 is widened at ONE place, the table builder, never in an action (`agentUseActions.ts:90-97` says why an action must not mask).
 
 **How.** `maskEntries.ts` gets `export async function maskEntriesWithLink(source, accountId, entityId)`: T's table from
@@ -381,13 +415,15 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | G10 | `a_link_or_target_changed_while_the_dialog_was_open_is_refused_at_run` | `summary = summarize({}, ctx)`; then (a) `s1.details.host = 'evil.example'` (trust the NEW line too, so trust alone would pass), (b) `T.sshEntityId = 's2'` with `usableSsh('s2')` trusted, (c) `T.sshEntityId` removed: each `run({ ...ctx, summary })` → `denied`, message `=== changedWhileAsking('deploy')`; `overSsh` 0; `slots.taken` 0. Then the unchanged world with the same `summary` → one `overSsh` call (the compare passes) | runs on the new target |
 | G11 | `a_run_with_no_shown_summary_does_not_compare` | `run(ctx)` without `summary` on a usable trusted world → one `overSsh` call — the test worlds of §S2.5 keep working; the broker always sets it (G17) | (green; a guard — say so) |
 | G12 | `asks_after_consent_is_true_only_for_a_linked_entry_that_forwards_the_agent_while_the_socket_is_up` | `typeof terminalRunAction(deps).asksAfterConsent === 'function'`; unlinked → false; linked, no `-A` → false; `-A`, `agentSocket: () => undefined` → false; `-A`, socket `'/tmp/a.sock'` → true; `deps` without `agentSocket` → false | `undefined` |
-| G13 | `a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lists_words` | usable S, trusted, `run({ ...ctx, bridge: { … } as BridgeContext })` → `not_supported`, message `=== BRIDGE_NOT_SERVED`; `overSsh` 0; and `bridgeRouteRefusal('POST', p)` is not `undefined` for each of `/v1/use/run`, `/v1/alias/run`, `/v1/mcp/use/run` (the first wall still stands) | runs |
+| G13 | `a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lists_words` | usable S, trusted, `run({ ...ctx, bridge: { … } as BridgeContext })` → `not_supported`, message `=== BRIDGE_NOT_SERVED`; `overSsh` 0; and `bridgeRouteRefusal('POST', p)` is not `undefined` for each of `/v1/use/run`, `/v1/alias/run`, `/v1/mcp/use/run` (the first wall still stands). Then the same bridged call with S MISSING and with S CLOSED: the same code and message, byte-equal (round 1, item 6: the bridge answer stands before the link is resolved, so it cannot tell S's states apart), and `storage.calls` holds no read of `s1` | runs |
 | G14 | `the_mask_table_of_a_linked_entry_holds_the_ssh_entrys_password` | `maskEntriesWithLink(source, 'acct-1', 'e1')` with T holding nothing and S's password `'correct-horse-battery-staple'`: the table deep-includes `{ value: 'correct-horse-battery-staple', label: 'PASSWORD' }`; unlinked T → T's table only; S missing → T's table, no throw; T missing → throws `MaskSourceUnavailable` (as before) | no export |
 | G15 | `the_agent_reads_no_name_host_or_reason_of_the_ssh_entry` | over G2–G5's refusals: no message includes `prod box`, `prod.example`, `Trash`, `PIN`, `acct-2`; every note does include the real reason | (RED with G2–G5) |
 | G16 | `an_agents_vpn_start_with_a_linked_launcher_stays_refused` | the existing agent-start test of `test/sshLinkRoads.test.ts` (the VPN block, `startVpn` with `SENTENCE('start-openvpn')`) stays green unchanged; here: `vpnAction(vpnDeps(false, []), 'up')` is untouched by this spec — assert `launcherRefusal`-path sentence `=== sshLinkRefusal(launcher)` through `vpnWorld` as that test does | (green; a guard — say so) |
 | G17 | `the_broker_hands_run_the_summary_it_showed` | over `brokerWorld` (the real broker, a stubbed action that records `ctx.summary`): `/v1/use/<action>` with Allow → the recorded `ctx.summary === action.summarize(body, grant)`'s text; a quiet MCP call (`every12h` stamped) records it too | `undefined` |
 | G18 | `the_one_sentence_has_one_name_and_one_parameter` | `linkedRunRefused.length === 1`; `linkedRunRefused('Q').match(/"[^"]*"/g)` deep-equals `['"Q"', '"Q"']`; `changedWhileAsking.length === 1` | no export |
 | G19 | `exec_and_run_sit_on_the_same_rung` | `switchForAction('exec') === switchForAction('run')` and both `=== 'use'`; and the gate's call passes `'exec'` (a recording `findUsableEntry` is not possible without a seam, so: `usableSsh('s1', { mcp: { view: true, use: true, edit: false } })` is usable and `{ view: true, edit: true }` (no use) is refused — the rung read is `use`) | (green for the table; RED for the gate) |
+| G20 | `before_the_gate_passes_every_outcome_is_the_one_sentence` (round 1, item 6) | One case per world, each with S CLOSED (`sshNode('s1', { mcp: { view: true } })`) unless the case is S itself: (a) S missing; (b) S only in `acct-2`; (c) S with `host: '-oProxyCommand=x'`; (d) T's command `'echo a\necho b'` (a line break); (e) T `terminalOs: 'windows'`; (f) T named `'a b'` with command `'echo {name}'` — the `{name}` refusal of `test/remoteLaunch.test.ts:208-213` (R10: inside `planLaunch` that refusal wins over a link refusal, which is exactly why `planLaunch` must not run before the gate); its `ctx.entityName` is `'a b'`, so its ONE is `linkedRunRefused('a b')`; (g) T with no command. For each, BOTH `validate({}, ctx)` → `{ ok: false, code: 'denied', message: ONE }` AND `run(ctx)` → `denied`, message `=== ONE`; no message holds `Windows`, `line break`, `will not run`, `has no command`, `prod box` or `prod.example`; `overSsh` 0; slot 0; `trustStore.get` never called; each world's note holds its real reason | (a)–(c) E1's sentence, `not_supported`; (d)–(g) `planLaunch`'s or today's own sentence, said first |
+| G21 | `after_the_gate_passes_plan_refusals_name_only_the_terminal_entry` (round 1, item 6) | The same (d), (e), (f) with S USABLE and the line trusted: `run(ctx)` → `not_supported`, message `=== refusalSaid(T, planLaunch(T, sshLinkOf(T, lookup), { stayOpen: false }).reason)`; it holds T's quoted name (`"deploy"`, or `"a b"` for (f)) and not `prod box` or `prod.example`; (g) → `no_credential`, `"deploy" has no command.`; `overSsh` 0; slot 0. The positive half of G20: the gate decides WHEN these are said, not whether | E1's sentence |
 
 **Existing tests whose expected values change**
 
@@ -420,7 +456,9 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | A bridged `run` | the allow-list refuses before the body is read; a call that somehow reached `run` with `ctx.bridge` is refused with the same words | G13 |
 | A `creds_vpn_up` whose launcher or chain step is linked | E1's shared sentence, nothing typed | G16 |
 | A Terminal entry whose link was added by a sync after a 12-hour Allow | quiet at the door, refused at step 6 as untrusted until a person runs the trust line here | §S2.5 AG2 covers the key; G1/G2 the gate |
-| A linked T whose `command` holds a `{name}` the composer refuses | `not_supported`, `refusalSaid` — after the gate, so a closed S still gives the one sentence first | §S2.5 AG6 class |
+| A linked T whose `command` holds a `{name}` the composer refuses | `not_supported`, `refusalSaid` — after the gate, so a closed S still gives the one sentence first | G20 (f), G21 (f) |
+| A T written for Windows, or with a line break, linked to an S the agent may not use — probing whether S is usable by watching for the D9 or line-break sentence | the one sentence: the gate answers before `planLaunch` runs; the D9 / line-break sentence only when S is usable | G20 (d) (e), G21, §S2.5 AG6 |
+| A bridged call, probing S's state through the bridge | `BRIDGE_NOT_SERVED` for a missing, a closed and a usable S alike; S is never read | G13 |
 | An agent on the alias door (the CLI's `run`) | the same `perform`, the same `validate`: the one sentence; the alias route's modal is never raised for it | G6 (the funnel is one) |
 
 ## 15. Opus review checklist
@@ -428,6 +466,9 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 - [ ] `linkedCall` is the ONLY place that decides the gate, and `validate`, `summarize` and `run` all call it (grep
       `findUsableEntry(` in `agentUseActions.ts`: one site).
 - [ ] The lookup is `accountOnly(…, target.accountId)`, and `found.accountId === target.accountId` is asserted.
+- [ ] `linkedCall` is called BEFORE any `planLaunch`, any `sshLinkOf` with a real lookup and any `resolveJumpChain` in
+      `validate`, `summarize` and `run` (read each function top-down); the bridge test (§2.1 step 3) stands before step 4;
+      G20 and G21 were each watched RED.
 - [ ] No sentence reachable BEFORE the gate passes names S, its host, its folder, the Trash, the PIN or an account
       (read every `fail(` in the linked branch; `sshLinkOf`'s reasons go to `note`, never to `fail`).
 - [ ] `linkedRunRefused` and `changedWhileAsking` have one parameter each, and tests read them from the module.

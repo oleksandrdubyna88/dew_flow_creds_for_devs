@@ -2,12 +2,18 @@
 
 > Status: **stories of E3, nothing implemented yet, 2026-11-10.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
-> fix); E3 lands as ONE commit. Scope: `src_vs_code` only. Three stories, no cornerstone (the parent's ledger stays
+> fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
+> `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
+> lands as ONE commit. Scope: `src_vs_code` only. Three stories, no cornerstone (the parent's ledger stays
 > `Cornerstones: 2 of 2 — E1.S2, E1.S3`). Scenarios and briefs by Opus; code and tests by Sonnet; review by Opus. The
 > AUTHORISATION part of S2 is a Fable security judgement (outside the quota), in its own file:
-> `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` (not written yet; it becomes a link in the commit that adds it).
+> [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md).
+> The eight amendments of E3's first plan round are written into the sections they change (§E3.R1 says where).
 
-Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on a5ddd73.
+Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on a5ddd73 and
+checked again on 454e990: of the cited source files only `sshSession.ts` moved (#336 added 4 lines at `:103`), and of the
+documents `research/module_extension.md` and `research/module_tests.md`; those references are updated. E3 finds no session
+by a terminal title: the masked run is its own pseudoterminal, and `sshTerminalOwners.ts` is SSH Connect's alone.
 
 ## The three stories
 
@@ -28,8 +34,10 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 - **Goal.** *Run with Secrets* on a linked Terminal entry runs the line on the chosen host. The order is: link and plan →
   prepare → the trust question on the trust line → dependencies → resolve the values → spawn. The child is `ssh` by argv
   with no shell. Its STDIN carries `secretsStdin` and is then closed. A password goes in the CHILD's environment through
-  askpass. The output is masked. A banner says the run is not interactive. A Windows remote, a remote VS Code window and
-  a line break are refused before anything is asked. ONE OWNER and ONE SNAPSHOT as on every other road.
+  askpass. The output is masked. A banner says the run is not interactive, and carries the launch's own warning. A
+  Windows remote, a remote VS Code window and a line break are refused before anything is asked. ONE OWNER and ONE
+  SNAPSHOT as on every other road; the owner hands the session to the run in one atomic, once-only step. The run is
+  bounded: `ConnectTimeout=10`, and closing its terminal kills the child through `childKill`; no stdin write outlives it.
 - **Scope.** Parent §4.4 bullet "Run with Secrets"; build step 7; D12. Help ×5 for Run with Secrets over SSH.
 - **Depends on.** E1 (`SECRETS_REMOTE_COMMAND`, `secretsStdin`, `trustLineFor`, the seam), E2 (`SshRoad`, `ownedSessions`).
 - **Done when.** §S1.6 scenarios green, each watched RED first; the scan edits of §S1.4; typecheck and lint green; no
@@ -62,11 +70,14 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | E3-D1 | **The pure part of the secrets launch lives in `remoteLaunch.ts`**: `secretsLaunch(plan, prepared)` (the argv), `secretsRemoteLine(plan, refs)` (the line with each reference replaced by its POSIX read), `secretsOverSshBanner(target, secrets)`. | D7: one pure module is the only road from "entry + link" to a launch. `secretsLaunch` is to the spawn what `typedLine` is to the terminal. |
 | E3-D2 | **The remote line is the trust line's line.** `secretsRemoteLine` = `rewriteRefs(plan.line, refs, 'linux')`; the references are planned from `plan.line` only (`planRefs([plan.line])`). | What the person approves (`trustLineFor(…, plan.line)`) is what runs, except that each `creds://` reference becomes `"$CREDS_REF_n"`. The local road plans from the parts, disabled rows included; a reference only in a disabled row is not in the line, so over SSH it is not read at all. Recorded as a deviation in S3. |
 | E3-D3 | **"No reference" is said BEFORE prepare.** Planning names reads no secret, so a linked entry with no `creds://` reference gets today's sentence and no PIN, no host-key question, no key file. | The parent's order (prepare → trust → dependencies → resolve values → spawn) is kept for everything that reads or asks. |
-| E3-D4 | **The secrets spawn prepares with `agentServesKey: false`.** `SshRoad.prepare` gains a third parameter `use: 'terminal' \| 'spawn'` (default `'terminal'`). For `'spawn'` a stored key is always written to its isolated file and `-i` names it. | A terminal reaches the extension's agent through the window's environment collection; a child spawned by the extension host does not. With no key file the child would use whatever `SSH_AUTH_SOCK` the host process has: the "silently authenticates with whatever keys" hazard `sshSession.ts:396-402` refuses on the relay route. |
-| E3-D5 | **`SshRoad.spawnLaunch(ssh, env)`** gives the program and the extra environment of a spawned ssh: `openSshBinary('ssh', ssh.agentForward === true, process.platform)` (never a bare name searched in the current folder on Windows) and `SSH_AUTH_SOCK` = the extension's agent socket when the SSH entry forwards the agent, plus the askpass `env`. Composed by ONE new pure function `sshSpawnLaunch` in `sshProgram.ts`, which `sshUseActions.ts` `agentAwareLaunch` (`:95-109`) also uses. | The agent's exec already does exactly this; one composition, two callers (reuse-first). `SshRoadDeps` gains an optional `agentSocket`; `sshRoadOf(sshDeps)` already receives it (`sshUseActions.ts:398`), so `extension.ts` does not change. |
+| E3-D4 | **The secrets spawn prepares with `agentServesKey: false`.** `SshRoad.prepare` gains a third parameter `use: 'terminal' \| 'spawn'` (default `'terminal'`). For `'spawn'` a stored key is always written to its isolated file and `-i` names it. | A terminal reaches the extension's agent through the window's environment collection; a child spawned by the extension host does not. With no key file the child would use whatever `SSH_AUTH_SOCK` the host process has: the "silently authenticates with whatever keys" hazard `sshSession.ts:400-406` refuses on the relay route. |
+| E3-D5 | **`SshRoad.spawnLaunch(ssh, env)`** gives the program and the extra environment of a spawned ssh: `openSshBinary('ssh', ssh.agentForward === true, process.platform)` (never a bare name searched in the current folder on Windows) and `SSH_AUTH_SOCK` = the extension's agent socket when the SSH entry forwards the agent, plus the askpass `env`. Composed by ONE new pure function `sshSpawnLaunch` in `sshProgram.ts`, which `sshUseActions.ts` `agentAwareLaunch` (`:95-109`) also uses. Its `warning` (today only `NO_AGENT_TO_FORWARD`, `sshProgram.ts:251-253`, from `agentForwardEnv` `:267-279`) goes into the banner (E3-D12). | The agent's exec already does exactly this; one composition, two callers (reuse-first). `SshRoadDeps` gains an optional `agentSocket`; `sshRoadOf(sshDeps)` already receives it (`sshUseActions.ts:398`), so `extension.ts` does not change. |
 | E3-D6 | **Local window only, checked before prepare**: `windowKind(vscode.env.remoteName) !== 'local'` → `secretsLocalOnly(name)`, nothing prepared. `secretsLaunch` also refuses a prepared session with a relay `prefix` or a client `program` (fail closed; unreachable in a local window). | Parent §4.4 "local window only". The extension host spawns on THIS machine; a WSL or Remote-SSH window's preparation is composed for another shell. |
-| E3-D7 | **The masked run takes the session over when it is created.** `OwnedSessions` gains `handOverToRun(ready)` (leaves the list, no clean). `MaskedRunOptions.onEnded` is called EXACTLY ONCE: child `close`, child `error`, a failed start, or the terminal closed before the child started. The road passes `onEnded: () => ready.cleanup()`. | Parent §4.4: after the spawn the owner is the child's exit handler. The pty spawns in `open()`, after `createTerminal` returns, so the hand-over is to the run, which owns every later exit. |
-| E3-D8 | **The SSH child's environment never holds a value.** `MaskedRunOptions.env` in argv mode is the askpass and agent variables only; the values reach the remote only in `stdinText`. | D12: never argv, never the remote `ps`; and nothing gains by putting them in the local ssh's environment. |
+| E3-D7 | **ONE atomic, once-only hand-over from the owner to the masked run** (round 1, item 5). `OwnedSessions` gains `handOverToRun(ready: ReadySsh): () => void`: it takes `ready` off the owner's list and answers the run's cleanup, a once-only wrapper of `ready.cleanup()` (a second call does nothing). The road calls it and then `runInMaskedTerminal({ …, onEnded: ended })` in ONE synchronous block with no `await` between them; when `runInMaskedTerminal` throws (the terminal was never made), the road's `catch` calls `ended()` and rethrows. `MaskedRunOptions.onEnded` is called EXACTLY ONCE for a run whose terminal was made: child `close`, child `error`, a failed start, or the terminal closed before the child started — whichever comes first; a throw from `createTerminal` is the caller's to clean. So `ready.cleanup()` runs exactly once on every exit: the run's end, a failed creation, a creation that ended and then threw, a close before the start; the owner's `finally` never sees a handed-over session again. | Parent §4.4: after the spawn the owner is the child's exit handler. The pty spawns in `open()`, after `createTerminal` returns, so the hand-over is to the run, which owns every later exit. A hand-over in two steps (create, then leave the list) cleans twice when the creation fails after the run ended, and a list entry that outlives the hand-over is a second owner. |
+| E3-D8 | **The SSH child's environment never holds a value** (D12; round 1, item 4). `MaskedRunOptions.env` in argv mode is `spawnLaunch`'s answer only: the askpass variables of a password SSH entry (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `sshAskpass.ts:43-45`) and `SSH_AUTH_SOCK`; no `CREDS_REF_n` and no resolved value. The values reach the remote only in `stdinText`. The askpass variables carry the SSH entry's own password and are the ACCEPTED LIMIT of `research/PLAN_windows_shell_quoting_injection.md` §8 (owner, 2026-11-10; `research/module_extension.md:221`): a person's own `SendEnv` pattern that matches them, with a server `AcceptEnv` that matches too, sends the password to the server. E3 adds no `-o SendEnv=-NAME`: it was MEASURED not to remove a wildcard pattern (OpenSSH removes only a literally equal one; `ssh -G` on OpenSSH 10.2p1 and Windows OpenSSH 9.5p2 still listed `sendenv CREDS_*`), so it would only look like protection. | D12 promises the values never in argv, the remote `ps` or a history; nothing gains by putting them in the local ssh's environment, and there no `SendEnv` can reach them. The password limit is the same on SSH Connect and E2's password terminals today; this road does not widen it. |
+| E3-D11 | **The masked run is bounded** (round 1, item 1). (a) Connecting: the argv carries `-o ConnectTimeout=10` in both branches (`sshExecCommand.ts:115`), and the password branch `NumberOfPasswordPrompts=1` (`:106`), the key branch `BatchMode=yes` (`:107`): ssh answers no prompt from stdin. That is what we ASK ssh; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang). (b) Closing: the terminal's `close()` calls `killChild(child, { tree: true })` (`childKill.ts:81-87`) as today: on Windows `taskkill /pid <pid> /T /F` (`:32-37`) ends `ssh.exe` and a jump host's helper `ssh`; on POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` = 2000 (`:23`), to the child, which in argv mode IS `ssh` (no shell between). (c) Stdin: the script is written once, in `open()`, right after the spawn; when the run ends (E3-D7's once-only `ended()`), the child's stdin is DESTROYED, so a part of the script not yet taken by the child (it holds the values) is dropped, never written later; `open()` after the run ended spawns nothing and writes nothing. | Parent §4.4: no byte to stdin before trust, and the run must end. A child that never reads stdin (stalled before the server answers) would otherwise keep the script, values included, in the extension host's write buffer for as long as it lives. |
+| E3-D12 | **The launch's warning is a line of the banner, not a toast** (round 1, item 3). `maskedOverSshBanner(described, warning, target, secrets)` (pure, `remoteLaunch.ts`) joins with `\r\n`: `described`; `Note: <warning>.` when `warning` is set; `secretsOverSshBanner(target, secrets)`. Nothing calls `showWarningMessage` for it. | A one-argument toast is not awaited and races the launch: the run's output can be on screen before it, or the person closes the toast unread. The banner is written in `open()` before the first byte of output. |
+| E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Recorded at promotion as a deviation from parent §4.5 (1) (S3.2). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
 | E3-D9 | **The agent's SSH call is injected**, as `overSsh` on the deps of `terminalRunAction`. Its implementation `execOverSsh(deps)` lives in `sshUseActions.ts` (the `vscode` side) and is shared with `sshExecAction`. `sshDepsFor` (`sshUseActions.ts:383-405`) returns it, and `agentDeps` already spreads `sshDeps` (`extension.ts:629-637`). | `agentUseActions.ts` imports no `vscode` and its tests load it directly; `resolveExecAuth` and `materializeKnownHosts` reach `vscode` (`keyInstaller.ts:5`, `hostKeyTrust.ts:3`). And `extension.ts` is at its size ratchet (1003). |
 | E3-D10 | **No new two-argument prompt and no renamed prompt function** (as E2-D10). If `test/promptSites.test.ts` goes red, stop and report to the judge. | The prompt ledger keys rows by `file#function#…`. |
 
@@ -78,10 +89,12 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | `NO_REFERENCE(name)` | `commands/runCommands.ts` (today's literal at `:369-371`, made a function; text unchanged) | `"<name>" holds no creds:// reference. Write one as a value — creds://<account email>/<entity>/<field> — then run this again. Nothing was run.` |
 | `secretsOverSshBanner(target, secrets)` | `remoteLaunch.ts` | `Over SSH to <target>. The values go to the remote login shell on its standard input, never on a command line, and are replaced with <CREDS_MASKED:NAME> in what it prints here.<caveat> This run is not interactive: there is no terminal, and the command reads an empty input, so a command that asks a question usually stops. To answer questions, use Run in Terminal instead; the values are not injected there.` |
 | `<caveat>` = `shortValuesCaveat(secrets)` | `outputMask.ts` (new export, the words of `extension.ts:972-976` moved, not changed) | `''`, or ` NOT masked, because they are too short to replace without mangling ordinary output: <labels> — a one-time code is six digits, so treat this window as showing it.` |
+| `maskedOverSshBanner(described, warning, target, secrets)` | `remoteLaunch.ts` (E3-D12) | the lines `described`, then `Note: <warning>.` only when `warning !== undefined`, then `secretsOverSshBanner(target, secrets)`, joined with `\r\n` (no trailing `\r\n`; `open()` adds the `\n`) |
 
-`<target>` is `ready.target` (`describeSshTarget`: `user@host` with `:port` when not 22). The masked run's banner is
-`` `${described}\r\n${secretsOverSshBanner(target, refs.secrets)}` `` where `described` is today's first line
-(`runCommands.ts:414-416`).
+`<target>` is the `target` of `secretsLaunch`'s `spawn` answer, which is `ready.target` (`describeSshTarget`: `user@host`
+with `:port` when not 22; K2 refuses a session whose `target` is undefined, so it is a string here). The masked run's
+banner is `maskedOverSshBanner(described, spawn.warning, launch.target, resolved.secrets)` where `described` is today's
+first line (`runCommands.ts:414-416`), built the same way from `refs`.
 
 ---
 
@@ -126,22 +139,54 @@ try {
   trust modal and then `runDependenciesFirst` (`:101-111`). No child exists and no byte is written yet.
 - `const resolution = await resolveSecretRefs(refs.refs, host.refSource)`; not ok → today's error message; return.
 - `const resolved = withValues(refs, resolution.values, { env: {}, body: '' })` (`:401-411`, unchanged).
-- `const spawn = host.sshRoad.spawnLaunch(ready.snapshot, ready.env)`; a `warning` → `showWarningMessage` (one argument).
-- `runInMaskedTerminal({ name: maskedRunTitle(name), argv: [spawn.program, ...launch.argv], env: spawn.env,
-  stdinText: secretsStdin(resolved.env, secretsRemoteLine(plan, refs)), secrets: resolved.secrets, banner: …,
-  onEnded: () => ready.cleanup() })`, then `sessions.handOverToRun(ready)`.
+- `const spawn = host.sshRoad.spawnLaunch(ready.snapshot, ready.env)`. Its `warning` is NOT shown as a toast: it is a
+  line of the banner (E3-D12), on screen before the first byte of output. No `showWarningMessage` on this path.
+- The hand-over (E3-D7), in `maskedOverSsh`, ONE synchronous block — no `await` from `handOverToRun` to the end of the
+  `try`:
+
+```ts
+const ended = sessions.handOverToRun(ready);   // off the owner's list; the once-only cleanup of this session
+try {
+  runInMaskedTerminal({
+    name: maskedRunTitle(name),
+    argv: [spawn.program, ...launch.argv],
+    env: spawn.env,                                                  // askpass + SSH_AUTH_SOCK only (E3-D8)
+    stdinText: secretsStdin(resolved.env, secretsRemoteLine(plan, refs)),
+    secrets: resolved.secrets,
+    banner: maskedOverSshBanner(described, spawn.warning, launch.target, resolved.secrets),
+    onEnded: ended,
+  });
+} catch (error) {
+  ended();          // no terminal was made, so the run can never end on its own
+  throw error;      // the owner's finally runs; the session is no longer on its list
+}
+```
 
 **ONE SNAPSHOT** (as code review checks it): from `prepare` to the spawn there is no `storage.getNode` of the SSH id, no
 `sshLinkOf`, and `plan.ssh` is not read again. The trust line, the argv, the spawn program and the banner target are
 built from `ready` only (`ready.entity`, `ready.jump`, `ready.options`, `ready.snapshot`, `ready.target`).
 
-### S1.2 What ssh does with stdin, and why nothing else reads it
+### S1.2 What ssh does with stdin, why nothing else reads it, and what ends the run
 
 `buildSshExecArgv` (`sshExecCommand.ts:94-140`) gives the key branch `-o BatchMode=yes` and the password branch
 `-o NumberOfPasswordPrompts=1` with `SSH_ASKPASS_REQUIRE=force` in the environment; both have `ConnectTimeout=10` and
 `StrictHostKeyChecking` (`accept-new`, or `yes` with the pinned file). So ssh answers no prompt from stdin, and stdin goes
 whole to the remote command. No `-t`: no remote pty. The remote command is `SECRETS_REMOTE_COMMAND`
 (`remoteLaunch.ts:298`, `"${SHELL:-sh}" -s`), the last argv element, after `--` and the destination.
+
+**What ends the run** (E3-D11; the scenarios K1, K2, M2, M9-M11):
+
+| Moment | What bounds it | Who observes it |
+|---|---|---|
+| connecting, authenticating | `-o ConnectTimeout=10` (both branches) and no prompt answered from stdin (`BatchMode=yes` or `NumberOfPasswordPrompts=1` with `SSH_ASKPASS_REQUIRE=force`) — what we ASK ssh | K1 and K2 assert the words are SENT; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang) |
+| the remote command runs | the person: the masked terminal is the run's only handle; closing it is the stop | — (by design: a long command is allowed to run) |
+| the terminal closes | `pty.close()` → `killChild(child, { tree: true })` (`maskedTerminal.ts:107`, unchanged): Windows `taskkill /T /F` on the tree; POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` | M9: a child that ignores `SIGTERM` is gone after the close; the kill is recorded with `{ tree: true }` |
+| the run ends (any of the four ways of E3-D7) | `ended()` destroys the child's stdin: an unwritten tail of the script (values included) is dropped, never written later; `open()` after the end does nothing | M9 (stdin destroyed with a script larger than the pipe takes), M6b (`close()` then `open()` spawns nothing) |
+
+Not observed by a unit test, and so written as a request, not a fact: on POSIX `childKill` signals `ssh` only; with a jump
+host, `ssh`'s `ProxyJump` helper is its own child, and that helper ending with it is OpenSSH's behaviour, not ours. Hand
+check 3 (parent §10) observes it: with a jump host, `pgrep -f 'ssh .*-W'` on this machine is empty a few seconds after the
+masked terminal is closed mid-run. S3 hands that line to the owner with hand check 3.
 
 ### S1.3 The brief — every file, the place, the change
 
@@ -151,8 +196,9 @@ whole to the remote command. No `-t`: no remote pty. The remote command is `SECR
 |---|---|
 | imports | `buildSshExecArgv` from `./sshExecCommand`; `RefPlan`, `rewriteRefs` from `./runPlan`; `shortValuesCaveat` from `./outputMask`; `sshDestination` is already imported for the trust line. Check that no import cycle appears (`runPlan.ts` imports `commandLine`, `types`, `secretRef`, `hostShell`). |
 | `export interface PreparedForSpawn` | `entity`, `options: Pick<SshCommandOptions, 'knownHostsFile' \| 'program'>`, `jump`, `prefix`, `env: Readonly<Record<string, string>> \| undefined`, `target: string \| undefined`. Structural, so a `ReadySsh` is assignable with no adapter; doc: reads the snapshot only. |
-| `export type SecretsLaunch` | `{ kind: 'spawn'; argv: readonly string[] } \| { kind: 'refused'; reason: string }`. |
-| `export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn): SecretsLaunch` | Rows K1-K3: K1 `prefix !== undefined \|\| options.program !== undefined` → `refused` with `secretsLocalOnly(plan.entryName)`; K2 `buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, prepared.env === undefined ? 'key' : 'askpass', { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile })` answers `undefined` → `refused` with `noHostSentence(plan.sshName)`; K3 → `spawn` with that argv. Doc names D12 and E3-D4. |
+| `export type SecretsLaunch` | `{ kind: 'spawn'; argv: readonly string[]; target: string } \| { kind: 'refused'; reason: string }`. |
+| `export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn): SecretsLaunch` | Rows K1-K3: K1 `prefix !== undefined \|\| options.program !== undefined` → `refused` with `secretsLocalOnly(plan.entryName)`; K2 `buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, prepared.env === undefined ? 'key' : 'askpass', { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile })` answers `undefined`, or `prepared.target` is `undefined` → `refused` with `noHostSentence(plan.sshName)`; K3 → `{ kind: 'spawn', argv, target: prepared.target }`. Doc names D12, E3-D4 and E3-D11 (a): the argv carries `ConnectTimeout=10` and answers no prompt from stdin. |
+| `export function maskedOverSshBanner(described: string, warning: string \| undefined, target: string, secrets: readonly { value: string; label: string }[]): string` | E3-D12, the E3.0 row. |
 | `export function secretsRemoteLine(plan: RemotePlan, refs: RefPlan): string` | `rewriteRefs(plan.line, refs, 'linux')` (E3-D2). Doc: the remote shell is POSIX (D9), so the reads are `"$CREDS_REF_n"`. |
 | `export function secretsLocalOnly(name: string): string` | The E3.0 text. |
 | `export function secretsOverSshBanner(target: string, secrets: readonly { value: string; label: string }[]): string` | The E3.0 text. |
@@ -164,17 +210,18 @@ with the words of `extension.ts:969-976` (the `short` filter on `MIN_MASKABLE_LE
 accepts a shrink. The banner text of the local road does not change (`test/maskedTerminal.test.ts` and the banner tests
 stay green unchanged).
 
-**`maskedTerminal.ts`** (172 → about 215 lines)
+**`maskedTerminal.ts`** (172 → about 230 lines)
 
 | Place | Change |
 |---|---|
-| `MaskedRunOptions` `:27-53` | `commandLine` and `shell` become optional, and three fields are added: `argv?: readonly string[]` — the program and its arguments, spawned with `shell: false`; when set, `commandLine` and `shell` are not read; `stdinText?: string` — written to the child's stdin once, right after the spawn, then stdin is closed; keystrokes are then NOT forwarded; `onEnded?: () => void` — called exactly once when the run ends (E3-D7). The `env` doc says: on top of the parent environment; in argv mode it carries no value (E3-D8). Exactly one of `commandLine` and `argv` must be set: put this in the type (a union), not in a comment. |
+| `MaskedRunOptions` `:27-53` | `commandLine` and `shell` become optional, and three fields are added: `argv?: readonly string[]` — the program and its arguments, spawned with `shell: false`; when set, `commandLine` and `shell` are not read; `stdinText?: string` — written to the child's stdin once, right after the spawn, then stdin is closed; keystrokes are then NOT forwarded; `onEnded?: () => void` — called exactly once for a run whose terminal was made, when the run ends (E3-D7: `close`, `error`, a failed start, or a close before the start); a throw from `createTerminal` is the caller's to clean. The `env` doc says: on top of the parent environment; in argv mode it carries no value (E3-D8). Exactly one of `commandLine` and `argv` must be set: put this in the type (a union), not in a comment. |
 | `spawnChild` `:155-172` | One spawn line, from a helper `launchOf(options)` that answers `{ program, args, shell }`: argv mode → `{ program: argv[0], args: argv.slice(1), shell: false }`; else `{ program: options.commandLine, args: [], shell: shellOption(options.shell) }` (today). The line becomes `const child = childProcess.spawn(launch.program, launch.args, {` with `shell: launch.shell`. |
-| `open()` `:74-98` | After `child = started.child`: `if (options.stdinText !== undefined) { child.stdin.end(options.stdinText); }` (the `stdin` `error` listener of `:167` is already on). A once-only `ended()` guard calls `options.onEnded?.()`: on `!started.ok`, in the child's `error` and `close` handlers. |
-| `close()` `:99-108` | `child === undefined` → `ended()` (the terminal closed before the child started); else kill as today (its `close` event then calls `ended()`). |
+| `runInMaskedTerminal` `:66-119`, new state | Beside `let child` (`:69`): `let over = false`, and `const ended = (): void => { if (over) { return; } over = true; child?.stdin.destroy(); options.onEnded?.(); }` (E3-D11 (c): the unwritten tail of the script is dropped with the stdin). |
+| `open()` `:74-98` | First line: `if (over) { return; }` (a close before the start: nothing is spawned, nothing written). After `child = started.child`: `if (options.stdinText !== undefined) { child.stdin.end(options.stdinText); }` (the `stdin` `error` listener of `:167` is already on). `ended()` is called on `!started.ok` (after `closer.fire(1)`), and in the child's `error` (`:87-90`) and `close` (`:91-97`) handlers, after their writes. |
+| `close()` `:99-108` | `child === undefined` → `ended()` (the terminal closed before the child started); else `killChild(child, { tree: true })` as today (its `close` event then calls `ended()`). |
 | `handleInput` `:109-113` | `stdinText !== undefined` → return without echo or write (stdin is the script, and closed). |
-| `killChild` comment `:103-106` | Add: in argv mode there is no shell; `tree: true` stays harmless. |
-| file doc `:8-25` | One paragraph: the argv mode of Run with Secrets over SSH (E3.S1): no shell, a script on stdin then end of input, no keystrokes forwarded. |
+| `killChild` comment `:103-106` | Add: in argv mode there is no shell and the child IS the program (`ssh`); `tree: true` stays — on Windows it also ends a jump host's helper `ssh`; on POSIX that helper is OpenSSH's to end (E3-D11, hand check 3). |
+| file doc `:8-25` | One paragraph: the argv mode of Run with Secrets over SSH (E3.S1): no shell, a script on stdin then end of input, no keystrokes forwarded; the run ends exactly once (`onEnded`), and its end destroys stdin. The sentence `:24` ("Input is forwarded…") gains "— except in argv mode with a script on stdin". |
 
 **`sshProgram.ts`** (pure) — add `export function sshSpawnLaunch(entity: EntityMetadata, socket: string | undefined, platform: NodeJS.Platform): { program: string; env: NodeJS.ProcessEnv; warning?: string }`
 = `openSshBinary('ssh', entity.agentForward === true, platform)` and `agentForwardEnv({}, entity.agentForward === true, socket)`.
@@ -187,26 +234,26 @@ stay green unchanged).
 | `SshRoad` `:21-33` | `prepare(accountId, ssh, use?: 'terminal' \| 'spawn')` with a doc for `'spawn'` (E3-D4); new `spawnLaunch(ssh: EntityMetadata, env: Readonly<Record<string, string>> \| undefined): { program: string; env: Record<string, string>; warning?: string }` (E3-D5): `sshSpawnLaunch(ssh, deps.agentSocket?.(), process.platform)`, its `env` with `env` merged on top. |
 | `SshRoadDeps` `:36` | `Pick<SshUseDeps, 'storage' \| 'storageDir' \| 'relays' \| 'servesKeyForEntity'> & Partial<Pick<SshUseDeps, 'agentSocket'>>`. |
 | `sshRoadOf` `:38-52` | `optionsFor(ssh, use)`: `agentServesKey: use === 'spawn' ? false : deps.servesKeyForEntity?.(ssh) === true`; everything else as today (`isolate: true`). |
-| `OwnedSessions` `:61-81` | Add `handOverToRun(ready: ReadySsh): void` = `owned.delete(ready)` with the doc of E3-D7. |
+| `OwnedSessions` `:61-81` | Add `handOverToRun(ready: ReadySsh): () => void` with the doc of E3-D7: `owned.delete(ready)`, then answer `once(() => ready.cleanup())` — a local `let done = false` guard, so a second call does nothing even if a future `cleanup()` is not idempotent. The class doc (`:54-60`) gains: "A session `handOverToRun`ed to a spawned run leaves the list; the run's end cleans it, once." |
 
 **`commands/runCommands.ts`** (436 → about 520 lines)
 
 | Place | Change |
 |---|---|
-| imports `:13-26` | `planRefs` stays; add `windowKind` to the `../hostShell` import; `../remoteLaunch` adds `RemotePlan`, `secretsLaunch`, `secretsLocalOnly`, `secretsOverSshBanner`, `secretsRemoteLine`, `secretsStdin`, `trustLineFor`; `../sshRoad` adds `ownedSessions`; `ReadySsh` type from `../sshSession`; `RefPlan` from `../runPlan`. |
+| imports `:13-26` | `planRefs` stays; `resolveCommand` from `../commandLine` (`:9`) STAYS (E3-D13); add `windowKind` to the `../hostShell` import; `../remoteLaunch` adds `RemotePlan`, `maskedOverSshBanner`, `secretsLaunch`, `secretsLocalOnly`, `secretsRemoteLine`, `secretsStdin`, `trustLineFor`; `../sshRoad` adds `ownedSessions`; `ReadySsh` type from `../sshSession`; `RefPlan` from `../runPlan`. |
 | `runWithSecrets` `:299-308` | §S1.1 steps 2-4: `const job = …; if (job === undefined) return; const link = secretsLinkOf(host, job); await (link.kind === 'none' ? runSecretsHere(host, job) : runSecretsOverSsh(host, job, link));`. `secretsLinkOf`: a script → `{ kind: 'none' }`; a command → `sshLinkOf(…)`. |
 | new `runSecretsHere(host, job)` | Today's `:301-307` (gates with `secretsRefusal`, `resolvedRefs`, `runMasked`), unchanged. |
 | `secretsRefusal` `:311-313` | Unchanged (the script with a synced link, and the OS check). Its doc: the script path and the local road; a linked command goes over SSH (E3.S1). |
 | `resolvedRefs` `:369-371` | The literal becomes `NO_REFERENCE(job.entry.name)`; same text. |
-| new `runSecretsOverSsh`, `spawnOverSsh`, `trustedThenSpawned`, `maskedOverSsh` | §S1.1 step 4 and 5. `maskedOverSsh(job, plan, refs, ready, launch, resolved, spawn)` builds the options and calls `runInMaskedTerminal` (keep each ≤ 50 lines, complexity ≤ 4, parameters ≤ 4: pass a small record). |
+| new `runSecretsOverSsh`, `spawnOverSsh`, `trustedThenSpawned`, `maskedOverSsh` | §S1.1 step 4 and 5. `maskedOverSsh(sessions, run)` — `run` a small record `{ job, plan, refs, ready, launch, resolved, spawn }` — is the ONLY function that calls `handOverToRun` and `runInMaskedTerminal`, in the one synchronous block of §S1.1 (keep each ≤ 50 lines, complexity ≤ 4, parameters ≤ 4). No `showWarningMessage` for `spawn.warning` (E3-D12). |
 | file doc of Run with Secrets `:288-298` | One paragraph: a linked command runs over SSH (E3.S1): the order, ssh by argv, the script on stdin, local window only, the banner. |
 
 **Test helpers**
 
 | File | Change |
 |---|---|
-| `test/arrowWorld.ts` `:23` and `:134` | The `masked` record type takes the new options (`argv?`, `env`, `stdinText?`, `secrets`, `banner`, `onEnded?`, `commandLine?`). `ArrowOptions` gains `remoteName?: string`, set on the stub's `env.remoteName` (absent = a local window). Expose `events` pushes: the mock of `runInMaskedTerminal` pushes `'spawn'` into the road's shared `events` when the test passes one (`ArrowOptions.events?: string[]`); the vault's `refSource` read pushes `'resolve'` the same way (wrap `vaultOf`'s source in the test). |
-| `test/sshRoadWorld.ts` `fakeRoad` `:76-` | `prepare(accountId, ssh, use)` records `use` in a NEW array `uses: string[]` (NOT in `calls`: E2 tests deep-equal `calls`). New `spawnLaunch(ssh, env)` → `{ program: 'ssh', env: { ...(env ?? {}) } }`, recorded in `launches`. |
+| `test/arrowWorld.ts` `:23` and `:134` | The `masked` record type takes the new options (`argv?`, `env`, `stdinText?`, `secrets`, `banner`, `onEnded?`, `commandLine?`). `ArrowOptions` gains `remoteName?: string`, set on the stub's `env.remoteName` (absent = a local window). Expose `events` pushes: the mock of `runInMaskedTerminal` pushes `'spawn'` into the road's shared `events` when the test passes one (`ArrowOptions.events?: string[]`); the vault's `refSource` read pushes `'resolve'` the same way (wrap `vaultOf`'s source in the test). `ArrowOptions` also gains `onMasked?: (options: <the masked record>) => void`, called by the mock AFTER it records the run: a test throws from it (a failed terminal creation, O5) or calls `options.onEnded?.()` in it (a run that ended while being created, O8). |
+| `test/sshRoadWorld.ts` `fakeRoad` `:76-` | `prepare(accountId, ssh, use)` records `use` in a NEW array `uses: string[]` (NOT in `calls`: E2 tests deep-equal `calls`). New `spawnLaunch(ssh, env)` → `{ program: 'ssh', env: { ...(env ?? {}) }, warning: spawnWarning }` (`warning` key absent when `spawnWarning` is undefined), recorded in `launches`; `spawnWarning` is a new LAST parameter of `fakeRoad` (`fakeRoad(script, lookup, events, spawnWarning?)`), so E2's calls are unchanged. New `cleanupCalls: string[]`: one `'<sshId>#<n>'` per call of a ready's `cleanup`, repeats INCLUDED (`cleaned` keeps recording only the call that did something, `:107-112`), so a test can see "exactly once" through an idempotent cleanup. |
 
 **The road scan — `test/launchRoadScan.test.ts`** (same commit; the stale-entry test forces it)
 
@@ -216,7 +263,7 @@ stay green unchanged).
 | `ALLOWED_SENDS['commands/runCommands.ts']` `:136-141` | Add `{ line: 'runInMaskedTerminal({', because: 'Run with Secrets: the local child through its shell (runMasked), and the linked child by argv with the script on stdin (E3.S1)', count: 2 }`. `runMasked(host, job, refs);` and its declaration stay (the local road). |
 | `ALLOWED_SENDS['maskedTerminal.ts']` `:178` | The spawn line's new text `const child = childProcess.spawn(launch.program, launch.args, {`, `because: 'the masked child of Run with Secrets: through a shell (local) or by argv with shell false (over SSH, E3.S1)'`; add `export function runInMaskedTerminal(options: MaskedRunOptions): vscode.Terminal {` (`because: 'the declaration'`). |
 | `REFUSAL_SITES` `:189-195` | Unchanged: `commands/runCommands.ts:secretsRefusal` STAYS (the script path). |
-| `RESOLVE_IMPORTERS` `:103` | Unchanged in S1: `commands/runCommands.ts` still imports `resolveCommand` (the local road's `parts`, and E2's `arrowLine`). See Flag 1. |
+| `RESOLVE_IMPORTERS` `:103` | Unchanged in S1, and `commands/runCommands.ts` STAYS in it after E3 (E3-D13: `LaunchPlan` is not changed; the local road's `parts` and E2's `arrowLine` resolve locally). S2 removes only `agentUseActions.ts`. Its failure message (`:107`) stays. |
 | self-check `:214-226` | Add `assert.equal(sitesIn('literal.ts', 'x = runInMaskedTerminal\n(\n {})', SENDS).length, 1);`. |
 
 **Existing tests whose expected values change**
@@ -257,17 +304,23 @@ five on a5ddd73; `usage` is the fifth line after it).
 - `## Secret references and *Run with Secrets*` (`:379-`): one paragraph at its end, the EN `usage` sentences above.
 
 **research/**
-- `research/module_extension.md` `:2352-2354` ("The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on
+- `research/module_extension.md` `:2367-2369` ("The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on
   THIS machine"): add "— unless the entry runs over SSH (E3)".
-- `:2378-2386` ("The refusal on every road"): Run with Secrets leaves the caller list, except a SCRIPT that a sync linked.
-- A new paragraph after the E2.S3 paragraph (it ends near `:2440`), **Run with Secrets over SSH (E3.S1)**: the order; the
-  checks before prepare (plan, local window, no reference); `prepare(…, 'spawn')` and why (E3-D4); `secretsLaunch`
-  (argv, `-o BatchMode=yes` or askpass, `SECRETS_REMOTE_COMMAND` last); `secretsRemoteLine` (E3-D2); the script on stdin
-  then end of input; `spawnLaunch` (E3-D5); the one owner with `handOverToRun` and `onEnded`; the banner.
+- `:2393-2400` ("The refusal on every road"): Run with Secrets leaves the caller list, except a SCRIPT that a sync linked.
+  `:2248` ("It is still called by Run with Secrets, the agent's run, …"): the same.
+- A new paragraph after the E2.S3 paragraph (`:2437-2455`, before `### Which shell parses the line` at `:2457`), **Run
+  with Secrets over SSH (E3.S1)**: the order; the checks before prepare (plan, local window, no reference);
+  `prepare(…, 'spawn')` and why (E3-D4); `secretsLaunch` (argv, `-o BatchMode=yes` or askpass, `ConnectTimeout=10`,
+  `SECRETS_REMOTE_COMMAND` last); `secretsRemoteLine` (E3-D2); the script on stdin then end of input; `spawnLaunch`
+  (E3-D5) and its warning as a banner line (E3-D12); the one owner and the once-only `handOverToRun` with `onEnded`
+  (E3-D7); what ends the run (E3-D11: the close kills through `childKill`, the end destroys stdin); the child's environment
+  holds no value (E3-D8) and the askpass variables are the known `SendEnv` limit of `:221` (link that paragraph, do not
+  repeat it); the banner.
 - `research/module_tests.md`: a new section `## Run with Secrets and the agent's run over SSH (E3 of PLAN_terminal_command_over_ssh.md)`
-  after the E2 section (`:1313-1331`), the run command, one row per new test file, a **Teeth** line and a **Not covered**
-  line (a real sshd, a Windows local host with a password entry: hand check 3). The `:1304` row says which roads still
-  refuse (the agent's run until S2; a linked script; an agent's VPN start).
+  after the E2 section (`:1374-1391`, before `## The composer for a Terminal entry over SSH` at `:1392`), the run command,
+  one row per new test file, a **Teeth** line and a **Not covered** line (a real sshd, a Windows local host with a password
+  entry, the POSIX jump helper after a close: hand check 3). The `:1365` row ("The refusal on every road") says which
+  roads still refuse (the agent's run until S2; a linked script; an agent's VPN start).
 
 ### S1.4 Line budget (checked before the first edit)
 
@@ -276,7 +329,7 @@ five on a5ddd73; `usage` is the fifth line after it).
 | `extension.ts` | 1003 | ≤ 1003 | ratchet 1003 | edits in place only; it shrinks |
 | `commands/runCommands.ts` | 436 | about 520 | 800 | — |
 | `remoteLaunch.ts` | 369 | about 430 | 800 | — |
-| `maskedTerminal.ts` | 172 | about 215 | 800 | — |
+| `maskedTerminal.ts` | 172 | about 230 | 800 | — |
 | `sshRoad.ts` | 226 | about 260 | 800 | — |
 | `help<Lang>.ts` | 319 each | 319 each | 800 | in-place string edits |
 
@@ -291,6 +344,15 @@ five on a5ddd73; `usage` is the fifth line after it).
   stdin is `secretsStdin(…)`; the remote command is `SECRETS_REMOTE_COMMAND`.
 - **One positive per file** (testing.md): `sshRoadSecrets.test.ts` holds the happy run S7, which fails when the fixture
   is wrong.
+- **Every real-child test is bounded, and kills what it started** (round 1, items 1 and 7). In `test/maskedTerminal.test.ts`
+  every NEW test is `test(name, { timeout: 15_000 }, async () => …)` and waits with a new helper
+  `closedWithin(w, ms)` instead of `closed(w)` (`:93-106`, whose 20-second wait kills nothing): it polls `w.exitCode()`
+  every 10 ms; at `ms` (5 000 unless a row says otherwise) it calls `w.pty().close()` — which is `killChild(child,
+  { tree: true })` — waits up to `KILL_GRACE_MS + 1_000` for the exit code, and then rejects with
+  `child never closed within <ms> ms; killed; output so far: <written>`. So a RED test fails in seconds, on its own
+  message, and leaves no process behind. Existing tests keep `closed(w)`.
+- **"Exactly once" is counted through a counter, never through an idempotent cleanup**: `onEnded` with a counter in
+  `maskedTerminal.test.ts`; `fakeRoad`'s `cleanupCalls` (every call) beside `cleaned` (every call that did something).
 
 ### S1.6 Scenarios — RED first
 
@@ -305,7 +367,7 @@ fake road's first ready.
 
 | # | Test | Assertion | RED today |
 |---|---|---|---|
-| K1 | `the_argv_ends_with_the_remote_login_shell_reading_stdin_after_the_destination` | for a key ready (`entity.sshKeyPath: '/keys/s1.key'`, no env): `kind 'spawn'`; argv deep-equals `buildSshExecArgv(entity, '/keys/s1.key', SECRETS_REMOTE_COMMAND, 'key', { jump, knownHostsFile })`; its last element is `SECRETS_REMOTE_COMMAND`; the two before it are `--` and `deploy@prod.example`; no element is `-t` | no export |
+| K1 | `the_argv_ends_with_the_remote_login_shell_reading_stdin_after_the_destination` | for a key ready (`entity.sshKeyPath: '/keys/s1.key'`, no env): `kind 'spawn'`; argv deep-equals `buildSshExecArgv(entity, '/keys/s1.key', SECRETS_REMOTE_COMMAND, 'key', { jump, knownHostsFile })`; its last element is `SECRETS_REMOTE_COMMAND`; the two before it are `--` and `deploy@prod.example`; no element is `-t`; it holds the pair `-o`, `ConnectTimeout=10` and the pair `-o`, `BatchMode=yes` (E3-D11 (a): the words are SENT); `target === 'deploy@prod.example'` | no export |
 | K2 | `a_password_session_uses_askpass_one_prompt_and_a_connect_timeout` | ready with `env` set: argv holds `NumberOfPasswordPrompts=1` and `ConnectTimeout=10`, not `BatchMode=yes`; no element holds the password value of `env` | no export |
 | K3 | `a_pinned_host_is_enforced` | `options.knownHostsFile: '/keys/kh-s1'`: argv holds `StrictHostKeyChecking=yes` and `UserKnownHostsFile=/keys/kh-s1`; without it, `StrictHostKeyChecking=accept-new` | no export |
 | K4 | `the_jump_and_the_forwards_are_the_trust_lines` | an SSH entry with `agentForward: true`, one enabled `-L` forward and `jump 'deploy@bastion'`: every word of `sshOptionArgv(entity, jump)` appears in the argv, in that order (the trust line's words, so what was approved is what connects) | no export |
@@ -314,19 +376,31 @@ fake road's first ready.
 | K7 | `the_remote_line_reads_each_reference_from_the_posix_environment` | `secretsRemoteLine(PLAN, planRefs([PLAN.line]))` equals `'printenv "$CREDS_REF_1"'`; it holds no `creds://` | no export |
 | K8 | `the_banner_is_exact_and_names_the_target` | `secretsOverSshBanner('deploy@prod.example:2222', [{ value: 'x'.repeat(12), label: 'CREDS_REF_1' }])` equals the E3.0 text literally, with `<caveat>` empty; with a 6-character value it holds `shortValuesCaveat(…)` and names `CREDS_REF_1` | no export |
 | K9 | `the_short_value_caveat_is_the_words_the_local_banner_had` | `maskingBanner(secrets)` (from `../extension`, through the stub) still includes `shortValuesCaveat(secrets)` for a short value — the local banner did not change | no export |
+| K10 | `the_launch_warning_is_a_banner_line_before_the_secrets_text` | `maskedOverSshBanner('CREDS_REF_1 = password of me/alert', NO_AGENT_TO_FORWARD, 'deploy@prod.example', S)` with `S = [{ value: 'x'.repeat(12), label: 'CREDS_REF_1' }]` equals `['CREDS_REF_1 = password of me/alert', `Note: ${NO_AGENT_TO_FORWARD}.`, secretsOverSshBanner('deploy@prod.example', S)].join('\r\n')`; with `warning` undefined it equals the first and the last joined by `\r\n` (no empty line, no `Note:`) | no export |
 
-**`test/maskedTerminal.test.ts`** (append; its `world()` and `run()`; a real child, as the file's doc says)
+**`test/maskedTerminal.test.ts`** (append; its `world()`, a real child, as the file's doc says). POSIX only (`/bin/sh`): on
+win32 each new test is skipped with a printed reason. Every new test is bounded per §S1.5 (`{ timeout: 15_000 }` and
+`closedWithin`). `world()` gains an optional `mocks` argument passed to `loadWithVscode` (`test/vscodeStub.ts:16-28`,
+keyed by the request string `maskedTerminal.ts` writes): `spawnSpy(w)` = `{ 'node:child_process': { ...childProcess,
+spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); return c; } } }` and `killSpy(w)` =
+`{ './childKill': { ...childKill, killChild: (c, o) => { w.kills.push(o); childKill.killChild(c, o); } } }` (`w.children`,
+`w.kills` new arrays on the world). A helper `runArgv(w, options)` is `run()` (`:76-91`) with `argv`, `stdinText`,
+`onEnded` in place of `commandLine`/`shell`, and it does NOT wait (each test waits with `closedWithin`).
 
 | # | Test | Assertion | RED today |
 |---|---|---|---|
-| M1 | `argv_mode_runs_no_shell` | `argv: ['/bin/echo', '$HOME;id']`: the screen shows `$HOME;id` literally (posix only; on win32 skip with a printed reason) | `argv` is ignored, `commandLine` undefined: the spawn fails |
-| M2 | `stdin_text_is_written_once_then_closed` | `argv: ['/bin/sh', '-c', 'cat; echo END']`, `stdinText: 'hello-from-stdin\n'`: the screen holds `hello-from-stdin` then `END`, and `[exit 0]` (cat ended, so stdin was closed) | no stdin write: `cat` waits forever (the test's own timeout fails it) |
+| M1 | `argv_mode_runs_no_shell` | `argv: ['/bin/echo', '$HOME;id']`: the screen shows `$HOME;id` literally | `argv` is ignored, `commandLine` undefined: the spawn fails |
+| M2 | `stdin_text_is_written_once_then_closed` | `argv: ['/bin/sh', '-c', 'cat; echo END']`, `stdinText: 'hello-from-stdin\n'`; `await closedWithin(w, 3_000)`: the screen holds `hello-from-stdin` then `END`, and `[exit 0]` (cat ended, so stdin was closed) | no stdin write: `cat` waits; at 3 s `closedWithin` closes the pty (`killChild`, tree) and rejects `child never closed within 3000 ms; killed; …` — the test fails in about 3 s and no `cat` is left (round 1, item 7) |
 | M3 | `keystrokes_are_not_forwarded_when_stdin_is_a_script` | M2's child with `sleep 1` before `cat`; `pty.handleInput('typed\r')` during the sleep: the screen does not hold `typed` | `typed` is echoed and written |
 | M4 | `on_ended_is_called_once_when_the_child_exits` | `argv: ['/bin/true']`, a counter: after the close, `1` | no option |
-| M5 | `on_ended_is_called_once_when_the_program_does_not_exist` | `argv: ['/nonexistent/ssh-xyz']`: the screen says it could not start, and after both `error` and any `close`, the counter is `1` | no option |
-| M6 | `on_ended_is_called_once_when_the_terminal_closes_before_the_child_starts` | `pty.close()` before `pty.open()`: counter `1`; `open()` is then not called by the stub | no option |
+| M5 | `on_ended_is_called_once_when_the_program_does_not_exist` | `argv: ['/nonexistent/ssh-xyz']`: the screen says it could not start, and after both `error` and any `close` (wait 200 ms after the exit code), the counter is `1` | no option |
+| M6 | `on_ended_is_called_once_when_the_terminal_closes_before_the_child_starts` | `pty.close()` before `pty.open()`: counter `1` | no option |
+| M6b | `a_run_closed_before_it_started_never_spawns_or_writes` | with `spawnSpy`: `pty.close()`, then `pty.open()` (VS Code should not, the code must not care): `w.children` `[]`, counter still `1`, the screen holds the banner at most | `open()` spawns after the close |
 | M7 | `the_env_of_argv_mode_reaches_the_child` | `argv: ['/bin/sh', '-c', 'printf %s "$ASKPASS_PROBE"']`, `env: { ASKPASS_PROBE: 'probe-value-1234' }`: shown | `argv` ignored |
 | M8 | `end_to_end_values_echoed_to_stdout_and_stderr_are_masked` | A fake `ssh` in an `ownedDir(t, 'ssh')` (the pattern of `test/remoteLaunchDelivery.test.ts:66-80`): it records its argv NUL-separated and its environment (`env -0`) to two files, skips its options to `--`, skips the destination, and runs the last argument with `/bin/sh -c` (what sshd does with an exec request), stdin inherited. Run `argv: [fake, ...secretsLaunch(PLAN, ready).argv]`, `env: {}`, `stdinText: secretsStdin(env, 'printf "%s\\n" "$CREDS_REF_1"; printf "%s\\n" "$CREDS_REF_2" >&2')` with `CREDS_REF_1 = "it's $HOME \"quoted\" value"` and `CREDS_REF_2 = 'second-secret-value-42'`, `secrets` both with their labels. The screen holds `<CREDS_MASKED:CREDS_REF_1>` and `<CREDS_MASKED:CREDS_REF_2>` and neither raw value; the recorded argv holds neither value; the recorded environment holds neither value | no argv mode |
+| M9 | `closing_the_terminal_kills_a_stalled_child_and_drops_the_unwritten_script` (round 1, item 1) | with `spawnSpy` and `killSpy`: `argv: ['/bin/sh', '-c', "echo PID=$$; trap '' TERM; exec sleep 300"]` (the shell becomes `sleep`, same pid, and `SIGTERM` stays ignored across `exec`), `stdinText: 'x'.repeat(4 * 1024 * 1024)` (more than a pipe takes; `sleep` never reads), a counter. Wait for `PID=<n>` on the screen (≤ 3 s), then `pty.close()`; `await closedWithin(w, KILL_GRACE_MS + 3_000)`. Then: the screen ends with `[exit killed]`; the counter is `1`; `w.kills` deep-equals `[{ tree: true }]`; `process.kill(n, 0)` throws `ESRCH`; `w.children[0].stdin.destroyed === true` | no argv mode |
+| M10 | `a_terminal_that_cannot_be_created_throws_and_never_spawns` (round 1, item 5) | a world whose `createTerminal` throws `new Error('no terminal')`, with `spawnSpy`: `runInMaskedTerminal(…)` throws that error; the counter stays `0` (the caller cleans, E3-D7); `w.children` `[]` | (green before and after: a guard that pins E3-D7's "a throw from `createTerminal` is the caller's" — say so) |
+| M11 | `the_ssh_childs_environment_holds_no_secret_value` (round 1, item 4; D12) | M8's fake `ssh` and launch, with `env` = a password session's askpass set `{ SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' }` and the resolved values `CREDS_REF_1 = 'first-secret-value-0001'`, `CREDS_REF_2 = 'second-secret-value-42'` ONLY in `stdinText`: the environment the fake recorded (`env -0`, split on NUL) holds no entry whose value contains either resolved value and no name starting `CREDS_REF_`; it DOES hold `SSH_ASKPASS_REQUIRE=force` (the positive control: the recording works). The askpass password IS there — the accepted limit (E3-D8), asserted present, not hidden | no argv mode |
 
 **`test/sshRoad.test.ts`** (append; its `loadWithVscode` world)
 
@@ -334,7 +408,8 @@ fake road's first ready.
 |---|---|---|---|
 | H6 | `a_spawn_preparation_never_relies_on_the_agent` | `servesKeyForEntity` answers true; `prepare(acct, ssh, 'spawn')` → the mocked `prepareSshSession` got `agentServesKey === false` and `isolate === true`; `prepare(acct, ssh)` still gets `true` | the third argument is ignored |
 | H7 | `spawn_launch_names_the_built_in_client_and_the_extensions_agent_for_a_forwarding_entry` | `agentSocket: () => '/tmp/agent.sock'`, `ssh.agentForward: true`: `program` equals `openSshBinary('ssh', true, process.platform)`; `env.SSH_AUTH_SOCK === '/tmp/agent.sock'`; the askpass `env` passed in is merged; without forwarding, no `SSH_AUTH_SOCK` | no method |
-| H8 | `hand_over_to_run_leaves_the_list_and_does_not_clean` | `own(r)`, `handOverToRun(r)`, `cleanAll()` → `cleanup` 0 | no method |
+| H8 | `hand_over_to_run_leaves_the_list_and_answers_a_once_only_cleanup` (round 1, item 5) | `r` with a COUNTING `cleanup` (not idempotent: it counts every call); `own(r)`; `const ended = handOverToRun(r)`; `cleanAll()` → count 0; `ended(); ended()` → count 1 | no method |
+| H9 | `a_hand_over_of_a_session_never_owned_still_cleans_once` | no `own`; `handOverToRun(r)()` twice → count 1; a later `cleanAll()` → still 1 | no method |
 
 **`test/sshRoadSecrets.test.ts`** (new; `arrowWorld({ others: [S1, alert], sshRoad: road, events }, [], vault.source)` and `aw.runWithSecrets(LINKED)`)
 
@@ -344,15 +419,19 @@ fake road's first ready.
 | S2 | `no_child_and_no_value_before_the_trust_answer` | the trust modal HELD: `aw.masked` `[]`, `vault.calls` `[]`, `road.calls.length === 1`; then answered: one masked run | E1's sentence |
 | S3 | `the_child_is_ssh_by_argv_with_no_value_in_argv_or_env` | after the run: `masked[0].argv` deep-equals `['ssh', ...secretsLaunch(PLAN, r1).argv]`; `commandLine` undefined; no element of `argv` and no value of `env` holds `correct-horse-battery-staple`; `road.uses` deep-equals `['spawn']` | E1's sentence |
 | S4 | `stdin_carries_the_exports_and_the_line_in_a_group_then_exit` | `masked[0].stdinText === secretsStdin({ CREDS_REF_1: 'correct-horse-battery-staple' }, 'printenv "$CREDS_REF_1"')`; it holds `} </dev/null` and ends with `exit $?\n` | E1's sentence |
-| S5 | `the_output_is_masked_and_the_banner_says_not_interactive` | `masked[0].secrets` deep-equals `[{ value: 'correct-horse-battery-staple', label: 'CREDS_REF_1' }]`; `masked[0].banner` ends with `secretsOverSshBanner(r1.target, masked[0].secrets)` | E1's sentence |
+| S5 | `the_output_is_masked_and_the_banner_says_not_interactive` | `masked[0].secrets` deep-equals `[{ value: 'correct-horse-battery-staple', label: 'CREDS_REF_1' }]`; `masked[0].banner` ends with `secretsOverSshBanner(r1.target, masked[0].secrets)` and holds no `Note:` (the fake road gives no warning) | E1's sentence |
 | S6 | `trust_is_asked_on_the_trust_line_and_one_approval_covers_the_arrow` | the modal text includes `trustLineFor(r1.entity, r1.jump, PLAN.line)`; afterwards `isCommandTrusted(aw.trust, 'e1', thatLine)` true; a local trust of `PLAN.line` alone does NOT skip the modal | E1's sentence |
-| S7 | `a_linked_entry_runs_with_secrets_over_ssh` | the happy run, trusted: one masked run, `cleaned` `[]` (the run owns it now), then `masked[0].onEnded()` twice → `cleaned` `['s1#1']` once | E1's sentence |
-| S8 | `a_password_entry_puts_askpass_in_the_child_env_never_in_argv` | script `{ password: true }`: `masked[0].env` includes every key and value of `r1.env`; `argv` holds `NumberOfPasswordPrompts=1`; no `argv` element holds `r1.env.CREDS_ASKPASS_PASSWORD` | E1's sentence |
+| S7 | `a_linked_entry_runs_with_secrets_over_ssh` | the happy run, trusted: one masked run; `cleaned` `[]` and `road.cleanupCalls` `[]` after the road returned (the run owns it now; the owner's `finally` did not touch it); then `masked[0].onEnded()` twice → `road.cleanupCalls` `['s1#1']` (exactly one call) | E1's sentence |
+| S8 | `a_password_entry_puts_askpass_in_the_child_env_never_in_argv` | script `{ password: true }`: `masked[0].env` includes every key and value of `r1.env`; `argv` holds `NumberOfPasswordPrompts=1`; no `argv` element holds `r1.env.CREDS_ASKPASS_PASSWORD` (the fake road's name for the password variable, `test/sshRoadWorld.ts:54`; the real one is `CREDS_SSH_PASSWORD`, `sshAskpass.ts:45`) | E1's sentence |
+| S9 | `the_child_env_is_the_askpass_and_agent_variables_only_and_holds_no_value` (round 1, item 4; E3-D8) | for a key session and for `{ password: true }`: every key of `masked[0].env` is a key of `r1.env ?? {}` or `SSH_AUTH_SOCK`; no key starts with `CREDS_REF_`; no value contains `correct-horse-battery-staple`; and `masked[0].stdinText` DOES contain it (the value went somewhere: stdin, and only there) | E1's sentence |
+| S10 | `the_spawn_warning_is_in_the_banner_and_no_toast_races_the_run` (round 1, item 3; E3-D12) | `fakeRoad(…, …, events, NO_AGENT_TO_FORWARD)`, `recordDialogs(aw, events)` (`test/sshRoadWorld.ts:119-128`): `masked[0].banner === maskedOverSshBanner(described, NO_AGENT_TO_FORWARD, r1.target, masked[0].secrets)` with `described` = the banner's first line; the `Note:` line comes before `secretsOverSshBanner(…)`; `events` holds no `dialog:` entry that includes `NO_AGENT_TO_FORWARD` | E1's sentence |
 | O1 | `owner_a_declined_trust_spawns_nothing_and_cleans` | modal `'dismiss'`: `aw.masked` `[]`, `vault.calls` `[]`, `cleaned` `['s1#1']` | `road.calls` is 0 (E1) |
 | O2 | `owner_a_cancelled_dependency_spawns_nothing_and_cleans` | S1's world, the chain modal answered `undefined`: `masked` `[]`, `vault.calls` `[]`, `cleaned` `['s1#1']` | E1's sentence |
 | O3 | `owner_a_failed_resolution_spawns_nothing_and_cleans` | a reference to `creds://me/gone/password` (no such entity): the error message is today's `Nothing was run: …`; `masked` `[]`; `cleaned` `['s1#1']` | E1's sentence |
 | O4 | `owner_a_thrown_error_cleans` | a `refSource` that throws: `await assert.rejects(aw.runWithSecrets(LINKED))`; `cleaned` `['s1#1']` | E1's sentence, no throw |
-| O5 | `owner_a_failed_terminal_creation_cleans` | the mocked `runInMaskedTerminal` throws: rejects; `cleaned` `['s1#1']` | E1's sentence |
+| O5 | `owner_a_failed_terminal_creation_cleans_exactly_once` (round 1, item 5) | `onMasked` throws: `aw.runWithSecrets(LINKED)` rejects with that error; `road.cleanupCalls` `['s1#1']` — ONE call (the road's `catch`), not two (the owner's `finally` no longer holds the session) | E1's sentence |
+| O8 | `owner_a_run_that_ended_while_its_terminal_was_made_and_then_threw_cleans_once` (round 1, item 5) | `onMasked` calls `options.onEnded()` and then throws: rejects; `road.cleanupCalls` `['s1#1']` | E1's sentence |
+| O9 | `owner_a_close_before_start_cleans_once_and_a_late_end_does_nothing` (round 1, item 5) | `onMasked` calls `options.onEnded()` (the terminal closed before its child started) and returns: the road resolves; `road.cleanupCalls` `['s1#1']`; then the test calls `masked[0].onEnded()` again → still `['s1#1']` | E1's sentence |
 | O6 | `a_stopped_preparation_asks_nothing_and_spawns_nothing` | script `'stopped'`: no modal, `masked` `[]`, `refusedShown` 0 | E1's sentence |
 | O7 | `a_refused_preparation_shows_the_remedy_and_spawns_nothing` | script `'refused'`: `refusedShown` 1, no trust modal, `masked` `[]` | E1's sentence |
 | N1 | `snapshot_a_host_changed_during_the_trust_question_does_not_reach_the_child` | modal held; `aw.nodes['s1']` REPLACED with host `evil.example`; answered Run: `masked[0].argv` holds `deploy@prod.example` and nothing holds `evil`; `aw.reads('s1')` after `prepare` returned is 0 | E1's sentence |
@@ -393,8 +472,9 @@ The lead runs the full `npm test`.
 
 ### S2.1 What the Fable spec owns, and what it must answer
 
-The spec `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` (Fable, a security judgement outside the quota) owns
-these and nothing in §S2.2-§S2.5 decides them:
+The spec [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) (Fable, a
+security judgement outside the quota) owns these and nothing in §S2.2-§S2.5 decides them (its answers: the spec's §0
+table; the gate order of item 6 of round 1 is its §2.1 and §4):
 
 1. **The gate.** Parent D2: `findUsableEntry(…, sshEntityId, 'exec')` must answer `usable`. Questions: `findUsableEntry`
    (`mcpEntries.ts:344-356`) searches EVERY account — must the SSH entry be looked up with `accountOnly(source,
@@ -434,30 +514,51 @@ The spec writes its decisions as a table, the exact sentences, its own RED-first
 plus a storage with `getAccounts`) built against the REAL `findUsableEntry` (testing.md: a fixture the code rejects
 proves nothing). §S2.5 uses that fixture.
 
-### S2.2 What the road does (after the gate)
+### S2.2 What the road does — the gate FIRST
+
+**The gate runs before any refusal that reads the link or the SSH entry** (round 1, item 6; the spec's §2.1 and §2.3,
+which decide it). `planLaunch` is NOT called before the gate: its order is `{name}`/empty → the LINK's refusal (which
+names the SSH entry, `remoteLaunch.ts:54-106`) → D9 Windows → the line break (`:174-199`, `:205-215`), so calling it first
+would hand the agent `sshLinkOf`'s sentences, and would tell it "Windows" or "line break" about an entry whose SSH
+connection it may not use. Until the gate has passed, the agent reads exactly one of three answers: `not_found` (the
+Terminal entry itself is gone — the Terminal entry is the agent's) or the one sentence `linkedRunRefused(T)` (the spec's
+§4), whatever the reason: missing, another account, in the Trash, not an SSH entry, unsafe host, self, closed, PIN-hidden
+— and also a malformed line or a Windows remote on such an entry. On a bridge it is `BRIDGE_NOT_SERVED`, for every linked
+entry alike (the spec's §2.1 step 3, before the link is resolved).
 
 `terminalRunAction` (`agentUseActions.ts:188-237`; `run` has 48 of its 50 code lines) becomes a short dispatcher:
 
-1. `entityFor` as today; gone → `not_found`.
-2. `const link = sshLinkOf(entity, (id) => deps.storage.getNode(ctx.accountId, id))`;
-   `const plan = planLaunch(entity, link, { stayOpen: false })` (D11's bare line: ssh's exit status is the command's).
-3. `empty` → `fail('no_credential', `"${ctx.entityName}" has no command.`)` (today's words). `refused` → the Fable
-   spec's rule for which sentence the agent hears; a `{name}` refusal reads `` `"${ctx.entityName}" will not run: ${reason}` ``
-   as today. Use the one helper `refusalSaid(entry, reason)` (below).
-4. `local` → `runHere(deps, ctx, entity, plan.line)`: today's `:211-235` (OS check without `sshLinkRefusal`, trust on the
-   line, slot, `capturedRun`), unchanged in behaviour.
-5. `remote` → **the Fable gate**, then `runThere(deps, ctx, plan)`:
+1. `entityFor` as today; gone → `not_found` (today's words, `:200-202`).
+2. `const gate = linkedCall(deps, ctx, ctx.bridge)` — the spec's gate (§2.1), the ONLY reader of the link in `run`.
+   `refused` → `deps.note(journalLine(ctx.entityName, gate.why))`, then `fail(gate.code, gate.message)`. Nothing below runs.
+3. The compare, for `local` and `linked` alike (spec §2.3 step 3): `ctx.summary !== undefined && ctx.summary !==
+   linkedSummary(gate, entity)` → `fail('denied', changedWhileAsking(ctx.entityName))`. For an entry that was unlinked
+   when the dialog stood both are today's words and it passes; a link removed while the dialog stood is refused (spec
+   §2.4 row 4, G10 (c)), never run here.
+4. `local` (no link) → `runHere(deps, ctx, entity)`: `const plan = planLaunch(entity, { kind: 'none' }, { stayOpen: false })`;
+   `empty` → `fail('no_credential', `"${ctx.entityName}" has no command.`)` (today's words); `refused` (only `{name}` can
+   reach here) → `fail('not_supported', refusalSaid(entity, plan.reason))`, which is today's `"<T>" will not run: <reason>`;
+   `local` → today's `:211-235` with `plan.line` (OS check without `sshLinkRefusal`, trust on the line, slot,
+   `capturedRun`), unchanged in behaviour.
+5. `linked` → `const plan = planLaunch(entity, gate.link, { stayOpen: false })` — the gate's OWN `link`
+   object, so `plan.ssh === gate.link.ssh` and no second `sshLinkOf` runs (D11's bare line: ssh's exit status is the
+   command's). `empty` → today's `has no command.`; `refused` → `fail('not_supported', refusalSaid(entity, plan.reason))`
+   — only `{name}`, D9 Windows and the line break can reach here, and each names the Terminal entry only; `remote` →
+   `runThere(deps, ctx, plan)`:
    - `const chain = resolveJumpChain(plan.ssh, (id) => deps.storage.getNode(ctx.accountId, id)?.details)`; not ok →
-     the Fable spec's sentence (question 4).
+     `fail('no_credential', chain.reason)` (spec §2.3 step 5: after the gate, `ssh:exec`'s words).
    - `trustLineFor(plan.ssh, chain.value, plan.line)` not trusted (`isCommandTrusted(deps.trustStore, ctx.entityId, …)`)
      → `untrusted(ctx.entityName, 'the line')` (`:108-113`, today's words). Before the slot, as today.
    - `const release = deps.acquireExecSlot()`; none → `too_many_requests` (today's words).
    - `try { return await deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand,
      timeoutMs: clampExecTimeout(undefined) }); } finally { release(); }`.
 
-**ONE SNAPSHOT:** `plan.ssh` is the object `sshLinkOf` read, once. The trust line and the argv are built from it and from
-`chain`, resolved once; nothing reads the SSH entry again. `resolveExecAuth` reads the CREDENTIAL (the key entity), which
-is not the target.
+`validate` and `summarize` call the same `linkedCall` (spec §2.2), so a refused gate is answered in `validate`, before any
+dialog, with the same one sentence.
+
+**ONE SNAPSHOT:** `plan.ssh` is the object `sshLinkOf` read inside the gate, once. The trust line and the argv are built
+from it and from `chain`, resolved once; nothing reads the SSH entry again. `resolveExecAuth` reads the CREDENTIAL (the key
+entity), which is not the target.
 
 **`execOverSsh(deps)`** (`sshUseActions.ts`, new export; E3-D9) answers `OverSsh = (ctx, call) => Promise<UseActionResult>`:
 `prepareAuth(deps, ctx, call.ssh, refuse)` (`:158-182`) → `const chain = call.jump()`; not ok → `refuse('no_credential',
@@ -536,8 +637,8 @@ answer `{ status: 200, body: { exitCode: 0, stdout: 'ok', … } }`).
 | AG2 | `the_trust_key_is_the_trust_line_not_the_local_line` | trusted on `'echo linked'` only: `no_credential` with `untrusted`'s text; `overSsh` 0; slot 0 | E1's sentence |
 | AG3 | `a_busy_window_answers_too_many_and_runs_nothing` | `acquireExecSlot` → `undefined`: `too_many_requests`; `overSsh` 0 | E1's sentence |
 | AG4 | `the_slot_is_released_when_the_ssh_call_throws` | `overSsh` rejects: the action rejects or answers `internal` as the Fable spec says; the release function was called once | E1's sentence |
-| AG5 | `snapshot_the_ssh_entry_is_read_once` | `getNode` counts reads of `s1`: exactly the reads the gate and `sshLinkOf` make, as the Fable spec lists them, and none after the trust check | E1's sentence |
-| AG6 | `a_linked_entry_written_for_windows_is_refused_and_runs_nothing` | `terminalOs: 'windows'`: `not_supported`, `overSsh` 0, slot 0 (the sentence per the Fable spec, question 4) | E1's sentence differs |
+| AG5 | `snapshot_the_ssh_entry_is_read_once` | `getNode` counts reads of `s1`: exactly the two the gate makes (`linkTo` and `lookedUp`, spec §2.1), and none after the gate — `planLaunch` gets the gate's `link`, so it reads nothing | E1's sentence |
+| AG6 | `a_linked_entry_written_for_windows_is_refused_after_the_gate_naming_only_the_terminal_entry` | S usable (the gate passes), `terminalOs: 'windows'`: `not_supported`, message `=== refusalSaid(T, planLaunch(T, sshLinkOf(T, lookup), { stayOpen: false }).reason)`, which includes `"deploy"` and not `prod box` or `prod.example`; `overSsh` 0, slot 0. The same entry with S CLOSED answers the one sentence instead: that case is the spec's G20 | E1's sentence differs |
 | AG7 | `an_unlinked_entry_runs_here_as_before` | the existing tests `the_agent_runs_the_resolved_line` and the #103 pair (`agentUseActions.test.ts:214-229`, `:377-399`) green unchanged; and here: an unlinked entry never calls `overSsh` | (green; guard) |
 
 **`test/sshExecOver.test.ts`** (new; `loadWithVscode('../sshUseActions', stub, { './sshExecRunner': { runSshExec: recorder } })`)
@@ -576,36 +677,67 @@ The lead runs the full `npm test`.
 | `src_vs_code/CHANGELOG.md` `## [Unreleased]` | One `### Added — a Terminal entry runs its command over a chosen SSH connection` block: the field (*Runs over SSH*); every road (arrow, VPN *Started by*, *Run All in Folder*, a dependency step, *Run with Secrets*, an agent's run) with one line each; the trust line (a changed host, user, port, jump, agent forwarding or forward asks again); *Copy Command* copies the trust line; the refusals (Windows server, non-local window for secrets, `{config}` in a linked launcher, a password dependency step, PowerShell 5.1 with `"` or a final `\`, an agent's VPN start with a linked launcher); share and export leave the link out, *Update it* keeps the recipient's own; the older-build note. One `### Changed` line: SSH Connect's preparation is shared (no behaviour change). Cite `file:line` as the existing entries do. |
 | `research/module_extension.md` | Read the whole SSH-link section (from `#### Terminal entry SSH link`, about `:2356`, to the end of the E3 paragraphs) as ONE text: no sentence says a road "still refuses" that runs now; "The refusal on every road" lists exactly the remaining callers of `sshLinkRefusal` (scan 4's list); the module map names `remoteLaunch.ts`, `sshSession.ts`, `sshRoad.ts`, `entityCommandRows.ts`, the scan. |
 | `research/module_tests.md` | The E1, E2 and E3 sections: every new test file has a row; each row's flow is covered or `not covered` with a reason; one **Not covered** line names the hand checks of parent §10 and who runs them. |
-| parent §10 | Hand check 3 is handed to the owner (it is owed, not a gate for the merge); the summary says so. |
+| parent §10 | Hand check 3 is handed to the owner (it is owed, not a gate for the merge); the summary says so. With it go the observations E3 could not make in a unit test (E3-D11): with a jump host, closing the masked terminal mid-run leaves no `ssh` helper on this machine (`pgrep -f 'ssh .*-W'` empty after a few seconds), and an unreachable host ends the run with ssh's error after about 10 s. They are the owner's to run, written into the hand-over message, not into the parent (§E3.R1, flag 7). |
 
 ### S3.2 The promotion — together, the `git mv` LAST (`planning-docs.md` § *The `git mv` goes LAST*)
 
-The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, `_E1_S3_spec.md`, `_E2.md`, `_E3.md`,
-`_E3_S2_security.md`. NOT `PLAN_windows_shell_quoting_injection.md` (its own plan and clock, parent §7a).
+The documents are SEVEN, listed in the table below. NOT `research/PLAN_windows_shell_quoting_injection.md` (its own
+plan, already promoted by #334, parent §7a).
+
+**Each document, its index rows and its links** (round 1, item 8). Line numbers are as on 454e990 + this branch; find each
+`todo/README.md` row by its link text, not by its number. `research/README.md` gets ONE new row at the top of the
+*Implemented plans* table (after the header at `:37-38`, before the `PLAN_windows_shell_quoting_injection.md` row at `:39`),
+in the shape of the multi-document row at `:41`, and that one row is the mention of all seven (the checker,
+`plan-lifecycle.mjs` "research/README.md never mentions <plan>", asks for a mention of each file name):
+
+`| [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md), with stories [E1](PLAN_terminal_command_over_ssh_E1.md) (specs [S2](PLAN_terminal_command_over_ssh_E1_S2_spec.md), [S3](PLAN_terminal_command_over_ssh_E1_S3_spec.md)), [E2](PLAN_terminal_command_over_ssh_E2.md), [E3](PLAN_terminal_command_over_ssh_E3.md) (security spec [S2](PLAN_terminal_command_over_ssh_E3_S2_security.md)) | <YYYY-MM-DD> | <the release, then one sentence per epic of what shipped, and the deviations that a reader needs first> |`
+
+| # | Document | `todo/README.md` row removed (link text; line on this branch) | `research/README.md` mention (in the one row above) | Its own links that change (the three cases) |
+|---|---|---|---|---|
+| 1 | `PLAN_terminal_command_over_ssh.md` | `[PLAN_terminal_command_over_ssh.md]` — `:30` | the row's first link | case 1: `PLAN_askpass_answers_the_hop.md` (×2), `PLAN_terminal_runs_followups.md`, `PLAN_remote_bridge_scoped.md` gain `../todo/`; case 2: `../research/PLAN_windows_shell_quoting_injection.md` (×3) drops `../research/`; siblings unchanged; the path `todo/PLAN_terminal_command_over_ssh_E<n>.md` in the text (`:424`) becomes `research/…` |
+| 2 | `PLAN_terminal_command_over_ssh_E1.md` | `[PLAN_terminal_command_over_ssh_E1.md]` — `:31` | `[E1]` | case 2: `../research/PLAN_windows_shell_quoting_injection.md` drops `../research/`; siblings unchanged |
+| 3 | `PLAN_terminal_command_over_ssh_E1_S2_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S2_spec.md]` — `:35` | `[S2]` after E1 | siblings only (none change) |
+| 4 | `PLAN_terminal_command_over_ssh_E1_S3_spec.md` | `[PLAN_terminal_command_over_ssh_E1_S3_spec.md]` — `:36` | `[S3]` after E1 | siblings only; the path `todo/PLAN_terminal_…` in its F12 row (`:34`) becomes `research/…` |
+| 5 | `PLAN_terminal_command_over_ssh_E2.md` | `[PLAN_terminal_command_over_ssh_E2.md]` — `:32` | `[E2]` | siblings only |
+| 6 | `PLAN_terminal_command_over_ssh_E3.md` | `[PLAN_terminal_command_over_ssh_E3.md]` — `:33` | `[E3]` | siblings only; the backticked paths `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md` in its text become `research/…` or links |
+| 7 | `PLAN_terminal_command_over_ssh_E3_S2_security.md` | `[PLAN_terminal_command_over_ssh_E3_S2_security.md]` — `:34` | `[S2]` after E3 | case 1: `PLAN_consent_coverage_per_door.md` (§3.2) gains `../todo/`; siblings unchanged |
+
+Inbound references outside the seven (case 3, and the paths no renderer checks): `research/PLAN_windows_shell_quoting_injection.md:67`
+cites `todo/PLAN_terminal_command_over_ssh.md` → `research/…`; `src_vs_code/src/remoteLaunch.ts:11` cites
+`todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` → `research/…`. Find any others by
+`grep -rn "todo/PLAN_terminal_command_over_ssh" --include=*.ts --include=*.md --include=*.mjs --include=*.cjs .` (the
+bare name `PLAN_terminal_command_over_ssh.md` in a code comment names no folder and does not change), not from memory.
+
+The steps, in this order:
 
 1. While every file is still in `todo/`: each status line becomes `> Status: **IMPLEMENTED, <YYYY-MM-DD>.**` with its
    deviations. The parent's deviations section collects at least: E1 §S4 F1-F7; E2's four recorded deviations and its
    flags 2-5; E3-D2 (references only from the line that runs, over SSH); E3-D4 (a spawn always writes the key file);
-   the §4.5 (1) importer target as reached or not (Flag 1); the `sshLinkRefusal` sentence's last callers (Flag 4);
-   the CHANGELOG path. A deviation that records something as impossible names what was CHECKED.
-2. The parent's ledger: read it whole. If this epic's work accepted a change after epoch 2's approval, it is entry 2.1
-   (and a second one is the full stop of `plan-change-control.md`). A stories document keeps no ledger.
-3. Links, the three cases: (1) the movers' links to plans still in `todo/` (`PLAN_askpass_answers_the_hop.md`,
-   `PLAN_terminal_runs_followups.md`, `PLAN_windows_shell_quoting_injection.md`, `PLAN_remote_bridge_scoped.md`) gain
-   `../todo/`; (2) links to `research/` files (`PLAN_os_aware_execution.md`, `research/module_*.md`) drop `../research/`;
-   (3) inbound links: `todo/README.md` rows go, `research/README.md` gets one mention per document (each stories
-   document is a plan to the checker); `research/PLAN_windows_shell_quoting_injection.md:67` cites `todo/PLAN_terminal_command_over_ssh.md`;
-   `remoteLaunch.ts:11` cites `todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` — both become `research/…`. Find the
-   rest by `grep -rn "PLAN_terminal_command_over_ssh" --include=*.ts --include=*.md .`, not from memory.
-4. `git mv` each of the seven, `git add` each destination (the move staged the original bytes), and commit in the same
-   breath with `todo/README.md`, `research/README.md` and the referrers.
-5. `node .agents/conventions/tools/plan-lifecycle.mjs` clean; every markdown link in `todo/` and `research/` resolves.
+   **E3-D13: the §4.5 (1) importer target NOT reached** — `commands/runCommands.ts` still imports `resolveCommand` for
+   the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not widened (E3's plan
+   round 1); the `sshLinkRefusal` sentence's last callers (Flag 4); the CHANGELOG path; and, recorded as CHECKED and not
+   built, `-o SendEnv=-NAME` for the askpass variables (measured not to remove a wildcard pattern,
+   `PLAN_windows_shell_quoting_injection.md` §8; the limit stays accepted). A deviation that records something as
+   impossible names what was CHECKED.
+2. The parent's ledger: read it whole. Entry 2.1 is the E3.S2 security judgement; a second entry of epoch 2 is the full
+   stop of `plan-change-control.md`, before anything is promoted. A stories document keeps no ledger.
+3. Edit, still in `todo/`: every link of the table's last column, written for the DESTINATION; the two inbound paths;
+   delete the seven `todo/README.md` rows; add the one `research/README.md` row.
+4. `git mv` each of the seven to `research/`, `git add` each DESTINATION (the move staged the original bytes;
+   `git-workflow.md` rule 8), `git show :research/<file> | head -3` shows the IMPLEMENTED status for each, and commit in
+   the same breath with `todo/README.md`, `research/README.md`, `research/PLAN_windows_shell_quoting_injection.md` and
+   `src_vs_code/src/remoteLaunch.ts`. `git diff --cached --name-status` shows seven renames, none `R100`.
+5. Then run `node .agents/conventions/tools/plan-lifecycle.mjs`: it must print `plan-lifecycle: clean.` (no "omits", no
+   "still lists", no "never mentions", no unresolved link). Walk every markdown link in `todo/` and `research/` that the
+   commit touched and resolve it against its own file.
 
 ### S3.3 Checklist
 
 - [ ] The help tests pass, five languages, English first; no help text says a road refuses that runs.
 - [ ] README, CHANGELOG, `module_extension.md`, `module_tests.md` describe the shipped system.
-- [ ] The seven documents promoted together, deviations recorded, links walked, `plan-lifecycle.mjs` clean.
+- [ ] The seven documents promoted together, each with its `todo/README.md` row removed and its mention in the one
+      `research/README.md` row (§S3.2 table), deviations recorded (E3-D13 among them), links walked, then
+      `plan-lifecycle.mjs` clean.
 - [ ] Hand check 3 handed to the owner; hand checks 1, 2 and 4 still listed as owed if not done.
 
 ---
@@ -620,12 +752,18 @@ The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, 
   a link written by this build; a synced one keeps E1's sentence).
 - **No change to the local Run with Secrets** (its shell, its line from the parts, its references in disabled rows, its
   banner text), to `runMasked`, or to `secretsStdin`, `SECRETS_REMOTE_COMMAND`, `trustLineFor`, `planLaunch`,
-  `prepareSshSession`, `cleanup()`, the trust store or `commandFingerprint`.
+  `LaunchPlan` (E3-D13), `prepareSshSession`, `cleanup()`, `childKill.ts`, the trust store or `commandFingerprint`.
 - **No change to `ssh:exec`'s behaviour**: its body moves into `execOverSsh`, in the same order.
 - **No fix of risk 7** (askpass answers a jump host's password prompt): a password SSH entry with a jump host has it on
   these roads too (`PLAN_askpass_answers_the_hop.md`).
-- **No `SendEnv` control.** The askpass variables stay in the LOCAL ssh's environment; the argv asks for no `SendEnv`.
-  A person's own `~/.ssh/config` with `SendEnv` could forward them, as with SSH Connect today.
+- **No `SendEnv` control, and no `-o SendEnv=-NAME`** (E3-D8). The removal form was MEASURED not to work on a wildcard
+  pattern (`research/PLAN_windows_shell_quoting_injection.md` §8), so it would only look like protection. A password SSH
+  entry's askpass variables stay in the LOCAL ssh's environment; a person's own `SendEnv` pattern together with a
+  server's `AcceptEnv` could send that password to the server — the limit the owner accepted and documented on
+  2026-11-10 (`research/module_extension.md:221`, `src_vs_code/CHANGELOG.md:34-36`, release 1.19.0), the same as on SSH Connect today.
+  The resolved VALUES are never in that environment (stdin only, M11 and S9), so no `SendEnv` can carry them.
+- **No overall time limit on a masked run.** It is bounded by `ConnectTimeout` while connecting and by the person after
+  that (closing the terminal kills it, E3-D11), as the local Run with Secrets is today.
 - **No authorisation decision outside the Fable spec**: S2's gate, refusal texts and consent text are the spec's.
 - **No change of the translated *Runs on* labels** in `helpDe.ts` and `helpEs.ts` (older than this plan; E1 note 6).
 - **No promotion before S1 and S2 are built and reviewed**, and no promotion of `PLAN_windows_shell_quoting_injection.md`.
@@ -639,6 +777,8 @@ The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, 
    E2's `arrowLine` (`:169-172`). Reaching the target means adding `parts` to `LaunchPlan` (a change to E1.S2's
    cornerstone type, and `test/remoteLaunch.test.ts:223`'s expected value) or changing the local road's line. Either
    keep it as a recorded deviation, or count it.
+   (Settled by E3's plan round 1, item 2: `LaunchPlan` is not changed, E3-D13; the deviation is recorded at promotion.
+   Whether that deviation from parent §4.5 (1) is a parent-plan change is still the lead's to count — flag 7.)
 2. **Possible plan change (contract), for the Fable spec.** Naming the SSH entry and its target in the consent
    (parent §4.4 "Agent", D2) needs the broker to know the target at the dialog; `UseAction.summarize(body)` has none
    (`useActions.ts:139`). An interface change of the broker's consent path may follow from the spec.
@@ -654,26 +794,40 @@ The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, 
 6. **Both-sides rule.** This document was written alone (one file). The parent's `### E3` needs the line `Stories:
    [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md).` and `todo/README.md` needs this
    document's row, in the SAME commit as this file; the security spec's row comes with the spec.
+7. **Round-1 amendments that may touch the parent (flagged by the Opus judge who wrote them in, 2026-11-10; not decided
+   here, in doubt they count).** (a) E3-D13 leaves parent §4.5 (1)'s structural target ("`resolveCommand(` is imported
+   only by `commandLine.ts` and `remoteLaunch.ts`") unreached for good, not for a while: the parent's structural-test
+   contract then reads wider than what ships. (b) The askpass `SendEnv` exposure on this road is the owner-accepted limit
+   of the security plan's §8, not a new one; parent §4.4 "Run with Secrets" says nothing about `SendEnv`, so nothing in
+   the parent changes — named only so the count is a decision. (c) The hand-check observations of §S3.1 (the POSIX jump
+   helper after a close, an unreachable host) are handed with hand check 3 and NOT written into parent §10; writing them
+   there would change a parent section. Everything else of round 1 (the bounded run, the warning in the banner, the
+   once-only hand-over, the bounded tests, the gate first, the per-document promotion list) only makes parent §4.4 and
+   the E3 epic true as written.
 
 ## E3.L — Lead decisions on the flags (2026-11-10)
 
 | Flag | Decision |
 |---|---|
-| 1 — `resolveCommand(` still imported by `commands/runCommands.ts` after E3 | `LaunchPlan`'s `local` (and `remote`) variant carries the resolved `parts`, so the local roads read them from the plan and stop importing `resolveCommand`; the road scan's importer list then ends at `commandLine.ts` and `remoteLaunch.ts` (parent §4.5 (1), as written). Built in S1. Not a plan change: it makes the plan's own target true. |
+| 1 — `resolveCommand(` still imported by `commands/runCommands.ts` after E3 | `LaunchPlan`'s `local` (and `remote`) variant carries the resolved `parts`, so the local roads read them from the plan and stop importing `resolveCommand`; the road scan's importer list then ends at `commandLine.ts` and `remoteLaunch.ts` (parent §4.5 (1), as written). Built in S1. Not a plan change: it makes the plan's own target true. **WITHDRAWN 2026-11-10 by E3's plan round 1 (item 2): `LaunchPlan` is not changed; see E3-D13.** |
 | 2 — the consent must name the SSH entry and target, but `UseAction.summarize(body)` has no target | An internal interface widening that makes D2 true as written; the Fable spec (§S2.1) chooses its shape. Not a plan change. |
 | 3 — references only from the line that runs; "no reference" said before prepare; the spawn always writes the key file | Implementation details within D12; recorded as deviations at promotion. |
 
 S2 security spec: [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) (Fable, 2026-11-10). Its finding F7 (outside this plan: `refusalFor` in `brokerRequests.ts` can confirm an entry's name to an agent on a guessed id) is reported to the owner, not built here.
 
-## E3.R1 — Owed after E3's first plan round (2026-11-10: revise, 7 gating of 6, 2 of 2 reviewers; all 8 findings accepted)
+## E3.R1 — applied (round 1 of 2026-11-10: revise, 7 gating of 6, 2 of 2 reviewers; all 8 findings accepted)
 
-To be written into the stories (and the S2 security spec where named) before round 2:
+Written into the sections they change by an Opus judge on 2026-11-10, before round 2:
 
-1. The masked run is bounded: `ConnectTimeout`, and a run whose terminal closes kills the child tree; no stdin write can outlive the run (a test with a stalled child).
-2. E3.L flag 1 is WITHDRAWN: `LaunchPlan` (E1.S2's cornerstone type) is not changed; `commands/runCommands.ts` keeps importing `resolveCommand` for the local Run with Secrets, recorded as a deviation from §4.5 (1) at promotion.
-3. The spawn-road warning is part of the banner (or awaited before the run), not a one-argument toast racing the launch.
-4. **Security:** the askpass variables (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`) must not be sendable by the person's own `SendEnv`: the spawned ssh gets `-o SendEnv=-<name>` for each (OpenSSH removes a SendEnv pattern with a leading `-`), measured with a fake sshd/`ssh -G` that the effective SendEnv list holds none of them; a scenario with a `SendEnv CREDS_*` config. The same exposure exists TODAY in SSH Connect's password terminal and the E2 roads' password terminals — reported to the owner as its own security item, not fixed in E3.
-5. One atomic, idempotent hand-over from the owner to the masked run, covering terminal-creation failure and close-before-start; cleanup exactly once (tests).
-6. S2 (security spec): the gate runs BEFORE any refusal that reads the link or the SSH entry; every pre-gate outcome (missing, other account, unsafe host, malformed line, Windows remote) answers the one non-disclosing sentence; tests for each.
-7. M2's real-child test has a short explicit timeout and kills the child tree on timeout.
-8. S3's promotion lists, document by document, the `research/README.md` mention and the removed `todo/README.md` row for each of the seven documents, then runs `plan-lifecycle.mjs`.
+| # | Finding | Now in |
+|---|---|---|
+| 1 | The masked run is bounded; a closed terminal kills the child; no stdin write outlives the run | E3-D11; §S1.2 *What ends the run*; §S1.3 `maskedTerminal.ts` (`ended()`, stdin destroyed, `open()` after the end); K1; M9 (stalled child), M6b; §S3.1 (the POSIX jump helper, handed with hand check 3) |
+| 2 | E3.L flag 1 withdrawn: `LaunchPlan` not changed | E3-D13; E3.L row 1 marked WITHDRAWN; §S1.3 imports and `RESOLVE_IMPORTERS`; §S3.2 step 1 (the deviation); flag 1's note; flag 7 (a) |
+| 3 | The spawn warning in the banner, not a toast | E3-D5, E3-D12; the texts table (`maskedOverSshBanner`); §S1.1; K10; S10 |
+| 4 | Security, REWRITTEN: the round's `-o SendEnv=-<name>` was measured NOT to work (OpenSSH removes only a literally equal pattern; `research/PLAN_windows_shell_quoting_injection.md` §8, owner-accepted limit). So: no removal flag; the askpass limit stated; the VALUES never in the ssh environment | E3-D8; "What E3 does NOT do" (`SendEnv`); M11 (the real child's environment); S9 (the options); §S3.2 step 1 (checked, not built); flag 7 (b) |
+| 5 | One atomic, once-only hand-over | E3-D7; §S1.1 (the block); §S1.3 `sshRoad.ts`, `maskedTerminal.ts`, test helpers (`onMasked`, `cleanupCalls`); H8, H9; M6, M10; S7, O5, O8, O9 |
+| 6 | S2: the gate before any refusal that reads the link or the SSH entry; every pre-gate outcome the one sentence | §S2.2 (rewritten: gate first, `planLaunch` after it with the gate's `link`); AG5, AG6; the security spec §2.1 (bridge first), §2.3, §4 (the pre-gate rule), G13, G20, G21, §14, §15. Found while applying it: the spec's §2.3 skipped the compare for an unlinked answer, against its own §2.4 row 4 and G10 (c); corrected there and in §S2.2 step 3 (the compare runs for both) |
+| 7 | M2 bounded, with a tree kill on timeout | §S1.5 (`closedWithin`, `{ timeout: 15_000 }`); M2 |
+| 8 | S3's promotion, document by document | §S3.2 (the table, the one `research/README.md` row, the steps, then `plan-lifecycle.mjs`); §S3.3 |
+
+Line references re-checked on 454e990 (header). Parent-plan questions raised while applying: flag 7.
