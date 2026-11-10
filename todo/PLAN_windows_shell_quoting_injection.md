@@ -46,6 +46,7 @@ single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
   port word also goes through the rule (the road test found it pushed raw: a port is a number by type and a string by
   sync or import data). J2: `askpassScript('win32')` itself has CRLF line ends, so the file `writeAskpassScriptFile`
   writes is the file cmd reads. J3: a road test (below).
+- The POSIX `-p` word stays bare: `typeGuards.ts:300` refuses a non-number port on every sync, import and sealed read, so only a number reaches the line (checked 2026-11-10); the win32 port word goes through `windowsWord` anyway.
 - `test/shellQuotingRoadScan.test.ts` lists every quoting site with its parser and whether vault data reaches it,
   with a self-check.
 
