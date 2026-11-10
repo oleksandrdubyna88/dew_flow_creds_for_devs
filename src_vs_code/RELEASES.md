@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.19.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.18.0...extension-v1.19.0) (2026-11-10)
+
+
+### Features
+
+* **bridge:** E1.4 — consent stamps keyed by server, the quiet switch, and a bridged dialog that says where the action runs ([#312](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/312)) ([455567a](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/455567a336be02338f8ab089e6a4f0ca170b1617))
+* **bridge:** E1.5 — the dialog owns the place until a person acts; the 504 sentence per door, the late answer, Deny first on a bridge ([#323](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/323)) ([cb9be47](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/cb9be47532cf22dcfd556fdb4e6dc950ab05cbea))
+* **leftovers:** E2.4 — the bash helper owned.sh, the shell scripts, the Docker image smoke and the acme harness name what they leave behind and remove it on every exit path ([#329](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/329)) ([6e08071](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/6e08071220ac133b3cb438a23d6eda5590b4c875))
+* terminal tabs say "Creds", and an entry's tab names its tree folder ([#325](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/325)) ([16975d0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/16975d01a7cca5ae7b3dbdc16fafdda349c8fa77))
+
+
+### Bug Fixes
+
+* **help:** tmux on a server from a local Windows window — ssh in the line, and pwsh for the arrow to see it end ([#324](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/324)) ([f160800](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/f1608003b6a520e68d798d7ded56c30f213ed112))
+* **ssh:** Windows — vault data in SSH Connect's typed line or the askpass script can no longer run a local command ([#331](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/331)) ([57bfc33](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/57bfc3360cf4e43e33134a336b3587c86c8d48eb))
+
 ## [1.18.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.17.0...extension-v1.18.0) (2026-11-08)
 
 
