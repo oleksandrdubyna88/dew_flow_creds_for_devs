@@ -187,7 +187,7 @@ lines; the gate's G2 and G3. No row is unmapped since the coordinator's answers.
 | 25 | **The stories' DoD: nothing of D9 came back in** | D9 rows 1–18 | — | the reviewer walks the table at the head, one line per row on the PR | A reading | E2.5's own D9 rows: #2 (S1.1's split `.cs` plant, row 4), #14 (S1.1's `Owned.Prefix` plant) |
 | 26 | **F30's closure for creds** — a consumer that declared "F30 open" re-runs the guard at `37b9aa5` and records it; the remaining findings reach zero in E2.5 | creds #309 recorded it at `85b5a67` (0 `legacy-name`); E2.5 records the run on its head | `docs.yml` | row 1's line on the PR, with the commit | — | 0 `legacy-name` at `6e08071` (§ 0) |
 | 27 | **G2** — the repository guard's test on each distinct release runner before the merge | none: the release jobs already run `ServiceDefaults.Tests` | `release.yml` `cli-binaries` legs: `ubuntu-latest`, `ubuntu-24.04-arm`, `windows-latest`, `windows-11-arm`, `macos-latest` (osx-arm64 and osx-x64) | a `workflow_dispatch` of `release.yml` with `target=cli` on the PR branch (S3.4, run E2.5-R1): each leg's `This_repository_passes_the_guard` passed, quoted per leg with the run URL | The dispatch publishes nothing: `cli-release` runs on a `cli-v*` tag only (`release.yml:537`); `cli-sign` runs with `required: false`, packs unsigned. `mcp-binaries` uses the same runner set and is not dispatched again | **to observe** before the merge; `ubuntu-24.04-arm` and `windows-11-arm` have never run the guard's classifier through `node` |
-| 28 | **G3** — in every job that installs the mount's modules, a guard-reading test that cannot load them FAILS, never skips | `src_vs_code/src/test/mountedGuard.ts` (new): the mount path and the load; the flag `CREDS_GUARD_TESTS_REQUIRED=1` on the unit-suite step of the three jobs of row 13 (S2.4) | the three jobs; off CI a person's `npm test` still skips | with the flag set and the mount's `node_modules` moved away by hand, `npm test` FAILS in the three guard-reading files; without the flag it skips; `workflowMount.test.ts` pins that each installing job sets the flag | A local run with the folder moved stands in for a CI job that lost its install | today the files skip in every job (row 13); release extension job: E2.5-R2 (S3.4) |
+| 28 | **G3** — in every job that installs the mount's modules, a guard-reading test that cannot load them FAILS, never skips | `src_vs_code/src/test/mountedGuard.ts` (new): the mount path and the load; the flag `CREDS_GUARD_TESTS_REQUIRED=1` on the unit-suite step of the three jobs of row 13 (S2.4) | the three jobs; off CI a person's `npm test` still skips | with the flag set and the mount's `node_modules` moved away by hand, `npm test` FAILS in the three guard-reading files; without the flag it skips; `workflowMount.test.ts` pins that each installing job sets the flag | A local run with the folder moved stands in for a CI job that lost its install | today the files skip in every job (row 13); release extension job: the PR's own `typecheck · test · package` job (E2.5-R2 by dispatch is withdrawn: S3.4, 2026-11-10) |
 
 ## 2. What E2.5 changes, by file and line
 
@@ -402,8 +402,8 @@ check of `TheAdaptedCopyTests` stays green. No op touches ownership, liveness or
   - **E2.5-R1:** `gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=cli`. It runs `cli-binaries` on
     the six legs and `cli-sign` with `required: false`; `cli-release` is tag-only (`release.yml:537`), so nothing is
     published. Quote for each leg the line of `This_repository_passes_the_guard` (passed) and the run URL.
-  - **E2.5-R2:** `gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension`. Its publish steps are
-    tag-only (`:888`, `:923`, `:937`). Quote that `dockerSmokeLeftovers`, `acmeRunLeftovers` and `leftoversGuardFixtures`
+  - **E2.5-R2:** `gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension`. ~~Its publish steps are
+    tag-only (`:888`, `:923`, `:937`).~~ **[2026-11-10, corrected after run 42792112748: this dispatch PUBLISHES when the manifest version is new. The job `extension` runs on `target == 'extension'` and its Marketplace publish step has no tag guard (only the tag-match step and the two release steps do). The run was refused by the Marketplace (`v1.18.0 already exists`) and made no release. The safe evidence for that job is the PR's own `typecheck · test · package` job. Never dispatch `target=extension` for evidence.]** Quote that `dockerSmokeLeftovers`, `acmeRunLeftovers` and `leftoversGuardFixtures`
     ran (no skip line) under the flag.
   - If a dispatch is refused (an environment rule, or the auto-mode classifier), a throwaway workflow on a never-merged
     branch runs the same `ServiceDefaults.Tests` and `npm test` steps on the same runners, as E2.4 did with
@@ -547,6 +547,7 @@ says "zero for the guard's listed spellings". The old sentence of the stories (`
   `:103` and `:117` fails (its EXIT trap is `rollback`, which does not remove it). `restore-archive.sh:61` is clean (its
   `rollback` calls `cleanup`).
 - I16, the ShellCheck of the two smoke scripts and their tests in CI: a todo.
+- **Side finding, a todo, not built (2026-11-10; `release.yml` is outside E2.5):** a manual dispatch of `release.yml` with `target=extension`, from any branch, publishes to the Marketplace with no tag check when the manifest version is new (its publish step has no `if:`; run 42792112748 reached it).
 - N20 (the janitor and bash 3.2), N21 (the flaky Windows dry run): conventions follow-ups.
 - The template's raw-string reading (`CallerIdentityTests.cs:196`, E2.3 part 3b): a note for E3 (N24), not an op here.
 - A `raw-temp` reading of `${TMPDIR…}` (N6), a `mktemp` reading in workflows for the Node guard (N23), the split spellings
@@ -702,7 +703,7 @@ bash .github/scripts/mcp-listen-smoke.test.sh; bash .github/scripts/version-smok
 cd src_vs_code && npm test && CREDS_GUARD_TESTS_REQUIRED=1 npm test
 # hosted, by the coordinator, one at a time (S3.4)
 gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=cli
-gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension
+# gh workflow run release.yml --ref feat/test-leftovers-e2.5 -f target=extension   # NEVER: it publishes when the version is new (S3.4, 2026-11-10)
 ```
 
 - [ ] Rows 1–28 of § 1 each have their evidence line on the PR (rows 24–26 the reviewer's readings).
@@ -727,7 +728,7 @@ form taken is the one that is not, for the reason given:
 | Finding | Where | Why it is not a change |
 |---|---|---|
 | G1 — the order against #328, named, with checks | S3.0; Q1 | It makes Q1's answer (C) executable; no scope, step or condition of the stories moves |
-| G2 — the guard's test on each release runner before the merge | row 27; S3.4 | The release jobs already run the test (§ 3); this is the observed result epoch 8 item 8.1 asks for an invocation the inventory lists. No publishing path is used |
+| G2 — the guard's test on each release runner before the merge | row 27; S3.4 | The release jobs already run the test (§ 3); this is the observed result epoch 8 item 8.1 asks for an invocation the inventory lists. No publishing path is used for `target=cli` (2026-11-10: the same is NOT true of `target=extension`, see S3.4) |
 | G3 — fail, not skip, where the modules are installed | row 28; S2.4 | Row 13 already asks that the guard-reading tests RUN in CI; a skip there would not satisfy it. A fix that only satisfies the plan as written |
 | F1 — the detail text, the piece RED | § 0; S2.6 | The parent's E2.5-a asks for a RED; with class-only asserts there would be none |
 | F2 — non-literal plants, markers, split docker words, a scans-clean case; NO sixth allowance | S1.1 | A sixth allowance would be the change; the form taken keeps the file inside the guard's normal reading |
