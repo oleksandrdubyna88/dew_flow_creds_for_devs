@@ -1,9 +1,9 @@
 # PLAN — Test leftovers, E2: creds names, claims, removes and collects what its tests, harnesses and CI smoke make
 
-> Status: **E2 shipped, 2026-11-10; promotes with its parent.** The five epics E2.1 to E2.5 were built as stacked pull requests (#294, #310,
-> #311, #329 and E2.5's); their build records are in § *E2.1 build record* to § *E2.5 build record*, and E2.5's merge conditions of D8 are
-> collected in one list there. The stories and the parent plan promote together, after E2.5 is merged; the hosted evidence of E2.5 (the release
-> dispatches E2.5-R1 and E2.5-R2, the Windows leg of the clients job) is the coordinator's and goes into the last part of that record.
+> Status: **E2.5 built, PR #330 open; E2 ships with its merge.** The epics E2.1 to E2.4 are merged (#294, #310, #311, #329); E2.5 is built on
+> `feat/test-leftovers-e2.5` and its build record is § *E2.5 build record*, with the merge conditions of D8 for the five pull requests in one list.
+> At E2.5's merge this line becomes `E2 shipped, <date>; promotes with its parent` (the coordinator sets the date), and the stories and the parent plan
+> promote together. The hosted evidence of E2.5 (the release dispatches, the Windows leg of the clients job) is in the last part of that record.
 >
 > Before E2.5 (2026-11-01 to 2026-11-09): **plan only, nothing implemented yet — the 2026-11-01 re-split against release `105d53c` of
 > `dew_flow_conventions` (the merged core, F17–F20, the core/detail split), the merged C# helper of `dew_flow_mcp`
@@ -2894,7 +2894,7 @@ The last edits to the probe; kept minimal.
 
 **Fix, two parts.** (1) After TERM, `cleanup` polls `kill -0 "$probe_pid"` (50 × 0.2 s), then sends KILL if the probe is still there. (2) Inside the `PROJECT` guard and before `down -v`, every container that still holds a project volume is removed: for each of `data`, `logs`, `certs-conf`, `certs-www`, `docker ps -aq --filter "volume=${PROJECT}_<name>"`, then `docker rm -f <id>`, each `|| true`. The names come from the project only; there is no `docker inspect`. This also covers a container whose client is gone but whose removal has not finished. GREEN: 34 pass; for INT and TERM in both modes the run ends 130 and 143, the volume is gone, the held container is removed before `down -v` (the calls are checked in order), no `down -v ended with exit code` line, nothing left. The leftovers guard over the repository: 5 findings, none in `run.sh`; `shellcheck -x deploy/acme-test/run.sh` (0.11.0) clean; lint clean. The comment in `cleanup` and `module_tests.md`'s S4 paragraph say so.
 
-### E2.5 build record (2026-11-10, branch `feat/test-leftovers-e2.5`, not pushed, not merged)
+### E2.5 build record (2026-11-10, branch `feat/test-leftovers-e2.5`, PR #330, not merged)
 
 Built by a Sonnet coder from [PLAN_test_leftovers_E2.5_brief.md](PLAN_test_leftovers_E2.5_brief.md) (plan gate `proceed`, G1–G3 and F1–F18 applied), test first, on `dcae80d` (`main` `6e08071` plus the brief commits). Commits, oldest first: `218a8bc7` (the brief text: `TemplateEntries` from 52 to 53 said the same in § 2 and S1.4), `6cbed9c0` (S1.1 RED), `5eea0022` (S1.2 GREEN), `4002862d` (S1.3 GREEN), `3c3c0f32` (S1.5 RED),
 `520cb90f` (S1.5 GREEN), `c6cb3bb4` (S1.4 RED), `6043eb0e` (S2.1 GREEN), `2479dd96` (S2.3 RED), `adb77d6c` (S2.2 GREEN), `a06088ac` (S2.4 RED), `bb61d116` (S2.4 `mountedGuard.ts`), `4d10b1d9` (S2.6),
