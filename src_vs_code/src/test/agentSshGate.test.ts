@@ -34,6 +34,11 @@ after(() => scope.close());
 /** `sshUseActions.ts` imports `vscode`; loaded with the stub only to ask whether `sshExecAction` declares `uses`. */
 const loadSshActions = async (): Promise<typeof import('../sshUseActions')> => loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', { window: {} });
 
+/** `SshUseDeps` over the world's typed deps: the one field `SshUseDeps` requires and `AgentUseDeps` leaves optional is given, and nothing is cast. */
+function sshUseDepsOf(gate: GateWorld['deps']): SshUseDeps {
+  return { ...gate, agentSocket: gate.agentSocket ?? ((): string | undefined => undefined) };
+}
+
 /** What the stub of G17 says it also uses (the third amendment, A1). */
 const USED: UsedEntry = { accountId: 'a1', entityId: 'e2', entityName: 'other' };
 
@@ -674,10 +679,7 @@ test('uses_names_the_ssh_entry_only_after_the_gate', async () => {
     assert.equal(usesOf(gateWorld(options)), undefined);
   }
 
-  // `SshUseDeps` over the world's typed deps: the one field `SshUseDeps` requires and `AgentUseDeps` leaves optional is given, and nothing is cast.
-  const gate = gateWorld().deps;
-  const sshDeps: SshUseDeps = { ...gate, agentSocket: gate.agentSocket ?? ((): string | undefined => undefined) };
-  const exec = (await loadSshActions()).sshExecAction(sshDeps);
+  const exec = (await loadSshActions()).sshExecAction(sshUseDepsOf(gateWorld().deps));
   assert.equal(typeof exec.uses, 'undefined', 'no other action declares it');
 });
 

@@ -187,15 +187,22 @@ function openRun(run: Run): void {
   }
   run.child = started.child;
   listenToChild(run, started.child, new SecretMasker(run.options.secrets));
+  giveScriptOrDrop(run, started.child);
+}
+
+/**
+ * The script (`stdinText`, the values) goes to a child that somebody watches. A run that is already over is not watched: the terminal
+ * closed while the run was starting (a listener of the banner closed it), and the close found no child and only ended the run. That
+ * child goes with its tree and the script is never written to it.
+ */
+function giveScriptOrDrop(run: Run, child: childProcess.ChildProcessWithoutNullStreams): void {
   if (run.over) {
-    // The terminal closed while the run was starting (a listener of the banner closed it): the close found no child and only ended
-    // the run. Nobody watches this child, so it goes with its tree and the script (the values) is never written to it.
-    started.child.stdin.destroy();
-    killChild(started.child, { tree: true });
+    child.stdin.destroy();
+    killChild(child, { tree: true });
     return;
   }
   if (run.options.stdinText !== undefined) {
-    started.child.stdin.end(run.options.stdinText);
+    child.stdin.end(run.options.stdinText);
   }
 }
 

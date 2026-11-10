@@ -189,10 +189,14 @@ function socketOf(options: GateOptions): Pick<AgentUseDeps, 'agentSocket'> {
   return options.withSocketFn === true || options.agentSocket !== undefined ? { agentSocket: () => options.agentSocket } : {};
 }
 
+/** The nodes of the world's second account, when it has one. */
+function secondAccount(options: GateOptions): Record<string, readonly TreeNode[]> {
+  return options.acct2 === undefined ? {} : { [ACCOUNT_2]: options.acct2 };
+}
+
 function storageOf(options: GateOptions, terminal: TreeNode): { storage: AgentStorage; acct1: readonly TreeNode[] } {
   const acct1 = [...(options.noTerminal === true ? [] : [terminal]), ...(options.acct1 ?? [usableSsh('s1')])];
-  const second: Record<string, readonly TreeNode[]> = options.acct2 === undefined ? {} : { [ACCOUNT_2]: options.acct2 };
-  return { storage: options.storage ?? agentStorage({ ...second, [ACCOUNT_1]: acct1 }), acct1 };
+  return { storage: options.storage ?? agentStorage({ ...secondAccount(options), [ACCOUNT_1]: acct1 }), acct1 };
 }
 
 export function gateWorld(options: GateOptions = {}): GateWorld {
