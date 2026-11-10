@@ -16,10 +16,25 @@
 #      satisfied by nginx rather than bypassed.
 #
 # Exit 0 only if all four hold.
+#
+# What it leaves behind: nothing (rule common/test-leftovers.md). The compose project is the name of
+# an OWNED folder this run makes (`testsToDelete-<owner>-creds-acme-<id>`, lower-cased), every
+# resource carries the owner label, and the state is in named volumes of that project, so the one
+# exit clean-up (`down -v`, then the helper's removal of the folder) takes all of it. A run that is
+# killed with signal 9 leaves its project, its volumes and the folder with a dead owner; the NEXT
+# run's first act is the shared janitor, which collects them once they are 10 minutes old. An
+# interrupt (INT, TERM, HUP) ends the run with 128 + n and the same clean-up runs once.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-COMPOSE=(docker compose -f docker-compose.acme-test.yml)
+# shellcheck source=../../.github/scripts/lib/owned.sh
+source ../../.github/scripts/lib/owned.sh
+# The owner record goes into the compose file's labels. It is read in THIS shell (a `$( )` would
+# lose the helper's cache) and before anything is made.
+owned_owner >/dev/null || exit 1
+export TESTS_TO_DELETE_OWNER="$OWNED_OWNER"
+STATE=""
+PROJECT=""
 export VAULT_IMAGE="${VAULT_IMAGE:-ghcr.io/oleksandrdubyna88/cred-vault-server:edge}"
 HTTP=http://127.0.0.1:18081
 HTTPS=https://127.0.0.1:18444
@@ -46,14 +61,44 @@ expect() { # expect <description> <expected> <actual>
   fi
 }
 
-cleanup() { "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+# The clean-up of this script, run by the helper's exit trap before the helper removes the owned
+# folder. It skips what is not made yet: a failure before PROJECT is set must not run a teardown
+# against an empty name. `down -v` removes the containers, the network and the named volumes. The
+# helper calls it from a subshell, so it never removes the folder itself.
+# shellcheck disable=SC2317,SC2329
+cleanup() {
+  if [ -n "${PROJECT:-}" ]; then
+    docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans >/dev/null 2>&1 || true
+  fi
+}
+# The helper owns EXIT, INT, TERM and HUP: this script sets no trap of its own.
+owned_trap cleanup
 
 echo "image under test: ${VAULT_IMAGE}"
-cleanup
-rm -rf state && mkdir -p state/certs/conf state/certs/www state/data state/logs
-# The app runs unprivileged; a fresh host directory belongs to root.
-docker run --rm -v "$(pwd)/state":/s alpine sh -c 'chown -R 10001:10001 /s/data /s/logs' >/dev/null
+
+echo
+echo "-- 0. what a killed run left -----------------------------------"
+# The shared janitor collects the project, its volumes and the folder of a run that was killed more
+# than 10 minutes ago, and never touches a live run's. It is never a reason to stop this run.
+rc=0
+JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token creds || rc=$?
+case "$rc" in
+  0 | 3) ;;
+  127) echo "janitor: exit code 127 — the shared rules are not mounted: git submodule update --init .claude/rules/shared (the run goes on)" ;;
+  *) echo "janitor: exit code $rc (the run goes on)" ;;
+esac
+
+# The owned folder is the identity of this run: its lower-cased name is the compose project, and
+# nothing else is.
+owned_dir STATE acme || exit 1
+PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"
+COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)
+
+# `create` makes the project's network and its four named volumes, labelled, before anything starts.
+# The app runs unprivileged (uid 10001) and a fresh volume belongs to root, so its two folders are
+# handed over now, before the first `up`.
+"${COMPOSE[@]}" create >/dev/null
+docker run --rm -v "${PROJECT}_data:/d" -v "${PROJECT}_logs:/l" alpine chown -R 10001:10001 /d /l >/dev/null
 
 echo
 echo "-- 1. before issuance ------------------------------------------"
@@ -79,11 +124,14 @@ expect "the ACME challenge path is served (404 = route works, file absent)" \
 echo
 echo "-- 2. issuance -------------------------------------------------"
 "${COMPOSE[@]}" up -d certbot >/dev/null 2>&1
-for _ in $(seq 1 45); do
-  [ -f state/certs/conf/live/vaulthost/fullchain.pem ] && break
+# certbot's live folder is `drwx------ root`: the job's user cannot see into it from the host (a host
+# `[ -f ]` said "no certificate" while certbot had one). A one-shot container reads the volume as root.
+have_cert() { docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine test -f /s/live/vaulthost/fullchain.pem; }
+for _ in $(seq 1 150); do
+  have_cert 2>/dev/null && break
   sleep 2
 done
-if [ -f state/certs/conf/live/vaulthost/fullchain.pem ]; then
+if have_cert 2>/dev/null; then
   pass "certbot obtained a certificate through a real HTTP-01 challenge"
 else
   fail "no certificate was issued"
