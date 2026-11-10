@@ -133,7 +133,7 @@ export type TypedLine =
 /** The line a terminal receives: §S2.3 row T1 (PowerShell 5.1), then `prefix + buildSshCommand(ssh, platform, { ...options, remote })`. */
 export function typedLine(plan: Extract<LaunchPlan, { kind: 'remote' }>, prepared: PreparedForTyping, localShell: HostShell): TypedLine;
 
-/** The script a remote `sh -s` reads on stdin for Run with Secrets (§S2.4). Throws `Error` for a name that is not `^[A-Za-z_][A-Za-z0-9_]*$`. */
+/** The script the remote login shell's `"${SHELL:-sh}" -s` (epoch 2, E1 §S4 F3) reads on stdin for Run with Secrets (§S2.4). Throws `Error` for a name that is not `^[A-Za-z_][A-Za-z0-9_]*$`. */
 export function secretsStdin(env: Readonly<Record<string, string>>, line: string): string;
 ```
 
@@ -217,7 +217,8 @@ an unclosed quote is a syntax error reported by `eval`, then the login shell sta
 **Trust line** — `trustLineFor(ssh, jump, line)`:
 
 ```
-ssh[ -p <port>][ -J <jump>] -- <user@host|host> <quoteFor('posix', line)>
+ssh[ -p <port>][ -J <jump>][ -A][ -L …][ -R …][ -D …] -- <user@host|host> <quoteFor('posix', line)>
+(epoch 2, E1 §S4 F1: `-A` and every enabled forward, as `sshOptionArgv` composes them)
 ```
 
 `-p` only when `ssh.port !== undefined && ssh.port !== DEFAULT_SSH_PORT`; `-J` only when `jump` is a non-empty string;

@@ -19,6 +19,22 @@
   (First recorded as "not counted"; the E1 conventions review showed it is a change: its own cause, a shipped contract
   changed, a slice of another plan taken. In doubt it is a change. This second change stopped the plan.)
 
+### Re-review for epoch 2
+
+Narrowed: no — the Definition of Done is identical to epoch 1's; the trust line, the secrets shell and Update-it only widen or tighten; the security sweep leaves to its own plan and was never in epoch 1's scope
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| b65139c, e75dd44, e468285 plan, gate rounds 1-2, epoch 1 approval | local, not pushed | fits | kept |
+| 38d72cb E1 stories and the S2/S3 specs | local, not pushed | fits | kept; spec text for the trust line and the secrets shell fixed forward |
+| c4bac82 the cadence consultation's three points | local, not pushed | fits | kept |
+| 782444a E1 code with the security sweep inside | local, not pushed | cut | security hunks extracted onto their own branch (PLAN_windows_shell_quoting_injection), E1 rebased onto it, E1 §S4 F1-F7 fixed forward |
+| 6fb4ba7 entry 1.2, the stop | local, not pushed | fits | kept |
+| 6271779 the epoch 2 revision | local, not pushed | fits | kept; one README row fixed forward |
+
+  (Sorted by an Opus judge, 2026-11-10. The stop commit was not pushed: the repository is public and the cut commit
+  describes unreleased security defects; the push is the owner's decision.)
+
 ## 1. Goal
 
 Today a Terminal entry ("Terminal command") always runs on THIS machine: its line is typed into a local VS Code
