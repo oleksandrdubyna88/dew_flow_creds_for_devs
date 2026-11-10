@@ -41,6 +41,7 @@ public sealed class TheAdaptedCopyTests
         TestsFolder + "HostProcessAdapterTests.cs",
         TestsFolder + "WindowsHandoffTests.cs",
         TestsFolder + "ClientSitesScanTests.cs",
+        TestsFolder + "LeftoversGuardCredsTests.cs",
         HelperFolder + "SweepRanTests.cs",
         HelperFolder + "OwnedCreds.cs",
         HelperFolder + "LeftoversSocketRootSweepFixture.cs",
