@@ -124,3 +124,15 @@ bare word with `$`. See the commit message for the extra run through the Windows
 - [ ] The windows CI step green (`windowsParsers.test.js` runs, not skips, on `windows-latest`).
 - [ ] The owner decided push, PR text and release; hand checks 1–2 done.
 - [ ] Followups item 5 marked closed with this plan's merge.
+
+## 7. Observed on real Windows parsers (2026-11-10, through WSL interop, Windows 10.0.26300)
+
+- **cmd.exe, the RELEASED askpass** (`@echo off` + `echo %CREDS_SSH_PASSWORD%`, origin/main `sshAskpass.ts:24`): the
+  password `a&echo PWNED&b` printed `a` and then `PWNED` — cmd ran the injected command. The defect is real.
+- **cmd.exe, the FIXED askpass** (CRLF, `setlocal EnableDelayedExpansion`, `echo(!CREDS_SSH_PASSWORD!`, the exact bytes
+  `askpassScript('win32')` produces): 12 of 12 passwords came back byte-for-byte — `Te&st%1!x`, `a&echo PWNED&b`,
+  `!calc!`, `^!x^!`, `p"q%PATH%^r!s`, `<x>|y`, `100%`, ` lead and trail `, `x!y!z`, `a^b`, `(paren)`, `it's`.
+- **Windows PowerShell 5.1**: the line words, 46 of 46 (the coder's run, recorded in d9b9e9c's message); the old code
+  created the marker file.
+- **Not observed yet**: pwsh 7 (not installed on this host), a real `ssh.exe` password login (needs an SSH server with a
+  password account), the extension's UI. The windows CI step and §5's hand checks cover them.
