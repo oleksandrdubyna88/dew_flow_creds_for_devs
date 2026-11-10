@@ -194,7 +194,8 @@ test('spawnBounded: a timeout kills the child AND the process it started, and sa
   const parent = `const g = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(sleeper)}], { stdio: 'inherit' }); console.log(g.pid); ${sleeper}`;
   const ran = await spawnBounded(process.execPath, ['-e', parent], { timeoutMs: 3_000 });
   assert.equal(ran.timedOut, true);
-  assert.equal(ran.status, null);
+  // POSIX: killed by a signal, so no exit code. Windows: `taskkill /T /F` ends the process with exit code 1 (seen on windows-latest).
+  assert.equal(ran.status, process.platform === 'win32' ? 1 : null);
   const grandchild = Number.parseInt(ran.stdout.trim(), 10);
   assert.ok(Number.isInteger(grandchild) && ran.pid !== undefined, `the child printed no pid: ${JSON.stringify(ran.stdout)}`);
   try {
@@ -359,7 +360,7 @@ for (const shell of POWERSHELLS) {
     assert.deepEqual(chain, { ok: true, value: 'a@b,c@d' });
     assert.deepEqual(await read(lineOf({}, { jump: (chain as { value: string }).value })), ['-J', 'a@b,c@d', 'deploy@example.com']);
     // The pinned known_hosts file, ordinary and holding a `$`.
-    for (const file of ['C:\\Users\\me\\known_hosts', 'C:\\Users\\a$b\\known_hosts', 'C:\\Program Files\\kh']) {
+    for (const file of ['C:\\Users\\me\\known_hosts', 'C:\\Users\\me\\a$b\\known_hosts', 'C:\\Program Files\\kh']) {
       assert.deepEqual(
         await read(lineOf({}, { knownHostsFile: file })),
         ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${file}`, 'deploy@example.com'],

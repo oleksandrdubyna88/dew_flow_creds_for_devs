@@ -218,6 +218,8 @@ the `runner-windows` job of `ci-extension.yml`, and every child it starts is kil
 strings themselves are pinned in `hostShell.test.ts`, `sshCommand.test.ts`, `sshAskpass.test.ts` and `wslRelay.test.ts`.
 Record: [PLAN_windows_shell_quoting_injection.md](../todo/PLAN_windows_shell_quoting_injection.md).
 
+**Known limit — the askpass variables and `SendEnv` (accepted by the owner, 2026-11-10).** A password connection keeps `CREDS_SSH_PASSWORD` (with `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`) in the local `ssh` process's environment. A person's own `SendEnv` pattern that matches it, together with a server `AcceptEnv` that matches it, would send the password to the server. `-o SendEnv=-NAME` cannot prevent this: OpenSSH removes only a literally equal pattern, not a wildcard (measured with `ssh -G` on OpenSSH 10.2 and Windows OpenSSH 9.5). Recorded in `todo/PLAN_windows_shell_quoting_injection.md` §8.
+
 
 `remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.
 The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key not accessible` —

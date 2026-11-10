@@ -249,7 +249,7 @@ const FIXTURES: EntityMetadata[] = [
   entity({ user: 'a$HOME' }),
   entity({ sshKeyPath: '/keys/e1.key' }),
   entity({ sshKeyPath: 'C:\\Users\\me\\e1.key', port: 2200 }),
-  entity({ sshKeyPath: 'C:\\Users\\my name\\e1.key' }),
+  entity({ sshKeyPath: 'C:\\Users\\me\\my keys\\e1.key' }),
   entity({ agentForward: true }),
   entity({ agentForward: true, portForwards: [{ kind: 'local', bindPort: 5432, host: 'db', hostPort: 5432 }] }),
   entity({ host: '[2001:db8::1]' }),
@@ -354,13 +354,13 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
     ],
     // 8: sshKeyPath with a space
     [
-      'ssh -i "C:\\Users\\my name\\e1.key" deploy@example.com',
-      'ssh -i "C:\\Users\\my name\\e1.key" deploy@example.com',
-      '/usr/bin/ssh -i "C:\\Users\\my name\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
-      'ssh -i "C:\\Users\\my name\\e1.key" -J j@b:2200 deploy@example.com',
-      'ssh -i "C:\\Users\\my name\\e1.key" deploy@example.com',
-      'ssh -i "C:\\Users\\my name\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
-      "ssh -i \"C:\\Users\\my name\\e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "C:\\Users\\me\\my keys\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"C:\\Users\\me\\my keys\\e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 9: agentForward
     [
@@ -486,13 +486,13 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
     ],
     // 8: sshKeyPath with a space
     [
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" deploy@example.com',
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" deploy@example.com',
-      '/usr/bin/ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -J j@b:2200 deploy@example.com',
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" deploy@example.com',
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
-      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -J j@b:2200,k@c deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -J j@b:2200,k@c deploy@example.com',
     ],
     // 9: agentForward
     [
@@ -587,8 +587,8 @@ test('S2 win32 a_key_path_that_a_double_quoted_powershell_word_would_run_is_a_si
 
 test('S3 win32 a_pin_file_path_the_same_way_as_a_key_path_is_one_word', () => {
   assert.equal(
-    buildSshCommand(entity(), 'win32', { ...WIN, knownHostsFile: 'C:\\Users\\a$b\\known_hosts' }),
-    `ssh -o StrictHostKeyChecking=yes -o 'UserKnownHostsFile=C:\\Users\\a$b\\known_hosts' deploy@example.com`,
+    buildSshCommand(entity(), 'win32', { ...WIN, knownHostsFile: 'C:\\Users\\me\\a$b\\known_hosts' }),
+    `ssh -o StrictHostKeyChecking=yes -o 'UserKnownHostsFile=C:\\Users\\me\\a$b\\known_hosts' deploy@example.com`,
   );
   assert.equal(
     buildSshCommand(entity(), 'win32', { ...WIN, knownHostsFile: 'C:\\Users\\me\\known_hosts' }),

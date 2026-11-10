@@ -259,7 +259,7 @@ test('the word checker of the road test below refuses what it is written to refu
   }
   const good = [
     'ssh deploy@example.com',
-    'ssh -i "C:\\Users\\my name\\k" -p 2200 -J \'a@b,c@d\' -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\k h" \'a$HOME@h\'',
+    'ssh -i "C:\\Users\\me\\my keys\\k" -p 2200 -J \'a@b,c@d\' -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\k h" \'a$HOME@h\'',
     "ssh 'a''b' 'a\u2019\u2019b' deploy@[2001:db8::1]",
   ];
   for (const line of good) {

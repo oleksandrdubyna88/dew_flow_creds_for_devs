@@ -142,3 +142,18 @@ bare word with `$`. See the commit message for the extra run through the Windows
   (`LOGIN-OK`, exit 0). The RELEASED `.bat` made cmd try to run `st%9!xy` as a command, then `Permission denied`. The
   user was deleted afterwards.
 - **Not observed yet**: the extension's UI (hand check 2's Connect click). The windows CI step runs the parser tests.
+
+## 8. Accepted limit: the askpass variables and `SendEnv` (owner, 2026-11-10)
+
+A password connection puts `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE` and `CREDS_SSH_PASSWORD` in the environment of the
+local `ssh` process (the askpass program needs them). If the person's own ssh config holds a `SendEnv` pattern that
+matches them (for example `SendEnv *` or `SendEnv CREDS_*`) AND the server's sshd holds a matching `AcceptEnv`, the
+password reaches the server as an environment variable.
+
+Checked and not built: `-o SendEnv=-CREDS_SSH_PASSWORD` does NOT remove a wildcard pattern a config added — OpenSSH
+removes only a literally equal pattern (measured 2026-11-10: Linux OpenSSH 10.2p1 and Windows OpenSSH 9.5p2, `ssh -G`
+still listed `sendenv CREDS_*`). So that measure would only look like protection.
+
+Decision (owner, 2026-11-10): **accept and document**. The exposure needs two unusual settings together (the owner's
+IONOS server, for one, accepts only `LANG LC_*`). The full fix — the askpass program reads the password from the
+extension over a private local channel instead of the environment — stays an option for its own plan.
