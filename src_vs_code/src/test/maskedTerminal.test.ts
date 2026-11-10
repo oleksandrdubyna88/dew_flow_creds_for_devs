@@ -1,6 +1,15 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
+import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { TestContext, test } from 'node:test';
+import * as childKill from '../childKill';
+import { KILL_GRACE_MS } from '../childKill';
+import { RemotePlan, planLaunch, secretsLaunch, secretsStdin, sshLinkOf } from '../remoteLaunch';
+import { EntityMetadata } from '../types';
+import { fakeRoad, sshNode } from './sshRoadWorld';
 import { StubEventEmitter, loadWithVscode } from './vscodeStub';
+import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /**
  * The terminal whose output the extension owns, so a secret cannot appear in it (audit A3).
@@ -29,6 +38,12 @@ interface Pty {
 
 interface World {
   mod: Masked;
+  /** Every child `spawnSpy` saw start. */
+  children: childProcess.ChildProcess[];
+  /** The options of every `killChild` call `killSpy` saw. */
+  kills: unknown[];
+  /** How many times the terminal was disposed. */
+  disposed: number;
   /** The pty VS Code was handed, plus everything written to it. */
   pty(): Pty;
   written(): string;
@@ -36,39 +51,90 @@ interface World {
   shown: number;
 }
 
-function world(): World {
+interface WorldOptions {
+  /** Modules to stand in for, by the request string `maskedTerminal.ts` writes (`spawnSpy`, `killSpy`). */
+  mocks?: (w: World) => Record<string, unknown>;
+  /** The first workspace folder the stub `vscode.workspace` has; none when absent. */
+  workspaceDir?: string;
+  /** `show()` throws `no show` after the terminal was made. */
+  showThrows?: boolean;
+  /** `createTerminal` throws `no terminal`. */
+  createThrows?: boolean;
+}
+
+/** Records every child that starts, and passes the spawn through. */
+const spawnSpy = (w: World): Record<string, unknown> => ({
+  'node:child_process': {
+    ...childProcess,
+    spawn: (...args: Parameters<typeof childProcess.spawn>): childProcess.ChildProcess => {
+      const child = childProcess.spawn(...args);
+      w.children.push(child);
+      return child;
+    },
+  },
+});
+
+/** Records the options of every kill, and passes it through. */
+const killSpy = (w: World): Record<string, unknown> => ({
+  './childKill': {
+    ...childKill,
+    killChild: (child: childProcess.ChildProcess, options: childKill.KillOptions): void => {
+      w.kills.push(options);
+      childKill.killChild(child, options);
+    },
+  },
+});
+
+/** The stub's folders: none, unless the test names a workspace. */
+function foldersOf(workspaceDir: string | undefined): { uri: { fsPath: string } }[] | undefined {
+  return workspaceDir === undefined ? undefined : [{ uri: { fsPath: workspaceDir } }];
+}
+
+/** The terminal the stub hands back: `show()` may throw (`no show`), and every `dispose()` is counted. */
+function terminalOf(w: World, showThrows: boolean): unknown {
+  return {
+    show: (): void => {
+      w.shown += 1;
+      if (showThrows) {
+        throw new Error('no show');
+      }
+    },
+    dispose: (): void => {
+      w.disposed += 1;
+    },
+  };
+}
+
+function world(options: WorldOptions = {}): World {
   let pty: Pty | undefined;
   let out = '';
   let code: number | undefined;
   const w = {
+    children: [] as childProcess.ChildProcess[],
+    kills: [] as unknown[],
+    disposed: 0,
     mod: undefined as never as Masked,
     pty: (): Pty => pty as Pty,
     written: (): string => out,
     exitCode: (): number | undefined => code,
     shown: 0,
   };
-  w.mod = loadWithVscode<Masked>('../maskedTerminal', {
-    EventEmitter: StubEventEmitter,
-    window: {
-      createTerminal: (options: { pty: Pty }): unknown => {
-        pty = options.pty;
-        // VS Code subscribes before it opens; so does this.
-        pty.onDidWrite((text) => {
-          out += text;
-        });
-        pty.onDidClose((c) => {
-          code = c;
-        });
-        return {
-          show: (): void => {
-            w.shown += 1;
-          },
-          dispose: (): void => undefined,
-        };
-      },
-    },
-    workspace: { workspaceFolders: undefined },
-  });
+  const createTerminal = (created: { pty: Pty }): unknown => {
+    if (options.createThrows === true) {
+      throw new Error('no terminal');
+    }
+    pty = created.pty;
+    // VS Code subscribes before it opens; so does this.
+    pty.onDidWrite((text) => {
+      out += text;
+    });
+    pty.onDidClose((c) => {
+      code = c;
+    });
+    return terminalOf(w, options.showThrows === true);
+  };
+  const stub = { EventEmitter: StubEventEmitter, window: { createTerminal }, workspace: { workspaceFolders: foldersOf(options.workspaceDir) } };
+  w.mod = loadWithVscode<Masked>('../maskedTerminal', stub, options.mocks?.(w) ?? {});
   return w;
 }
 
@@ -265,4 +331,399 @@ test('the terminal is shown, not left to be found in the panel list', () => {
   w.mod.runInMaskedTerminal({ name: 'test', commandLine: 'echo hi', env: {}, secrets: [], banner: 'b' });
 
   assert.equal(w.shown, 1);
+});
+
+// ---- argv mode: Run with Secrets over SSH (E3.S1, M1-M14) ----------------------------------------------------------------
+//
+// The tests below spawn REAL children by argv with no shell. POSIX only (`/bin/sh`): on win32 each real-child test is skipped
+// with a printed reason (M12 and M14 are not real-child tests and run everywhere). Every one is bounded (`{ timeout: 15_000 }`
+// and `closedWithin`, never `closed`): a test that goes RED fails in seconds on its own message and leaves no process behind.
+
+const POSIX_ONLY = process.platform === 'win32' ? 'argv-mode children are spawned through /bin/sh here: POSIX only' : false;
+const REAL_CHILD = { skip: POSIX_ONLY, timeout: 15_000 };
+
+/**
+ * Wait for the child to close; at `ms` close the terminal (which is `killChild(child, { tree: true })`), wait for the exit it
+ * causes, and fail with its own message. So a stalled child costs seconds, and nothing is left running.
+ */
+function closedWithin(w: World, ms: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const state: { killedAt: number | undefined } = { killedAt: undefined };
+    const poll = setInterval(() => {
+      const verdict = checked(w, state, started + ms);
+      if (verdict === 'waiting') {
+        return;
+      }
+      clearInterval(poll);
+      return verdict === 'closed' ? resolve() : reject(new Error(`child never closed within ${ms} ms; killed; output so far: ${w.written()}`));
+    }, 10);
+  });
+}
+
+function checked(w: World, state: { killedAt: number | undefined }, deadline: number): 'waiting' | 'closed' | 'gave up' {
+  const now = Date.now();
+  if (state.killedAt !== undefined) {
+    return afterKill(w, state.killedAt, now);
+  }
+  if (w.exitCode() !== undefined) {
+    return 'closed';
+  }
+  if (now > deadline) {
+    state.killedAt = now;
+    closeIfOpen(w);
+  }
+  return 'waiting';
+}
+
+/** After the kill: its exit has come, or the grace period and a second have passed. Either way the test has failed on its own message. */
+function afterKill(w: World, killedAt: number, now: number): 'waiting' | 'gave up' {
+  return w.exitCode() !== undefined || now - killedAt > KILL_GRACE_MS + 1_000 ? 'gave up' : 'waiting';
+}
+
+function closeIfOpen(w: World): void {
+  const pty = w.pty();
+  if (pty !== undefined) {
+    pty.close();
+  }
+}
+
+async function waitFor(what: string, ok: () => boolean, ms: number): Promise<void> {
+  const started = Date.now();
+  while (!ok()) {
+    if (Date.now() - started > ms) {
+      throw new Error(`${what} did not happen within ${ms} ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+interface ArgvRun {
+  argv: readonly [string, ...string[]];
+  /** An owned folder unless a test gives one. */
+  cwd?: string;
+  env?: Record<string, string>;
+  stdinText?: string;
+  secrets?: readonly (string | { value: string; label: string })[];
+  onEnded?: () => void;
+}
+
+/** `run()` for argv mode: the same terminal, opened at once; it does NOT wait (each test waits with `closedWithin`). */
+function runArgv(t: TestContext, w: World, options: ArgvRun): void {
+  w.mod.runInMaskedTerminal({
+    name: 'test',
+    argv: options.argv,
+    cwd: options.cwd ?? ownedDir(t, 'cwd'),
+    env: options.env ?? {},
+    stdinText: options.stdinText,
+    secrets: options.secrets ?? [],
+    banner: '[masked]',
+    onEnded: options.onEnded,
+  });
+  w.pty().open();
+}
+
+/** A counter for `onEnded`: "exactly once" is counted, never read through an idempotent cleanup. */
+function counter(): { count: () => number; ended: () => void } {
+  let n = 0;
+  return { count: () => n, ended: () => void (n += 1) };
+}
+
+test('argv_mode_runs_no_shell', REAL_CHILD, async (t) => {
+  const w = world();
+  runArgv(t, w, { argv: ['/bin/echo', '$HOME;id'] });
+  await closedWithin(w, 3_000);
+  assert.ok(w.written().includes('$HOME;id'), `the argument arrives literally, no shell parsed it: ${w.written()}`);
+});
+
+test('stdin_text_is_written_once_then_closed', REAL_CHILD, async (t) => {
+  const w = world();
+  runArgv(t, w, { argv: ['/bin/sh', '-c', 'cat; echo END'], stdinText: 'hello-from-stdin\n' });
+  await closedWithin(w, 3_000);
+  const out = w.written();
+  assert.ok(out.indexOf('hello-from-stdin') >= 0 && out.indexOf('hello-from-stdin') < out.indexOf('END'), `the script reached the child, then cat ended: ${out}`);
+  assert.match(out, /\[exit 0\]/, 'cat ended, so stdin was closed');
+});
+
+test('keystrokes_are_not_forwarded_when_stdin_is_a_script', REAL_CHILD, async (t) => {
+  const w = world();
+  runArgv(t, w, { argv: ['/bin/sh', '-c', 'sleep 1; cat; echo END'], stdinText: 'script\n' });
+  w.pty().handleInput('typed\r');
+  await closedWithin(w, 4_000);
+  assert.ok(!w.written().includes('typed'), `stdin is the script and closed: no echo, no write: ${w.written()}`);
+});
+
+test('on_ended_is_called_once_when_the_child_exits', REAL_CHILD, async (t) => {
+  const w = world();
+  const ended = counter();
+  runArgv(t, w, { argv: ['/bin/true'], onEnded: ended.ended });
+  await closedWithin(w, 3_000);
+  assert.equal(ended.count(), 1);
+});
+
+test('on_ended_is_called_once_when_the_program_does_not_exist', REAL_CHILD, async (t) => {
+  const w = world();
+  const ended = counter();
+  runArgv(t, w, { argv: ['/nonexistent/ssh-xyz'], onEnded: ended.ended });
+  await closedWithin(w, 3_000);
+  await new Promise((resolve) => setTimeout(resolve, 200)); // a later `close` after the `error` must not count again
+  assert.match(w.written(), /Could not start|ENOENT/, w.written());
+  assert.equal(ended.count(), 1);
+});
+
+test('on_ended_is_called_once_when_the_terminal_closes_before_the_child_starts', (t) => {
+  const w = world();
+  const ended = counter();
+  w.mod.runInMaskedTerminal({ name: 'test', argv: ['/bin/true'], cwd: ownedDir(t, 'cwd'), env: {}, secrets: [], banner: '[masked]', onEnded: ended.ended });
+  w.pty().close();
+  assert.equal(ended.count(), 1);
+});
+
+test('a_run_closed_before_it_started_never_spawns_or_writes', (t) => {
+  const w = world({ mocks: spawnSpy });
+  const ended = counter();
+  w.mod.runInMaskedTerminal({ name: 'test', argv: ['/bin/true'], cwd: ownedDir(t, 'cwd'), env: {}, secrets: [], banner: '[masked]', onEnded: ended.ended });
+  w.pty().close();
+  w.pty().open(); // VS Code should not, and the code must not care
+  assert.deepEqual(w.children, []);
+  assert.equal(ended.count(), 1);
+  assert.ok(!w.written().includes('Could not start'), w.written());
+});
+
+test('on_ended_is_called_once_when_the_start_throws', REAL_CHILD, async (t) => {
+  // A NUL byte in the program makes spawn throw at once (ERR_INVALID_ARG_VALUE): the failed-start exit of E3-D7.
+  const w = world();
+  const ended = counter();
+  runArgv(t, w, { argv: ['bad\0program'], onEnded: ended.ended });
+  await closedWithin(w, 3_000);
+  assert.match(w.written(), /Could not start/, w.written());
+  assert.equal(ended.count(), 1);
+});
+
+test('the_env_of_argv_mode_reaches_the_child', REAL_CHILD, async (t) => {
+  const w = world();
+  runArgv(t, w, { argv: ['/bin/sh', '-c', 'printf %s "$ASKPASS_PROBE"'], env: { ASKPASS_PROBE: 'probe-value-1234' } });
+  await closedWithin(w, 3_000);
+  assert.ok(w.written().includes('probe-value-1234'), w.written());
+});
+
+// ---- the end to end run through a recording fake ssh (M8, M11) -----------------------------------------------------------
+
+const S1 = sshNode('s1');
+const LINKED: EntityMetadata = { id: 'e1', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'printenv', commandArgs: [{ value: 'creds://me/alert/password' }], sshEntityId: 's1' };
+
+/** The argv `secretsLaunch` gives for the fake road's first ready (a key session, or a password one). */
+async function launchArgv(password: boolean): Promise<readonly string[]> {
+  const road = fakeRoad(() => (password ? { password: true } : {}), (id) => (id === 's1' ? S1 : undefined));
+  await road.prepare('a1', S1.details as EntityMetadata);
+  const plan = planLaunch(LINKED, sshLinkOf(LINKED, (id) => (id === 's1' ? S1 : undefined)), { stayOpen: false });
+  assert.equal(plan.kind, 'remote');
+  const launch = secretsLaunch(plan as RemotePlan, road.readies[0]);
+  assert.equal(launch.kind, 'spawn');
+  return launch.kind === 'spawn' ? launch.argv : [];
+}
+
+/**
+ * An executable that behaves as ssh does for an exec request: records its own PID, its argv (NUL-separated) and its environment
+ * (`env -0`), sets SHELL as sshd sets the login shell (the runner's own `$SHELL` can be fish, which does not read a POSIX
+ * script), skips its options to `--` and the destination, and runs the last argument with `/bin/sh -c`, stdin inherited.
+ */
+function writeFakeSsh(dir: string): string {
+  const file = path.join(dir, 'fake-ssh');
+  fs.writeFileSync(
+    file,
+    [
+      '#!/bin/sh',
+      `echo $$ >> '${dir}/pids'`,
+      `printf '%s\\0' "$@" > '${dir}/argv'`,
+      `env -0 > '${dir}/env'`,
+      'SHELL=/bin/sh',
+      'export SHELL',
+      'while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done',
+      'shift',
+      'shift',
+      '/bin/sh -c "$1"',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return file;
+}
+
+function nulSplit(file: string): string[] {
+  return fs.readFileSync(file, 'utf8').split('\0').filter((entry) => entry.length > 0);
+}
+
+/** Every PID the fake and the remote shell recorded must be gone; a live one is killed and named. */
+function assertNoProcessLeft(dir: string): void {
+  const left: number[] = [];
+  const recorded = path.join(dir, 'pids');
+  for (const pid of fs.existsSync(recorded) ? fs.readFileSync(recorded, 'utf8').split('\n').filter((line) => line.length > 0).map(Number) : []) {
+    try {
+      process.kill(pid, 0);
+      left.push(pid);
+      process.kill(pid, 'SIGKILL');
+    } catch (error) {
+      assert.equal((error as NodeJS.ErrnoException).code, 'ESRCH');
+    }
+  }
+  assert.deepEqual(left, [], `fake ssh process ${left.join(', ')} was left running`);
+}
+
+const SECOND = 'second-secret-value-42';
+
+test('end_to_end_values_echoed_to_stdout_and_stderr_are_masked', REAL_CHILD, async (t) => {
+  const dir = ownedDir(t, 'ssh');
+  const fake = writeFakeSsh(dir);
+  const first = `it's $HOME "quoted" value`;
+  const argv = await launchArgv(false);
+  const script = secretsStdin(
+    { CREDS_REF_1: first, CREDS_REF_2: SECOND },
+    `echo $$ >> '${dir}/pids'; printf "%s\\n" "$CREDS_REF_1"; printf "%s\\n" "$CREDS_REF_2" >&2`,
+  );
+  const w = world();
+  try {
+    runArgv(t, w, {
+      argv: [fake, ...argv],
+      stdinText: script,
+      secrets: [
+        { value: first, label: 'CREDS_REF_1' },
+        { value: SECOND, label: 'CREDS_REF_2' },
+      ],
+    });
+    await closedWithin(w, 5_000);
+    const out = w.written();
+    assert.ok(out.includes('<CREDS_MASKED:CREDS_REF_1>') && out.includes('<CREDS_MASKED:CREDS_REF_2>'), out);
+    assert.ok(!out.includes(first) && !out.includes(SECOND), `a raw value reached the screen: ${out}`);
+    assert.match(out, /\[exit 0\]/);
+    const recordedArgv = nulSplit(path.join(dir, 'argv'));
+    assert.deepEqual(recordedArgv, [...argv], 'the fake ssh recorded the argv the road built');
+    for (const value of [first, SECOND]) {
+      assert.ok(!recordedArgv.some((element) => element.includes(value)), 'no value in argv');
+      assert.ok(!nulSplit(path.join(dir, 'env')).some((entry) => entry.includes(value)), 'no value in the ssh environment');
+    }
+    assert.equal(fs.readFileSync(path.join(dir, 'pids'), 'utf8').split('\n').filter((line) => line.length > 0).length, 2, 'the fake and the remote shell recorded themselves');
+  } finally {
+    assertNoProcessLeft(dir);
+  }
+});
+
+test('the_ssh_childs_environment_holds_no_secret_value', REAL_CHILD, async (t) => {
+  const dir = ownedDir(t, 'ssh');
+  const fake = writeFakeSsh(dir);
+  const values = { CREDS_REF_1: 'first-secret-value-0001', CREDS_REF_2: SECOND };
+  const askpass = { SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' };
+  const w = world();
+  try {
+    runArgv(t, w, {
+      argv: [fake, ...(await launchArgv(true))],
+      env: askpass,
+      stdinText: secretsStdin(values, `echo $$ >> '${dir}/pids'; true`),
+      secrets: [
+        { value: values.CREDS_REF_1, label: 'CREDS_REF_1' },
+        { value: values.CREDS_REF_2, label: 'CREDS_REF_2' },
+      ],
+    });
+    await closedWithin(w, 5_000);
+    const recorded = nulSplit(path.join(dir, 'env'));
+    assert.ok(recorded.includes('SSH_ASKPASS_REQUIRE=force'), 'the positive control: the recording works');
+    assert.ok(recorded.includes('CREDS_SSH_PASSWORD=ssh-entry-password-77'), "the SSH entry's own password IS there: the accepted limit (E3-D8), asserted, not hidden");
+    for (const entry of recorded) {
+      assert.ok(!entry.startsWith('CREDS_REF_'), `no reference variable: ${entry}`);
+      assert.ok(!Object.values(values).some((value) => entry.includes(value)), `no resolved value in the environment: ${entry}`);
+    }
+  } finally {
+    assertNoProcessLeft(dir);
+  }
+});
+
+// ---- the bounded run (M9, M10, M10b) -----------------------------------------------------------------------------------------
+
+test('closing_the_terminal_kills_a_stalled_child_and_drops_the_unwritten_script', REAL_CHILD, async (t) => {
+  const w = world({ mocks: (world) => ({ ...spawnSpy(world), ...killSpy(world) }) });
+  const ended = counter();
+  runArgv(t, w, {
+    argv: ['/bin/sh', '-c', "echo PID=$$; trap '' TERM; exec sleep 300"],
+    stdinText: 'x'.repeat(4 * 1024 * 1024), // more than a pipe takes; sleep never reads
+    onEnded: ended.ended,
+  });
+  await waitFor('the child telling its PID', () => /PID=\d+/.test(w.written()), 3_000);
+  const pid = Number(/PID=(\d+)/.exec(w.written())?.[1]);
+  w.pty().close();
+  await closedWithin(w, KILL_GRACE_MS + 3_000);
+  assert.ok(w.written().trimEnd().endsWith('[exit killed]'), w.written());
+  assert.equal(ended.count(), 1);
+  assert.deepEqual(w.kills, [{ tree: true }]);
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  assert.equal(w.children[0].stdin?.destroyed, true, 'the unwritten script (the values) is dropped with the run, never written later');
+});
+
+test('an_error_event_ends_the_run_at_once_and_drops_the_unwritten_script', REAL_CHILD, async (t) => {
+  // The one exit where the child may still be ALIVE when the run ends: its 'error' event (a failed kill, a failed message). The
+  // end destroys stdin, so the script (the values) is not written to a child that nobody watches any more.
+  const w = world({ mocks: spawnSpy });
+  const ended = counter();
+  runArgv(t, w, { argv: ['/bin/sh', '-c', 'echo PID=$$; exec sleep 300'], stdinText: 'x'.repeat(4 * 1024 * 1024), onEnded: ended.ended });
+  try {
+    await waitFor('the child telling its PID', () => /PID=\d+/.test(w.written()), 3_000);
+    assert.equal(w.children[0].stdin?.destroyed, false, 'before the end the script is still being written');
+    w.children[0].emit('error', new Error('boom'));
+    assert.equal(ended.count(), 1);
+    assert.equal(w.children[0].stdin?.destroyed, true, 'the end destroyed stdin while the child is still running');
+  } finally {
+    // The error event already ended the run (and told VS Code), so a close would not wait for the child: kill it here.
+    w.children[0].kill('SIGKILL');
+    await waitFor('the killed child closing', () => w.children[0].exitCode !== null || w.children[0].signalCode !== null, 3_000);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(ended.count(), 1, 'the later close does not count again');
+});
+
+test('a_terminal_that_cannot_be_created_throws_and_never_spawns', (t) => {
+  // GREEN before and after: a guard that pins E3-D7's "a throw from createTerminal is the caller's to clean".
+  const w = world({ createThrows: true, mocks: spawnSpy });
+  const ended = counter();
+  assert.throws(
+    () => w.mod.runInMaskedTerminal({ name: 'test', argv: ['/bin/true'], cwd: ownedDir(t, 'cwd'), env: {}, secrets: [], banner: '[masked]', onEnded: ended.ended }),
+    /no terminal/,
+  );
+  assert.equal(ended.count(), 0);
+  assert.deepEqual(w.children, []);
+});
+
+test('a_show_that_throws_ends_the_run_and_a_later_open_spawns_nothing', (t) => {
+  const w = world({ showThrows: true, mocks: spawnSpy });
+  const ended = counter();
+  assert.throws(
+    () => w.mod.runInMaskedTerminal({ name: 'test', argv: ['/bin/echo', 'x'], cwd: ownedDir(t, 'cwd'), env: {}, secrets: [], banner: '[masked]', onEnded: ended.ended }),
+    /no show/,
+  );
+  assert.equal(ended.count(), 1);
+  assert.equal(w.disposed, 1);
+  w.pty().open();
+  assert.deepEqual(w.children, []);
+  assert.equal(w.written(), '');
+  assert.equal(ended.count(), 1);
+});
+
+// ---- the program's own folder (M12, M13) -------------------------------------------------------------------------------------
+
+test('launch_of_argv_mode_takes_its_own_folder_never_the_workspace', () => {
+  const w = world({ workspaceDir: '/work/repo' });
+  const storage = 'C:/Users/me/AppData/Roaming/Code/User/globalStorage/x';
+  assert.deepEqual(
+    w.mod.launchOf({ name: 't', argv: ['C:/Windows/System32/OpenSSH/ssh.exe', '-o', 'BatchMode=yes'], cwd: storage, env: {}, secrets: [], banner: '' }),
+    { program: 'C:/Windows/System32/OpenSSH/ssh.exe', args: ['-o', 'BatchMode=yes'], shell: false, cwd: storage },
+  );
+  assert.equal(w.mod.launchOf({ name: 't', commandLine: 'echo hi', env: {}, secrets: [], banner: '' }).cwd, '/work/repo', 'the shell variant is unchanged');
+});
+
+test('an_argv_run_starts_in_its_own_folder', REAL_CHILD, async (t) => {
+  const workspace = ownedDir(t, 'workspace');
+  const own = ownedDir(t, 'own');
+  const w = world({ workspaceDir: workspace });
+  runArgv(t, w, { argv: ['/bin/sh', '-c', 'pwd'], cwd: own });
+  await closedWithin(w, 3_000);
+  assert.ok(w.written().includes(fs.realpathSync(own)), w.written());
+  assert.ok(!w.written().includes(fs.realpathSync(workspace)), 'never the workspace folder');
 });

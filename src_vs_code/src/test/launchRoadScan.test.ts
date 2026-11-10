@@ -175,7 +175,12 @@ const ALLOWED_SENDS: AllowList = {
       because: "the one linked send of the person's arrow and a VPN launcher (E2.S1, runOverSsh): the line typedLine built from the prepared snapshot, with a password session's own environment",
     },
   ],
-  'maskedTerminal.ts': [{ line: 'const child = childProcess.spawn(options.commandLine, [], {', because: 'the masked child of Run with Secrets: E3' }],
+  'maskedTerminal.ts': [
+    {
+      line: 'const child = childProcess.spawn(launch.program, launch.args, {',
+      because: 'the masked child of Run with Secrets: through a shell (local) or by argv with shell false (over SSH, E3.S1)',
+    },
+  ],
 };
 
 test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
