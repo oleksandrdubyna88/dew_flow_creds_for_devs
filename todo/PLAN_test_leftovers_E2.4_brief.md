@@ -78,6 +78,8 @@ A row with "—" in the implementation or check column is **unmapped**: an open 
 | 24 | **Parent row E2.4-c** — the owner segment is the runner's uid, checked before any resource exists | the naming step, before *Build*: its FIRST command `[ "$(id -u)" = 1001 ] \|\| exit 1` (§ 3.2 item 1) | `ubuntu-latest` | S3.3 (c): the naming step's first command is the uid check, and the step comes before *Build*. RED: the check removed, or the step moved after *Build*. The first dispatch prints the uid | The guard does not see it (the parent **[M]**: B without the check, 0 findings). **To observe** before the plan gate: uid `1001` in a hosted throwaway run (the parent's build order) |
 | 25 | **Parent row E2.4-h** — acme's compose project is the owned folder's name, never a fixed one | `run.sh`: `PROJECT` from `$STATE`'s basename, lower-cased, and from nothing else (§ 3.3 step 3) | `run.sh` | S4.5: a creds test over `run.sh`: `PROJECT` is assigned from `$STATE`'s basename only. RED: `PROJECT=acme` | **S4.5 is the only pin.** The guard is no evidence here: in `run.sh`'s real shape a fixed project gives 0 findings (whole-file drafts, also `COMPOSE=(docker compose -p acme …)`); only a direct `docker compose -p acme … up -d` line gives `docker-name` (Opus review, 2026-11-09). The test reads the text; it does not run compose |
 
+*[2026-11-10, part 2d, row 20: the guard's expected list after E2.4 is 5 findings only if `deploy/nginx/entrypoint.test.sh:39` is migrated. That file came with #326 after the inventory of § 2 was measured at `0ae0211`; it is a site of the planned kind (E2's scope: "every temp site of … the CI/test shell scripts"), migrated to `owned_dir` like the other test scripts, with the same temp-root check in its CI step. Not a change.]*
+
 *[2026-11-07, the parent's epoch 8.]* Rows 22–25 are the parent's rows this table lacked. The other rows of the parent's
 item 3 map so: **E2.4-a** → row 12 (now mapped: Q1 is (B)); **E2.4-d** → rows 10 and 11 (each run also quotes row 23's
 step, not only "the remover ran"); **E2.4-e** → row 8 and S1's spec § 3; **E2.4-f** → row 15 (now: named volumes); **E2.4-g**
@@ -102,6 +104,8 @@ Every place that starts a script E2.4.S2–S4 change, at `0ae0211`. "Root" is th
 | `restore-archive-itest.sh` | `ci-server.yml:314` (job `deployment`); a person (`:4`; `research/module_tests.md:2154`) | `mktemp -d` ×9 → `owned_dir` ×9 | **no mount, no Node** in `deployment` (`:265-314`): `owned.sh` must work there on Linux without either (I8) |
 | `deploy/acme-test/run.sh` | a person only (`deploy/README.md:252`; compose header `:3`); no workflow, not shellchecked | `./state` in the checkout → `owned_dir STATE acme` | a person's clone; the janitor needs the mount (`../../.claude/rules/shared/tools/janitor.sh`) |
 | `docker.yml` `image` | `workflow_run` after `ci · server` on a push to `main`; `workflow_dispatch` | the hosted VM | — |
+
+*[2026-11-10, part 2d: one more caller, `deploy/nginx/entrypoint.test.sh` (`ci-server.yml`, job `deployment`). It came with #326 after this inventory was measured at `0ae0211`, and its `mktemp -d` is a site of the planned kind: E2's scope covers "every temp site of … the CI/test shell scripts". It uses `owned_dir` like the other test scripts, and its CI step has the same temp-root check as each S2 step. Not a change: E2.4's Done-when ("5 guard findings") needs it.]*
 
 ## 3. The stories
 
