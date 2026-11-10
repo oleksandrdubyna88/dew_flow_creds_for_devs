@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A one-use SSH entry is spent by the run**: if the SSH entry is set to last until an agent uses it once, the agent's run is that
   use and the SSH entry is deleted after it, as after the agent's own `creds_exec` (`brokerCall.ts:280`, `burnInTurn`). The run
   takes the turn of that entry like any use of it, so a direct `creds_exec` and a linked run at the same moment start ssh once.
-  An SSH entry whose delete failed stays spent, and a later run is refused with a sentence that names that one entry.
+  An SSH entry whose delete failed stays spent **in this window** (the marker is in memory), and a later linked run is refused with a
+  sentence that names only the Terminal entry.
 - **The agent's output is masked with both entries' values**: the Terminal entry's and the SSH entry's password (a rotated SSH password that was still waiting to be stored is stored first, so it is masked too).
 - **A Remote Bridge never runs a linked entry**; it answers its usual sentence.
 
@@ -80,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requests to ssh, and the extension removes only the variable it can see. A password connection's askpass variables are in the
   local ssh's environment: a `SendEnv` pattern of yours that matches them AND a server's `AcceptEnv` could send the password,
   the limit written down in 1.19.0.
+- **On Windows, `ssh` can still use the Windows ssh-agent service's default pipe when `SSH_AUTH_SOCK` is not set**; not checked yet
+  (hand check 3 of the plan).
 - **Closing the run's terminal stops ssh here, and sends the server no hangup**: the command on the server has no terminal and can
   keep running there until it ends.
 - **Observed by hand, not in CI**: how a real server answers a wrong password, an unreachable host and a jump host's helper after a
