@@ -103,7 +103,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: git submodule update --init --depth 1 .claude/rules/shared
+      - run: git submodule update --init --depth 1 .agents/conventions
 
       - name: Run the post-deploy checklist against what is now running
         env:
@@ -113,4 +113,4 @@ jobs:
             echo "RSD_PUBLIC_URL not set — the checklist has no target to run against."
             exit 0
           fi
-          node .claude/rules/shared/tools/post-deploy-check.mjs --target "$URL"
+          node .agents/conventions/tools/post-deploy-check.mjs --target "$URL"

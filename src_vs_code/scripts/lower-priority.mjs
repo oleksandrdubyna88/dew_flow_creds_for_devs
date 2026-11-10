@@ -11,7 +11,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const MOUNT = new URL("../../.claude/rules/shared/", import.meta.url);
+const MOUNT = new URL("../../.agents/conventions/", import.meta.url);
 
 const tool = new URL("tools/low-priority.mjs", MOUNT);
 const mountIsAbsent = () => !existsSync(MOUNT) || readdirSync(MOUNT).length === 0;

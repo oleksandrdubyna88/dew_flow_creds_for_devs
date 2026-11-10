@@ -261,7 +261,7 @@ public sealed class LeftoversGuardTests : IDisposable
             ("tests/X/obj/C.cs", violation),
             ("http/node_modules/pkg/index.mjs", "const d = os.tmp§dir();"),
             (".git/hooks/x.sh", "d=$(mktemp -d)"),
-            (".claude/rules/shared/tools/x.sh", "d=$(mktemp -d)"),
+            (".agents/conventions/tools/x.sh", "d=$(mktemp -d)"),
             (".http-artifacts/x.sh", "d=$(mktemp -d)"),
             ("logs/x.sh", "d=$(mktemp -d)"));
 
@@ -347,9 +347,9 @@ public sealed class LeftoversGuardTests : IDisposable
         // node as program text they would run `touch`; handed as arguments they are only names.
         var weird = "m'q`$(touch pwned);" + (OperatingSystem.IsWindows() ? "" : "\"x\ny");
         var mount = Path.Combine(_owned.Dir("weird-mount"), weird);
-        var lib = Path.Combine(mount, ".claude", "rules", "shared", "tools", "lib");
+        var lib = Path.Combine(mount, ".agents", "conventions", "tools", "lib");
         Directory.CreateDirectory(lib);
-        foreach (var file in Directory.GetFiles(Path.Combine(RepositoryRoot.Path, ".claude", "rules", "shared", "tools", "lib"), "*.mjs")) File.Copy(file, Path.Combine(lib, Path.GetFileName(file)));
+        foreach (var file in Directory.GetFiles(Path.Combine(RepositoryRoot.Path, ".agents", "conventions", "tools", "lib"), "*.mjs")) File.Copy(file, Path.Combine(lib, Path.GetFileName(file)));
         var root = Tree(("tools/" + weird + ".sh", $"rm -rf /tmp/{P}-*"));
 
         var report = LeftoversGuard.Scan(root, mount);
@@ -471,7 +471,7 @@ public sealed class LeftoversGuardTests : IDisposable
         var root = _owned.Dir(what);
         foreach (var (name, text) in files)
         {
-            var full = Path.Combine(root, ".claude", "rules", "shared", name);
+            var full = Path.Combine(root, ".agents", "conventions", name);
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             File.WriteAllText(full, text);
         }
@@ -554,7 +554,7 @@ public sealed class LeftoversGuardTests : IDisposable
             "neither" => MountWith("c-neither", (CoreName, "# core\n"), (DetailName, "# detail\n")),
             _ => _owned.Dir("c-nofiles"),
         };
-        var mount = Path.Combine(root, ".claude", "rules", "shared");
+        var mount = Path.Combine(root, ".agents", "conventions");
 
         var picked = MountedSelectorPick(mount);
         var found = LeftoversGuard.RegisteredTokenFindings(root, "mcp", "nobody").Should().ContainSingle().Subject;
@@ -576,7 +576,7 @@ public sealed class LeftoversGuardTests : IDisposable
             const { resolveRule } = await import(module);
             console.log(resolveRule(repo) ?? "");
             """;
-        var module = new Uri(Path.GetFullPath(Path.Combine(RepositoryRoot.Path, ".claude/rules/shared/tools/leftovers-check.mjs"))).AbsoluteUri;
+        var module = new Uri(Path.GetFullPath(Path.Combine(RepositoryRoot.Path, ".agents/conventions/tools/leftovers-check.mjs"))).AbsoluteUri;
         var start = new ProcessStartInfo("node") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var argument in new[] { "--input-type=module", "-e", program, "--", module, mount }) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("node did not start");
@@ -604,7 +604,7 @@ public sealed class LeftoversGuardTests : IDisposable
         if (Native.GetUid() == 0) Assert.Skip("root reads a file with mode 000");
         var other = unreadable == DetailName ? CoreName : DetailName;
         var root = MountWith("unreadable", (unreadable, Rule(McpRow)), (other, "# no table\n"));
-        var file = Path.Combine(root, ".claude", "rules", "shared", unreadable);
+        var file = Path.Combine(root, ".agents", "conventions", unreadable);
         File.SetUnixFileMode(file, UnixFileMode.None);
         try
         {

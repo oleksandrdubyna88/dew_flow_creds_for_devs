@@ -6,7 +6,7 @@ namespace CredVaultServer;
 
 /// <summary>
 /// The server's entry point into the repository's one logging configuration, per
-/// <c>.claude/rules/shared/common/logging-serilog.md</c>: the console, and a file on disk with a NEW FILE
+/// <c>.agents/conventions/common/logging-serilog.md</c>: the console, and a file on disk with a NEW FILE
 /// PER RUN under a folder named for the UTC day.
 ///
 /// <para>

@@ -1,7 +1,7 @@
 # `http/` — the vault server's contract suite
 
 One folder per route group, per
-[`.claude/rules/shared/common/http-contracts.md`](../.claude/rules/shared/common/http-contracts.md).
+[`.agents/conventions/common/http-contracts.md`](../.agents/conventions/common/http-contracts.md).
 The files are ordinary `.http` documents: open one in VS Code and send a single request while you are
 writing the endpoint, or run the whole tree headless before a release.
 
@@ -36,7 +36,7 @@ claim that every HTTP surface in a repository has a suite.
 For the record, the family's founding evidence for this whole tier came from that second surface:
 `/v1/use/exportEnv` was unreachable in every released build because the route grammar rejected a
 capital letter, and the first end-to-end run found it in seconds
-([testing.md](../.claude/rules/shared/common/testing.md)).
+([testing.md](../.agents/conventions/common/testing.md)).
 
 ## The environment this suite expects
 
@@ -62,8 +62,8 @@ running with an empty key produces a wall of 401s that reads exactly like an aut
 ```bash
 npm install --save-dev httpyac@6.16.7            # once per machine
 
-# a local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md)
-LP=.claude/rules/shared/tools/low-priority.mjs
+# a local run goes below interactive work (.agents/conventions/common/local-cpu-budget.md)
+LP=.agents/conventions/tools/low-priority.mjs
 
 # BUILD first, on its own — never inside the wait for the server (see below)
 node $LP dotnet build src_minimalapi_server/src/CredVaultServer.csproj -c Release -m:4 --disable-build-servers
@@ -84,7 +84,7 @@ export VAULT_LOCAL_SIGNING_KEY="$(openssl rand -base64 48)"
     node ../../$LP bash ../../.github/scripts/start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 -- \
     ./bin/Release/net10.0/CredVaultServer)
 
-node $LP node .claude/rules/shared/tools/http-run.mjs \
+node $LP node .agents/conventions/tools/http-run.mjs \
   --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
 
 kill <the pid the start script printed>   # it IS the server: the script started the apphost itself
@@ -113,12 +113,12 @@ report it as *"the suite could not run"*, not as a finding about the server.
 Only the requests tagged `# @prod` are safe to send at something real: they read and change nothing.
 
 ```bash
-node .claude/rules/shared/tools/http-run.mjs --tag prod --target https://vault.example.com
+node .agents/conventions/tools/http-run.mjs --tag prod --target https://vault.example.com
 ```
 
 Today that subset still needs a token for everything except `/api/health` and `/api/client-config`,
 and this server has no machine identity — see the open question in
-[`todo/PLAN_prod_checks_and_http_contracts.md`](../.claude/rules/shared/todo/PLAN_prod_checks_and_http_contracts.md)
+[`todo/PLAN_prod_checks_and_http_contracts.md`](../.agents/conventions/todo/PLAN_prod_checks_and_http_contracts.md)
 in the conventions repository. Until that is decided, [`../POST_DEPLOY.md`](../POST_DEPLOY.md) runs the
 anonymous ones.
 

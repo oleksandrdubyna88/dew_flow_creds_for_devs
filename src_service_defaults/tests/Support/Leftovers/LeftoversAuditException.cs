@@ -32,5 +32,5 @@ public sealed class LeftoversAuditException : InvalidOperationException
     }
 
     private static string Remedy =>
-        $"remedy: dispose the OwnedDir or OwnedScope that made each (a test class field, disposed by xUnit); list what is left with: bash .claude/rules/shared/tools/janitor.sh --token {OwnedToken.RepoToken} --dry-run";
+        $"remedy: dispose the OwnedDir or OwnedScope that made each (a test class field, disposed by xUnit); list what is left with: bash .agents/conventions/tools/janitor.sh --token {OwnedToken.RepoToken} --dry-run";
 }

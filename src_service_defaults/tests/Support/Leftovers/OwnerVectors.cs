@@ -8,7 +8,7 @@ namespace CredsForDevs.Tests.Leftovers;
 /// submodule is a broken setup, not a clean one.</summary>
 internal static class OwnerVectors
 {
-    public static readonly string File = Path.Combine(RepositoryRoot.Path, ".claude", "rules", "shared", "tools", "fixtures", "owner-vectors.json");
+    public static readonly string File = Path.Combine(RepositoryRoot.Path, ".agents", "conventions", "tools", "fixtures", "owner-vectors.json");
 
     /// <summary>The <c>vectors</c> of one table (<c>names</c>, <c>windows-owner</c>, <c>hostnames</c>, <c>record</c>,
     /// <c>grammar</c>, <c>scope</c>, <c>verdicts</c>).</summary>

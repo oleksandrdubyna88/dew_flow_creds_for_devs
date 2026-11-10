@@ -126,7 +126,7 @@ deploy/.update-state
 # Vault blobs written by a server run outside Docker (Vault__DataDir=./data)
 src_minimalapi_server/**/data/
 
-# Host logs: a folder per day, a file per run (.claude/rules/shared/common/logging-serilog.md)
+# Host logs: a folder per day, a file per run (.agents/conventions/common/logging-serilog.md)
 logs/
 
 # The .http suite's report and any tag-filtered tree the runner materialises. The suite itself is

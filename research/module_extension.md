@@ -6048,7 +6048,7 @@ a file that churns is a file nobody reads the diff of.
 **Three ways that file could lie, all closed in S4.3's code round** (#95), and each was observed
 rather than predicted. **A stale binary**: the script's entire output is whatever the executable
 answers, and `dew_flow_creds_for_devs.slnx` used to list the minimal-API server and its tests and
-nothing else — so a `Program.cs` edit followed by `dotnet build dew_flow_creds_for_devs.slnx`
+nothing else — so a `Program.cs` edit followed by `dotnet build dew_flow_creds_for_devs.slnx -m:4`
 printed *Build succeeded, 0 Warning(s)* without rebuilding anything, regenerated the contract from
 yesterday's prose, and `--check` agreed, because both had asked the same stale process. **The
 solution file now carries `src_mcp/src` and `src_mcp/tests`**, which is the real repair and makes

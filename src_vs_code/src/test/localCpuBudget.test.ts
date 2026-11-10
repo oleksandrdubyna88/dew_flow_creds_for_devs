@@ -21,7 +21,7 @@ import { pathToFileURL } from 'node:url';
 
 const extensionRoot = path.join(__dirname, '..', '..');
 const repoRoot = path.join(extensionRoot, '..');
-const mountDir = path.join(repoRoot, '.claude', 'rules', 'shared');
+const mountDir = path.join(repoRoot, '.agents', 'conventions');
 const preloadPath = path.join(extensionRoot, 'scripts', 'lower-priority.mjs');
 const templatePath = path.join(mountDir, 'tools', 'templates', 'lower-priority-preload.mjs');
 
@@ -90,7 +90,7 @@ test('the preload has exactly one MOUNT line, and it points at the shared-rules 
   const mounts = [...lf(fs.readFileSync(preloadPath, 'utf8')).matchAll(MOUNT_LINE)].map(match => match[1]);
   assert.equal(mounts.length, 1, 'the preload must keep exactly one MOUNT line');
   const resolved = new URL(mounts[0], pathToFileURL(preloadPath)).href;
-  assert.equal(resolved, pathToFileURL(mountDir + path.sep).href, 'MOUNT does not resolve to .claude/rules/shared/');
+  assert.equal(resolved, pathToFileURL(mountDir + path.sep).href, 'MOUNT does not resolve to .agents/conventions/');
 });
 
 test('the preload is the conventions template with only the MOUNT line changed', t => {

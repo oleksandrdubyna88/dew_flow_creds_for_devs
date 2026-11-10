@@ -77,7 +77,7 @@ Per (day, project): sort event timestamps, merge gaps below a threshold (default
 configurable), an isolated event counts as a minimum grain (default 5 min), total rounded to
 0.25 h. Day bucketing uses the **configured company timezone** (payroll-spec assumption 8); all
 arithmetic and storage stay UTC per the family rule
-([../.claude/rules/shared/common/utc-timestamps.md](../.claude/rules/shared/common/utc-timestamps.md)).
+([../.claude/rules/shared/common/utc-timestamps.md](../.agents/conventions/common/utc-timestamps.md)).
 
 Overlap policy, v1: two projects active in the same wall-clock minutes are **not netted** —
 each is counted, and the day is **flagged** when Σ project hours exceeds the wall-clock span, so

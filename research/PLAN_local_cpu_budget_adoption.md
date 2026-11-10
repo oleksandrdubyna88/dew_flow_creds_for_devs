@@ -11,7 +11,7 @@
 > was corrected in its #60). Open tail: the two WSL harnesses' inner `dotnet build` (owed
 > `nice -n 19 … -m:4 --disable-build-servers` once the branch rewriting them lands).
 >
-> Related docs: the shared rule [local-cpu-budget.md](../.claude/rules/shared/common/local-cpu-budget.md),
+> Related docs: the shared rule [local-cpu-budget.md](../.agents/conventions/common/local-cpu-budget.md),
 > its rollout plan `todo/PLAN_local_cpu_budget.md` in the conventions repository (the creds_for_devs row),
 > [module_tests.md](module_tests.md).
 
