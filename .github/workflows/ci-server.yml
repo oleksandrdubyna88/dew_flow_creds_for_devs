@@ -323,6 +323,8 @@ jobs:
           # E2.4.S1: the bash helper and its self-test. -x follows the one `source` of the self-test.
           $SHELLCHECK -x .github/scripts/lib/owned.sh .github/scripts/lib/owned.test.sh .github/scripts/lib/owned.test.lib.sh \
             .github/scripts/lib/owned.test.record.sh .github/scripts/lib/owned.test.exit.sh .github/scripts/lib/owned.test.sweeps.sh
+          # E2.4.S4: the acme harness. -x follows the one `source` of owned.sh.
+          $SHELLCHECK -x deploy/acme-test/run.sh
 
       - name: Drive restore-archive.sh as a program
         run: |
