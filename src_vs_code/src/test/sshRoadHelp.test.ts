@@ -93,6 +93,7 @@ test('the_english_chain_sentences_name_what_the_person_sees', () => {
 });
 
 // Hp6 (E3.S1): Run with Secrets runs over SSH from a local window — the terminal bullet, and the `secret-references` article, in every language.
+// RUNS_BULLET_SENTENCE is the ONE table of the bullet's sentence about Run with Secrets and the agent's run: Hp6, Hp8 and Hp10 read it.
 const RUNS_BULLET_SENTENCE: Record<HelpLanguage, string> = {
   en: "*Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs.",
   de: "*Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster, und der Lauf eines Agenten auch, aber nur, wenn der SSH-Eintrag selbst *Usable by agents* ist; sonst wird der Agent abgelehnt und nichts läuft.",
@@ -157,17 +158,10 @@ test('the_english_secrets_text_is_exact', () => {
 });
 
 // Hp8 (E3.S2): the agent's run over SSH, in every language. Only when the SSH entry itself is *Usable by agents* — the SSH entry's own ask policy is not consulted.
-const AGENT_RUN_SENTENCE: Record<HelpLanguage, string> = {
-  en: "*Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs.",
-  de: "*Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster, und der Lauf eines Agenten auch, aber nur, wenn der SSH-Eintrag selbst *Usable by agents* ist; sonst wird der Agent abgelehnt und nichts läuft.",
-  es: "*Run with Secrets* también la ejecuta allí, desde una ventana local, y la ejecución de un agente también, pero solo cuando la propia entrada SSH es *Usable by agents*; si no, el agente se rechaza y no se ejecuta nada.",
-  ru: "*Run with Secrets* тоже выполняет её там, из локального окна, и запуск агентом тоже, но только если сама запись SSH — *Usable by agents*; иначе агенту отказывают и ничего не выполняется.",
-  uk: "*Run with Secrets* теж виконує його там, із локального вікна, і запуск агентом теж, але лише коли сам запис SSH — *Usable by agents*; інакше агентові відмовляють і нічого не виконується.",
-};
-
+// It reads RUNS_BULLET_SENTENCE (Hp6's table): the bullet's one sentence is written down once.
 test('every_language_says_the_agents_run_needs_the_ssh_entry_usable_by_agents', () => {
   for (const language of HELP_LANGUAGES) {
-    assert.ok(whole(language).includes(AGENT_RUN_SENTENCE[language]), `${language}: the terminal bullet does not say that an agent's run needs the SSH entry to be Usable by agents`);
+    assert.ok(whole(language).includes(RUNS_BULLET_SENTENCE[language]), `${language}: the terminal bullet does not say that an agent's run needs the SSH entry to be Usable by agents`);
     assert.ok(whole(language).includes('*Usable by agents*'), `${language}: the label stays English`);
   }
   assert.ok(!whole('en').includes('an agent\'s run still refuses'), 'the E1 sentence is gone');
@@ -184,6 +178,6 @@ const ONE_USE_SENTENCE: Record<HelpLanguage, string> = {
 
 test('every_language_says_a_linked_run_spends_a_one_use_ssh_entry', () => {
   for (const language of HELP_LANGUAGES) {
-    assert.ok(whole(language).includes(`${AGENT_RUN_SENTENCE[language]} ${ONE_USE_SENTENCE[language]}`), `${language}: the terminal bullet does not say, after the Usable by agents sentence, that a linked run spends a one-use SSH entry`);
+    assert.ok(whole(language).includes(`${RUNS_BULLET_SENTENCE[language]} ${ONE_USE_SENTENCE[language]}`), `${language}: the terminal bullet does not say, after the Usable by agents sentence, that a linked run spends a one-use SSH entry`);
   }
 });
