@@ -216,9 +216,9 @@ a hostile value into every string field of the win32 line and reads the result w
 PowerShell 5.1 and pwsh and checks that the value is read back unchanged and that no injected command ran (it runs in
 the `runner-windows` job of `ci-extension.yml`, and every child it starts is killed as a whole tree on a timeout); the
 strings themselves are pinned in `hostShell.test.ts`, `sshCommand.test.ts`, `sshAskpass.test.ts` and `wslRelay.test.ts`.
-Record: [PLAN_windows_shell_quoting_injection.md](../todo/PLAN_windows_shell_quoting_injection.md).
+Record: [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md).
 
-**Known limit — the askpass variables and `SendEnv` (accepted by the owner, 2026-11-10).** A password connection keeps `CREDS_SSH_PASSWORD` (with `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`) in the local `ssh` process's environment. A person's own `SendEnv` pattern that matches it, together with a server `AcceptEnv` that matches it, would send the password to the server. `-o SendEnv=-NAME` cannot prevent this: OpenSSH removes only a literally equal pattern, not a wildcard (measured with `ssh -G` on OpenSSH 10.2 and Windows OpenSSH 9.5). Recorded in `todo/PLAN_windows_shell_quoting_injection.md` §8.
+**Known limit — the askpass variables and `SendEnv` (accepted by the owner, 2026-11-10).** A password connection keeps `CREDS_SSH_PASSWORD` (with `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`) in the local `ssh` process's environment. A person's own `SendEnv` pattern that matches it, together with a server `AcceptEnv` that matches it, would send the password to the server. `-o SendEnv=-NAME` cannot prevent this: OpenSSH removes only a literally equal pattern, not a wildcard (measured with `ssh -G` on OpenSSH 10.2 and Windows OpenSSH 9.5). Recorded in `research/PLAN_windows_shell_quoting_injection.md` §8.
 
 
 `remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.

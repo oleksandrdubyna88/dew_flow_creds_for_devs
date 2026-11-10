@@ -1,6 +1,6 @@
 # PLAN — Windows: vault data in a typed SSH line or the askpass script cannot run a local command
 
-> Status: **built on fix/windows-shell-quoting-injection (local, not pushed), 2026-11-10 — unverified on real Windows parsers until the windows CI step runs (on the first push) and the owner's hand checks.**
+> Status: **IMPLEMENTED, 2026-11-10** — merged as #331 (57bfc33) and released in extension 1.19.0 (tag `extension-v1.19.0`, published to the Marketplace the same day). Deviations: §9.
 > Scope: the extension (`src_vs_code`) — `hostShell.ts` (`quoteFor`), `sshCommand.ts` (win32 words), `sshAskpass.ts`
 > (the `.bat`), `wslRelay.ts` (`envPrefix`), their tests and one structural scan. Security fix of shipped behaviour.
 
@@ -27,7 +27,7 @@ sync, Accept Share and the ssh-config import — reached a local parser unescape
 
 Plus the class root: `quoteFor('powershell')` doubled only the ASCII `'`, but PowerShell also reads ‘ ’ ‚ ‛ as
 single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
-[PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md).
+[PLAN_terminal_runs_followups.md](../todo/PLAN_terminal_runs_followups.md).
 
 ## 2. Fix (as built on this branch, 4779685)
 
@@ -157,3 +157,20 @@ still listed `sendenv CREDS_*`). So that measure would only look like protection
 Decision (owner, 2026-11-10): **accept and document**. The exposure needs two unusual settings together (the owner's
 IONOS server, for one, accepts only `LANG LC_*`). The full fix — the askpass program reads the password from the
 extension over a private local channel instead of the environment — stays an option for its own plan.
+
+## 9. As shipped — deviations from this plan (2026-11-10)
+
+- **Observed, not only asserted.** The windows CI step ran the real-parser tests green on `windows-latest`
+  (cmd.exe, Windows PowerShell 5.1, pwsh 7) on #331's final head; locally the fix was also seen on the owner's real
+  Windows (cmd.exe 12/12, pwsh 7.6.9 32/32, PowerShell 5.1 32/32) and in a real password login. The owner's own UI
+  check (a password Connect from Windows pwsh with 1.19.0) logged in without a prompt.
+- **One CI assumption was POSIX-only**: the test helper's tree-kill case expected a killed child's exit code to be
+  `null`; on Windows `taskkill /T /F` ends it with `1`. Fixed in the test (760861e), not in the helper.
+- **Public-hygiene**: two fixture paths read as real user folders (`my name`, `a$b`); they moved behind the placeholder
+  user `me` with the space and the `$` kept, so the quoting cases are unchanged.
+- **`SendEnv` is an accepted limit, not a fix** (§8): `-o SendEnv=-NAME` was measured not to remove a wildcard pattern.
+- **The PR** was the repository's fifth open one, opened with the owner's agreement; CodeRabbit's one comment
+  (a stale count in `research/module_tests.md`) was fixed; CodeQL's alert on `quoteFor` is the standing false
+  positive (alerts 41–43), its dismissal left to the owner.
+- **Owed after shipping, outside this plan**: a WSL window refuses a password Connect (older behaviour of the
+  remote-window plan, not changed here).
