@@ -334,11 +334,19 @@ EOF
 t7a() {
   local pattern='(^|[^[:alnum:]_-])trap[[:space:]].*(EXIT|INT|TERM|HUP|[[:space:]]0([[:space:]]|$))' fixture callers f hits=0 line
   # comment lines are dropped first; then every spelling of a trap that would replace the helper's must be found
-  trap_scan() { grep -Ev '^[[:space:]]*#' | grep -E "$pattern"; }
+  # A backslash at the end of a line joins it to the next one (a trap list may sit on the second physical line); a comment line is never
+  # joined (a comment that ends in a backslash does not continue in the shell, and must not hide the line after it).
+  trap_scan() {
+    awk '{ if (buf == "" && $0 ~ /^[[:space:]]*#/) { next } if ($0 ~ /\\$/) { sub(/\\$/, ""); buf = buf $0 " "; next } print buf $0; buf = "" } END { if (buf != "") print buf }' | grep -E "$pattern"
+  }
   # every spelling of a trap that would replace the helper's, each in a line of its own (a scan that finds nothing passes forever)
   for line in '  trap cleanup EXIT' 'trap f 0' 'echo before; trap cleanup EXIT' 'if x; then trap cleanup TERM; fi' '  trap - INT'; do
     if printf '%s\n' "$line" | trap_scan > /dev/null; then ok "T7a the scan finds the planted line [$line]"; else bad "T7a fixture [$line]" "the pattern found nothing"; fi
   done
+  # multiline spellings: the signal list on the next physical line, and a trap line after a comment that ends in a backslash
+  if printf '%s\n' "  trap 'cleanup' \\" "    EXIT" | trap_scan > /dev/null; then ok "T7a the scan finds a multiline trap (the list on the second line)"; else bad "T7a multiline fixture" "the pattern found nothing"; fi
+  if printf '%s\n' "trap 'cleanup' \\" "  INT TERM" | trap_scan > /dev/null; then ok "T7a the scan finds a multiline trap with two signals"; else bad "T7a multiline fixture 2" "the pattern found nothing"; fi
+  if printf '%s\n' "# a note that ends in a backslash \\" "trap cleanup EXIT" | trap_scan > /dev/null; then ok "T7a a comment ending in a backslash does not hide the next line"; else bad "T7a comment backslash" "the trap line after it was missed"; fi
   fixture='# trap cleanup EXIT is what a caller must never write'
   if printf '%s\n' "$fixture" | trap_scan > /dev/null; then bad "T7a comment" "a comment line was found"; else ok "T7a a comment about a trap is not a trap"; fi
   callers="$(git -C "$repo" grep -l 'lib/owned.sh' -- '*.sh' 2>/dev/null | grep -v -e '^.github/scripts/lib/owned.sh$' -e '^.github/scripts/lib/owned.test.sh$')"
@@ -952,9 +960,113 @@ EOF
   eq "F9 with no seam the helper writes nothing" "$(lines_of "$CTL/tf9b.err")" 0
 }
 
+# --- G2 a token that cannot be had makes nothing, whatever the reason; the cache holds only a success ---
+tg2() {
+  case_root tg2
+  child tg2a << 'EOF'
+. "$T_OWNED_SH"
+# the Windows branch on any OS, with no node on PATH: owned_token must fail and leave OWNED_TOKEN empty
+OWNED_UNAME=MINGW64_NT-10.0
+PATH=/nonexistent-path-of-the-test
+d=UNTOUCHED
+owned_token 2> "$T_CTL/tg2a.msg"; echo "$?" > "$T_CTL/tg2a.rc1"
+echo "[$OWNED_TOKEN]" > "$T_CTL/tg2a.tok"
+owned_dir d x 2> /dev/null; echo "$?" > "$T_CTL/tg2a.rc2"
+echo "$d" > "$T_CTL/tg2a.d"
+EOF
+  run_child tg2a
+  eq "G2 a failed token: owned_token returns 1" "$(first_line "$CTL/tg2a.rc1")" 1
+  eq "G2 a failed token: OWNED_TOKEN is empty" "$(first_line "$CTL/tg2a.tok")" "[]"
+  eq "G2 a failed token: owned_dir returns 1" "$(first_line "$CTL/tg2a.rc2")" 1
+  eq "G2 a failed token: the variable is untouched" "$(first_line "$CTL/tg2a.d")" UNTOUCHED
+  eq "G2 a failed token: nothing is made" "$(count "$CR")" 0
+  child tg2b << 'EOF'
+. "$T_OWNED_SH"
+# a token function that says "ok" and leaves the token empty (whatever the reason): owned_dir must still refuse
+owned_token() { OWNED_UNAME=Linux; return 0; }
+d=UNTOUCHED
+owned_dir d x 2> /dev/null; echo "$?" > "$T_CTL/tg2b.rc"
+echo "$d" > "$T_CTL/tg2b.d"
+EOF
+  run_child tg2b
+  eq "G2 an empty token after a successful call: owned_dir returns 1" "$(first_line "$CTL/tg2b.rc")" 1
+  eq "G2 an empty token: the variable is untouched" "$(first_line "$CTL/tg2b.d")" UNTOUCHED
+  eq "G2 an empty token: no testsToDelete--creds- entry is made" "$(count "$CR")" 0
+  child tg2c << 'EOF'
+. "$T_OWNED_SH"
+owned_token > "$T_CTL/tg2c.first"
+# the environment changes after a success: the cached value is the script's constant, it is never recomputed, never stale-empty
+OWNED_UNAME=MINGW64_NT-10.0
+PATH=/nonexistent-path-of-the-test
+owned_token > "$T_CTL/tg2c.second"; echo "$?" > "$T_CTL/tg2c.rc"
+EOF
+  run_child tg2c
+  eq "G2 after a success the second call returns 0" "$(first_line "$CTL/tg2c.rc")" 0
+  eq "G2 after a success the second call gives the cached value" "$(first_line "$CTL/tg2c.second")" "$(first_line "$CTL/tg2c.first")"
+}
+
+# --- G3 a caller's variable named like an internal one of owned_dir is still the caller's ---
+tg3() {
+  case_root tg3
+  child tg3 << 'EOF'
+. "$T_OWNED_SH"
+for name in dir var what root i rc draws re_var; do
+  unset "$name"
+  owned_dir "$name" x || echo "failed $name" >> "$T_CTL/tg3.res"
+  printf '%s=%s\n' "$name" "${!name-UNSET}" >> "$T_CTL/tg3.res"
+done
+EOF
+  rm -f "$CTL/tg3.res"
+  run_child tg3
+  local name val
+  for name in dir var what root i rc draws re_var; do
+    val="$(grep "^$name=" "$CTL/tg3.res" | head -n 1)"
+    case "$val" in "$name=$CR/testsToDelete-$TOK-creds-x-"*) ok "G3 owned_dir $name x sets the caller's $name" ;; *) bad "G3 owned_dir $name x" "got [$val]" ;; esac
+  done
+}
+
+# --- G4 a minimal /proc: no start and no ns, never an error (the seam OWNED_PROC names the /proc root) ---
+tg4() {
+  if [ "$osclass" != linux ]; then skipped "G4" "Linux only (the start and the namespace are written on Linux only)"; return 0; fi
+  case_root tg4
+  child tg4 << 'EOF'
+. "$T_OWNED_SH"
+FP="$T_CTL/fakeproc-$FP_NAME"
+mkdir -p "$FP/$$" "$FP/self/ns"
+printf '%s\n' "$$ ($FP_COMM) $FP_REST" > "$FP/$$/stat"
+if [ -n "$FP_BTIME" ]; then printf 'cpu 1 2\nbtime %s\nprocesses 5\n' "$FP_BTIME" > "$FP/stat"; else printf 'cpu 1 2\n' > "$FP/stat"; fi
+if [ -z "$FP_NO_NS" ]; then ln -s 'pid:[4242]' "$FP/self/ns/pid"; fi
+OWNED_PROC="$FP"
+owned_dir d x || exit 1
+cp "$d.owner" "$T_CTL/tg4-$FP_NAME.claim"
+EOF
+  local good='S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 250' tick line re_end n
+  tick="$(getconf CLK_TCK)"
+  # name | btime | rest of the stat line after the command | no-ns
+  local cases="nobtime||$good|
+badbtime|x1|$good|
+badfield|1000|S 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 abc|
+shortstat|1000|S 0 0|
+nons|1000|$good|1
+good|1000|$good|"
+  local c_name c_btime c_rest c_nons
+  while IFS='|' read -r c_name c_btime c_rest c_nons; do
+    run_child tg4 FP_NAME="$c_name" FP_BTIME="$c_btime" FP_REST="$c_rest" FP_NO_NS="$c_nons" FP_COMM="a b) c"
+    eq "G4 $c_name: the child exits 0" "$CH_RC" 0
+    line="$(first_line "$CTL/tg4-$c_name.claim")"
+    if [ "$c_name" = good ]; then
+      eq "G4 $c_name: the start is btime + field 22 / CLK_TCK, the ns is the link's (a command name with ') ')" "${line#*@linux:*:}" "$((1000 + 250 / tick)):4242"
+    else
+      [[ "$line" =~ ^[uw][0-9]{1,10}:[^@:[:space:]]+@linux:[1-9][0-9]*$ ]] && ok "G4 $c_name: the record ends after the pid ($line)" || bad "G4 $c_name" "record: $line"
+    fi
+    n="$(grep -ciE 'arithmetic|syntax error|too great|bad substitution|unbound' "$CTL/tg4.err")"
+    eq "G4 $c_name: no shell error on stderr" "$n" 0
+  done <<< "$cases"
+}
+
 # --- run ----------------------------------------------------------------------------------------------------------------------
 t1; t2; t4; t5; t6; t7a; t7b; t7c; t7d; t8; t9; t9b; t10; t11; t12; t13; t15; t16; t18; t19; t20
-tf1; tf2; tf4; tf5; tf6; tf9
+tf1; tf2; tf4; tf5; tf6; tf9; tg2; tg3; tg4
 
 echo "owned.test.sh: $PASS passed, $FAILN failed"
 if [ "$FAILN" -gt 0 ]; then exit 1; fi
