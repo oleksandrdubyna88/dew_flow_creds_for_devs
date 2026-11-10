@@ -140,11 +140,16 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          # shellcheck disable=SC2086 -- SMOKE_ID is 8 hex digits; the guard reads a remover's names only when they are unquoted
+          # SMOKE_ID is 8 hex digits and the guard reads a remover's names only when they are unquoted, so each of the four
+          # removals carries the directive: actionlint puts `set -eo pipefail` first, and a directive reaches ONE command.
           [ -n "${SMOKE_ID:-}" ] || { echo "no smoke id: nothing was named, nothing to remove"; exit 0; }
+          # shellcheck disable=SC2086 # unquoted on purpose: SMOKE_ID is 8 hex digits
           docker rm -f -v testsToDelete-u1001-creds-cv-${SMOKE_ID} || true
+          # shellcheck disable=SC2086 # unquoted on purpose: SMOKE_ID is 8 hex digits
           docker rm -f -v testsToDelete-u1001-creds-refused-${SMOKE_ID} || true
+          # shellcheck disable=SC2086 # unquoted on purpose: SMOKE_ID is 8 hex digits
           docker volume rm testsToDelete-u1001-creds-refused-data-${SMOKE_ID} || true
+          # shellcheck disable=SC2086 # unquoted on purpose: SMOKE_ID is 8 hex digits
           docker volume rm testsToDelete-u1001-creds-refused-logs-${SMOKE_ID} || true
           echo "left after removal:"
           docker ps -a --filter label=testsToDelete.owner --format '{{.Names}}' || true
