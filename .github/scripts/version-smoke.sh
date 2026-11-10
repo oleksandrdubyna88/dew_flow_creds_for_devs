@@ -70,7 +70,7 @@ case "$kind" in
     # is running it: the scratch is an owned folder of owned.sh, removed on every exit; `owned.sh` is read on this branch
     # only, so the release jobs gain no dependency. A person who wants the log after a failed run passes a root.
     if [[ -n "$root" ]]; then
-      dir="$(cd "$root" && (pwd -W 2> /dev/null || pwd))/creds-version-smoke-$$"
+      dir="$(cd "$root" && (pwd -W 2> /dev/null || pwd))/version-smoke-log-$$"
       mkdir -p "$dir"
     else
       # shellcheck source-path=SCRIPTDIR
