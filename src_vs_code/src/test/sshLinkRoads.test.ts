@@ -6,7 +6,7 @@ import { terminalRunAction } from '../agentUseActions';
 import { planDependencyRun, StepRefusal } from '../dependencyRun';
 import { FolderFacts, planFolderRun } from '../folderRun';
 import { osMismatch } from '../hostShell';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
 import { CommandArg, EntityMetadata, TreeNode } from '../types';
 import { arrowWorld, vaultOf } from './arrowWorld';
 import { L, folderWorld, named, session } from './folderWorld';
@@ -28,19 +28,26 @@ const LINKED: EntityMetadata = { id: 'e1', name: 'deploy', isSshEnabled: false, 
 
 const RUN_THIS = /Run this command/;
 
-test('the_arrow_refuses_a_linked_entry_before_any_question_even_when_trusted', async () => {
+/** E2.S1: the arrow and Copy Command have a road; `s1` is not in these worlds, so a linked entry says `sshLinkOf`'s missing-entry sentence. */
+const MISSING = (e: EntityMetadata): string => {
+  const link = sshLinkOf(e, () => undefined);
+  assert.equal(link.kind, 'refused');
+  return (link as { reason: string }).reason;
+};
+
+test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_any_question_even_when_trusted', async () => {
   const aw = arrowWorld({}, [['e1', 'echo linked']]);
   await aw.run({ ...LINKED, runDependencies: true, dependsOn: ['dep'] });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)]);
   assert.deepEqual(aw.terminals, []);
 });
 
 // W1b: the stored line is NOT trusted. A refusal that came after the trust question would show the modal first,
 // so only an untrusted world can see "refused before any question" (the trusted W1 cannot: no modal is asked there).
-test('the_arrow_refuses_a_linked_entry_before_the_trust_question_when_the_line_is_not_trusted', async () => {
+test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_trust_question_when_the_line_is_not_trusted', async () => {
   const aw = arrowWorld({}, []);
   await aw.run({ ...LINKED, runDependencies: true, dependsOn: ['dep'] });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')], 'the sentence is the only thing shown');
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)], 'the sentence is the only thing shown');
   assert.deepEqual(aw.warnings.filter((t) => RUN_THIS.test(t)), [], 'no trust modal');
   assert.deepEqual(aw.terminals, []);
 });
@@ -68,7 +75,7 @@ test('run_with_secrets_refuses_a_linked_entry_before_the_trust_question_and_read
 
 // ---- the folder run -------------------------------------------------------------------------------------------
 
-const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false };
+const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false, lookup: () => undefined };
 const ARGS: CommandArg[] = [{ value: '-t {name}' }];
 
 function term(name: string, command = 'tmux attach', args: CommandArg[] | undefined = ARGS, extra: Partial<EntityMetadata> = {}): TreeNode {
@@ -76,6 +83,7 @@ function term(name: string, command = 'tmux attach', args: CommandArg[] | undefi
   return { id: details.id, name, type: 'entity', details };
 }
 
+// E2.S2: the folder has a road for a linked row; here its SSH entry is not in the vault, so the row says `sshLinkOf`'s missing-entry sentence.
 test('the_folder_plan_does_not_run_a_linked_row', () => {
   const plan = planFolderRun([term('a'), term('b', 'tmux attach', ARGS, { sshEntityId: 's1' })], FACTS);
   const rows = (plan as unknown as { rows: { kind: string; name: string; reason?: string }[] }).rows;
@@ -83,7 +91,7 @@ test('the_folder_plan_does_not_run_a_linked_row', () => {
   const b = rows.find((r) => r.name === 'b');
   assert.equal(a?.kind, 'run');
   assert.equal(b?.kind, 'notRun');
-  assert.equal(b?.reason, SENTENCE('b'));
+  assert.equal(b?.reason, MISSING(term('b', 'tmux attach', ARGS, { sshEntityId: 's1' }).details as EntityMetadata));
 });
 
 test('a_folder_run_types_the_other_rows_and_reports_the_linked_one', async () => {
@@ -91,7 +99,7 @@ test('a_folder_run_types_the_other_rows_and_reports_the_linked_one', async () =>
   await w.click();
   assert.deepEqual(named(w, 'a').map((t) => t.sent), [[L('a')]]);
   assert.deepEqual(named(w, 'b'), []);
-  assert.ok(w.infos.concat(w.warnings).join('\n').includes(SENTENCE('b').replace(/\.$/u, '')), w.infos.concat(w.warnings).join('\n'));
+  assert.ok(w.infos.concat(w.warnings).join('\n').includes(MISSING({ ...session('b'), sshEntityId: 's1' }).replace(/\.$/u, '')), w.infos.concat(w.warnings).join('\n'));
 });
 
 // ---- a dependency chain, a launcher ----------------------------------------------------------------------------
@@ -202,12 +210,12 @@ function copyWorld() {
   return { warnings, infos, copied, copy };
 }
 
-test('copy_command_copies_nothing_for_a_linked_entry', async () => {
+test('copy_command_copies_nothing_for_a_linked_entry_whose_ssh_entry_is_missing', async () => {
   const h = copyWorld();
   await h.copy({ id: 'e1', name: 'deploy', type: 'entity', details: LINKED });
   assert.deepEqual(h.copied, []);
   assert.deepEqual(h.infos, []);
-  assert.deepEqual(h.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(h.warnings, [MISSING(LINKED)]);
 });
 
 test('an_unlinked_entry_runs_as_before', async () => {

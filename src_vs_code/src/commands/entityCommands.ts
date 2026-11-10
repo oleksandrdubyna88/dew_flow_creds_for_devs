@@ -6,7 +6,8 @@ import { asElement } from '../commandTargets';
 import * as vscode from 'vscode';
 import { nodeAt } from '../entityViewerCommands';
 import { CommandEntry, commandRefusal, describeCommand, shownCommandLine } from '../commandLine';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { CopiedLine, NodeLookup, copiedLineOf } from '../remoteLaunch';
+import type { SshRoad } from '../sshRoad';
 import { openEntityViewer } from '../entityViewerCommands';
 import { copySecret } from '../secretClipboard';
 import { copiedMessage } from '../secretClipboard';
@@ -37,6 +38,8 @@ export interface EntityCommandsHost {
   /** Only the presence ping: what the commands of this file ask of the vault's keys. */
   readonly vaultKeys: Pick<VaultKeys, 'noteUserActivity'>;
   readonly trust: TrustStore;
+  /** The person's road host: what lets Start run a launcher linked to an SSH entry (E2.S1). Optional: a test host needs none; absent keeps E1's refusal of a linked launcher. */
+  readonly sshRoad?: SshRoad;
 }
 
 /**
@@ -178,7 +181,7 @@ async function copyTotpCode(host: EntityCommandsHost, target: unknown): Promise<
  * tunnel. Each file written from a protected value says it is outside the PIN (`outsidePinNote`).
  */
 function registerFiles(host: EntityCommandsHost): void {
-  const { register, storage, storageDir, vaultKeys, trust } = host;
+  const { register, storage, storageDir, vaultKeys, trust, sshRoad } = host;
   register('credSshManager.installSshKey', (target) => installSshKey(host, target));
   register('credSshManager.removeInstalledKey', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -197,8 +200,9 @@ function registerFiles(host: EntityCommandsHost): void {
   });
   // Start and Stop side by side (Stop used to live in extension.ts). `trust` is the per-line record
   // a launcher's command and a dependency chain are confirmed against (issue #103). No start gate: the
-  // person clicked, and no client's departure can cancel what they asked for (E4.S3).
-  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, undefined));
+  // person clicked, and no client's departure can cancel what they asked for (E4.S3). `sshRoad` is the person's road host: a launcher
+  // linked to an SSH entry runs only from here (E2.S1).
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, undefined, undefined, undefined, sshRoad));
   register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, undefined));
 }
 
@@ -220,16 +224,26 @@ async function installSshKey(host: EntityCommandsHost, target: unknown): Promise
 
 /**
  * Copy Command: the resolved line; for a refused name the template, and it says so. An entry set to run over SSH
- * (E1.S1 of `PLAN_terminal_command_over_ssh.md`) copies nothing: the line would run on the wrong machine.
+ * (E2.S1 of `PLAN_terminal_command_over_ssh.md`) copies the TRUST line, `ssh … -- user@host '<line>'`, and says what it is
+ * (`COPY_NOTE`): it uses the person's own ssh setup, not the vault's key. A broken link or a bad plan copies nothing.
  */
-async function copyCommandLine(node: TreeNode): Promise<void> {
+async function copyCommandLine(node: TreeNode, lookup: NodeLookup): Promise<void> {
   const entry = node.details ?? { id: node.id, name: node.name };
-  const linked = sshLinkRefusal(entry);
-  if (linked !== undefined) {
-    void vscode.window.showWarningMessage(linked);
-    return;
+  await copyLine(node.name, entry, copiedLineOf(entry, lookup));
+}
+
+async function copyLine(name: string, entry: CommandEntry, copy: CopiedLine): Promise<void> {
+  switch (copy.kind) {
+    case 'local':
+      return copyLocalLine(name, entry);
+    case 'refused':
+      void vscode.window.showWarningMessage(copy.reason);
+      return;
+    case 'linked':
+      await vscode.env.clipboard.writeText(copy.line);
+      void vscode.window.showInformationMessage(`Copied: ${copy.line} — ${copy.note}`);
+      return;
   }
-  await copyLocalLine(node.name, entry);
 }
 
 async function copyLocalLine(name: string, entry: CommandEntry): Promise<void> {
@@ -263,7 +277,7 @@ function registerCommandLines(host: EntityCommandsHost): void {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
     if (element?.kind === 'node') {
-      await copyCommandLine(element.node);
+      await copyCommandLine(element.node, (id) => storage.getNode(element.accountId, id));
     }
   });
 

@@ -1,9 +1,9 @@
 import { EntityMetadata, TreeNode } from './types';
-import { resolveCommand } from './commandLine';
+import { commandRefusal, resolveCommand } from './commandLine';
 import { resolveKind } from './entityKind';
 import { HostShell, asOsName, isWindowsPowerShell51, quoteFor } from './hostShell';
 import { SshCommandOptions, buildSshCommand, isSafeSshTarget, noHostSentence, portArgv, sshDestination, withAcceptNew } from './sshCommand';
-import { sshOptionArgv } from './sshOptions';
+import { resolveJumpChain, sshOptionArgv } from './sshOptions';
 import { isInTrash } from './trash';
 
 /**
@@ -112,13 +112,15 @@ export type LinkedEntry = Pick<EntityMetadata, 'id' | 'name' | 'sshEntityId'>;
  * The sentence every road says instead of running a linked entry (E1.S1, D8).
  *
  * <p>`undefined` means exactly one thing: THIS ENTRY HAS NO SSH LINK (row L1: `sshEntityId` is absent or empty). Any other
- * answer is the sentence, and that includes an entry that is linked to a valid, live SSH target: in E1 no road runs a
- * linked entry over SSH yet, so even a perfectly good link gets the sentence. The decision is made WITHOUT a lookup
+ * answer is the sentence, and that includes an entry that is linked to a valid, live SSH target: a road that calls this
+ * function does not run a linked entry over SSH, so even a perfectly good link gets the sentence. The decision is made WITHOUT a lookup
  * (`sshLinkOf` is asked with one that finds nothing), so it never depends on whether the target exists; "is this entry
  * linked" has ONE reader, and `undefined` is never "linked but fine".</p>
  *
- * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 and E3 replace each caller by
- * `planLaunch`, road by road.</p>
+ * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 replaced the person's roads by
+ * `planLaunch` (the arrow, the folder run, a VPN's Start on the person's click, a chain step with a road). It is still
+ * called by the roads that have no SSH road: Run with Secrets (until E3), the agent's run, an agent's VPN start, and a
+ * dependency chain with no road (`launchRoadScan.test.ts` lists the callers); a road that moves to `planLaunch` leaves that list.</p>
  */
 export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
   return sshLinkOf(entry, () => undefined).kind === 'none'
@@ -260,7 +262,7 @@ export type TypedLine =
   | { readonly kind: 'typed'; readonly line: string }
   | { readonly kind: 'refused'; readonly reason: string };
 
-type RemotePlan = Extract<LaunchPlan, { kind: 'remote' }>;
+export type RemotePlan = Extract<LaunchPlan, { kind: 'remote' }>;
 
 /** Windows PowerShell 5.1 wraps a native argument with a space in `"…"` and escapes no inner `"`: a known-wrong parse is refused. */
 function powerShell51Refusal(plan: RemotePlan, localShell: HostShell): string | undefined {
@@ -313,4 +315,55 @@ function exportLine(name: string, value: string): string {
 export function secretsStdin(env: Readonly<Record<string, string>>, line: string): string {
   const exports = Object.entries(env).map(([name, value]) => exportLine(name, value));
   return [...exports, '{', line, '', '} </dev/null', 'exit $?', ''].join('\n');
+}
+
+// ---- the copies (E2.S1) -----------------------------------------------------------------------------------------------
+
+/**
+ * The trust line a person is SHOWN before any preparation (Copy Command, the viewer, Copy All, the folder's modal), from
+ * storage's read of the SSH entry and its jump chain: the same read `connectionOptions` makes. A road that prepares
+ * rebuilds it from the snapshot (`trustLineFor(ready.entity, ready.jump, …)`, E2-D5). A jump chain that cannot be
+ * resolved (a loop, a missing hop) is a refusal, as it is on every road.
+ */
+export function shownTrustLine(plan: RemotePlan, lookup: NodeLookup): { kind: 'shown'; line: string } | { kind: 'refused'; reason: string } {
+  const chain = resolveJumpChain(plan.ssh, (id) => lookup(id)?.details);
+  return chain.ok ? { kind: 'shown', line: trustLineFor(plan.ssh, chain.value, plan.line) } : { kind: 'refused', reason: chain.reason };
+}
+
+/** What every copy of a linked line says beside it (parent §4.4 "Copy Command / viewer"). */
+export const COPY_NOTE = "This line uses your own ssh setup (agent, ~/.ssh/config); the vault's key and password are not in it — use Run to connect with them.";
+
+/**
+ * What a copy shows for a Terminal entry: `local` (no link, or no command: the caller's own words), `linked` (the trust
+ * line from storage's read, and `COPY_NOTE`), or `refused` (why nothing is shown).
+ */
+export type CopiedLine =
+  | { readonly kind: 'local' }
+  | { readonly kind: 'linked'; readonly line: string; readonly note: string }
+  | { readonly kind: 'refused'; readonly reason: string };
+
+/** The ONE reader of "what do the copies of this entry show": Copy Command, the viewer's row and copy, and Copy All. */
+export function copiedLineOf(entry: LaunchEntry, lookup: NodeLookup): CopiedLine {
+  const link = sshLinkOf(entry, lookup);
+  return link.kind === 'none' ? { kind: 'local' } : copyOfPlan(entry, planLaunch(entry, link, { stayOpen: false }), lookup);
+}
+
+function copyOfPlan(entry: LaunchEntry, plan: LaunchPlan, lookup: NodeLookup): CopiedLine {
+  switch (plan.kind) {
+    case 'remote':
+      return copyOfTrustLine(shownTrustLine(plan, lookup));
+    case 'refused':
+      return { kind: 'refused', reason: refusedCopyReason(entry, plan.reason) };
+    default:
+      return { kind: 'local' };
+  }
+}
+
+function copyOfTrustLine(shown: ReturnType<typeof shownTrustLine>): CopiedLine {
+  return shown.kind === 'shown' ? { kind: 'linked', line: shown.line, note: COPY_NOTE } : { kind: 'refused', reason: shown.reason };
+}
+
+/** A `{name}` refusal reads as the arrow says it (`runCommands.ts`); every other reason is `planLaunch`'s own sentence. */
+function refusedCopyReason(entry: LaunchEntry, reason: string): string {
+  return reason === commandRefusal(entry) ? `"${entry.name}" will not run: ${reason}` : reason;
 }

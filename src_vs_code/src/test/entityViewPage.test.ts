@@ -7,6 +7,7 @@ import {
   renderEntityViewHtml,
 } from '../entityViewPage';
 import { cliCommandFor } from '../cliCommandText';
+import { copiedLineOf } from '../remoteLaunch';
 import { EntityMetadata } from '../types';
 import { NAME_REFUSAL } from '../commandName';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from '../webviewHtml';
@@ -36,6 +37,8 @@ function metadata(overrides: Partial<EntityMetadata> = {}): EntityMetadata {
 function options(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
   return {
     details: metadata(),
+    /** The caller always reads it with storage; an entry with no link reads as `local`. */
+    sshCopy: copiedLineOf(overrides.details ?? metadata(), () => undefined),
     hasPassword: false,
     hasPrivateKey: false,
     hasVpnConfig: false,

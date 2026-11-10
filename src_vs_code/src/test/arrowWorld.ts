@@ -25,6 +25,10 @@ export interface ArrowWorld extends World {
   subscriptions: unknown[];
   /** Invoke the green arrow's handler on version `index` of `entry`, as a click on a history row does. */
   runRevision(entry: EntityMetadata, revision: { name: string; details: EntityMetadata }, index?: number): Promise<void>;
+  /** What storage holds, by node id: a test REPLACES a node here to model a sync that wrote a new record (E2.S1 N1). */
+  nodes: Record<string, unknown>;
+  /** How many times storage's `getNode` was called with `id`, from the start of the world. */
+  reads(id: string): number;
 }
 
 export type Handler = (target: unknown) => Promise<void>;
@@ -44,6 +48,21 @@ export interface RunWorldHost {
   onActivity?: () => void;
   /** Where scripts are written; a test that runs one gives an owned directory. Default `/storage`. */
   storageDir?: string;
+  /** The person's road host (`SshRoad`) `registerRunCommands` is given. Default `NO_ROAD`: a test that reaches it fails loudly. */
+  sshRoad?: unknown;
+}
+
+/** The road host of a world that has none: reaching it is the test's failure, not a silent pass. */
+const NO_ROAD = {
+  prepare: (): Promise<never> => Promise.reject(new Error('this world has no SSH road')),
+  sayRefused: (): Promise<never> => Promise.reject(new Error('this world has no SSH road')),
+};
+
+const roadOf = (host: RunWorldHost): unknown => host.sshRoad ?? NO_ROAD;
+
+/** The nodes storage holds from the start, by id. */
+function seededNodes(others: readonly TreeNode[] | undefined): Record<string, unknown> {
+  return Object.fromEntries((others ?? []).map((other) => [other.id, other]));
 }
 
 /**
@@ -65,6 +84,7 @@ export function registerRunWorld(w: World, host: RunWorldHost): Record<string, H
     storage: host.storage,
     storageDir: host.storageDir ?? '/storage',
     vaultKeys: { noteUserActivity: () => host.onActivity?.() },
+    sshRoad: roadOf(host),
   });
   return handlers;
 }
@@ -77,6 +97,10 @@ export interface ArrowOptions extends WorldOptions {
   elementParentId?: string;
   /** Where a script run writes its file. */
   storageDir?: string;
+  /** The person's road host (`SshRoad`), as `registerRunCommands` receives it. */
+  sshRoad?: unknown;
+  /** Other nodes storage holds from the start (an SSH entry, a dependency): seeded once, by id. */
+  others?: TreeNode[];
 }
 
 /** The tree element a click hands over: the node as the menu drew it, its `parentId` possibly old. */
@@ -94,16 +118,24 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
   const masked: ArrowWorld['masked'] = [];
   const store = memoryTrust();
   seedTrusted(store, trusted);
-  const nodes: Record<string, unknown> = {};
+  const nodes = seededNodes(opts.others);
+  const readsOf: Record<string, number> = {};
   const history: { name: string; details: EntityMetadata }[] = [];
   const subscriptions: unknown[] = [];
   const handlers = registerRunWorld(w, {
     store,
-    storage: { getNode: (_account: string, id: string) => nodes[id], getHistory: () => Promise.resolve(history) },
+    storage: {
+      getNode: (_account: string, id: string) => {
+        readsOf[id] = (readsOf[id] ?? 0) + 1;
+        return nodes[id];
+      },
+      getHistory: () => Promise.resolve(history),
+    },
     mocks: { '../maskedTerminal': { runInMaskedTerminal: (o: { name: string; commandLine: string; env: Record<string, string> }) => void masked.push(o) } },
     refSource,
     subscriptions,
     storageDir: opts.storageDir,
+    sshRoad: opts.sshRoad,
   });
   /** Storage holds the entry (and its folder) as the tree has them NOW. */
   const seed = (entry: EntityMetadata, nodeName: string): void => {
@@ -121,7 +153,7 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
     history[index] = revision;
     return handlers['credSshManager.runCommand']({ kind: 'revision', accountId: 'a1', index, node: { id: entry.id, name: entry.name, details: entry } });
   };
-  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision };
+  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision, nodes, reads: (id) => readsOf[id] ?? 0 };
 }
 
 /** A vault of one account `me` holding the entities named, each with the one password: the `refSource` of `arrowWorld`, and the ids it was asked to read. */

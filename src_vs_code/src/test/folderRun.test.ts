@@ -33,7 +33,7 @@ import { CommandArg, EntityMetadata, TreeNode } from '../types';
  * The pure half of the folder run. Importing `../folderRun` directly, with no `vscode` stub, is the proof that it holds none.
  */
 
-const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false };
+const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false, lookup: () => undefined };
 
 const ARGS: CommandArg[] = [{ value: '-t {name}' }];
 
@@ -347,7 +347,7 @@ test('a_refused_name_comes_before_the_control_character_reason', () => {
 });
 
 test('the_control_character_reason_comes_before_config_the_shell_open_and_a_duplicate', () => {
-  const facts: FolderFacts = { shellRefusal: () => 'not this window', isOpen: () => true };
+  const facts: FolderFacts = { shellRefusal: () => 'not this window', isOpen: () => true, lookup: () => undefined };
   const plan = planFolderRun(
     [term('a\nb', 'openvpn {config}', [], { id: '1' }), term('c\nd', 'ls', [], { id: '2' }), term('e\nf', 'ls', [], { id: '3' }), term('e\nf', 'ls', [], { id: '4' })],
     facts,

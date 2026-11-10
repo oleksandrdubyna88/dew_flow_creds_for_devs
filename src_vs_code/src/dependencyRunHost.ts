@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
 import { TrustStore, isCommandTrusted, trustCommand } from './commandTrust';
-import { RunStep, StepVerdict, describeRunPlan, planDependencyRun, stepVerdict } from './dependencyRun';
+import { RunPlan, RunStep, StepVerdict, changedStepRefusal, describeRunPlan, passwordStepRefusal, planDependencyRun, stepVerdict } from './dependencyRun';
 import { ShellContext, entryShell } from './hostShell';
-import { pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
+import { composedShellPath, pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
+import { NodeLookup, RemotePlan, shownTrustLine } from './remoteLaunch';
+import { OwnedSessions, SshRoad, linkedNow, ownedSessions, recheckedLine } from './sshRoad';
+import type { ReadySsh } from './sshSession';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
 import { endedAfter, requestGone, untilGone } from './requestLife';
@@ -48,10 +51,20 @@ export interface DependencyRunRequest {
   readonly lateAnswer?: (what: string) => void;
   /** The broker's seam that makes a standing *Continue* question hold the one dialog place until it settles (F1). */
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
+  /**
+   * The person's SSH road, for a step linked to an SSH entry (E2.S3). Only the person's roads set it (E2-D2); absent, a
+   * linked step refuses the whole chain with E1's sentence (an agent's start).
+   */
+  readonly ssh?: { readonly road: SshRoad; readonly accountId: string; readonly lookup: NodeLookup };
 }
 
 /** What the chain's questions need of the request: its life, and the broker's two seams for a question that outlives it. */
 type QuestionRequest = Pick<DependencyRunRequest, 'startGate' | 'lateAnswer' | 'standingPrompt'>;
+
+/** A running chain: its questions' seams, and each linked step's own session, cleaned when THAT step ends (E2.S3). */
+interface RunContext extends QuestionRequest {
+  readonly sessions: ReadonlyMap<string, ReadySsh>;
+}
 
 /** What a storage lookup must answer for a chain — `getNode` of this account. */
 export interface NodeSource {
@@ -71,6 +84,11 @@ export function dependencyRequest(
   exclude?: ReadonlySet<string>,
 ): DependencyRunRequest {
   return { roots, nodeOf: (id) => liveDetails(source, accountId, id), exclude, ownerName, trust };
+}
+
+/** `request` with the person's SSH road: a step linked to an SSH entry runs over it (E2.S3). */
+export function withSshSteps(request: DependencyRunRequest, road: SshRoad, accountId: string, source: NodeSource): DependencyRunRequest {
+  return { ...request, ssh: { road, accountId, lookup: (id) => source.getNode(accountId, id) } };
 }
 
 /** An entry's record — `undefined` when it is gone OR in the Trash: neither may run anything. */
@@ -97,8 +115,40 @@ export async function runDependenciesFirst(request: DependencyRunRequest): Promi
     return NOTHING_RAN;
   }
   const ctx = shellContext();
-  const plan = planDependencyRun(request.roots, request.nodeOf, (name, os) => refusalIn(ctx, name, os), request.exclude);
+  const plan = shownPlan(request, ctx);
   return plan.ok ? approveAndRun(request, plan.steps, plan.missing, chainIsPinned(ctx, plan.steps)) : refused(plan.reason);
+}
+
+/**
+ * The chain's plan with each linked step shown by its trust line: what the modal says and the approval is keyed on. A step
+ * is linked only when the plan was made with the road's lookup (`planDependencyRun`), so a request with no road has none.
+ */
+function shownPlan(request: DependencyRunRequest, ctx: ShellContext): RunPlan {
+  const lookup = request.ssh?.lookup;
+  const plan = planDependencyRun(request.roots, request.nodeOf, (name, os) => refusalIn(ctx, name, os), request.exclude, lookup);
+  return plan.ok && lookup !== undefined ? withShownLines(plan, lookup) : plan;
+}
+
+function withShownLines(plan: Extract<RunPlan, { ok: true }>, lookup: NodeLookup): RunPlan {
+  const shown = shownSteps(plan.steps, lookup);
+  return shown.ok ? { ok: true, steps: shown.steps, missing: plan.missing } : shown;
+}
+
+/**
+ * The steps as the modal shows them (E2.A A2): a linked step's `line` is its trust line from storage's read of the SSH
+ * entry and its jump chain (`shownTrustLine`), with NO preparation — no PIN, no host-key question, no key file before the
+ * person has agreed. The plan's `remote.line` stays the person's own line.
+ */
+function shownSteps(steps: readonly RunStep[], lookup: NodeLookup): { ok: true; steps: RunStep[] } | { ok: false; reason: string } {
+  const shown: RunStep[] = [];
+  for (const step of steps) {
+    const line = step.remote === undefined ? { kind: 'shown' as const, line: step.line } : shownTrustLine(step.remote, lookup);
+    if (line.kind === 'refused') {
+      return { ok: false, reason: line.reason };
+    }
+    shown.push({ ...step, line: line.line });
+  }
+  return { ok: true, steps: shown };
 }
 
 /**
@@ -117,10 +167,102 @@ export const NO_CHAIN: ChainEnd = { ready: true, typed: false };
 
 const NOTHING_RAN: ChainEnd = { ready: false, typed: false };
 
-/** The modal, then — if the request it serves is still there — the steps. */
+/** The modal, then — if the request it serves is still there — the preparation of the linked steps and the steps. */
 async function approveAndRun(request: DependencyRunRequest, steps: readonly RunStep[], missing: readonly string[], pinned: boolean): Promise<ChainEnd> {
   const approved = await approve(request, steps, missing, pinned);
-  return approved && !requestGone(request.startGate) ? runSteps(request, steps, pinned) : NOTHING_RAN;
+  return approved && !requestGone(request.startGate) ? prepareAndRun(request, steps, pinned) : NOTHING_RAN;
+}
+
+/** What the chain prepared: the one owner of every session (made before the first `prepare`), and each step's own session. */
+interface Sessions {
+  readonly owner: OwnedSessions;
+  readonly byStep: Map<string, ReadySsh>;
+}
+
+/** A step ready to run: `line` is what the person approved, `typed` what the shell is handed (the same text for a local step). */
+interface ChainStep extends RunStep {
+  readonly typed: string;
+}
+
+/**
+ * The chain's ONE OWNER of the prepared sessions (E2.A A4, `ownedSessions`). The list exists before the first `prepare` and the
+ * `finally` cleans all of it — a throw in a later preparation, a refused step, a closed terminal, a stop, a thrown request end.
+ * Each step's own session is also cleaned when THAT step ends (`runAll`); `cleanup()` is idempotent.
+ */
+async function prepareAndRun(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<ChainEnd> {
+  const sessions: Sessions = { owner: ownedSessions(), byStep: new Map() };
+  try {
+    const ready = await prepareSteps(request, steps, sessions);
+    return ready === undefined || requestGone(request.startGate) ? NOTHING_RAN : await runSteps(request, ready, pinned, sessions);
+  } finally {
+    sessions.owner.cleanAll();
+  }
+}
+
+/**
+ * Every linked step prepared IN STEP ORDER, one after another (each may ask the person's PIN or host key), before any step
+ * runs. `undefined`: the chain stops AT THE FIRST step that cannot run — a stop, a refusal, a changed line, a password
+ * session — so no later step is prepared (no PIN or host-key question, no files), and what was said was said (a stop is quiet).
+ */
+async function prepareSteps(request: DependencyRunRequest, steps: readonly RunStep[], sessions: Sessions): Promise<ChainStep[] | undefined> {
+  const ready: ChainStep[] = [];
+  for (const step of steps) {
+    const next = step.remote === undefined ? { ...step, typed: step.line } : await prepareStep(roadOf(request), request, step, step.remote, sessions);
+    if (next === undefined) {
+      return undefined;
+    }
+    ready.push(next);
+  }
+  return ready;
+}
+
+/** The person's SSH road, as the request carries it. */
+type SshSteps = NonNullable<DependencyRunRequest['ssh']>;
+
+/** A step with a `remote` was planned with the road's lookup, so the request has its road: the only reader of "no road" on a linked step. */
+function roadOf(request: DependencyRunRequest): SshSteps {
+  if (request.ssh === undefined) {
+    throw new Error('a linked step was planned without the road that plans it (planDependencyRun refuses it)');
+  }
+  return request.ssh;
+}
+
+/**
+ * One linked step: its link is read again NOW, by the Terminal entry as storage holds it (`liveDetails` through `nodeOf`:
+ * gone or trashed reads as "changed") and the SSH entry as it is now (`linkedNow`, the read the folder run shares), then the
+ * session is prepared. `stopped` is quiet; `refused` shows SSH Connect's remedy with no retry. A prepared session joins the
+ * owner's list at once, so a refusal below finds it there.
+ */
+async function prepareStep(ssh: SshSteps, request: DependencyRunRequest, step: RunStep, remote: RemotePlan, sessions: Sessions): Promise<ChainStep | undefined> {
+  const link = linkedNow(request.nodeOf(step.id), ssh.lookup, changedStepRefusal(step.name));
+  if (typeof link === 'string') {
+    refuse(link);
+    return undefined;
+  }
+  const answer = await ssh.road.prepare(ssh.accountId, link.ssh);
+  if (answer.kind === 'refused') {
+    await ssh.road.sayRefused(answer, link.ssh);
+  }
+  if (answer.kind !== 'ready') {
+    return undefined;
+  }
+  sessions.owner.own(answer);
+  return checkedStep(step, remote, answer, sessions);
+}
+
+/**
+ * The step the prepared snapshot allows to run, or `undefined` having said why: the shown trust line rebuilt (else "changed
+ * while the dialog was open"), a password session refused (one terminal, one environment), then the typed line, which can
+ * refuse too (PowerShell 5.1) — `recheckedLine`, shared with the folder run. Its session is registered only when the step may run.
+ */
+function checkedStep(step: RunStep, remote: RemotePlan, ready: ReadySsh, sessions: Sessions): ChainStep | undefined {
+  const typed = recheckedLine(remote, ready, step.line, changedStepRefusal(step.name), passwordStepRefusal(step.name, remote.sshName));
+  if (typed.kind === 'refused') {
+    refuse(typed.reason);
+    return undefined;
+  }
+  sessions.byStep.set(step.id, ready);
+  return { ...step, typed: typed.line };
 }
 
 function refusalIn(ctx: ShellContext, name: string, terminalOs: string | undefined): string | undefined {
@@ -132,10 +274,11 @@ function refusalIn(ctx: ShellContext, name: string, terminalOs: string | undefin
  * One terminal for the whole chain: the default profile when every step would have run there on
  * its own (no OS recorded, or a default shell of the right system), the native shell otherwise —
  * and the modal then names that shell, so a step written for the default profile is not typed
- * into PowerShell without the person being told.
+ * into PowerShell without the person being told. A linked step is composed for the local shell, so in a local window it
+ * pins the chain (E2.S3).
  */
 function chainIsPinned(ctx: ShellContext, steps: readonly RunStep[]): boolean {
-  return steps.some((step) => entryShell(step.name, step.terminalOs, ctx).kind === 'pinned');
+  return steps.some((step) => (step.remote === undefined ? entryShell(step.name, step.terminalOs, ctx).kind === 'pinned' : composedShellPath() !== undefined));
 }
 
 /**
@@ -174,7 +317,7 @@ export async function trustAll(trust: TrustStore, steps: readonly { readonly id:
   return true;
 }
 
-async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<ChainEnd> {
+async function runSteps(request: DependencyRunRequest, steps: readonly ChainStep[], pinned: boolean, sessions: Sessions): Promise<ChainEnd> {
   if (steps.length === 0) {
     return NO_CHAIN;
   }
@@ -185,7 +328,7 @@ async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[]
   const integration = await shellIntegrationOf(opened.terminal);
   return integration === 'closed'
     ? refused(`The ${opened.shellName} terminal closed before it was ready, so nothing ran. That shell may not be reachable from this window.`)
-    : runAll(opened.terminal, integration, steps, request);
+    : runAll(opened.terminal, integration, steps, { ...request, sessions: sessions.byStep });
 }
 
 /** Said, and nothing ran. */
@@ -237,11 +380,12 @@ function shellIntegrationOf(terminal: vscode.Terminal): Promise<Integration | 'c
 }
 
 /** Each step in order; the first that does not end well stops the rest. */
-async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly RunStep[], request: QuestionRequest): Promise<ChainEnd> {
+async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly ChainStep[], request: RunContext): Promise<ChainEnd> {
   const { startGate } = request;
   let typed = false;
   for (const step of steps) {
     const end = await runStep(terminal, integration, step, request);
+    endSession(request, step);
     typed = typed || end.typed;
     if (!end.next) {
       return stopped(typed, startGate);
@@ -251,6 +395,11 @@ async function runAll(terminal: vscode.Terminal, integration: Integration, steps
     typedAndStillWanted(startGate);
   }
   return { ready: true, typed };
+}
+
+/** The step is over (its exit, the Continue answer, a close): its key and pin go now. `cleanup()` is idempotent. */
+function endSession(request: RunContext, step: ChainStep): void {
+  request.sessions.get(step.id)?.cleanup();
 }
 
 /**
@@ -289,7 +438,7 @@ function typedAndStillWanted(startGate: AbortSignal | undefined): void {
  * chain serves: a client gone during the step before — or while its Continue question sat open — gets
  * no further step, quietly (E4.S3).
  */
-async function runStep(terminal: vscode.Terminal, integration: Integration, step: RunStep, request: QuestionRequest): Promise<StepEnd> {
+async function runStep(terminal: vscode.Terminal, integration: Integration, step: ChainStep, request: QuestionRequest): Promise<StepEnd> {
   if (requestGone(request.startGate)) {
     return { next: false, typed: false };
   }
@@ -297,7 +446,7 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
     return { next: refuse(`The terminal was closed before "${step.name}" could run — nothing after it ran.`), typed: false };
   }
   if (integration === 'absent') {
-    terminal.sendText(step.line, true);
+    terminal.sendText(step.typed, true);
     return { next: await askToContinue(`CredsForDevs cannot tell when "${step.name}" finishes in this terminal (it reports no shell integration). Continue once it has finished successfully.`, request), typed: true };
   }
   return ran(terminal, integration, step, request);
@@ -307,8 +456,8 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
  * The step with shell integration. `'untyped'` (the gate had fired before the line was handed to the shell) is the same end as `runStep`'s own check:
  * nothing was typed, so the journal never claims a step. `'gone'` (it fired while the step ran) reads as no exit code, and `settle` then ends the call.
  */
-async function ran(terminal: vscode.Terminal, integration: vscode.TerminalShellIntegration, step: RunStep, request: QuestionRequest): Promise<StepEnd> {
-  const end = await executed(terminal, integration, step.line, request.startGate);
+async function ran(terminal: vscode.Terminal, integration: vscode.TerminalShellIntegration, step: ChainStep, request: QuestionRequest): Promise<StepEnd> {
+  const end = await executed(terminal, integration, step.typed, request.startGate);
   if (end === 'untyped') {
     return { next: false, typed: false };
   }

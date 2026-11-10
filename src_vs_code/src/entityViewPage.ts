@@ -7,8 +7,8 @@ import { describeMcpSource } from './viewerOptions';
 import { mcpBarHtml } from './mcpSwitches';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
-import { commandRefusal, commandRowLabel, normalizeArgs, shownCommandLine } from './commandLine';
-import { sshLinkRefusal } from './remoteLaunch';
+import { commandRowLabel, normalizeArgs } from './commandLine';
+import { CopiedLine, commandRowsOf } from './entityCommandRows';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { configCodePanel, highlightSnippet } from './configCodePanel';
 import {
@@ -99,6 +99,8 @@ export interface EntityViewOptions {
   jumpHostName?: string;
   /** The NAME of the SSH entry a Terminal entry runs over, resolved by the caller. */
   sshLinkName?: string;
+  /** What the command rows show for a Terminal entry, read by the caller with storage (E2.S1): the line, the trust line and its note, or why not. */
+  sshCopy: CopiedLine;
   /** `SHA256:…` of the pinned host key, the string a server prints about itself (audit B10). */
   hostKeyFingerprint?: string;
   /**
@@ -511,8 +513,9 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     row('Runs over SSH', 'sshLink', d.isTerminal ? options.sshLinkName : undefined),
     row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
     ...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),
-    row('Full command', 'fullCommand', d.isTerminal && sshLinkRefusal(d) === undefined ? shownCommandLine(d) : undefined),
-    row('Will not run', 'commandRefusal', d.isTerminal ? (sshLinkRefusal(d) ?? commandRefusal(d)) : undefined),
+    row('Full command', 'fullCommand', d.isTerminal ? commandRowsOf(d, options.sshCopy).full : undefined),
+    row('About this line', 'sshCopyNote', d.isTerminal ? commandRowsOf(d, options.sshCopy).note : undefined),
+    row('Will not run', 'commandRefusal', d.isTerminal ? commandRowsOf(d, options.sshCopy).refusal : undefined),
     row('VPN type', 'vpnType', d.isVpn ? (d.vpnType ?? 'other') : undefined),
     row(
       `VPN config${d.vpnConfigFileName ? ` (${d.vpnConfigFileName})` : ''}`,

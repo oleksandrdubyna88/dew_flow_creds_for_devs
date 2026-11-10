@@ -26,6 +26,8 @@ export const hostOs = HOST_OS[process.platform] ?? 'linux';
 export interface FakeTerminal {
   name: string;
   shellPath?: string;
+  /** The environment the terminal was CREATED with (a password road's askpass variables), or `undefined`. */
+  env?: Record<string, string>;
   executed: string[];
   sent: string[];
   /** How many times the terminal was brought to the front. */
@@ -125,8 +127,8 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
   };
   let listed: LiveTerminal[] = [];
   const reads = { disposals: 0, afterDispose: 0 };
-  const makeTerminal = (o: { name: string; shellPath?: string }): LiveTerminal => {
-    const record: FakeTerminal = { name: o.name, shellPath: o.shellPath, executed: [], sent: [], shown: 0, disposed: 0 };
+  const makeTerminal = (o: { name: string; shellPath?: string; env?: Record<string, string> }): LiveTerminal => {
+    const record: FakeTerminal = { name: o.name, shellPath: o.shellPath, env: o.env, executed: [], sent: [], shown: 0, disposed: 0 };
     terminals.push(record);
     const terminal: LiveTerminal & { creationOptions: unknown } = {
       name: o.name,
@@ -197,7 +199,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
       set terminals(list: LiveTerminal[]) {
         listed = list;
       },
-      createTerminal: (o: { name: string; shellPath?: string }): LiveTerminal => {
+      createTerminal: (o: { name: string; shellPath?: string; env?: Record<string, string> }): LiveTerminal => {
         if (opts.failCreate?.test(o.name) === true) {
           throw new Error(`no terminal for ${o.name}`);
         }
@@ -368,12 +370,17 @@ export type RunVpn = (
   k: unknown,
   trust: unknown,
   startGate?: AbortSignal,
+  lateAnswer?: (what: string) => void,
+  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
+  sshRoad?: unknown,
 ) => Promise<boolean>;
 
 export interface StartOptions {
   action?: 'start' | 'stop';
   /** The agent request's signal — absent for the person's own click. */
   startGate?: AbortSignal;
+  /** The person's road host (`SshRoad`), handed to `runVpn` as its last argument: absent is the agent's start (E2-D2). */
+  sshRoad?: unknown;
   storage?: ReturnType<typeof storageOf>;
   /** The trust store the start reads and writes; a fresh one when absent. */
   trust?: ReturnType<typeof memoryTrust>;
@@ -403,7 +410,7 @@ export async function startVpn(scope: Scope, w: World, nodes: Record<string, Ent
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   const storage = o.storage ?? storageOf(nodes);
   try {
-    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), o.startGate), dir };
+    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), o.startGate, undefined, undefined, o.sshRoad), dir };
   } catch (error) {
     return { started: false, dir, ended: requestsEnd(error) };
   }

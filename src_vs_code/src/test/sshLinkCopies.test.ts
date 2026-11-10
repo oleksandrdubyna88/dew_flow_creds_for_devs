@@ -7,14 +7,19 @@ import { exportedNode } from '../exportSecrets';
 import { formatEntityBlock } from '../entityText';
 import { EntityViewOptions, copyValueFor, renderEntityViewHtml } from '../entityViewPage';
 import { quarantineUnsafeIds } from '../idQuarantine';
-import { sshLinkRefusal } from '../remoteLaunch';
+import { copiedLineOf, sshLinkOf } from '../remoteLaunch';
 import { shareableDetails } from '../shareFormat';
 import { escapeHtml } from '../webviewHtml';
 import type { BackupBundle, EntityMetadata, TreeNode } from '../types';
 
 /** E1.S1: the link is kept by a backup and a sync, removed by a share and an export, shown by the viewer as a name. */
 
-const SENTENCE = (name: string): string => sshLinkRefusal({ id: 'x', name, sshEntityId: 's1' }) as string;
+/** E2.S1: without `sshCopy` (no lookup was made) a linked entry fails closed with `sshLinkOf`'s missing-entry sentence. */
+const MISSING = (details: EntityMetadata): string => {
+  const link = sshLinkOf(details, () => undefined);
+  assert.equal(link.kind, 'refused');
+  return (link as { reason: string }).reason;
+};
 
 function terminal(extra: Partial<EntityMetadata> = {}): EntityMetadata {
   return { id: 't1', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'ls', ...extra };
@@ -73,6 +78,8 @@ test('an_entry_without_a_link_gets_no_link_key_after_a_remap', () => {
 function viewOptions(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
   return {
     details: terminal(),
+    /** The caller always reads it with storage; with no lookup a linked entry reads as the missing-entry sentence. */
+    sshCopy: copiedLineOf(overrides.details ?? terminal(), () => undefined),
     hasPassword: false,
     hasPrivateKey: false,
     hasVpnConfig: false,
@@ -97,13 +104,13 @@ test('the_viewer_names_the_ssh_entry_and_shows_the_sentence_not_the_line', () =>
   const html = renderEntityViewHtml(linked());
   assert.match(html, /Runs over SSH[\s\S]*?<input readonly value="prod box">/);
   assert.doesNotMatch(html, /Full command/);
-  assert.ok(html.includes(escapeHtml(SENTENCE('deploy'))), 'the sentence is in the "Will not run" row');
+  assert.ok(html.includes(escapeHtml(MISSING(terminal({ sshEntityId: 's1' })))), 'the sentence is in the "Will not run" row');
 });
 
 test('the_viewer_copies_no_line_for_a_linked_entry', async () => {
   const options = linked();
   assert.equal(await copyValueFor(options, 'fullCommand'), undefined);
-  assert.equal(await copyValueFor(options, 'commandRefusal'), SENTENCE('deploy'));
+  assert.equal(await copyValueFor(options, 'commandRefusal'), MISSING(terminal({ sshEntityId: 's1' })));
   assert.equal(await copyValueFor(options, 'sshLink'), 'prod box');
 });
 
@@ -113,17 +120,19 @@ const LOCAL_LINE = 'ls -la /srv/app';
 
 test('the_viewer_copy_all_of_a_linked_entry_holds_the_sentence_and_not_the_local_line', async () => {
   const details = terminal({ command: LOCAL_LINE, sshEntityId: 's1' });
-  const options = viewOptions({ details, sshLinkName: 'prod box', copyAllText: async () => formatEntityBlock(details, undefined) });
+  const options = viewOptions({ details, sshLinkName: 'prod box', copyAllText: async () => formatEntityBlock(details, undefined, undefined, undefined, undefined, copiedLineOf(details, () => undefined)) });
   const all = await copyValueFor(options, 'all');
-  assert.ok(all?.includes(SENTENCE('deploy')), `the sentence is in the block: ${all}`);
+  assert.ok(all?.includes(MISSING(details)), `the sentence is in the block: ${all}`);
   assert.equal(all?.includes(LOCAL_LINE), false, `the local line is not in the block: ${all}`);
 });
 
 // A guard, green before the change: an entry with no link, or an empty one, gets the block it always got.
 test('the_block_of_an_unlinked_entry_is_unchanged', () => {
   const block = 'Name: deploy\n\nls -la /srv/app';
-  assert.equal(formatEntityBlock(terminal({ command: LOCAL_LINE }), undefined), block);
-  assert.equal(formatEntityBlock(terminal({ command: LOCAL_LINE, sshEntityId: '' }), undefined), block);
+  const unlinked = terminal({ command: LOCAL_LINE });
+  const blank = terminal({ command: LOCAL_LINE, sshEntityId: '' });
+  assert.equal(formatEntityBlock(unlinked, undefined, undefined, undefined, undefined, copiedLineOf(unlinked, () => undefined)), block);
+  assert.equal(formatEntityBlock(blank, undefined, undefined, undefined, undefined, copiedLineOf(blank, () => undefined)), block);
 });
 
 test('the_viewer_wires_the_name_of_the_link', () => {

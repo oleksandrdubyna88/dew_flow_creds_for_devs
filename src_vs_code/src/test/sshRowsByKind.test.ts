@@ -136,5 +136,6 @@ function viewPage(details: EntityMetadata): EntityViewOptions {
     saveAttachment: () => Promise.resolve(),
     setEnv: () => Promise.resolve(true),
     checkEnv: () => undefined,
+    sshCopy: { kind: 'local' },
   } as EntityViewOptions;
 }

@@ -28,7 +28,7 @@ import { StorageManager } from './storageManager';
 import { SyncManager } from './syncManager';
 import { CredsAgentServer } from './credsAgentServer';
 import { UseActionRegistry } from './useActions';
-import { sshDepsFor, sshExecAction, sshTerminalAction } from './sshUseActions';
+import { sshDepsFor, sshExecAction, sshRoadOf, sshTerminalAction } from './sshUseActions';
 import { ShareInbox } from './shareInbox';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
@@ -837,7 +837,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
   };
 
-  registerRunCommands({ context, refSource, register, storage, storageDir, vaultKeys });
+  registerRunCommands({ context, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
 
   registerPinCommands({ register, storage, refresh: () => mutated() });
 
@@ -925,7 +925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
   });
 
-  registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys, trust: context.globalState });
+  registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys, trust: context.globalState, sshRoad: sshRoadOf(sshDeps) });
   registerTreeMutationCommands({ announceArrival, doorsFor, log, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
   registerExportCommand({ corpPolicyOf, log, register, storage, vaultKeys });
 
