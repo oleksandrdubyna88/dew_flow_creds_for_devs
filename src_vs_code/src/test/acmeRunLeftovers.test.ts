@@ -49,7 +49,9 @@ const liveLines = (text: string): string[] => text.split(/\r?\n/).map((line) => 
 
 // --- the text rules ------------------------------------------------------------------------------------------------------------------
 
-const PROJECT_LINE = `PROJECT="$(printf '%s' "\${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`;
+// Written in pieces with no escape: this string is handed to `mutate`, which also takes a RegExp, and CodeQL reads a `\$` in it as a
+// useless regular-expression escape (js/useless-regexp-character-escape).
+const PROJECT_LINE = ['PROJECT="$(printf ', "'%s'", ' "${STATE##*/}" | tr ', "'[:upper:]' '[:lower:]'", ')"'].join('');
 const COMPOSE_LINE = ['COMPOSE=(docker', 'compose', '-p', '"$PROJECT"', '-f', 'docker-compose.acme-test.yml)'].join(' ');
 const PROJECT_VARIABLE = ['COMPOSE', 'PROJECT', 'NAME'].join('_');
 const assignmentsOf = (text: string): string[] => liveLines(text).filter((line) => /^(?:export |declare |readonly )?PROJECT=/.test(line) && line !== 'PROJECT=""');
@@ -97,7 +99,7 @@ const SCRIPT_CHECKS: Check[] = [
     const bad = liveLines(text).find((line) => /\bstate\b/.test(line) && !/\$STATE|\$\{STATE|STATE=|owned_dir STATE/.test(line));
     return unless(bad === undefined, `the script still names a state folder of the checkout: ${bad}`);
   },
-  (text) => unless(!/\brm -rf\b/.test(text), 'the script removes a folder itself (owned_cleanup does)'),
+  (text) => unless(!/\brm -rf\b/.test(liveLines(text).join('\n')), 'the script removes a folder itself (owned_cleanup does); a comment may name the command'),
   (text) => unless(ownedCleanupIsGuarded(cleanupBody(text)), 'the clean-up does not call owned_cleanup INSIDE the STATE guard (brief § 3.3 item 1)'),
 ];
 
