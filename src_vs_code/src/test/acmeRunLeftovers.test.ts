@@ -67,6 +67,15 @@ const PROJECT_CHECKS: Check[] = [
   (text) => unless(liveLines(text).includes(COMPOSE_LINE), `COMPOSE is not ${COMPOSE_LINE}`),
 ];
 
+/** The live lines of the function `cleanup`, from its header to the first closing brace at column 0. */
+function cleanupBody(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const start = lines.indexOf('cleanup() {');
+  if (start < 0) return [];
+  const end = lines.slice(start + 1).findIndex((line) => line === '}');
+  return lines.slice(start + 1, end < 0 ? lines.length : start + 1 + end).map((line) => line.trim()).filter((line) => line !== '' && !line.startsWith('#'));
+}
+
 /** Rule 5 and the folder rules of the script's text: the helper's trap, no trap of its own, no state folder, no sudo. */
 const SCRIPT_CHECKS: Check[] = [
   (text) => unless(liveLines(text).filter((line) => line === 'owned_trap cleanup').length === 1, 'the script does not call `owned_trap cleanup` exactly once'),
@@ -81,6 +90,7 @@ const SCRIPT_CHECKS: Check[] = [
     return unless(bad === undefined, `the script still names a state folder of the checkout: ${bad}`);
   },
   (text) => unless(!/\brm -rf\b/.test(text), 'the script removes a folder itself (owned_cleanup does)'),
+  (text) => unless(cleanupBody(text).some((line) => line === 'if [ -n "${STATE:-}" ]; then') && cleanupBody(text).some((line) => line === 'owned_cleanup'), 'the clean-up does not call owned_cleanup behind the STATE guard (brief § 3.3 item 1)'),
 ];
 
 /** The lines of the top-level block that starts at `header` (indent 0), up to the next top-level key. */
@@ -265,6 +275,41 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   // The run says which project and folder it made, so a person (or a hosted check) can look for exactly those afterwards.
   assert.match(run.output, new RegExp(`^compose project: ${run.folderProject}$`, 'm'));
   assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
+});
+
+/** The volume rules of a run: `compose create` comes before the first `docker run` that mounts a project volume, and every such `-v` source is `<folder's project>_<one of the four>`. */
+function volumeProblems(run: Run): string[] {
+  const problems: string[] = [];
+  const mounts = run.calls.filter((call) => call.startsWith('run ') && /\s-v\s/.test(call));
+  const created = run.calls.findIndex((call) => /^compose .* create\b/.test(call));
+  const firstMount = run.calls.findIndex((call) => call.startsWith('run ') && /\s-v\s/.test(call));
+  if (created < 0) problems.push('no `compose create` was called');
+  else if (firstMount >= 0 && created > firstMount) problems.push(`the first docker run that mounts a project volume (call ${firstMount}) comes before compose create (call ${created})`);
+  if (mounts.length === 0) problems.push('no docker run mounts a volume: the order cannot be proved');
+  const allowed = new Set(VOLUMES.map((name) => `${run.folderProject}_${name}`));
+  for (const call of mounts) {
+    for (const source of [...call.matchAll(/\s-v\s+([^:\s]+):/g)].map((hit) => hit[1])) {
+      if (!allowed.has(source)) problems.push(`the -v source ${source} is not ${run.folderProject}_ plus one of ${VOLUMES.join(', ')}: ${call}`);
+    }
+  }
+  return problems;
+}
+
+test('E2.4-f: compose create comes before the first docker run that mounts a project volume, and every -v source is the folder\'s project plus one of the four volumes', () => {
+  const run = runAcme(REAL_RUN);
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(volumeProblems(run), []);
+  assert.doesNotMatch(run.output, /not what this run wrote/, 'the clean-up calls owned_cleanup and the helper must not warn about a release it did not see');
+});
+
+test('E2.4-f: the plants go red: a fixed `acme_data` for `${PROJECT}_data`, and the create moved after the chown', () => {
+  const fixed = runAcme(mutate(REAL_RUN, '-v "${PROJECT}_data:/d"', '-v "acme_data:/d"'));
+  assert.match(volumeProblems(fixed).join('\n'), /-v source acme_data is not/);
+  const createLine = '"${COMPOSE[@]}" create >/dev/null\n';
+  const chown = /docker run --rm -v "\$\{PROJECT\}_data:\/d" -v "\$\{PROJECT\}_logs:\/l" alpine chown -R 10001:10001 \/d \/l >\/dev\/null\n/;
+  const text = mutate(REAL_RUN, createLine, '');
+  const late = runAcme(mutate(text, chown, `$&${createLine}`));
+  assert.match(volumeProblems(late).join('\n'), /comes before compose create/);
 });
 
 test('E2.4-h: run under stubs, `PROJECT=acme` names a project that is not the folder\'s', () => {
