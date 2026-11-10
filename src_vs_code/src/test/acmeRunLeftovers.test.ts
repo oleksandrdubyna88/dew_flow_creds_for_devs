@@ -388,6 +388,14 @@ test('the certificate is asked for through a container: a certificate only a con
   assert.deepEqual(absent.left, [], 'a failing run leaves nothing');
 });
 
+test('the certificate wait says it is waiting: a progress line every 15 tries, and the number of tries when it gives up; a run that finds the certificate at once says nothing', () => {
+  const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
+  const progress = [...absent.output.matchAll(/still waiting for the certificate: try (\d+) of 150/g)].map((hit) => Number(hit[1]));
+  assert.deepEqual(progress, [15, 30, 45, 60, 75, 90, 105, 120, 135, 150], absent.output);
+  assert.match(absent.output, /FAIL\S*\s+no certificate was issued after 150 tries/);
+  assert.doesNotMatch(runAcme(REAL_RUN).output, /still waiting for the certificate/);
+});
+
 test('a certificate check from the host, as the job\'s user, says "no certificate was issued" although the volume holds it: the plant the test above refuses', () => {
   assert.match(REAL_RUN, CERT_PROBE, 'run.sh does not read the certificate through a throwaway alpine container');
   const host = mutate(REAL_RUN, CERT_PROBE, '[ -f "$PWD/certs/live/vaulthost/fullchain.pem" ]');
