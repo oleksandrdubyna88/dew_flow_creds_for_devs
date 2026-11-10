@@ -131,10 +131,10 @@ test('dbQueryAction refuses when the entity has no db type or no connection stri
 });
 
 test('dbQueryAction rejects a malformed body before any side effect', () => {
-  const v = dbQueryAction(fakeDeps()).validate({});
+  const v = dbQueryAction(fakeDeps()).validate({}, ctx);
   assert.equal(v.ok, false);
-  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'x'.repeat(9000) }).ok, false);
-  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'select 1' }).ok, true);
+  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'x'.repeat(9000) }, ctx).ok, false);
+  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'select 1' }, ctx).ok, true);
 });
 
 test('scriptRunAction will not run a script no human has vouched for on this machine', async () => {
@@ -316,14 +316,14 @@ test('X1: exportEnv in an ssh-remote window is refused by validate, with a stabl
   const applied: string[] = [];
   const action = credentialExportEnvAction(exportDeps('ssh-remote', applied));
 
-  assert.deepEqual(action.validate({}), { ok: false, code: 'denied', message: EXPORT_REFUSED });
+  assert.deepEqual(action.validate({}, ctx), { ok: false, code: 'denied', message: EXPORT_REFUSED });
 });
 
 test('X1: in a local window the same entry is exported as before', async () => {
   const applied: string[] = [];
   const action = credentialExportEnvAction(exportDeps(undefined, applied));
 
-  assert.deepEqual(action.validate({}), { ok: true });
+  assert.deepEqual(action.validate({}, ctx), { ok: true });
   const result = await action.run(ctx, {});
 
   assert.equal(result.status, 200);
@@ -333,11 +333,11 @@ test('X1: in a local window the same entry is exported as before', async () => {
 
 test('X2: undefined, empty and wsl admit; every other window refuses with exactly EXPORT_REFUSED', () => {
   for (const admitted of [undefined, '', 'wsl']) {
-    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}), { ok: true }, `remoteName ${String(admitted)}`);
+    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}, ctx), { ok: true }, `remoteName ${String(admitted)}`);
   }
   for (const refused of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces', 'tunnel']) {
     assert.deepEqual(
-      credentialExportEnvAction(exportDeps(refused)).validate({}),
+      credentialExportEnvAction(exportDeps(refused)).validate({}, ctx),
       { ok: false, code: 'denied', message: EXPORT_REFUSED },
       `remoteName ${refused}`,
     );
@@ -399,8 +399,8 @@ test('a_refused_name_fails_not_supported_before_the_trust_check', async () => {
 });
 
 test('the_summary_and_the_snippet_stop_saying_exactly_as_saved', () => {
-  const summary = terminalRunAction(fakeDeps()).summarize({});
+  const summary = terminalRunAction(fakeDeps()).summarize({}, ctx);
   assert.doesNotMatch(summary, /exactly as saved/);
   // The script road is run exactly as saved, and still says so.
-  assert.match(scriptRunAction(fakeDeps()).summarize({}), /exactly as saved/);
+  assert.match(scriptRunAction(fakeDeps()).summarize({}, ctx), /exactly as saved/);
 });

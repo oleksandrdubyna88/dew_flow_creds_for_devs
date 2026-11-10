@@ -527,7 +527,7 @@ export class CredsAgentServer implements vscode.Disposable {
     if (useAction === undefined) {
       return;
     }
-    const summary = useAction.summarize(body);
+    const summary = useAction.summarize(body, grant);
     // Read BEFORE the await. A grant a policy settled at the door is already `allowed`, and a call
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
@@ -558,7 +558,7 @@ export class CredsAgentServer implements vscode.Disposable {
       this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
-    const validated = useAction.validate(body);
+    const validated = useAction.validate(body, grant);
     // A bridged call's stored command is checked once more before anybody is asked: a reference the scope does not serve.
     const refused = validated.ok ? referenceRefusal(grant, this.hooks.bridgeWall) : validationRefusal(validated);
     if (refused !== undefined) {

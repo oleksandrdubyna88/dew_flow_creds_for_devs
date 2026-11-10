@@ -63,6 +63,13 @@ export interface UseActionContext {
    * Set by the broker: a prompt of this action's own is on screen; the one dialog place is that prompt's until it settles. Absent for a start that serves no request.
    */
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
+  /**
+   * The summary `summarize` answered for this call before consent: the dialog showed it, or it was computed for a call a policy settled.
+   * Absent for a start that serves no request. Set by the broker (`brokerCall.ts`); read by nothing but the linked run, which compares
+   * it with the summary rebuilt at run time, so a switch, a link or a target that changed while the dialog stood is refused, never run
+   * (E3.S2 security spec §2.3 step 3, §5). INTERNAL: no contract names it.
+   */
+  readonly summary?: string;
 }
 
 /**
@@ -118,7 +125,6 @@ export interface UseAction {
    * to" a database the day a second kind arrived.
    */
   readonly verb: string;
-  /** Reject a malformed body before any dialog or side effect. */
   /**
    * Whether this action can WRITE a stored secret while it runs.
    *
@@ -144,19 +150,27 @@ export interface UseAction {
    * (`create`, `terminal`, `up`, `down`, `rotate`); a function of the call's target for one that may on some entries only: `exec`,
    * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket), read when the dialog
    * closes on an Allow (`ConsentQuestion.followUp`), not before it opens: the socket may come up or go down while the dialog is on screen.
-   * `query`, `run` and a non-forwarding `exec` keep nothing once the dialog closes.
+   * `run` on some entries only: a Terminal entry whose linked SSH entry is usable by the agent and forwards the agent while the agent
+   * socket is up (E3.S2, the signing prompt of `ssh -A`; the gate is asked first, so the flag says nothing of an SSH entry the agent may
+   * not use). `query`, a stored script, a `run` with no such link and a non-forwarding `exec` keep nothing once the dialog closes.
    */
   readonly asksAfterConsent?: FollowUp;
 
   /**
-   * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
+   * Reject a malformed body — or a target this window refuses on purpose (`credentialExportEnvAction`; the linked run's gate) — before any
+   * dialog or side effect.
+   *
+   * <p>`code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
    * body. A well-formed request this window refuses on purpose (an export into another computer's
    * terminals) names `denied`: a client does not read it as its own mistake, and, unlike a 404, does
-   * not read it as "this window does not have the entry" and go looking in the next one.
+   * not read it as "this window does not have the entry" and go looking in the next one.</p>
+   *
+   * <p>`target` is REQUIRED (E3.S2 security spec §5): a call that forgets the grant does not compile, so "the gate runs before the
+   * dialog" is not a thing each call site must remember.</p>
    */
-  validate(body: unknown): { ok: true } | { ok: false; message: string; code?: ErrorCode };
-  /** One line for the first-use consent dialog (e.g. the command about to run). */
-  summarize(body: unknown): string;
+  validate(body: unknown, target: CallTarget): { ok: true } | { ok: false; message: string; code?: ErrorCode };
+  /** One line for the first-use consent dialog (e.g. the command about to run). `target` is required for the same reason as `validate`'s. */
+  summarize(body: unknown, target: CallTarget): string;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */
   describeOutcome(result: UseActionResult): string;
   /** Perform the action. Called only after validation and consent. */

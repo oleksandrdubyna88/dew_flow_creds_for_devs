@@ -200,7 +200,7 @@ function spentToken(deps: CallDeps, call: CallSubject, now: number, limits: Gran
 function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
   return new Promise<UseActionResult>((resolve) => {
-    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing }, body));
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing, summary: call.summary }, body));
   });
 }
 

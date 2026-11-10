@@ -389,8 +389,8 @@ test('a command the validator rejects never reaches run()', async () => {
   const w = await world(parts);
   const action = w.mod.sshExecAction(deps(w, parts));
 
-  assert.equal(action.validate({ command: '' }).ok, false, 'an empty command is not a command');
-  assert.equal(action.validate({ command: 'uptime' }).ok, true);
+  assert.equal(action.validate({ command: '' }, CTX).ok, false, 'an empty command is not a command');
+  assert.equal(action.validate({ command: 'uptime' }, CTX).ok, true);
 });
 
 test('the outcome an audit line shows names the exit code, and says when it timed out', async () => {
