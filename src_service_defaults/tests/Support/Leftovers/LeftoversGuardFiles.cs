@@ -19,7 +19,7 @@ internal sealed record SourceFile(string Relative, string Absolute, SourceKind K
     public bool IsJudgedByClassifier => Kind is SourceKind.Script or SourceKind.Workflow;
 
     /// <summary>The languages with <c>/* … */</c> comments and string literals the walk must respect.</summary>
-    public bool HasBlockComments => Extension is ".cs" or ".mjs" or ".js" or ".cjs";
+    public bool HasBlockComments => Extension is ".cs" or ".mjs" or ".js" or ".cjs" or ".ts";
 }
 
 /// <summary>Which files of a repository the guard reads, and which kind each is.</summary>
@@ -34,6 +34,9 @@ internal static class GuardFiles
     private static readonly string[] SourceRoots =
         ["src/", "src_service_defaults/src/", "src_cli/src/", "src_mcp/src/", "src_broker_client/src/", "src_minimalapi_server/src/"];
     private static readonly Regex WorkflowPath = new(@"^\.github/workflows/[^/]+\z", RegexOptions.CultureInvariant);
+
+    /// <summary>The folder of the extension's tests: a <c>*.test.ts</c> there is the shipped Node guard's, any other <c>.ts</c> there is a helper this guard reads as a script.</summary>
+    private const string ExtensionTestFolder = "src_vs_code/src/test/";
 
     /// <summary>Every file the guard reads under <paramref name="root"/>, in ordinal path order; none when the root does not exist.</summary>
     internal static IReadOnlyList<SourceFile> Discover(string root) =>
@@ -69,6 +72,12 @@ internal static class GuardFiles
 
     private static bool IsWorkflow(string extension, string relative) => extension is ".yml" or ".yaml" && WorkflowPath.IsMatch(relative);
 
+    /// <summary>A <c>.ts</c> file of the extension's test folder whose name does not end in <c>.test.ts</c>: a world, a fixture or a harness the tests import. The Node guard's
+    /// <c>node</c> profile reads <c>*.test.ts</c> only, so without this reading a temp call in such a helper is seen by neither guard.</summary>
+    private static bool IsExtensionTestHelper(string extension, string relative) =>
+        extension == ".ts" && relative.StartsWith(ExtensionTestFolder, StringComparison.Ordinal) && !relative.EndsWith(".test.ts", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsScript(string extension, string relative) =>
+        IsExtensionTestHelper(extension, relative) ||
         ScriptExtensions.Contains(extension) || (JavaScriptExtensions.Contains(extension) && ScriptFolders.Any(f => relative.StartsWith(f, StringComparison.Ordinal)));
 }

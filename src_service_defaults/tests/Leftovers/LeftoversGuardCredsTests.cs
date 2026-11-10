@@ -202,7 +202,7 @@ public sealed class LeftoversGuardCredsTests : IDisposable
     /// <summary>The guard over a scratch tree of the given files, the shipped classifier read from the real mount.</summary>
     private GuardReport Scan(params (string Path, string Text)[] files)
     {
-        var root = _owned.Dir("creds-guard-tree");
+        var root = _owned.Dir("guard-tree");
         foreach (var (relative, text) in files)
         {
             var full = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));

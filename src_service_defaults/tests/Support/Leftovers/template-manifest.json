@@ -450,6 +450,30 @@
           "new": "TestRoots.Any(root => relative.StartsWith(root, StringComparison.Ordinal)) ? SourceKind.Tests : SourceRoots.Any(root => relative.StartsWith(root, StringComparison.Ordinal)) ? SourceKind.Source : null;",
           "count": 1,
           "reason": "S3 discovery for this tree (D7): a file under any test root is a test, under any source root is source"
+        },
+        {
+          "old": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\";",
+          "new": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\" or \".ts\";",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): a TypeScript helper has // and /* */ comments and string literals the walk must respect, as the JavaScript of the script folders"
+        },
+        {
+          "old": "    private static readonly Regex WorkflowPath = new(@\"^\\.github/workflows/[^/]+\\z\", RegexOptions.CultureInvariant);\n",
+          "new": "    private static readonly Regex WorkflowPath = new(@\"^\\.github/workflows/[^/]+\\z\", RegexOptions.CultureInvariant);\n\n    /// <summary>The folder of the extension's tests: a <c>*.test.ts</c> there is the shipped Node guard's, any other <c>.ts</c> there is a helper this guard reads as a script.</summary>\n    private const string ExtensionTestFolder = \"src_vs_code/src/test/\";\n",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the one folder whose non-test .ts files are read, by name"
+        },
+        {
+          "old": "    private static bool IsScript(string extension, string relative) =>\n        ScriptExtensions.Contains(extension) ||",
+          "new": "    private static bool IsScript(string extension, string relative) =>\n        IsExtensionTestHelper(extension, relative) ||\n        ScriptExtensions.Contains(extension) ||",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the .ts helpers of src_vs_code/src/test/ that are not *.test.ts are scripts to this guard"
+        },
+        {
+          "old": "    private static bool IsScript(string extension, string relative) =>",
+          "new": "    /// <summary>A <c>.ts</c> file of the extension's test folder whose name does not end in <c>.test.ts</c>: a world, a fixture or a harness the tests import. The Node guard's\n    /// <c>node</c> profile reads <c>*.test.ts</c> only, so without this reading a temp call in such a helper is seen by neither guard.</summary>\n    private static bool IsExtensionTestHelper(string extension, string relative) =>\n        extension == \".ts\" && relative.StartsWith(ExtensionTestFolder, StringComparison.Ordinal) && !relative.EndsWith(\".test.ts\", StringComparison.OrdinalIgnoreCase);\n\n    private static bool IsScript(string extension, string relative) =>",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the file-name test for the helpers, a little more than a path op: it names a folder and excludes *.test.ts"
         }
       ]
     },
