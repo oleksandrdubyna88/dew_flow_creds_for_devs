@@ -20,8 +20,8 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { pathToFileURL } from 'node:url';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { guardOrSkip, MOUNT } from './mountedGuard';
 import { REPO } from './repoFiles';
 
 const scope = cleanupScope();
@@ -285,7 +285,7 @@ function makeTree(text: string): { dir: string; script: string; tmp: string; stu
   const script = put(RUN, text, 0o755);
   put(COMPOSE, REAL_COMPOSE, 0o644);
   put('.github/scripts/lib/owned.sh', OWNED_SH, 0o644);
-  put('.claude/rules/shared/tools/janitor.sh', JANITOR, 0o644);
+  put(`${MOUNT}/tools/janitor.sh`, JANITOR, 0o644);
   for (const [name, body] of Object.entries({ docker: DOCKER, curl: CURL, openssl: OPENSSL, sleep: SLEEP })) put(`bin/${name}`, body, 0o755);
   fs.mkdirSync(path.join(dir, 'tmp'));
   return { dir, script, tmp: path.join(dir, 'tmp'), stub: path.dirname(put('stub/seen', '', 0o644)), calls: put('calls', '', 0o644) };
@@ -625,7 +625,7 @@ test('the janitor call: 0 and 3 are fine and silent; 127 names the command that 
   }
   const unmounted = runAcme(REAL_RUN, { STUB_JANITOR_RC: '127' });
   assert.equal(unmounted.status, 0, unmounted.output);
-  assert.match(unmounted.output, /janitor: exit code 127.*git submodule update --init \.claude\/rules\/shared/);
+  assert.match(unmounted.output, new RegExp(`janitor: exit code 127.*git submodule update --init ${MOUNT.replace(/[./]/g, '\\$&')}`));
   const other = runAcme(REAL_RUN, { STUB_JANITOR_RC: '2' });
   assert.equal(other.status, 0, other.output);
   assert.equal(other.output.split('\n').filter((line) => /janitor/i.test(line)).length, 1, other.output);
@@ -654,26 +654,12 @@ test('sc. 7 (c) SIGTERM during the first `compose up` ends the run with 143 and 
 
 // --- the shipped guard reads it ---------------------------------------------------------------------------------------------------
 
-const guardPath = path.join(REPO, '.claude', 'rules', 'shared', 'tools', 'leftovers-check.mjs');
-
-type Finding = { cls: string; line: number; text: string };
-type GuardModule = { scanText: (file: string, text: string) => Finding[]; loadYaml: (repo: undefined) => unknown };
-
-/** The mounted guard, or the reason it cannot be had (its `yaml` module lives in the mount's own `node_modules`). */
-async function loadGuard(): Promise<GuardModule | string> {
-  if (!fs.existsSync(guardPath)) return 'the shared rules are not mounted';
-  const module = (await import(pathToFileURL(guardPath).href)) as GuardModule;
-  try {
-    module.loadYaml(undefined);
-  } catch {
-    return 'the mounted guard cannot load its yaml module (run npm ci in .claude/rules/shared)';
-  }
-  return module;
-}
+/** The mounted guard, or `undefined` after the skip (a failure under CREDS_GUARD_TESTS_REQUIRED=1): see `mountedGuard.ts`. */
+const loadGuard = guardOrSkip;
 
 test('the shipped guard reads run.sh and the compose file with no finding', async (t) => {
-  const guard = await loadGuard();
-  if (typeof guard === 'string') return t.skip(guard);
+  const guard = await loadGuard(t);
+  if (guard === undefined) return;
   assert.deepEqual(guard.scanText(RUN, REAL_RUN), []);
   assert.deepEqual(guard.scanText(COMPOSE, REAL_COMPOSE), []);
 });

@@ -17,9 +17,9 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { after, test } from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { after, test, type TestContext } from 'node:test';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { guardOrSkip } from './mountedGuard';
 import { REPO } from './repoFiles';
 
 const scope = cleanupScope();
@@ -643,35 +643,27 @@ test('every container and volume the smoke makes carries the owner label and an 
 
 // --- the shipped guard reads it ----------------------------------------------------------------------------------------------
 
-const guardPath = path.join(REPO, '.claude', 'rules', 'shared', 'tools', 'leftovers-check.mjs');
-
 interface Guard {
   readonly scan: (text: string) => Array<{ cls: string; line: number; text: string }>;
 }
 
-/** The mounted guard's `scanText`, or the reason it cannot be had (its `yaml` module lives in the mount's own `node_modules`). */
-async function loadGuard(): Promise<Guard | string> {
-  if (!fs.existsSync(guardPath)) return 'the shared rules are not mounted';
-  const module = (await import(pathToFileURL(guardPath).href)) as { scanText: (file: string, text: string) => ReturnType<Guard['scan']>; loadYaml: (repo: undefined) => unknown };
-  try {
-    module.loadYaml(undefined);
-  } catch {
-    return 'the mounted guard cannot load its yaml module (run npm ci in .claude/rules/shared)';
-  }
-  return { scan: (text) => module.scanText(WORKFLOW, text) };
+/** The mounted guard's `scanText` over a workflow, or `undefined` after the skip (a failure under CREDS_GUARD_TESTS_REQUIRED=1): see `mountedGuard.ts`. */
+async function loadGuard(t: TestContext): Promise<Guard | undefined> {
+  const guard = await guardOrSkip(t);
+  return guard === undefined ? undefined : { scan: (text) => guard.scanText(WORKFLOW, text) };
 }
 
 const classes = (guard: Guard, text: string): string[] => guard.scan(text).map((entry) => entry.cls).sort();
 
 test('the shipped guard reads docker.yml with no finding: the names are owner-form and the carve-out is complete', async (t) => {
-  const guard = await loadGuard();
-  if (typeof guard === 'string') return t.skip(guard);
+  const guard = await loadGuard(t);
+  if (guard === undefined) return;
   assert.deepEqual(guard.scan(REAL), []);
 });
 
 test('the shipped guard refuses each plant of the carve-out: quoted remover names, a `-v` source alone in quotes, a reader after the remover', async (t) => {
-  const guard = await loadGuard();
-  if (typeof guard === 'string') return t.skip(guard);
+  const guard = await loadGuard(t);
+  if (guard === undefined) return;
 
   const quoted = mutate(REAL, /(docker rm -f -v) (testsToDelete-u1001-creds-cv-\$\{SMOKE_ID\}) \|\| true/, '$1 "$2" || true').replace(/(docker rm -f -v) (testsToDelete-u1001-creds-refused-\$\{SMOKE_ID\}) \|\| true/, '$1 "$2" || true');
   assert.deepEqual(classes(guard, quoted), ['docker-run', 'docker-run']);
