@@ -70,7 +70,7 @@ type Rename = (id: string) => string;
 
 /**
  * The id references inside `details` — a key source, a jump host, a VPN's launcher (issue #103),
- * and the dependency list.
+ * an SSH link, and the dependency list.
  */
 function remapDetails(details: NonNullable<TreeNode['details']>, to: Rename): TreeNode['details'] {
   const depends = details.dependsOn;
@@ -80,6 +80,7 @@ function remapDetails(details: NonNullable<TreeNode['details']>, to: Rename): Tr
     ...remappedRef('sshKeyEntityId', details.sshKeyEntityId, to),
     ...remappedRef('jumpHostEntityId', details.jumpHostEntityId, to),
     ...remappedRef('vpnLauncherEntityId', details.vpnLauncherEntityId, to),
+    ...remappedRef('sshEntityId', details.sshEntityId, to),
     ...(depends === undefined ? {} : { dependsOn: depends.map(to) }),
   };
 }

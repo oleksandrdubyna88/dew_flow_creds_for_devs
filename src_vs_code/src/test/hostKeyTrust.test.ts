@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { formatHostKey, HostKey } from '../hostKeyPin';
@@ -152,4 +153,22 @@ test('a non-port-standard host is scanned without ever spawning for an unsafe na
   const outcome = await trust(asked()).scanHostKey('-oProxyCommand=touch /tmp/pwned', undefined);
 
   assert.equal(outcome, undefined);
+});
+
+test('a suffix reaches the REAL known_hosts name: known_hosts-<id>-<suffix>, beside today’s (E1.S3 isolate)', () => {
+  const dir = ownedDir(scope, 'kh3');
+  const mod = trust(asked());
+  const pinned = entity({ hostKey: formatHostKey(KEY) });
+  const uuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+  const plain = mod.materializeKnownHosts(dir, pinned);
+  const isolated = mod.materializeKnownHosts(dir, pinned, uuid);
+
+  assert.ok(plain !== undefined && isolated !== undefined);
+  assert.equal(path.basename(isolated), `known_hosts-e1-${uuid}`);
+  assert.equal(path.basename(plain), 'known_hosts-e1', 'without the suffix the name is today’s');
+  assert.equal(path.dirname(isolated), path.dirname(plain), 'both in keys/<pid>/');
+  assert.equal(path.basename(path.dirname(isolated)), String(process.pid));
+  assert.notEqual(plain, isolated);
+  assert.match(fs.readFileSync(isolated, 'utf8'), /prod\.example\.com/);
 });

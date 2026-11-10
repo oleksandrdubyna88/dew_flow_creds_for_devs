@@ -36,10 +36,10 @@ test('the exec/bridge paths in extension.ts derive no credential of their own', 
 });
 
 test('the guard still matches the one place that legitimately narrows a credential', () => {
-  // `sshConnect.ts` opens a HUMAN terminal, where the stored-key case really is special: the
-  // agent may serve the key instead of it being written out at all. If this stops matching, the
-  // pattern above has gone stale and the assertion before it is checking nothing.
-  const source = read('sshConnect.ts');
+  // `sshSession.ts` prepares a HUMAN terminal's connection (the code moved there from `sshConnect.ts` in E1.S3),
+  // where the stored-key case really is special: the agent may serve the key instead of it being written out
+  // at all. If this stops matching, the pattern above has gone stale and the assertion before it is checking nothing.
+  const source = read('sshSession.ts');
 
   assert.ok((source.match(HAND_ROLLED) ?? []).length > 0, 'the pattern no longer matches real code');
 });

@@ -18,6 +18,7 @@ import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { resolveCommand } from './commandLine';
+import { sshLinkRefusal } from './remoteLaunch';
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
@@ -207,8 +208,8 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
         return fail('not_supported', `"${ctx.entityName}" will not run: ${resolved.reason}`);
       }
       const { line } = resolved;
-      // Issue #103: an entry written for another OS is refused here exactly as on the human path.
-      const mismatch = osMismatch(ctx.entityName, entity.terminalOs, process.platform);
+      // Issue #103 and the SSH link (E1.S1): refused here exactly as on the human path.
+      const mismatch = sshLinkRefusal(entity) ?? osMismatch(ctx.entityName, entity.terminalOs, process.platform);
       if (mismatch !== undefined) {
         return fail('not_supported', mismatch);
       }

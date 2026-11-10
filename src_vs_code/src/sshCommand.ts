@@ -22,6 +22,11 @@
  *
  * <p>So both are refused at composition rather than escaped. Escaping answers the first
  * parser and not the second, and a value that cannot be a hostname has no legitimate use.</p>
+ *
+ * <p><b>The remote word</b> (`options.remote`, E1.S2 of PLAN_terminal_command_over_ssh.md) is the third string
+ * a person chose, and it is quoted for the LOCAL parse only, as ONE single-quoted literal (`quoteFor`, family
+ * from `platform`). The remote shell parses its CONTENT, which is not this file's business. `--` stands before the
+ * destination, so ssh reads nothing after it as an option.</p>
  */
 
 import { EntityMetadata } from './types';
@@ -62,6 +67,13 @@ export interface SshCommandOptions {
    * way because that is what this client reads.</p>
    */
   program?: string;
+  /**
+   * A command to run on the remote, as ONE argument. The line then ends `-- <destination> '<command>'`, and `-t` follows
+   * the program word when `tty` is true. Without this field the output is byte-identical to before the field existed.
+   * An empty command is refused (`undefined`): ssh would open a login shell, which is not what a caller that passed a
+   * command meant.
+   */
+  remote?: { readonly command: string; readonly tty: boolean };
 }
 
 /**
@@ -158,15 +170,34 @@ function lineWord(word: string, platform: NodeJS.Platform): string {
   return platform === 'win32' ? windowsWord(word, 'bare') : word;
 }
 
+/** `user@host`, or `host` without a login: the one spelling of a destination, for the line, the title and the trust text. */
+export function sshDestination(entity: EntityMetadata): string {
+  const host = entity.host ?? '';
+  return entity.user ? `${entity.user}@${host}` : host;
+}
+
+/**
+ * `-p <port>` unless the port is empty or the default: the one place that decides it. The port is a number by type and a
+ * string by data (sync and import write JSON): on win32 it goes through the one word rule (`lineWord`) like every other
+ * line word. A POSIX word stays bare: `typeGuards.ts` refuses a non-number port on every sync, import and sealed read.
+ */
+export function portArgv(port: number | undefined, platform: NodeJS.Platform): string[] {
+  return port !== undefined && port !== DEFAULT_SSH_PORT ? ['-p', lineWord(String(port), platform)] : [];
+}
+
+/** The sentence for an entry whose host is missing or refused: no road starts ssh for it. */
+export function noHostSentence(name: string): string {
+  return `"${name}" has no host configured — cannot start SSH.`;
+}
+
 /** `user@host:port` (port omitted when default) â€” the connection identity. */
-// eslint-disable-next-line complexity
 export function describeSshTarget(entity: EntityMetadata): string | undefined {
   if (!isSafeSshTarget(entity)) {
     // Refused here too, so no dialog, terminal title or clipboard text ever
     // displays a target the connect path would refuse to use.
     return undefined;
   }
-  const base = entity.user ? `${entity.user}@${entity.host}` : entity.host;
+  const base = sshDestination(entity);
   return entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT
     ? `${base}:${entity.port}`
     : base;
@@ -184,10 +215,9 @@ export function buildSshCommand(
   platform: NodeJS.Platform = process.platform,
   options: SshCommandOptions = {},
 ): string | undefined {
-  if (!isSafeSshTarget(entity)) {
+  if (!isSafeSshTarget(entity) || options.remote?.command === '') {
     return undefined;
   }
-  const host = entity.host as string; // isSafeSshTarget above proved it non-empty
   // Not always the bare word: a connection that forwards the agent needs a client that can
   // reach ours, and on Windows the `ssh` first on PATH is usually the MSYS one, which cannot
   // open a named pipe. Composed here rather than at the five call sites so the command SHOWN
@@ -196,13 +226,13 @@ export function buildSshCommand(
     options.program ??
       openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists, options.pathProbe),
   ];
+  if (options.remote?.tty === true) {
+    parts.push('-t');
+  }
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));
   }
-  if (entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT) {
-    // A number by type, a string by data (sync and import write JSON): on win32 it goes through the word rule like the rest.
-    parts.push('-p', lineWord(String(entity.port), platform));
-  }
+  parts.push(...portArgv(entity.port, platform));
   // The connection-manager options (jump host, forwards, agent forwarding) are composed by
   // `sshOptions.ts` — the SAME function the agent's argv builder calls, so the two surfaces
   // cannot reach a host by different routes. Every element is already refused-or-safe there for a
@@ -210,8 +240,27 @@ export function buildSshCommand(
   // one that PowerShell would still read (a `$` in a login), because PowerShell is the parser there.
   parts.push(...sshOptionArgv(entity, options.jump).map((word) => lineWord(word, platform)));
   parts.push(...hostKeyArgv(options.knownHostsFile, platform));
-  parts.push(quotedDestination(entity.user ? `${entity.user}@${host}` : host, platform));
+  parts.push(...destinationArgv(sshDestination(entity), platform, options.remote));
   return parts.join(' ');
+}
+
+/**
+ * The tail of the line: the destination alone, or — with a remote command — `--`, the destination and the command as
+ * ONE word, last. The word is quoted by `quoteFor` for the shell of `platform` (never `shellQuote`: its `$` would
+ * expand in PowerShell), because the typed line is parsed locally first and the remote sees only what is inside.
+ */
+function destinationArgv(destination: string, platform: NodeJS.Platform, remote: SshCommandOptions['remote']): string[] {
+  const target = quotedDestination(destination, platform);
+  return remote === undefined ? [target] : ['--', target, quoteFor(platform === 'win32' ? 'powershell' : 'posix', remote.command)];
+}
+
+/**
+ * `command` with `-o StrictHostKeyChecking=accept-new` after its FIRST word (the program word: `ssh`, or the Windows client's
+ * path, which holds no space) when `acceptNew`. The ONE spelling, for Connect and the terminal roads. Connect's old `^ssh `
+ * skipped a program word with a path; the password branch's askpass would then have answered the host key question.
+ */
+export function withAcceptNew(command: string, acceptNew: boolean): string {
+  return acceptNew ? command.replace(/^(\S+) /, '$1 -o StrictHostKeyChecking=accept-new ') : command;
 }
 
 /**
@@ -273,7 +322,7 @@ function hostKeyArgv(knownHostsFile: string | undefined, platform: NodeJS.Platfo
     // terminal has a person in front of it, so ssh's own default (`ask`) prompts and they
     // answer; forcing `accept-new` here would take that question away, which is the silence
     // B10 is about. The agent's exec has nobody to ask and keeps `accept-new`; the password
-    // branch in `sshConnect.ts` also forces it, because with SSH_ASKPASS_REQUIRE=force the
+    // branch (`passwordBranch` in `sshSession.ts`) also forces it, because with SSH_ASKPASS_REQUIRE=force the
     // host-key question would otherwise be answered by the askpass program — with the password.
     return [];
   }

@@ -12,7 +12,7 @@ import { folderKindOf } from './commandTargets';
 import { imageMime } from './attachment';
 import { buildDependencyCandidates } from './depGraph';
 import { buildDependencyColorMap } from './depGraph';
-import { collectJumpCandidates, collectLauncherCandidates } from './commandTargets';
+import { collectJumpCandidates, collectLauncherCandidates, collectSshCandidates } from './commandTargets';
 import { newEntryOs } from './hostShell';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
@@ -196,6 +196,7 @@ async function editFormOptions(ctx: EditContext, door: Door, storedPayment: Paym
     dependencyColors: buildDependencyColorMap(storage.getNodes(accountId)),
     jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
     launcherCandidates: collectLauncherCandidates(storage, accountId, node.id),
+    sshCandidates: collectSshCandidates(storage, accountId, node.id),
     hostOs: newEntryOs(vscode.env.remoteName, process.platform),
     hasStoredHostKey: storedHostKey !== undefined,
     hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),

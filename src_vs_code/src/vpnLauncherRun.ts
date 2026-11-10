@@ -4,6 +4,7 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { commandRefusal } from './commandLine';
+import { sshLinkRefusal } from './remoteLaunch';
 import { executableLine } from './dependencyRun';
 import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
 import { endedAfter, requestGone } from './requestLife';
@@ -78,7 +79,7 @@ function launcherLine(launcher: EntityMetadata): string | undefined {
 /** Its `{name}` first, then its OS: neither gets as far as the trust modal. */
 function launcherRefusal(launcher: EntityMetadata): string | undefined {
   const reason = commandRefusal(launcher);
-  return reason === undefined ? refusedHere(launcher) : `The launcher "${launcher.name}" will not start: ${reason}`;
+  return sshLinkRefusal(launcher) ?? (reason === undefined ? refusedHere(launcher) : `The launcher "${launcher.name}" will not start: ${reason}`);
 }
 
 /** The launcher's OS against THIS window's terminal — the rule every Terminal entry follows. */

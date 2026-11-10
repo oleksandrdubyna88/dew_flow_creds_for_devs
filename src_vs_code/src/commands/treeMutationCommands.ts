@@ -25,7 +25,7 @@ import { showEntityForm } from '../entityFormPanel';
 import { collectKeyCandidates } from '../entityEditCommands';
 import { buildDependencyCandidates } from '../depGraph';
 import { buildDependencyColorMap } from '../depGraph';
-import { collectJumpCandidates, collectLauncherCandidates } from '../commandTargets';
+import { collectJumpCandidates, collectLauncherCandidates, collectSshCandidates } from '../commandTargets';
 import { newEntryOs } from '../hostShell';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
@@ -273,6 +273,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       dependencyColors: buildDependencyColorMap(storage.getNodes(location.accountId)),
       jumpCandidates: collectJumpCandidates(storage, location.accountId, id),
       launcherCandidates: collectLauncherCandidates(storage, location.accountId, id),
+      sshCandidates: collectSshCandidates(storage, location.accountId, id),
       hostOs: newEntryOs(vscode.env.remoteName, process.platform),
     });
     if (result === undefined) {

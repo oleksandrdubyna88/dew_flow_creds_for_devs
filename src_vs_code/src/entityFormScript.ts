@@ -687,7 +687,7 @@ export function formPageScript(
       vpnType: val('vpnType'), vpnConfigContent, vpnConfigFileName: val('vpnConfigFileName'),
       clearVpnConfig: chk('clearVpnConfig'), vpnLauncherEntityId: val('vpnLauncherEntityId'),
       dbType: val('dbType'), dbConnection: val('dbConnection'),
-      command: val('command'), commandNote: val('commandNote'), commandArgs: argRows, terminalOs: val('terminalOs'),
+      command: val('command'), commandNote: val('commandNote'), commandArgs: argRows, terminalOs: val('terminalOs'), sshEntityId: val('sshEntityId'),
       envBindings: collectEnvBindings(), lifetime: val('lifetime'),
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       configFormat: val('configFormat'), configFileName: val('configFileName'),

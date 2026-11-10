@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { memoryStorage } from './pinWorld';
@@ -290,4 +291,16 @@ test('the person’s own click, with no request behind it, is asked and trusted 
   assert.equal(w.warnings.length, 1);
   assert.equal(got?.pin, formatHostKey(KEY));
   assert.equal(w.stored()?.hostKey, formatHostKey(KEY));
+});
+
+test('a pinned host key and a suffix: the options carry the SUFFIXED known_hosts file (E1.S3 isolate)', async () => {
+  // Pins connectionOptions's forwarding of the suffix to the file name, which a mock of the file cannot.
+  const uuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+  const w = world({ scanned: KEY });
+
+  const got = await w.mod.connectionOptions(ACCOUNT, entity({ hostKey: formatHostKey(KEY) }), w.storage, w.dir, undefined, uuid);
+
+  assert.ok(got?.knownHostsFile !== undefined);
+  assert.equal(path.basename(got.knownHostsFile), `known_hosts-e1-${uuid}`);
+  assert.match(fs.readFileSync(got.knownHostsFile, 'utf8'), /prod\.example\.com/);
 });

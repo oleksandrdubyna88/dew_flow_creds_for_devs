@@ -4,6 +4,7 @@ import { keepingMark } from './exportScope';
 import { firstPinFor } from './pinOnCreate';
 import { admitEntry } from './pinPrompt';
 import { grantedPin } from './pinSession';
+import { keepingSshLink } from './remoteLaunch';
 import { snapshotForRevision } from './revisionSnapshot';
 import { sealedRevision } from './historyPin';
 import type { Revision } from './revisionHistory';
@@ -22,7 +23,7 @@ import { SharePayload, TreeNode, withOwnId } from './types';
  * person is asked its PIN once, with the purpose "update it" — and every arriving value is sealed
  * under that PIN IN MEMORY before its setter runs (`shareRecipientPin.ts` set the precedent;
  * `entityPin.sealValue` is the one sealing rule). The recipient's marks travel through
- * `exportScope.keepingMark`, one helper for all of them.</p>
+ * `exportScope.keepingMark`, one helper for all of them, and its own SSH link through `remoteLaunch.keepingSshLink`.</p>
  *
  * <p>An entry protected while EMPTY — *Protect with a PIN…* on an entry that holds nothing writes the
  * mark alone — has no sealed slot for the door to open, and until 2026-10-01 the writer asked only the
@@ -92,11 +93,16 @@ async function keptVersion(
 function rebuilt(payload: SharePayload, existing: TreeNode | undefined, previousId: string, parentId: string | null): TreeNode {
   return withOwnId({
     ...payload.node,
-    details: keepingMark(payload.node.details, existing),
+    details: keepingOwnLink(keepingMark(payload.node.details, existing), existing),
     id: previousId,
     ...recipientsOwn(existing, parentId),
     children: undefined,
   });
+}
+
+/** The recipient's own SSH link rides with its marks (D4): the payload's is never taken, the recipient's never erased. */
+function keepingOwnLink(details: TreeNode['details'], existing: TreeNode | undefined): TreeNode['details'] {
+  return details === undefined ? undefined : keepingSshLink(details, existing?.details);
 }
 
 /** What the recipient's node keeps whatever the payload says: its place, its age, its decisions. */

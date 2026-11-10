@@ -9,7 +9,7 @@ import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
 import { clearSecondBox, secondBox, secondModeControl } from './secondModeMarkup';
 import { notForExportField, pinState, wovenState } from './generalNotes';
-import { runDependenciesField, terminalOsField, vpnLauncherField } from './execFormFields';
+import { runDependenciesField, sshLinkField, terminalOsField, vpnLauncherField } from './execFormFields';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
 import { describeAttachment } from './attachmentMeta';
@@ -594,6 +594,7 @@ ${formHeaderHtml({
            placeholder="aws sso login" value="${escapeHtml(d?.command ?? '')}">
     <p class="hint">The verb only. Arguments go in their own rows below, so each one can carry its own explanation.</p>
     ${terminalOsField(d, options.mode, options.hostOs)}
+    ${sshLinkField(d, options.sshCandidates ?? [])}
 
     <label for="commandNote">What this command is for</label>
     <textarea id="commandNote" rows="2" spellcheck="false"

@@ -407,3 +407,10 @@ test('the #103 fields survive a save WHOLE — the literal toValues writes is wh
   assert.deepEqual(vpn.details.dependsOn, ['t1']);
 });
 
+
+test('the_ssh_link_survives_a_save_whole', () => {
+  const panel = world();
+  const post = (kind: EntityKind) => panel.toValues(posted(kind, { command: 'ls', sshEntityId: 's1' }), { entityId: 't1' } as never).details.sshEntityId;
+  assert.equal(post('terminal'), 's1');
+  assert.equal(post('ssh'), undefined);
+});

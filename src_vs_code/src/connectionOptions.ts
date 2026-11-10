@@ -40,6 +40,8 @@ function lookup(storage: StorageManager, accountId: string): (id: string) => Ent
  * click, so no caller can forget it (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, E4.S4). It cancels the
  * host-key scan, and once it has fired the question is not raised and nothing is written: a trust answer
  * given to a dialog nobody waits for decides nothing, and the next live connect asks again.</p>
+ *
+ * <p>`knownHostsSuffix` names the pin file one session's alone (`isolate`, E1.S3); absent is today's name.</p>
  */
 export async function connectionOptions(
   accountId: string,
@@ -47,6 +49,7 @@ export async function connectionOptions(
   storage: StorageManager,
   storageDir: string,
   startGate: AbortSignal | undefined,
+  knownHostsSuffix?: string,
 ): Promise<ConnectionOptions | undefined> {
   const chain = resolveJumpChain(entity, lookup(storage, accountId));
   if (!chain.ok) {
@@ -64,7 +67,7 @@ export async function connectionOptions(
   const settled = pin.entity;
   return {
     jump: chain.value,
-    knownHostsFile: materializeKnownHosts(storageDir, settled),
+    knownHostsFile: materializeKnownHosts(storageDir, settled, knownHostsSuffix),
     pin: pin.stored,
   };
 }

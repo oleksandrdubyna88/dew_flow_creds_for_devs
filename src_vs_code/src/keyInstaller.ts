@@ -142,16 +142,23 @@ function processAlive(pid: number): boolean {
 /**
  * Write a stored private key into the extension's private storage
  * (dir 0700, file 0600) and return its path for `ssh -i`.
+ *
+ * <p>`suffix` makes the file THIS call's alone: `<id>-<suffix>.key`, so two sessions of one entry never
+ * share a path (E1.S3 `isolate`). A per-session uuid, never vault data. Omitted, the name is `<id>.key`.</p>
  */
 export function materializePrivateKey(
   storageDir: string,
   entityId: string,
   content: string,
+  suffix?: string,
 ): string {
   const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
   // The id comes from the vault, and import/restore write an envelope's ids verbatim.
-  const keyPath = path.join(keysDir, `${safeFileComponent(entityId)}.key`);
+  const keyPath = path.join(
+    keysDir,
+    `${safeFileComponent(entityId)}${suffix === undefined ? '' : `-${safeFileComponent(suffix)}`}.key`,
+  );
   fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
   fs.chmodSync(keyPath, 0o600);
   lockToOwner(keyPath);
