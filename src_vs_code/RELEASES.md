@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.20.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.19.0...extension-v1.20.0) (2026-11-10)
+
+
+### Features
+
+* **ssh:** an SSH Connect tab is titled Creds SSH: &lt;folder&gt; / &lt;entry&gt;, and a session is found again by its entry ([#336](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/336)) ([454e990](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/454e990f9bd1047a8510eedbd2ad94f06756d2d2))
+* **terminal:** E1 — a Terminal entry can link an SSH connection; the composer, the seam, and a refusal on every road ([#335](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/335)) ([f3b024b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/f3b024b733d4e5bdee5afa365a372faa43d35ee2))
+* **terminal:** E2 — the arrow, a VPN's Start, Run All in Folder and the dependency chain run a linked entry over SSH ([#337](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/337)) ([44f3f3d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/44f3f3dca7dc557a5c6e0144ac9770a1c423ad13))
+
 ## [1.19.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.18.0...extension-v1.19.0) (2026-11-10)
 
 
