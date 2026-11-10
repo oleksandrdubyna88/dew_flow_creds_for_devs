@@ -240,7 +240,7 @@ export function repairRegistration({ home, beforeWrite = () => {} }) {
   if (original !== null && original.equals(Buffer.from(merged))) return result(0, ['already registered']);
   const lines = original === null ? [] : [`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`];
   beforeWrite();
-  if (!sameBytes(readOrNull(t.settings), original)) return result(1, [...lines, CHANGED]);
+  if (changedUnderUs(t, original, target)) return result(1, [...lines, CHANGED]);
   writeSettings(target.file, merged);
   return result(0, [...lines, `wrote ${t.settings} (hooks.PreToolUse: ${MATCHER})`]);
 }
@@ -295,7 +295,7 @@ export function install({ home, source, beforeWrite = () => {}, clearOptout = fa
   const lines = [...dropOptout(t, clearOptout)];
   if (original !== null) lines.push(`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`);
   beforeWrite();
-  if (!sameBytes(readOrNull(t.settings), original)) return result(1, [...lines, CHANGED]);
+  if (changedUnderUs(t, original, target)) return result(1, [...lines, CHANGED]);
   // Every refusal is above, so a refused install never writes the hook, the manifest or settings.json (the backup and
   // the opt-out removal above are older behaviour). Order: the manifest (naming the bytes it replaces), the hook, then
   // the registration. A stop after the manifest leaves the old bytes, which its `previous` vouches for; a stop after the
@@ -325,7 +325,7 @@ export function uninstall({ home, beforeWrite = () => {} }) {
     if (target.refusal) return result(1, [target.refusal]);
     lines.push(`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`);
     beforeWrite();
-    if (!sameBytes(readOrNull(t.settings), original)) return result(1, [CHANGED]);
+    if (changedUnderUs(t, original, target)) return result(1, [CHANGED]);
     writeSettings(target.file, serialise(removeEntry(parsed.settings, t.hook)));
     lines.push(`removed the hook entry from ${t.settings}`);
   }
@@ -414,6 +414,15 @@ function writeSettings(file, data) {
   writeAtomic(file, data, modeOf(file));
 }
 
+/**
+ * True when settings.json changed between the read and the write: its bytes, or WHICH file it is — a link pointed at
+ * another file with the same bytes passed the byte check, and the write went to the old file (CodeRabbit on coai
+ * #970, 2026-11-10).
+ */
+function changedUnderUs(t, original, target) {
+  return !sameBytes(readOrNull(t.settings), original) || settingsFileOf(t.settings).file !== target.file;
+}
+
 /** How many links a settings path may pass through before it is called a loop (the kernel's own ELOOP limit). */
 const MAX_LINKS = 40;
 
@@ -446,7 +455,9 @@ function lastLinkTarget(settingsPath) {
   for (let hop = 0; hop <= MAX_LINKS; hop += 1) {
     const stat = lstatOrNull(current);
     if (stat === null || !stat.isSymbolicLink()) return hop === 0 ? null : current;
-    current = path.resolve(path.dirname(current), fs.readlinkSync(current));
+    // From the link's REAL folder: a textual `..` after a symlinked parent names the wrong folder (CodeRabbit on creds
+    // #340, 2026-11-10). The link exists, so its folder does too.
+    current = path.resolve(fs.realpathSync(path.dirname(current)), fs.readlinkSync(current));
   }
   return TOO_MANY_LINKS;
 }
