@@ -867,6 +867,12 @@ jobs:
 
       - run: npm ci
 
+      # The tests that read the shared guard (dockerSmokeLeftovers, acmeRunLeftovers) import the mount's own `yaml`; without
+      # its node_modules they SKIP and prove nothing (E2.4 fix round 2b). Installed from the mount's own lock file.
+      - name: Install the shared rules' own dependencies
+        working-directory: .
+        run: npm ci --prefix .claude/rules/shared --ignore-scripts
+
       # Never publish something that has not passed its own tests.
       - run: npm run typecheck
       - run: npm test
