@@ -53,6 +53,21 @@ jobs:
           # checked out to a push on main; this bounds what it could do with what it finds.
           persist-credentials: false
 
+      # common/test-leftovers.md §1, §3, §5: one random id per job; the owner segment of every name is the runner user's uid,
+      # written as a literal (`u1001`, the uid of the hosted ubuntu-latest runner, the only runner this workflow runs on). The
+      # FIRST command checks that uid, so on any other runner the job fails here with no image, container or volume made.
+      # The record's pid is the job's runner worker, the parent of every step's shell: the only process that outlives a step.
+      # It is printed once, so the first run shows which process that is.
+      - name: Name the smoke's resources
+        run: |
+          [ "$(id -u)" = 1001 ] || exit 1
+          echo "runner uid: $(id -u)"
+          {
+            echo "SMOKE_ID=$(openssl rand -hex 4)"
+            echo "SMOKE_OWNER=u1001:$(hostname | sed -E 's/[@:[:space:]]+/-/g')@linux:$PPID"
+          } >> "$GITHUB_ENV"
+          ps -o pid=,comm= -p "$PPID" || true
+
       # Pinned to SHAs, not tags: a tag can be repointed at any commit by whoever owns the action,
       # and every workflow naming it follows silently. The version comment is what keeps the line
       # readable. (SonarCloud githubactions:S7637; the conventions repository pinned its own Sonar
@@ -72,24 +87,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # An image that builds but does not serve is not a green build.
+      # An image that builds but does not serve is not a green build. The container is named under the leftovers
+      # contract and has no --rm: its logs are what a failed health wait prints. The remover below takes it out on every path.
       - name: Smoke-test
         run: |
-          docker run -d --name cv \
+          docker run -d --name "testsToDelete-u1001-creds-cv-${SMOKE_ID}" \
+            --label "testsToDelete.owner=$SMOKE_OWNER" \
             -e Vault__AllowedDomains=example.com \
             -e Auth__Local__SigningKey=ci-signing-key-ci-signing-key-32b \
             -p 8080:8080 cred-vault-server:ci
           for _ in $(seq 1 30); do
-            state=$(docker inspect --format '{{.State.Health.Status}}' cv 2>/dev/null || echo starting)
+            state=$(docker inspect --format '{{.State.Health.Status}}' "testsToDelete-u1001-creds-cv-${SMOKE_ID}" 2>/dev/null || echo starting)
             [ "$state" = "healthy" ] && break
-            [ "$state" = "unhealthy" ] && { docker logs cv; exit 1; }
+            [ "$state" = "unhealthy" ] && { docker logs "testsToDelete-u1001-creds-cv-${SMOKE_ID}"; exit 1; }
             sleep 2
           done
-          [ "$state" = "healthy" ] || { echo "never became healthy"; docker logs cv; exit 1; }
+          [ "$state" = "healthy" ] || { echo "never became healthy"; docker logs "testsToDelete-u1001-creds-cv-${SMOKE_ID}"; exit 1; }
           curl --fail --silent http://127.0.0.1:8080/api/health
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/vault)
           [ "$code" = "401" ] || { echo "unauthenticated vault access returned $code, expected 401"; exit 1; }
-          docker rm -f cv
 
       # A start the server REFUSES must say why in its per-run log file and exit 78 (EX_CONFIG) — not die
       # with the runtime's crash code. Measured on 0.11.0 before the fix: exit 139 under Native AOT and a
@@ -98,23 +114,56 @@ jobs:
       # still does it: read-only root, tmpfs /tmp, no capabilities, no-new-privileges, Docker VOLUMES.
       - name: Smoke-test a refused start
         run: |
-          docker volume create cv-refused-data
-          docker volume create cv-refused-logs
+          docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}"
+          docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"
           # Detached and waited for with a bound: a regression that made this configuration START would
           # otherwise keep `docker run` in the foreground forever and hang the job instead of failing it.
-          docker run -d --name cv-refused --read-only --tmpfs /tmp --cap-drop ALL \
+          docker run -d --name "testsToDelete-u1001-creds-refused-${SMOKE_ID}" --read-only --tmpfs /tmp --cap-drop ALL \
+            --label "testsToDelete.owner=$SMOKE_OWNER" \
             --security-opt no-new-privileges \
-            -v cv-refused-data:/data -v cv-refused-logs:/logs \
+            -v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data" -v "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}:/logs" \
             -e Vault__AllowedDomains=example.com \
             cred-vault-server:ci
-          code=$(timeout 120 docker wait cv-refused) \
-            || { echo "a refused start was still running after 120 s"; docker logs cv-refused; docker rm -f cv-refused; exit 1; }
-          [ "$code" = "78" ] || { echo "a refused start exited $code, expected 78"; docker logs cv-refused; exit 1; }
-          docker cp cv-refused:/logs ./refused-logs
+          code=$(timeout 120 docker wait "testsToDelete-u1001-creds-refused-${SMOKE_ID}") \
+            || { echo "a refused start was still running after 120 s"; docker logs "testsToDelete-u1001-creds-refused-${SMOKE_ID}"; exit 1; }
+          [ "$code" = "78" ] || { echo "a refused start exited $code, expected 78"; docker logs "testsToDelete-u1001-creds-refused-${SMOKE_ID}"; exit 1; }
+          docker cp "testsToDelete-u1001-creds-refused-${SMOKE_ID}:/logs" ./refused-logs
           grep -rF "FTL]" ./refused-logs | grep -F "exited: code 78, reason startupRefused: No authentication scheme configured" \
             || { echo "the refusal is not in the run's log file:"; find ./refused-logs -type f -exec cat {} +; exit 1; }
-          docker rm cv-refused
-          docker volume rm cv-refused-data cv-refused-logs
+
+      # The carve-out's remover (common/test-leftovers.md section 5): after the last step that reads the two containers,
+      # on every path, by exact name. It never decides the verdict: continue-on-error, `|| true`, nothing here fails the job.
+      # `shell: bash` makes the body run as `bash --noprofile --norc -eo pipefail`: without `|| true` the first failed removal
+      # would end the step and the later ones would not run. The names stay unquoted, because the guard reads this raw text.
+      - name: Remove the smoke's containers and volumes
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          # shellcheck disable=SC2086 -- SMOKE_ID is 8 hex digits; the guard reads a remover's names only when they are unquoted
+          [ -n "${SMOKE_ID:-}" ] || { echo "no smoke id: nothing was named, nothing to remove"; exit 0; }
+          docker rm -f -v testsToDelete-u1001-creds-cv-${SMOKE_ID} || true
+          docker rm -f -v testsToDelete-u1001-creds-refused-${SMOKE_ID} || true
+          docker volume rm testsToDelete-u1001-creds-refused-data-${SMOKE_ID} || true
+          docker volume rm testsToDelete-u1001-creds-refused-logs-${SMOKE_ID} || true
+          echo "left after removal:"
+          docker ps -a --filter label=testsToDelete.owner --format '{{.Names}}' || true
+          docker volume ls --filter label=testsToDelete.owner --format '{{.Name}}' || true
+
+      # Nothing of the smoke is left, or the job is red. No continue-on-error: this step can only turn the job red, never
+      # green, and `Publish` (implicit success()) is then skipped. Filters only, never a reader verb after the remover, and
+      # each name a literal, so a reader added here is a guard finding.
+      - name: Check that nothing of the smoke is left
+        if: always()
+        shell: bash
+        run: |
+          [ -n "${SMOKE_ID:-}" ] || exit 0
+          left=""
+          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"
+          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-refused-${SMOKE_ID}$")" ] || left="$left refused"
+          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}$")" ] || left="$left refused-data"
+          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}$")" ] || left="$left refused-logs"
+          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }
 
       # ---------------------------------------------------------------------
       # Publish, but only for main. A pull request must never be able to move a

@@ -53,26 +53,34 @@ interface Step {
   readonly run: string;
 }
 
-/** The steps of the `image` job: a step starts at a six-space dash; a comment line is not part of any step. */
-function stepsOf(text: string): Step[] {
+/** The items before the first one `stop` accepts (all of them when none does). */
+function upTo<T>(items: T[], stop: (item: T) => boolean): T[] {
+  const end = items.findIndex(stop);
+  return end < 0 ? items : items.slice(0, end);
+}
+
+/** The lines of each step: a step starts at a six-space dash; a comment line is not part of any step. */
+function blocksOf(text: string): string[][] {
   const blocks: string[][] = [];
-  for (const line of text.split(/\r?\n/)) {
-    if (/^\s*#/.test(line)) continue;
-    if (/^      - /.test(line)) blocks.push([line]);
+  for (const line of text.split(/\r?\n/).filter((each) => !/^\s*#/.test(each))) {
+    if (/^ {6}- /.test(line)) blocks.push([line]);
     else blocks.at(-1)?.push(line);
   }
-  return blocks.map((lines) => {
-    const joined = lines.join('\n');
-    const label = /^ {6}- (?:name|uses):\s*(.+?)\s*$/m.exec(joined);
-    const start = lines.findIndex((line) => /^ {8}run:\s*\|\s*$/.test(line));
-    const body: string[] = [];
-    if (start >= 0) {
-      for (const line of lines.slice(start + 1)) {
-        if (line.trim() !== '' && !/^ {10}/.test(line)) break;
-        body.push(line.slice(10));
-      }
-    }
-    return { name: label?.[1] ?? '', text: joined, run: body.join('\n').trimEnd() + '\n' };
+  return blocks;
+}
+
+/** The `run: |` body of a step's lines, dedented. */
+function runBodyOf(lines: string[]): string {
+  const start = lines.findIndex((line) => /^ {8}run:\s*\|\s*$/.test(line));
+  if (start < 0) return '';
+  return upTo(lines.slice(start + 1), (line) => line.trim() !== '' && !/^ {10}/.test(line)).map((line) => line.slice(10)).join('\n').trimEnd() + '\n';
+}
+
+/** The steps of the `image` job. */
+function stepsOf(text: string): Step[] {
+  return blocksOf(text).map((lines) => {
+    const label = /^ {6}- (?:name|uses):\s*(.+?)\s*$/m.exec(lines.join('\n'));
+    return { name: label?.[1] ?? '', text: lines.join('\n'), run: runBodyOf(lines) };
   });
 }
 
@@ -80,17 +88,14 @@ const step = (text: string, name: string): Step | undefined => stepsOf(text).fin
 const indexOfStep = (text: string, name: string): number => stepsOf(text).findIndex((candidate) => candidate.name === name);
 /** A step's own key: `shell:`, `continue-on-error:` and the like, at the step's indent. */
 const keyOf = (candidate: Step, key: string): string | undefined => new RegExp(`^ {8}${key}:\\s*(.+?)\\s*$`, 'm').exec(candidate.text)?.[1];
+
 /** A step's `if:`, which may continue over several lines (`>-`). */
 function conditionOf(candidate: Step): string {
   const lines = candidate.text.split('\n');
   const start = lines.findIndex((line) => /^ {8}if:/.test(line));
   if (start < 0) return '';
-  const continued: string[] = [lines[start].replace(/^ {8}if:\s*[>|]?-?\s*/, '')];
-  for (const line of lines.slice(start + 1)) {
-    if (!/^ {10}/.test(line)) break;
-    continued.push(line.trim());
-  }
-  return continued.join(' ').trim();
+  const continued = upTo(lines.slice(start + 1), (line) => !/^ {10}/.test(line)).map((line) => line.trim());
+  return [lines[start].replace(/^ {8}if:\s*[>|]?-?\s*/, ''), ...continued].join(' ').trim();
 }
 
 /** The one place a planted fault is made: it fails when the text to replace is not there exactly once, so a drifted workflow cannot hide behind it. */
@@ -100,104 +105,116 @@ function mutate(text: string, from: string | RegExp, to: string): string {
   return typeof from === 'string' ? text.replace(from, () => to) : text.replace(from, to);
 }
 
+/** Where a block of lines ends: at the next step or comment of the job's indent. */
+function blockEnd(lines: string[], from: number): number {
+  const end = lines.slice(from + 1).findIndex((line) => /^ {6}[-#]/.test(line));
+  return end < 0 ? lines.length : from + 1 + end;
+}
+
+/** Where a step starts, counting the comment lines just above it. */
+function blockStart(lines: string[], from: number): number {
+  let first = from;
+  while (/^ {6}#/.test(lines[first - 1] ?? '')) first -= 1;
+  return first;
+}
+
 /** The text with the step `name` (and the comment lines just above it) cut out and put again right after the step `after`. */
 function moveStepAfter(text: string, name: string, after: string): string {
   const lines = text.split('\n');
-  const isStart = (line: string, label: string): boolean => line === `      - name: ${label}`;
-  const from = lines.findIndex((line) => isStart(line, name));
+  const from = lines.indexOf(`      - name: ${name}`);
   assert.ok(from >= 0, `no step ${name}`);
-  let first = from;
-  while (/^ {6}#/.test(lines[first - 1] ?? '')) first -= 1;
-  let end = from + 1;
-  while (end < lines.length && !/^ {6}[-#]/.test(lines[end])) end += 1;
-  const block = lines.slice(first, end);
-  const rest = [...lines.slice(0, first), ...lines.slice(end)];
-  const target = rest.findIndex((line) => isStart(line, after));
+  const first = blockStart(lines, from);
+  const block = lines.slice(first, blockEnd(lines, from));
+  const rest = [...lines.slice(0, first), ...lines.slice(blockEnd(lines, from))];
+  const target = rest.indexOf(`      - name: ${after}`);
   assert.ok(target >= 0, `no step ${after}`);
-  let stop = target + 1;
-  while (stop < rest.length && !/^ {6}[-#]/.test(rest[stop])) stop += 1;
+  const stop = blockEnd(rest, target);
   return [...rest.slice(0, stop), ...block, ...rest.slice(stop)].join('\n');
 }
 
-// --- the rules, each a function of the workflow text, so a planted fault can be handed to the same check --------------------------
+// --- the rules: each a function of the workflow text that answers a problem or nothing, so a planted fault goes through the same check --
+
+type Check = (text: string) => string | undefined;
+
+const problemsOf = (checks: Check[], text: string): string[] => checks.map((check) => check(text)).filter((problem): problem is string => problem !== undefined);
+const unless = (holds: boolean, problem: string): string | undefined => (holds ? undefined : problem);
+/** A check of the step `name`: "no step" when it is missing, else what `check` says of it. */
+const onStep = (name: string, check: (found: Step, text: string) => string | undefined): Check => (text) => {
+  const found = step(text, name);
+  return found === undefined ? `no step named "${name}"` : check(found, text);
+};
 
 const FIRST_COMMAND = '[ "$(id -u)" = 1001 ] || exit 1';
+const firstCommand = (run: string): string | undefined => run.split('\n').find((line) => line.trim() !== '')?.trim();
+const isRemoval = (line: string): boolean => /\bdocker (?:rm|volume rm)\b/.test(line);
+const removalLines = (run: string): string[] => run.split('\n').filter(isRemoval);
+/** The first of the four names the text does not mention in a line of `lines` (written with the id as `${SMOKE_ID}`), as `[key, name]`. */
+const missingName = (mentions: (name: string) => boolean): [string, string] | undefined => Object.entries(names('${SMOKE_ID}')).find(([, name]) => !mentions(name));
 
 /** Row E2.4-c: the naming step is after checkout, before Build, and its first command is the uid check. */
-function namingProblems(text: string): string[] {
-  const problems: string[] = [];
-  const naming = step(text, NAMING);
-  if (naming === undefined) return [`no step named "${NAMING}"`];
-  const at = indexOfStep(text, NAMING);
-  const build = indexOfStep(text, 'Build');
-  if (build < 0) problems.push('no Build step');
-  else if (at > build) problems.push('the naming step comes after Build: an image is built before the uid is known');
-  const checkout = stepsOf(text).findIndex((candidate) => /actions\/checkout@/.test(candidate.text));
-  if (checkout < 0 || at < checkout) problems.push('the naming step does not come after checkout');
-  const first = naming.run.split('\n').find((line) => line.trim() !== '');
-  if (first?.trim() !== FIRST_COMMAND) problems.push(`the first command is ${JSON.stringify(first)}, not ${FIRST_COMMAND}`);
-  return problems;
-}
+const NAMING_CHECKS: Check[] = [
+  onStep(NAMING, (_found, text) => unless(indexOfStep(text, 'Build') > indexOfStep(text, NAMING), 'the naming step comes after Build (or there is no Build): an image is built before the uid is known')),
+  onStep(NAMING, (_found, text) => unless(stepsOf(text).findIndex((candidate) => /actions\/checkout@/.test(candidate.text)) < indexOfStep(text, NAMING), 'the naming step does not come after checkout')),
+  onStep(NAMING, (found) => unless(firstCommand(found.run) === FIRST_COMMAND, `the first command is ${JSON.stringify(firstCommand(found.run))}, not ${FIRST_COMMAND}`)),
+];
 
 /** Row E2.4-b, the text half: ONE remover, in its place, `shell: bash`, always, `|| true` on each of four unquoted removals. */
-function removerProblems(text: string): string[] {
-  const problems: string[] = [];
-  const steps = stepsOf(text);
-  const removers = steps.filter((candidate) => /\bdocker (?:rm|volume rm)\b/.test(candidate.run));
-  if (removers.length !== 1) return [`${removers.length} steps remove a container or volume, expected exactly one`];
-  const remover = removers[0];
-  if (remover.name !== REMOVER) problems.push(`the remover is named "${remover.name}"`);
-  if (keyOf(remover, 'shell') !== 'bash') problems.push('the remover has no `shell: bash`');
-  if (conditionOf(remover) !== 'always()') problems.push(`the remover's if is "${conditionOf(remover)}", not always()`);
-  if (keyOf(remover, 'continue-on-error') !== 'true') problems.push('the remover has no continue-on-error: true');
-  const at = steps.indexOf(remover);
-  if (at < indexOfStep(text, REFUSED)) problems.push('the remover comes before the last step that reads the containers');
-  if (at > indexOfStep(text, LOGIN)) problems.push('the remover comes after Log in');
-  const lines = remover.run.split('\n').filter((line) => /\bdocker (?:rm|volume rm)\b/.test(line));
-  if (lines.length !== 4) problems.push(`the remover has ${lines.length} removal lines, expected 4`);
-  for (const line of lines) {
-    if (!/ \|\| true$/.test(line)) problems.push(`a removal without || true: ${line}`);
-    if (/["']/.test(line)) problems.push(`a removal with quotes (the guard does not read a quoted remover): ${line}`);
-  }
-  for (const [key, name] of Object.entries(names('${SMOKE_ID}'))) {
-    if (!lines.some((line) => line.includes(` ${name} `) || line.includes(` ${name}`))) problems.push(`no removal of ${key}: ${name}`);
-  }
-  return problems;
-}
+const REMOVER_CHECKS: Check[] = [
+  (text) => {
+    const count = stepsOf(text).filter((candidate) => isRemoval(candidate.run)).length;
+    return unless(count === 1, `${count} steps remove a container or volume, expected exactly one`);
+  },
+  onStep(REMOVER, (found) => unless(keyOf(found, 'shell') === 'bash', 'the remover has no `shell: bash`')),
+  onStep(REMOVER, (found) => unless(conditionOf(found) === 'always()', `the remover's if is "${conditionOf(found)}", not always()`)),
+  onStep(REMOVER, (found) => unless(keyOf(found, 'continue-on-error') === 'true', 'the remover has no continue-on-error: true')),
+  onStep(REMOVER, (_found, text) => unless(indexOfStep(text, REFUSED) < indexOfStep(text, REMOVER) && indexOfStep(text, REMOVER) < indexOfStep(text, LOGIN), 'the remover is not after the last step that reads the containers and before Log in')),
+  onStep(REMOVER, (found) => unless(removalLines(found.run).length === 4, `the remover has ${removalLines(found.run).length} removal lines, expected 4`)),
+  onStep(REMOVER, (found) => {
+    const bad = removalLines(found.run).find((line) => !/ \|\| true$/.test(line));
+    return unless(bad === undefined, `a removal without || true: ${bad}`);
+  }),
+  onStep(REMOVER, (found) => {
+    const bad = removalLines(found.run).find((line) => /["']/.test(line));
+    return unless(bad === undefined, `a removal with quotes (the guard does not read a quoted remover): ${bad}`);
+  }),
+  onStep(REMOVER, (found) => {
+    const lines = removalLines(found.run);
+    const missing = missingName((name) => lines.some((line) => line.includes(` ${name}`)));
+    return unless(missing === undefined, `no removal of ${missing?.[0]}: ${missing?.[1]}`);
+  }),
+];
 
 /** Row E2.4-k, the text half: the check follows the remover, always runs, can only turn the job red, and reads by filter, never by `inspect`. */
-function checkProblems(text: string): string[] {
-  const problems: string[] = [];
-  const steps = stepsOf(text);
-  const check = step(text, CHECK);
-  if (check === undefined) return [`no step named "${CHECK}"`];
-  if (steps.indexOf(check) !== steps.findIndex((candidate) => candidate.name === REMOVER) + 1) problems.push('the check is not the step right after the remover');
-  if (keyOf(check, 'shell') !== 'bash') problems.push('the check has no `shell: bash`');
-  if (conditionOf(check) !== 'always()') problems.push(`the check's if is "${conditionOf(check)}", not always()`);
-  if (keyOf(check, 'continue-on-error') !== undefined) problems.push('the check has continue-on-error: it could never fail the job');
-  if (/\bdocker inspect\b/.test(check.run)) problems.push('the check uses `docker inspect`, which the guard reads as a reader after the remover');
-  if (/\bdocker (?:rm|volume rm)\b/.test(check.run)) problems.push('the check removes something');
-  for (const [key, name] of Object.entries(names('${SMOKE_ID}'))) {
-    if (!check.run.includes(`name=^${name}$`)) problems.push(`the check does not ask for ${key} by exact name: ^${name}$`);
-  }
-  return problems;
-}
+const CHECK_CHECKS: Check[] = [
+  onStep(CHECK, (_found, text) => unless(indexOfStep(text, CHECK) === indexOfStep(text, REMOVER) + 1, 'the check is not the step right after the remover')),
+  onStep(CHECK, (found) => unless(keyOf(found, 'shell') === 'bash', 'the check has no `shell: bash`')),
+  onStep(CHECK, (found) => unless(conditionOf(found) === 'always()', `the check's if is "${conditionOf(found)}", not always()`)),
+  onStep(CHECK, (found) => unless(keyOf(found, 'continue-on-error') === undefined, 'the check has continue-on-error: it could never fail the job')),
+  onStep(CHECK, (found) => unless(!/\bdocker inspect\b/.test(found.run), 'the check uses `docker inspect`, which the guard reads as a reader after the remover')),
+  onStep(CHECK, (found) => unless(removalLines(found.run).length === 0, 'the check removes something')),
+  onStep(CHECK, (found) => {
+    const missing = missingName((name) => found.run.includes(`name=^${name}$`));
+    return unless(missing === undefined, `the check does not ask for ${missing?.[0]} by exact name: ^${missing?.[1]}$`);
+  }),
+];
 
-/** Row 10, the text half: a failed smoke stays failed. Only the remover may continue on error; nothing after it may run past a failure but the two always-steps. */
-function verdictProblems(text: string): string[] {
-  const problems: string[] = [];
-  for (const candidate of stepsOf(text)) {
-    if (candidate.name === REMOVER) continue;
-    if (keyOf(candidate, 'continue-on-error') !== undefined) problems.push(`"${candidate.name}" has continue-on-error`);
-    const condition = conditionOf(candidate);
-    if (candidate.name === CHECK) continue;
-    if (/\b(?:always|failure|cancelled)\(\)/.test(condition)) problems.push(`"${candidate.name}" runs past a failure: if ${condition}`);
-  }
-  const publish = step(text, 'Publish');
-  if (publish === undefined) problems.push('no Publish step');
-  else if (conditionOf(publish) === '') problems.push('Publish has no if: it would run on every dispatch');
-  return problems;
-}
+/** Row 10, the text half: a failed smoke stays failed. Only the remover may continue on error; only the remover and the check may run past a failure. */
+const VERDICT_CHECKS: Check[] = [
+  (text) => {
+    const offender = stepsOf(text).find((candidate) => candidate.name !== REMOVER && keyOf(candidate, 'continue-on-error') !== undefined);
+    return unless(offender === undefined, `"${offender?.name}" has continue-on-error`);
+  },
+  (text) => {
+    const offender = stepsOf(text).find((candidate) => candidate.name !== REMOVER && candidate.name !== CHECK && /\b(?:always|failure|cancelled)\(\)/.test(conditionOf(candidate)));
+    return unless(offender === undefined, `"${offender?.name}" runs past a failure: if ${offender === undefined ? '' : conditionOf(offender)}`);
+  },
+  onStep('Publish', (found) => unless(conditionOf(found) !== '', 'Publish has no if: it would run on every dispatch')),
+];
+
+const namingProblems = (text: string): string[] => problemsOf(NAMING_CHECKS, text);
+const removerProblems = (text: string): string[] => problemsOf(REMOVER_CHECKS, text);
+const checkProblems = (text: string): string[] => problemsOf(CHECK_CHECKS, text);
+const verdictProblems = (text: string): string[] => problemsOf(VERDICT_CHECKS, text);
 
 // --- what runs: a stub `docker` with a world of named resources ----------------------------------------------------------------
 
@@ -374,7 +391,7 @@ test('E2.4-b: the rule refuses a remover without `shell: bash`, without always()
   assert.match(removerProblems(mutate(REAL, `        if: always()\n        continue-on-error: true\n`, `        continue-on-error: true\n`)).join('\n'), /not always\(\)/);
   assert.match(removerProblems(mutate(REAL, 'docker volume rm testsToDelete-u1001-creds-refused-data-${SMOKE_ID} || true', 'docker volume rm "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}" || true')).join('\n'), /quotes/);
   assert.match(removerProblems(mutate(REAL, /\n {10}docker volume rm testsToDelete-u1001-creds-refused-logs-\$\{SMOKE_ID\} \|\| true/, '')).join('\n'), /4 removal lines|no removal of logs/);
-  assert.match(removerProblems(`${REAL.replace('      - name: Summary', `      - name: Again\n        run: docker rm -f x\n      - name: Summary`)}`).join('\n'), /2 steps remove/);
+  assert.match(removerProblems(`${REAL.replace('      - name: Summary', `      - name: Again\n        run: |\n          docker rm -f x\n\n      - name: Summary`)}`).join('\n'), /2 steps remove/);
 });
 
 // --- the check, E2.4-k -------------------------------------------------------------------------------------------------------
@@ -391,10 +408,10 @@ test('E2.4-k: with nothing left the check is green', () => {
 
 test('E2.4-k: with a container or a volume still there after the remover, the check fails and names it', () => {
   const n = names('abcd1234');
-  for (const [key, stuck] of [['cv', n.cv], ['refused', n.refused], ['refused-data', n.data], ['refused-logs', n.logs]] as const) {
+  for (const [key, stuck, kind] of [['cv', n.cv, 'c'], ['refused', n.refused, 'c'], ['refused-data', n.data, 'v'], ['refused-logs', n.logs, 'v']] as const) {
     const run = runSteps([bodyOf(REAL, REMOVER), bodyOf(REAL, CHECK)], { stuck: [stuck] });
     assert.equal(run.status, 1, `${key}: ${run.output}`);
-    assert.deepEqual(run.left, [`${stuck.includes('refused-') ? 'v' : 'c'} ${stuck}`]);
+    assert.deepEqual(run.left, [`${kind} ${stuck}`]);
     assert.match(run.output, new RegExp(`left after removal:.*\\b${key}\\b`), `${key}: the check did not name it:\n${run.output}`);
   }
 });
@@ -486,11 +503,11 @@ test('the shipped guard refuses each plant of the carve-out: quoted remover name
   const quoted = mutate(REAL, /(docker rm -f -v) (testsToDelete-u1001-creds-cv-\$\{SMOKE_ID\}) \|\| true/, '$1 "$2" || true').replace(/(docker rm -f -v) (testsToDelete-u1001-creds-refused-\$\{SMOKE_ID\}) \|\| true/, '$1 "$2" || true');
   assert.deepEqual(classes(guard, quoted), ['docker-run', 'docker-run']);
 
-  const sourceAlone = mutate(REAL, '-v testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data', '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}":/data');
+  const sourceAlone = mutate(REAL, '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data"', '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}":/data');
   assert.deepEqual(classes(guard, sourceAlone), ['docker-run']);
 
-  const whole = mutate(REAL, '-v testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data', '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data"');
-  assert.deepEqual(classes(guard, whole), [], 'a -v argument quoted WHOLE is allowed');
+  const unquoted = mutate(REAL, '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data"', '-v testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data');
+  assert.deepEqual(classes(guard, unquoted), [], 'a -v argument unquoted is allowed, as the real text quotes it WHOLE');
 
   const inspect = mutate(REAL, '[ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"', 'docker inspect testsToDelete-u1001-creds-cv-${SMOKE_ID} || left="$left cv"');
   assert.deepEqual(classes(guard, inspect), ['docker-run']);
@@ -498,6 +515,6 @@ test('the shipped guard refuses each plant of the carve-out: quoted remover name
   const reader = mutate(REAL, `      - name: ${CHECK}`, `      - name: Read the logs after the remover\n        run: docker logs testsToDelete-u1001-creds-cv-\${SMOKE_ID}\n\n      - name: ${CHECK}`);
   assert.deepEqual(classes(guard, reader), ['docker-run']);
 
-  const shortName = mutate(REAL, '--name testsToDelete-u1001-creds-cv-${SMOKE_ID}', '--name cv');
+  const shortName = mutate(REAL, '--name "testsToDelete-u1001-creds-cv-${SMOKE_ID}"', '--name cv');
   assert.ok(classes(guard, shortName).includes('docker-name'));
 });
