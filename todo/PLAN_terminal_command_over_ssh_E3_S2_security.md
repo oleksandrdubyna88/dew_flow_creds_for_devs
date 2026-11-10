@@ -8,9 +8,17 @@
 > line budget) is §S2.2–§S2.6 of the stories document and is not repeated here.
 > Every path is relative to `src_vs_code/src/`; every `file:line` was opened on `de15db8` (branch `feat/terminal-command-over-ssh-e3`)
 > and checked again on 454e990 (`origin/main` with E1 #335, E2 #337 and #336), where no file this spec cites moved.
+> Checked a third time on e57eb80f (this branch with `main` merged, #338 the CHANGELOG): `git diff 454e990 e57eb80f --
+> src_vs_code/src` is empty, so no cited source line moved, and every `file:line` of the second amendment was opened there.
 > Amended 2026-11-10 by E3's plan round 1, item 6 (an Opus judge, inside this spec's own decisions): the gate is answered
 > before ANY refusal that reads the link or the SSH entry, the bridge test moved before the link is read, and every
 > outcome before the gate passes is the one sentence (§2.1, §2.3, §4, G13, G20, G21).
+> Amended a second time 2026-11-10 (Fable) after the lead's Opus review. Each fix only makes the plan true as written; no
+> decision of the owner or of the parent changes. `asksAfterConsent` asks the gate first, because the door reads it
+> before `validate` (§2.2, §6, G22). Admission comes before `validate`, so a refused call is counted but raises no dialog
+> (§3.3). Two rows of the prompt ledger gain `run` (§13). The target of `validate` and `summarize` stays REQUIRED and the
+> fifteen test calls are listed (§5, §13). The mask builder gets its own source type (§7). The bridge table gets a `run`
+> branch (§8). The wiring type is named (§6). Two lint directives are removed (§11).
 
 ## 0. The decisions, in one table
 
@@ -18,12 +26,12 @@
 |---|---|---|
 | 1 | The gate | `findUsableEntry(accountOnly(storage, ctx.accountId), ssh.id, 'exec')` must answer `usable`. The lookup is kept to the Terminal entry's account, so the answer's account is the Terminal entry's by construction. `'exec'` is right: it maps to the `use` rung, as `run` does (`mcpEntries.ts:404-420`); a test pins both. A PIN-protected SSH entry answers `undefined`, as a made-up id does (`:376-391`); the agent hears the one sentence of §4, the same as for a closed one. |
 | 2 | No confused deputy | The SSH entry's own `Usable by agents` switch is required at EVERY call (validate and run). Its ask policy is NOT consulted: the Terminal entry's grant and policy decide how often the person is asked (§3.2 says why). A remembered Allow is not keyed on the link: the per-machine trust store is what notices a link a sync added (§3.2); keying the stamp on the link is recorded as a follow-up, not built. |
-| 3 | Order and TOCTOU | The gate runs in `validate(body, target)` — before the dialog, so nobody is asked to Allow a run that will be refused and no prompt of the throttle is spent — and again in `run`. The summary the person saw is handed to `run` (`ctx.summary`, internal) and compared with the summary rebuilt at run time: a switch flipped while the dialog was open refuses with the one sentence; a link or target changed refuses with the "changed while the question was open" sentence. Nothing runs in either case. |
+| 3 | Order and TOCTOU | The gate runs in `validate(body, target)` — before the dialog, so nobody is asked to Allow a run that will be refused and no dialog is raised for it (the call is still counted at admission, which comes before `validate`, §3.3) — and again in `run`. The summary the person saw is handed to `run` (`ctx.summary`, internal) and compared with the summary rebuilt at run time: a switch flipped while the dialog was open refuses with the one sentence; a link or target changed refuses with the "changed while the question was open" sentence. Nothing runs in either case. |
 | 4 | The refusal texts | ONE sentence for every reason the gate refuses (closed, PIN-hidden, missing, in the Trash, not an SSH entry, unsafe host, self, another account): it names the Terminal entry only. The real reason goes to the agent journal (`deps.note`). `sshLinkOf`'s sentences, which name the SSH entry, never reach an agent. **The gate is answered first** (round 1, item 6): for a linked entry nothing that reads the link or the SSH entry — and no `planLaunch` — runs before it, so until the gate passes the agent reads only `not_found` (the Terminal entry is gone), `BRIDGE_NOT_SERVED` (on a bridge, for every linked entry alike) or the one sentence; a malformed line or a Windows remote on an entry whose SSH entry is not usable is the one sentence too. After the gate has passed, the SSH entry is open to the agent (`use`), and the road says what `ssh:exec` says: the jump chain's reason, `pinRefusalFor`, the woven refusal, `Could not run ssh`. `planLaunch`'s own refusals (`{name}`, D9 Windows, the line break) name only the Terminal entry and come AFTER the gate. |
-| 5 | The consent text | `UseAction.summarize(body, target)` — `target: CallTarget`, an internal widening of `useActions.ts:139` (the `Grant` passed at `credsAgentServer.ts:530` already satisfies `CallTarget`). The linked summary is `the stored command, on the SSH connection "<ssh>" (<target>), as: <trust line>` (§5). A changed link between the dialog and the run is refused (question 3). |
-| 6 | `asksAfterConsent` | Declared as a function, as `sshExecAction` does (`sshUseActions.ts:228`): true for a linked entry whose SSH entry forwards the agent while the agent socket is up. Forwards (`-L`/`-R`) raise no prompt and are in the trust line the person approved: no refusal, no flag. `test/agentUseActions.test.ts:347` C.3 changes (§13). |
+| 5 | The consent text | `UseAction.summarize(body, target)` — `target: CallTarget`, REQUIRED (§5 says why it is not optional), an internal widening of `useActions.ts:139` (the `Grant` passed at `credsAgentServer.ts:530` already satisfies `CallTarget`). The linked summary is `the stored command, on the SSH connection "<ssh>" (<target>), as: <trust line>` (§5). A changed link between the dialog and the run is refused (question 3). |
+| 6 | `asksAfterConsent` | Declared as a function, as `sshExecAction` does (`sshUseActions.ts:228`), but it asks the GATE first: true only when `linkedCall(deps, target, undefined)` answers `linked` and that link's SSH entry forwards the agent while the agent socket is up. For every other answer it is false, as it is for an entry with no link. The MCP door reads this flag BEFORE `validate` (`brokerMcpDoor.ts:223`), so a flag read from the link alone would tell an agent whether a closed or PIN-hidden SSH entry forwards the agent (§6, G22). Forwards (`-L`/`-R`) raise no prompt and are in the trust line the person approved: no refusal, no flag. `test/agentUseActions.test.ts:347` C.3 changes, and two rows of the prompt ledger gain `run` (§13). |
 | 7 | Masking | Yes: the mask table of a call on a linked Terminal entry holds the SSH entry's values too (`maskEntriesWithLink`, §7). The SSH password can reach the remote only through the person's own `SendEnv`; the table is widened in the safe direction and at one place (the table builder), never in an action. |
-| 8 | The bridge | `bridgeAllowList.ts:65` refuses `run` on a bridge before the body is read. `terminalRunAction` refuses a linked entry with `ctx.bridge` set as well, fail closed, with the allow-list's own code and sentence so the two walls read the same. |
+| 8 | The bridge | `useRoute` (`bridgeAllowList.ts:57-66`) refuses `run` on a bridge before the body is read. Today `run` falls to its default-deny line (`:65`); it gets a branch of its own (§8). `terminalRunAction` refuses a linked entry with `ctx.bridge` set as well, fail closed, with the allow-list's own code and sentence so the two walls read the same. |
 | 9 | The audit line | The finished line's `detail` is the summary (`brokerCall.ts:225`), which names the SSH entry and the target. One `note` on every gate refusal with the real reason. No extra note on success. |
 | 10 | The agent's VPN start | Stays refused with E1's shared sentence (parent §9, E2-D2): `vpnLauncherRun.ts:84-86` gives an agent's start no road, and `launcherRefusal` (`:156-158`) and `stepRefusal` (`dependencyRun.ts:201-211`) still say `sshLinkRefusal`. Not changed by S2; a guard test says so. |
 
@@ -50,7 +58,7 @@ type LinkedCall =
 ```
 
 In this order, and nothing else is read. **Nothing that reads the link's target or the SSH entry — and no `planLaunch` —
-runs before `linkedCall` has answered** (round 1, item 6): `validate`, `summarize` and `run` call it first, and only its
+runs before `linkedCall` has answered** (round 1, item 6): `validate`, `summarize`, `run` and `forwardsAgentNow` (§6) call it first, and only its
 `linked` answer lets anything else read the link.
 
 1. `const entity = entityFor(deps, target)`; `undefined` → `local`.
@@ -84,17 +92,40 @@ Reads of S per evaluation: exactly two `getNode(account, S.id)` — `linkTo` (`r
 (`mcpEntries.ts:386`). `isInTrash` and `resolveMcpInTree` read S's PARENTS, not S. Nothing after the gate reads S again:
 `planLaunch(entity, link, …)` takes the gate's `link`, so `plan.ssh === link.ssh` (the same object the storage returned).
 
+`linkedCall` is evaluated at each moment of §2.2, so up to five times in one call. Each evaluation is these two reads, from
+memory, and it writes nothing. The journal note is its caller's: `validate` and `run` write it, `summarize` and
+`forwardsAgentNow` do not. So one refused call writes one note (G6, G22).
+
 ### 2.2 Where the gate runs, relative to the dialog
+
+The rows are in the order a call on the MCP door reaches them.
 
 | Moment | Who calls | What runs | Result when refused |
 |---|---|---|---|
-| **validate** — `credsAgentServer.ts:561`, inside `usable()`, BEFORE `summarize`, the dialog and the throttle's prompt | the broker, with the grant | `linkedCall(deps, target, undefined)` | `{ ok: false, code, message }`; the broker answers it and writes the audit line (`:566`); `deps.note(why)` from the action. No dialog is shown, no prompt is spent, the grant is dropped (`:565`). |
+| **asksAfterConsent** — first at `brokerMcpDoor.ts:223`, BEFORE the door's admission and so before `validate` (it decides whether a quiet call takes the dialog place, §6); again at `brokerConsent.ts:156`, when the dialog closes on Allow | the broker, with the target | `linkedCall(deps, target, undefined)` FIRST. Only on `linked`: `link.ssh.agentForward === true` and `deps.agentSocket?.() !== undefined`. No note | `false` for every answer that is not `linked`, the same bit as for an entry with no link. The refusal itself is `validate`'s |
+| **validate** — `credsAgentServer.ts:561`, inside `usable()`, BEFORE `summarize` and the dialog, AFTER the door's admission (§3.3) | the broker, with the grant | `linkedCall(deps, target, undefined)` | `{ ok: false, code, message }`; the broker answers it and writes the audit line (`:566`); `deps.note(why)` from the action. No dialog is shown and no modal stamp is written; the call was counted at admission (§3.3); the grant is dropped (`:565`). |
 | **summarize** — `:530` | the broker, with the grant | `linkedCall` again; `linked` → the linked summary (§5); anything else → today's words | — (a refused gate was answered in validate; the local words are returned and never shown) |
-| **asksAfterConsent** — `brokerMcpDoor.ts:224` before the dialog (the throttle), `brokerConsent.ts:156` when the dialog closes on Allow | the broker, with the target | the LINK only (no gate): `sshLinkOf` linked and `ssh.agentForward === true` and `deps.agentSocket?.() !== undefined` | — (decides only whether the dialog place is kept) |
 | **run** — `brokerCall.ts:203` | the broker, after consent, the launch gate and the mask table | `linkedCall(deps, ctx, ctx.bridge)` again, then the compare of §2.3 | the `refused` result; `deps.note(why)` |
 
-The bridge test of step 3 is read in `run` only: `CallTarget` carries no bridge, and a bridged `run` never reaches `validate`
-(`refusedOnBridge`, `credsAgentServer.ts:443`, answers before the body is read). The `run` test is the second wall.
+The bridge test of step 3 is read in `run` only: `CallTarget` carries no bridge, and a bridged `run` never reaches the
+door's flag or `validate` (`refusedOnBridge`, `credsAgentServer.ts:443`, answers before the body is read). The `run` test
+is the second wall.
+
+**The order at the door, and the sweep for the class** (the second amendment). On the MCP door the order is: the lookup
+of T (`readMcpUse`, which resolves T only) → `door.asksAfter` and `door.admit` (`brokerMcpDoor.ts:223`) → `door.perform`
+(`:232`) → `usable` → `validate` (`credsAgentServer.ts:561`). So `asksAfterConsent` is the FIRST code of this action that
+a call reaches. The alias door admits with no flag (`credsAgentServer.ts:334`), and the local token door does not admit
+(`:497` calls `perform`). The first version of this spec read the flag from the link alone ("the LINK only (no gate)").
+That was a read of S before the gate, with an effect an agent can see (§6), against parent §4.4.
+
+One instance was found, so the class was swept (security.md, *Security response protocol*). Method: `grep -n
+'useAction\.\|asksAfter(\|actions\.resolve(\|actionsFor('` over `src_vs_code/src/*.ts` and `commands/*.ts`, then each
+hit read in its function. The broker runs an action's own code at five places and no more: `asksAfterConsent`
+(`credsAgentServer.ts:273` for the door, `:535` for the dialog's close), `validate` (`:561`), `summarize` (`:530`), `run`
+(`brokerCall.ts:203`) and `describeOutcome` (`brokerCall.ts:228`, which reads the result only). `verb` and
+`mutatesSecrets` are constants (`brokerConsent.ts:358-363`, `brokerCall.ts:222`). The first four call `linkedCall` before
+they read anything of S. The one other reader of the link is the mask table builder (§7); §7 says when it runs and what
+it can show.
 
 ### 2.3 The order inside `run`, for a linked entry
 
@@ -183,10 +214,25 @@ shows the new state in its own dialog.
 ### 3.3 The order and TOCTOU (question 3) — §2.2 to §2.4
 
 Why `validate` and not only `run`: `credentialExportEnvAction` refuses in `validate` for the stated reason *a person is never
-asked to allow something that will be refused* (`agentUseActions.ts:251-254`, `test/agentUseActions.test.ts:298-299`); and a
-dialog costs a prompt of the throttle (`brokerMcpDoor.ts:219-224`), so a refused call must cost none. Why `run` again: the
-switch is live data, and `run` is the only place that reads it at the moment of use. Why not the door: the door resolves T
-only (`readMcpUse`), knows nothing of links, and the token and alias doors have no lookup to extend.
+asked to allow something that will be refused* (`agentUseActions.ts:251-254`, `test/agentUseActions.test.ts:298-299`). Why
+`run` again: the switch is live data, and `run` is the only place that reads it at the moment of use. Why not the door: the
+door resolves T only (`readMcpUse`), knows nothing of links, and the token and alias doors have no lookup to extend.
+
+**What a refused call costs** (corrected by the second amendment: the first version said *a refused call costs no prompt of
+the throttle*, which is not what the code does). Admission comes BEFORE `validate` on the two throttled doors: the MCP
+door admits at `brokerMcpDoor.ts:223` and calls `perform` at `:232`; the alias door admits at `credsAgentServer.ts:334` and
+calls `perform` at `:350`; `validate` is inside `perform` (`:526` → `usable` → `:561`). So a call that the gate refuses is
+admitted first, as every refused call is:
+
+- An asking call is counted in its door's asking window (`aliasThrottle.ts:395-399`) and holds the one dialog place until
+  its refusal is answered (the door's `finally`, `brokerMcpDoor.ts:233-235`).
+- A quiet call is counted in its door's silent window (`aliasThrottle.ts:377-379`).
+- The local token door is not throttled (`credsAgentServer.ts:497`).
+
+What the refused call does NOT cost: no dialog is raised, so the person is not asked, and no modal stamp is written. The
+modal window is stamped only by `prompted`, when a dialog is shown (`aliasThrottle.ts:411-421`). The count at admission
+does not depend on S: it is taken from T's own policy (`brokerMcpDoor.ts:219`) and from the flag of §6, which is `false`
+for every S the gate refuses.
 
 ### 3.4 The refusal texts (question 4) — §4
 
@@ -252,9 +298,26 @@ Rules the texts obey:
 `validate(body: unknown, target: CallTarget): …`. Both call sites are in `credsAgentServer.ts`: `:530`
 `useAction.summarize(body, grant)` and `:561` `useAction.validate(body, grant)`. `Grant` (`grantRegistry.ts:21-27`) has
 `accountId`, `entityId`, `entityName`, so it is a `CallTarget` (`useActions.ts:17`) — `asksAfter(useAction, grant)` at `:535`
-already relies on that. Every other action keeps its one-parameter implementation (TypeScript accepts fewer parameters).
-`UseAction` is an internal interface: `contract/broker-v1.json` names routes and bodies, not this method, so no contract
-changes. This is the shape E3.L flag 2 asked this spec to choose.
+already relies on that. Every other action keeps its one-parameter IMPLEMENTATION (TypeScript accepts an implementation
+with fewer parameters). A CALL with one argument does not compile any more; §13 lists the fifteen test calls that gain the
+second argument. `UseAction` is an internal interface: `contract/broker-v1.json` names routes and bodies, not this method,
+so no contract changes. This is the shape E3.L flag 2 asked this spec to choose.
+
+**The target is REQUIRED, not `target?: CallTarget`** (decided in the second amendment). Reasons:
+
+1. The target is what the gate is asked about. With an optional target, "the gate runs before the dialog" is a thing each
+   call site must remember: a measure applied at some of its sites (security.md). A required parameter puts it on the one
+   road in: a call that forgets the target does not compile. This file and its funnel already do the same for every input
+   that a caller must not forget: `signal` (`useActions.ts:33-40`), `mutatesSecrets` (`:102-119`) and `caller`
+   (`credsAgentServer.ts:513-517`, `brokerMcpDoor.ts:94-98`).
+2. An optional target needs a meaning for "absent", and no meaning is good. If an absent target passes `validate`, the
+   person is asked to allow a run that `run` then refuses, and the dialog shows the local words for a linked entry, which
+   D2 forbids (*the consent dialog names the SSH entry*). If an absent target refuses, the compiler could have said so
+   first. An absent target must never give an agent more, and the sure way to hold that is that it cannot exist.
+3. The cost is small and is not a behaviour change: fifteen calls in four test files gain one argument, and no expected
+   value changes. The broker's two call sites already hold the grant.
+
+`run`'s gate does not depend on this choice: `ctx` is required today, and `run` asks the gate again whatever `validate` did.
 
 **The second internal field.** `UseActionContext` (`useActions.ts:29-64`) gains
 `readonly summary?: string` — *the summary `summarize` answered for this call before consent; the dialog showed it, or it
@@ -278,13 +341,34 @@ there* is true as written. The summary never holds a key path, a known_hosts pat
 
 ## 6. `asksAfterConsent`, `-A` and forwards
 
-- `terminalRunAction` declares `asksAfterConsent: (target) => forwardsAgentNow(deps, target)` where `forwardsAgentNow` =
-  the link's S has `agentForward === true` and `deps.agentSocket?.() !== undefined` — the same two facts `sshExecAction`
-  reads (`sshUseActions.ts:228`), because the signing prompt of a forwarded agent arrives through the socket after the Allow
-  and the broker must keep the one dialog place for it (`useActions.ts:120-128`). Read when the dialog closes on an Allow
-  (`brokerConsent.ts:155-157`), and once before it for the throttle (`brokerMcpDoor.ts:224`).
+- `terminalRunAction` declares `asksAfterConsent: (target) => forwardsAgentNow(deps, target)`. `forwardsAgentNow` asks
+  the gate FIRST: `const call = linkedCall(deps, target, undefined)`; it answers `true` only when `call.kind === 'linked'`
+  and `call.link.ssh.agentForward === true` and `deps.agentSocket?.() !== undefined`. For `local` and for `refused` it
+  answers `false` and reads nothing more. It writes no note (the refusal and its note are `validate`'s). The two facts
+  after the gate are the ones `sshExecAction` reads (`sshUseActions.ts:228`), because the signing prompt of a forwarded
+  agent arrives through the socket after the Allow and the broker must keep the one dialog place for it
+  (`useActions.ts:120-128`). It reads `agentForward` from the gate's own `link`, so it adds no read of S.
+- **Why the gate first** (the second amendment). The flag is read at two moments: when the dialog closes on an Allow
+  (`brokerConsent.ts:155-157`), and once BEFORE `validate`, at the MCP door's admission (`brokerMcpDoor.ts:223`,
+  `credsAgentServer.ts:273`). At the door the bit decides how a QUIET call is admitted (`aliasThrottle.ts:346-349`,
+  `:360-379`): with `true` the call must take the one dialog place, so it is answered *busy* when another call holds the
+  place; with `false` it takes nothing and goes on to `validate`. A call is quiet by T's own policy alone
+  (`brokerMcpDoor.ts:219`). So an agent with a quiet grant on T could hold the place with a second call and read the bit
+  of S from *busy* against the one sentence. A flag read from the link alone answers `true` for an S that is closed, or
+  PIN-hidden, and forwards the agent: that tells the agent a fact about an S it may not use, before the gate, against
+  parent §4.4 and D15. With the gate first, the bit is `false` for every S the gate refuses, the same as for a T with no
+  link, and it is `true` only for an S that is usable by this agent. G22 holds this, with a positive control.
 - `AgentUseDeps` gains `agentSocket?: () => string | undefined` (optional). `agentDeps` spreads `sshDeps`
-  (`extension.ts:623-630`, §E3-D9), which carries it (`sshUseActions.ts:398`); the test worlds leave it out and read `false`.
+  (`extension.ts:623`, `:629-630`, §E3-D9), which carries it (`sshUseActions.ts:398`); the test worlds leave it out and
+  read `false`.
+- **The wiring type is named.** `sshDepsFor` returns `SshUseDeps` today (`sshUseActions.ts:383-389`). E3-D9 adds `overSsh`
+  to the record it returns, and `terminalRunAction` requires `overSsh`. With today's return type the typecheck fails at
+  two places (measured with the repository's TypeScript 5.9.3 on a reduced copy): the extra field in the returned literal is
+  an excess property (TS2353), and the spread `agentDeps` (`extension.ts:629-637`) has no `overSsh` in its type, so
+  `terminalRunAction(agentDeps)` (`:639`) is refused (TS2345). So `sshUseActions.ts` exports
+  `export type SshWiredDeps = SshUseDeps & { readonly overSsh: OverSsh }`, and `sshDepsFor` returns `SshWiredDeps`.
+  `sshExecAction(sshDeps)` and `sshTerminalAction(sshDeps)` take it unchanged (it is an `SshUseDeps`). `extension.ts` does
+  not change for this: it names no type there.
 - Port forwards: no refusal and no flag. A forward is part of the launch `buildSshExecArgv` composes for `ssh:exec` today
   (`sshExecCommand.ts:121`), it raises no prompt, and it is in the trust line the person approved (parent §4.2, epoch 2:
   *a forward or `-A` applies to the launch, so a synced change that adds one must ask again*). A forward added after the
@@ -309,11 +393,41 @@ is widened at ONE place, the table builder, never in an action (`agentUseActions
 `maskEntriesFor` (which still throws `MaskSourceUnavailable` when T is gone, `:72-76`), then — when
 `sshLinkOf(details, (id) => source.getNode(accountId, id))` is `linked` — S's table from `maskEntriesFor(source, accountId,
 link.ssh.id)` appended. `sshLinkOf` is the one reader of the link, so `launchRoadScan.test.ts`'s `ALLOWED_LINK_READS` (`:113`)
-does not change; `SecretSource.getNode` (`maskEntries.ts:29`) must answer a `TreeNode`-shaped record for `sshLinkOf`
-(`{ type: 'entity', details }`), so its type is widened to `TreeNode | undefined` — `StorageManager.getNode` already answers
-one. `extension.ts:516` changes in place to `maskEntriesWithLink(storage, accountId, entityId)`; the import on `:69` names it
-(no line added; the ratchet holds). An S that is missing or refused by `sshLinkOf` adds nothing and throws nothing: the run
-is refused by the gate anyway. A value under `MIN_MASKABLE_LENGTH` (8, `secretMasker.ts:28`) is not masked, as today.
+does not change.
+
+**The source type** (corrected by the second amendment). `sshLinkOf` needs a lookup that answers a `TreeNode`
+(`NodeLookup`, `remoteLaunch.ts:34`), and `SecretSource.getNode` answers only `{ details? }` (`maskEntries.ts:29`). The
+first version widened `SecretSource.getNode` to `TreeNode | undefined`. That breaks `test/maskEntries.test.ts`: its stub
+is a `SecretSource` whose `getNode` answers `{ details }` with no `id`, `name` or `type` (`:32-34`). So `SecretSource`
+is NOT changed, and `maskEntriesWithLink` has its own source type:
+
+```ts
+/** What the linked table reads: a `SecretSource` whose node is a whole tree node, because `sshLinkOf` walks it. */
+export interface LinkedSecretSource extends SecretSource {
+  getNode(accountId: string, id: string): TreeNode | undefined;
+}
+export async function maskEntriesWithLink(source: LinkedSecretSource, accountId: string, entityId: string): Promise<readonly MaskEntry[]>;
+```
+
+An interface that narrows the method, not the intersection `SecretSource & { getNode(…): TreeNode | undefined }`. Measured
+with the repository's TypeScript 5.9.3 on a reduced copy: on that intersection a call of `getNode` takes the FIRST
+signature and still answers `{ details? } | undefined`, so the lookup for `sshLinkOf` does not compile (TS2322). The
+interface compiles, a `LinkedSecretSource` is accepted where `maskEntriesFor` wants a `SecretSource`, and
+`StorageManager` is one (`storageManager.ts:409` answers `TreeNode | undefined`). `test/maskEntries.test.ts` is not
+edited.
+
+`extension.ts:516` changes in place to `maskEntriesWithLink(storage, accountId, entityId)`. The import on `:69` names
+BOTH functions: `maskEntriesFor` stays for the clipboard scan (`:710`). No line is added; the ratchet holds. An S that is
+missing or refused by `sshLinkOf` adds nothing and throws nothing: the run is refused by the gate anyway. A value under
+`MIN_MASKABLE_LENGTH` (8, `secretMasker.ts:28`) is not masked, as today.
+
+**When the builder runs, and what it can show.** The broker reads the table after `validate` (`credsAgentServer.ts:561`
+comes before `:588`) and before `run`. So in a call that reaches it, `validate`'s gate has answered `linked` or `local`.
+The builder is not a gate and gives the agent no answer: it only replaces values in the response. It reads the link
+again, without the gate, so there is one narrow case: a link added, or an S closed, while the dialog stood. Then the
+table can hold values of an S that `run`'s gate refuses. The builder adds nothing to the answer. It could change the
+refusal text only if that text already held a value of S, and the text holds only fixed words and T's name. So the agent
+reads the one sentence as in every other case. This is recorded, not changed (§16 item 8).
 
 What the table does NOT need: the key file's path (not a secret; the remote never sees it), the known_hosts file.
 
@@ -326,9 +440,18 @@ What the table does NOT need: the key file's path (not a secret; the remote neve
   the scope wall; neither is in this plan (parent §7a, §9).
 - The second wall: step 3 of §2.1, read in `run`: `ctx.bridge !== undefined` → `fail('not_supported', BRIDGE_NOT_SERVED)`.
   The same code and sentence as the table, so an agent cannot tell which wall answered, and the journal says which (`why`).
-- `bridgeAllowList.ts:65`'s `why` text is updated to say E3 decided (`'not served: E3 decided a stored line runs from the
-  person\'s machine only (PLAN_terminal_command_over_ssh_E3_S2_security.md §8)'`); `bridgeAllowList.test.ts` reads the table,
-  not the words.
+- **`run` gets a branch of its own in `useRoute`** (corrected by the second amendment). The first version changed the
+  `why` text of `bridgeAllowList.ts:65`. That line is the default-deny answer for EVERY action of `USE_ACTIONS` (`:44`)
+  that is not served and is not `exportEnv`: `terminal`, `run`, `up` and `down`. A text about `run` there would be false
+  for the other three. So `useRoute` (`:57-66`) gets one more branch before the default line:
+  `if (action === RUN_ACTION) { return refused(path, 'a stored line runs from the person\'s machine only; E3 decided
+  (PLAN_terminal_command_over_ssh_E3_S2_security.md §8)'); }`, with `const RUN_ACTION = 'run';` beside `EXPORT_ACTION`
+  (`:47`). The code and the message stay `not_supported` and `BRIDGE_NOT_SERVED` (the defaults of `refused`, `:53-54`).
+  The default line (`:65`) loses its last words and reads `'not named by the parent plan; default deny decides'`. The
+  header comment (`:16`) says *`run` stays refused: E3 decided that a stored command runs from the person's machine
+  only* in place of *`run` waits for E3, which decides where a stored command runs*. `useRoute` then has a complexity of
+  4 (3 today, measured), which is the limit. `bridgeAllowList.test.ts` reads the table, not the words (`:115` asks only
+  that every `why` is longer than ten characters); G13 holds the two texts.
 
 ## 9. The audit line
 
@@ -354,19 +477,27 @@ there, and §13 G16 is the guard that stays green.
 
 | File | Change |
 |---|---|
-| `useActions.ts` | `validate(body, target: CallTarget)`, `summarize(body, target: CallTarget)` (`:137`, `:139`); `UseActionContext.summary?: string` (`:29-64`) with the doc of §5. Doc of `validate`: *Reject a malformed body — or a target this window refuses on purpose (`credentialExportEnvAction`; the linked run's gate) — before any dialog or side effect.* |
+| `useActions.ts` | `validate(body, target: CallTarget)`, `summarize(body, target: CallTarget)` (`:137`, `:139`), both parameters REQUIRED (§5); `UseActionContext.summary?: string` (`:29-64`) with the doc of §5. Doc of `validate`: *Reject a malformed body — or a target this window refuses on purpose (`credentialExportEnvAction`; the linked run's gate) — before any dialog or side effect.* Doc of `asksAfterConsent` (`:120-128`): its last sentence says today that `run` keeps nothing; it then says *`run` on some entries only: a Terminal entry whose linked SSH entry is usable by the agent and forwards the agent while the agent socket is up*, and *`query`, a stored script, a `run` with no such link and a non-forwarding `exec` keep nothing once the dialog closes*. |
 | `credsAgentServer.ts` | `:530` `useAction.summarize(body, grant)`; `:561` `useAction.validate(body, grant)`. Two in-place edits; the file is at 793 of 800. |
 | `brokerCall.ts` | `:203` adds `summary: call.summary` to the context object. |
-| `agentUseActions.ts` | `AgentUseDeps` gains `agentSocket?`; `linkedCall`, `linkedSummary`, `forwardsAgentNow`, `linkedRunRefused`, `changedWhileAsking`, `journalLine` (exported); `terminalRunAction`'s `validate`, `summarize`, `asksAfterConsent` and the `run` dispatcher of §2.3 (each function ≤ 50 lines, complexity ≤ 4). Imports `findUsableEntry`, `accountOnly`, `UsableFound` from `./mcpEntries`; `BRIDGE_NOT_SERVED` from `./bridgeAllowList`; `describeSshTarget` from `./sshCommand`; `BridgeContext` type. After §S2.3's ~490 lines, about 560; ceiling 800. |
-| `maskEntries.ts` | `maskEntriesWithLink` (§7); `SecretSource.getNode` answers `TreeNode \| undefined`. |
+| `agentUseActions.ts` | `AgentUseDeps` gains `agentSocket?`; `linkedCall`, `linkedSummary`, `forwardsAgentNow`, `linkedRunRefused`, `changedWhileAsking`, `journalLine` (exported); `terminalRunAction`'s `validate`, `summarize`, `asksAfterConsent` and the `run` dispatcher of §2.3 (each function ≤ 50 lines, complexity ≤ 4). REMOVE the directive `// eslint-disable-next-line complexity` at `:197`: today's `run` has a complexity of 10 (measured), the dispatcher has at most 4, and a directive that suppresses nothing fails lint (`eslint.config.mjs:20`, `reportUnusedDisableDirectives: 'error'`). Imports `findUsableEntry`, `accountOnly`, `UsableFound` from `./mcpEntries`; `BRIDGE_NOT_SERVED` from `./bridgeAllowList`; `describeSshTarget` from `./sshCommand`; `BridgeContext` type. After §S2.3's ~490 lines, about 560; ceiling 800. |
+| `sshUseActions.ts` | `export type SshWiredDeps = SshUseDeps & { readonly overSsh: OverSsh }`; `sshDepsFor` (`:383-389`) returns `SshWiredDeps` (§6). REMOVE the directive `// eslint-disable-next-line max-lines-per-function` at `:221` when lint names it: `sshExecAction` has 71 code lines today (measured, limit 50) and about 47 after §S2.2 moves `:260-291` into `execOverSsh`. The directive at `:245` (`complexity`, on `run`: 8 today) stays only if lint still needs it. The rule for all three: run `npm run lint`, remove every directive it reports as unused, and add no new one. |
+| `maskEntries.ts` | `LinkedSecretSource` and `maskEntriesWithLink` (§7). `SecretSource` is not changed. Imports `TreeNode` (type) from `./types` and `sshLinkOf` from `./remoteLaunch` (pure, no `vscode`). |
 | `extension.ts` | `:516` and `:69` in place (§7). Not one line longer. |
-| `bridgeAllowList.ts` | `:65` the `why` text (§8). |
+| `bridgeAllowList.ts` | The `run` branch in `useRoute`, `RUN_ACTION`, the default line's `why` and the header comment (§8). |
 | `test/agentSshWorld.ts` (new, not a suite) | the fixture of §12. |
 | `test/agentSshGate.test.ts` (new) | §13. |
+| `test/promptSiteLedger.ts` | `:186` and `:187`: the two signing rows gain `run` (§13). No row is added, removed or renamed. |
 | `test/agentUseActions.test.ts`, `test/sshLinkRoads.test.ts`, `test/promptSites.test.ts`, `test/launchRoadScan.test.ts` | §13 "existing tests". |
+| `test/useActions.test.ts`, `test/sshUseActions.test.ts`, `test/agentUseActions.test.ts`, `test/rotateAction.test.ts` | §13 "existing tests whose calls change": fifteen calls gain the target. |
 
 Not changed: `mcpEntries.ts` (the parent's scope names it for `findUsableEntry` on S; the function is used, not changed),
-`brokerMcpDoor.ts`, `brokerRequests.ts`, `mcpHooks.ts`, the stamp, `brokerConsent.ts`, `sshExecAuth.ts`, `sshExecCommand.ts`.
+`brokerMcpDoor.ts`, `aliasThrottle.ts`, `brokerRequests.ts`, `mcpHooks.ts`, the stamp, `brokerConsent.ts`, `sshExecAuth.ts`,
+`sshExecCommand.ts`, `test/maskEntries.test.ts`.
+
+The numbers above were measured on e57eb80f with the repository's ESLint 10.13.0 and its own rules (`max-lines-per-function`
+with blank lines and comments skipped; `--no-inline-config` to see the functions a directive hides). The outer
+`terminalRunAction` (`agentUseActions.ts:188-238`) has 48 code lines of its 50; its `run` (`:198-236`) has 37.
 
 ## 12. The fixture — `test/agentSshWorld.ts`
 
@@ -414,8 +545,8 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | G9 | `a_switch_turned_off_while_the_dialog_was_open_is_refused_at_run` | `validate` ok with usable S; set `s1.details.mcp = { view: true }`; `run({ ...ctx, summary })` → `denied`, `=== ONE`; `overSsh` 0 | runs |
 | G10 | `a_link_or_target_changed_while_the_dialog_was_open_is_refused_at_run` | `summary = summarize({}, ctx)`; then (a) `s1.details.host = 'evil.example'` (trust the NEW line too, so trust alone would pass), (b) `T.sshEntityId = 's2'` with `usableSsh('s2')` trusted, (c) `T.sshEntityId` removed: each `run({ ...ctx, summary })` → `denied`, message `=== changedWhileAsking('deploy')`; `overSsh` 0; `slots.taken` 0. Then the unchanged world with the same `summary` → one `overSsh` call (the compare passes) | runs on the new target |
 | G11 | `a_run_with_no_shown_summary_does_not_compare` | `run(ctx)` without `summary` on a usable trusted world → one `overSsh` call — the test worlds of §S2.5 keep working; the broker always sets it (G17) | (green; a guard — say so) |
-| G12 | `asks_after_consent_is_true_only_for_a_linked_entry_that_forwards_the_agent_while_the_socket_is_up` | `typeof terminalRunAction(deps).asksAfterConsent === 'function'`; unlinked → false; linked, no `-A` → false; `-A`, `agentSocket: () => undefined` → false; `-A`, socket `'/tmp/a.sock'` → true; `deps` without `agentSocket` → false | `undefined` |
-| G13 | `a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lists_words` | usable S, trusted, `run({ ...ctx, bridge: { … } as BridgeContext })` → `not_supported`, message `=== BRIDGE_NOT_SERVED`; `overSsh` 0; and `bridgeRouteRefusal('POST', p)` is not `undefined` for each of `/v1/use/run`, `/v1/alias/run`, `/v1/mcp/use/run` (the first wall still stands). Then the same bridged call with S MISSING and with S CLOSED: the same code and message, byte-equal (round 1, item 6: the bridge answer stands before the link is resolved, so it cannot tell S's states apart), and `storage.calls` holds no read of `s1` | runs |
+| G12 | `asks_after_consent_is_true_only_for_a_linked_entry_that_forwards_the_agent_while_the_socket_is_up` | Every S here is USABLE (`usableSsh`), so the gate answers `linked`. `typeof terminalRunAction(deps).asksAfterConsent === 'function'`; unlinked → false; linked, no `-A` → false; `-A`, `agentSocket: () => undefined` → false; `-A`, socket `'/tmp/a.sock'` → true; `deps` without `agentSocket` → false. The states of S that the gate refuses are G22's | `undefined` |
+| G13 | `a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lists_words` | usable S, trusted, `run({ ...ctx, bridge: { … } as BridgeContext })` → `not_supported`, message `=== BRIDGE_NOT_SERVED`; `overSsh` 0; and `bridgeRouteRefusal('POST', p)` is not `undefined` for each of `/v1/use/run`, `/v1/alias/run`, `/v1/mcp/use/run` (the first wall still stands). Then the same bridged call with S MISSING and with S CLOSED: the same code and message, byte-equal (round 1, item 6: the bridge answer stands before the link is resolved, so it cannot tell S's states apart), and `storage.calls` holds no read of `s1`. And the texts of the table (§8): the `why` of each of the three `run` rows of `BRIDGE_ROUTES` holds `E3 decided`; the `why` of the `terminal`, `up` and `down` rows does not hold `run` | runs; the `why` clause: no `run` row says `E3 decided`, and the other three say `run waits for E3` |
 | G14 | `the_mask_table_of_a_linked_entry_holds_the_ssh_entrys_password` | `maskEntriesWithLink(source, 'acct-1', 'e1')` with T holding nothing and S's password `'correct-horse-battery-staple'`: the table deep-includes `{ value: 'correct-horse-battery-staple', label: 'PASSWORD' }`; unlinked T → T's table only; S missing → T's table, no throw; T missing → throws `MaskSourceUnavailable` (as before) | no export |
 | G15 | `the_agent_reads_no_name_host_or_reason_of_the_ssh_entry` | over G2–G5's refusals: no message includes `prod box`, `prod.example`, `Trash`, `PIN`, `acct-2`; every note does include the real reason | (RED with G2–G5) |
 | G16 | `an_agents_vpn_start_with_a_linked_launcher_stays_refused` | the existing agent-start test of `test/sshLinkRoads.test.ts` (the VPN block, `startVpn` with `SENTENCE('start-openvpn')`) stays green unchanged; here: `vpnAction(vpnDeps(false, []), 'up')` is untouched by this spec — assert `launcherRefusal`-path sentence `=== sshLinkRefusal(launcher)` through `vpnWorld` as that test does | (green; a guard — say so) |
@@ -424,6 +555,7 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | G19 | `exec_and_run_sit_on_the_same_rung` | `switchForAction('exec') === switchForAction('run')` and both `=== 'use'`; and the gate's call passes `'exec'` (a recording `findUsableEntry` is not possible without a seam, so: `usableSsh('s1', { mcp: { view: true, use: true, edit: false } })` is usable and `{ view: true, edit: true }` (no use) is refused — the rung read is `use`) | (green for the table; RED for the gate) |
 | G20 | `before_the_gate_passes_every_outcome_is_the_one_sentence` (round 1, item 6) | One case per world, each with S CLOSED (`sshNode('s1', { mcp: { view: true } })`) unless the case is S itself: (a) S missing; (b) S only in `acct-2`; (c) S with `host: '-oProxyCommand=x'`; (d) T's command `'echo a\necho b'` (a line break); (e) T `terminalOs: 'windows'`; (f) T named `'a b'` with command `'echo {name}'` — the `{name}` refusal of `test/remoteLaunch.test.ts:208-213` (R10: inside `planLaunch` that refusal wins over a link refusal, which is exactly why `planLaunch` must not run before the gate); its `ctx.entityName` is `'a b'`, so its ONE is `linkedRunRefused('a b')`; (g) T with no command. For each, BOTH `validate({}, ctx)` → `{ ok: false, code: 'denied', message: ONE }` AND `run(ctx)` → `denied`, message `=== ONE`; no message holds `Windows`, `line break`, `will not run`, `has no command`, `prod box` or `prod.example`; `overSsh` 0; slot 0; `trustStore.get` never called; each world's note holds its real reason | (a)–(c) E1's sentence, `not_supported`; (d)–(g) `planLaunch`'s or today's own sentence, said first |
 | G21 | `after_the_gate_passes_plan_refusals_name_only_the_terminal_entry` (round 1, item 6) | The same (d), (e), (f) with S USABLE and the line trusted: `run(ctx)` → `not_supported`, message `=== refusalSaid(T, planLaunch(T, sshLinkOf(T, lookup), { stayOpen: false }).reason)`; it holds T's quoted name (`"deploy"`, or `"a b"` for (f)) and not `prod box` or `prod.example`; (g) → `no_credential`, `"deploy" has no command.`; `overSsh` 0; slot 0. The positive half of G20: the gate decides WHEN these are said, not whether | E1's sentence |
+| G22 | `before_the_gate_passes_the_follow_up_flag_says_nothing_about_the_ssh_entry` (the second amendment) | Every world has `agentSocket: () => '/tmp/a.sock'`. Six states of S that the gate refuses, each built TWICE, with `agentForward: true` and without it: (a) closed (`sshNode('s1', { mcp: { view: true } })`); (b) no `mcp`; (c) PIN-hidden (`usableSsh('s1', { pinProtected: true })`); (d) under a Trash folder; (e) usable but only in `acct-2`; (f) missing. For all twelve, `asksAfter(action, ctx) === false`, which is also the answer for an unlinked T: the forwarding world and the non-forwarding world of each state give the same bit. Then the door's admission with that bit, through the REAL throttle, as `test/consentContract.test.ts:99-113` does: `const ceilings = new TokenlessCeilings(); ceilings.admit(true, 0)` (another call holds the place); `ceilings.admit(false, 1, LOCAL_DOOR, asksAfter(action, ctx)).refusal === undefined` for all twelve (a quiet call is admitted, never *busy*), and then `validate({}, ctx)` answers `{ ok: false, code: 'denied', message: ONE }`, byte-equal across the twelve. `notes` is empty after `asksAfter` alone (the flag writes no note). POSITIVE CONTROL, so the test can see what it guards: `usableSsh('s1', { agentForward: true })` → `asksAfter(action, ctx) === true`, and the same `admit` call answers `BUSY_PLACE` | With the stub that reads the link alone (`sshLinkOf(…).kind === 'linked' && link.ssh.agentForward === true` and the socket): the forwarding worlds of (a), (b) and (c) answer `true`, and their quiet call is told `BUSY_PLACE`. That is the leak. (With no stub the control is RED: `undefined` today) |
 
 **Existing tests whose expected values change**
 
@@ -432,10 +564,46 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
   `getAccounts: () => [{ accountId: 'acct-1' }]`. Rename to `the_agent_run_refuses_a_linked_entry_whose_ssh_entry_is_missing_with_the_one_sentence_before_the_trust_check_and_the_slot`.
 - `test/agentUseActions.test.ts:347-357` (C.3): `terminalRun` is now a function; the deep-equal becomes
   `typeof flags.terminalRun === 'function'` plus `flags.terminalRun(ctx) === false` for the unlinked `fakeDeps` entry, the other
-  five unchanged. `fakeDeps` (`:38-53`) gains `getAccounts` and `overSsh` (§S2.3).
+  five unchanged. Its title ends *and on no other action of this module*; it then ends *and `run` declares it per
+  entry; no other action of this module declares it*. `fakeDeps` (`:38-53`) gains `getAccounts` and `overSsh` (§S2.3).
 - `test/promptSites.test.ts:214` and `test/sshLinkRoads.test.ts:166-177`: deps gain `getAccounts` and `overSsh` (§S2.3).
+- `test/promptSites.test.ts:223-235` (*every action an `after-allow` row names carries the follow-up flag on its real
+  factory, and no other action does*) goes RED when `terminalRunAction.asksAfterConsent` becomes a function (§6):
+  `flagged(factories.run)` is then true, `:233` compares the flagged factories with the actions the ledger names, and
+  `:234` says that `run` keeps nothing. Two edits make the test true again:
+  1. `test/promptSiteLedger.ts:186` and `:187`, the two rows of the signing prompt (`sshSignPrompt.ts#askSigning#showWarningMessage#1`
+     and `sshSignPrompt.ts#pickLength#showQuickPick#1`): `actions` becomes `['exec', 'terminal', 'rotate', 'run']` in
+     both, and the `reason` of `:186` gains `; run of a Terminal entry linked to such an entry`.
+  2. `test/promptSites.test.ts:234`: the list becomes `['query', 'script', 'exportEnv']` and its message
+     `query, script and exportEnv keep nothing`.
+
+  **This is a ledger row, not a new prompt, so E3-D10 holds** (*no new two-argument prompt and no renamed prompt
+  function*). No prompt site is added and no prompt function is renamed: the ledger gains, loses and renames NO key
+  (its keys are `file#function#call#n`). The signing prompt exists today. After S2 one more action can reach it after
+  its Allow: a linked run over an SSH entry that forwards the agent starts `ssh -A` with the extension's agent socket,
+  as `exec` on that SSH entry does (`sshUseActions.ts:95-109`), and the far side can ask the agent to sign. The ledger
+  must name every action whose Allow can come before a prompt, and `:233` holds the flag and the ledger equal in both
+  directions. E3-D10 also says *if `test/promptSites.test.ts` goes red, stop and report*: these two edits are named
+  here, in advance, so they are not that case. Any OTHER red in that file is.
 - `test/launchRoadScan.test.ts:189-195`: `REFUSAL_SITES` loses `agentUseActions.ts:terminalRunAction` (§S2.3).
 - Any other test that goes red: stop and report; do not edit an expected value.
+
+**Existing tests whose calls change (no expected value changes)** — `validate` and `summarize` take a REQUIRED target
+(§5), so a call with one argument does not compile. Each of these fifteen calls gains the second argument and nothing
+else:
+
+| File | Calls | The second argument |
+|---|---|---|
+| `test/useActions.test.ts` | `:29`, `:30`, `:32` (`summarize({})`) | a new constant `const TARGET: CallTarget = { accountId: 'a1', entityId: 'e1', entityName: 'x' }`; `CallTarget` joins the import on `:3` as a type |
+| `test/sshUseActions.test.ts` | `:392`, `:393` (`validate`) | `CTX` (`:183`) |
+| `test/agentUseActions.test.ts` | `:134`, `:136`, `:137`, `:319`, `:326`, `:336`, `:340` (`validate`); `:402`, `:405` (`summarize`) | `ctx` (`:27`) |
+| `test/rotateAction.test.ts` | `:111` (`summarize`), `:156` (`validate`) | `CTX` (`:93`) |
+
+The list is complete for e57eb80f. Method: `grep -rn '\.validate(\|\.summarize('` over `src_vs_code/src` (the typed
+fixtures included) and `src_vs_code/scripts`; the only other calls are the broker's two (`credsAgentServer.ts:530`,
+`:561`). `test/agentUseActions.test.ts:402` keeps its expected value: `fakeDeps`' entry has no link, so the gate answers
+`local` and the summary is today's words. Test stubs that IMPLEMENT `validate` or `summarize` with fewer parameters
+compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 
 ## 14. Break-it cases — what an attacker-agent would try
 
@@ -459,15 +627,16 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | A linked T whose `command` holds a `{name}` the composer refuses | `not_supported`, `refusalSaid` — after the gate, so a closed S still gives the one sentence first | G20 (f), G21 (f) |
 | A T written for Windows, or with a line break, linked to an S the agent may not use — probing whether S is usable by watching for the D9 or line-break sentence | the one sentence: the gate answers before `planLaunch` runs; the D9 / line-break sentence only when S is usable | G20 (d) (e), G21, §S2.5 AG6 |
 | A bridged call, probing S's state through the bridge | `BRIDGE_NOT_SERVED` for a missing, a closed and a usable S alike; S is never read | G13 |
+| A quiet grant on T (T's policy asks once in 12 hours, or never) linked to an S the agent may not use: the agent holds the dialog place with a second call and watches whether the quiet `run` is told *busy*, to learn whether S forwards the agent | Never *busy* for this reason: the flag asks the gate first and is `false` for a closed, PIN-hidden, trashed, missing or other-account S, forwarding or not; the call is admitted and reads the one sentence | G22 |
 | An agent on the alias door (the CLI's `run`) | the same `perform`, the same `validate`: the one sentence; the alias route's modal is never raised for it | G6 (the funnel is one) |
 
 ## 15. Opus review checklist
 
-- [ ] `linkedCall` is the ONLY place that decides the gate, and `validate`, `summarize` and `run` all call it (grep
+- [ ] `linkedCall` is the ONLY place that decides the gate, and `validate`, `summarize`, `run` and `forwardsAgentNow` all call it (grep
       `findUsableEntry(` in `agentUseActions.ts`: one site).
 - [ ] The lookup is `accountOnly(…, target.accountId)`, and `found.accountId === target.accountId` is asserted.
 - [ ] `linkedCall` is called BEFORE any `planLaunch`, any `sshLinkOf` with a real lookup and any `resolveJumpChain` in
-      `validate`, `summarize` and `run` (read each function top-down); the bridge test (§2.1 step 3) stands before step 4;
+      `validate`, `summarize`, `run` and `forwardsAgentNow` (read each function top-down); the bridge test (§2.1 step 3) stands before step 4;
       G20 and G21 were each watched RED.
 - [ ] No sentence reachable BEFORE the gate passes names S, its host, its folder, the Trash, the PIN or an account
       (read every `fail(` in the linked branch; `sshLinkOf`'s reasons go to `note`, never to `fail`).
@@ -477,10 +646,21 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
       a test world without `summary` is not refused (G11), and the broker always sets it (G17).
 - [ ] `plan.ssh === link.ssh`: the gate's `link` is the object passed to `planLaunch`; no second `sshLinkOf` in `run`.
 - [ ] Reads of S in `run`: exactly two `getNode` calls, both inside `linkedCall` (AG5 of §S2.5 lists them).
-- [ ] `asksAfterConsent` reads the live link and the socket at call time; it is a function, and C.3 asserts the shape.
+- [ ] `asksAfterConsent` is a function, and C.3 asserts the shape. `forwardsAgentNow` calls `linkedCall` FIRST and reads
+      `agentForward` and the socket only on `linked`; it has no `sshLinkOf` call of its own and writes no note. G22 was
+      watched RED with the stub that reads the link alone.
+- [ ] The prompt ledger: the two signing rows name `run`; no key was added, removed or renamed; `promptSites.test.ts:234`
+      lost `run`; no other line of that test changed.
+- [ ] `validate` and `summarize` have a REQUIRED `target`; the diff of the four test files of §13 adds one argument to
+      fifteen calls and changes no expected value.
 - [ ] `maskEntriesWithLink` reads the link through `sshLinkOf`; `ALLOWED_LINK_READS` did not grow; `extension.ts` is not one
-      line longer; G14 covers T gone (throws), S gone (does not throw).
-- [ ] The bridge: `BRIDGE_NOT_SERVED` and `not_supported` on both walls; `bridgeAllowList.ts:65` says E3 decided.
+      line longer; G14 covers T gone (throws), S gone (does not throw). `SecretSource` is unchanged, `LinkedSecretSource`
+      is an interface that extends it, and `test/maskEntries.test.ts` is not in the diff.
+- [ ] The bridge: `BRIDGE_NOT_SERVED` and `not_supported` on both walls; `useRoute` has a `run` branch whose `why` says E3
+      decided, and the default-deny line no longer names `run`.
+- [ ] `sshDepsFor` returns `SshWiredDeps`; typecheck is green with no cast at `extension.ts:639`.
+- [ ] Lint is green and no unused directive is left: `agentUseActions.ts:197` is gone; `sshUseActions.ts:221` is gone if
+      lint named it; no new `eslint-disable` was added.
 - [ ] `vpnLauncherRun.ts`, `dependencyRun.ts`, `sshLinkRefusal` untouched; G16 green before and after.
 - [ ] The stamp, `brokerMcpDoor.ts`, `mcpHooks.ts`, `brokerConsent.ts` untouched (grep the diff).
 - [ ] No test asserts a delegated option (`-A`, a forward) PROTECTS anything; they assert what is sent and what is refused.
@@ -507,14 +687,20 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
    sentence whenever `findUsableEntry` answers `closed`, which it does for a node that has no `view` (`verdictFor` reads
    `use`, not `view`, `mcpEntries.ts:422-436`). So `creds_exec` on an unlisted id can confirm the entry's NAME today. Not this
    plan's road; a finding for the lead to route (the security response protocol says sweep the class, and this is the class).
+8. **The mask table builder reads the link between the two gates** (§7, found by the sweep of §2.2). In the usual call
+   `validate`'s gate has passed before it runs. If a link is added, or S is closed, while the dialog stands, the table can
+   hold values of an S that `run` then refuses. The agent reads nothing from it (§7 says why). To close it fully, the
+   builder would have to ask the gate, which puts an authorisation decision into `maskEntries.ts`; that is a design
+   change and is not made here. Recorded for the lead.
 
 ## 16a. The both-sides rule
 
-`node .agents/conventions/tools/plan-lifecycle.mjs` reports one finding for this file alone: `todo/README.md omits
-PLAN_terminal_command_over_ssh_E3_S2_security.md`. The row belongs in the SAME commit as this file (planning-docs.md
-§ *A boundary between two plans is named on BOTH sides*; the stories document says *the security spec's row comes with the
-spec*). This file was written alone, so the lead adds the row — and the link from `PLAN_terminal_command_over_ssh_E3.md`'s
-status line (`not written yet; it becomes a link in the commit that adds it`) — when committing.
+The first version of this file said that `plan-lifecycle.mjs` reported `todo/README.md omits
+PLAN_terminal_command_over_ssh_E3_S2_security.md`, and that the lead adds the row. That is done: `todo/README.md` has this
+file's row, the stories document links this file from its status block, and
+`node .agents/conventions/tools/plan-lifecycle.mjs` answers `clean` (run on e57eb80f, 2026-11-10, before and after the
+second amendment). The README row is another file and is the lead's: it names the scenarios `G1–G19`; this file now
+holds G1–G22.
 
 ## 17. Help ×5
 
