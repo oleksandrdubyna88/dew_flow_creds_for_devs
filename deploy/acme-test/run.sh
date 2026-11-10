@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Proves the certificate pipeline actually issues — end to end, without touching Let's Encrypt. A run
-# that passes takes a few minutes (image pulls, then the issuance). A run that fails reports after at most
-# about ten minutes: port 80 is waited for up to 60 s, the certificate for 150 tries of 2 s plus one
-# `docker run` each (a line "still waiting for the certificate: try N of 150" every 15 tries), and
-# nginx's port 443 for 24 tries of up to 9 s.
+# that passes takes a few minutes (image pulls, then the issuance). A run that fails reports after about
+# 11 to 13 minutes: the waits alone are 60 s for port 80 (30 tries of 2 s), 300 s for the certificate
+# (150 tries of 2 s, a line "still waiting for the certificate: try N of 150" every 15 tries) and 216 s
+# for nginx's port 443 (24 tries of 9 s) — 576 s — plus one `docker run` for each certificate try and up
+# to 4 s for each curl that hangs (every curl has --max-time).
 #
 #   ./run.sh                                  # uses the published :edge image
 #   VAULT_IMAGE=cred-vault-server:local ./run.sh
@@ -29,6 +30,9 @@
 # Windows (Git Bash) the pinned janitor only does a dry run unless JANITOR_WINDOWS_E2E_GREEN is set,
 # so there it removes nothing: a killed run's project and folder wait for a person. An interrupt
 # (INT, TERM, HUP) ends the run with 128 + n and the same clean-up runs once.
+# An old deploy/acme-test/state/ from an earlier version of this script is no longer made, nor ignored by
+# git, and can hold root-owned files. Remove it from this folder with:
+#   docker run --rm -v "$PWD":/w alpine rm -rf /w/state
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -123,7 +127,7 @@ echo "-- 1. before issuance ------------------------------------------"
 "${COMPOSE[@]}" up -d pebble vault nginx >/dev/null 2>&1
 code=000
 for _ in $(seq 1 30); do
-  code=$(code_of "${HTTP}/api/vault")
+  code=$(code_of --max-time 4 "${HTTP}/api/vault")
   [ "$code" != "000" ] && break
   sleep 2
 done
@@ -136,7 +140,7 @@ else
 fi
 
 expect "the ACME challenge path is served (404 = route works, file absent)" \
-       404 "$(code_of "${HTTP}/.well-known/acme-challenge/probe")"
+       404 "$(code_of --max-time 4 "${HTTP}/.well-known/acme-challenge/probe")"
 
 echo
 echo "-- 2. issuance -------------------------------------------------"
@@ -178,9 +182,9 @@ esac
 echo
 echo "-- 4. the API through TLS --------------------------------------"
 expect "unauthenticated request reaches the app and is refused" \
-       401 "$(code_of -k "${HTTPS}/api/vault")"
+       401 "$(code_of -k --max-time 4 "${HTTPS}/api/vault")"
 expect "port 80 redirects to HTTPS instead of answering 503" \
-       301 "$(code_of "${HTTP}/api/vault")"
+       301 "$(code_of --max-time 4 "${HTTP}/api/vault")"
 
 echo
 if [ "$FAILED" = "0" ]; then
