@@ -13,7 +13,7 @@ import { lockToOwner, materializedKeyPath, safeFileComponent } from '../material
 import { RefPlan, buildCommandLineWithRefs, planRefs, refField, rewriteScriptRefs } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
-import { pinnedShell, pinnedTerminal, shellContext, sshReaderShell } from '../pinnedTerminal';
+import { pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
 import { sendGuarded } from '../terminalGuard';
 import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle, maskedRunTitle } from '../terminalTitles';
 import { registerFolderRun } from './folderRunCommand';
@@ -22,9 +22,8 @@ import { confirmTrusted } from '../trustPrompt';
 import { DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
 import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
-import { RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from '../remoteLaunch';
-import { SshRoad, ownedSession } from '../sshRoad';
-import type { ReadySsh } from '../sshSession';
+import { SshLink, planLaunch, sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
+import { SshRoad, runOverSsh } from '../sshRoad';
 
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
@@ -152,47 +151,18 @@ async function runLocalLine(host: RunCommandsHost, entry: Entry, line: string): 
   }
 }
 
-/** A linked entry: the plan first — its refusal (the link's, a Windows remote's, a line break's) is said before anyone is asked. No `windowRefusal`: *Runs on* is the remote's system (D14). */
+/**
+ * A linked entry: the plan first — its refusal (the link's, a Windows remote's, a line break's) is said before anyone is asked. No `windowRefusal`: *Runs on* is the remote's system (D14).
+ * Then the road over SSH (`runOverSsh`, shared with the VPN launcher): prepare, the typed line's own refusal, the trust question on the prepared snapshot's trust line and the
+ * dependencies, then the send into the entry's terminal.
+ */
 async function runLinkedEntry(host: RunCommandsHost, entry: Entry, link: SshLink): Promise<void> {
   const plan = planLaunch(entry.details, link, { stayOpen: true });
   if (plan.kind === 'refused') {
     warn(plan.reason);
   } else if (plan.kind === 'remote') {
-    await runLinkedLine(host, entry, plan);
+    await runOverSsh(host.sshRoad, entry.accountId, plan, () => entry.key, (trustLine) => passGates(host, entry, trustLine, undefined));
   }
-}
-
-/** Prepare, then the ONE OWNER holds the session: a stopped preparation said what it had to; a refused one shows SSH Connect's own modal, with no retry. */
-async function runLinkedLine(host: RunCommandsHost, entry: Entry, plan: RemotePlan): Promise<void> {
-  const prepared = await host.sshRoad.prepare(entry.accountId, plan.ssh);
-  if (prepared.kind === 'refused') {
-    await host.sshRoad.sayRefused(prepared, plan.ssh);
-  } else if (prepared.kind === 'ready') {
-    await ownedSession(prepared, () => trustedThenSent(host, entry, plan, prepared));
-  }
-}
-
-/**
- * From the PREPARED snapshot only (one snapshot): the typed line's own refusal first (PowerShell 5.1, before anyone is asked to
- * trust a line that could not run), then the trust question on the trust line, then the dependencies, then the send.
- * Answers the terminal the line went into, or `undefined` when nothing was sent.
- */
-async function trustedThenSent(host: RunCommandsHost, entry: Entry, plan: RemotePlan, ready: ReadySsh): Promise<vscode.Terminal | undefined> {
-  const typed = typedLine(plan, ready, sshReaderShell());
-  if (typed.kind === 'refused') {
-    warn(typed.reason);
-    return undefined;
-  }
-  return (await passGates(host, entry, trustLineFor(ready.entity, ready.jump, plan.line), undefined)) ? sendSshLine(entry, ready, typed) : undefined;
-}
-
-/** The guarded send into SSH Connect's own shell, with the session's environment (a password opens a new terminal, D10). */
-async function sendSshLine(entry: Entry, ready: ReadySsh, typed: { readonly line: string }): Promise<vscode.Terminal | undefined> {
-  const sent = await sendGuarded(entry.key, { kind: 'ssh', env: ready.env }, () => typed.line);
-  if (sent.kind === 'refused') {
-    warn(sent.reason);
-  }
-  return sent.kind === 'typed' ? sent.terminal : undefined;
 }
 
 /** The entry's resolved line, or `undefined` having said why, before anyone is asked anything. */

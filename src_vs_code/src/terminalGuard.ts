@@ -19,7 +19,7 @@ import { Activity, TYPE_ANYWAY, agentRefusal, busyQuestion, closedMeanwhile } fr
  * never finds and never disposes, it opens a new terminal beside any live one (D10).</p>
  */
 export type GuardedSend =
-  | { kind: 'typed'; terminal: vscode.Terminal }
+  | { kind: 'typed'; terminal: vscode.Terminal; /** The terminal was REUSED after a `finished` verdict: what ran in it before has ended. False for a new terminal and for Type It Anyway. */ earlierEnded: boolean }
   | { kind: 'declined' } // the person did not say Type It Anyway, or a question is already open for that terminal
   | { kind: 'refused'; reason: string }; // the caller says it (a warning)
 
@@ -92,14 +92,14 @@ function verdictOf(terminal: vscode.Terminal): Activity {
 /** A reused terminal is brought to the front, as before the guard; no await between the show and the send. */
 function shownAndTyped(terminal: vscode.Terminal, line: string): GuardedSend {
   terminal.show();
-  return typed(terminal, line);
+  return typed(terminal, line, true);
 }
 
 /** `noteSent` BEFORE `sendText`: the evidence is void before the keystrokes leave, and a late end cannot restore it. */
-function typed(terminal: vscode.Terminal, line: string): Extract<GuardedSend, { kind: 'typed' }> {
+function typed(terminal: vscode.Terminal, line: string, earlierEnded = false): Extract<GuardedSend, { kind: 'typed' }> {
   noteSent(terminal);
   terminal.sendText(line, true);
-  return { kind: 'typed', terminal };
+  return { kind: 'typed', terminal, earlierEnded };
 }
 
 async function askThenType(terminal: vscode.Terminal, verdict: 'running' | 'unknown', line: string, startGate: AbortSignal | undefined): Promise<GuardedSend> {

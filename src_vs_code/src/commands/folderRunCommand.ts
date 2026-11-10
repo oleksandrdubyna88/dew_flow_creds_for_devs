@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { asElement } from '../commandTargets';
 import { isCommandTrusted } from '../commandTrust';
-import { dependencyRequest, runDependenciesFirst, trustAll, withSshSteps } from '../dependencyRunHost';
+import { dependencyRequest, liveDetails, runDependenciesFirst, trustAll, withSshSteps } from '../dependencyRunHost';
 import { describeError } from '../describeError';
 import {
   CHANGED_ROW,
@@ -27,9 +27,9 @@ import {
   settleRow,
   sshStopped,
 } from '../folderRun';
-import { entryOpenRefusal, liveTerminalsOfEntry, sshReaderShell } from '../pinnedTerminal';
-import { RemotePlan, SshLink, TypedLine, sshLinkOf, trustLineFor, typedLine } from '../remoteLaunch';
-import { SshRoad, cleanWhenClosed } from '../sshRoad';
+import { entryOpenRefusal, liveTerminalsOfEntry } from '../pinnedTerminal';
+import type { RemotePlan } from '../remoteLaunch';
+import { OwnedSessions, linkedNow, ownedSessions, recheckedLine } from '../sshRoad';
 import type { ReadySsh } from '../sshSession';
 import { NewTerminalSend, typeIntoNew } from '../terminalGuard';
 import { EntryTerminalKey, entryTerminalKey, entryTerminalKeyOf } from '../terminalTitles';
@@ -41,8 +41,8 @@ import type { RunCommandsHost } from './runCommands';
  * and every sentence is `folderRun.ts`.
  *
  * <p>Closing is authorised per terminal OBJECT, in a snapshot taken when the modal is built, and never by name afterwards.
- * From the chain's end to the last send nothing is awaited, so the one re-check is as fresh as one per line, and nothing
- * reads the terminal list after a `dispose` (a disposed terminal may still be listed).</p>
+ * From the last preparation (`prepareLinked`) to the last send nothing is awaited, so the one re-check is as fresh as one per
+ * line, and nothing reads the terminal list after a `dispose` (a disposed terminal may still be listed).</p>
  *
  * <p>A row's key is read at two points, and nothing in between is a key (`PLAN_terminal_titles_folder.md` §Design, the timing
  * contract). BEFORE the modal, synchronously from `folderAt` to the snapshot: the classification and the modal's snapshot use
@@ -57,10 +57,12 @@ import type { RunCommandsHost } from './runCommands';
  * <p><b>Linked rows (E2.S2).</b> A row that runs over SSH is shown in the modal by its trust line. After the modal, the
  * trust and the chain, each linked row is prepared in ROW ORDER (`prepareLinked`), one after another, before the
  * synchronous send; the SSH entry is read again then, and a row whose trust line, rebuilt from its prepared snapshot,
- * differs from the one the modal showed is not typed. A `stopped` row (the person cancelled a question) stops the WHOLE run:
- * nothing is typed, linked or not. The run OWNS the list of sessions it prepared, created before the first `prepare` and
- * cleaned in the run's `finally`, also when a later `prepare` throws: a row handed to its terminal leaves the list, and that
- * terminal's close cleans it (`cleanWhenClosed`).</p>
+ * differs from the one the modal showed is not typed (`recheckedLine`). A row's link is read again from the Terminal entry
+ * as storage holds it NOW (`liveDetails`, then `linkedNow`), the way the chain reads it: a row removed or trashed during the
+ * wait is not typed. A `stopped` row (the person cancelled a question) stops the WHOLE run: nothing is typed, linked or not.
+ * The run OWNS the sessions it prepared (`ownedSessions`, made before the first `prepare` and cleaned in the run's
+ * `finally`, also when a later `prepare` throws): a row handed to its terminal leaves the list, and that terminal's close
+ * cleans it.</p>
  */
 
 interface Folder {
@@ -74,20 +76,13 @@ interface Folder {
 /** A linked row after preparation: ready to type (its typed line from the prepared snapshot), or why it is not typed. */
 type LinkedState = { readonly kind: 'ready'; readonly ready: ReadySsh; readonly typed: string } | { readonly kind: 'failed'; readonly reason: string };
 
-/** A linked row and its plan: what `checkedRow` compares the prepared snapshot with. */
-interface Planned {
-  readonly row: LineRow;
-  readonly remote: RemotePlan;
-}
-
 /**
- * What the run prepared: each linked row's state by row id, and the sessions the run still OWNS. A session joins `owned`
- * the moment `prepare` answers it and leaves when its row is handed to a terminal; the run's `finally` cleans what is left.
- * Made before the first `prepare`, so a throw in a later one still finds the earlier sessions here (lead amendment A4).
+ * What the run prepared: each linked row's state by row id, and the one owner of the sessions (`sshRoad.ts`). Made before
+ * the first `prepare`, so a throw in a later one still finds the earlier sessions there (lead amendment A4).
  */
 interface Prepared {
   readonly rows: Map<string, LinkedState>;
-  readonly owned: Set<ReadySsh>;
+  readonly sessions: OwnedSessions;
   stopped: boolean;
 }
 
@@ -206,7 +201,7 @@ async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan
 /** The run's one owner of the prepared sessions: prepare inside the `try`, type, and clean whatever was not handed over. */
 async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: FolderPlan, chosen: Chosen): Promise<void> {
   const keyOfRow: KeyOfRow = (row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name);
-  const prepared: Prepared = { rows: new Map(), owned: new Set(), stopped: false };
+  const prepared: Prepared = { rows: new Map(), sessions: ownedSessions(), stopped: false };
   try {
     await prepareLinked(host, folder, linesToType(plan, chosen.closing), prepared);
     if (prepared.stopped) {
@@ -215,7 +210,8 @@ async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: Folde
     }
     say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));
   } finally {
-    cleanUnsent(prepared);
+    prepared.sessions.cleanAll();
+    prepared.rows.clear();
   }
 }
 
@@ -245,48 +241,30 @@ function failedState(reason: string): LinkedState {
 }
 
 async function prepareRow(host: RunCommandsHost, folder: Folder, row: LineRow, remote: RemotePlan, prepared: Prepared): Promise<LinkedState | 'stopped'> {
-  const link = sshLinkOf(row.details, (id) => host.storage.getNode(folder.accountId, id));
-  if (link.kind === 'linked') {
-    return prepareOver(host.sshRoad, folder.accountId, link, { row, remote }, prepared);
+  const link = linkedNow(liveDetails(host.storage, folder.accountId, row.id), (id) => host.storage.getNode(folder.accountId, id), CHANGED_ROW);
+  if (typeof link === 'string') {
+    return failedState(link);
   }
-  return failedState(link.kind === 'refused' ? link.reason : CHANGED_ROW);
-}
-
-async function prepareOver(road: SshRoad, accountId: string, link: Extract<SshLink, { kind: 'linked' }>, planned: Planned, prepared: Prepared): Promise<LinkedState | 'stopped'> {
-  const answer = await road.prepare(accountId, link.ssh);
+  const answer = await host.sshRoad.prepare(folder.accountId, link.ssh);
   switch (answer.kind) {
     case 'stopped':
       return 'stopped';
     case 'refused':
       return failedState(refusedRowReason(link.sshName));
     default:
-      prepared.owned.add(answer);
-      return checkedRow(planned, answer, prepared);
+      prepared.sessions.own(answer);
+      return checkedRow(row, remote, answer);
   }
 }
 
-/** The trust line the modal showed must be the one the prepared snapshot gives; then the typed line. Either refusal cleans now. */
-function checkedRow(planned: Planned, ready: ReadySsh, prepared: Prepared): LinkedState {
-  const checked = checkedLine(planned, ready);
+/** The trust line the modal showed must be the one the prepared snapshot gives; then the typed line. Either refusal cleans now (the run's `finally` cleans again, harmlessly). */
+function checkedRow(row: LineRow, remote: RemotePlan, ready: ReadySsh): LinkedState {
+  const checked = recheckedLine(remote, ready, row.line, CHANGED_ROW);
   if (checked.kind === 'typed') {
     return { kind: 'ready', ready, typed: checked.line };
   }
   ready.cleanup();
-  prepared.owned.delete(ready);
   return failedState(checked.reason);
-}
-
-function checkedLine({ row, remote }: Planned, ready: ReadySsh): TypedLine {
-  return trustLineFor(ready.entity, ready.jump, remote.line) === row.line
-    ? typedLine(remote, ready, sshReaderShell())
-    : { kind: 'refused', reason: CHANGED_ROW };
-}
-
-/** The run's `finally`: every session the run still owns (a row not typed, or whose send threw), and the list dropped. */
-function cleanUnsent(prepared: Prepared): void {
-  prepared.owned.forEach((ready) => ready.cleanup());
-  prepared.owned.clear();
-  prepared.rows.clear();
 }
 
 /** The re-check over every row first, then the closes and the sends: synchronous from here to the last send. */
@@ -333,8 +311,7 @@ function typeLinkedRow(row: LineRow, toClose: readonly vscode.Terminal[], keyOfR
 function typeLinked(key: EntryTerminalKey, state: Extract<LinkedState, { kind: 'ready' }>, prepared: Prepared): NewTerminalSend {
   const sent = typeIntoNew(key, { kind: 'ssh', env: state.ready.env }, () => state.typed);
   if (sent.kind === 'typed') {
-    prepared.owned.delete(state.ready);
-    cleanWhenClosed(sent.terminal, state.ready);
+    prepared.sessions.handOver(state.ready, sent.terminal, sent.earlierEnded);
   }
   return sent;
 }

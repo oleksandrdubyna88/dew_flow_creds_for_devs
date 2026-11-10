@@ -189,6 +189,17 @@ test('a_password_step_after_a_local_step_still_runs_nothing', async () => {
   assert.deepEqual(executedAnywhere(s.aw), [], 'the local step before it did not run either: refused before any step runs');
 });
 
+// D5 (coai, accepted): the chain stops preparing at the FIRST password step — a later step is not prepared (no PIN or host-key question, no files).
+test('a_password_step_stops_the_preparation_so_no_later_step_is_prepared', async () => {
+  const second = step('st2', 'seed', { sshEntityId: 's2' });
+  const s = setup((ssh) => (ssh.id === 's1' ? { password: true } : {}), {}, [], [S1, S2, asNode(STEP), asNode(second)]);
+  await s.aw.run(rootOver('st', 'st2'));
+  assert.deepEqual(s.road.calls.map((c) => c.ssh.id), ['s1'], 'step 2 was never prepared');
+  assert.ok(s.aw.warnings.includes(passwordStepRefusal('migrate', 'prod box')), s.aw.warnings.join('\n'));
+  assert.deepEqual(s.road.cleaned, ['s1#1'], 'the session already prepared is cleaned');
+  assert.deepEqual(executedAnywhere(s.aw), []);
+});
+
 // D6
 test('owner_the_steps_session_is_cleaned_when_the_step_ends', async () => {
   const box: { s?: Setup } = {};

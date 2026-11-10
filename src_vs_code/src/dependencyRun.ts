@@ -168,7 +168,7 @@ function addLocalStep(walk: Walk, node: EntityMetadata, line: string): void {
  * | Check | Linked step | Why |
  * |---|---|---|
  * | the `{name}` rule (`nameStepRefusal`, then `planLaunch`) | applies | it is about the entry's name, not the shell |
- * | a control character or line break in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
+ * | a line break or NUL in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
  * | a Windows remote (`planLaunch` D9) | applies | a Windows remote is not supported yet |
  * | `{config}` | applies | the config is a file on THIS machine |
  * | `walk.refusalOf`, the local OS and shell (D14) | does NOT apply | *Runs on* names the remote; the local shell is SSH Connect's |

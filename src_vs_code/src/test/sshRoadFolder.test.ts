@@ -230,6 +230,22 @@ test('snapshot_a_host_changed_while_the_modal_was_open_is_not_typed', async () =
   assert.deepEqual(sentOf(s.w, 'a'), [L('a')]);
 });
 
+// F7b: the link is read from the Terminal entry AS STORAGE HOLDS IT after the modal (the chain's read, `linkedNow`), not from the row's details taken at plan time.
+test('snapshot_a_row_unlinked_while_the_modal_was_open_is_not_prepared_and_not_typed', async () => {
+  const b = linked('b', 's1');
+  const s = setup([session('a'), b], { waiting: true });
+  const { done, modal } = await clickAndWait(s.w);
+  const node = s.w.nodes.find((n) => n.name === 'b');
+  assert.ok(node?.details !== undefined, 'the row b is in the vault');
+  replaceNode(s.w, { ...node, details: { ...node.details, sshEntityId: undefined } });
+  choose(modal, 'first');
+  await done;
+  assert.deepEqual(s.road.calls, [], 'a row that is no longer linked is never prepared');
+  assert.deepEqual(sentOf(s.w, 'b'), []);
+  assert.ok(everyText(s.w).includes(CHANGED_ROW), everyText(s.w));
+  assert.deepEqual(sentOf(s.w, 'a'), [L('a')]);
+});
+
 // ---- the owner ------------------------------------------------------------------------------------------------
 
 // F8

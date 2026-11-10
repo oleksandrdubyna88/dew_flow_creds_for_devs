@@ -139,7 +139,7 @@ function judgedLine(details: EntityMetadata, line: string, facts: FolderFacts): 
  * | Check | Linked row | Why |
  * |---|---|---|
  * | the `{name}` rule (`planLaunch`, from `resolveCommand`) | applies | it is about the entry's name, not the shell |
- * | a control character or line break in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
+ * | a line break or NUL in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
  * | a control character in the entry's name (`lineRefusal`) | applies | the open test is not trusted for such a name |
  * | `{config}` (`lineRefusal`) | applies | the config is a file on THIS machine |
  * | `facts.shellRefusal`, the local OS and shell (D14) | does NOT apply | *Runs on* names the remote; the local shell is SSH Connect's |

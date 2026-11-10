@@ -227,6 +227,32 @@ test('owner_the_terminal_owns_the_session_after_the_send', async () => {
   assert.deepEqual(road.cleaned, ['s1#1']);
 });
 
+// O7 (both reviews): "Type It Anyway" into a busy or unknown terminal does NOT end the earlier session — its ssh may still be
+// running on it — so the terminal keeps BOTH, and its close cleans both.
+test('owner_type_it_anyway_into_a_busy_terminal_keeps_both_sessions_until_it_closes', async () => {
+  const { aw, road } = setup(undefined, { holdDialogs: /was not typed/ });
+  await aw.run(LINKED);
+  const second = aw.run(LINKED);
+  await until(() => aw.held.length === 1, 'the busy-terminal question');
+  aw.held[0].answer('Type It Anyway');
+  await second;
+  assert.equal(terminalNamed(aw, TITLE).sent.length, 2, 'the line went into the same terminal');
+  assert.deepEqual(road.cleaned, [], 'the earlier ssh may still be running: neither session is cleaned at the hand-over');
+  aw.exit(aw.live[TITLE]);
+  assert.deepEqual([...road.cleaned].sort(), ['s1#1', 's1#2'], 'the close cleans both');
+});
+
+// O8: the other half of the rule — after a `finished` verdict the earlier ssh has ended, so its session is cleaned at the hand-over.
+test('owner_a_finished_terminal_cleans_the_earlier_session_at_the_second_hand_over', async () => {
+  const { aw, road } = setup();
+  await aw.run(LINKED);
+  aw.shell.end(aw.live[TITLE], aw.shell.start(aw.live[TITLE]), 0);
+  await aw.run(LINKED);
+  assert.deepEqual(road.cleaned, ['s1#1'], 'the first ssh ended with the command: cleaned at the second hand-over');
+  aw.exit(aw.live[TITLE]);
+  assert.deepEqual(road.cleaned, ['s1#1', 's1#2']);
+});
+
 // ---- ONE SNAPSHOT ---------------------------------------------------------------------------------------------------
 
 // N1

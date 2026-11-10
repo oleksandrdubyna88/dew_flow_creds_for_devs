@@ -1,5 +1,5 @@
 import { commandRefusal, describeCommand, shownCommandLine } from './commandLine';
-import { CopiedLine, copiedLineOf } from './remoteLaunch';
+import type { CopiedLine } from './remoteLaunch';
 import { EntityMetadata } from './types';
 
 /**
@@ -8,35 +8,26 @@ import { EntityMetadata } from './types';
  */
 export type { CopiedLine } from './remoteLaunch';
 
-function readOf(d: EntityMetadata, copy: CopiedLine | undefined): CopiedLine {
-  return copy ?? copiedLineOf(d, () => undefined);
-}
-
-/**
- * The viewer's command rows. `copy` is what the caller read with storage; absent means "no lookup was made", and a linked
- * entry then fails closed with the missing-entry sentence (production always passes it).
- */
-export function commandRowsOf(d: EntityMetadata, copy: CopiedLine | undefined): { full?: string; refusal?: string; note?: string } {
-  const read = readOf(d, copy);
-  switch (read.kind) {
+/** The viewer's command rows. `copy` is REQUIRED: what the caller read with storage (`copiedLineOf`); there is no fallback reading. */
+export function commandRowsOf(d: EntityMetadata, copy: CopiedLine): { full?: string; refusal?: string; note?: string } {
+  switch (copy.kind) {
     case 'local':
       return { full: shownCommandLine(d), refusal: commandRefusal(d) };
     case 'linked':
-      return { full: read.line, note: read.note };
+      return { full: copy.line, note: copy.note };
     case 'refused':
-      return { refusal: read.reason };
+      return { refusal: copy.reason };
   }
 }
 
 /** Copy All's block for a Terminal entry: the local description, or the trust line and its note, or the reason. */
-export function commandBlockOf(d: EntityMetadata, copy: CopiedLine | undefined): string {
-  const read = readOf(d, copy);
-  switch (read.kind) {
+export function commandBlockOf(d: EntityMetadata, copy: CopiedLine): string {
+  switch (copy.kind) {
     case 'local':
       return describeCommand(d);
     case 'linked':
-      return `${read.line}\n${read.note}`;
+      return `${copy.line}\n${copy.note}`;
     case 'refused':
-      return read.reason;
+      return copy.reason;
   }
 }

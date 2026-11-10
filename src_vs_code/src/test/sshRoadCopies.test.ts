@@ -143,6 +143,8 @@ test('copy_command_of_a_broken_link_copies_nothing_and_says_why', async () => {
 function viewOptions(overrides: Partial<EntityViewOptions> = {}): EntityViewOptions {
   return {
     details: LINKED,
+    /** The caller always reads it with storage; here, with no lookup, unless a test says otherwise. */
+    sshCopy: copiedLineOf(overrides.details ?? LINKED, () => undefined),
     hasPassword: false,
     hasPrivateKey: false,
     hasVpnConfig: false,
@@ -200,6 +202,12 @@ test('copy_all_of_a_linked_entry_holds_the_trust_line_and_the_note_not_the_local
   assert.ok(!block.includes('\necho linked'), block);
 });
 
+// V6 (coai, accepted): the copied line is REQUIRED — a Terminal entry's Copy All never guesses one without storage.
+test('copy_all_of_a_terminal_entry_without_its_copied_line_is_a_programming_error', () => {
+  assert.throws(() => formatEntityBlock(LINKED, undefined), /copied line/);
+  assert.throws(() => formatEntityBlock({ ...LINKED, sshEntityId: undefined, command: 'ls' }, undefined), /copied line/);
+});
+
 // V5 — a guard, green before and after (testing.md: one positive per file).
 test('an_unlinked_viewer_and_block_are_unchanged', () => {
   const plain = { ...LINKED, sshEntityId: undefined, command: 'ls' };
@@ -209,6 +217,5 @@ test('an_unlinked_viewer_and_block_are_unchanged', () => {
   const stable = (html: string): string => html.replace(/nonce-[\w-]+/g, 'nonce-X').replace(/nonce="[^"]+"/g, 'nonce="X"');
   assert.equal(stable(renderEntityViewHtml(withLocal)), stable(renderEntityViewHtml(bare)));
   assert.ok(renderEntityViewHtml(bare).includes('Full command'), 'the local line is still shown');
-  assert.equal(formatEntityBlock(plain, undefined, undefined, undefined, undefined, { kind: 'local' }), formatEntityBlock(plain, undefined));
-  assert.equal(formatEntityBlock(plain, undefined), 'Name: deploy\n\nls');
+  assert.equal(formatEntityBlock(plain, undefined, undefined, undefined, undefined, { kind: 'local' }), 'Name: deploy\n\nls');
 });

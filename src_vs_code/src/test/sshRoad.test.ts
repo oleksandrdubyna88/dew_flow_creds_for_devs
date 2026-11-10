@@ -121,23 +121,29 @@ test('a_refusal_shows_the_remedy_once_and_never_retries', async () => {
 });
 
 // H3
-test('owned_session_cleans_on_undefined_and_on_a_throw_and_hands_over_otherwise', async () => {
+test('owned_sessions_clean_what_is_not_handed_over_and_hand_over_the_rest', () => {
   const events = closeEvents();
-  const { ownedSession } = loadRoad(events.vscode);
+  const { ownedSessions } = loadRoad(events.vscode);
 
   const unsent = counted();
-  assert.equal(await ownedSession(unsent.ready, async () => undefined), false);
-  assert.equal(unsent.cleaned(), 1, 'nothing was sent: the owner cleans');
-
-  const thrown = counted();
-  await assert.rejects(ownedSession(thrown.ready, () => Promise.reject(new Error('no terminal'))), /no terminal/);
-  assert.equal(thrown.cleaned(), 1, 'a throw: the owner cleans');
+  const first = ownedSessions();
+  first.own(unsent.ready);
+  first.cleanAll();
+  assert.equal(unsent.cleaned(), 1, 'nothing was handed over: the owner cleans');
+  first.cleanAll();
+  assert.equal(unsent.cleaned(), 1, 'the list is empty after cleanAll: nothing is cleaned twice');
 
   const before = events.listeners.list.length;
   const handed = counted();
+  const other = counted();
   const t = terminal();
-  assert.equal(await ownedSession(handed.ready, async () => t as never), true);
-  assert.equal(handed.cleaned(), 0, 'handed over: the terminal owns it now');
+  const owner = ownedSessions();
+  owner.own(handed.ready);
+  owner.own(other.ready);
+  owner.handOver(handed.ready, t as never);
+  owner.cleanAll();
+  assert.equal(handed.cleaned(), 0, 'handed over: the terminal owns it now, and cleanAll leaves it');
+  assert.equal(other.cleaned(), 1, 'not handed over: cleanAll cleans it');
   assert.equal(events.listeners.list.length, before + 1);
   events.fire(terminal());
   assert.equal(handed.cleaned(), 0, 'ANOTHER terminal closing does not clean it');
@@ -151,27 +157,30 @@ test('owned_session_cleans_on_undefined_and_on_a_throw_and_hands_over_otherwise'
 // H4
 test('a_terminal_already_closed_at_the_hand_over_is_cleaned_at_once', () => {
   const events = closeEvents();
-  const { cleanWhenClosed } = loadRoad(events.vscode);
+  const { ownedSessions } = loadRoad(events.vscode);
   const owned = counted();
-  cleanWhenClosed({ exitStatus: { code: 0 } } as never, owned.ready);
+  const owner = ownedSessions();
+  owner.own(owned.ready);
+  owner.handOver(owned.ready, { exitStatus: { code: 0 } } as never);
   assert.equal(owned.cleaned(), 1);
   assert.equal(events.listeners.list.length, 0, 'no listener was added');
 });
 
 // H5 (lead amendment A1)
-test('a_reused_terminal_keeps_one_session_and_one_listener_the_first_is_cleaned_at_the_second_hand_over', async () => {
+test('a_reused_terminal_keeps_one_listener_and_cleans_the_earlier_session_when_the_last_command_had_finished', () => {
   const events = closeEvents();
-  const { ownedSession } = loadRoad(events.vscode);
+  const { ownedSessions } = loadRoad(events.vscode);
   const t = terminal();
   const first = counted();
   const second = counted();
+  const owner = ownedSessions();
 
-  await ownedSession(first.ready, async () => t as never);
+  owner.handOver(first.ready, t as never);
   assert.equal(first.cleaned(), 0);
   assert.equal(events.listeners.list.length, 1);
 
-  await ownedSession(second.ready, async () => t as never);
-  assert.equal(first.cleaned(), 1, 'the earlier session ended with its ssh: cleaned at the second hand-over');
+  owner.handOver(second.ready, t as never, true);
+  assert.equal(first.cleaned(), 1, 'a `finished` verdict: the earlier ssh ended, cleaned at the second hand-over');
   assert.equal(second.cleaned(), 0);
   assert.equal(events.listeners.list.length, 1, 'exactly one listener remains');
 
@@ -179,4 +188,42 @@ test('a_reused_terminal_keeps_one_session_and_one_listener_the_first_is_cleaned_
   assert.equal(second.cleaned(), 1, 'close cleans the current session');
   assert.equal(first.cleaned(), 1, 'and not the first again');
   assert.equal(events.listeners.list.length, 0);
+});
+
+// H6 (both reviews): Type It Anyway into a busy or unknown terminal does not say the earlier ssh ended.
+test('a_terminal_that_was_not_finished_keeps_both_sessions_and_one_listener_until_it_closes', () => {
+  const events = closeEvents();
+  const { ownedSessions } = loadRoad(events.vscode);
+  const t = terminal();
+  const first = counted();
+  const second = counted();
+  const third = counted();
+  const owner = ownedSessions();
+
+  owner.handOver(first.ready, t as never);
+  owner.handOver(second.ready, t as never, false);
+  assert.deepEqual([first.cleaned(), second.cleaned()], [0, 0], 'the earlier ssh may still be running: nothing is cleaned');
+  assert.equal(events.listeners.list.length, 1, 'still one listener');
+
+  owner.handOver(third.ready, t as never, true);
+  assert.deepEqual([first.cleaned(), second.cleaned(), third.cleaned()], [1, 1, 0], 'a later `finished` verdict ends everything the terminal held before');
+
+  events.fire(t);
+  assert.deepEqual([first.cleaned(), second.cleaned(), third.cleaned()], [1, 1, 1]);
+  assert.equal(events.listeners.list.length, 0);
+});
+
+// H7: the link read again after the approval, the one reader of the folder run and the chain.
+test('a_link_read_again_is_the_link_or_the_sentence_why_not', () => {
+  const { linkedNow } = loadRoad(closeEvents().vscode);
+  const lookup = (id: string): never | undefined => (id === 's1' ? ({ id: 's1', name: 'prod box', type: 'entity', details: SSH, parentId: null } as never) : undefined);
+  const entry = (extra: Partial<EntityMetadata>): EntityMetadata => ({ id: 'e', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'x', ...extra }) as EntityMetadata;
+
+  const linked = linkedNow(entry({ sshEntityId: 's1' }), lookup, 'changed');
+  assert.equal(typeof linked, 'object');
+  assert.equal(linkedNow(undefined, lookup, 'changed'), 'changed', 'gone or trashed: changed');
+  assert.equal(linkedNow(entry({}), lookup, 'changed'), 'changed', 'no longer linked: changed');
+  const gone = linkedNow(entry({ sshEntityId: 'zz' }), lookup, 'changed');
+  assert.equal(typeof gone, 'string');
+  assert.notEqual(gone, 'changed', 'the link\'s own refusal is said as it is');
 });

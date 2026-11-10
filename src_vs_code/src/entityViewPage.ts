@@ -100,7 +100,7 @@ export interface EntityViewOptions {
   /** The NAME of the SSH entry a Terminal entry runs over, resolved by the caller. */
   sshLinkName?: string;
   /** What the command rows show for a Terminal entry, read by the caller with storage (E2.S1): the line, the trust line and its note, or why not. */
-  sshCopy?: CopiedLine;
+  sshCopy: CopiedLine;
   /** `SHA256:…` of the pinned host key, the string a server prints about itself (audit B10). */
   hostKeyFingerprint?: string;
   /**

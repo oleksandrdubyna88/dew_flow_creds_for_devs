@@ -2,9 +2,9 @@ import * as vscode from 'vscode';
 import { TrustStore, isCommandTrusted, trustCommand } from './commandTrust';
 import { RunPlan, RunStep, StepVerdict, changedStepRefusal, describeRunPlan, passwordStepRefusal, planDependencyRun, stepVerdict } from './dependencyRun';
 import { ShellContext, entryShell } from './hostShell';
-import { composedShellPath, pinnedShell, pinnedTerminal, shellContext, sshReaderShell } from './pinnedTerminal';
-import { NodeLookup, RemotePlan, SshLink, TypedLine, shownTrustLine, sshLinkOf, trustLineFor, typedLine } from './remoteLaunch';
-import type { SshRoad } from './sshRoad';
+import { composedShellPath, pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
+import { NodeLookup, RemotePlan, shownTrustLine } from './remoteLaunch';
+import { OwnedSessions, SshRoad, linkedNow, ownedSessions, recheckedLine } from './sshRoad';
 import type { ReadySsh } from './sshSession';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
@@ -119,13 +119,17 @@ export async function runDependenciesFirst(request: DependencyRunRequest): Promi
   return plan.ok ? approveAndRun(request, plan.steps, plan.missing, chainIsPinned(ctx, plan.steps)) : refused(plan.reason);
 }
 
-/** The chain's plan with each linked step shown by its trust line: what the modal says and the approval is keyed on. */
+/**
+ * The chain's plan with each linked step shown by its trust line: what the modal says and the approval is keyed on. A step
+ * is linked only when the plan was made with the road's lookup (`planDependencyRun`), so a request with no road has none.
+ */
 function shownPlan(request: DependencyRunRequest, ctx: ShellContext): RunPlan {
   const lookup = request.ssh?.lookup;
   const plan = planDependencyRun(request.roots, request.nodeOf, (name, os) => refusalIn(ctx, name, os), request.exclude, lookup);
-  if (!plan.ok) {
-    return plan;
-  }
+  return plan.ok && lookup !== undefined ? withShownLines(plan, lookup) : plan;
+}
+
+function withShownLines(plan: Extract<RunPlan, { ok: true }>, lookup: NodeLookup): RunPlan {
   const shown = shownSteps(plan.steps, lookup);
   return shown.ok ? { ok: true, steps: shown.steps, missing: plan.missing } : shown;
 }
@@ -135,23 +139,16 @@ function shownPlan(request: DependencyRunRequest, ctx: ShellContext): RunPlan {
  * entry and its jump chain (`shownTrustLine`), with NO preparation — no PIN, no host-key question, no key file before the
  * person has agreed. The plan's `remote.line` stays the person's own line.
  */
-function shownSteps(steps: readonly RunStep[], lookup: NodeLookup | undefined): { ok: true; steps: RunStep[] } | { ok: false; reason: string } {
+function shownSteps(steps: readonly RunStep[], lookup: NodeLookup): { ok: true; steps: RunStep[] } | { ok: false; reason: string } {
   const shown: RunStep[] = [];
   for (const step of steps) {
-    const line = shownLine(step, lookup);
+    const line = step.remote === undefined ? { kind: 'shown' as const, line: step.line } : shownTrustLine(step.remote, lookup);
     if (line.kind === 'refused') {
       return { ok: false, reason: line.reason };
     }
     shown.push({ ...step, line: line.line });
   }
   return { ok: true, steps: shown };
-}
-
-function shownLine(step: RunStep, lookup: NodeLookup | undefined): { kind: 'shown'; line: string } | { kind: 'refused'; reason: string } {
-  if (step.remote === undefined) {
-    return { kind: 'shown', line: step.line };
-  }
-  return lookup === undefined ? { kind: 'refused', reason: changedStepRefusal(step.name) } : shownTrustLine(step.remote, lookup);
 }
 
 /**
@@ -176,9 +173,9 @@ async function approveAndRun(request: DependencyRunRequest, steps: readonly RunS
   return approved && !requestGone(request.startGate) ? prepareAndRun(request, steps, pinned) : NOTHING_RAN;
 }
 
-/** What the chain prepared: every session it OWNS (`all`, made before the first `prepare`), and each step's own (`byStep`). */
+/** What the chain prepared: the one owner of every session (made before the first `prepare`), and each step's own session. */
 interface Sessions {
-  readonly all: ReadySsh[];
+  readonly owner: OwnedSessions;
   readonly byStep: Map<string, ReadySsh>;
 }
 
@@ -188,28 +185,29 @@ interface ChainStep extends RunStep {
 }
 
 /**
- * The chain's ONE OWNER of the prepared sessions (E2.A A4). The list exists before the first `prepare` and the `finally`
- * cleans all of it — a throw in a later preparation, a refused step, a closed terminal, a stop, a thrown request end. Each
- * step's own session is also cleaned when THAT step ends (`runAll`); `cleanup()` is idempotent.
+ * The chain's ONE OWNER of the prepared sessions (E2.A A4, `ownedSessions`). The list exists before the first `prepare` and the
+ * `finally` cleans all of it — a throw in a later preparation, a refused step, a closed terminal, a stop, a thrown request end.
+ * Each step's own session is also cleaned when THAT step ends (`runAll`); `cleanup()` is idempotent.
  */
 async function prepareAndRun(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<ChainEnd> {
-  const sessions: Sessions = { all: [], byStep: new Map() };
+  const sessions: Sessions = { owner: ownedSessions(), byStep: new Map() };
   try {
     const ready = await prepareSteps(request, steps, sessions);
     return ready === undefined || requestGone(request.startGate) ? NOTHING_RAN : await runSteps(request, ready, pinned, sessions);
   } finally {
-    sessions.all.forEach((session) => session.cleanup());
+    sessions.owner.cleanAll();
   }
 }
 
 /**
  * Every linked step prepared IN STEP ORDER, one after another (each may ask the person's PIN or host key), before any step
- * runs. `undefined`: the chain stops, nothing runs, and what was said was said (a stop is quiet).
+ * runs. `undefined`: the chain stops AT THE FIRST step that cannot run — a stop, a refusal, a changed line, a password
+ * session — so no later step is prepared (no PIN or host-key question, no files), and what was said was said (a stop is quiet).
  */
 async function prepareSteps(request: DependencyRunRequest, steps: readonly RunStep[], sessions: Sessions): Promise<ChainStep[] | undefined> {
   const ready: ChainStep[] = [];
   for (const step of steps) {
-    const next = step.remote === undefined ? { ...step, typed: step.line } : await prepareStep(request, step, step.remote, sessions);
+    const next = step.remote === undefined ? { ...step, typed: step.line } : await prepareStep(roadOf(request), request, step, step.remote, sessions);
     if (next === undefined) {
       return undefined;
     }
@@ -221,41 +219,26 @@ async function prepareSteps(request: DependencyRunRequest, steps: readonly RunSt
 /** The person's SSH road, as the request carries it. */
 type SshSteps = NonNullable<DependencyRunRequest['ssh']>;
 
-type LinkedNow = Extract<SshLink, { kind: 'linked' }>;
+/** A step with a `remote` was planned with the road's lookup, so the request has its road: the only reader of "no road" on a linked step. */
+function roadOf(request: DependencyRunRequest): SshSteps {
+  if (request.ssh === undefined) {
+    throw new Error('a linked step was planned without the road that plans it (planDependencyRun refuses it)');
+  }
+  return request.ssh;
+}
 
 /**
- * One linked step: its link is read again NOW (the SSH entry may have changed while the modal was open), then the session
- * is prepared. `stopped` is quiet; `refused` shows SSH Connect's remedy with no retry. A prepared session joins the owner's
- * list at once, so a refusal below finds it there.
+ * One linked step: its link is read again NOW, by the Terminal entry as storage holds it (`liveDetails` through `nodeOf`:
+ * gone or trashed reads as "changed") and the SSH entry as it is now (`linkedNow`, the read the folder run shares), then the
+ * session is prepared. `stopped` is quiet; `refused` shows SSH Connect's remedy with no retry. A prepared session joins the
+ * owner's list at once, so a refusal below finds it there.
  */
-async function prepareStep(request: DependencyRunRequest, step: RunStep, remote: RemotePlan, sessions: Sessions): Promise<ChainStep | undefined> {
-  const found = linkNow(request, step);
-  if (typeof found === 'string') {
-    refuse(found);
+async function prepareStep(ssh: SshSteps, request: DependencyRunRequest, step: RunStep, remote: RemotePlan, sessions: Sessions): Promise<ChainStep | undefined> {
+  const link = linkedNow(request.nodeOf(step.id), ssh.lookup, changedStepRefusal(step.name));
+  if (typeof link === 'string') {
+    refuse(link);
     return undefined;
   }
-  return prepareOver(found.ssh, found.link, step, remote, sessions);
-}
-
-/** A step that is gone, or no longer linked: its link reads as nothing, which is "changed". */
-const NO_LINK_NOW: SshLink = { kind: 'none' };
-
-/** The step's link now with the road to prepare it over, or the sentence why it cannot be used. */
-function linkNow(request: DependencyRunRequest, step: RunStep): { ssh: SshSteps; link: LinkedNow } | string {
-  const { ssh } = request;
-  if (ssh === undefined) {
-    return changedStepRefusal(step.name);
-  }
-  const node = request.nodeOf(step.id);
-  const link = node === undefined ? NO_LINK_NOW : sshLinkOf(node, ssh.lookup);
-  return link.kind === 'linked' ? { ssh, link } : unusableLink(link, step);
-}
-
-function unusableLink(link: SshLink, step: RunStep): string {
-  return link.kind === 'refused' ? link.reason : changedStepRefusal(step.name);
-}
-
-async function prepareOver(ssh: SshSteps, link: LinkedNow, step: RunStep, remote: RemotePlan, sessions: Sessions): Promise<ChainStep | undefined> {
   const answer = await ssh.road.prepare(ssh.accountId, link.ssh);
   if (answer.kind === 'refused') {
     await ssh.road.sayRefused(answer, link.ssh);
@@ -263,34 +246,23 @@ async function prepareOver(ssh: SshSteps, link: LinkedNow, step: RunStep, remote
   if (answer.kind !== 'ready') {
     return undefined;
   }
-  sessions.all.push(answer);
+  sessions.owner.own(answer);
   return checkedStep(step, remote, answer, sessions);
 }
 
-/** The step the prepared snapshot allows to run, or `undefined` having said why. Its session is registered only when the step may run. */
+/**
+ * The step the prepared snapshot allows to run, or `undefined` having said why: the shown trust line rebuilt (else "changed
+ * while the dialog was open"), a password session refused (one terminal, one environment), then the typed line, which can
+ * refuse too (PowerShell 5.1) — `recheckedLine`, shared with the folder run. Its session is registered only when the step may run.
+ */
 function checkedStep(step: RunStep, remote: RemotePlan, ready: ReadySsh, sessions: Sessions): ChainStep | undefined {
-  const typed = checkedLine(step, remote, ready);
+  const typed = recheckedLine(remote, ready, step.line, changedStepRefusal(step.name), passwordStepRefusal(step.name, remote.sshName));
   if (typed.kind === 'refused') {
     refuse(typed.reason);
     return undefined;
   }
   sessions.byStep.set(step.id, ready);
   return { ...step, typed: typed.line };
-}
-
-/**
- * The prepared snapshot against what the dialog showed: its trust line, rebuilt, must be the shown one (else "changed while
- * the dialog was open"); a password session is refused (one terminal, one environment); then the typed line, which can
- * refuse too (PowerShell 5.1).
- */
-function checkedLine(step: RunStep, remote: RemotePlan, ready: ReadySsh): TypedLine {
-  if (trustLineFor(ready.entity, ready.jump, remote.line) !== step.line) {
-    return { kind: 'refused', reason: changedStepRefusal(step.name) };
-  }
-  if (ready.env !== undefined) {
-    return { kind: 'refused', reason: passwordStepRefusal(step.name, remote.sshName) };
-  }
-  return typedLine(remote, ready, sshReaderShell());
 }
 
 function refusalIn(ctx: ShellContext, name: string, terminalOs: string | undefined): string | undefined {

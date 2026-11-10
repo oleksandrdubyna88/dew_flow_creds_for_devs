@@ -1,6 +1,6 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **epoch 2 open 2026-11-10 after the re-review. E1 built locally (782444a, cut: to be split under the security plan and fixed forward per E1 §S4); E2, E3 not started; nothing pushed.** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 2 open 2026-11-10 after the re-review. E1 built locally (782444a, cut: to be split under the security plan and fixed forward per E1 §S4); E2 built locally on feat/terminal-command-over-ssh-e2; E3 not started; nothing pushed.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.

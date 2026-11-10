@@ -28,6 +28,7 @@ const ROAD_FILES = [
   'dependencyRun.ts',
   'dependencyRunHost.ts',
   'vpnLauncherRun.ts',
+  'sshRoad.ts',
   'agentUseActions.ts',
   'terminalGuard.ts',
   'pinnedTerminal.ts',
@@ -134,7 +135,6 @@ test('sshEntityId_is_read_only_by_the_plumbing_and_sshLinkOf', () => {
 const ALLOWED_SENDS: AllowList = {
   'commands/runCommands.ts': [
     { line: "const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);", because: 'Run in Terminal, an entry with no link: the local road, unchanged' },
-    { line: "const sent = await sendGuarded(entry.key, { kind: 'ssh', env: ready.env }, () => typed.line);", because: 'Run in Terminal over SSH (E2.S1): the line typedLine built from the prepared snapshot' },
     { line: "opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);", because: 'Run Script in a terminal: a script, never linked (E1.S1 scrub)' },
     { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: E3 switches it to the remote script on stdin' },
     { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
@@ -160,7 +160,6 @@ const ALLOWED_SENDS: AllowList = {
       line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'entry', terminalOs: launcher.terminalOs }, (family) => withConfig(line, configPath, family), ctx.startGate);",
       because: "the VPN launcher with no link, or an agent's start: the local road, unchanged",
     },
-    { line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'ssh', env: ready.env }, () => typed.line);", because: "a VPN launcher over SSH on the person's Start (E2.S1)" },
   ],
   'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
   'terminalGuard.ts': [
@@ -170,6 +169,12 @@ const ALLOWED_SENDS: AllowList = {
     { line: 'terminal.sendText(line, true);', because: 'the ONE sendText of the guarded roads: the typed line arrives here' },
   ],
   'pinnedTerminal.ts': [{ line: 'opened.terminal.sendText(line, true);', because: 'the pinned-shell opener used by the launchers (E2)' }],
+  'sshRoad.ts': [
+    {
+      line: "const sent = await sendGuarded(key(), { kind: 'ssh', env: ready.env }, () => line);",
+      because: "the one linked send of the person's arrow and a VPN launcher (E2.S1, runOverSsh): the line typedLine built from the prepared snapshot, with a password session's own environment",
+    },
+  ],
   'maskedTerminal.ts': [{ line: 'const child = childProcess.spawn(options.commandLine, [], {', because: 'the masked child of Run with Secrets: E3' }],
 };
 

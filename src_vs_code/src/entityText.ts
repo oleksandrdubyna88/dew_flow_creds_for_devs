@@ -37,6 +37,9 @@ export function formatEntityBlock(
   // An entry set to run over SSH (E1.S1) has no local line to copy: the block says why instead, because this
   // is the one road every Copy All takes (the viewer, for the entry and for a revision).
   if (details.isTerminal) {
+    if (sshCopy === undefined) {
+      throw new Error('formatEntityBlock: a Terminal entry needs its copied line (copiedLineOf), read with storage');
+    }
     const described = commandBlockOf(details, sshCopy);
     if (described.length > 0) {
       lines.push('', described);

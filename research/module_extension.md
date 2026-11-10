@@ -2245,7 +2245,7 @@ Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds th
 the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
 (`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
 the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
-`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher, the copies, the folder run and the chain call it since E2.S1, E2.S2 and E2.S3; Run with Secrets and the agent (E3) follow.
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. Since E2.S1, E2.S2 and E2.S3 the person's roads (the arrow, a VPN's Start on the person's click, the copies, the folder run and a chain step with a road) plan through `planLaunch` and no longer call it. It is still called by Run with Secrets, the agent's run, an agent's VPN start and a dependency chain with no road (E3 follows).
 `launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
 send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
 
@@ -2394,29 +2394,32 @@ on the trust line `trustLineFor(ready.entity, ready.jump, line)` → the depende
 holds the road host: `SshRoad` (`prepare` through `prepareSshSession` with `isolate: true`, the window's route and the agent's answer for THAT
 entry; `sayRefused` is SSH Connect's modal through `offerTheFix`, with NO retry, the person runs the entry again) and `sshRoadOf`, which
 `extension.ts` imports through `sshUseActions.ts` (the size ratchet). Only the person's roads get it; an agent's `creds_vpn_up` passes none, so
-a linked launcher on an agent's start keeps E1's refusal (E2-D2). ONE OWNER: `ownedSession` cleans the prepared session on every exit that
-sends nothing (declined trust, cancelled dependency, a throw, a failed terminal creation, a declined busy question); after a send,
-`cleanWhenClosed` makes that terminal's close clean it, and a `WeakMap` keeps ONE session per terminal (a reused terminal cleans the earlier
-session at the next hand-over, lead amendment A1). ONE SNAPSHOT: from `prepare` to the send nothing reads the SSH entry from storage again.
+a linked launcher on an agent's start keeps E1's refusal (E2-D2). The arrow and the launcher share ONE road, `runOverSsh(road, accountId, plan, key, gates)`: prepare, the typed line's own refusal, `gates(trustLine)` (the road's trust question and
+dependencies), then the guarded send; `key` is a function because the launcher reads its terminal's key after the chain. ONE OWNER for every road that prepares (the arrow, the launcher, the folder run, the chain):
+`ownedSessions()` gives `{ own, handOver, cleanAll }`; a road `own`s a session the moment `prepare` answers it and `cleanAll`s in its `finally` (declined trust, cancelled dependency,
+a throw, a failed terminal creation, a declined busy question); `handOver(ready, terminal, earlierEnded)` removes it from the list and makes that terminal's close clean it. A
+`WeakMap` keeps the sessions of each terminal under ONE listener (lead amendment A1, corrected by the E2 fix pass): a terminal reused after a `finished` verdict (`GuardedSend.earlierEnded`, true only
+on that path) cleans what it held at the hand-over, because that ssh has ended; after "Type It Anyway" into a busy or unknown terminal the earlier ssh may still be running, so the terminal keeps BOTH
+sessions and its close cleans all of them. ONE SNAPSHOT: from `prepare` to the send nothing reads the SSH entry from storage again.
 A session that signs in with a password has an environment, which a terminal takes only at creation: its send opens a NEW terminal beside any
 live one and disposes nothing (D10), and a terminal opened with an environment is NEVER found for reuse by any later run — the SSH finder, the local road's finder and the pinned finder all skip it (`carriesEnvironment`, read from `creationOptions.env`) — so a later key session or an unlinked local line never runs with a password's askpass variables. `sshReaderShell()` (`pinnedTerminal.ts`) is the shell that reads the typed line (only the PowerShell 5.1
 check). A linked launcher whose line uses `{config}` is refused before prepare (`linkedConfigRefusal`): the file is on this machine. The copies
 read `copiedLineOf` (`remoteLaunch.ts`): a linked entry shows `ssh … -- user@host '<line>'` with `COPY_NOTE` (it uses the person's own ssh
 setup, the vault's key and password are not in it) in Copy Command, the viewer's *Full command* and *About this line* rows and copy, and Copy
-All (`entityCommandRows.ts`); a broken link or a bad plan shows why and copies nothing.
+All (`entityCommandRows.ts`); a broken link or a bad plan shows why and copies nothing. The copied line is REQUIRED by `commandRowsOf` and `commandBlockOf` (no fallback reading): `EntityViewOptions.sshCopy` is a required field, and `formatEntityBlock` throws for a Terminal entry given none.
 
 *The folder run over SSH (E2.S2 of PLAN_terminal_command_over_ssh_E2.md).* A Terminal row that runs over an SSH entry is planned by `planLaunch` (not
 by `resolveCommand`; `folderRun.ts` no longer imports it and no longer calls `sshLinkRefusal`) and its `line` is the SHOWN trust line
 (`shownTrustLine`, from the vault as the plan reads it), so the modal lists `name: ssh … -- user@host '<line>'`, `(new)` is `isCommandTrusted(row.id, trustLine)`
 and `trustAll` records the trust line, the key the arrow uses: one approval covers both roads. Of the local checks, a linked row keeps the `{name}` rule, the
 control-character and line-break refusals and `{config}`, and is NOT asked `facts.shellRefusal` (the table is in `linkedLine`'s doc, lead amendment A3). After the
-modal, the trust and the chain, `prepareLinked` prepares each linked row IN ROW ORDER, one after another and before the synchronous `typeAll`: the SSH entry is
-read again, `SshRoad.prepare` answers, and the trust line rebuilt from the prepared snapshot must be the one the modal showed, or the row fails with
+modal, the trust and the chain, `prepareLinked` prepares each linked row IN ROW ORDER, one after another and before the synchronous `typeAll`: the Terminal entry is
+read again from storage (`liveDetails`, then `linkedNow` of `sshRoad.ts`, the same read the chain makes: a row removed, trashed or unlinked during the wait is not prepared and fails as changed), `SshRoad.prepare` answers, and `recheckedLine` (`sshRoad.ts`, shared with the chain) rebuilds the trust line from the prepared snapshot, which must be the one the modal showed, or the row fails with
 `CHANGED_ROW` (its SSH entry or jump host changed while the dialog was open — run the folder again); a refused preparation fails that row alone
 (`refusedRowReason`), no modal per row. A `stopped` row (an SSH connection could not be prepared: a question was cancelled, or SSH Connect said why) stops the WHOLE run: no further `prepare`, nothing typed,
-linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared: the `Prepared` list is made before the first `prepare`, and `prepareAndType`'s
-`finally` (`cleanUnsent`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
-with the session's own environment for a password, D10) leaves the list and that terminal's close cleans it (`cleanWhenClosed`).
+linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared (`ownedSessions()`, made before the first `prepare`), and `prepareAndType`'s
+`finally` (`cleanAll`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
+with the session's own environment for a password, D10) is handed over (`handOver`) and that terminal's close cleans it.
 
 *A dependency step over SSH (E2.S3 of PLAN_terminal_command_over_ssh_E2.md, as amended by E2.A).* `planDependencyRun` takes an optional `lookup`. Without it (an
 agent's start, which passes no road, E2-D2) a linked step still refuses the whole chain with `sshLinkRefusal`'s sentence in `stepRefusal`. With it, a step whose
@@ -2425,17 +2428,17 @@ which the chain reads). Of the local checks a linked step keeps the `{name}` rul
 `refusalOf`, the local OS (D14); the table is in `addLinkedStep`'s doc (lead amendment A3). The chain follows the FOLDER model (A2): `runDependenciesFirst` shows each
 linked step by its trust line from `shownTrustLine` (`shownSteps`, NO preparation: no PIN, no host-key question, no key file before the person has agreed), the
 approval is keyed on that trust line (`isCommandTrusted(trust, step.id, trustLine)`, the key the arrow uses), and only after the approval and the request's own check does
-`prepareAndRun` prepare the linked steps IN STEP ORDER, before any step runs. Each step's link is read again then (`linkNow`); `stopped` is quiet, `refused` shows SSH
-Connect's remedy through `sayRefused` with no retry, and the prepared snapshot is checked (`checkedLine`): its trust line rebuilt by `trustLineFor(ready.entity,
+`prepareAndRun` prepare the linked steps IN STEP ORDER, before any step runs. Each step's link is read again then (`linkedNow` over `request.nodeOf`, so a step gone or trashed reads as changed, and the SSH entry as it is now; the read the folder run shares); `stopped` is quiet, `refused` shows SSH
+Connect's remedy through `sayRefused` with no retry, and the prepared snapshot is checked by `recheckedLine` (`sshRoad.ts`, shared with the folder run): its trust line rebuilt by `trustLineFor(ready.entity,
 ready.jump, remote.line)` must be the shown one, else the chain stops with `changedStepRefusal` ("changed while the dialog was open — run it again") before any step; a
 session with an `env` (a password) is refused with `passwordStepRefusal`, because the chain's one terminal has one environment (so the PIN of a password entry may be asked
-before the refusal, which only the credential kind inside `prepareSshSession` can tell); then `typedLine` (the PowerShell 5.1 refusal). The chain terminal is pinned when
-any step is linked and `composedShellPath()` is set (a local window). ONE OWNER (A4): `prepareAndRun` makes the `Sessions` list BEFORE the first `prepare`, a session joins it
+before the refusal, which only the credential kind inside `prepareSshSession` can tell); then `typedLine` (the PowerShell 5.1 refusal). The chain stops preparing at the FIRST step that cannot run (a stop, a refusal, a changed line, a password session): no later step is prepared, so no later PIN or host-key question and no later key file. The chain terminal is pinned when
+any step is linked and `composedShellPath()` is set (a local window). ONE OWNER (A4): `prepareAndRun` makes the owner (`ownedSessions()`) BEFORE the first `prepare`, a session joins it
 the moment `prepare` answers, and its `finally` cleans every session on it — a refused step, a thrown later `prepare`, a closed chain terminal, a *Stop*, a thrown request end;
 `runAll` also cleans a step's own session when THAT step ends (its exit, the Continue answer), before the next step, so a step's key and pin are gone before the root is typed.
 Every preparation is `isolate: true` (`sshRoad.ts`), so a step linked to the same SSH entry as its parent or another step has its own key and pin files and its `cleanup()`
 cannot delete theirs. The chain's two sends (`sendText` without shell integration, `executeCommand` with it) type `step.typed`; `launchRoadScan.test.ts` now also scans
-`.executeCommand(`. The person's callers pass the road (`withSshSteps`: the arrow, Run Script and Run with Secrets chains through `chainRequest` in `runCommands.ts`, and
+`.executeCommand(`. The person's callers pass the road (`withSshSteps`: the arrow, Run Script and Run with Secrets chains through `chainRequest` in `runCommands.ts`, the folder run's chain in `folderRunCommand.ts`, and
 `vpnDependencies` when `ctx.sshRoad` is set); an agent's `creds_vpn_up` passes none and keeps E1's refusal.
 
 ### Which shell parses the line (issue #103)

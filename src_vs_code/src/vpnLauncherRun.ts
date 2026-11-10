@@ -4,14 +4,13 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { commandRefusal } from './commandLine';
-import { LaunchPlan, RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from './remoteLaunch';
-import { SshRoad, ownedSession } from './sshRoad';
-import type { ReadySsh } from './sshSession';
+import { LaunchPlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal } from './remoteLaunch';
+import { SshRoad, runOverSsh } from './sshRoad';
 import { executableLine } from './dependencyRun';
 import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from './dependencyRunHost';
 import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
-import { shellContext, sshReaderShell } from './pinnedTerminal';
+import { shellContext } from './pinnedTerminal';
 import { sendGuarded } from './terminalGuard';
 import { EntryTerminalKey, entryTerminalKeyOf } from './terminalTitles';
 import { confirmTrusted } from './trustPrompt';
@@ -97,7 +96,9 @@ async function runLocalLauncher(ctx: VpnRunContext, launcher: EntityMetadata): P
 
 /**
  * A linked launcher (E2.S1): its plan, then the `{config}` refusal BEFORE `prepare` (so no PIN is asked and no config
- * file is written), then prepare; the ONE OWNER holds the session from there.
+ * file is written), then the road over SSH shared with the arrow (`runOverSsh`): prepare, the typed line's own refusal, the
+ * trust question on the prepared snapshot's trust line, the chain, then the send into the launcher's own terminal. No
+ * `afterTheChain`: that belongs to the agent's start, which has no road. The launcher's key is read after the chain.
  */
 async function runLinkedLauncher(ctx: VpnRunContext, road: SshRoad, launcher: EntityMetadata, link: SshLink): Promise<boolean> {
   if (launcherLine(launcher, () => undefined) === undefined) {
@@ -108,7 +109,7 @@ async function runLinkedLauncher(ctx: VpnRunContext, road: SshRoad, launcher: En
   if (refusal !== undefined) {
     return refuse(refusal);
   }
-  return plan.kind === 'remote' ? prepareAndLaunch(ctx, road, launcher, plan) : false;
+  return plan.kind === 'remote' ? runOverSsh(road, ctx.accountId, plan, () => launcherKey(ctx, launcher), (trustLine) => trustedAndChained(ctx, launcher, trustLine)) : false;
 }
 
 /** Why a linked launcher cannot start: the plan's own refusal (the link's, a Windows remote's, a line break's), or a `{config}` in its line. */
@@ -119,46 +120,15 @@ function linkedRefusal(launcher: EntityMetadata, plan: LaunchPlan): string | und
   return plan.kind === 'remote' && usesConfig(plan.line) ? linkedConfigRefusal(launcher.name) : undefined;
 }
 
-async function prepareAndLaunch(ctx: VpnRunContext, road: SshRoad, launcher: EntityMetadata, plan: RemotePlan): Promise<boolean> {
-  const prepared = await road.prepare(ctx.accountId, plan.ssh);
-  if (prepared.kind === 'refused') {
-    await road.sayRefused(prepared, plan.ssh);
-    return false;
-  }
-  return prepared.kind === 'ready' && ownedSession(prepared, () => trustThenLaunch(ctx, launcher, plan, prepared));
-}
-
 /** Said, and nothing runs. */
 function refuse(why: string): false {
   void vscode.window.showWarningMessage(why);
   return false;
 }
 
-/**
- * From the PREPARED snapshot only: the typed line's own refusal, the trust question on the trust line, the chain, then the
- * send into the launcher's own terminal. No `{config}` and no `afterTheChain`: those belong to the agent's start, which
- * has no road. Answers the terminal the line went into, or `undefined` when nothing was sent.
- */
-async function trustThenLaunch(ctx: VpnRunContext, launcher: EntityMetadata, plan: RemotePlan, ready: ReadySsh): Promise<vscode.Terminal | undefined> {
-  const typed = typedLine(plan, ready, sshReaderShell());
-  if (typed.kind === 'refused') {
-    refuse(typed.reason);
-    return undefined;
-  }
-  return (await trustedAndChained(ctx, launcher, trustLineFor(ready.entity, ready.jump, plan.line))) ? sendLinkedLauncher(ctx, launcher, ready, typed) : undefined;
-}
-
 /** The trust question on the trust line, then the dependencies the VPN and the launcher ask for. */
 async function trustedAndChained(ctx: VpnRunContext, launcher: EntityMetadata, trustLine: string): Promise<boolean> {
   return (await confirmTrusted(ctx.trust, launcher.id, launcher.name, trustLine)) && (await runDependenciesFirst(vpnDependencies(ctx, [ctx.details, launcher], new Set([launcher.id])))).ready;
-}
-
-async function sendLinkedLauncher(ctx: VpnRunContext, launcher: EntityMetadata, ready: ReadySsh, typed: { readonly line: string }): Promise<vscode.Terminal | undefined> {
-  const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'ssh', env: ready.env }, () => typed.line);
-  if (sent.kind === 'refused') {
-    refuse(sent.reason);
-  }
-  return sent.kind === 'typed' ? sent.terminal : undefined;
 }
 
 /**

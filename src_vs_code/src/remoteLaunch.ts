@@ -112,13 +112,15 @@ export type LinkedEntry = Pick<EntityMetadata, 'id' | 'name' | 'sshEntityId'>;
  * The sentence every road says instead of running a linked entry (E1.S1, D8).
  *
  * <p>`undefined` means exactly one thing: THIS ENTRY HAS NO SSH LINK (row L1: `sshEntityId` is absent or empty). Any other
- * answer is the sentence, and that includes an entry that is linked to a valid, live SSH target: in E1 no road runs a
- * linked entry over SSH yet, so even a perfectly good link gets the sentence. The decision is made WITHOUT a lookup
+ * answer is the sentence, and that includes an entry that is linked to a valid, live SSH target: a road that calls this
+ * function does not run a linked entry over SSH, so even a perfectly good link gets the sentence. The decision is made WITHOUT a lookup
  * (`sshLinkOf` is asked with one that finds nothing), so it never depends on whether the target exists; "is this entry
  * linked" has ONE reader, and `undefined` is never "linked but fine".</p>
  *
- * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 and E3 replace each caller by
- * `planLaunch`, road by road.</p>
+ * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 replaced the person's roads by
+ * `planLaunch` (the arrow, the folder run, a VPN's Start on the person's click, a chain step with a road). It is still
+ * called by the roads that have no SSH road: Run with Secrets (until E3), the agent's run, an agent's VPN start, and a
+ * dependency chain with no road (`launchRoadScan.test.ts` lists the callers); a road that moves to `planLaunch` leaves that list.</p>
  */
 export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
   return sshLinkOf(entry, () => undefined).kind === 'none'
