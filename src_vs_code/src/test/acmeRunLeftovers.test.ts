@@ -177,7 +177,9 @@ case "$1" in
     exit 0 ;;
   run)
     case "$*" in
-      *" test -f "*) [ "\${STUB_CERT:-1}" = 1 ] && exit 0; exit 1 ;;
+      *" test -f "*)
+        if [ -n "\${STUB_CERT_ERR:-}" ]; then echo "$STUB_CERT_ERR" >&2; exit "\${STUB_CERT_ERR_CODE:-125}"; fi
+        [ "\${STUB_CERT:-1}" = 1 ] && exit 0; exit 1 ;;
       *) exit 0 ;;
     esac ;;
 esac
@@ -288,6 +290,21 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   // The run says which project and folder it made, so a person (or a hosted check) can look for exactly those afterwards.
   assert.match(run.output, new RegExp(`^compose project: ${run.folderProject}$`, 'm'));
   assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
+});
+
+test('a docker that fails during the certificate wait is named, with its exit code and its words, and stops the wait early; "no file yet" is told apart from it', () => {
+  const broken = runAcme(REAL_RUN, { STUB_CERT_ERR: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?', STUB_CERT_ERR_CODE: '125' });
+  assert.equal(broken.status, 1, broken.output);
+  assert.match(broken.output, /FAIL\S*\s+the certificate check failed in docker, not for want of a file \(exit code 125/, broken.output);
+  assert.match(broken.output, /Cannot connect to the Docker daemon/);
+  assert.doesNotMatch(broken.output, /no certificate was issued after/);
+  const tries = broken.calls.filter((call) => / test -f /.test(call)).length;
+  assert.ok(tries <= 6, `docker failed every time, yet the wait went on for ${tries} tries`);
+  assert.deepEqual(broken.left, [], 'a failing run leaves nothing');
+  // a missing file (the container's `test -f` says 1) is the old message, with no docker words
+  const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
+  assert.match(absent.output, /no certificate was issued after 150 tries \(the last try found no file\)/);
+  assert.doesNotMatch(absent.output, /failed in docker/);
 });
 
 test('the guard of owned_cleanup is a block: owned_cleanup moved out of the STATE `if` is refused', () => {
