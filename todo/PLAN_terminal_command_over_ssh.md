@@ -1,13 +1,13 @@
 # PLAN — a Terminal entry runs its command over a chosen SSH connection
 
-> Status: **E1 built locally (782444a, not pushed), stopped for re-review 2026-11-10 (second change, entry 1.2).** Scope: the extension (`src_vs_code`) — a new
+> Status: **epoch 2 open 2026-11-10 after the re-review. E1 built locally (782444a, cut: to be split under the security plan and fixed forward per E1 §S4); E2, E3 not started; nothing pushed.** Scope: the extension (`src_vs_code`) — a new
 > Terminal-entry field, the form, every road that runs a Terminal entry (arrow, folder run, dependency chain, VPN
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-09 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-09 · by reviewers · state: closed
 
   (Approval: the plan gate's round 2, verdict good_enough, committed in e468285 with that round's accepted findings
   and the three-epic split the same round's operator command ordered.)
@@ -34,6 +34,12 @@ Narrowed: no — the Definition of Done is identical to epoch 1's; the trust lin
 
   (Sorted by an Opus judge, 2026-11-10. The stop commit was not pushed: the repository is public and the cut commit
   describes unreleased security defects; the push is the owner's decision.)
+
+> Epoch 2 · approved 2026-11-10 · by reviewers · state: open
+
+  (The re-review round on branch feat/terminal-command-over-ssh-epoch2: verdict proceed, 1 of 2 reviewers answered —
+  antigravity's answer was unparseable; the Update-it finding accepted (already E1 §S4 F2), the `exit` finding
+  rejected with its reason.)
 
 ## 1. Goal
 
