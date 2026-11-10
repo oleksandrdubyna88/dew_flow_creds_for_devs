@@ -77,7 +77,7 @@ public sealed class LeftoversGuardCredsTests : IDisposable
         var report = Scan(("src_cli/tests/Y.cs", SplitPrefix()));
 
         Found(report).Should().Equal("src_cli/tests/Y.cs:1:owner-blind");
-        report.Findings.Single().Text.Should().Contain(P[..7], "the finding names what the folded reading joined");
+        report.Findings.Single().Text.Should().Contain(P + "-ag", "the finding names the JOINED spelling; a piece alone (the piece reading) would not hold it");
     }
 
     [Fact]
