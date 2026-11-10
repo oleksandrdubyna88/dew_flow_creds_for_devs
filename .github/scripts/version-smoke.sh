@@ -4,6 +4,11 @@
 #   .github/scripts/version-smoke.sh mcp <creds-mcp binary> <X.Y.Z> [log root]
 #   .github/scripts/version-smoke.sh cli <creds binary>     <X.Y.Z> [log root]
 #
+# The `cli` kind with no log root and no RUNNER_TEMP keeps its log in an owned folder (lib/owned.sh) that is removed
+# when the script ends, whatever way it ends; pass a root to keep the log of a failed run.
+# Off CI under Git Bash (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init
+# .claude/rules/shared`); without them the script stops before it makes anything — pass a log root there.
+#
 # Why it exists: until 2026-10-11 `release.yml` published both binaries without `-p:Version`, so every release
 # of `creds-mcp` answered `--version` with `creds-mcp 1.0.0` and every `creds` log said `version 1.0.0` — the SDK
 # default — while the extension's WSL install check compares exactly that answer with the release it installed
@@ -27,7 +32,7 @@ usage='usage: version-smoke.sh <mcp|cli> <binary> <X.Y.Z> [log root]'
 kind="${1:?$usage}"
 binary="${2:?$usage}"
 version="${3:?$usage}"
-root="${4:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
+root="${4:-${RUNNER_TEMP:-}}"
 seconds="${SMOKE_GUARD_SECONDS:-60}"
 
 [[ -x "$binary" ]] || { echo "not an executable: $binary"; exit 1; }
@@ -61,8 +66,20 @@ case "$kind" in
     echo "version smoke passed: $binary --version prints '$first'"
     ;;
   cli)
-    dir="$(cd "$root" && (pwd -W 2> /dev/null || pwd))/creds-version-smoke-$$"
-    mkdir -p "$dir"
+    # A log root (the fourth argument, or RUNNER_TEMP in CI) is the caller's: the leaf stays in it. With neither, a person
+    # is running it: the scratch is an owned folder of owned.sh, removed on every exit; `owned.sh` is read on this branch
+    # only, so the release jobs gain no dependency. A person who wants the log after a failed run passes a root.
+    if [[ -n "$root" ]]; then
+      dir="$(cd "$root" && (pwd -W 2> /dev/null || pwd))/creds-version-smoke-$$"
+      mkdir -p "$dir"
+    else
+      # shellcheck source-path=SCRIPTDIR
+      # shellcheck source=lib/owned.sh
+      source "$(dirname "${BASH_SOURCE[0]}")/lib/owned.sh"
+      owned="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
+      owned_dir owned smoke || exit 1
+      dir="$(cd "$owned" && (pwd -W 2> /dev/null || pwd))"
+    fi
     code=0
     CREDS_LOG_DIR="$dir" CREDS_ENDPOINT_DIR="$dir/no-endpoints" "${guard[@]}" "$binary" relay-pipe < /dev/null > "$dir/stdout" 2> "$dir/stderr" || code=$?
     if ended_by_guard "$code"; then echo "relay-pipe did not end within $seconds s"; exit 1; fi

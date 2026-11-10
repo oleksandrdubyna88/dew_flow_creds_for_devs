@@ -14,7 +14,8 @@
 #
 # The entrypoint is RUN, not copied: its own seams (CRED_VAULT_CERT_LIVE, CRED_VAULT_TEMPLATE,
 # CRED_VAULT_CONF_DIR, CRED_VAULT_RENDER_ONLY) point it at a private folder and stop it before the
-# reload loop. Nothing is written outside that folder, which is removed on exit.
+# reload loop. Nothing is written outside that folder, an owned folder that is removed on exit. Under Git Bash
+# (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -uo pipefail
 
 # A local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md), the same
@@ -36,8 +37,13 @@ fail() { printf 'FAIL  %s\n' "$1"; [[ -n "${2:-}" ]] && printf '      %s\n' "$2"
 
 command -v envsubst >/dev/null 2>&1 || { echo "envsubst is required (gettext-base)"; exit 2; }
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The private folder is an owned folder (.github/scripts/lib/owned.sh): claimed first, removed by the helper's exit trap on every
+# way the script ends. This file sets no trap of its own. Read AFTER the `nice` re-exec above, which keeps the pid.
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../../.github/scripts/lib/owned.sh
+source "${HERE}/../../.github/scripts/lib/owned.sh" || exit 1
+WORK="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
+owned_dir WORK nginx-entry || exit 1
 
 # render <mode> <with-cert: yes|no> -> sets RENDERED to the path of the rendered vault.conf.
 # Not a command substitution: a failure must be counted in THIS shell, and its text must reach the terminal.
