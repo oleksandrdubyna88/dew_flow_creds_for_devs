@@ -359,6 +359,67 @@ release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'cred
 line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
 version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
 
+**The bash helper `owned.sh` has a self-test in real child processes (2026-11-09, E2.4.S1 of
+[PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).** `.github/scripts/lib/owned.sh` gives a shell script one owned
+folder, `testsToDelete-<owner>-creds-<what>-<8 hex>`, in the rule's order (claim by an exclusive write of the owner record, register
+the traps, create with `mkdir`), and removes it on every exit path by its exact name. `.github/scripts/lib/owned.test.sh` runs three area files (`owned.test.record.sh`, `owned.test.exit.sh`, `owned.test.sweeps.sh`, each in its own bash with its own private root, sharing `owned.test.lib.sh`) with 20
+cases (T1 to T21 of the spec; T3, T12 and T14 are Windows only) and every case starts a real `bash` with its own temp root: the
+name and the record against the mounted `owned.mjs` (the claim is byte for byte the reference's `formatOwner`, `:<start>:<ns>` on
+Linux), claim-first, a taken claim, a squatter folder that is never removed, `owned_remove` limited to this run's folders, a
+removal that gives up, `kill -9` between the claim and the `mkdir` and after it (the shipped janitor and the mounted Node sweep
+collect the claim on Linux and macOS; on Windows the Node sweep lists it `unverified:` and the janitor is a dry run), `OWNED_KEEP`,
+the exit chain under `set -e`, `set -u` with an empty registry, and a signal that arrives while `mkdir` runs. `ci-clients.yml` runs it
+on the three legs (macOS with `/bin/bash`, 3.2); `ci-server.yml` shellchecks both files. What it does not cover: a trap a caller sets
+itself (T7d measures the replacement, T7a scans the callers), a race of two live scripts on one name, the Windows
+collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
+whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two successes), so `owned_create_dir` uses perl's `mkdir`
+where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
+(the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE. A seam `OWNED_PROC` (the /proc root) lets a test give the helper a minimal /proc: the record then ends after the pid (T G4).
+
+**The shell scripts take their scratch from `owned.sh` (2026-11-10, E2.4.S2 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`mcp-listen-smoke.test.sh`, `version-smoke.test.sh`, `start-server-and-wait.test.sh` and `deploy/restore-archive-itest.sh` make their
+folders with `owned_dir` (the test with its own clean-up function sets it with `owned_trap` first); none of them sets a trap of its
+own, and `owned.test.sh`'s caller scan (T7a) reads all of them. The two smoke scripts, with no log root and no `RUNNER_TEMP`, make
+their scratch with `owned_dir` too (a given root is unchanged, so the release jobs need no `owned.sh`); each smoke self-test has two
+new cases that run the smoke that way, with a private `TMPDIR`, once failing after the folder is made and once passing, and ask for an empty root.
+`start-server-and-wait.sh` with no `START_SERVER_LOG` writes `server.log` in a claimed, KEPT owned folder (case `j` reads the folder, the
+claim, the record's pid and that the old `start-server-*.log` is gone); its own trap became the `owned_trap` clean-up function, so an
+interrupt ends it with 128 plus the signal. `restore-archive-itest.sh` makes its nine worlds with `owned_dir` and gives the restore child
+`TMPDIR="$WORLD"`. Each of the four CI steps runs its script with `TMPDIR="$RUNNER_TEMP/leftovers-<step>"` and fails when anything is left in that root.
+Watched RED first (a private `TMPDIR`): a stub `chmod` that fails before the old removal left one `tmp.*` in each smoke self-test;
+the smoke scripts off CI left `creds-mcp-listen-smoke-<pid>` and `creds-version-smoke-<pid>`; `start-server-and-wait.sh` left
+`start-server-<id>.log`; the itest left nine `tmp.*`; a SIGTERM or SIGHUP to the process group of `mcp-listen-smoke.test.sh` left its `tmp.*`
+(a SIGINT does not, on the old script: bash waits for the child, which ends normally, and goes on). With `owned.sh` every root is empty, and INT, TERM and HUP give 130, 143 and 129.
+
+**The image smoke is a carve-out of the contract (2026-11-10, E2.4.S3 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`docker.yml`'s two smoke containers and two volumes are named `testsToDelete-u1001-creds-{cv,refused,refused-data,refused-logs}-${SMOKE_ID}` and carry
+the label `testsToDelete.owner`; `u1001` is the uid of the hosted `ubuntu-latest` runner. The step that makes the id has the uid check as its
+FIRST command (`[ "$(id -u)" = 1001 ] || exit 1`) and comes before *Build*, so on any other runner nothing is made. One remover step
+(`if: always()`, `continue-on-error`, `shell: bash`, an unquoted name and `|| true` on each of four removals) runs after the last step that reads
+the containers; the step after it (`if: always()`, `shell: bash`, NO `continue-on-error`) asks for each of the four names with
+`docker ps -a -q --filter "name=^<name>$"` and `docker volume ls -q --filter …`, and fails the job while one is left. `Publish` keeps its implicit
+`success()`, so a failed smoke stays failed and nothing is published. `src_vs_code/src/test/dockerSmokeLeftovers.test.ts` reads `docker.yml` and
+RUNS the naming, remover and check bodies under `bash --noprofile --norc -eo pipefail` against a stub `docker` that keeps a world of named
+resources (a name in `STUB_STUCK` fails its removal and stays): all four removals are called after a failed first one; the check is red for each of
+the four names left, and for a remover that forgets a volume; the naming step ends at once, writing nothing, under a uid that is not 1001. Each rule
+also has a planted fault (a mutated copy of the real text) that it must refuse, and, when the mounted guard can load its `yaml` module, the
+shipped guard reads the real file with 0 findings and each plant (a quoted remover name, a `-v` source alone in quotes, a `docker inspect` or `docker
+logs` after the remover, a short name) with the finding it should have. What no test here can see is Docker itself: the hosted dispatches of the
+build record (part 3) do.
+
+**The acme harness owns its run (2026-11-10, E2.4.S4 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`deploy/acme-test/run.sh` makes an owned folder with `owned_dir STATE acme`; its lower-cased name, `PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`,
+is the compose project and nothing else is (there is no `name:` in the compose file). The compose file's `x-owned` label `testsToDelete.owner` is on the four services,
+the network and the four named volumes (`certs-conf`, `certs-www`, `data`, `logs`); no state is a bind mount, because a container writes root-owned files that a
+janitor running as the user cannot delete. The script sets its clean-up with `owned_trap cleanup` and no trap of its own: `cleanup` runs
+`docker compose -p "$PROJECT" … down -v --remove-orphans` only when `PROJECT` is set, then the helper removes the folder. The first act of a run is the shared
+janitor (`--token creds`, 10 minutes), which collects what a `kill -9` left. The issued certificate is checked through a one-shot `alpine` container that mounts
+`certs-conf` read-only, never from the host: certbot's live folder is `drwx------ root`. `src_vs_code/src/test/acmeRunLeftovers.test.ts` copies `run.sh` into a temp
+tree and RUNS it against a stub `docker`, `curl`, `openssl`, `sleep` and janitor (green; a stack that does not start; no certificate; SIGINT during the janitor call;
+SIGINT and SIGTERM during `compose up`; an owned folder that cannot be made), and reads the text for the `PROJECT` line, the trap and the compose labels; each rule has
+a planted fault it must refuse (`PROJECT=acme`, an unlabelled volume, an unguarded clean-up, a host-side certificate check, a trap of its own). Docker itself is seen only
+by the hosted dispatch of the build record (part 4).
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
@@ -1531,7 +1592,7 @@ code **78**. The operator who reads the file after a deploy is who it is for.
 | layer | test | runs where | what it proves |
 |---|---|---|---|
 | the BUILT JIT binary | `StartupRefusalProcessTests` | every server CI leg (Linux, Windows, macOS) | exit 78 and the Fatal line, for a refusal after the first log line (no auth) and one before it (a UNC data dir — the case whose file used to be EMPTY) |
-| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes |
+| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes; the containers and volumes are named under the leftovers contract and removed on every path (`dockerSmokeLeftovers.test.ts`) |
 | `Program` in-process | `StartupGuardTests` | every server CI leg | each of the five guards stops the real `Program` and its message reaches the file at Fatal; the accepted cases must really start |
 | the guards alone | `StartupGuardsTests` | every server CI leg | each message byte for byte, the inner exception, the order (configuration before the disk) |
 
@@ -1672,6 +1733,7 @@ server's first log line. On this PR's first run the build step took 27 s and the
 | g. TERM to the script while it waits | exit non-zero, `interrupted`, and the server it started is gone — a cancelled step leaves nothing behind |
 | h. accepts the connection, never answers, deadline 2 s | exit 1 within 4.5 s — no probe runs past the deadline |
 | i. the start line (on c's run) | names the program only, never its arguments, which may carry a secret |
+| j. no `START_SERVER_LOG`, no `RUNNER_TEMP`, a private `TMPDIR` (E2.4.S2) | the root holds one `testsToDelete-<owner>-creds-server-log-<id>` folder with `server.log` and its claim (a well-formed record, the script's own gone pid), and no loose `start-server-*.log` |
 
 Runs in the contract job before the build, and the pinned shellcheck of *compose · scripts* reads both scripts.
 **Watched RED** with the old inline loop as the implementation (`START_SERVER_SCRIPT`): all six cases failed, and
