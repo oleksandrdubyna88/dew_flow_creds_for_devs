@@ -384,6 +384,24 @@
           "new": "        \"src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",",
           "count": 1,
           "reason": "the four folding allowances re-pointed to where each file lies here (the pin of LeftoversGuardTests keeps its four entries)"
+        },
+        {
+          "old": "    public static IReadOnlyList<string> ExcludedFiles { get; } = [];\n",
+          "new": "    public static IReadOnlyList<string> ExcludedFiles { get; } = [];\n\n    /// <summary>The workflows whose docker classes (<c>docker-run</c>, <c>docker-name</c>) this guard does not read: exactly one entry, pinned by a test. The\n    /// container carve-out of rule §5 (a smoke container started without the remove flag, then removed by one always-run remover) is read by the SHIPPED Node\n    /// guard, which is green on the file; this copy does not know the carve-out and would call both smoke starts a finding. Every other class still reads the\n    /// file, and the same text under another workflow name keeps both docker findings.</summary>\n    internal static IReadOnlyList<string> DockerJudgedByNodeGuard { get; } = [\".github/workflows/docker.yml\"];\n",
+          "count": 1,
+          "reason": "E2.5.S1.2 (D7): the one workflow whose docker classes the shipped Node guard judges, pinned by name; the carve-out of rule §5 lives in that file"
+        },
+        {
+          "old": "                .Concat(Tag(\"docker-run\", ContainerWithoutRemoveFlag(line)))\n                .Concat(Tag(\"docker-name\", GuardDocker.NameHits(line)))\n",
+          "new": "                .Concat(DockerHits(source, line))\n",
+          "count": 1,
+          "reason": "E2.5.S1.2: the two docker classes are read through one method that skips the pinned workflow (one method keeps the complexity of this one at 4)"
+        },
+        {
+          "old": "    /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>\n",
+          "new": "    /// <summary>The two docker classes of a line, none for a workflow of <see cref=\"DockerJudgedByNodeGuard\"/>.</summary>\n    private static IEnumerable<(string Class, string Text)> DockerHits(SourceFile source, string line) =>\n        DockerJudgedByNodeGuard.Contains(source.Relative)\n            ? []\n            : Tag(\"docker-run\", ContainerWithoutRemoveFlag(line)).Concat(Tag(\"docker-name\", GuardDocker.NameHits(line)));\n\n    /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>\n",
+          "count": 1,
+          "reason": "E2.5.S1.2: the method of the docker classes, skipped for the pinned workflow"
         }
       ]
     },

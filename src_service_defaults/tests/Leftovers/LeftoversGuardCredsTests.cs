@@ -113,6 +113,14 @@ public sealed class LeftoversGuardCredsTests : IDisposable
     }
 
     [Fact]
+    public void The_exclusion_of_the_docker_classes_is_one_pinned_workflow_that_exists_and_no_file_is_excluded()
+    {
+        LeftoversGuard.DockerJudgedByNodeGuard.Should().Equal(".github/workflows/docker.yml");
+        LeftoversGuard.DockerJudgedByNodeGuard.Should().OnlyContain(file => File.Exists(Path.Combine(RepositoryRoot.Path, file.Replace('/', Path.DirectorySeparatorChar))));
+        LeftoversGuard.ExcludedFiles.Should().BeEmpty("the docker exclusion hides two classes of one file; no file is skipped whole");
+    }
+
+    [Fact]
     public void The_same_text_under_another_workflow_name_keeps_both_docker_run_findings()
     {
         var report = Scan((".github/workflows/other.yml", RealDockerWorkflow()));
