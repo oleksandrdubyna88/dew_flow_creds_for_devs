@@ -102,6 +102,21 @@ printf 'not a program\n' > "$work/not-a-program"
 off_ci 'off CI: a binary that is not executable fails after the folder is made and leaves nothing' 1 'not an executable' "$work/not-a-program"
 off_ci 'off CI: a passing run leaves nothing' 0 'listen smoke passed' "$fake"
 
+# A log root that does not exist (or cannot be entered) is refused with a message. The leaf must NOT be made at the filesystem root, which is
+# what `$(cd "$root" && pwd)` gave when the `cd` failed: an empty answer, and `/listen-smoke-log-<pid>`. The root of this case is private;
+# the check looks at `/` and at HOME for a leaf (on Git Bash the filesystem root is writable, so the old code made it there).
+leaf_somewhere() { compgen -G "/listen-smoke-log-*" > /dev/null || compgen -G "${HOME:-/nonexistent}/listen-smoke-log-*" > /dev/null; }
+mkdir "$work/root-missing"
+code=0
+env -u RUNNER_TEMP -u SMOKE_VERSION TMPDIR="$work/root-missing" bash "$smoke" "$fake" "$work/no-such-root" > "$work/run.log" 2>&1 || code=$?
+if [[ "$code" -eq 1 ]] && grep -qF -- "the log root '$work/no-such-root' cannot be entered" "$work/run.log" && ! leaf_somewhere && [[ -z "$(ls -A "$work/root-missing")" ]]; then
+  echo "ok   a log root that does not exist is refused with a message and no leaf is made at / or in HOME (the smoke exited $code)"
+else
+  echo "FAIL a log root that does not exist — expected exit 1 saying the root cannot be entered, no leaf at / or in HOME; exit $code; its output:"
+  sed 's/^/     /' "$work/run.log"
+  failures=$((failures + 1))
+fi
+
 if [[ "$failures" -eq 0 ]]; then
   echo "all smoke self-test checks passed"
 else
