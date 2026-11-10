@@ -99,7 +99,7 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
  * Sorted, compared whole, so a new importer and a vanished one both fail. The target state (parent §4.5 (1)) is
  * `commandLine.ts`' own users, `remoteLaunch.ts`, and the display-only readers; each of E2 and E3 removes road files.
  */
-const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'folderRun.ts', 'remoteLaunch.ts'];
+const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
@@ -140,9 +140,16 @@ const ALLOWED_SENDS: AllowList = {
     { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
   ],
   'commands/folderRunCommand.ts': [
-    { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow)));', because: 'Run Folder, the call: E2 switches the per-row typing' },
-    { line: 'function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow): readonly FolderOutcome[] {', because: 'Run Folder, the declaration: E2' },
-    { line: "const sent = typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line);", because: 'Run Folder, one row into a new terminal: E2.S2' },
+    { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));', because: 'Run Folder, the call (E2.S2): after every linked row is prepared and the run-level stop is read' },
+    { line: 'function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow, prepared: Prepared): readonly FolderOutcome[] {', because: 'Run Folder, the declaration (E2.S2): synchronous from the last re-check to the last send' },
+    {
+      line: "return typeLine(row, toClose, () => typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line));",
+      because: 'Run Folder, one unlinked row into a new terminal: its own line, the local road (E2.S2)',
+    },
+    {
+      line: "const sent = typeIntoNew(key, { kind: 'ssh', env: state.ready.env }, () => state.typed);",
+      because: "Run Folder, one linked row into a new terminal: the line typedLine built from the row's prepared snapshot, with a password session's own environment (E2.S2)",
+    },
   ],
   'dependencyRunHost.ts': [{ line: 'terminal.sendText(step.line, true);', because: 'the dependency chain step: E2 types the composed line' }],
   'vpnLauncherRun.ts': [
@@ -175,7 +182,6 @@ const REFUSAL_SITES = [
   'agentUseActions.ts:terminalRunAction',
   'commands/runCommands.ts:secretsRefusal',
   'dependencyRun.ts:stepRefusal',
-  'folderRun.ts:judgedLine',
   'remoteLaunch.ts:sshLinkRefusal',
   'vpnLauncherRun.ts:launcherRefusal',
 ];

@@ -75,7 +75,7 @@ test('run_with_secrets_refuses_a_linked_entry_before_the_trust_question_and_read
 
 // ---- the folder run -------------------------------------------------------------------------------------------
 
-const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false };
+const FACTS: FolderFacts = { shellRefusal: () => undefined, isOpen: () => false, lookup: () => undefined };
 const ARGS: CommandArg[] = [{ value: '-t {name}' }];
 
 function term(name: string, command = 'tmux attach', args: CommandArg[] | undefined = ARGS, extra: Partial<EntityMetadata> = {}): TreeNode {
@@ -83,6 +83,7 @@ function term(name: string, command = 'tmux attach', args: CommandArg[] | undefi
   return { id: details.id, name, type: 'entity', details };
 }
 
+// E2.S2: the folder has a road for a linked row; here its SSH entry is not in the vault, so the row says `sshLinkOf`'s missing-entry sentence.
 test('the_folder_plan_does_not_run_a_linked_row', () => {
   const plan = planFolderRun([term('a'), term('b', 'tmux attach', ARGS, { sshEntityId: 's1' })], FACTS);
   const rows = (plan as unknown as { rows: { kind: string; name: string; reason?: string }[] }).rows;
@@ -90,7 +91,7 @@ test('the_folder_plan_does_not_run_a_linked_row', () => {
   const b = rows.find((r) => r.name === 'b');
   assert.equal(a?.kind, 'run');
   assert.equal(b?.kind, 'notRun');
-  assert.equal(b?.reason, SENTENCE('b'));
+  assert.equal(b?.reason, MISSING(term('b', 'tmux attach', ARGS, { sshEntityId: 's1' }).details as EntityMetadata));
 });
 
 test('a_folder_run_types_the_other_rows_and_reports_the_linked_one', async () => {
@@ -98,7 +99,7 @@ test('a_folder_run_types_the_other_rows_and_reports_the_linked_one', async () =>
   await w.click();
   assert.deepEqual(named(w, 'a').map((t) => t.sent), [[L('a')]]);
   assert.deepEqual(named(w, 'b'), []);
-  assert.ok(w.infos.concat(w.warnings).join('\n').includes(SENTENCE('b').replace(/\.$/u, '')), w.infos.concat(w.warnings).join('\n'));
+  assert.ok(w.infos.concat(w.warnings).join('\n').includes(MISSING({ ...session('b'), sshEntityId: 's1' }).replace(/\.$/u, '')), w.infos.concat(w.warnings).join('\n'));
 });
 
 // ---- a dependency chain, a launcher ----------------------------------------------------------------------------

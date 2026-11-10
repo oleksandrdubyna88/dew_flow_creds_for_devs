@@ -33,14 +33,29 @@ test('every_language_explains_the_arrow_over_ssh_with_english_labels', () => {
 });
 
 const EN_BULLET =
-  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal* and a VPN's *Started by* run the line on that host, and *Runs on* then names the host's system. *Run All in Folder*, a dependency chain, *Run with Secrets* and an agent's run still refuse such an entry and say why. A share and an export leave the choice out.";
+  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal*, a VPN's *Started by* and *Run All in Folder* run the line on that host, and *Runs on* then names the host's system. A dependency chain, *Run with Secrets* and an agent's run still refuse such an entry and say why. A share and an export leave the choice out.";
 
 const EN_ADVICE =
   "To run a line on a server, choose its **ssh** entry under *Runs over SSH* instead of writing `ssh` into the line. The arrow then connects with that entry — its key or password, its pinned host key, its jump host — and the line runs in your login shell there, which stays open after the line ends; a line that fails says its exit code first. Write the line for the server, such as `tmux new -A -s {name}` with *Runs on* set to Linux or macOS; a Windows server is refused. The login shell must be sh, bash, zsh, ksh or dash; fish and csh are not supported. The approval names the host, so a changed host, user, port, jump host, agent forwarding or port forward asks again. If the SSH entry signs in with a password, every run opens a new terminal beside any open one. Windows PowerShell 5.1 cannot pass a double quote or a final backslash to ssh, so such a line is refused there; install PowerShell 7 (`pwsh`). After a run, the arrow asks before it types into that terminal again, because the login shell is still open. A VPN's *Started by* runs over SSH the same way, but a launcher line with `{config}` is refused, because the config is a file on this machine, and an agent's VPN start with such a launcher is refused. *Copy Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent, `~/.ssh/config`), and the vault's key and password are not in it.";
+
+const EN_FOLDER =
+  "A line set to run over SSH is shown as the `ssh … -- user@host '<line>'` it runs. After the question and the dependencies, each such entry connects in turn, in the folder's order, and only then is anything typed: cancelling one of its questions types nothing at all, and an entry whose SSH entry or jump host changed while the question was open is not typed — run the folder again.";
 
 // Hp3
 test('the_english_text_is_exact', () => {
   const body = whole('en');
   assert.ok(body.includes(EN_BULLET), 'the terminal bullet of paragraph 8');
   assert.ok(body.includes(EN_ADVICE), 'paragraph 25');
+  assert.ok(body.includes(EN_FOLDER), 'the Run All in Folder paragraph');
+});
+
+// Hp4 (E2.S2)
+test('every_language_explains_the_folder_run_over_ssh_in_its_own_paragraph', () => {
+  for (const language of HELP_LANGUAGES) {
+    const body = whole(language);
+    const paragraph = body.split('\n\n').find((p) => p.startsWith('**Run All in Folder.**'));
+    assert.ok(paragraph !== undefined, `${language} has no Run All in Folder paragraph`);
+    assert.ok(paragraph.includes("`ssh … -- user@host '<line>'`"), `${language}: the folder paragraph does not show the ssh line`);
+    assert.ok(!body.includes('*Run All in Folder*, '), `${language} still lists Run All in Folder among the roads that refuse an SSH entry`);
+  }
 });

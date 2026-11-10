@@ -4,6 +4,7 @@ import { isCommandTrusted } from '../commandTrust';
 import { dependencyRequest, runDependenciesFirst, trustAll } from '../dependencyRunHost';
 import { describeError } from '../describeError';
 import {
+  CHANGED_ROW,
   CLOSE_AND_RUN,
   FolderFacts,
   FolderNotice,
@@ -21,11 +22,16 @@ import {
   lineRows,
   linesToType,
   planFolderRun,
+  refusedRowReason,
   reportNotice,
   settleRow,
+  sshStopped,
 } from '../folderRun';
-import { entryOpenRefusal, liveTerminalsOfEntry } from '../pinnedTerminal';
-import { typeIntoNew } from '../terminalGuard';
+import { entryOpenRefusal, liveTerminalsOfEntry, sshReaderShell } from '../pinnedTerminal';
+import { RemotePlan, SshLink, TypedLine, sshLinkOf, trustLineFor, typedLine } from '../remoteLaunch';
+import { SshRoad, cleanWhenClosed } from '../sshRoad';
+import type { ReadySsh } from '../sshSession';
+import { NewTerminalSend, typeIntoNew } from '../terminalGuard';
 import { EntryTerminalKey, entryTerminalKey, entryTerminalKeyOf } from '../terminalTitles';
 import type { TreeNode } from '../types';
 import type { RunCommandsHost } from './runCommands';
@@ -47,6 +53,14 @@ import type { RunCommandsHost } from './runCommands';
  * NEVER read after the wait. What the person approved stays by object: the snapshot's terminals, closed under `Close Open
  * Terminals and Run` only. Under `Run` the snapshot is read, never acted on: a terminal it listed that is still live counts
  * as `appeared` (its row is left alone, not "closed meanwhile"), whatever title it carries now.</p>
+ *
+ * <p><b>Linked rows (E2.S2).</b> A row that runs over SSH is shown in the modal by its trust line. After the modal, the
+ * trust and the chain, each linked row is prepared in ROW ORDER (`prepareLinked`), one after another, before the
+ * synchronous send; the SSH entry is read again then, and a row whose trust line, rebuilt from its prepared snapshot,
+ * differs from the one the modal showed is not typed. A `stopped` row (the person cancelled a question) stops the WHOLE run:
+ * nothing is typed, linked or not. The run OWNS the list of sessions it prepared, created before the first `prepare` and
+ * cleaned in the run's `finally`, also when a later `prepare` throws: a row handed to its terminal leaves the list, and that
+ * terminal's close cleans it (`cleanWhenClosed`).</p>
  */
 
 interface Folder {
@@ -57,6 +71,26 @@ interface Folder {
   readonly node: TreeNode;
 }
 
+/** A linked row after preparation: ready to type (its typed line from the prepared snapshot), or why it is not typed. */
+type LinkedState = { readonly kind: 'ready'; readonly ready: ReadySsh; readonly typed: string } | { readonly kind: 'failed'; readonly reason: string };
+
+/**
+ * What the run prepared: each linked row's state by row id, and the sessions the run still OWNS. A session joins `owned`
+ * the moment `prepare` answers it and leaves when its row is handed to a terminal; the run's `finally` cleans what is left.
+ * Made before the first `prepare`, so a throw in a later one still finds the earlier sessions here (lead amendment A4).
+ */
+/** A linked row and its plan: what `checkedRow` compares the prepared snapshot with. */
+interface Planned {
+  readonly row: LineRow;
+  readonly remote: RemotePlan;
+}
+
+interface Prepared {
+  readonly rows: Map<string, LinkedState>;
+  readonly owned: Set<ReadySsh>;
+  stopped: boolean;
+}
+
 /** The terminals the modal listed, by row id: what `Close Open Terminals and Run` authorises, and nothing else. */
 type Authorised = ReadonlyMap<string, readonly vscode.Terminal[]>;
 
@@ -64,8 +98,12 @@ function keyOf(folder: Folder, name: string): EntryTerminalKey {
   return entryTerminalKey(name, folder.node);
 }
 
-function factsOf(folder: Folder): FolderFacts {
-  return { shellRefusal: entryOpenRefusal, isOpen: (name) => liveTerminalsOfEntry(keyOf(folder, name)).length > 0 };
+function factsOf(host: RunCommandsHost, folder: Folder): FolderFacts {
+  return {
+    shellRefusal: entryOpenRefusal,
+    isOpen: (name) => liveTerminalsOfEntry(keyOf(folder, name)).length > 0,
+    lookup: (id) => host.storage.getNode(folder.accountId, id),
+  };
 }
 
 /** Folders with a run pending, in a modal or a chain, as the guard's `asking`. Each key leaves in a `finally`, so it cannot grow. */
@@ -114,7 +152,7 @@ async function oneAtATime(folder: Folder, run: () => Promise<void>): Promise<voi
 }
 
 async function planAndAsk(host: RunCommandsHost, folder: Folder): Promise<void> {
-  const plan = planFolderRun(host.storage.getChildren(folder.accountId, folder.id), factsOf(folder));
+  const plan = planFolderRun(host.storage.getChildren(folder.accountId, folder.id), factsOf(host, folder));
   const isNew = (row: LineRow): boolean => !isCommandTrusted(host.context.globalState, row.id, row.line);
   const stop = beforeAsking(folder.name, plan, isNew);
   if (stop === undefined) {
@@ -159,17 +197,105 @@ async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan
   const request = dependencyRequest(host.storage, folder.accountId, lines.map((row) => row.details), folder.name, trust, plan.directIds);
   const chain = await runDependenciesFirst({ ...request, ownerIsFolder: true });
   if (chain.ready) {
-    const keyOfRow: KeyOfRow = (row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name);
-    say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow)));
+    await prepareAndType(host, folder, plan, chosen);
   } else {
     warned(chainStopped(folder.name));
   }
 }
 
+/** The run's one owner of the prepared sessions: prepare inside the `try`, type, and clean whatever was not handed over. */
+async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: FolderPlan, chosen: Chosen): Promise<void> {
+  const keyOfRow: KeyOfRow = (row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name);
+  const prepared: Prepared = { rows: new Map(), owned: new Set(), stopped: false };
+  try {
+    await prepareLinked(host, folder, linesToType(plan, chosen.closing), prepared);
+    if (prepared.stopped) {
+      warned(sshStopped(folder.name));
+      return;
+    }
+    say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));
+  } finally {
+    cleanUnsent(prepared);
+  }
+}
+
+/**
+ * Every linked row of `rows`, IN ROW ORDER, one after another (each awaits the person's PIN or host-key question): its link
+ * is read again, then the session prepared. A `stopped` answer ends the loop and the run: no further `prepare`.
+ */
+async function prepareLinked(host: RunCommandsHost, folder: Folder, rows: readonly LineRow[], prepared: Prepared): Promise<void> {
+  for (const row of rows) {
+    if (row.remote === undefined) {
+      continue;
+    }
+    const state = await prepareRow(host, folder, row, row.remote, prepared);
+    if (state === 'stopped') {
+      prepared.stopped = true;
+      return;
+    }
+    prepared.rows.set(row.id, state);
+  }
+}
+
+/** What a linked row is when it was never prepared: never typed (fail closed). */
+const NOT_PREPARED: LinkedState = { kind: 'failed', reason: CHANGED_ROW };
+
+function failedState(reason: string): LinkedState {
+  return { kind: 'failed', reason };
+}
+
+async function prepareRow(host: RunCommandsHost, folder: Folder, row: LineRow, remote: RemotePlan, prepared: Prepared): Promise<LinkedState | 'stopped'> {
+  const link = sshLinkOf(row.details, (id) => host.storage.getNode(folder.accountId, id));
+  if (link.kind === 'linked') {
+    return prepareOver(host.sshRoad, folder.accountId, link, { row, remote }, prepared);
+  }
+  return failedState(link.kind === 'refused' ? link.reason : CHANGED_ROW);
+}
+
+async function prepareOver(road: SshRoad, accountId: string, link: Extract<SshLink, { kind: 'linked' }>, planned: Planned, prepared: Prepared): Promise<LinkedState | 'stopped'> {
+  const answer = await road.prepare(accountId, link.ssh);
+  switch (answer.kind) {
+    case 'stopped':
+      return 'stopped';
+    case 'refused':
+      return failedState(refusedRowReason(link.sshName));
+    default:
+      prepared.owned.add(answer);
+      return checkedRow(planned, answer, prepared);
+  }
+}
+
+/** The trust line the modal showed must be the one the prepared snapshot gives; then the typed line. Either refusal cleans now. */
+function checkedRow(planned: Planned, ready: ReadySsh, prepared: Prepared): LinkedState {
+  const checked = checkedLine(planned, ready);
+  if (checked.kind === 'typed') {
+    return { kind: 'ready', ready, typed: checked.line };
+  }
+  ready.cleanup();
+  prepared.owned.delete(ready);
+  return failedState(checked.reason);
+}
+
+function checkedLine({ row, remote }: Planned, ready: ReadySsh): TypedLine {
+  return trustLineFor(ready.entity, ready.jump, remote.line) === row.line
+    ? typedLine(remote, ready, sshReaderShell())
+    : { kind: 'refused', reason: CHANGED_ROW };
+}
+
+/** The run's `finally`: every session the run still owns (a row not typed, or whose send threw), and the list dropped. */
+function cleanUnsent(prepared: Prepared): void {
+  prepared.owned.forEach((ready) => ready.cleanup());
+  prepared.owned.clear();
+  prepared.rows.clear();
+}
+
 /** The re-check over every row first, then the closes and the sends: synchronous from here to the last send. */
-function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow): readonly FolderOutcome[] {
+function typeAll(plan: FolderPlan, chosen: Chosen, keyOfRow: KeyOfRow, prepared: Prepared): readonly FolderOutcome[] {
+  if (prepared.stopped) {
+    return [];
+  }
   const settled = plan.rows.map((row) => settleRow(row, chosen.closing, (r) => appeared(r, chosen, keyOfRow)));
-  return settled.map((step) => (step.kind === 'type' ? typeLine(step.row, authorisedFor(step.row, chosen), keyOfRow) : step));
+  return settled.map((step) => (step.kind === 'type' ? typeStep(step.row, authorisedFor(step.row, chosen), keyOfRow, prepared) : step));
 }
 
 /** What the person authorised closing for this row: the snapshot's terminals under the closing button, nothing under `Run`. */
@@ -189,12 +315,36 @@ function appeared(row: LineRow, chosen: Chosen, keyOfRow: KeyOfRow): boolean {
   return unlisted || (!chosen.closing && stillLive(listed));
 }
 
+/** A local row types its own line; a linked row types the line prepared for it, or is the failure its preparation said. */
+function typeStep(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: KeyOfRow, prepared: Prepared): FolderOutcome {
+  return row.remote === undefined ? typeLocal(row, toClose, keyOfRow) : typeLinkedRow(row, toClose, keyOfRow, prepared);
+}
+
+function typeLocal(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: KeyOfRow): FolderOutcome {
+  return typeLine(row, toClose, () => typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line));
+}
+
+function typeLinkedRow(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: KeyOfRow, prepared: Prepared): FolderOutcome {
+  const state = prepared.rows.get(row.id) ?? NOT_PREPARED;
+  return state.kind === 'ready' ? typeLine(row, toClose, () => typeLinked(keyOfRow(row), state, prepared)) : failed(row, state.reason);
+}
+
+/** A new terminal with the session's own environment (a password's, D10); the session leaves the run's list and goes to that terminal. */
+function typeLinked(key: EntryTerminalKey, state: Extract<LinkedState, { kind: 'ready' }>, prepared: Prepared): NewTerminalSend {
+  const sent = typeIntoNew(key, { kind: 'ssh', env: state.ready.env }, () => state.typed);
+  if (sent.kind === 'typed') {
+    prepared.owned.delete(state.ready);
+    cleanWhenClosed(sent.terminal, state.ready);
+  }
+  return sent;
+}
+
 /** Close what was authorised for this row, by object; then a NEW terminal, never found. A failure is this row's alone. No rollback. */
-function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], keyOfRow: KeyOfRow): FolderOutcome {
+function typeLine(row: LineRow, toClose: readonly vscode.Terminal[], send: () => NewTerminalSend): FolderOutcome {
   const live = toClose.filter((terminal) => terminal.exitStatus === undefined);
   try {
     live.forEach((terminal) => terminal.dispose());
-    const sent = typeIntoNew(keyOfRow(row), { kind: 'entry', terminalOs: row.details.terminalOs }, () => row.line);
+    const sent = send();
     return sent.kind === 'typed' ? { kind: 'typed', name: row.name } : failed(row, failedAfterClosing(sent.reason, live.length));
   } catch (error) {
     return failed(row, failedAfterClosing(describeError(error), live.length));

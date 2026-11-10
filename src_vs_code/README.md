@@ -254,10 +254,10 @@ removed and reordered, and a live preview shows exactly what will run.
   system's own shell does otherwise; on another system it is refused. *Not set* keeps your default
   terminal, exactly as before.
 - **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. With one chosen,
-  *Run in Terminal* and a VPN's *Started by* connect with that entry — its key or password, its pinned
-  host key, its jump host — and run the line there; *Runs on* then names the server's system. *Run All
-  in Folder*, a dependency chain, *Run with Secrets* and an agent's run still refuse such an entry and
-  say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
+  *Run in Terminal*, a VPN's *Started by* and *Run All in Folder* connect with that entry — its key or
+  password, its pinned host key, its jump host — and run the line there; *Runs on* then names the
+  server's system. A dependency chain, *Run with Secrets* and an agent's run still refuse such an entry
+  and say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
   out of a share and an export.
 
 **Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
@@ -283,7 +283,11 @@ open, closes those terminals and types their lines too. Closing ends whatever ru
 client only detaches, and its session goes on. The lines do not wait for each other: something that
 has to finish first goes outside the folder, under *Depends on*, and a dependency that never exits
 holds the whole run. At most 32 lines and a 4000-character question, because it has to show every
-line; an entry whose name holds a control character is not run.
+line; an entry whose name holds a control character is not run. A line set to run over SSH is shown as the
+`ssh … -- user@host '<line>'` it runs. After the question and the dependencies, each such entry connects in
+turn, in the folder's order, and only then is anything typed: cancelling one of its questions types nothing
+at all, and an entry whose SSH entry or jump host changed while the question was open is not typed — run
+the folder again.
 
 For tmux sessions: `tmux new -A -s {name}` attaches to the session or creates it, so the entry still
 works after the machine has rebooted; `tmux attach -t '={name}'` matches the name exactly, because a

@@ -2245,7 +2245,7 @@ Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds th
 the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
 (`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
 the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
-`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher and the copies call it since E2.S1; the folder run (E2.S2), the chain (E2.S3), Run with Secrets and the agent (E3) follow.
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher, the copies and the folder run call it since E2.S1 and E2.S2; the chain (E2.S3), Run with Secrets and the agent (E3) follow.
 `launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
 send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
 
@@ -2381,7 +2381,7 @@ The viewer shows the linked entry's name in a *Runs over SSH* row.
 this version cannot do yet. To run it on this machine, edit it and set "Runs over SSH" to "Do not use".` It answers through
 `sshLinkOf` row L1, so "is this entry linked" has one reader. It is asked, before any question, dependency, secret read or spawn, by
 Run with Secrets (`commands/runCommands.ts`), the agent's run (`agentUseActions.ts`), a VPN launcher on an AGENT's start (`vpnLauncherRun.ts`,
-which has no road host) and a chain step with no road (the agent's start, `dependencyRun.ts`), and the folder run (`folderRun.ts`) until E2.S2.
+which has no road host) and a chain step with no road (the agent's start, `dependencyRun.ts`).
 The copies no longer say it: they show the trust line of a linked entry (`copiedLineOf`, below). `launchRoadScan.test.ts` pins this: `.sshEntityId`
 is read only by the plumbing and `sshLinkOf`/`keepingSshLink`, and `sshLinkRefusal(` is called only from the listed functions (a list
 that shrinks as E2 and E3 switch each road). The help article of all five languages and the README carry the field.
@@ -2404,6 +2404,19 @@ check). A linked launcher whose line uses `{config}` is refused before prepare (
 read `copiedLineOf` (`remoteLaunch.ts`): a linked entry shows `ssh … -- user@host '<line>'` with `COPY_NOTE` (it uses the person's own ssh
 setup, the vault's key and password are not in it) in Copy Command, the viewer's *Full command* and *About this line* rows and copy, and Copy
 All (`entityCommandRows.ts`); a broken link or a bad plan shows why and copies nothing.
+
+*The folder run over SSH (E2.S2 of PLAN_terminal_command_over_ssh_E2.md).* A Terminal row that runs over an SSH entry is planned by `planLaunch` (not
+by `resolveCommand`; `folderRun.ts` no longer imports it and no longer calls `sshLinkRefusal`) and its `line` is the SHOWN trust line
+(`shownTrustLine`, from the vault as the plan reads it), so the modal lists `name: ssh … -- user@host '<line>'`, `(new)` is `isCommandTrusted(row.id, trustLine)`
+and `trustAll` records the trust line, the key the arrow uses: one approval covers both roads. Of the local checks, a linked row keeps the `{name}` rule, the
+control-character and line-break refusals and `{config}`, and is NOT asked `facts.shellRefusal` (the table is in `linkedLine`'s doc, lead amendment A3). After the
+modal, the trust and the chain, `prepareLinked` prepares each linked row IN ROW ORDER, one after another and before the synchronous `typeAll`: the SSH entry is
+read again, `SshRoad.prepare` answers, and the trust line rebuilt from the prepared snapshot must be the one the modal showed, or the row fails with
+`CHANGED_ROW` (its SSH entry or jump host changed while the dialog was open — run the folder again); a refused preparation fails that row alone
+(`refusedRowReason`), no modal per row. A `stopped` row (the person cancelled a PIN or host-key question) stops the WHOLE run: no further `prepare`, nothing typed,
+linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared: the `Prepared` list is made before the first `prepare`, and `prepareAndType`'s
+`finally` (`cleanUnsent`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
+with the session's own environment for a password, D10) leaves the list and that terminal's close cleans it (`cleanWhenClosed`).
 
 ### Which shell parses the line (issue #103)
 

@@ -1,5 +1,4 @@
-import { resolveCommand } from './commandLine';
-import { sshLinkRefusal } from './remoteLaunch';
+import { NodeLookup, RemotePlan, planLaunch, shownTrustLine, sshLinkOf } from './remoteLaunch';
 import { READ_EACH_LINE } from './dependencyRun';
 import { isInTrash } from './trash';
 import { escapeControl } from './transitSecretReport';
@@ -41,6 +40,11 @@ export interface LineRow {
   readonly name: string;
   readonly line: string;
   readonly details: EntityMetadata;
+  /**
+   * Set for a row that runs over SSH (E2.S2). Then `line` is the SHOWN trust line (what the modal shows and `trustAll`
+   * records, the key the arrow uses too), and `remote.line` is the person's own line.
+   */
+  readonly remote?: RemotePlan;
 }
 
 export interface NotRunRow {
@@ -67,6 +71,8 @@ export interface FolderFacts {
   readonly shellRefusal: (name: string, terminalOs: string | undefined) => string | undefined;
   /** Whether a live terminal of the entry's name exists, in any shell. */
   readonly isOpen: (name: string) => boolean;
+  /** The vault as the folder's plan reads it, for each row's link and its shown trust line. */
+  readonly lookup: NodeLookup;
 }
 
 type Candidate = Omit<LineRow, 'kind'> & { readonly kind: 'candidate' };
@@ -94,28 +100,60 @@ function rowName(node: TreeNode): string {
 
 function judgeTerminal(id: string, details: EntityMetadata, facts: FolderFacts): NotRunRow | Candidate {
   const verdict = lineOrReason(details, facts);
-  return 'reason' in verdict ? notRun(id, details.name, verdict.reason) : { kind: 'candidate', id, name: details.name, line: verdict.line, details };
+  if ('reason' in verdict) {
+    return notRun(id, details.name, verdict.reason);
+  }
+  return { kind: 'candidate', id, name: details.name, line: verdict.line, details, ...(verdict.remote === undefined ? {} : { remote: verdict.remote }) };
 }
 
 function notRun(id: string, name: string, reason: string): NotRunRow {
   return { kind: 'notRun', id, name, reason };
 }
 
-function lineOrReason(details: EntityMetadata, facts: FolderFacts): { line: string } | { reason: string } {
-  const resolved = resolveCommand(details);
-  switch (resolved.kind) {
+/** A row's verdict: its line (and, for a linked row, its plan), or why it does not run. */
+type Verdict = { line: string; remote?: RemotePlan } | { reason: string };
+
+/** `planLaunch` is the ONE road from an entry and its link to a line (E2.S2): no resolving of the command here. */
+function lineOrReason(details: EntityMetadata, facts: FolderFacts): Verdict {
+  const plan = planLaunch(details, sshLinkOf(details, facts.lookup), { stayOpen: true });
+  switch (plan.kind) {
     case 'empty':
       return { reason: NO_COMMAND };
     case 'refused':
-      return { reason: resolved.reason };
+      return { reason: plan.reason };
+    case 'local':
+      return judgedLine(details, plan.line, facts);
     default:
-      return judgedLine(details, resolved.line, facts);
+      return linkedLine(details, plan, facts);
   }
 }
 
-function judgedLine(details: EntityMetadata, line: string, facts: FolderFacts): { line: string } | { reason: string } {
-  const reason = sshLinkRefusal(details) ?? lineRefusal(details.name, line) ?? facts.shellRefusal(details.name, details.terminalOs);
+function judgedLine(details: EntityMetadata, line: string, facts: FolderFacts): Verdict {
+  const reason = lineRefusal(details.name, line) ?? facts.shellRefusal(details.name, details.terminalOs);
   return reason === undefined ? { line } : { reason };
+}
+
+/**
+ * A linked row (E2.S2, lead amendment A3). Which local checks apply to it, and why:
+ *
+ * | Check | Linked row | Why |
+ * |---|---|---|
+ * | the `{name}` rule (`planLaunch`, from `resolveCommand`) | applies | it is about the entry's name, not the shell |
+ * | a control character or line break in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
+ * | a control character in the entry's name (`lineRefusal`) | applies | the open test is not trusted for such a name |
+ * | `{config}` (`lineRefusal`) | applies | the config is a file on THIS machine |
+ * | `facts.shellRefusal`, the local OS and shell (D14) | does NOT apply | *Runs on* names the remote; the local shell is SSH Connect's |
+ *
+ * The line SHOWN, trusted and approved is the trust line (`shownTrustLine`, from the vault as the plan reads it); the
+ * person's own line stays in `remote.line`. A jump chain that cannot be resolved refuses the row.
+ */
+function linkedLine(details: EntityMetadata, plan: RemotePlan, facts: FolderFacts): Verdict {
+  const reason = lineRefusal(details.name, plan.line);
+  if (reason !== undefined) {
+    return { reason };
+  }
+  const shownLine = shownTrustLine(plan, facts.lookup);
+  return shownLine.kind === 'shown' ? { line: shownLine.line, remote: plan } : { reason: shownLine.reason };
 }
 
 /**
@@ -356,6 +394,19 @@ function emptyFolderNote(folderName: string): string {
 
 export function alreadyRunning(folderName: string): string {
   return `A run of "${shown(folderName)}" is already waiting for you or for its dependencies, so this click did nothing.`;
+}
+
+/** A linked row the run cannot open from this window: the SSH entry refused (not stopped by the person). */
+export function refusedRowReason(sshName: string): string {
+  return `its SSH connection "${sshName}" cannot be opened from this window: run it with its own arrow to see why`;
+}
+
+/** A linked row whose trust line, rebuilt from the prepared snapshot, is not the one the modal showed. */
+export const CHANGED_ROW = 'its SSH connection changed while the dialog was open — run the folder again';
+
+/** A question for an SSH connection was cancelled: the WHOLE run stops. */
+export function sshStopped(folderName: string): string {
+  return `Nothing was typed in "${shown(folderName)}" and no entry's terminal was closed: a question for an SSH connection was cancelled.`;
 }
 
 export function chainStopped(folderName: string): string {
