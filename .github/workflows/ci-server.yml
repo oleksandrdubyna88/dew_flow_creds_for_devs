@@ -301,6 +301,8 @@ jobs:
             deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+          # Its harness is bash, like the other two.
+          $SHELLCHECK deploy/nginx/entrypoint.test.sh
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
           $SHELLCHECK .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
 
@@ -312,6 +314,49 @@ jobs:
           # unfinished-restore check sitting after `docker compose down`, so a retry took the running
           # stack offline before refusing; scenario 4 in here is what catches that class.
           bash deploy/restore-archive-itest.sh
+
+      - name: Render the nginx config in every TLS mode and count the once-only directives
+        run: |
+          # Runs the real entrypoint.sh against a private folder, with and without a certificate. A
+          # block written twice (the real_ip block, once by the entrypoint and once by the TLS
+          # template) is invisible until a certificate exists, and then nginx refuses the config.
+          bash deploy/nginx/entrypoint.test.sh
+
+      - name: nginx itself accepts the config the entrypoint renders
+        run: |
+          # The count above is a proxy; the parser is the authority. This runs the shipped entrypoint
+          # inside the SAME image the stack pins (deploy/docker-compose.yml) in each TLS mode, with a
+          # throwaway certificate where the mode reads one, then `nginx -t`. Measured failure this
+          # catches (run 42635403255): `"real_ip_header" directive is duplicate in
+          # /etc/nginx/conf.d/vault.conf` — nginx kept the plain-HTTP 503 config and HTTPS never opened.
+          # --add-host: `nginx -t` resolves the `vault` upstream, which only exists in the compose network.
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          # Where each mode looks (entrypoint.sh: CERT_NAME): domain and ip read
+          # live/<SERVER_NAME>/{fullchain,privkey}.pem, the Let's Encrypt layout; custom reads live/custom/.
+          for name in vault.example.test custom; do
+            mkdir -p "$work/live/$name"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=vault.example.test" \
+              -keyout "$work/live/$name/privkey.pem" -out "$work/live/$name/fullchain.pem" 2>/dev/null
+          done
+          for mode in domain ip custom none; do
+            echo "-- TLS_MODE=$mode"
+            # The premise: a nginx-owned TLS mode must render the TLS server, `none` must not. Without
+            # this a mode that fell back to plain HTTP would pass `nginx -t` and prove nothing.
+            if [ "$mode" = none ]; then
+              premise='! grep -q "listen 443" /etc/nginx/conf.d/vault.conf'
+            else
+              premise='grep -q "listen 443 ssl" /etc/nginx/conf.d/vault.conf'
+            fi
+            docker run --rm --add-host vault:127.0.0.1 \
+              -v "$PWD/deploy/nginx/entrypoint.sh:/entry.sh:ro" \
+              -v "$PWD/deploy/nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro" \
+              -v "$work/live:/etc/letsencrypt/live:ro" \
+              -e TLS_MODE="$mode" -e SERVER_NAME=vault.example.test -e MAX_BODY_MB=16 \
+              -e HSTS_MAX_AGE=31536000 -e CRED_VAULT_RENDER_ONLY=1 \
+              --entrypoint sh nginx:1.27-alpine -c "sh /entry.sh && ${premise} && nginx -t" \
+              || { echo "TLS_MODE=$mode: the premise failed (TLS server not rendered as expected) or nginx refused the config"; exit 1; }
+          done
 
 
   # ---------------------------------------------------------------------------
