@@ -178,8 +178,21 @@ case "$1" in
   run)
     case "$*" in
       *" test -f "*)
+        # the certificate probe: it prints cert:yes or cert:no from inside the container and exits 0 either way. Switches:
+        # STUB_CERT_ERR (+ _CODE): a docker failure, words on stderr, no marker; STUB_PROBE_RAW: print STUB_PROBE_OUT as it is (even empty);
+        # STUB_PROBE_SLEEP: a stall (exec, so the stalled process IS the one that is killed); STUB_PROBE_SIGNAL: signal the script, then stall.
+        echo "$$" > "$STUB_DIR/probe.pid"
+        if [ -n "\${STUB_PROBE_SIGNAL:-}" ]; then
+          target="$PPID"
+          case "$(ps -o comm= -p "$PPID" 2>/dev/null)" in timeout*) target="$(ps -o ppid= -p "$PPID" | tr -d ' ')" ;; esac
+          kill -"$STUB_PROBE_SIGNAL" "$target"
+          exec /bin/sleep 30
+        fi
+        if [ -n "\${STUB_PROBE_SLEEP:-}" ]; then exec /bin/sleep "$STUB_PROBE_SLEEP"; fi
         if [ -n "\${STUB_CERT_ERR:-}" ]; then echo "$STUB_CERT_ERR" >&2; exit "\${STUB_CERT_ERR_CODE:-125}"; fi
-        [ "\${STUB_CERT:-1}" = 1 ] && exit 0; exit 1 ;;
+        if [ -n "\${STUB_PROBE_RAW:-}" ]; then printf '%s' "\${STUB_PROBE_OUT:-}"; exit 0; fi
+        if [ "\${STUB_CERT:-1}" = 1 ]; then echo cert:yes; else echo cert:no; fi
+        exit 0 ;;
       *) exit 0 ;;
     esac ;;
 esac
@@ -223,6 +236,18 @@ interface Run {
   readonly folderProject: string | undefined;
   /** Every curl call's arguments, in order. */
   readonly curlCalls: string[];
+  /** The pid of the stub that last answered the certificate probe, when it wrote one. */
+  readonly probePid: number | undefined;
+}
+
+/** Is the process still there? (a signal of 0 only asks) */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const lowerCased = (text: string | undefined): string | undefined => text?.toLowerCase();
@@ -253,7 +278,7 @@ function execute(text: string, env: Record<string, string>, noRoot: boolean): Ru
   const childEnv = { PATH: `${path.join(tree.dir, 'bin')}:${String(process.env.PATH)}`, HOME: tree.dir, TMPDIR: root, STUB_CALLS: tree.calls, STUB_DIR: tree.stub, ...env };
   const result = spawnSync('bash', [tree.script], { cwd: tree.dir, env: childEnv, encoding: 'utf8', timeout: 60000 });
   const folder = splitLines(fs.readFileSync(path.join(tree.stub, 'seen'), 'utf8')).find((entry) => !entry.endsWith('.owner'));
-  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
+  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), probePid: fs.existsSync(path.join(tree.stub, 'probe.pid')) ? Number(fs.readFileSync(path.join(tree.stub, 'probe.pid'), 'utf8')) : undefined, curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
 }
 
 const runAcme = (text: string, env: Record<string, string> = {}): Run => execute(text, env, false);
@@ -292,19 +317,56 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
 });
 
-test('a docker that fails during the certificate wait is named, with its exit code and its words, and stops the wait early; "no file yet" is told apart from it', () => {
-  const broken = runAcme(REAL_RUN, { STUB_CERT_ERR: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?', STUB_CERT_ERR_CODE: '125' });
-  assert.equal(broken.status, 1, broken.output);
-  assert.match(broken.output, /FAIL\S*\s+the certificate check failed in docker, not for want of a file \(exit code 125/, broken.output);
-  assert.match(broken.output, /Cannot connect to the Docker daemon/);
-  assert.doesNotMatch(broken.output, /no certificate was issued after/);
-  const tries = broken.calls.filter((call) => / test -f /.test(call)).length;
-  assert.ok(tries <= 6, `docker failed every time, yet the wait went on for ${tries} tries`);
-  assert.deepEqual(broken.left, [], 'a failing run leaves nothing');
-  // a missing file (the container's `test -f` says 1) is the old message, with no docker words
+const DAEMON_DOWN = 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?';
+const probeTries = (run: Run): number => run.calls.filter((call) => / test -f /.test(call)).length;
+
+test('a docker failure during the certificate wait ends the wait at the FIRST one: its code and words are named; exit 125 and exit 1 with no marker are both docker failures', () => {
+  for (const code of ['125', '1']) {
+    const broken = runAcme(REAL_RUN, { STUB_CERT_ERR: DAEMON_DOWN, STUB_CERT_ERR_CODE: code });
+    assert.equal(broken.status, 1, broken.output);
+    assert.match(broken.output, new RegExp(`FAIL\\S*\\s+the certificate check failed in docker, not for want of a file \\(docker exited with code ${code}: Cannot connect to the Docker daemon`), broken.output);
+    assert.doesNotMatch(broken.output, /no certificate was issued after/);
+    assert.equal(probeTries(broken), 1, `exit ${code}: docker failed at once, yet the wait made ${probeTries(broken)} tries`);
+    assert.deepEqual(broken.left, [], 'a failing run leaves nothing');
+  }
+});
+
+test('only the marker `cert:yes` means found and only `cert:no` means not yet: empty or other output is a docker failure, also with exit code 0', () => {
+  for (const out of ['', 'ok', 'cert:yes please', 'cert:maybe']) {
+    const run = runAcme(REAL_RUN, { STUB_PROBE_RAW: '1', STUB_PROBE_OUT: out });
+    assert.equal(run.status, 1, `[${out}] ${run.output}`);
+    assert.match(run.output, /the certificate check failed in docker, not for want of a file \(the probe printed '/, `[${out}] ${run.output}`);
+    assert.equal(probeTries(run), 1);
+  }
   const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
   assert.match(absent.output, /no certificate was issued after 150 tries \(the last try found no file\)/);
   assert.doesNotMatch(absent.output, /failed in docker/);
+  assert.equal(probeTries(absent), 151, 'every try, and the one look after the last sleep');
+});
+
+test('a stalled probe is bounded: it counts as a docker failure "timed out after N s", well before the full wait, and leaves nothing (timeout, and the portable watchdog)', () => {
+  for (const env of [{}, { ACME_PROBE_WATCHDOG: '1' }] as Array<Record<string, string>>) {
+    const began = Date.now();
+    const run = runAcme(REAL_RUN, { ACME_PROBE_TIMEOUT: '2', STUB_PROBE_SLEEP: '30', ...env });
+    const seconds = (Date.now() - began) / 1000;
+    assert.equal(run.status, 1, run.output);
+    assert.match(run.output, /the certificate check failed in docker, not for want of a file \(the probe timed out after 2 s/, run.output);
+    assert.ok(seconds < 20, `${JSON.stringify(env)}: the stalled probe held the run for ${seconds} s`);
+    assert.equal(probeTries(run), 1);
+    assert.deepEqual(run.left, []);
+    assert.ok(run.probePid !== undefined && !alive(run.probePid), `${JSON.stringify(env)}: the stalled probe (pid ${run.probePid}) is still running`);
+  }
+});
+
+test('an interrupt during a probe ends the run with 128 + n, kills the probe and its watchdog, and leaves nothing', () => {
+  for (const [signal, code] of [['INT', 130], ['TERM', 143]] as const) {
+    for (const env of [{}, { ACME_PROBE_WATCHDOG: '1' }] as Array<Record<string, string>>) {
+      const run = runAcme(REAL_RUN, { STUB_PROBE_SIGNAL: signal, ACME_PROBE_TIMEOUT: '60', ...env });
+      assert.equal(run.status, code, `${signal} ${JSON.stringify(env)}: ${run.output}`);
+      assert.deepEqual(run.left, []);
+      assert.ok(run.probePid !== undefined && !alive(run.probePid), `${signal} ${JSON.stringify(env)}: the probe (pid ${run.probePid}) is still running`);
+    }
+  }
 });
 
 test('the guard of owned_cleanup is a block: owned_cleanup moved out of the STATE `if` is refused', () => {
@@ -419,13 +481,13 @@ test('an unguarded clean-up runs `docker compose -p "" … down` when PROJECT is
 
 // --- the certificate is asked for through a container (rule 4) ----------------------------------------------------------------------
 
-const CERT_PROBE = /docker run --rm -v "\$\{PROJECT\}_certs-conf:\/s:ro" alpine test -f \/s\/live\/vaulthost\/fullchain\.pem/;
+const CERT_PROBE = /cert_probe_cmd=\(docker run --rm -v "\$\{PROJECT\}_certs-conf:\/s:ro" alpine sh -c 'if test -f \/s\/live\/vaulthost\/fullchain\.pem; then echo cert:yes; else echo cert:no; fi'\)/;
 
 test('the certificate is asked for through a container: a certificate only a container can see is found, and its absence is reported', () => {
   const seen = runAcme(REAL_RUN);
   assert.equal(seen.status, 0, seen.output);
   assert.match(seen.output, /ok\S*\s+certbot obtained a certificate through a real HTTP-01 challenge/);
-  assert.ok(seen.calls.some((call) => /^run --rm -v \S+_certs-conf:\/s:ro alpine test -f \/s\/live\/vaulthost\/fullchain\.pem$/.test(call)), `no container read of the certificate:\n${seen.calls.join('\n')}`);
+  assert.ok(seen.calls.some((call) => /^run --rm -v \S+_certs-conf:\/s:ro alpine sh -c if test -f \/s\/live\/vaulthost\/fullchain\.pem; then echo cert:yes; else echo cert:no; fi$/.test(call)), `no container read of the certificate:\n${seen.calls.join('\n')}`);
 
   const absent = runAcme(REAL_RUN, { STUB_CERT: '0' });
   assert.equal(absent.status, 1, absent.output);
@@ -443,7 +505,7 @@ test('the certificate wait says it is waiting: a progress line every 15 tries, a
 
 test('a certificate check from the host, as the job\'s user, says "no certificate was issued" although the volume holds it: the plant the test above refuses', () => {
   assert.match(REAL_RUN, CERT_PROBE, 'run.sh does not read the certificate through a throwaway alpine container');
-  const host = mutate(REAL_RUN, CERT_PROBE, '[ -f "$PWD/certs/live/vaulthost/fullchain.pem" ]');
+  const host = mutate(REAL_RUN, CERT_PROBE, `cert_probe_cmd=(sh -c 'if test -f "$PWD/certs/live/vaulthost/fullchain.pem"; then echo cert:yes; else echo cert:no; fi')`);
   const run = runAcme(host);
   assert.equal(run.status, 1, run.output);
   assert.match(run.output, /FAIL\S*\s+no certificate was issued/);
