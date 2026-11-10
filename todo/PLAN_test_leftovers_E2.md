@@ -532,6 +532,17 @@ observation the parent's proof asks for. *[2026-11-07, the parent's epoch 8: `||
 its resource stays, and the listing alone decides nothing. `shell: bash` makes the step run as `bash --noprofile --norc
 -eo pipefail {0}`, under which `|| true` is what lets every later removal run. The parent's rows E2.4-b and E2.4-k; a creds
 test pins both (§ S4 sc. 8).]*
+*[2026-11-10, the rollout's entry 8.1 (conventions PR #146): `bash -e` does not stop on a command that fails inside another
+command, so two lines of this text were wrong as written. **Was:** the check step's lines were `[ -z "$(docker ps -a -q --filter
+"name=^<name>$")" ] || left="$left <key>"` (and `docker volume ls -q` for the volumes) — with the daemon down, `docker` fails,
+the substitution is empty, and the check passes; and the naming step wrote `echo "SMOKE_ID=$(openssl rand -hex 4)"`, which
+writes an empty id when `openssl` fails. **Now:** each line of the check step first assigns the listing, `out=$(docker ps -a -q
+--filter "name=^<name>$")` (a failed assignment fails the step under `-e`), and then tests it, `[ -z "$out" ] || left="$left
+<key>"`, for all four names; the naming step, after the uid check, which stays its first command, assigns `id=$(openssl rand
+-hex 4)`, refuses an id that is not 8 hex digits, `[[ $id =~ ^[0-9a-f]{8}$ ]] || exit 1`, and only then writes `SMOKE_ID=$id`.
+The creds test pins both: a stub `docker` that fails ("Cannot connect to the Docker daemon") makes the check's body exit non-zero;
+a failing `openssl` stub makes the naming body (run as `bash -e`) exit non-zero with no `SMOKE_ID` written. The shipped guard on
+`docker.yml`: still 0 findings.]*
 
 **D6 — acme-test is a probe, so its containers are leftovers too** (rule §1's first sentence; the parent named only
 `state/`). The compose project becomes `teststodelete-<owner>-creds-acme-<id>`, the name of the owned folder

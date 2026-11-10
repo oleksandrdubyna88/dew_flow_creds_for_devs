@@ -447,7 +447,8 @@ test('entry 8.1: when docker itself fails (the daemon is down) the check step fa
   assert.notEqual(run.status, 0, `the check passed with no docker daemon:\n${run.output}`);
   assert.match(run.output, /Cannot connect to the Docker daemon/);
   // the plant is the old line: a failing command inside `[ -z "$(…)" ]` is an empty answer, and the old check is green
-  const old = mutate(REAL, '          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }', '          left=""\n          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"\n          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }');
+  const old = REAL.replace(/out=\$\((docker [^\n]*)\)\n {10}\[ -z "\$out" \]/g, '[ -z "$($1)" ]');
+  assert.notEqual(old, REAL, 'the plant must change the four lines');
   assert.equal(runWith(old, CHECK, { docker: DOWN }, { SMOKE_ID: 'abcd1234' }).status, 0, 'the old shape of a check line is green while docker is down: the real check must differ');
 });
 
@@ -581,7 +582,7 @@ test('E2.4-k: the rule refuses a check with continue-on-error, without always(),
   assert.match(checkProblems(mutate(REAL, `      - name: ${CHECK}\n        if: always()\n`, `      - name: ${CHECK}\n        if: always()\n        continue-on-error: true\n`)).join('\n'), /continue-on-error/);
   assert.match(checkProblems(mutate(REAL, `      - name: ${CHECK}\n        if: always()\n`, `      - name: ${CHECK}\n`)).join('\n'), /not always\(\)/);
   assert.match(checkProblems(mutate(REAL, '[ -z "$left" ] || { echo "left after removal:$left"; exit 1; }', '[ -z "$left" ] || { docker inspect testsToDelete-u1001-creds-cv-${SMOKE_ID}; exit 1; }')).join('\n'), /docker inspect/);
-  assert.match(checkProblems(mutate(REAL, /\n {10}\[ -z "\$\(docker volume ls -q --filter "name=\^testsToDelete-u1001-creds-refused-logs-\$\{SMOKE_ID\}\$"\)" \] \|\| left="\$left refused-logs"/, '')).join('\n'), /refused-logs/);
+  assert.match(checkProblems(mutate(REAL, /\n {10}out=\$\(docker volume ls -q --filter "name=\^testsToDelete-u1001-creds-refused-logs-\$\{SMOKE_ID\}\$"\)\n {10}\[ -z "\$out" \] \|\| left="\$left refused-logs"/, '')).join('\n'), /refused-logs/);
 });
 
 test('E2.4-k: the rule refuses a check that is not right after the remover, without `shell: bash`, or one that removes something', () => {
@@ -681,7 +682,7 @@ test('the shipped guard refuses each plant of the carve-out: quoted remover name
   const unquoted = mutate(REAL, '-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data"', '-v testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data');
   assert.deepEqual(classes(guard, unquoted), [], 'a -v argument unquoted is allowed, as the real text quotes it WHOLE');
 
-  const inspect = mutate(REAL, '[ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"', 'docker inspect testsToDelete-u1001-creds-cv-${SMOKE_ID} || left="$left cv"');
+  const inspect = mutate(REAL, 'out=$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")\n          [ -z "$out" ] || left="$left cv"', 'docker inspect testsToDelete-u1001-creds-cv-${SMOKE_ID} || left="$left cv"');
   assert.deepEqual(classes(guard, inspect), ['docker-run']);
 
   const reader = mutate(REAL, `      - name: ${CHECK}`, `      - name: Read the logs after the remover\n        run: docker logs testsToDelete-u1001-creds-cv-\${SMOKE_ID}\n\n      - name: ${CHECK}`);

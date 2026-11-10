@@ -241,6 +241,15 @@ sweep after its shell is gone.
              [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }
    ```
 
+   *[2026-11-10, the rollout's entry 8.1 (conventions PR #146): the check lines above, and item 1's `echo
+   "SMOKE_ID=$(openssl rand -hex 4)"`, are corrected. **Was:** `[ -z "$(docker ps -a -q --filter "name=^…$")" ] || left="$left
+   cv"` — with `docker` failing (no daemon) the substitution is empty and the check passes; and `openssl` failing writes an
+   empty id. **Now:** each of the four check lines is `out=$(docker ps -a -q --filter "name=^…$")` (for the volumes, `docker volume
+   ls -q`), then `[ -z "$out" ] || left="$left cv"` (a failed assignment fails the step under `-e`); the naming step, after the
+   uid check (still its first command), runs `id=$(openssl rand -hex 4)`, `[[ $id =~ ^[0-9a-f]{8}$ ]] || exit 1`, then writes
+   `SMOKE_ID=$id`. S3.3 gains two stub tests (a failing `docker` fails the check; a failing `openssl` fails the naming step with no
+   `SMOKE_ID` written, the body run as `bash -e`). The guard on `docker.yml`: still 0 findings.]*
+
    Observed 2026-11-07 for this brief (`scanText` of the guard at `37b9aa5` on the whole `docker.yml` of `0ae0211` with
    items 1–3a): 0 findings. Counterexamples: the remover's names quoted, 2 `docker-run`; a `-v` source alone in quotes, 1;
    one check line written as `docker inspect <name>`, 1; the same reader through a loop variable, 0. Whether

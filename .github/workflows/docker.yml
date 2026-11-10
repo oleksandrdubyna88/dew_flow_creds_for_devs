@@ -62,8 +62,12 @@ jobs:
         run: |
           [ "$(id -u)" = 1001 ] || exit 1
           echo "runner uid: $(id -u)"
+          # The id is made first and checked, then written: `echo "SMOKE_ID=$(openssl …)"` would write an empty id when openssl fails,
+          # because `bash -e` does not stop on a failed command substitution inside another command.
+          id=$(openssl rand -hex 4)
+          [[ $id =~ ^[0-9a-f]{8}$ ]] || exit 1
           {
-            echo "SMOKE_ID=$(openssl rand -hex 4)"
+            echo "SMOKE_ID=$id"
             echo "SMOKE_OWNER=u1001:$(hostname | sed -E 's/[@:[:space:]]+/-/g')@linux:$PPID"
           } >> "$GITHUB_ENV"
           ps -o pid=,comm= -p "$PPID" || true
@@ -157,17 +161,22 @@ jobs:
 
       # Nothing of the smoke is left, or the job is red. No continue-on-error: this step can only turn the job red, never
       # green, and `Publish` (implicit success()) is then skipped. Filters only, never a reader verb after the remover, and
-      # each name a literal, so a reader added here is a guard finding.
+      # each name a literal, so a reader added here is a guard finding. Each line assigns the listing first and tests it after:
+      # a failed `docker` (the daemon is down) then fails the step under `-e`, and an empty answer is only ever a real one.
       - name: Check that nothing of the smoke is left
         if: always()
         shell: bash
         run: |
           [ -n "${SMOKE_ID:-}" ] || exit 0
           left=""
-          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"
-          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-refused-${SMOKE_ID}$")" ] || left="$left refused"
-          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}$")" ] || left="$left refused-data"
-          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}$")" ] || left="$left refused-logs"
+          out=$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")
+          [ -z "$out" ] || left="$left cv"
+          out=$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-refused-${SMOKE_ID}$")
+          [ -z "$out" ] || left="$left refused"
+          out=$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}$")
+          [ -z "$out" ] || left="$left refused-data"
+          out=$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}$")
+          [ -z "$out" ] || left="$left refused-logs"
           [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }
 
       # ---------------------------------------------------------------------
