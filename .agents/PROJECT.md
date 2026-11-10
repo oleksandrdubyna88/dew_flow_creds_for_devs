@@ -74,6 +74,8 @@ cd deploy && cp .env.example .env && $EDITOR .env && docker compose up -d
 
 # --- a fresh clone needs the shared rules before a session sees them ---
 git submodule update --init .agents/conventions
+npm ci --ignore-scripts --prefix .agents/conventions   # the resolver's packages; without them the hook says INCOMPLETE
+# a clone from before 2026-11-10 also removes the old copy once: README.md § Building everything
 ```
 
 ## Project Structure

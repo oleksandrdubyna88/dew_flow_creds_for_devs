@@ -293,6 +293,7 @@ They version separately, on separate tags, and each half has its own CI workflow
 
 ```bash
 git submodule update --init .agents/conventions   # shared conventions
+npm ci --ignore-scripts --prefix .agents/conventions   # the resolver's packages (yaml, picomatch)
 
 # local runs: at most 8 workers, at lowered CPU priority (.agents/conventions/common/local-cpu-budget.md)
 LP=.agents/conventions/tools/low-priority.mjs
@@ -300,6 +301,19 @@ node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe   # Linux/macOS: no .exe
 
 cd src_vs_code && npm ci && npm run typecheck && npm test   # npm test lowers itself
+```
+
+**A clone from before 2026-11-10.** The shared rules moved from `.claude/rules/shared` to `.agents/conventions`.
+A pull does not remove the old folder, and the resolver then refuses the non-empty `.claude/rules` (instruction
+loading stays INCOMPLETE). Once, after the pull: check that the old copy holds no local change (it is a copy of the
+release, so the first command should print nothing), then remove it and set up the new path.
+
+```bash
+git -C .claude/rules/shared status --porcelain   # must print nothing; save anything it lists first
+rm -rf .claude/rules
+git submodule sync
+git submodule update --init .agents/conventions
+npm ci --ignore-scripts --prefix .agents/conventions
 ```
 
 ## Reporting a vulnerability
