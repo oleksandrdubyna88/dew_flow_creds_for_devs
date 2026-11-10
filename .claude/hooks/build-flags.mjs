@@ -33,6 +33,9 @@ const BUILD_VERBS = new Set(['build', 'msbuild', 'publish', 'pack', 'restore']);
 /** Shells and evaluators whose argument is itself a command line. */
 const WRAPPERS = new Set(['eval', 'sh', 'bash', 'zsh', 'dash', 'pwsh', 'powershell', 'cmd', 'command', 'time', 'nice']);
 
+/** The wrappers whose `-c` takes exactly one argument as the command line (`$0` and the arguments follow it). */
+const POSIX_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash']);
+
 /** `NAME=value` in front of a command — an environment assignment, never the executable. */
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
@@ -135,8 +138,20 @@ function unboundedBuild(segment, depth = 0) {
     // not a build), and dropping every dashed token instead would throw away the inner `-m:4`.
     const rest = parts.slice(1);
     const start = rest.findIndex(part => !part.startsWith('-') && !/^\/[a-z]+$/i.test(part));
+    if (start < 0) return '';
 
-    return start < 0 ? '' : unboundedBuild(rest.slice(start).join(' '), depth + 1);
+    // A POSIX shell's `-c` takes ONE argument as its command; what follows is `$0` and the positional arguments, so
+    // `bash -c 'dotnet build' -m:4` is an unbounded build (the code round, 2026-11-10). That holds for a quoted,
+    // several-word argument; a one-word one (`sh -lc dotnet build x`) is judged with what follows, as before, because
+    // the guard leans to refusing when it cannot tell what was meant. Every other wrapper (cmd /c, pwsh -Command,
+    // eval, time, nice, command) takes the rest of the line.
+    const shellC = POSIX_SHELLS.has(exe) && /\s/.test(rest[start])
+      && rest.slice(0, start).some(flag => /^-[a-z]*c[a-z]*$/i.test(flag));
+    const inner = shellC ? rest[start] : rest.slice(start).join(' ');
+    // The inner line is a command line of its own, so it is split into its chain exactly like the outer one:
+    // `bash -c "cd src && dotnet build"` judged as ONE segment started with `cd` and passed, and the `-m:4` of a
+    // neighbouring inner command vouched for the build (CodeRabbit on creds #328, 2026-11-10).
+    return segments(inner).map(part => unboundedBuild(part, depth + 1)).find(Boolean) ?? '';
   }
   const isBuild = exe === 'msbuild'
     || (exe === 'dotnet' && BUILD_VERBS.has((parts[1] ?? '').toLowerCase()));
@@ -157,8 +172,21 @@ const VERB_IN_TEXT = /(?<=^|[\s"'\/\\&])(dotnet(?:\.exe|\.cmd|\.bat)?["']?\s+(?:
  * the old append, so the text is never worse than before.
  */
 function boundedSuggestion(offending) {
-  return VERB_IN_TEXT.test(offending) ? offending.replace(VERB_IN_TEXT, verb => `${verb} -m:4`) : `${offending} -m:4`;
+  // The search starts after the leading `NAME=value` words, quoted values included: `BUILDER="msbuild" dotnet build`
+  // matched the msbuild inside the quotes (CodeRabbit on coai #968, 2026-11-10).
+  const start = ASSIGNMENTS_AT_START.exec(offending)?.[0].length ?? 0;
+  const command = offending.slice(start);
+  return VERB_IN_TEXT.test(command)
+    ? offending.slice(0, start) + command.replace(VERB_IN_TEXT, verb => `${verb} -m:4`)
+    : `${offending} -m:4`;
 }
+
+/**
+ * The leading environment assignments of a command, each value plain or quoted (`A=1 B="x y" C='z' `). Each value
+ * piece is ONE character or one quoted run, never `[^\s"']+` inside `*`: that nesting backtracked exponentially on an
+ * unclosed quote (24 characters took 647 ms; the code round, 2026-11-10). Exported for its test.
+ */
+export const ASSIGNMENTS_AT_START = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s"'])*\s+)*/;
 
 /** The reason to refuse, or an empty string when there is nothing to say. */
 export function buildFlagsRefusal(command) {

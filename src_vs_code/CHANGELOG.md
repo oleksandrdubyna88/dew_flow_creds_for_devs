@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ***Copy Command* and the viewer copy the trust line** of a linked entry, with a note that it uses your own ssh setup.
 - **Share with… and Export remove the link**; *Update it* on a shared entry keeps your own link.
 
+### Changed
+
+- **An SSH Connect terminal is titled `Creds SSH: <folder> / <entry>`** instead of `SSH: <user>@<host>`. An entry at the
+  root is titled `Creds SSH: <entry>`. The folder is the entry's direct parent, as for the other Creds terminals. Connect a
+  second time and the same session comes forward, also after you moved the entry (its tab keeps the old folder until you
+  close it). A session is found by the entry, not by its tab: another entry with the same name in the same folder, or the
+  same entry in another account, gets its own terminal, and a password connection closes only its own entry's earlier terminal.
+- **One-time effect.** An SSH terminal opened before this update keeps its old title, and Connect opens a new one beside it once.
+
 ### Not yet over SSH
 
 - **Run with Secrets** and an agent's **`creds_run`** refuse a linked entry with one clear sentence. They never run it on

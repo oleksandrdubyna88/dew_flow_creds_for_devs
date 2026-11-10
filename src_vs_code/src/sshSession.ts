@@ -100,6 +100,10 @@ const LOCAL_WINDOW: RemoteWindowDeps = {
 
 /** What preparing needs. */
 export interface PrepareOptions {
+  /**
+   * The profile. Tests pass a partial one (`sshConnectWorld.storageWith`): besides the modules they replace, the connect
+   * path reads only `getNode` (the terminal title's folder, `sshConnect.placeOf`).
+   */
   readonly storage: StorageManager;
   readonly storageDir: string;
   /**
