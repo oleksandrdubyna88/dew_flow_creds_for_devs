@@ -171,7 +171,7 @@ test('the companion: the scan still sees kept-version readers and click openers'
   const clicks = new Set(eachSource((file, text) => importedUses(file, text, 'clickOpener', 'pinClick')).map((finding) => finding.file));
 
   assert.ok(kept.has('entityViewerCommands.ts') && kept.has('configCommands.ts'), 'the viewer and Show Config Changes read kept versions');
-  assert.ok(clicks.has('sshConnect.ts'), 'Connect opens its credential with a click opener');
+  assert.ok(clicks.has('sshSession.ts'), 'Connect opens its credential with a click opener (E1.S3 moved it from sshConnect.ts into prepareSshSession)');
   const fixture = "import { clickOpener } from './pinClick';\nasync function f(s: S) { const [v] = await s.getHistory('a', 'e'); return clickOpener(s, 'a', 'x')(o, v.secrets.config); }";
   assert.equal(readsKeptVersions('fixture.ts', fixture).length > 0 && importedUses('fixture.ts', fixture, 'clickOpener', 'pinClick').length > 0, true, 'the fixture is not seen');
 });

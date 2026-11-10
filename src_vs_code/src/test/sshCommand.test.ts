@@ -234,11 +234,14 @@ test('a domain login on a WINDOWS shell is left alone, where a backslash is lite
   assert.match(String(line), /CORP\\alice@h\.example\.com$/);
 });
 
-// --- the line is byte-identical to the old builder, except where the Windows quoting fix changes it (PLAN_windows_shell_quoting_injection.md) ---
+// --- the `remote` option (E1.S2 of PLAN_terminal_command_over_ssh, spec §S2.2 and §S2.5) ----------------------------
+//
+// ONE remote command as ONE argument: `-t` after the program word, `--` before the destination, the word last and
+// quoted for the LOCAL parse only. Without the field nothing moves.
 
 // C1 compares the builder with literal strings, NOT with itself. Every string below was PRINTED by the builder as it stood
-// at commit db450e5 (`git show db450e5:src_vs_code/src/sshCommand.ts`, compiled and run once, outside the repository),
-// then pasted. Rows are fixtures, columns are option shapes, per platform.
+// at commit db450e5 (the last one before the `remote` option existed: `git show db450e5:src_vs_code/src/sshCommand.ts`,
+// compiled and run once, outside the repository), then pasted. Rows are fixtures, columns are option shapes, per platform.
 // A row that differs from db450e5 is named in the comment above it, with the reason.
 const FIXTURES: EntityMetadata[] = [
   entity(),
@@ -256,7 +259,7 @@ const FIXTURES: EntityMetadata[] = [
   entity({ host: '82.165.44.219', user: 'root' }),
 ];
 
-/** Functions, because two shapes carry callbacks. The PATH is pinned so the program word is the same on every machine. */
+/** Functions, because two shapes carry callbacks; none has a `remote`. The PATH is pinned so the program word is the same on every machine. */
 const OPTION_SHAPES: (() => SshCommandOptions)[] = [
   () => ({ builtInExists: () => false, pathProbe: pathWith() }),
   () => ({ program: 'ssh' }),
@@ -537,7 +540,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
   ],
 };
 
-test('C1 the_line_is_byte_identical_to_the_old_builder_except_the_quoting_fix', () => {
+test('C1 without_remote_the_line_is_byte_identical_to_the_old_builder', () => {
   let compared = 0;
   for (const platform of ['win32', 'linux'] as const) {
     assert.equal(EXPECTED[platform].length, FIXTURES.length, `${platform}: a fixture without an expected row`);
@@ -545,11 +548,64 @@ test('C1 the_line_is_byte_identical_to_the_old_builder_except_the_quoting_fix', 
       OPTION_SHAPES.forEach((shape, column) => {
         const without = buildSshCommand(fixture, platform, shape());
         assert.equal(without, EXPECTED[platform][row][column], `${platform} fixture ${row} shape ${column}`);
+        assert.equal(buildSshCommand(fixture, platform, { ...shape(), remote: undefined }), without, `${platform} ${row} ${column} with remote: undefined`);
         compared += 1;
       });
     });
   }
   assert.equal(compared, FIXTURES.length * OPTION_SHAPES.length * 2);
+});
+
+
+test('C2 with_remote_the_order_is_program_t_options_dashdash_destination_word', () => {
+  const line = buildSshCommand(entity({ sshKeyPath: '/k', port: 2222 }), 'linux', {
+    program: 'ssh',
+    jump: 'j@b',
+    knownHostsFile: '/kh',
+    remote: { command: 'echo hi', tty: true },
+  });
+
+  assert.equal(line, `ssh -t -i "/k" -p 2222 -J j@b -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh" -- deploy@example.com 'echo hi'`);
+  // A domain login stays quoted by the destination rule, and is still right before the word (B8).
+  assert.equal(
+    buildSshCommand(entity({ user: 'CORP\\alice' }), 'linux', { program: 'ssh', remote: { command: 'id', tty: true } }),
+    `ssh -t -- "CORP\\\\alice@example.com" 'id'`,
+  );
+});
+
+test('C3 tty_false_omits_t_and_keeps_dashdash', () => {
+  assert.equal(
+    buildSshCommand(entity({ port: 2222 }), 'linux', { program: 'ssh', remote: { command: 'echo hi', tty: false } }),
+    `ssh -p 2222 -- deploy@example.com 'echo hi'`,
+  );
+});
+
+test('C4 the_remote_word_is_quoted_for_the_family_of_platform', () => {
+  const command = "it's $(x) `y` \\";
+  const remote = { command, tty: true };
+  assert.equal(buildSshCommand(entity(), 'linux', { program: 'ssh', remote }), `ssh -t -- deploy@example.com 'it'"'"'s $(x) \`y\` \\'`);
+  assert.equal(buildSshCommand(entity(), 'darwin', { program: 'ssh', remote }), `ssh -t -- deploy@example.com 'it'"'"'s $(x) \`y\` \\'`);
+  assert.equal(buildSshCommand(entity(), 'win32', { program: 'ssh', remote }), `ssh -t -- deploy@example.com 'it''s $(x) \`y\` \\'`);
+});
+
+test('C4b a_curly_quote_in_the_remote_word_cannot_close_the_powershell_literal', () => {
+  // Microsoft about_Quoting_Rules: U+2018, U+2019, U+201A and U+201B are single quotes in PowerShell 5.1 and 7.
+  const remote = { command: 'x\u2019; calc; \u2019 it\u2019s \u2018x\u2019 \u201Ay\u201B', tty: true };
+  assert.equal(
+    buildSshCommand(entity(), 'win32', { program: 'ssh', remote }),
+    `ssh -t -- deploy@example.com 'x\u2019\u2019; calc; \u2019\u2019 it\u2019\u2019s \u2018\u2018x\u2019\u2019 \u201A\u201Ay\u201B\u201B'`,
+  );
+});
+
+test('C5 an_empty_remote_command_is_undefined', () => {
+  assert.equal(buildSshCommand(entity(), 'linux', { remote: { command: '', tty: true } }), undefined);
+});
+
+test('C6 an_unsafe_target_is_still_undefined_with_remote', () => {
+  const remote = { command: 'echo hi', tty: true };
+  assert.equal(buildSshCommand(entity({ host: '-x' }), 'linux', { remote }), undefined);
+  assert.equal(buildSshCommand(entity({ host: '-oProxyCommand=id' }), 'linux', { remote }), undefined);
+  assert.equal(buildSshCommand(entity({ user: 'a@b' }), 'linux', { remote }), undefined);
 });
 
 // ---- the vault-data road into the line the pinned PowerShell parses (E1.S2 review, F1-sweep) ------------------------
@@ -601,6 +657,7 @@ test('S4 win32 a_dollar_in_a_login_is_not_a_powershell_variable_in_the_destinati
   assert.equal(buildSshCommand(entity({ user: 'a$HOME' }), 'win32', WIN), "ssh 'a$HOME@example.com'");
   assert.equal(buildSshCommand(entity({ user: 'CORP\\WS01$' }), 'win32', WIN), "ssh 'CORP\\WS01$@example.com'");
   assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'a$HOME@bastion:2200' }), "ssh -J 'a$HOME@bastion:2200' deploy@example.com");
+  assert.equal(buildSshCommand(entity({ user: 'a$HOME' }), 'win32', { ...WIN, remote: { command: 'id', tty: true } }), "ssh -t -- 'a$HOME@example.com' 'id'");
   // The ordinary words stay bare, and a domain backslash is literal in PowerShell.
   assert.equal(buildSshCommand(entity({ user: 'CORP\\alice' }), 'win32', { ...WIN, jump: 'j@b:2200' }), 'ssh -J j@b:2200 CORP\\alice@example.com');
 });

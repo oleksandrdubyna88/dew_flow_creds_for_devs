@@ -1,5 +1,6 @@
 import { EntityMetadata } from './types';
 import { commandRefusal, shownCommandLine } from './commandLine';
+import { sshLinkRefusal } from './remoteLaunch';
 import { escapeControl } from './transitSecretReport';
 import { USES_CONFIG, usesConfig } from './vpnLauncher';
 
@@ -149,7 +150,7 @@ function stepRefusal(walk: Walk, node: EntityMetadata, line: string): string | u
   if (usesConfig(line)) {
     return `"${node.name}" ${USES_CONFIG}. Pick it as the VPN's launcher there instead of running it as a dependency.`;
   }
-  return nameStepRefusal(node) ?? walk.refusalOf(node.name, node.terminalOs);
+  return sshLinkRefusal(node) ?? nameStepRefusal(node) ?? walk.refusalOf(node.name, node.terminalOs);
 }
 
 /** A step whose `{name}` cannot be filled refuses the whole chain, with the reason. */

@@ -1,6 +1,6 @@
 import { EntityMetadata } from './types';
 import { OS_LABELS, OS_NAMES, OsName, asOsName, osLabel } from './hostShell';
-import { LauncherCandidate } from './entityFormShape';
+import { KeyCandidate, LauncherCandidate } from './entityFormShape';
 import { escapeHtml } from './webviewHtml';
 
 /**
@@ -23,7 +23,7 @@ export function terminalOsField(d: EntityMetadata | undefined, mode: 'create' | 
   const foreign = isForeignOs(selected) ? [option(selected, selected, selected)] : [];
   return `<label for="terminalOs">Runs on</label>
     <select id="terminalOs">${[option('', '— not set (default terminal) —', selected), ...known, ...foreign].join('')}</select>
-    <p class="hint">Your default terminal is used when it is a shell of that system; otherwise the system's own — PowerShell (7 when installed) on Windows, bash on macOS and Linux. On any other system it is refused. "Not set" always uses your default terminal, as before.</p>`;
+    <p class="hint">Your default terminal is used when it is a shell of that system; otherwise the system's own — PowerShell (7 when installed) on Windows, bash on macOS and Linux. On any other system it is refused. "Not set" always uses your default terminal, as before. With an SSH connection chosen below, this is the remote system.</p>`;
 }
 
 function initialOs(d: EntityMetadata | undefined, mode: 'create' | 'edit', hostOs: OsName | undefined): string {
@@ -53,7 +53,20 @@ function launcherLabel(c: LauncherCandidate): string {
   return c.os === undefined ? c.name : `${c.name} · ${osLabel(c.os)}`;
 }
 
-function isDangling(selected: string, candidates: readonly LauncherCandidate[]): boolean {
+/**
+ * The SSH-link picker in the Terminal section — the shape of `vpnLauncherField`. It starts on "Do not use", and a
+ * stored link that is no longer offered stays selectable (shown as missing) so a save does not drop it silently.
+ */
+export function sshLinkField(d: EntityMetadata | undefined, candidates: readonly KeyCandidate[]): string {
+  const selected = d?.sshEntityId ?? '';
+  const offered = candidates.map((c) => option(c.id, c.name, selected));
+  const dangling = isDangling(selected, candidates) ? [option(selected, '(missing entry)', selected)] : [];
+  return `<label for="sshEntityId">Runs over SSH</label>
+    <select id="sshEntityId">${[option('', '— Do not use —', selected), ...offered, ...dangling].join('')}</select>
+    <p class="hint">One of your SSH entries. This version saves the choice but cannot run a command over SSH yet: while one is chosen, every way of running this entry refuses and says why.</p>`;
+}
+
+function isDangling(selected: string, candidates: readonly KeyCandidate[]): boolean {
   return selected !== '' && !candidates.some((c) => c.id === selected);
 }
 
@@ -66,11 +79,11 @@ export function runDependenciesField(d: EntityMetadata | undefined): string {
       <p class="hint">Before Run in Terminal, Run Script, Run with Secrets or Start VPN, this entry's Terminal dependencies run in order, each waiting for the one before — and theirs too, where they ask for the same. Other dependencies stay notes; SSH connect does not run them.</p>`;
 }
 
-/** The three fields as the save writes them — the host half of the controls above. */
-type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'vpnLauncherEntityId' | 'runDependencies'>;
+/** The four fields as the save writes them — the host half of the controls above. */
+type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'sshEntityId' | 'vpnLauncherEntityId' | 'runDependencies'>;
 
 /**
- * Read the three fields from a posted form, scrubbed by kind the way every field around them in
+ * Read the four fields from a posted form, scrubbed by kind the way every field around them in
  * `toValues` is: an OS only on a Terminal entry, a launcher only on a VPN (and never itself), the
  * execute mark only while there is something to execute.
  *
@@ -85,6 +98,7 @@ export function execDetails(
 ): ExecDetails {
   return {
     terminalOs: kind === 'terminal' ? nonEmpty(text(data.terminalOs)) : undefined,
+    sshEntityId: kind === 'terminal' ? launcherId(text(data.sshEntityId), selfId) : undefined,
     vpnLauncherEntityId: kind === 'vpn' ? launcherId(text(data.vpnLauncherEntityId), selfId) : undefined,
     runDependencies: runMark(dependsOnCount, data.runDependencies),
   };

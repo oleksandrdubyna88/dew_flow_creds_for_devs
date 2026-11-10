@@ -165,6 +165,12 @@ export interface EntityMetadata {
    */
   terminalOs?: string;
   /**
+   * A same-account SSH entry this Terminal entry runs over (`PLAN_terminal_command_over_ssh.md`). A typed
+   * reference like `vpnLauncherEntityId`: it can dangle; it is stripped from a share and an export, and
+   * remapped on a backup import. Not set (or `''`) means the entry runs on this machine.
+   */
+  sshEntityId?: string;
+  /**
    * When this entry stops existing (ms epoch). Absent means it lives until deleted.
    *
    * <p>Expiry is a real delete when it comes — tombstone, every SecretStorage key, the

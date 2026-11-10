@@ -253,6 +253,11 @@ removed and reordered, and a live preview shows exactly what will run.
   terminal runs it when it is a shell of that system — pwsh 7, zsh with your aliases — and that
   system's own shell does otherwise; on another system it is refused. *Not set* keeps your default
   terminal, exactly as before.
+- **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. This version
+  saves the choice, keeps it through sync and backup, and leaves it out of a share and an export, but
+  it cannot run a command over SSH yet: while one is chosen, *Run in Terminal*, *Run All in Folder*, a
+  dependency chain, a VPN's *Started by*, *Run with Secrets* and an agent's run all refuse and say why,
+  and *Copy Command* copies nothing. Nothing runs on this machine instead.
 
 **Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
 before *Run in Terminal*, *Run Script*, *Run with Secrets* or *Start VPN*, its Terminal

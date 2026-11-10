@@ -15,6 +15,12 @@
   (Not counted, each only makes the plan true as written: the trust line built from the prepared snapshot per §4.4,
   the seam's range taking the password branch's preparation, `stopped` leaving nothing on disk, and the importer
   count of `resolveCommand(` repaired.)
+  (Also not counted, and flagged to the owner to rule otherwise: E1.S2's review found PowerShell reads the typographic
+  quotes as quotes, and the mandatory class sweep (security.md) then found three local-injection defects on this
+  plan's own launch line that SSH Connect already shipped with — the `-i` key path and the destination in
+  `shellQuote`'s double quotes (`$( )` and `$VAR` expand in PowerShell) and the askpass `.bat`'s `%VAR%` (cmd expands
+  it before parsing). Fixed in b983b57. Counted as making §4.2's delivery contract true, not as new scope; SSH Connect
+  gets the fix through the shared builder. The `.bat` fix has run on no Windows machine: hand check 2 covers it.)
 
 ## 1. Goal
 
@@ -148,7 +154,10 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
   is run as `<shell> -c '<element>'` — what sshd does with an exec request, which carries one command string
   (RFC 4254 §6.5) — under `dash` and `bash` (and `zsh` when installed, else skipped with a printed reason), and its
   output must equal running the line directly in that shell. A real sshd round trip stays hand check 4.
-- **Supported remote login shells**: the POSIX family — `sh`, `dash`, `bash`, `zsh`, `ksh`. `fish`, `csh` and
+- **Supported remote login shells**: the POSIX family — `sh`, `dash`, `bash`, `zsh`, `ksh`. One measured limit (2026-11-10): on a `dash`
+  login shell, a SYNTAX error in the stored line (an unclosed quote) ends the session after dash prints the error —
+  plain `eval` is a special builtin there. `command eval` would keep dash open but breaks zsh (`command` runs only
+  external commands in zsh), so plain `eval` stays. `fish`, `csh` and
   `tcsh` are not supported (their syntax differs and the stay-open wrapper is POSIX); the help says so. The remote
   shell cannot be known before connecting, so this is a documented limit, not a check.
 - `typedLine(plan, prepared, localFamily)`: `buildSshCommand` with a new optional `remote = {command, tty}` option:
@@ -320,7 +329,7 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | Plan | Touches | This plan's part |
 |---|---|---|
 | [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | askpass + `-J` defect | none; inherits the fix (risk 7) |
-| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name) | none of its items; this plan adds the `ssh` target to `sendGuarded` and must not close or change those items |
+| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) | the same roads (`sendPinned`, the arrow's `{config}`, `fresh` disposing by name), and item 5 (`quoteFor` and typographic quotes) | item 5 only: closed by E1 (b983b57) because the remote word of every linked launch goes through `quoteFor('powershell')`; no other item is closed or changed; E2 adds the `ssh` target to `sendGuarded` |
 | [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | stored commands run by an agent ON a server through the bridge | none; the bridge keeps refusing `run` (§9). Disjoint: that plan runs a line on the server an agent lives on; this one runs a person's line on a server they connect to |
 
 The table is complete for plans open on 2026-11-09 that touch these files.

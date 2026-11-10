@@ -245,6 +245,18 @@ not use; `openSshTerminal` is handed `terminalPlatform(side, process.platform)` 
 terminal and a WSL one at once — the same limitation `PLAN_wsl_agent_relay.md` recorded when it
 declined to export the variable for you.
 
+Everything in that paragraph up to the terminal is `prepareSshSession` (`sshSession.ts`, E1.S3 — the seam):
+it opens no terminal and returns `ready`, `refused` or `stopped`, and `connectEntity` keeps only the open half
+and the refusal's modal. The contract is a table of what is on disk after each result: `stopped` and `refused`
+leave nothing (every exit after `connectionOptions` took its pin file back through one helper — or, for a failed
+translation, inside `withTranslatedKnownHosts` — and a stored key that cannot be written now does too — the one
+deviation from the old behaviour; a second, harmless one: a safe host with an unsafe `user` also gives its pin back,
+because `buildSshCommand` returns `undefined` through `isSafeSshTarget` while `knownHostsLine` checks only the host,
+so the pin was written, and the old code left it); `ready` holds the key and the
+pin, and its OWNER calls `cleanup()` (key and pin, idempotent) on every exit that did not hand the session to
+a terminal or a child. With `isolate: true` the key and the pin carry a per-preparation uuid, so two sessions of
+one SSH entry never share a file; `connectEntity` never sets it and keeps today's names.
+
 A **pinned host key survives** the WSL route: `UserKnownHostsFile` has no mode requirement, so the
 file is translated by asking the distribution (`translateWindowsPath` → `wslpath -a`, bounded and
 tree-killed), and a translation that fails deletes the file it had already written rather than
@@ -2223,6 +2235,19 @@ and one click vouches for up to 32 lines, so a name must not draw a row of its o
 C0, DEL, C1, the line and paragraph separators and the bidi controls U+202A-E, U+2066-9, U+200E, U+200F and U+061C. It leaves `·` alone, which is legal and
 readable in a name with no `{name}`: the field separator is `logSafe`'s own addition, because only a log line has fields to forge.
 The chain's modal (`describeRunPlan`) takes the same escaper on every road, for the owner, each step and each line.
+
+**The composer for a Terminal entry that runs over SSH (`remoteLaunch.ts`, E1.S2 of `PLAN_terminal_command_over_ssh.md`).** One
+pure module (no `vscode`) is the road from an entry and its `sshEntityId` link to a launch: `sshLinkOf(entry, lookup)` answers
+`none`, `linked` or `refused` with its own sentence (itself, missing, in the Trash, not an SSH entry, unsafe address);
+`planLaunch(entry, link, { stayOpen })` answers `empty`, `refused`, `local` or `remote` (the `{name}` refusal first, then the link, a
+Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds the typed line from the PREPARED snapshot
+(`PreparedForTyping`, which S3's `ReadySsh` satisfies as it is), and `trustLineFor` and `secretsStdin` give the approval text and
+the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
+(`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
+the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. No road calls the composer yet; E2 and E3 switch them.
+`launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
+send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
 
 *The chain.* `runDependenciesFirst(dependencyRequest(…, roots, folder.name, trust, plan.directIds))` with the details of the
 lines the chosen button types as roots and every direct entry as `exclude`. `planDependencyRun` keeps only roots with

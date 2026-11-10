@@ -8,6 +8,7 @@ import { mcpBarHtml } from './mcpSwitches';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
 import { commandRefusal, commandRowLabel, normalizeArgs, shownCommandLine } from './commandLine';
+import { sshLinkRefusal } from './remoteLaunch';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { configCodePanel, highlightSnippet } from './configCodePanel';
 import {
@@ -96,6 +97,8 @@ export interface EntityViewOptions {
   sshCommand?: string;
   /** The NAME of the jump-host entity, resolved by the caller — the id means nothing to a reader. */
   jumpHostName?: string;
+  /** The NAME of the SSH entry a Terminal entry runs over, resolved by the caller. */
+  sshLinkName?: string;
   /** `SHA256:…` of the pinned host key, the string a server prints about itself (audit B10). */
   hostKeyFingerprint?: string;
   /**
@@ -505,10 +508,11 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // the line that actually runs. The viewer previously knew nothing about this kind,
     // so it rendered a Name and stopped.
     row(commandRowLabel(d.terminalOs), 'command', d.isTerminal ? d.command : undefined),
+    row('Runs over SSH', 'sshLink', d.isTerminal ? options.sshLinkName : undefined),
     row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
     ...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),
-    row('Full command', 'fullCommand', d.isTerminal ? shownCommandLine(d) : undefined),
-    row('Will not run', 'commandRefusal', d.isTerminal ? commandRefusal(d) : undefined),
+    row('Full command', 'fullCommand', d.isTerminal && sshLinkRefusal(d) === undefined ? shownCommandLine(d) : undefined),
+    row('Will not run', 'commandRefusal', d.isTerminal ? (sshLinkRefusal(d) ?? commandRefusal(d)) : undefined),
     row('VPN type', 'vpnType', d.isVpn ? (d.vpnType ?? 'other') : undefined),
     row(
       `VPN config${d.vpnConfigFileName ? ` (${d.vpnConfigFileName})` : ''}`,

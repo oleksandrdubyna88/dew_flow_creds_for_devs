@@ -22,6 +22,11 @@
  *
  * <p>So both are refused at composition rather than escaped. Escaping answers the first
  * parser and not the second, and a value that cannot be a hostname has no legitimate use.</p>
+ *
+ * <p><b>The remote word</b> (`options.remote`, E1.S2 of PLAN_terminal_command_over_ssh.md) is the third string
+ * a person chose, and it is quoted for the LOCAL parse only, as ONE single-quoted literal (`quoteFor`, family
+ * from `platform`). The remote shell parses its CONTENT, which is not this file's business. `--` stands before the
+ * destination, so ssh reads nothing after it as an option.</p>
  */
 
 import { EntityMetadata } from './types';
@@ -62,6 +67,13 @@ export interface SshCommandOptions {
    * way because that is what this client reads.</p>
    */
   program?: string;
+  /**
+   * A command to run on the remote, as ONE argument. The line then ends `-- <destination> '<command>'`, and `-t` follows
+   * the program word when `tty` is true. Without this field the output is byte-identical to before the field existed.
+   * An empty command is refused (`undefined`): ssh would open a login shell, which is not what a caller that passed a
+   * command meant.
+   */
+  remote?: { readonly command: string; readonly tty: boolean };
 }
 
 /**
@@ -184,7 +196,7 @@ export function buildSshCommand(
   platform: NodeJS.Platform = process.platform,
   options: SshCommandOptions = {},
 ): string | undefined {
-  if (!isSafeSshTarget(entity)) {
+  if (!isSafeSshTarget(entity) || options.remote?.command === '') {
     return undefined;
   }
   const host = entity.host as string; // isSafeSshTarget above proved it non-empty
@@ -196,6 +208,9 @@ export function buildSshCommand(
     options.program ??
       openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists, options.pathProbe),
   ];
+  if (options.remote?.tty === true) {
+    parts.push('-t');
+  }
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));
   }
@@ -210,8 +225,18 @@ export function buildSshCommand(
   // one that PowerShell would still read (a `$` in a login), because PowerShell is the parser there.
   parts.push(...sshOptionArgv(entity, options.jump).map((word) => lineWord(word, platform)));
   parts.push(...hostKeyArgv(options.knownHostsFile, platform));
-  parts.push(quotedDestination(entity.user ? `${entity.user}@${host}` : host, platform));
+  parts.push(...destinationArgv(entity.user ? `${entity.user}@${host}` : host, platform, options.remote));
   return parts.join(' ');
+}
+
+/**
+ * The tail of the line: the destination alone, or — with a remote command — `--`, the destination and the command as
+ * ONE word, last. The word is quoted by `quoteFor` for the shell of `platform` (never `shellQuote`: its `$` would
+ * expand in PowerShell), because the typed line is parsed locally first and the remote sees only what is inside.
+ */
+function destinationArgv(destination: string, platform: NodeJS.Platform, remote: SshCommandOptions['remote']): string[] {
+  const target = quotedDestination(destination, platform);
+  return remote === undefined ? [target] : ['--', target, quoteFor(platform === 'win32' ? 'powershell' : 'posix', remote.command)];
 }
 
 /**

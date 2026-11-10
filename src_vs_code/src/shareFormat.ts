@@ -533,8 +533,11 @@ export function shareableDetails(
     dependsOn: undefined,
     depColor: undefined,
     // Issue #103, for `dependsOn`'s reason and one more: the launcher is an id in the SENDER's
-    // vault, and the execute mark would arm a chain of commands the recipient never set up.
+    // vault, and the execute mark would arm a chain of commands the recipient never set up. The SSH
+    // entry a Terminal entry runs over is an id in the SENDER's vault as well: the recipient's copy
+    // runs locally (D4 of `PLAN_terminal_command_over_ssh.md`).
     vpnLauncherEntityId: undefined,
+    sshEntityId: undefined,
     runDependencies: undefined,
     mcp: undefined,
     mcpCreatedByAgent: undefined,

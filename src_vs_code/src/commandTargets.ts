@@ -5,6 +5,9 @@ import { executableLine } from './dependencyRun';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import { inheritedFolderType } from './defaultFolders';
 import { StorageManager } from './storageManager';
+import { isInTrash } from './trash';
+import { resolveKind } from './entityKind';
+import { isSafeSshTarget } from './sshCommand';
 
 /**
  * Turning what a command was INVOKED with into what it may act on.
@@ -118,6 +121,27 @@ function canLaunch(node: TreeNode, excludeEntityId: string): boolean {
 /** A Terminal entry with something to run — the same test the dependency chain uses. */
 function hasCommand(details: TreeNode['details']): boolean {
   return details !== undefined && executableLine(details) !== undefined;
+}
+
+/**
+ * The SSH entries a Terminal entry can run over (D13 of `PLAN_terminal_command_over_ssh.md`): live (not in the Trash,
+ * at any depth), of the SSH kind, with a host `isSafeSshTarget` accepts, and never the entry itself. The same test as
+ * the composer's link check, so every entry offered here is one the composer can use.
+ */
+export function collectSshCandidates(storage: StorageManager, accountId: string, excludeEntityId: string): KeyCandidate[] {
+  const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
+  return storage
+    .getNodes(accountId)
+    .filter((node) => canRunOver(node, excludeEntityId) && !isInTrash(node, byId))
+    .map((node) => ({ id: node.id, name: node.name }));
+}
+
+function canRunOver(node: TreeNode, excludeEntityId: string): boolean {
+  return node.type === 'entity' && node.id !== excludeEntityId && node.details !== undefined && isSshLinkTarget(node.details);
+}
+
+function isSshLinkTarget(details: EntityMetadata): boolean {
+  return resolveKind(details) === 'ssh' && isSafeSshTarget(details);
 }
 
 /**

@@ -3,7 +3,7 @@ import { parseFields } from './entityFields';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import { plainSecret, readSecret } from './secretEnvelope';
 import { StoredSecret, carried } from './storedSecret';
-import { TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
 
 /** The nine secret readers the export walks — the storage, by the part of it this needs. */
 export interface SecretReader {
@@ -126,5 +126,13 @@ async function secretsOf(
  * recipient's agents and offer a Remove-PIN that has nothing to remove.
  */
 export function exportedNode(node: TreeNode): TreeNode {
-  return node.details?.pinProtected === true ? { ...node, details: { ...node.details, pinProtected: undefined } } : node;
+  return node.details === undefined ? node : { ...node, details: exportedDetails(node.details) };
+}
+
+/**
+ * Without the PIN claim, and without the SSH link (D4 of `PLAN_terminal_command_over_ssh.md`): the id names an
+ * entry of THIS vault, which a recipient's copy has never heard of, so the copy runs on its own machine.
+ */
+function exportedDetails(details: EntityMetadata): EntityMetadata {
+  return { ...details, pinProtected: details.pinProtected === true ? undefined : details.pinProtected, sshEntityId: undefined };
 }

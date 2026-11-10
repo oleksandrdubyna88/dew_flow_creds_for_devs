@@ -63,8 +63,8 @@ export async function scanHostKey(
  * verbatim, so one containing `../` would put this file — and the host key a connection then
  * trusts — outside the directory the purge can reach. See `safeFileComponent`.</p>
  */
-function knownHostsPath(storageDir: string, entityId: string): string {
-  return materializedKeyPath(storageDir, `known_hosts-${entityId}`);
+function knownHostsPath(storageDir: string, entityId: string, suffix?: string): string {
+  return materializedKeyPath(storageDir, `known_hosts-${entityId}${suffix === undefined ? '' : `-${suffix}`}`);
 }
 
 /**
@@ -73,10 +73,14 @@ function knownHostsPath(storageDir: string, entityId: string): string {
  * <p>In the per-window `keys/<pid>/` directory, so the purge on activate and deactivate covers it
  * exactly as it covers a materialized private key — a pin is not secret, but a stale one left on
  * disk would be a file claiming to be authoritative about a host.</p>
+ *
+ * <p>`suffix` makes the file one session's alone: `known_hosts-<id>-<suffix>` (E1.S3 `isolate`). A per-session
+ * uuid, never vault data. Omitted, the name is `known_hosts-<id>`.</p>
  */
 export function materializeKnownHosts(
   storageDir: string,
   entity: EntityMetadata,
+  suffix?: string,
 ): string | undefined {
   const key = parseHostKey(entity.hostKey);
   if (key === undefined || entity.host === undefined) {
@@ -86,7 +90,7 @@ export function materializeKnownHosts(
   if (line === undefined) {
     return undefined;
   }
-  const file = knownHostsPath(storageDir, entity.id);
+  const file = knownHostsPath(storageDir, entity.id, suffix);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, line, { mode: 0o600 });
   lockToOwner(file);

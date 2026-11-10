@@ -309,6 +309,14 @@ The full `npm test` is run by the lead.
 - It does not replace the hand-written `ssh -t <host> …` advice in the help and the README (E2.S1 does).
 - It does not touch `research/`, `CHANGELOG.md`, the parent plan or `todo/README.md`.
 - It does not translate or fix the *Runs on* label in `helpDe.ts` and `helpEs.ts` (see the note below).
+- Recorded after the Opus review (four items, plain text):
+  - (a) The agent's consent dialog (`credsAgentServer.ts:535`) comes before the refusal in `agentUseActions.ts`.
+    E3.S2 reworks that road.
+  - (b) A linked dependency STEP is refused after the root's own trust modal. This is the existing order of every
+    step refusal.
+  - (c) The viewer's "Command" field copy (`entityViewCopy.ts:150`) copies the raw field, like any other field.
+  - (d) Running an old revision from the history (`entityViewerCommands.ts:465-481`) runs that revision as it was.
+    An unlinked old revision is not linked.
 
 ### S1.8 Notes for the lead (found while writing this)
 

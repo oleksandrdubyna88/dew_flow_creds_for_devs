@@ -212,7 +212,7 @@ eval 'L'; s=$?; test $s -eq 0 || printf 'creds: the command ended with exit code
 One line, no `"` anywhere unless the person's line holds one. Measured (G11) under `dash -c` and `bash -c`: `echo ok # a
 note` prints `ok` and starts the login shell; `echo a &` prints `a` and starts it; `false` prints the sentence with `1`
 and starts it; `exit 3` ends with 3 and no login shell (eval of `exit` exits — accepted, the same as the parent's form);
-an unclosed quote is a syntax error reported by `eval`, then the login shell starts.
+an unclosed quote is a syntax error reported by `eval`, then the login shell starts — in bash; in dash the syntax error of the special builtin `eval` ends the shell after the message (measured 2026-11-10 by the coder and the lead; `command eval` would fix dash and break zsh, so plain `eval` stays — lead note).
 
 **Trust line** — `trustLineFor(ssh, jump, line)`:
 
