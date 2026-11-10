@@ -61,14 +61,16 @@ public static class LeftoversGuard
 
     /// <summary>The files that may spell the word in pieces, so the folded reading (<see cref="GuardLiterals"/>: joined literals, decoded
     /// escapes, single-character classes, pieces of the word) is not applied to them: the helper that owns the prefix, the guard that
-    /// holds the detector words, and the two files that build the guard's break-it fixtures out of the word. Pinned by a test; a fifth
-    /// file is a decision, not a convenience. Everything else names the word through <c>Owned</c> (a constant) or not at all.</summary>
+    /// holds the detector words, and the two files that build the guard's break-it fixtures out of the word. Pinned by a test; a sixth
+    /// file is a decision, not a convenience (the fifth, the Node wrapper, changes no answer here: the copy folds .cs only). Everything else names the word through <c>Owned</c> (a constant) or not at all.</summary>
     internal static IReadOnlyList<string> FoldingAllowances { get; } =
     [
         HelperFile,
         "src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs",
         "src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs",
         "src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs",
+        // The Node wrapper (D7). No effect at the pin: this copy folds .cs only (IsFolded), so the entry changes no answer; LeftoversGuardCredsTests pins that.
+        "src_vs_code/scripts/lib/leftovers.cjs",
     ];
 
     private static Regex Rx(string pattern, RegexOptions options = RegexOptions.None) => new(pattern, options | RegexOptions.CultureInvariant);

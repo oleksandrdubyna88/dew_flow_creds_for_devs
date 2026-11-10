@@ -414,6 +414,18 @@
           "new": "    /// <summary>The two docker classes of a line, none for a workflow of <see cref=\"DockerJudgedByNodeGuard\"/>.</summary>\n    private static IEnumerable<(string Class, string Text)> DockerHits(SourceFile source, string line) =>\n        DockerJudgedByNodeGuard.Contains(source.Relative)\n            ? []\n            : Tag(\"docker-run\", ContainerWithoutRemoveFlag(line)).Concat(Tag(\"docker-name\", GuardDocker.NameHits(line)));\n\n    /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>\n",
           "count": 1,
           "reason": "E2.5.S1.2: the method of the docker classes, skipped for the pinned workflow"
+        },
+        {
+          "old": "        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",\n    ];",
+          "new": "        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",\n        // The Node wrapper (D7). No effect at the pin: this copy folds .cs only (IsFolded), so the entry changes no answer; LeftoversGuardCredsTests pins that.\n        \"src_vs_code/scripts/lib/leftovers.cjs\",\n    ];",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the fifth folding allowance, the Node wrapper, with a comment that it has no effect at the pin (the copy folds .cs only)"
+        },
+        {
+          "old": "Pinned by a test; a fifth\n    /// file is a decision, not a convenience.",
+          "new": "Pinned by a test; a sixth\n    /// file is a decision, not a convenience (the fifth, the Node wrapper, changes no answer here: the copy folds .cs only).",
+          "count": 1,
+          "reason": "E2.5.S1.5: the sentence follows the pin's new count"
         }
       ]
     },
