@@ -2756,6 +2756,44 @@ By the brief's § 5 the `research/module_tests.md` text belongs to E2.5. The edi
 > a planted fault it must refuse (`PROJECT=acme`, an unlabelled volume, an unguarded clean-up, a host-side certificate check, a trap of its own). Docker itself is seen only
 > by the hosted dispatch of the build record (part 4).
 
+**S1 and S2 — taken out on 2026-11-10 too (same reason, § 5).** The S1 paragraph (`59859b9`) and the S2 paragraph (`abf693a`) stood after the paragraph that ends "RED again on a fresh publish without it."; the S2 table row stood after row *i* of the `start-server-and-wait` table. Their text:
+
+> **The bash helper `owned.sh` has a self-test in real child processes (2026-11-09, E2.4.S1 of
+> [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).** `.github/scripts/lib/owned.sh` gives a shell script one owned
+> folder, `testsToDelete-<owner>-creds-<what>-<8 hex>`, in the rule's order (claim by an exclusive write of the owner record, register
+> the traps, create with `mkdir`), and removes it on every exit path by its exact name. `.github/scripts/lib/owned.test.sh` runs three area files (`owned.test.record.sh`, `owned.test.exit.sh`, `owned.test.sweeps.sh`, each in its own bash with its own private root, sharing `owned.test.lib.sh`) with 20
+> cases (T1 to T21 of the spec; T3, T12 and T14 are Windows only) and every case starts a real `bash` with its own temp root: the
+> name and the record against the mounted `owned.mjs` (the claim is byte for byte the reference's `formatOwner`, `:<start>:<ns>` on
+> Linux), claim-first, a taken claim, a squatter folder that is never removed, `owned_remove` limited to this run's folders, a
+> removal that gives up, `kill -9` between the claim and the `mkdir` and after it (the shipped janitor and the mounted Node sweep
+> collect the claim on Linux and macOS; on Windows the Node sweep lists it `unverified:` and the janitor is a dry run), `OWNED_KEEP`,
+> the exit chain under `set -e`, `set -u` with an empty registry, and a signal that arrives while `mkdir` runs. `ci-clients.yml` runs it
+> on the three legs (macOS with `/bin/bash`, 3.2); `ci-server.yml` shellchecks both files. What it does not cover: a trap a caller sets
+> itself (T7d measures the replacement, T7a scans the callers), a race of two live scripts on one name, the Windows
+> collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
+> whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two successes), so `owned_create_dir` uses perl's `mkdir`
+> where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
+> (the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE. A seam `OWNED_PROC` (the /proc root) lets a test give the helper a minimal /proc: the record then ends after the pid (T G4).
+>
+> **The shell scripts take their scratch from `owned.sh` (2026-11-10, E2.4.S2 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+> `mcp-listen-smoke.test.sh`, `version-smoke.test.sh`, `start-server-and-wait.test.sh` and `deploy/restore-archive-itest.sh` make their
+> folders with `owned_dir` (the test with its own clean-up function sets it with `owned_trap` first); none of them sets a trap of its
+> own, and `owned.test.sh`'s caller scan (T7a) reads all of them. The two smoke scripts, with no log root and no `RUNNER_TEMP`, make
+> their scratch with `owned_dir` too (a given root is unchanged, so the release jobs need no `owned.sh`); each smoke self-test has two
+> new cases that run the smoke that way, with a private `TMPDIR`, once failing after the folder is made and once passing, and ask for an empty root.
+> `start-server-and-wait.sh` with no `START_SERVER_LOG` writes `server.log` in a claimed, KEPT owned folder (case `j` reads the folder, the
+> claim, the record's pid and that the old `start-server-*.log` is gone); its own trap became the `owned_trap` clean-up function, so an
+> interrupt ends it with 128 plus the signal. `restore-archive-itest.sh` makes its nine worlds with `owned_dir` and gives the restore child
+> `TMPDIR="$WORLD"`. Each of the four CI steps runs its script with `TMPDIR="$RUNNER_TEMP/leftovers-<step>"` and fails when anything is left in that root.
+> Watched RED first (a private `TMPDIR`): a stub `chmod` that fails before the old removal left one `tmp.*` in each smoke self-test;
+> the smoke scripts off CI left `creds-mcp-listen-smoke-<pid>` and `creds-version-smoke-<pid>`; `start-server-and-wait.sh` left
+> `start-server-<id>.log`; the itest left nine `tmp.*`; a SIGTERM or SIGHUP to the process group of `mcp-listen-smoke.test.sh` left its `tmp.*`
+> (a SIGINT does not, on the old script: bash waits for the child, which ends normally, and goes on). With `owned.sh` every root is empty, and INT, TERM and HUP give 130, 143 and 129.
+
+**The S2 table row:**
+
+> | j. no `START_SERVER_LOG`, no `RUNNER_TEMP`, a private `TMPDIR` (E2.4.S2) | the root holds one `testsToDelete-<owner>-creds-server-log-<id>` folder with `server.log` and its claim (a well-formed record, the script's own gone pid), and no loose `start-server-*.log` |
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
