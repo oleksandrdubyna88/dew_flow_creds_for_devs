@@ -37,6 +37,7 @@ test('an =-joined flag is one row as written', () => {
 });
 
 test('a flag with no value stands alone, and does not eat the next flag', () => {
+  // testsToDelete-exempt: docker-name — a parser fixture string: no image or container is built here
   const r = parseCommandLine('docker build --no-cache --pull -t myimage');
 
   assert.deepEqual(r.args.map((a) => a.value), ['--no-cache', '--pull', '-t myimage']);
