@@ -95,6 +95,22 @@ export function errorBody(
 export const INTERNAL_FAILURE = 'The action failed inside this window. See the agent journal for the reason.';
 
 /**
+ * What a caller is told when nobody answered the consent dialog within the call's wait (504 `consent_timeout`), for a call COUNTED on the
+ * window's one dialog place (a bridged call on any door, a local alias or MCP call): the dialog is still on screen, and the place is its until a
+ * person answers it. The call did not run, and the next asking call is told `busy` until then (parent §4.10, row 3).
+ */
+export const CONSENT_TIMED_OUT_ON_PLACE =
+  "Nobody answered within five minutes. The question is still on the person's screen and keeps this window's shared dialog place until they answer it. This request did not run.";
+
+/** The same refusal for a local token call, which is counted on no door and so holds no place: only the dialog stays. */
+export const CONSENT_TIMED_OUT = "Nobody answered within five minutes. The question is still on the person's screen until they answer it. This request did not run.";
+
+/** The timeout sentence of a door: with the place clause when the call was admitted on the place (`countedOnPlace`), without it when it was not. */
+export function consentTimedOut(onPlace: boolean): string {
+  return onPlace ? CONSENT_TIMED_OUT_ON_PLACE : CONSENT_TIMED_OUT;
+}
+
+/**
  * What a request is told when a handler threw before it could answer (`unanswered`). Its own sentence: `INTERNAL_FAILURE` promises a reason
  * in the journal, and the journal line of this failure is a classification (the error's class, a system errno name when it has one, the route) that never carries the message (parent §4.1).
  */

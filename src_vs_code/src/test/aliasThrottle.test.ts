@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ASKING_CEILING, type Holding, LOCAL_DOOR, MAX_PROMPTS, OneInFlight, SILENT_CEILING, SlidingWindow, type Slot, TokenlessCeilings, WINDOW_MS, over } from '../aliasThrottle';
+import { ASKING_CEILING, BUSY_PLACE, type Holding, LOCAL_DOOR, MAX_PROMPTS, OneInFlight, SILENT_CEILING, SlidingWindow, type Slot, TokenlessCeilings, WINDOW_MS, over } from '../aliasThrottle';
 
 /**
  * The rate at which a caller with no token may make a window ask a human.
@@ -159,7 +159,7 @@ test("the local door is today's modal budget to the byte: five dialogs, one in f
   const c = new TokenlessCeilings();
   const first = admitted(c, true, NOW, 'the first prompting call');
   c.prompted(local, 'alias', NOW);
-  assert.equal(refusal(c, true, NOW).message, 'Another request is already waiting for the person to answer. Try again once they have.', 'serialized');
+  assert.equal(refusal(c, true, NOW).message, BUSY_PLACE, 'serialized');
   c.dialogClosed(local, 'alias');
   first.release();
   for (let i = 1; i < MAX_PROMPTS; i += 1) {
@@ -253,7 +253,7 @@ test('release on a silent admission is a no-op: it frees nothing and banks nothi
   for (let i = 0; i < SILENT_CEILING; i += 1) {
     admitted(c, false, NOW + i, `quiet call ${i + 1}`).release();
   }
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'sixty silent releases did not free the dialog in flight');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'sixty silent releases did not free the dialog in flight');
   assert.notEqual(c.admit(false, NOW + SILENT_CEILING).refusal, undefined, 'and the sixty are still sixty inside the minute');
   holder.release();
 });
@@ -362,8 +362,8 @@ test('one dialog in flight is global: a dialog held open on A makes B and the lo
   // The person is one person with one screen. Per-door in-flight would show them two modals at once.
   const c = new TokenlessCeilings();
   const held = admitted(c, true, NOW, 'a dialog on A', A);
-  assert.match(refusal(c, true, NOW, B).message, /already waiting/);
-  assert.match(refusal(c, true, NOW).message, /already waiting/);
+  assert.match(refusal(c, true, NOW, B).message, /holds this window's dialog place/);
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/);
   held.release();
   assert.equal(c.admit(true, NOW, B).refusal, undefined, 'and B is asked the moment A is answered');
 });
@@ -480,7 +480,7 @@ test('B.2: through the coordinator, a call that ends during its dialog frees the
   const slot = admitted(c, true, NOW, 'the call');
   c.prompted(local, 'alias', NOW);
   slot.release();
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the client left; the dialog is still on screen');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'the client left; the dialog is still on screen');
   c.dialogClosed(local, 'alias');
   admitted(c, true, NOW, 'the next call, once the dialog is gone');
 });
@@ -492,7 +492,7 @@ test('B.2: a dialog closing frees the place although its call is still running (
   c.dialogClosed(local, 'alias');
   const next = admitted(c, true, NOW + 1, 'another call while the first still runs');
   running.release();
-  assert.match(refusal(c, true, NOW + 2).message, /already waiting/, 'the long call ending freed nothing of the next call\'s place');
+  assert.match(refusal(c, true, NOW + 2).message, /holds this window's dialog place/, 'the long call ending freed nothing of the next call\'s place');
   next.release();
 });
 
@@ -501,9 +501,9 @@ test('B.2: a local token call holds, stamps and closes nothing', () => {
   const holder = admitted(c, true, NOW, 'a call with a dialog to come');
   c.prompted(local, 'token', NOW);
   c.dialogClosed(local, 'token');
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the token dialog and its close did not touch the place of another call');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'the token dialog and its close did not touch the place of another call');
   c.dialogClosed(local, 'alias');
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'a close with no dialog open frees nothing');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'a close with no dialog open frees nothing');
   holder.release();
   admitted(c, true, NOW, 'the next call, once the holder ended');
 });
@@ -513,7 +513,7 @@ test('B.2: a local token dialog closing frees nothing of the place a throttled d
   const holder = admitted(c, true, NOW, 'a call whose dialog is on screen');
   c.prompted(local, 'alias', NOW);
   c.dialogClosed(local, 'token'); // a local token dialog, which was never counted, closes meanwhile
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the alias dialog is still on screen');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'the alias dialog is still on screen');
   c.dialogClosed(local, 'alias');
   holder.release();
   admitted(c, true, NOW, 'the next call, once the alias dialog closed');
@@ -527,7 +527,7 @@ test('B.2: a close the coordinator never saw opened, or a second close, frees no
   first.release();
   const second = admitted(c, true, NOW + 1, 'the second');
   c.dialogClosed(local, 'alias');
-  assert.match(refusal(c, true, NOW + 1).message, /already waiting/, 'a second close of the first dialog freed nothing of the second');
+  assert.match(refusal(c, true, NOW + 1).message, /holds this window's dialog place/, 'a second close of the first dialog freed nothing of the second');
   second.release();
 });
 
@@ -587,7 +587,7 @@ test('K7: through the coordinator, keep holds the place across the close until t
   const slot = admitted(c, true, NOW, 'the call');
   c.prompted(local, 'alias', NOW);
   c.dialogClosed(local, 'alias', true);
-  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the call may show a prompt of its own: the place is still its own');
+  assert.match(refusal(c, true, NOW).message, /holds this window's dialog place/, 'the call may show a prompt of its own: the place is still its own');
   slot.release();
   admitted(c, true, NOW, 'the next call, once the call ended');
 });
@@ -661,7 +661,7 @@ test('B.1: a refusal for the dialog budget counts too; a busy answer, which did 
   const d = new TokenlessCeilings();
   const holder = admitted(d, true, NOW, 'the call in flight');
   for (let i = 0; i < ASKING_CEILING * 2; i += 1) {
-    assert.match(refusal(d, true, NOW + i).message, /already waiting/, `busy ${i + 1}`);
+    assert.match(refusal(d, true, NOW + i).message, /holds this window's dialog place/, `busy ${i + 1}`);
   }
   holder.release();
   admitted(d, true, NOW + ASKING_CEILING * 2, 'the call after the place was freed: busy answers were not counted');

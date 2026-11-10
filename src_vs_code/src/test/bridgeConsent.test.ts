@@ -1,6 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseAuditLine } from '../agentAuditLog';
+import { BUSY_PLACE } from '../aliasThrottle';
+import { CONSENT_TIMED_OUT_ON_PLACE } from '../brokerProtocol';
 import type { McpAskPolicy } from '../mcpAccess';
 import { ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
 import { code, message } from './bridgeDoorHarness';
@@ -275,9 +277,12 @@ test('C17: a Deny writes nothing, and a dialog that times out writes nothing', a
   const slow = await consenting('every12h', true, { holdDialogs: true, consentTimeoutMs: 100 });
   try {
     const reply = await send(A(slow), mcp());
-    assert.deepEqual([reply.status, code(reply)], [504, 'consent_timeout']);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [504, 'consent_timeout', CONSENT_TIMED_OUT_ON_PLACE], 'the place sentence (E1.5)');
     assert.deepEqual(slow.keys(), []);
     assert.deepEqual(slow.ww.w.consents, []);
+    const busy = await send(A(slow), mcp());
+    assert.deepEqual([busy.status, message(busy)], [429, BUSY_PLACE], 'and the place is still held by the standing dialog');
+    assert.equal(slow.ww.w.dialogs.length, 1);
   } finally {
     settleAll(slow.ww);
     slow.ww.dispose();
@@ -657,7 +662,7 @@ test('C20: a busy call and a call over the dialog budget leave no line — only 
     for (let call = 2; call <= 6; call += 1) {
       const busy = await send(A(c), mcp());
       assert.equal(busy.status, 429, `call ${call}: ${busy.body}`);
-      assert.match(message(busy), /already waiting for the person/);
+      assert.match(message(busy), /holds this window's dialog place/);
     }
     assert.deepEqual(ceilingGrants(c.ww), [], 'six at once: five are busy, and busy is not reported');
     c.ww.w.openDialogs[0]('Allow');

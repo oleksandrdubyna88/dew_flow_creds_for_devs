@@ -259,6 +259,8 @@ export interface WallOptions {
   oneUse?: boolean;
   maxCalls?: number;
   holdDialogs?: boolean;
+  /** The first n modals throw synchronously and record nothing (E1.5 F3). */
+  throwDialogs?: number;
   /**
    * The REAL consent hooks, over the real vault: the folder's policy is `ask`, the stamps live in `state`, and the stamp
    * clock is `now` (E1.4). The local MCP door and every bridge read and write the same store, as in a window. Without it the
@@ -384,6 +386,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     oneUse: options.oneUse,
     maxCalls: options.maxCalls,
     holdDialogs: options.holdDialogs,
+    throwDialogs: options.throwDialogs,
     asksAfterConsent: options.asksAfterConsent,
     consentTimeoutMs: options.consentTimeoutMs,
     trash: true,
@@ -543,14 +546,21 @@ export function normalised(reply: Reply): { status: number; body: string } {
   return { status: reply.status, body: reply.body.replace(/"durationMs":\d+/g, '"durationMs":0') };
 }
 
-/** Poll until `done` is true, or fail with `what`; the broker answers on its own schedule and a fixed sleep guesses it. */
+/** The real timer, taken at load: a test that mocks `setTimeout` or `Date` must not stop `until` from timing out. */
+const realSetTimeout = setTimeout;
+
+/**
+ * Poll until `done` is true, or fail with `what`; the broker answers on its own schedule and a fixed sleep guesses it.
+ * The deadline is on the REAL clock (`performance.now`) and the poll on the real timer: a test that mocks `Date` or `setTimeout` (the throttle's clock, the
+ * consent wait) and whose condition never comes fails here in `ms`, instead of waiting for the runner's 60-minute limit.
+ */
 export async function until(done: () => boolean, what: string, ms = 3_000): Promise<void> {
-  const deadline = Date.now() + ms;
+  const deadline = performance.now() + ms;
   while (!done()) {
-    if (Date.now() > deadline) {
+    if (performance.now() > deadline) {
       throw new Error(`timed out waiting for ${what}`);
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 5));
   }
 }
 

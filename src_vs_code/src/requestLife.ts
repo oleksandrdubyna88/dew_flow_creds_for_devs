@@ -47,6 +47,50 @@ export function requestGone(startGate: AbortSignal | undefined): boolean {
   return startGate?.aborted === true;
 }
 
+/**
+ * `promise`'s value, or `undefined` the moment `startGate` fires — the race of a start's two QUESTIONS (the OpenVPN Connect import, the chain's
+ * *Continue*). With no gate (the person's own click) it is `promise`'s value. The abort listener is removed when EITHER side settles: a listener on a signal
+ * that never fires is a leak, and `{ once: true }` alone does not remove it. A rejection resolves `undefined`. The promise is not cancelled (VS Code cannot
+ * take a modal down): `onLate` receives what resolves it AFTER the gate won — how a late click is journalled — and nothing else reads it.
+ */
+export function untilGone<T>(promise: Thenable<T>, startGate: AbortSignal | undefined, onLate?: (value: T) => void): Promise<T | undefined> {
+  if (startGate === undefined) {
+    return Promise.resolve(promise);
+  }
+  return new Promise((resolve) => {
+    let gateWon = false;
+    const done = (): void => startGate.removeEventListener('abort', leave);
+    const leave = (): void => {
+      gateWon = true;
+      done();
+      resolve(undefined);
+    };
+    startGate.addEventListener('abort', leave);
+    if (startGate.aborted) {
+      leave();
+    }
+    Promise.resolve(promise).then(
+      (value) => {
+        done();
+        return gateWon ? lateValue(onLate, value) : resolve(value);
+      },
+      () => {
+        done();
+        resolve(undefined);
+      },
+    );
+  });
+}
+
+/** A late value handed to `onLate`: what it does decides nothing, so a throw (a journal that cannot be written) is dropped, never left unhandled. */
+function lateValue<T>(onLate: ((value: T) => void) | undefined, value: T): void {
+  try {
+    onLate?.(value);
+  } catch {
+    // Dropped on purpose: the call has ended and nothing waits for this.
+  }
+}
+
 /** The journal's words for a request whose action had not been launched when its client left. */
 export const NOT_LAUNCHED = 'as the action was starting — it was not launched';
 

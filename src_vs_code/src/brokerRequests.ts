@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import * as os from 'node:os';
 import { auditGrantMark, type BridgeContext } from './bridgeContext';
-import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, parseBearer, parseJsonObject } from './brokerProtocol';
+import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, consentTimedOut, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantWords';
 import { MCP_SWITCHES } from './mcpSwitches';
@@ -28,6 +28,20 @@ export const UNKNOWN_TOKEN = 'Unknown or missing grant token.';
 
 /** What an agent is told when the person answered Deny, on this call or earlier on this token. */
 export const GRANT_NOT_ALLOWED = 'The human did not allow this grant.';
+
+/**
+ * The one chooser for a consent that was not given, on every door (E1.5).
+ *
+ * <p>`denied` is the person's Deny: 403 with the door's own words. `dismissed` (Escape, or a modal that closed under VS Code) is a person's
+ * act too and is answered as it always was: 504 `consent_timeout` with the door's own words, never the timeout sentence, which would be false
+ * after an Escape. `timeout` is the CALL's wait running out, with the sentence of the door: the place clause when the call was counted on the place.</p>
+ */
+export function consentRefusal(consent: 'denied' | 'timeout' | 'dismissed', deniedMessage: string, onPlace: boolean): Refusal {
+  if (consent === 'denied') {
+    return { code: 'denied', message: deniedMessage };
+  }
+  return { code: 'consent_timeout', message: consent === 'timeout' ? consentTimedOut(onPlace) : deniedMessage };
+}
 
 /** A failed validation as a refusal: the action's own code, or the plain `invalid_request`. */
 export function validationRefusal(failed: { readonly code?: ErrorCode; readonly message: string }): Refusal {

@@ -11,6 +11,7 @@ import { Ask, Door, answeredAtOnce, send, sendAbortable, until } from './bridgeW
 import { share, world as brokerWorld } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust, storageOf, world as vpnWorld } from './vpnWorld';
+import { BUSY_PLACE } from '../aliasThrottle';
 
 /**
  * The follow-up contract of the one dialog place (parent §4.10), per action, through the local doors (the alias and the MCP door):
@@ -26,7 +27,7 @@ import { memoryTrust, storageOf, world as vpnWorld } from './vpnWorld';
 const scope = cleanupScope();
 after(() => scope.close());
 
-const BUSY = 'Another request is already waiting for the person to answer. Try again once they have.';
+const BUSY = BUSY_PLACE;
 const door = (port: number): Door => ({ port, headers: { Host: `127.0.0.1:${port}` } });
 
 /** A prompt the test answers by hand: `ask()` is awaited by the code under test, `answer()` is the person's click. */
