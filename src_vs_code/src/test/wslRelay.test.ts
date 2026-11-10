@@ -362,6 +362,12 @@ test('a value holding a single quote yields NO prefix rather than a broken line'
   assert.equal(envPrefix('SSH_AUTH_SOCK', "/tmp/it's/creds.sock"), '');
 });
 
+test('a value holding a curly single quote yields NO prefix: a WSL window whose default profile is pwsh reads it as a quote', () => {
+  for (const quote of ['\u2018', '\u2019', '\u201A', '\u201B']) {
+    assert.equal(envPrefix('SSH_AUTH_SOCK', `/tmp/a${quote}; calc; ${quote}/creds.sock`), '', quote.codePointAt(0)?.toString(16));
+  }
+});
+
 test('an empty value yields no prefix', () => {
   assert.equal(envPrefix('SSH_AUTH_SOCK', ''), '');
 });

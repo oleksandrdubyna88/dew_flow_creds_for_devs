@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { asOsName, entryShell, hostShell, newEntryOs, osLabel, osOf, pinnedShellRefusal, quoteFor, readerFamily, shellFamily } from '../hostShell';
+import { asOsName, entryShell, hasPowerShellSingleQuote, hostShell, newEntryOs, osLabel, osOf, pinnedShellRefusal, quoteFor, readerFamily, shellFamily } from '../hostShell';
 
 /**
  * Which shell parses a composed line (issue #103). The defect was a line for one shell typed into
@@ -43,6 +43,30 @@ const NASTY = `C:\\Users\\o'brien\\my "vpn" $HOME \`id\` %PATH%.ovpn`;
 
 test('PowerShell quoting: single quotes are literal, an apostrophe is doubled', () => {
   assert.equal(quoteFor('powershell', "a'b $x"), "'a''b $x'");
+});
+
+// PowerShell (5.1 and 7) reads all four of these as a single quote (about_Quoting_Rules): a value holding one closes the
+// literal early, and what follows runs LOCALLY. One case per character, each with the text a hostile entry would send.
+for (const [name, quote] of [['U+2018', '\u2018'], ['U+2019', '\u2019'], ['U+201A', '\u201A'], ['U+201B', '\u201B']] as const) {
+  test(`PowerShell quoting: ${name} is a single quote to PowerShell, so it is doubled with the same character`, () => {
+    assert.equal(quoteFor('powershell', `x${quote}; calc; ${quote}`), `'x${quote}${quote}; calc; ${quote}${quote}'`);
+    assert.equal(quoteFor('powershell', quote), `'${quote}${quote}'`);
+  });
+}
+
+test('PowerShell quoting: the double-quote look-alikes need no doubling inside a single-quoted word', () => {
+  assert.equal(quoteFor('powershell', 'a\u201Cb\u201D\u201E "c" $d `e`'), `'a\u201Cb\u201D\u201E "c" $d \`e\`'`);
+});
+
+test('hasPowerShellSingleQuote answers the same on every call (no regex state is kept between calls)', () => {
+  for (let round = 0; round < 3; round += 1) {
+    for (const quote of ["'", '\u2018', '\u2019', '\u201A', '\u201B']) {
+      assert.equal(hasPowerShellSingleQuote(`a${quote}b`), true, JSON.stringify(quote));
+    }
+    for (const plain of ['', 'ab', 'a"b', 'a\u201Cb\u201D\u201E\u201F\u2033', 'a`b$c']) {
+      assert.equal(hasPowerShellSingleQuote(plain), false, JSON.stringify(plain));
+    }
+  }
 });
 
 test('POSIX quoting: single quotes are literal, an apostrophe closes, escapes and reopens', () => {
