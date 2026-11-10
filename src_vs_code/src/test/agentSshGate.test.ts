@@ -16,10 +16,11 @@ import { stored } from '../storedSecret';
 import type { StoredSecret } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
-import { ACCOUNT_1, ACCOUNT_2, GateOptions, GateWorld, OK_BODY, detailsOf, gateWorld, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
+import { ACCOUNT_1, ACCOUNT_2, GateOptions, GateWorld, OK_BODY, asBroker, detailsOf, gateWorld, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
 import { call, share, world } from './brokerWorld';
 import { ownerChain, startVpn, world as vpnWorldOf } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+import { loadWithVscode } from './vscodeStub';
 
 const scope = cleanupScope();
 after(() => scope.close());
@@ -28,6 +29,9 @@ after(() => scope.close());
  * The authorisation of the agent's run over SSH (E3.S2; spec `todo/PLAN_terminal_command_over_ssh_E3_S2_security.md`, scenarios G1-G22).
  * Each test is named for the guarantee; each was watched RED first, and the commit that builds the guarantee says what the failure read.
  */
+
+/** `sshUseActions.ts` imports `vscode`; loaded with the stub only to ask whether `sshExecAction` declares `uses`. */
+const loadSshActions = async (): Promise<typeof import('../sshUseActions')> => loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', { window: {} });
 
 /** What the stub of G17 says it also uses (the third amendment, A1). */
 const USED: UsedEntry = { accountId: 'a1', entityId: 'e2', entityName: 'other' };
@@ -196,7 +200,8 @@ test('the_mask_table_of_a_linked_entry_holds_the_ssh_entrys_password', async () 
 const LOCAL_SUMMARY = 'the stored command, as its Run button would type it';
 
 type Outcome = { status: number; body: unknown };
-const errorOf = (result: Outcome): { code: string; message: string } => (result.body as { error: { code: string; message: string } }).error;
+/** The error a result carries; a result with none (the run went through) reads as `status <n>`, so a test that expected a refusal fails on its assertion. */
+const errorOf = (result: Outcome): { code: string; message: string } => (result.body as { error?: { code: string; message: string } }).error ?? { code: `status ${result.status}`, message: JSON.stringify(result.body) };
 
 /** Everything the one sentence must not carry: the SSH entry's name, host, folder, the Trash, the PIN, the other account. */
 const NEVER_SAID = ['prod box', 'prod.example', 'Trash', 'PIN', 'acct-2'];
@@ -206,7 +211,8 @@ const unmarkedSsh = (): TreeNode => sshNode('s1');
 
 function runOf(w: GateWorld): (over?: Partial<UseActionContext>) => Promise<UseActionResult> {
   const action = terminalRunAction(w.deps);
-  return (over = {}) => action.run({ ...w.ctx, ...over }, {});
+  // What the broker hands `run`: the shown summary and the used entry, read from the real action in one step (spec §12, A4).
+  return (over = {}) => action.run(asBroker(action, { ...w.ctx, ...over }), {});
 }
 
 test('a_usable_ssh_entry_lets_a_trusted_linked_run_through_the_gate', async () => {
@@ -350,10 +356,10 @@ test('a_switch_turned_off_while_the_dialog_was_open_is_refused_at_run', async ()
   w.trust(detailsOf(w, 's1'));
   const action = terminalRunAction(w.deps);
   assert.deepEqual(action.validate({}, w.ctx), { ok: true });
-  const summary = action.summarize({}, w.ctx);
+  const shown = asBroker(action, w.ctx);
 
   detailsOf(w, 's1').mcp = { view: true };
-  const error = errorOf(await action.run({ ...w.ctx, summary }, {}));
+  const error = errorOf(await action.run(shown, {}));
 
   assert.equal(error.code, 'denied');
   assert.equal(error.message, linkedRunRefused('deploy'));
@@ -379,10 +385,10 @@ test('a_link_or_target_changed_while_the_dialog_was_open_is_refused_at_run', asy
     const w = gateWorld({ acct1: [usableSsh('s1'), usableSsh('s2', { name: 'staging box' })] });
     w.trust(detailsOf(w, 's1'));
     const action = terminalRunAction(w.deps);
-    const summary = action.summarize({}, w.ctx);
+    const shown = asBroker(action, w.ctx);
 
     change(w);
-    const error = errorOf(await action.run({ ...w.ctx, summary }, {}));
+    const error = errorOf(await action.run(shown, {}));
 
     assert.equal(error.code, 'denied', what);
     assert.equal(error.message, changedWhileAsking('deploy'), what);
@@ -392,17 +398,33 @@ test('a_link_or_target_changed_while_the_dialog_was_open_is_refused_at_run', asy
   const same = gateWorld();
   same.trust(detailsOf(same, 's1'));
   const action = terminalRunAction(same.deps);
-  const summary = action.summarize({}, same.ctx);
-  assert.deepEqual(await action.run({ ...same.ctx, summary }, {}), { status: 200, body: OK_BODY }, 'the unchanged world passes the compare');
+  const shown = asBroker(action, same.ctx);
+  assert.deepEqual(await action.run(shown, {}), { status: 200, body: OK_BODY }, 'the unchanged world passes the compare');
   assert.equal(same.overSsh.calls.length, 1);
 });
 
-test('a_run_with_no_shown_summary_does_not_compare', async () => {
-  // A guard (green before and after): the test worlds of the run's own scenarios hand no summary; the broker always does (G17).
+test('a_linked_run_with_no_shown_summary_is_refused_and_a_local_one_is_not_compared', async () => {
+  // Rewritten by the third amendment, A4 (it was a_run_with_no_shown_summary_does_not_compare): a linked run now needs BOTH the shown summary and the
+  // used entry the broker holds, and a caller that omits either one is refused, not skipped (spec §2.3 step 3).
   const w = gateWorld();
   w.trust(detailsOf(w, 's1'));
-  assert.deepEqual(await runOf(w)(), { status: 200, body: OK_BODY });
+  const action = terminalRunAction(w.deps);
+
+  const bare = errorOf(await action.run(w.ctx, {}));
+  assert.equal(bare.code, 'denied');
+  assert.equal(bare.message, changedWhileAsking('deploy'), 'no summary and no used entry');
+  const noSummary = errorOf(await action.run({ ...asBroker(action, w.ctx), summary: undefined }, {}));
+  assert.equal(noSummary.message, changedWhileAsking('deploy'), 'no summary');
+  assert.equal(w.overSsh.calls.length, 0);
+  assert.equal(w.slots.taken, 0);
+
+  assert.deepEqual(await action.run(asBroker(action, w.ctx), {}), { status: 200, body: OK_BODY }, 'the positive control: what the broker hands it runs');
   assert.equal(w.overSsh.calls.length, 1);
+
+  // An UNLINKED world is not compared: its run starts as today (a busy window answers too_many_requests, so nothing is spawned here).
+  const local = gateWorld({ terminal: { sshEntityId: undefined }, acct1: [], busy: true });
+  local.trusted.push(commandFingerprint('e1', 'echo linked'));
+  assert.equal(errorOf(await terminalRunAction(local.deps).run(local.ctx, {})).code, 'too_many_requests', 'the local run started');
 });
 
 test('asks_after_consent_is_true_only_for_a_linked_entry_that_forwards_the_agent_while_the_socket_is_up', () => {
@@ -424,7 +446,8 @@ test('a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lis
     w.trust(sshNode('s1').details as EntityMetadata);
     w.storage.calls.length = 0;
 
-    const error = errorOf(await runOf(w)({ bridge: BRIDGE }));
+    // A bridged call never reaches the door's `summarize` or `uses` (`refusedOnBridge` answers before the body is read), so `run` gets the bare context.
+    const error = errorOf(await terminalRunAction(w.deps).run({ ...w.ctx, bridge: BRIDGE }, {}));
 
     assert.equal(error.code, 'not_supported');
     assert.equal(error.message, BRIDGE_NOT_SERVED);
@@ -617,4 +640,88 @@ test('before_the_gate_passes_the_follow_up_flag_says_nothing_about_the_ssh_entry
   const ceilings = new TokenlessCeilings();
   ceilings.admit(true, 0);
   assert.equal(ceilings.admit(false, 1, LOCAL_DOOR, flag).refusal?.message, BUSY_PLACE, 'and the quiet call is told busy');
+});
+
+// ---- the third amendment (A1, A4): the used entry, and the compare's second part ------------------------------------------------------
+
+test('uses_names_the_ssh_entry_only_after_the_gate', async () => {
+  const hasUses = (w: GateWorld): boolean => typeof terminalRunAction(w.deps).uses === 'function';
+  assert.ok(hasUses(gateWorld()), 'terminalRunAction declares `uses`');
+  const usesOf = (w: GateWorld): UsedEntry | undefined => terminalRunAction(w.deps).uses?.(w.ctx);
+  const S1: UsedEntry = { accountId: 'acct-1', entityId: 's1', entityName: 'prod box' };
+
+  assert.deepEqual(usesOf(gateWorld()), S1);
+  assert.deepEqual(usesOf(gateWorld({ acct1: [usableSsh('s1', { burnPolicy: 'oneUse' })] })), S1, 'a one-use SSH entry passes the gate too (decision B): it is spent, not refused');
+  assert.equal(usesOf(gateWorld({ terminal: { sshEntityId: undefined }, acct1: [] })), undefined, 'an unlinked entry uses no second entry');
+
+  for (const forward of [true, false]) {
+    for (const { name, options } of refusedStates(forward)) {
+      const w = gateWorld(options);
+      assert.equal(usesOf(w), undefined, `${name}, -A ${String(forward)}: before the gate passes it names nothing`);
+      assert.deepEqual(w.notes, [], `${name}: \`uses\` writes no note`);
+    }
+  }
+
+  const viaUses = gateWorld({ acct1: [closedSsh()] });
+  usesOf(viaUses);
+  const viaValidate = gateWorld({ acct1: [closedSsh()] });
+  terminalRunAction(viaValidate.deps).validate({}, viaValidate.ctx);
+  assert.deepEqual(viaUses.storage.calls, viaValidate.storage.calls, 'no read of S beyond the gate\'s two');
+
+  // The gate's own answer, not the link alone: the stub that read the link alone would answer S for the three states below.
+  for (const options of [{ acct1: [closedSsh()] }, { acct1: [usableSsh('s1', { pinProtected: true })] }, { acct1: [] as TreeNode[], acct2: [usableSsh('s1')] }]) {
+    assert.equal(usesOf(gateWorld(options)), undefined);
+  }
+
+  const exec = (await loadSshActions()).sshExecAction(gateWorld().deps as never);
+  assert.equal(typeof exec.uses, 'undefined', 'no other action declares it');
+});
+
+test('a_linked_run_over_another_ssh_entry_than_the_one_the_broker_holds_is_refused', async () => {
+  const world = (): GateWorld => {
+    const w = gateWorld({ acct1: [usableSsh('s1'), usableSsh('s2')] });
+    w.trust(detailsOf(w, 's1'));
+    w.trust(detailsOf(w, 's2'));
+    return w;
+  };
+  const w = world();
+  const action = terminalRunAction(w.deps);
+  const shown = asBroker(action, w.ctx);
+  detailsOf(w, 'e1').sshEntityId = 's2';
+  assert.equal(action.summarize({}, w.ctx), shown.summary, 'the setup: the two texts ARE equal (same name, host, user, port)');
+
+  const relinked = errorOf(await action.run(shown, {}));
+  assert.equal(relinked.code, 'denied');
+  assert.equal(relinked.message, changedWhileAsking('deploy'));
+  assert.equal(w.overSsh.calls.length, 0, 'it did not run over s2');
+  assert.equal(w.slots.taken, 0);
+
+  const same = world();
+  const sameAction = terminalRunAction(same.deps);
+  const noUses = errorOf(await sameAction.run({ ...asBroker(sameAction, same.ctx), uses: undefined }, {}));
+  assert.equal(noUses.message, changedWhileAsking('deploy'), 'no used entry on the unchanged world');
+  assert.equal(same.overSsh.calls.length, 0);
+
+  const unlinked = gateWorld({ terminal: { sshEntityId: undefined }, acct1: [] });
+  unlinked.trusted.push(commandFingerprint('e1', 'echo linked'));
+  const held = errorOf(await terminalRunAction(unlinked.deps).run({ ...unlinked.ctx, uses: { accountId: 'acct-1', entityId: 's1', entityName: 'prod box' } }, {}));
+  assert.equal(held.message, changedWhileAsking('deploy'), 'the broker holds the turn of an SSH entry that this run does not use any more');
+  assert.equal(unlinked.slots.taken, 0, 'nothing ran locally');
+});
+
+test('a_bridged_gate_refusal_writes_a_journal_line_that_says_what_the_bridge_was_told', async () => {
+  // The spec's literal ending (*the agent was told only that the SSH connection is not open to it*) is false on a bridge, where the agent was told
+  // BRIDGE_NOT_SERVED. Each of the two lines ends with what its agent really read.
+  const closed = gateWorld({ acct1: [closedSsh()] });
+  await runOf(closed)();
+  assert.equal(closed.notes.length, 1);
+  assert.ok(closed.notes[0].endsWith('(the agent was told only that the SSH connection is not open to it)'), closed.notes[0]);
+
+  const bridged = gateWorld();
+  bridged.trust(detailsOf(bridged, 's1'));
+  const error = errorOf(await runOf(bridged)({ bridge: BRIDGE }));
+  assert.equal(error.message, BRIDGE_NOT_SERVED, 'the agent was told the bridge\'s own sentence');
+  assert.equal(bridged.notes.length, 1);
+  assert.ok(bridged.notes[0].endsWith(`(the agent was told: ${BRIDGE_NOT_SERVED})`), bridged.notes[0]);
+  assert.ok(!bridged.notes[0].includes('the SSH connection is not open to it'), 'and not that the SSH connection is closed to it');
 });

@@ -19,7 +19,7 @@ import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
 import { bridgedTokenCall, tokenStatusNow } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
-import { CallSubject, performCall, usedEntryOf } from './brokerCall';
+import { CallSubject, performCall, usedByCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
@@ -528,7 +528,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     const summary = useAction.summarize(body, grant);
-    const uses = usedEntryOf(useAction, grant);
+    const uses = usedByCall(useAction, grant);
     // Read BEFORE the await. A grant a policy settled at the door is already `allowed`, and a call
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
@@ -582,6 +582,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     await this.releaseWaiting(grant);
+    await this.releaseWaiting(call.uses);
     if (this.gone(call, 'before its values were read')) {
       return;
     }
@@ -618,9 +619,9 @@ export class CredsAgentServer implements vscode.Disposable {
     return left || refused !== undefined;
   }
 
-  /** A waiting rotated value goes in FIRST, so the mask table holds the value the action will use (`brokerHooks.ts`). */
-  private releaseWaiting(grant: Grant): Promise<void> {
-    return Promise.resolve(this.hooks.releaseWaiting?.(grant.accountId, grant.entityId)).then(
+  /** A waiting rotated value goes in FIRST, for the grant's entry and the entry the call also uses, so the mask table holds the value the action will use (`brokerHooks.ts`). */
+  private releaseWaiting(entry: { accountId: string; entityId: string } | undefined): Promise<void> {
+    return Promise.resolve(entry === undefined ? undefined : this.hooks.releaseWaiting?.(entry.accountId, entry.entityId)).then(
       () => undefined,
       () => undefined,
     );

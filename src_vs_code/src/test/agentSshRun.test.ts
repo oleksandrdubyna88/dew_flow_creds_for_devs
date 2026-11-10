@@ -6,7 +6,7 @@ import { commandFingerprint } from '../commandTrust';
 import { planLaunch, refusalSaid, sshLinkOf } from '../remoteLaunch';
 import { resolveJumpChain } from '../sshOptions';
 import type { UseActionResult } from '../useActions';
-import { ACCOUNT_1, GateWorld, OK_BODY, detailsOf, gateWorld } from './agentSshWorld';
+import { ACCOUNT_1, GateWorld, OK_BODY, asBroker, detailsOf, gateWorld } from './agentSshWorld';
 import { sshNode } from './sshRoadWorld';
 
 /**
@@ -16,7 +16,11 @@ import { sshNode } from './sshRoadWorld';
 
 const errorOf = (result: UseActionResult): { code: string; message: string } => (result.body as { error: { code: string; message: string } }).error;
 
-const run = (w: GateWorld): Promise<UseActionResult> => terminalRunAction(w.deps).run(w.ctx, {});
+/** What the broker hands `run`: the shown summary and the used entry, read from the real action in one step (spec §12). */
+const run = (w: GateWorld): Promise<UseActionResult> => {
+  const action = terminalRunAction(w.deps);
+  return action.run(asBroker(action, w.ctx), {});
+};
 
 test('a_usable_trusted_linked_entry_runs_the_bare_line_over_ssh', async () => {
   const w = gateWorld();
@@ -70,9 +74,11 @@ test('the_slot_is_released_when_the_ssh_call_throws', async () => {
 test('snapshot_the_ssh_entry_is_read_once', async () => {
   const w = gateWorld();
   w.trust(detailsOf(w, 's1'));
+  const action = terminalRunAction(w.deps);
+  const shown = asBroker(action, w.ctx);
   w.storage.calls.length = 0;
 
-  await run(w);
+  await action.run(shown, {});
 
   assert.equal(w.storage.calls.filter(([account, id]) => account === ACCOUNT_1 && id === 's1').length, 2, 'the two reads the gate makes (linkTo and lookedUp), and none after it');
   assert.equal(w.overSsh.calls.length, 1);

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { BurnStorage, burnedByAgentUse } from '../burnOnUse';
 import { commandFingerprint } from '../commandTrust';
+import { oneUseIn } from '../entityExpiry';
 import { findUsableEntry, switchForAction } from '../mcpEntries';
 import { isLinkTarget, trustLineFor } from '../remoteLaunch';
 import type { AgentUseDeps } from '../agentUseActions';
-import type { OverSsh, OverSshCall, UseActionContext } from '../useActions';
+import type { OverSsh, OverSshCall, UseAction, UseActionContext } from '../useActions';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
 
@@ -49,6 +51,45 @@ assert.equal(findUsableEntry(agentStorage({ 'acct-1': [usableSsh('s1')] }), 's1'
 assert.equal(isLinkTarget(usableSsh('s1'), () => undefined), true, 'usableSsh() is not a link target');
 assert.equal(switchForAction('exec'), 'use');
 assert.equal(switchForAction('run'), 'use');
+
+/**
+ * `agentStorage` that can also DELETE (the third amendment, A1): `deleteNodeRecursive` removes the node, or throws while `failDelete` is set. It is
+ * what `burnOneUseIn` burns an entry through, so a one-use SSH entry really goes (or really stays) in the world of the broker tests.
+ */
+export type OneUseStorage = AgentStorage & BurnStorage & { failDelete: boolean };
+
+export function oneUseStorage(byAccount: Readonly<Record<string, readonly TreeNode[]>>): OneUseStorage {
+  const live: Record<string, TreeNode[]> = Object.fromEntries(Object.entries(byAccount).map(([accountId, nodes]) => [accountId, [...nodes]]));
+  const storage = Object.assign(agentStorage(live), {
+    failDelete: false,
+    deleteNodeRecursive: async (accountId: string, id: string): Promise<string[]> => {
+      if (storage.failDelete) {
+        throw new Error('the vault would not delete it');
+      }
+      const nodes = live[accountId] ?? [];
+      const at = nodes.findIndex((node) => node.id === id);
+      if (at >= 0) {
+        nodes.splice(at, 1);
+      }
+      return [id];
+    },
+  });
+  return storage;
+}
+
+// Load-time proofs: the real predicates see the fixture as the product does, and a one-use SSH entry passes the gate (decision B, not A).
+const ONCE = usableSsh('s1', { burnPolicy: 'oneUse' });
+assert.equal(oneUseIn(oneUseStorage({ 'acct-1': [ONCE] }))('acct-1', 's1'), true, 'a burnPolicy of oneUse is not one-use to the product');
+assert.equal(burnedByAgentUse(ONCE), true, 'the burn would not fire on the fixture');
+assert.equal(findUsableEntry(agentStorage({ 'acct-1': [ONCE] }), 's1', 'exec')?.kind, 'usable', 'a one-use SSH entry must pass the gate');
+
+/**
+ * The context of a run as the BROKER hands it: the shown summary and the used entry, read in ONE step (spec §2.2, §2.3 step 3). Every test world that
+ * calls `run` of a linked entry goes through it, so it runs with what a real call carries, read from the REAL `summarize` and `uses`.
+ */
+export function asBroker(action: UseAction, ctx: UseActionContext): UseActionContext {
+  return { ...ctx, summary: action.summarize({}, ctx), uses: action.uses?.(ctx) };
+}
 
 /** The Terminal entry of every gate test: `LINKED` of the spec. */
 export const LINKED: EntityMetadata = { id: 'e1', name: 'deploy', isSshEnabled: false, isTerminal: true, command: 'echo linked', sshEntityId: 's1' };

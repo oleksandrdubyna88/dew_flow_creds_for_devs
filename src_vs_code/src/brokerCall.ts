@@ -92,7 +92,7 @@ export async function performCall(deps: CallDeps, call: CallSubject): Promise<vo
  * The entry this call ALSO uses, asked once per call in the same synchronous step as `summarize` (spec §2.2): the action's own answer, or nothing for an
  * action that declares none. A function here, and not an optional call in the server's `perform`, which has no complexity left.
  */
-export function usedEntryOf(action: UseAction, target: CallTarget): UsedEntry | undefined {
+export function usedByCall(action: UseAction, target: CallTarget): UsedEntry | undefined {
   return action.uses?.(target);
 }
 

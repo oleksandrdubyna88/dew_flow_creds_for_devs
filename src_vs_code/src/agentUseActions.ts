@@ -9,7 +9,7 @@ import {
   errorBody,
   statusForErrorCode,
 } from './brokerProtocol';
-import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
+import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards } from './useActions';
 import type { BridgeContext } from './bridgeContext';
 import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
 import { UsableEntry, UsableFound, accountOnly, findUsableEntry } from './mcpEntries';
@@ -202,9 +202,13 @@ export function changedWhileAsking(name: string): string {
   return `"${name}" or its SSH connection changed while the question was open, so nothing ran. Ask again: the next question shows the new target.`;
 }
 
-/** The journal's line for a gate refusal: the real reason, which the agent is not told (spec §4). */
-export function journalLine(name: string, why: string): string {
-  return `creds_run — "${name}": ${why} (the agent was told only that the SSH connection is not open to it)`;
+/**
+ * The journal's line for a gate refusal: the real reason, which the agent is not told (spec §4). The ending says what the agent WAS told: on a bridge
+ * it read the bridge's own sentence, and the spec's literal ending (that the SSH connection is not open to it) would be false there.
+ */
+export function journalLine(name: string, why: string, bridged = false): string {
+  const told = bridged ? `the agent was told: ${BRIDGE_NOT_SERVED}` : 'the agent was told only that the SSH connection is not open to it';
+  return `creds_run — "${name}": ${why} (${told})`;
 }
 
 const LOCAL_SUMMARY = 'the stored command, as its Run button would type it';
@@ -309,15 +313,34 @@ function validateTarget(deps: AgentUseDeps, target: CallTarget): ReturnType<UseA
   return { ok: false, code: gate.code, message: gate.message };
 }
 
-/** Whether what the person was shown differs from what would run now (spec §2.3 step 3). A call that carries no summary is not compared. */
+/**
+ * The entry this call ALSO uses, for the broker (`UseAction.uses`, spec §2.5): the SSH entry, and only when the gate answers `linked`. Asks the gate first and
+ * writes no note, so before the gate passes it tells the broker, and through it nobody, anything about the SSH entry. Called in the step of `summarize`.
+ */
+function usedEntryOf(deps: AgentUseDeps, target: CallTarget): UsedEntry | undefined {
+  const gate = linkedCall(deps, target, undefined);
+  return gate.kind === 'linked' ? { accountId: target.accountId, entityId: gate.link.ssh.id, entityName: gate.link.sshName } : undefined;
+}
+
+/** A LINKED run needs BOTH what the person was shown and the entry the broker holds: an absent summary or an absent `ctx.uses` is not equal, so it refuses (spec §2.3 step 3, A4). */
+function linkedChanged(deps: AgentUseDeps, ctx: UseActionContext, gate: Extract<LinkedCall, { kind: 'linked' }>, entity: EntityMetadata): boolean {
+  return ctx.summary !== linkedSummary(deps, gate, entity, ctx.accountId) || ctx.uses?.entityId !== gate.link.ssh.id;
+}
+
+/** A LOCAL run uses no second entry: a `ctx.uses` means the broker holds the turn of an SSH entry this run does not use any more, and refuses. An absent summary is not compared (the trust check of `runHere` holds the line). */
+function localChanged(ctx: UseActionContext): boolean {
+  return (ctx.summary !== undefined && ctx.summary !== LOCAL_SUMMARY) || ctx.uses !== undefined;
+}
+
+/** Whether what the person was shown, or the entry the broker holds, differs from what would run now (spec §2.3 step 3, in two parts). */
 function changedSince(deps: AgentUseDeps, ctx: UseActionContext, gate: LinkedCall, entity: EntityMetadata): boolean {
-  return ctx.summary !== undefined && ctx.summary !== linkedSummary(deps, gate, entity, ctx.accountId);
+  return gate.kind === 'linked' ? linkedChanged(deps, ctx, gate, entity) : localChanged(ctx);
 }
 
 /** The refusals before anything runs: the gate's own (journalled with the real reason), then the compare. */
 function gateRefusal(deps: AgentUseDeps, ctx: UseActionContext, gate: LinkedCall, entity: EntityMetadata): UseActionResult | undefined {
   if (gate.kind === 'refused') {
-    deps.note(journalLine(ctx.entityName, gate.why));
+    deps.note(journalLine(ctx.entityName, gate.why, ctx.bridge !== undefined));
     return fail(gate.code, gate.message);
   }
   return changedSince(deps, ctx, gate, entity) ? fail('denied', changedWhileAsking(ctx.entityName)) : undefined;
@@ -425,6 +448,10 @@ async function runEntity(deps: AgentUseDeps & { onPath?: (exe: string) => boolea
  * <p>A Terminal entry linked to an SSH entry runs on that host instead, and only when the SSH entry is itself open to
  * this agent (the gate, `linkedCall`): see the block above and the E3.S2 security spec. A linked entry never reaches the
  * local shell.</p>
+ *
+ * <p>A linked run is an agent's USE of the SSH entry: `uses` names it to the broker, which takes its one-use turn, releases a waiting
+ * rotated value of it before the mask table is read, and burns it after a 200, as for `creds_exec` on it. The run then needs the entry the broker
+ * holds (`ctx.uses`) as well as the summary the dialog showed (spec §2.5, §2.3 step 3).</p>
  */
 export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }): UseAction {
   return {
@@ -437,6 +464,7 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
     describeOutcome: execOutcome,
     validate: (_body, target) => validateTarget(deps, target),
     summarize: (_body, target) => summaryFor(deps, target),
+    uses: (target) => usedEntryOf(deps, target),
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       return entity === undefined ? fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`) : runEntity(deps, ctx, entity);

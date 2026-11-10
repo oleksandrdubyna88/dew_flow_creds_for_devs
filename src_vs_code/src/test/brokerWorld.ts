@@ -170,6 +170,11 @@ function world(options: {
   storageDir?: string;
   /** Whether the entry is marked "until an agent uses it once" — the broker then queues calls. */
   oneUse?: boolean;
+  /**
+   * The window's own one-use predicate and burn, over a real storage (`oneUseIn`, `burnOneUseIn`): read by `hooksFor` in place of the two stubs (`oneUse`,
+   * `burns`) when it is given. Its own option because `hooks` cannot carry them — the shaped collaborators overwrite it (E3.4 F-S2, spec §11).
+   */
+  vault?: { isOneUse: (accountId: string, entityId: string) => boolean; burnAfterUse: (accountId: string, entityId: string) => Promise<boolean> };
   /** `credSshManager.agentGrantMaxCalls`. Absent leaves the real default, which is no cap. */
   maxCalls?: number;
   /** Whether this window can move entries to the Trash. Absent means it cannot. */
@@ -333,8 +338,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     ...(options.hooks ?? {}),
     storageDir: options.storageDir,
     maskEntriesFor: maskerFor(w, options),
-    burnAfterUse: burnerFor(w, options.burns),
-    isOneUse: oneUseFor(w, options.oneUse),
+    ...vaultHooks(w, options),
     resolveAlias: aliasResolverFor(options.alias, options.aliasMap),
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
@@ -347,6 +351,11 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
       return options.mcpRemember?.(accountId, entityId, rungs, serverEntityId) ?? Promise.resolve();
     },
   };
+}
+
+/** The one-use predicate and the burn: the window's own over a real storage when a test gives `vault`, else the two scripted stubs (`oneUse`, `burns`). */
+function vaultHooks(w: World, options: Parameters<typeof world>[0]): { burnAfterUse: ((a: string, entityId: string) => Promise<boolean>) | undefined; isOneUse: ((a: string, entityId: string) => boolean) | undefined } {
+  return options.vault ?? { burnAfterUse: burnerFor(w, options.burns), isOneUse: oneUseFor(w, options.oneUse) };
 }
 
 /* The broker's three optional collaborators, each absent unless a test asks for it — which is
