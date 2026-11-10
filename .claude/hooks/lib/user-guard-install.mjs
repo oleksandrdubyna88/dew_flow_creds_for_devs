@@ -240,7 +240,7 @@ export function repairRegistration({ home, beforeWrite = () => {} }) {
   if (original !== null && original.equals(Buffer.from(merged))) return result(0, ['already registered']);
   const lines = original === null ? [] : [`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`];
   beforeWrite();
-  if (!sameBytes(readOrNull(t.settings), original)) return result(1, [...lines, CHANGED]);
+  if (changedUnderUs(t, original, target)) return result(1, [...lines, CHANGED]);
   writeSettings(target.file, merged);
   return result(0, [...lines, `wrote ${t.settings} (hooks.PreToolUse: ${MATCHER})`]);
 }
@@ -295,7 +295,7 @@ export function install({ home, source, beforeWrite = () => {}, clearOptout = fa
   const lines = [...dropOptout(t, clearOptout)];
   if (original !== null) lines.push(`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`);
   beforeWrite();
-  if (!sameBytes(readOrNull(t.settings), original)) return result(1, [...lines, CHANGED]);
+  if (changedUnderUs(t, original, target)) return result(1, [...lines, CHANGED]);
   // Every refusal is above, so a refused install never writes the hook, the manifest or settings.json (the backup and
   // the opt-out removal above are older behaviour). Order: the manifest (naming the bytes it replaces), the hook, then
   // the registration. A stop after the manifest leaves the old bytes, which its `previous` vouches for; a stop after the
@@ -325,7 +325,7 @@ export function uninstall({ home, beforeWrite = () => {} }) {
     if (target.refusal) return result(1, [target.refusal]);
     lines.push(`backup ${writeBackup(t.settings, original, modeOf(t.settings))}`);
     beforeWrite();
-    if (!sameBytes(readOrNull(t.settings), original)) return result(1, [CHANGED]);
+    if (changedUnderUs(t, original, target)) return result(1, [CHANGED]);
     writeSettings(target.file, serialise(removeEntry(parsed.settings, t.hook)));
     lines.push(`removed the hook entry from ${t.settings}`);
   }
@@ -414,6 +414,15 @@ function writeSettings(file, data) {
   writeAtomic(file, data, modeOf(file));
 }
 
+/**
+ * True when settings.json changed between the read and the write: its bytes, or WHICH file it is — a link pointed at
+ * another file with the same bytes passed the byte check, and the write went to the old file (CodeRabbit on coai
+ * #970, 2026-11-10).
+ */
+function changedUnderUs(t, original, target) {
+  return !sameBytes(readOrNull(t.settings), original) || settingsFileOf(t.settings).file !== target.file;
+}
+
 /** How many links a settings path may pass through before it is called a loop (the kernel's own ELOOP limit). */
 const MAX_LINKS = 40;
 
@@ -431,25 +440,76 @@ function settingsFileOf(settingsPath) {
   if (last === TOO_MANY_LINKS) {
     return { refusal: `${settingsPath} has more than ${MAX_LINKS} links (a loop, or a chain too long to open); nothing changed — point it at one file` };
   }
+  if (last === MISSING_FOLDER) {
+    return { refusal: `${settingsPath} is a link whose target goes through a folder that does not exist and then ".."; nothing changed — point it at one file` };
+  }
   return { file: last ?? settingsPath };
 }
 
 /** What `lastLinkTarget` answers when the chain does not end within `MAX_LINKS`. */
 const TOO_MANY_LINKS = Symbol('too many links');
 
+/** What `physicalTarget` answers for a `..` after a missing folder: the kernel fails there, so nothing is written. */
+const MISSING_FOLDER = Symbol('missing folder');
+
 /**
  * The missing file a chain of links ends in, each hop read from its own folder; null when the path is no link;
- * `TOO_MANY_LINKS` past the limit. At most `MAX_LINKS` links are followed, as the kernel follows them.
+ * `TOO_MANY_LINKS` past the limit; `MISSING_FOLDER` when a hop's target takes `..` after a folder that does not exist.
+ * At most `MAX_LINKS` links are followed, as the kernel follows them.
  */
 function lastLinkTarget(settingsPath) {
   let current = settingsPath;
   for (let hop = 0; hop <= MAX_LINKS; hop += 1) {
     const stat = lstatOrNull(current);
     if (stat === null || !stat.isSymbolicLink()) return hop === 0 ? null : current;
-    current = path.resolve(path.dirname(current), fs.readlinkSync(current));
+    // From the link's REAL folder: a textual `..` after a symlinked parent names the wrong folder (CodeRabbit on creds
+    // #340, 2026-11-10). The link exists, so its folder does too.
+    current = physicalTarget(fs.realpathSync(path.dirname(current)), fs.readlinkSync(current));
+    if (current === MISSING_FOLDER) return MISSING_FOLDER;
   }
   return TOO_MANY_LINKS;
 }
+
+/**
+ * Where a link's `target` points, from the link's real folder, the way the kernel walks it: one component at a time,
+ * each folder made real before the next `..` is taken. `path.resolve` collapses `jump/..` as text, so with `jump` a
+ * link to another folder it named a file beside the link instead of beside jump's real place (CodeRabbit on creds
+ * #343, 2026-11-10). The root of an absolute target comes from `path.parse`, and `..` never goes above it. The last
+ * component is joined and not made real: a link there is the next hop of `lastLinkTarget`. A folder that does not
+ * exist is joined as text, since the write creates it; a `..` after one is `MISSING_FOLDER`: the kernel fails there,
+ * and a lexical answer past it could name an existing file. Other errors (a loop, no permission) are thrown, as the
+ * installer's other file operations throw them.
+ */
+function physicalTarget(realFolder, target) {
+  const root = path.parse(target).root;
+  const separators = process.platform === 'win32' ? /[\\/]+/ : /\/+/;
+  const parts = target.slice(root.length).split(separators).filter(part => part !== '' && part !== '.');
+  const leaf = parts.pop();
+  let current = root === '' ? realFolder : fs.realpathSync(root);
+  let missing = false;
+  for (const part of [...parts, ...(leaf === '..' ? ['..'] : [])]) {
+    if (part === '..') {
+      if (missing) return MISSING_FOLDER;
+      current = path.dirname(current);
+      continue;
+    }
+    const next = path.join(current, part);
+    const real = missing ? null : realOrNull(next);
+    missing = real === null;
+    current = real ?? next;
+  }
+  return leaf === undefined || leaf === '..' ? current : path.join(current, leaf);
+}
+
+/** The real path of `file`, or null when it or a folder above it does not exist. */
+const realOrNull = file => {
+  try {
+    return fs.realpathSync(file);
+  } catch (e) {
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
+    throw e;
+  }
+};
 
 const lstatOrNull = file => {
   try {
