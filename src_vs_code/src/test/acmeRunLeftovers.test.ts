@@ -285,7 +285,7 @@ function makeTree(text: string): { dir: string; script: string; tmp: string; stu
   const script = put(RUN, text, 0o755);
   put(COMPOSE, REAL_COMPOSE, 0o644);
   put('.github/scripts/lib/owned.sh', OWNED_SH, 0o644);
-  put('.claude/rules/shared/tools/janitor.sh', JANITOR, 0o644);
+  put('.agents/conventions/tools/janitor.sh', JANITOR, 0o644);
   for (const [name, body] of Object.entries({ docker: DOCKER, curl: CURL, openssl: OPENSSL, sleep: SLEEP })) put(`bin/${name}`, body, 0o755);
   fs.mkdirSync(path.join(dir, 'tmp'));
   return { dir, script, tmp: path.join(dir, 'tmp'), stub: path.dirname(put('stub/seen', '', 0o644)), calls: put('calls', '', 0o644) };
@@ -666,7 +666,7 @@ async function loadGuard(): Promise<GuardModule | string> {
   try {
     module.loadYaml(undefined);
   } catch {
-    return 'the mounted guard cannot load its yaml module (run npm ci in .claude/rules/shared)';
+    return 'the mounted guard cannot load its yaml module (run npm ci in .agents/conventions)';
   }
   return module;
 }

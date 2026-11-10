@@ -24,8 +24,8 @@ set -o pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 T_OWNED="${T_OWNED_SH:-$here/owned.sh}"
-janitor="$repo/.claude/rules/shared/tools/janitor.sh"
-mount_lib="$repo/.claude/rules/shared/tools/lib"
+janitor="$repo/.agents/conventions/tools/janitor.sh"
+mount_lib="$repo/.agents/conventions/tools/lib"
 
 # T21: say which bash this leg runs. On macOS it must be /bin/bash 3.2, not Homebrew's bash 5.
 echo "bash: $BASH_VERSION"

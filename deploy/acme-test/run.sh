@@ -116,10 +116,10 @@ echo "-- 0. what a killed run left -----------------------------------"
 # The shared janitor collects the project, its volumes and the folder of a run that was killed more
 # than 10 minutes ago, and never touches a live run's. It is never a reason to stop this run.
 rc=0
-JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token creds || rc=$?
+JANITOR_MIN_AGE_MINUTES=10 bash ../../.agents/conventions/tools/janitor.sh --token creds || rc=$?
 case "$rc" in
   0 | 3) ;;
-  127) echo "janitor: exit code 127 — the shared rules are not mounted: git submodule update --init .claude/rules/shared (the run goes on)" ;;
+  127) echo "janitor: exit code 127 — the shared rules are not mounted: git submodule update --init .agents/conventions (the run goes on)" ;;
   *) echo "janitor: exit code $rc (the run goes on)" ;;
 esac
 
