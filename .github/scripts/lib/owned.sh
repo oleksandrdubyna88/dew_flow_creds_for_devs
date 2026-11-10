@@ -446,6 +446,10 @@ owned_cleanup() {
       created)
         if owned_holds "${OWNED_PATHS[$i]}.owner" "${OWNED_TEXTS[$i]}"; then
           owned_remove_at "$i"
+        elif [ ! -e "${OWNED_PATHS[$i]}" ] && [ ! -L "${OWNED_PATHS[$i]}" ] && [ ! -e "${OWNED_PATHS[$i]}.owner" ] && [ ! -L "${OWNED_PATHS[$i]}.owner" ]; then
+          # Claim and folder are both gone: an earlier owned_cleanup ended this entry (a caller's own function runs in a subshell, so
+          # its release is lost to this shell). Nothing is left and nothing is wrong.
+          OWNED_STATES[i]="released"
         else
           owned_say "the claim of ${OWNED_PATHS[$i]} is not what this run wrote - the folder is left"
           OWNED_STATES[i]="released"
