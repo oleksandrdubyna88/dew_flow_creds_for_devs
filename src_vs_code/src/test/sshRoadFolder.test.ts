@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
 import { CHANGED_ROW, FolderFacts, planFolderRun, refusedRowReason, sshStopped } from '../folderRun';
-import { RemotePlan, planLaunch, shownTrustLine, sshLinkOf, trustLineFor, typedLine } from '../remoteLaunch';
+import { RemotePlan, planLaunch, shownTrustLine, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from '../remoteLaunch';
 import { USES_CONFIG } from '../vpnLauncher';
 import type { EntityMetadata, TreeNode } from '../types';
-import { FOLDER, FolderWorld, FolderWorldOptions, L, T, choose, clickAndWait, everyText, folderModals, folderWorld, held, named, session, step } from './folderWorld';
+import { FOLDER, FolderWorld, FolderWorldOptions, L, T, choose, clickAndWait, everyText, folderModals, folderWorld, held, named, needing, session, step } from './folderWorld';
 import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -136,6 +136,20 @@ test('linked_rows_are_prepared_in_row_order_after_the_modal_and_the_chain_and_be
   assert.deepEqual(s.sentAtPrepare, [[], []], 'nothing was typed when a row was prepared');
   assert.equal(sentOf(s.w, 'b').length, 1);
   assert.equal(sentOf(s.w, 'c').length, 1);
+});
+
+// F2b: the folder's own chain runs a linked step too, not only the clicked entry's chain (E2.S3 for Run All in Folder).
+test('a_dependency_step_linked_to_ssh_runs_over_ssh_in_the_folders_chain', async () => {
+  const dep = { ...step('dep', 'migrate'), sshEntityId: 's1' };
+  const ssh = S1.details as EntityMetadata;
+  const s = setup([needing('a', 'dep')], { outside: [dep], trusted: [['dep', trustLineFor(ssh, undefined, 'migrate')]] });
+  await s.w.click();
+  assert.ok(!everyText(s.w).includes(sshLinkRefusal(dep) ?? ''), `E1's refusal was shown: ${everyText(s.w)}`);
+  assert.equal(s.road.calls.length, 1, 'the step is prepared over s1');
+  const executed = s.w.terminals.flatMap((t) => t.executed);
+  assert.equal(executed.length, 1, 'the step ran');
+  assert.ok(!executed[0].includes('eval'), 'the bare line');
+  assert.deepEqual(sentOf(s.w, 'a'), [L('a')], 'the row is typed after the step');
 });
 
 // ---- a refused row, a stopped row -----------------------------------------------------------------------------

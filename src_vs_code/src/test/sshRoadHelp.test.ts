@@ -70,11 +70,11 @@ const CHAIN_BULLET: Record<HelpLanguage, string> = {
 };
 
 const CHAIN_SENTENCES: Record<HelpLanguage, string> = {
-  en: ' A step set to run over SSH runs there and ends there, so the chain sees its exit code; its connection is made, and its PIN or host key asked, before the chain is shown. A step whose SSH entry signs in with a password is refused, because the chain\'s one terminal has one environment.',
-  de: ' Ein Schritt, der über SSH laufen soll, läuft dort und endet dort, die Kette sieht also seinen Exit-Code; seine Verbindung wird vorbereitet und seine PIN oder sein Host-Schlüssel erfragt, bevor die Kette gezeigt wird. Ein Schritt, dessen SSH-Eintrag sich mit einem Passwort anmeldet, wird abgelehnt, denn das eine Terminal der Kette hat eine Umgebung.',
-  es: ' Un paso que se ejecuta por SSH se ejecuta allí y termina allí, así que la cadena ve su código de salida; su conexión se prepara, y se pregunta su PIN o su clave de host, antes de mostrar la cadena. Un paso cuya entrada SSH inicia sesión con una contraseña se rechaza, porque el único terminal de la cadena tiene un único entorno.',
-  ru: ' Шаг, который выполняется через SSH, выполняется там и там же завершается, поэтому цепочка видит его код выхода; его подключение готовится, а PIN или ключ хоста спрашиваются до того, как цепочка показана. Шаг, чья запись SSH входит по паролю, отклоняется, потому что у единственного терминала цепочки одно окружение.',
-  uk: " Крок, що виконується через SSH, виконується там і там же завершується, тож ланцюжок бачить його код виходу; його з'єднання готується, а PIN або ключ хоста запитуються до того, як ланцюжок показано. Крок, чий запис SSH входить за паролем, відхиляється, бо єдиний термінал ланцюжка має одне оточення.",
+  en: ' A step set to run over SSH runs there and ends there, so the chain sees its exit code; its connection is made, and its PIN or host key asked, after you approve the chain and before any step runs. A step whose SSH entry signs in with a password is refused, because the chain\'s one terminal has one environment.',
+  de: ' Ein Schritt, der über SSH laufen soll, läuft dort und endet dort, die Kette sieht also seinen Exit-Code; seine Verbindung wird vorbereitet und seine PIN oder sein Host-Schlüssel erfragt, nachdem Sie die Kette bestätigt haben und bevor ein Schritt läuft. Ein Schritt, dessen SSH-Eintrag sich mit einem Passwort anmeldet, wird abgelehnt, denn das eine Terminal der Kette hat eine Umgebung.',
+  es: ' Un paso que se ejecuta por SSH se ejecuta allí y termina allí, así que la cadena ve su código de salida; su conexión se prepara, y se pregunta su PIN o su clave de host, después de que usted apruebe la cadena y antes de que se ejecute cualquier paso. Un paso cuya entrada SSH inicia sesión con una contraseña se rechaza, porque el único terminal de la cadena tiene un único entorno.',
+  ru: ' Шаг, который выполняется через SSH, выполняется там и там же завершается, поэтому цепочка видит его код выхода; его подключение готовится, а PIN или ключ хоста спрашиваются после того, как вы одобрите цепочку, и до запуска любого шага. Шаг, чья запись SSH входит по паролю, отклоняется, потому что у единственного терминала цепочки одно окружение.',
+  uk: " Крок, що виконується через SSH, виконується там і там же завершується, тож ланцюжок бачить його код виходу; його з'єднання готується, а PIN або ключ хоста запитуються після того, як ви схвалите ланцюжок, і до запуску будь-якого кроку. Крок, чий запис SSH входить за паролем, відхиляється, бо єдиний термінал ланцюжка має одне оточення.",
 };
 
 test('every_language_says_a_dependency_chain_runs_a_step_over_ssh', () => {
@@ -87,7 +87,7 @@ test('every_language_says_a_dependency_chain_runs_a_step_over_ssh', () => {
 
 test('the_english_chain_sentences_name_what_the_person_sees', () => {
   const body = whole('en');
-  for (const needle of ['runs there and ends there', 'its PIN or host key asked, before the chain is shown', 'signs in with a password is refused']) {
+  for (const needle of ['runs there and ends there', 'its PIN or host key asked, after you approve the chain and before any step runs', 'signs in with a password is refused']) {
     assert.ok(body.includes(needle), needle);
   }
 });

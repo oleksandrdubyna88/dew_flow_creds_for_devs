@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { asElement } from '../commandTargets';
 import { isCommandTrusted } from '../commandTrust';
-import { dependencyRequest, runDependenciesFirst, trustAll } from '../dependencyRunHost';
+import { dependencyRequest, runDependenciesFirst, trustAll, withSshSteps } from '../dependencyRunHost';
 import { describeError } from '../describeError';
 import {
   CHANGED_ROW,
@@ -74,17 +74,17 @@ interface Folder {
 /** A linked row after preparation: ready to type (its typed line from the prepared snapshot), or why it is not typed. */
 type LinkedState = { readonly kind: 'ready'; readonly ready: ReadySsh; readonly typed: string } | { readonly kind: 'failed'; readonly reason: string };
 
-/**
- * What the run prepared: each linked row's state by row id, and the sessions the run still OWNS. A session joins `owned`
- * the moment `prepare` answers it and leaves when its row is handed to a terminal; the run's `finally` cleans what is left.
- * Made before the first `prepare`, so a throw in a later one still finds the earlier sessions here (lead amendment A4).
- */
 /** A linked row and its plan: what `checkedRow` compares the prepared snapshot with. */
 interface Planned {
   readonly row: LineRow;
   readonly remote: RemotePlan;
 }
 
+/**
+ * What the run prepared: each linked row's state by row id, and the sessions the run still OWNS. A session joins `owned`
+ * the moment `prepare` answers it and leaves when its row is handed to a terminal; the run's `finally` cleans what is left.
+ * Made before the first `prepare`, so a throw in a later one still finds the earlier sessions here (lead amendment A4).
+ */
 interface Prepared {
   readonly rows: Map<string, LinkedState>;
   readonly owned: Set<ReadySsh>;
@@ -194,7 +194,7 @@ async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan
   const { closing } = chosen;
   const lines = linesToType(plan, closing);
   await trustAll(trust, lines);
-  const request = dependencyRequest(host.storage, folder.accountId, lines.map((row) => row.details), folder.name, trust, plan.directIds);
+  const request = withSshSteps(dependencyRequest(host.storage, folder.accountId, lines.map((row) => row.details), folder.name, trust, plan.directIds), host.sshRoad, folder.accountId, host.storage);
   const chain = await runDependenciesFirst({ ...request, ownerIsFolder: true });
   if (chain.ready) {
     await prepareAndType(host, folder, plan, chosen);

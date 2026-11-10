@@ -404,9 +404,9 @@ export function refusedRowReason(sshName: string): string {
 /** A linked row whose trust line, rebuilt from the prepared snapshot, is not the one the modal showed. */
 export const CHANGED_ROW = 'its SSH connection changed while the dialog was open — run the folder again';
 
-/** A question for an SSH connection was cancelled: the WHOLE run stops. */
+/** An SSH connection could not be prepared (a question was cancelled, or SSH Connect said why): the WHOLE run stops. */
 export function sshStopped(folderName: string): string {
-  return `Nothing was typed in "${shown(folderName)}" and no entry's terminal was closed: a question for an SSH connection was cancelled.`;
+  return `Nothing was typed in "${shown(folderName)}" and no entry's terminal was closed: an SSH connection could not be prepared (a question was cancelled, or SSH Connect said why).`;
 }
 
 export function chainStopped(folderName: string): string {

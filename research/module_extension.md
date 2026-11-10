@@ -2413,7 +2413,7 @@ control-character and line-break refusals and `{config}`, and is NOT asked `fact
 modal, the trust and the chain, `prepareLinked` prepares each linked row IN ROW ORDER, one after another and before the synchronous `typeAll`: the SSH entry is
 read again, `SshRoad.prepare` answers, and the trust line rebuilt from the prepared snapshot must be the one the modal showed, or the row fails with
 `CHANGED_ROW` (its SSH entry or jump host changed while the dialog was open — run the folder again); a refused preparation fails that row alone
-(`refusedRowReason`), no modal per row. A `stopped` row (the person cancelled a PIN or host-key question) stops the WHOLE run: no further `prepare`, nothing typed,
+(`refusedRowReason`), no modal per row. A `stopped` row (an SSH connection could not be prepared: a question was cancelled, or SSH Connect said why) stops the WHOLE run: no further `prepare`, nothing typed,
 linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared: the `Prepared` list is made before the first `prepare`, and `prepareAndType`'s
 `finally` (`cleanUnsent`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
 with the session's own environment for a password, D10) leaves the list and that terminal's close cleans it (`cleanWhenClosed`).

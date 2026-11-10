@@ -266,7 +266,7 @@ dependencies run in order, each one awaited — "install openvpn", then "start o
 VPN. You read the chain before its first run; a step that fails asks whether to go on; a circular
 chain is refused. Waiting for a step needs VS Code **1.93** or newer. A step set to run over SSH runs there
 and ends there, so the chain sees its exit code; its connection is made, and its PIN or host key asked,
-before the chain is shown. A step whose SSH entry signs in with a password is refused, because the chain's
+after you approve the chain and before any step runs. A step whose SSH entry signs in with a password is refused, because the chain's
 one terminal has one environment.
 
 **`{name}` in the command or an enabled argument row is the entry's own name**, so
