@@ -18,6 +18,16 @@ import type { EntityMetadata } from './types';
 /** What a call is aimed at, as a grant names it: enough to read the live entity. */
 export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
 
+/**
+ * Another entry whose credential a call uses, beside the one its grant names: the SSH entry of a linked Terminal entry (E3.4, spec §2.5). The
+ * action names it to the broker (`UseAction.uses`), and the broker gives it what it gives the grant's entry.
+ */
+export interface UsedEntry {
+  readonly accountId: string;
+  readonly entityId: string;
+  readonly entityName: string;
+}
+
 /** Whether an action may prompt after the Allow: always, never, or by the call's target. */
 export type FollowUp = boolean | ((target: CallTarget) => boolean);
 
@@ -70,6 +80,11 @@ export interface UseActionContext {
    * (E3.S2 security spec §2.3 step 3, §5). INTERNAL: no contract names it.
    */
   readonly summary?: string;
+  /**
+   * What `UseAction.uses` answered for this call; the broker holds this entry's one-use turn. Set by the broker (`brokerCall.ts`), in the same step
+   * as `summary`; read by the linked run, which compares it with the SSH entry the gate answers now (spec §2.3 step 3). INTERNAL: no contract names it.
+   */
+  readonly uses?: UsedEntry;
 }
 
 /**
@@ -179,6 +194,13 @@ export interface UseAction {
   validate(body: unknown, target: CallTarget): { ok: true } | { ok: false; message: string; code?: ErrorCode };
   /** One line for the first-use consent dialog (e.g. the command about to run). `target` is required for the same reason as `validate`'s. */
   summarize(body: unknown, target: CallTarget): string;
+  /**
+   * The entry this call ALSO uses, or nothing. The broker asks once per call, in the same synchronous step as `summarize`, and then gives that
+   * entry what it gives the grant's entry: a waiting rotated value goes in before the mask table is read, its one-use turn is taken, and a
+   * one-use entry is burned after a call that answered 200 (spec §2.5). An action that answers must ask its gate first. OPTIONAL by decision: a
+   * required method would make every shipped action state today whether it uses a second entry (spec §2.5).
+   */
+  uses?(target: CallTarget): UsedEntry | undefined;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */
   describeOutcome(result: UseActionResult): string;
   /** Perform the action. Called only after validation and consent. */

@@ -9,7 +9,7 @@ import { commandFingerprint } from '../commandTrust';
 import { switchForAction } from '../mcpEntries';
 import { planLaunch, refusalSaid, sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
 import { asksAfter } from '../useActions';
-import type { UseActionContext, UseActionResult } from '../useActions';
+import type { UseActionContext, UseActionResult, UsedEntry } from '../useActions';
 import { MaskSourceUnavailable, maskEntriesWithLink } from '../maskEntries';
 import type { LinkedSecretSource } from '../maskEntries';
 import { stored } from '../storedSecret';
@@ -29,10 +29,17 @@ after(() => scope.close());
  * Each test is named for the guarantee; each was watched RED first, and the commit that builds the guarantee says what the failure read.
  */
 
-/** An action of the real shape that records what the broker handed it: the target `validate` and `summarize` got, and `ctx.summary` in `run`. */
-function recordingAction() {
-  const seen = { validated: [] as unknown[], summarized: [] as unknown[], ranWith: [] as (string | undefined)[], texts: [] as string[] };
+/** What the stub of G17 says it also uses (the third amendment, A1). */
+const USED: UsedEntry = { accountId: 'a1', entityId: 'e2', entityName: 'other' };
+
+/**
+ * An action of the real shape that records what the broker handed it: the target `validate` and `summarize` got, `ctx.summary` and `ctx.uses`
+ * in `run`, and how often `uses` was asked. `declaresUses` gives it the optional method.
+ */
+function recordingAction(declaresUses = false) {
+  const seen = { validated: [] as unknown[], summarized: [] as unknown[], ranWith: [] as (string | undefined)[], ranUses: [] as unknown[], usesAsked: [] as unknown[], texts: [] as string[] };
   const action = {
+    ...(declaresUses ? { uses: (target: unknown): UsedEntry => (seen.usesAsked.push(target), USED) } : {}),
     kind: 'ssh',
     action: 'exec',
     mutatesSecrets: false,
@@ -48,8 +55,9 @@ function recordingAction() {
       seen.summarized.push(target);
       return text;
     },
-    run: async (ctx: { summary?: string }): Promise<unknown> => {
+    run: async (ctx: { summary?: string; uses?: unknown }): Promise<unknown> => {
       seen.ranWith.push(ctx.summary);
+      seen.ranUses.push(ctx.uses);
       return { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } };
     },
   };
@@ -68,6 +76,7 @@ test('the_broker_hands_run_the_summary_it_showed', async () => {
     assert.equal(w.dialogs.length, 1, 'the dialog was shown');
     assert.ok(w.dialogs[0].includes(asked.seen.texts[0]), `the dialog shows the summary: ${w.dialogs[0]}`);
     assert.deepEqual(asked.seen.ranWith, [asked.seen.texts[0]], 'run got the summary the dialog showed');
+    assert.deepEqual(asked.seen.ranUses, [undefined], 'an action that declares no `uses` is handed none');
     assert.equal((asked.seen.summarized[0] as { entityName?: string }).entityName, 'prod', 'summarize got the grant');
     assert.equal((asked.seen.validated[0] as { entityId?: string }).entityId, 'e1', 'validate got the grant');
   } finally {
@@ -83,6 +92,34 @@ test('the_broker_hands_run_the_summary_it_showed', async () => {
     assert.equal(q.dialogs.length, 0, 'no dialog was shown');
     assert.deepEqual(quiet.seen.ranWith, [quiet.seen.texts[0]], 'a quiet call hands run its summary too');
     assert.notEqual(quiet.seen.ranWith[0], undefined);
+  } finally {
+    q.server.dispose();
+  }
+});
+
+test('the_broker_hands_run_the_used_entry_the_action_named_once_per_call_on_both_doors', async () => {
+  // Third amendment, A1 and A4 (G17 extended): `uses` is asked ONCE per call, in the step of `summarize`, and `run` is handed the answer as `ctx.uses`.
+  const asked = recordingAction(true);
+  const w = world({ realActions: { exec: asked.action }, answers: ['Allow'] });
+  try {
+    const { port, secret } = await share(w);
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.deepEqual(asked.seen.ranUses, [USED], 'the token door hands run what `uses` answered');
+    assert.equal(asked.seen.usesAsked.length, 1, '`uses` was asked once');
+    assert.equal((asked.seen.usesAsked[0] as { entityId?: string }).entityId, 'e1', 'with the grant as its target');
+  } finally {
+    w.server.dispose();
+  }
+
+  const quiet = recordingAction(true);
+  const q = world({ realActions: { exec: quiet.action }, mcpUse: 'usable', mcpPreConsented: true });
+  try {
+    const { port } = await share(q);
+    const answer = await call(port, '/v1/mcp/use/exec', { body: { entry: 'e1', command: 'uptime' } });
+    assert.equal(answer.status, 200, JSON.stringify(answer.body));
+    assert.deepEqual(quiet.seen.ranUses, [USED], 'the MCP door hands it too');
+    assert.equal(quiet.seen.usesAsked.length, 1);
   } finally {
     q.server.dispose();
   }
