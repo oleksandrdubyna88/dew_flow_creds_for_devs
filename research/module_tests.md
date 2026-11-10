@@ -391,6 +391,22 @@ the smoke scripts off CI left `creds-mcp-listen-smoke-<pid>` and `creds-version-
 `start-server-<id>.log`; the itest left nine `tmp.*`; a SIGTERM or SIGHUP to the process group of `mcp-listen-smoke.test.sh` left its `tmp.*`
 (a SIGINT does not, on the old script: bash waits for the child, which ends normally, and goes on). With `owned.sh` every root is empty, and INT, TERM and HUP give 130, 143 and 129.
 
+**The image smoke is a carve-out of the contract (2026-11-10, E2.4.S3 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`docker.yml`'s two smoke containers and two volumes are named `testsToDelete-u1001-creds-{cv,refused,refused-data,refused-logs}-${SMOKE_ID}` and carry
+the label `testsToDelete.owner`; `u1001` is the uid of the hosted `ubuntu-latest` runner. The step that makes the id has the uid check as its
+FIRST command (`[ "$(id -u)" = 1001 ] || exit 1`) and comes before *Build*, so on any other runner nothing is made. One remover step
+(`if: always()`, `continue-on-error`, `shell: bash`, an unquoted name and `|| true` on each of four removals) runs after the last step that reads
+the containers; the step after it (`if: always()`, `shell: bash`, NO `continue-on-error`) asks for each of the four names with
+`docker ps -a -q --filter "name=^<name>$"` and `docker volume ls -q --filter …`, and fails the job while one is left. `Publish` keeps its implicit
+`success()`, so a failed smoke stays failed and nothing is published. `src_vs_code/src/test/dockerSmokeLeftovers.test.ts` reads `docker.yml` and
+RUNS the naming, remover and check bodies under `bash --noprofile --norc -eo pipefail` against a stub `docker` that keeps a world of named
+resources (a name in `STUB_STUCK` fails its removal and stays): all four removals are called after a failed first one; the check is red for each of
+the four names left, and for a remover that forgets a volume; the naming step ends at once, writing nothing, under a uid that is not 1001. Each rule
+also has a planted fault (a mutated copy of the real text) that it must refuse, and, when the mounted guard can load its `yaml` module, the
+shipped guard reads the real file with 0 findings and each plant (a quoted remover name, a `-v` source alone in quotes, a `docker inspect` or `docker
+logs` after the remover, a short name) with the finding it should have. What no test here can see is Docker itself: the hosted dispatches of the
+build record (part 3) do.
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
@@ -1509,7 +1525,7 @@ code **78**. The operator who reads the file after a deploy is who it is for.
 | layer | test | runs where | what it proves |
 |---|---|---|---|
 | the BUILT JIT binary | `StartupRefusalProcessTests` | every server CI leg (Linux, Windows, macOS) | exit 78 and the Fatal line, for a refusal after the first log line (no auth) and one before it (a UNC data dir — the case whose file used to be EMPTY) |
-| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes |
+| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes; the containers and volumes are named under the leftovers contract and removed on every path (`dockerSmokeLeftovers.test.ts`) |
 | `Program` in-process | `StartupGuardTests` | every server CI leg | each of the five guards stops the real `Program` and its message reaches the file at Fatal; the accepted cases must really start |
 | the guards alone | `StartupGuardsTests` | every server CI leg | each message byte for byte, the inner exception, the order (configuration before the disk) |
 
