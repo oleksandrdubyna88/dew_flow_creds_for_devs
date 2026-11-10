@@ -49,6 +49,7 @@ if [ -z "${OWNED_LOADED:-}" ]; then
   OWNED_SEAM_HOOK_SAID=""
   OWNED_SEAM_IDS_SAID=""
   OWNED_SEAM_PROC_SAID=""
+  OWNED_SEAM_HOOKBAD_SAID=""
   OWNED_PATHS=()
   OWNED_STATES=()
   OWNED_TEXTS=()
@@ -344,9 +345,21 @@ owned_settle() {
   return 1
 }
 
+# owned_run_hook <path>: the test seam OWNED_HOOK_AFTER_CLAIM runs only when it names a defined function, never a command.
+owned_run_hook() {
+  if [ -z "${OWNED_HOOK_AFTER_CLAIM:-}" ]; then return 0; fi
+  if declare -F "$OWNED_HOOK_AFTER_CLAIM" > /dev/null 2>&1; then
+    "$OWNED_HOOK_AFTER_CLAIM" "$1" || true
+  elif [ -z "$OWNED_SEAM_HOOKBAD_SAID" ]; then
+    OWNED_SEAM_HOOKBAD_SAID=1
+    owned_say "OWNED_HOOK_AFTER_CLAIM is not a defined shell function - it is ignored"
+  fi
+  return 0
+}
+
 # owned_draw <what>: one draw: claim, register, create. Sets OWNED_DRAWN. Returns 0 made, 2 draw again, 1 error.
 owned_draw() {
-  local path rc
+  local path rc idx
   owned_next_id
   path="$OWNED_ROOT/testsToDelete-${OWNED_TOKEN}-${OWNED_REPO}-$1-${OWNED_ID}"
   OWNED_BUSY=1
@@ -354,9 +367,10 @@ owned_draw() {
   if [ "$rc" = 2 ]; then owned_leave; return 2; fi
   if [ "$rc" != 0 ]; then owned_leave; owned_say "cannot write the claim $path.owner"; return 1; fi
   owned_register "$path"                  # 2. REGISTER
-  if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ]; then "$OWNED_HOOK_AFTER_CLAIM" "$path" || true; fi
+  idx="$OWNED_IDX"                        # kept local: a hook may call owned_dir and set OWNED_IDX again
+  owned_run_hook "$path"
   owned_create_dir "$path" && rc=0 || rc=$?   # 3. CREATE
-  owned_settle "$OWNED_IDX" "$path" "$rc" && rc=0 || rc=$?
+  owned_settle "$idx" "$path" "$rc" && rc=0 || rc=$?
   OWNED_DRAWN="$path"
   return "$rc"
 }
