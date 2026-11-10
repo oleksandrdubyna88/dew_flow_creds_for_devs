@@ -46,6 +46,13 @@ single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
   port word also goes through the rule (the road test found it pushed raw: a port is a number by type and a string by
   sync or import data). J2: `askpassScript('win32')` itself has CRLF line ends, so the file `writeAskpassScriptFile`
   writes is the file cmd reads. J3: a road test (below).
+- **Review round 2 (A1–A4, A5).** A1: the road test no longer casts a hostile string to `never` for a port field; a port is
+  a number by type, so the ports left the string-field table, and a new road test feeds string ports through the real door
+  (`isEntityMetadata` refuses them, so the builder is never handed one). A2: the module doc says the rule
+  (`research/module_extension.md`, next to the Connect text). A3: U+201F and U+2033 also route a word to single quotes
+  (defence in depth; ordinary paths and the C1 literals are unchanged). A4: every child `windowsParsers.test.ts` starts
+  (`cmd.exe`, `powershell.exe`, `pwsh`) is started by one launcher whose timeout kills the whole process tree (`killChild`,
+  `taskkill /T /F` on Windows), with a test of the launcher. A5: `hasPowerShellSingleQuote` uses one precompiled regex.
 - The POSIX `-p` word stays bare: `typeGuards.ts:300` refuses a non-number port on every sync, import and sealed read, so only a number reaches the line (checked 2026-11-10); the win32 port word goes through `windowsWord` anyway.
 - `test/shellQuotingRoadScan.test.ts` lists every quoting site with its parser and whether vault data reaches it,
   with a self-check.
@@ -73,6 +80,10 @@ a ROAD test that feeds a hostile value (`a$(x)b`, `a'b`, `a’b`, `a,b`, `a;b`, 
 string field `buildSshCommand` reads on win32, then reads the line WORD BY WORD: each word is plain, a safe `"…"` word or
 a well-formed single-quoted word, or the value was refused by the field's validator. The checker has its own self-check.
 The test that only counted a line added to a source file is renamed for what it shows (it counts, it does not judge).
+
+Round 2 added: a road test that string ports never become an entity (RED when the guard accepts a string port); S2 cases for
+U+201F and U+2033; a launcher test that a timeout kills the child AND its grandchild (RED with a bare kill);
+`hasPowerShellSingleQuote` answers the same on every call.
 
 The strings are OBSERVED on the real parsers by `test/windowsParsers.test.ts` (security.md: a measure not observed
 working is a comment). Off Windows a case skips with a printed reason when its shell is absent (a no-op on Linux without pwsh); ON Windows nothing

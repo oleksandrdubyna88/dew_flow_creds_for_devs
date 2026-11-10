@@ -574,6 +574,9 @@ test('S2 win32 a_key_path_that_a_double_quoted_powershell_word_would_run_is_a_si
     ['C:\\k\\a"; calc; "', `'C:\\k\\a"; calc; "'`],
     ['C:\\k\\a\u201C; calc; \u201D', "'C:\\k\\a\u201C; calc; \u201D'"],
     ['C:\\k\\a\u201E; calc; \u201E', "'C:\\k\\a\u201E; calc; \u201E'"],
+    // Defence in depth: U+201F and U+2033 are not read as a double quote by 5.1 or 7 today, but they look like one.
+    ['C:\\k\\a\u201F; calc; \u201F', "'C:\\k\\a\u201F; calc; \u201F'"],
+    ['C:\\k\\a\u2033; calc; \u2033', "'C:\\k\\a\u2033; calc; \u2033'"],
     ["C:\\k\\a$(x)'b", "'C:\\k\\a$(x)''b'"],
     ['C:\\k\\a$(x)\u2019b', "'C:\\k\\a$(x)\u2019\u2019b'"],
   ];

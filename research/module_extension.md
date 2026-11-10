@@ -191,6 +191,33 @@ grew a `program` option for it rather than a second platform: **the client's ope
 the shell's are two facts**, and everywhere else in the codebase they were one value. Quoting still
 follows the SHELL; only the first word and the untranslated paths follow the client.
 
+**The Windows words (fix `fix/windows-shell-quoting-injection`, 2026-11-10).** In a LOCAL Windows window Connect types
+its line into PowerShell (pwsh 7, else 5.1), so every word that line carries is decided by ONE function, `windowsWord`
+in `sshCommand.ts`; a value from vault data (sync, a share, the ssh-config import) must never be able to run a local
+command there. The rule: a word is **bare** only when it is on the whitelist (letters, digits, `. _ : @ \ / [ ] = + -`;
+NOT `,`, because a bare `a,b` is a PowerShell array and a two-hop `-J a@b,c@d` would split) and does not start with `@`
+(a splat) or with `-` and hold `:` (`-p:1` splits). A path keeps its `"…"` spelling (cmd reads it too) only when the value
+holds no `$`, no backtick and no double-quote character (the ASCII one, U+201C, U+201D, U+201E, and by defence in depth
+U+201F and U+2033). Anything else is ONE PowerShell **single-quoted** word, built by `hostShell.quoteFor('powershell')`,
+which doubles every character PowerShell reads as a single quote (`'` and U+2018, U+2019, U+201A, U+201B), each with
+itself. `Name=value` words (`UserKnownHostsFile=`) go through the same rule, with the name inside the quotes when the
+value needs them. A password connection's askpass is a `.bat` run by cmd.exe: `askpassScript('win32')` has CRLF line ends
+(the file that is written is the file cmd reads) and uses `setlocal EnableDelayedExpansion` with `echo(!CREDS_SSH_PASSWORD!`,
+because cmd expands `%VAR%` BEFORE it parses the line and a delayed-expansion value is not parsed again. `envPrefix`
+(`wslRelay.ts`, the `env NAME='value' ` prefix of the relay line) REFUSES a value it cannot single-quote: a value that
+holds any character PowerShell reads as a single quote (the ASCII one and U+2018 to U+201B, because a WSL window's default
+profile can be pwsh) gets no prefix at all, and the Connect call site turns that into the `relay-socket-unusable` refusal
+instead of connecting without the agent (see the two refusals below for why a silent fallback is the wrong answer
+there). The POSIX `-p` word stays bare on purpose: `typeGuards.ts` (`hasValidSshFields`) accepts only a number as a port, so a
+string port never becomes an entity. **Where the proofs live:** `test/shellQuotingRoadScan.test.ts` lists every site that
+quotes, escapes or wraps a value for a shell (each counted, each with its parser and whether vault data reaches it), feeds
+a hostile value into every string field of the win32 line and reads the result word by word, and shows that
+`isEntityMetadata` refuses a string port; `test/windowsParsers.test.ts` hands the words to the REAL cmd.exe, Windows
+PowerShell 5.1 and pwsh and checks that the value is read back unchanged and that no injected command ran (it runs in
+the `runner-windows` job of `ci-extension.yml`, and every child it starts is killed as a whole tree on a timeout); the
+strings themselves are pinned in `hostShell.test.ts`, `sshCommand.test.ts`, `sshAskpass.test.ts` and `wslRelay.test.ts`.
+Record: [PLAN_windows_shell_quoting_injection.md](../todo/PLAN_windows_shell_quoting_injection.md).
+
 
 `remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.
 The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key not accessible` —

@@ -91,9 +91,11 @@ export function isSafeSshTarget(entity: EntityMetadata): boolean {
 
 /**
  * Inside a double-quoted PowerShell word: the characters that END it (`"` and U+201C, U+201D, U+201E, which PowerShell
- * reads as double quotes — about_Quoting_Rules) and the ones that EXPAND (`$`, and the backtick).
+ * reads as double quotes — about_Quoting_Rules) and the ones that EXPAND (`$`, and the backtick). U+201F and U+2033 are
+ * not read as a double quote by 5.1 or 7 today; they look like one, so they go to single quotes as well (defence in depth,
+ * for a later PowerShell that reads one). Ordinary paths hold none of these, so their `"…"` spelling does not change.
  */
-const POWERSHELL_DOUBLE_QUOTED_UNSAFE = /["\u201C\u201D\u201E$`]/;
+const POWERSHELL_DOUBLE_QUOTED_UNSAFE = /["\u201C\u201D\u201E\u201F\u2033$`]/;
 
 /**
  * A bare PowerShell word that needs no quoting: letters, digits and the punctuation a host, a login, a port, a jump value

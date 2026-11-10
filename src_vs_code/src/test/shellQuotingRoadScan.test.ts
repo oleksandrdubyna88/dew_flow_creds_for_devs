@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { SshCommandOptions, buildSshCommand } from '../sshCommand';
 import { resolveJumpChain } from '../sshOptions';
+import { isEntityMetadata } from '../typeGuards';
 import { EntityMetadata } from '../types';
 
 /**
@@ -216,7 +217,7 @@ test('the patterns count a quoting line added to a source file (they find the ne
 const SINGLE_QUOTE_CHARS = "'\u2018\u2019\u201A\u201B";
 const DOUBLED_SINGLE = [...SINGLE_QUOTE_CHARS].map((q) => `${q}${q}`).join('|');
 const SAFE_SINGLE = [...SINGLE_QUOTE_CHARS].map((q) => `${q}(?:[^${SINGLE_QUOTE_CHARS}]|${DOUBLED_SINGLE})*${q}`).join('|');
-const SAFE_DOUBLE = '(?:[A-Za-z]+=)?"[^"\u201C\u201D\u201E$`]*"';
+const SAFE_DOUBLE = '(?:[A-Za-z]+=)?"[^"\u201C\u201D\u201E\u201F\u2033$`]*"';
 const SAFE_PLAIN = '(?![@]|-[^: ]*:)[A-Za-z0-9._:@\\\\/[\\]=+-]+';
 const SAFE_WORD = new RegExp(`(?:${SAFE_SINGLE}|${SAFE_DOUBLE}|${SAFE_PLAIN})(?= |$)`, 'y');
 
@@ -246,6 +247,7 @@ test('the word checker of the road test below refuses what it is written to refu
     'ssh \'a\'b\' x',
     'ssh a;b',
     'ssh -i "a\u201C; x; \u201Db" h',
+    'ssh -i "a\u201F; x; \u2033b" h',
     'ssh \'a\u2019b\' h',
     'ssh @x h',
     'ssh -p:1 h',
@@ -266,7 +268,7 @@ test('the word checker of the road test below refuses what it is written to refu
 });
 
 /** Values a vault entry could carry into any field. */
-const HOSTILE = ['a$(x)b', "a'b", 'a\u2019b', 'a\u2018b', 'a,b', 'a;b', 'a b', 'a`b', 'a"b', 'a\u201Cb', 'a$b', 'a|b', 'a&b', 'a%b', 'a(b)', 'a<b', 'a!b', '@a', '-p:1'];
+const HOSTILE = ['a$(x)b', "a'b", 'a\u2019b', 'a\u2018b', 'a,b', 'a;b', 'a b', 'a`b', 'a"b', 'a\u201Cb', 'a\u201Fb', 'a\u2033b', 'a$b', 'a|b', 'a&b', 'a%b', 'a(b)', 'a<b', 'a!b', '@a', '-p:1'];
 
 const ROAD_BASE: EntityMetadata = { id: 'e1', name: 'prod', host: 'example.com', user: 'deploy', isSshEnabled: true };
 
@@ -283,17 +285,19 @@ function viaJump(hop: Partial<EntityMetadata>): RoadCase {
   return { entity, options: { jump: chain.ok ? chain.value : undefined } };
 }
 
-/** Every string field `buildSshCommand` reads on win32, each with a way to put a value into it. */
+/**
+ * Every string field `buildSshCommand` reads on win32, each with a way to put a value into it. The ports are NOT here: a
+ * port is a `number` by type (the entity's and a jump hop's alike), so a string cannot be built into this fixture without a
+ * cast. A string port can only arrive as JSON, and the next test feeds it through the door that JSON comes through.
+ */
 const ROAD_FIELDS: Record<string, (v: string) => RoadCase> = {
   sshKeyPath: (v) => ({ entity: { ...ROAD_BASE, sshKeyPath: v } }),
   user: (v) => ({ entity: { ...ROAD_BASE, user: v } }),
   host: (v) => ({ entity: { ...ROAD_BASE, host: v } }),
-  port: (v) => ({ entity: { ...ROAD_BASE, port: v as never } }),
   'forward.bindAddress': (v) => ({ entity: { ...ROAD_BASE, portForwards: [{ kind: 'local', bindAddress: v, bindPort: 1, host: 'db', hostPort: 2 }] } }),
   'forward.host': (v) => ({ entity: { ...ROAD_BASE, portForwards: [{ kind: 'remote', bindPort: 1, host: v, hostPort: 2 }] } }),
   'jump hop user': (v) => viaJump({ user: v }),
   'jump hop host': (v) => viaJump({ host: v }),
-  'jump hop port': (v) => viaJump({ port: v as never }),
   'options.jump': (v) => ({ entity: ROAD_BASE, options: { jump: v } }),
   'options.knownHostsFile': (v) => ({ entity: ROAD_BASE, options: { knownHostsFile: v } }),
 };
@@ -315,6 +319,22 @@ function roadOf(put: (v: string) => RoadCase): { reached: number; problem?: stri
   }
   return { reached };
 }
+
+test('road: a string in a port field never becomes an entity: isEntityMetadata refuses it, so the builder cannot be handed one', () => {
+  // The shape a vault, a sync, a share or an import writes: JSON, so a port can be any string there. Nothing is cast: the
+  // value goes in as `unknown`, which is what the guard takes.
+  const wire = (extra: Record<string, unknown>): unknown => ({ ...ROAD_BASE, ...extra });
+  assert.equal(isEntityMetadata(wire({})), true, 'the control: the same record without a hostile port is an entity');
+  assert.equal(isEntityMetadata(wire({ port: 2200 })), true, 'the control: a number port is an entity');
+  const forward = (row: Record<string, unknown>): unknown => wire({ portForwards: [{ kind: 'local', bindPort: 1, host: 'db', hostPort: 2, ...row }] });
+  assert.equal(isEntityMetadata(forward({})), true, 'the control: a forward with number ports is an entity');
+  for (const value of [...HOSTILE, '22', '']) {
+    assert.equal(isEntityMetadata(wire({ port: value })), false, `port ${JSON.stringify(value)} was accepted`);
+    assert.equal(isEntityMetadata(forward({ bindPort: value })), false, `forward bindPort ${JSON.stringify(value)} was accepted`);
+    assert.equal(isEntityMetadata(forward({ hostPort: value })), false, `forward hostPort ${JSON.stringify(value)} was accepted`);
+  }
+  // A jump hop is an entity too and is read through the same guard, so its port is covered by the loop above.
+});
 
 test('road: every string field the win32 line reads, given a hostile value, is refused or comes out as plain, "…" or single-quoted words only', () => {
   for (const [field, put] of Object.entries(ROAD_FIELDS)) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { asOsName, entryShell, hostShell, newEntryOs, osLabel, osOf, pinnedShellRefusal, quoteFor, readerFamily, shellFamily } from '../hostShell';
+import { asOsName, entryShell, hasPowerShellSingleQuote, hostShell, newEntryOs, osLabel, osOf, pinnedShellRefusal, quoteFor, readerFamily, shellFamily } from '../hostShell';
 
 /**
  * Which shell parses a composed line (issue #103). The defect was a line for one shell typed into
@@ -56,6 +56,17 @@ for (const [name, quote] of [['U+2018', '\u2018'], ['U+2019', '\u2019'], ['U+201
 
 test('PowerShell quoting: the double-quote look-alikes need no doubling inside a single-quoted word', () => {
   assert.equal(quoteFor('powershell', 'a\u201Cb\u201D\u201E "c" $d `e`'), `'a\u201Cb\u201D\u201E "c" $d \`e\`'`);
+});
+
+test('hasPowerShellSingleQuote answers the same on every call (no regex state is kept between calls)', () => {
+  for (let round = 0; round < 3; round += 1) {
+    for (const quote of ["'", '\u2018', '\u2019', '\u201A', '\u201B']) {
+      assert.equal(hasPowerShellSingleQuote(`a${quote}b`), true, JSON.stringify(quote));
+    }
+    for (const plain of ['', 'ab', 'a"b', 'a\u201Cb\u201D\u201E\u201F\u2033', 'a`b$c']) {
+      assert.equal(hasPowerShellSingleQuote(plain), false, JSON.stringify(plain));
+    }
+  }
 });
 
 test('POSIX quoting: single quotes are literal, an apostrophe closes, escapes and reopens', () => {

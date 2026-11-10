@@ -111,9 +111,12 @@ export function hostShell(platform: NodeJS.Platform, exists: (path: string) => b
  */
 const POWERSHELL_SINGLE_QUOTES = /['\u2018\u2019\u201A\u201B]/g;
 
+/** The same set without `g`: a global regex keeps `lastIndex` between `.test` calls, so the test below needs its own. */
+const POWERSHELL_SINGLE_QUOTE_ANY = new RegExp(POWERSHELL_SINGLE_QUOTES.source);
+
 /** Whether PowerShell would read a character of `value` as a single quote — a word that holds one cannot go inside `'…'` unchanged. */
 export function hasPowerShellSingleQuote(value: string): boolean {
-  return new RegExp(POWERSHELL_SINGLE_QUOTES.source).test(value);
+  return POWERSHELL_SINGLE_QUOTE_ANY.test(value);
 }
 
 /**
