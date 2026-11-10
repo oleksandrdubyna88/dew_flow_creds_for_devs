@@ -155,7 +155,12 @@ kept_folder_is_claimed_and_collected_later() {
 . "$T_OWNED_SH"
 owned_dir d x || exit 1
 printf '%s\n' "$d" > "$T_CTL/t16.dir"
-echo "$$" > "$T_CTL/t16.pid"
+# The record holds the pid a sweep can check: on Windows the shell's Windows pid (/proc/$$/winpid), not the msys $$
+# (CI, 2026-11-10: "expected [2014], got [8872]").
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) cat "/proc/$$/winpid" > "$T_CTL/t16.pid" ;;
+  *) echo "$$" > "$T_CTL/t16.pid" ;;
+esac
 EOF
   run_child t16 OWNED_KEEP=1
   eq "T16 the child exits 0" "$CH_RC" 0
