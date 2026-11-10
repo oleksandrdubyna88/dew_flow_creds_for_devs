@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { SshCommandOptions, buildSshCommand, describeSshTarget } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
+import { claimSshTerminal, isSshTerminalOf } from './sshTerminalOwners';
+import { entryTerminalKey, sshTerminalTitle } from './terminalTitles';
 
 // Re-exported so existing callers keep one import site.
 export { buildSshCommand, describeSshTarget };
@@ -15,6 +17,9 @@ export { buildSshCommand, describeSshTarget };
  * @param prefix an `env NAME='value' ` prefix from `envPrefix`, or empty. It points ONE command at
  *   the WSL agent relay's socket without touching the window-wide environment collection, which has
  *   no per-shell scope and so cannot serve a Windows terminal and a WSL one at the same time.
+ * @param title the tab, built by `sshTerminalTitle` from the entry's folder and name (`connectEntity` reads the folder
+ *   from storage). It is also the lookup key, so a live terminal is reused only when this window opened it for the
+ *   same entry (`sshTerminalOwners`). Defaulted to the entry name alone, without a folder.
  */
 // eslint-disable-next-line complexity -- pre-existing guards plus the options parameter; each clause is an independent usability check
 export function openSshTerminal(
@@ -22,6 +27,7 @@ export function openSshTerminal(
   options: SshCommandOptions = {},
   platform: NodeJS.Platform = process.platform,
   prefix = '',
+  title = sshTerminalTitle(entryTerminalKey(entity.name, undefined)),
 ): vscode.Terminal | undefined {
   const command = buildSshCommand(entity, platform, options);
   const target = describeSshTarget(entity);
@@ -32,9 +38,8 @@ export function openSshTerminal(
     return undefined;
   }
 
-  const name = `SSH: ${target}`;
   const existing = vscode.window.terminals.find(
-    (t) => t.name === name && t.exitStatus === undefined,
+    (t) => t.name === title && t.exitStatus === undefined && isSshTerminalOf(t, entity.id),
   );
   if (existing) {
     existing.show();
@@ -43,7 +48,8 @@ export function openSshTerminal(
 
   // The line is composed for `platform`; in a local window that is this machine, so its shell is
   // pinned — a Windows ssh line typed into a WSL-bash default profile is issue #103 again.
-  const terminal = vscode.window.createTerminal({ name, shellPath: composedShellPath() });
+  const terminal = vscode.window.createTerminal({ name: title, shellPath: composedShellPath() });
+  claimSshTerminal(terminal, entity.id);
   terminal.show();
   terminal.sendText(`${prefix}${command}`, true);
   return terminal;

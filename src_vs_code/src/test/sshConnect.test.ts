@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OPTIONS, OUR_PIN, WSL_NO_RELAY, WSL_READY, entity, storage, world } from './sshConnectWorld';
+import { OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, entity, storage, world } from './sshConnectWorld';
 
 /**
  * The human Connect path (audit A3): WHICH credential reaches ssh, and what each way leaves behind.
@@ -146,22 +146,44 @@ test('a password rides the ENVIRONMENT, never the command line', async () => {
   assert.ok(!w.created[0].sent.join(' ').includes('hunter2'), w.created[0].sent.join(' '));
 });
 
-test('a password session gets a FRESH terminal — an old one with that name is disposed', async () => {
+test('a password session gets a FRESH terminal — this entry\'s earlier one is disposed', async () => {
   // The env carries THIS entity's password; reusing a terminal would run the new session with
   // the previous entity's credentials.
-  const w = world({
-    source: { kind: 'password', password: 'hunter2' },
-    options: OPTIONS,
-    existingNamed: 'SSH: prod.corp.com',
-  });
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
-        storageDir: '/storage',
-      });
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+  w.existing.push(w.created[0]); // the window lists the terminal it just opened
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
 
-  assert.equal(w.existing[0].disposed, true, 'the stale one is gone');
+  assert.equal(w.created[0].disposed, true, 'the earlier one is gone');
+  assert.equal(w.created.length, 2);
+});
+
+// The owner, 2026-11-10: the tab names the folder and the entry. Two entries may share that title, so the password path
+// disposes only a terminal it opened for THIS entry — never another entry's live session that happens to share the name.
+test('a password terminal is titled with the folder and the entry', async () => {
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(w.created[0].name, SSH_TITLE);
+});
+
+test('a live terminal under the same title that this entry did not open is left alone', async () => {
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS, existingNamed: SSH_TITLE });
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(w.existing[0].disposed, false, 'another entry\'s session was closed');
   assert.equal(w.created.length, 1);
+});
+
+test('a key session hands the folder-and-entry title to the terminal it opens', async () => {
+  const w = world({ source: { kind: 'none' }, options: OPTIONS, sshTerminal: {} });
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(w.sshTerminals[0]?.title, SSH_TITLE);
 });
 
 test('without a pinned host key, accept-new is added — with one, it is NOT', async () => {

@@ -42,7 +42,7 @@ export interface World {
   openers: unknown[];
   forgotten: string[];
   /** Terminals opened through `openSshTerminal`, with the key path each was given. */
-  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string }[];
+  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string; title?: string }[];
   created: Terminal[];
   existing: Terminal[];
   warnings: string[];
@@ -171,8 +171,9 @@ export function world(parts: Parts): World {
           options: unknown,
           platform?: string,
           prefix?: string,
+          title?: string,
         ): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix });
+          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title });
           return opened;
         },
         buildSshCommand: (entity: { host?: string }): string | undefined =>
@@ -272,7 +273,17 @@ function missingSsh(w: World, missing: boolean): Record<string, unknown> {
 export const entity = (extra: Partial<EntityMetadata> = {}): EntityMetadata =>
   ({ id: 'e1', name: 'prod', kind: 'ssh', host: 'prod.corp.com', ...extra }) as unknown as EntityMetadata;
 
-export const storage = {} as never;
+/**
+ * The entry `e1` sits in the folder "ssh connections", so a connect names that folder in its terminal title (the owner,
+ * 2026-11-10). Only `getNode` is read on this path.
+ */
+const NODES: Record<string, { id: string; name: string; type: string; parentId: string | null }> = {
+  e1: { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' },
+  f1: { id: 'f1', name: 'ssh connections', type: 'folder', parentId: null },
+};
+export const storage = { getNode: (_accountId: string, id: string) => NODES[id] } as never;
+/** The title every connect of `entity()` gives its terminal. */
+export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };
 
 /** The shape materializeKnownHosts actually writes: keys/<pid>/, which is what the deletion guard keys on. */

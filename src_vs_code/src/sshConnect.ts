@@ -8,6 +8,8 @@ import { sshClientPresent } from './sshProgram';
 import { offerToInstall } from './toolEnsure';
 import { requestGone } from './requestLife';
 import { composedShellPath } from './pinnedTerminal';
+import { claimSshTerminal, isSshTerminalOf } from './sshTerminalOwners';
+import { entryTerminalKeyOf, sshTerminalTitle } from './terminalTitles';
 import {
   forgetMaterializedKey,
   materializePrivateKey,
@@ -144,6 +146,9 @@ export async function connectEntity(
     return false;
   }
   const { storage, storageDir } = connect;
+  // The tab, read from storage at the moment a terminal opens — after every dialog, so an entry moved meanwhile is
+  // named where it is now (the owner, 2026-11-10: `Creds SSH: <folder> / <entry>`, not `SSH: <user>@<host>`).
+  const titleNow = (): string => sshTerminalTitle(entryTerminalKeyOf(storage, accountId, entity.id, entity.name));
   const agentServesKey = connect.agentServesKey === true;
   const remote = connect.remote ?? LOCAL_WINDOW;
   const side = remote.side;
@@ -261,7 +266,7 @@ export async function connectEntity(
       forgetOurPin(resolved.knownHostsFile, storageDir);
       return false;
     }
-    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
+    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix, titleNow()) !== undefined;
   }
   if (agentServesKey && source.kind === 'storedKey' && route.kind === 'compose') {
     // Deliberately nothing: the agent answers, and writing the key out would defeat the
@@ -272,7 +277,7 @@ export async function connectEntity(
     // share — so on the Windows-client route the same `-i`-less line would authenticate with
     // whatever the WINDOWS agent happened to hold, and the whole point of naming this entity's key
     // would be gone. That route materialises instead, below.
-    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform) !== undefined;
+    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, undefined, titleNow()) !== undefined;
   }
   if (route.kind === 'windowsClient') {
     const caveat = windowsClientCaveat(entity);
@@ -309,15 +314,19 @@ export async function connectEntity(
     }
     const scriptPath = writeAskpassScriptFile(storageDir, platform);
     // A FRESH terminal every time: the env carries this entity's password, and reusing
-    // one would run the new session with the previous entity's credentials.
-    const name = `SSH: ${target}`;
-    vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
+    // one would run the new session with the previous entity's credentials. Only THIS entry's earlier terminal is
+    // closed: another entry may share the title, and its live session is not this click's to end.
+    const name = titleNow();
+    vscode.window.terminals
+      .find((t) => t.name === name && t.exitStatus === undefined && isSshTerminalOf(t, entity.id))
+      ?.dispose();
     const passTerminal = vscode.window.createTerminal({
       name,
       // Composed for `platform` — pinned in a local window, as `openSshTerminal` is (issue #103).
       shellPath: composedShellPath(),
       env: askpassEnv(scriptPath, source.password, platform),
     });
+    claimSshTerminal(passTerminal, entity.id);
     passTerminal.show();
     // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question would be
     // answered by the askpass program — with the password. A PINNED host needs no such
@@ -330,7 +339,7 @@ export async function connectEntity(
     return true;
   }
 
-  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options, platform);
+  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options, platform, undefined, titleNow());
   // Wipe the decrypted key from disk as soon as the session ends.
   if (materialized !== undefined) {
     if (terminal === undefined) {

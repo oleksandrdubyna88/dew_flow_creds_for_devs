@@ -2238,6 +2238,15 @@ The lines themselves do not wait for each other.
 (`entryShell`'s pinned-or-default choice) creates and disposes nothing, then `typed` calls `noteSent` before `sendText`. It is
 never `findEntryTerminal`, and never `pinnedTerminal(name, { fresh: true })`, which disposes by name.
 
+*An SSH Connect tab names its entry (2026-11-10, the owner).* It was `SSH: <user>@<host>`; it is `Creds SSH: <folder> / <entry>`
+(`Creds SSH: <entry>` with no parent folder), built by `sshTerminalTitle(EntryTerminalKey)` beside the other titles. Its own prefix
+keeps it a different key from a linked Terminal entry's `Creds: …` terminal. `connectEntity` reads the key from storage at the
+moment a terminal opens (`entryTerminalKeyOf(storage, accountId, entity.id, entity.name)`, after every dialog) and hands the title
+to `openSshTerminal` on all three key roads and uses it on the password road. Two entries may share a name in one folder, so the
+title alone no longer finds a session: `sshTerminalOwners.ts` (no `vscode` import, a `WeakMap` keyed by the terminal) records
+the entry id each SSH terminal was opened for. `openSshTerminal` reuses, and the password road disposes, only a live terminal of
+that title opened for the SAME entry. A terminal from before a reload belongs to nobody, so it is neither reused nor closed.
+
 *The title is one key (2026-11-09, `PLAN_terminal_titles_folder.md`).* A terminal's title is both the name it is created under
 and the key every lookup matches exactly, so `terminalTitles.ts` (no `vscode` import) builds every Creds terminal title and
 nothing else does (`terminalTitleScan.test.ts` pins it). An entry's terminal is `Creds: <folder> / <entry>`, or `Creds: <entry>`
