@@ -153,7 +153,7 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
 
    | | The shipped Node guard | The copied C# guard |
    |---|---|---|
-   | Reads | `*.test.*`, `.sh` and `.ps1` everywhere, `.github/scripts/*.{mjs,js,sh}`, workflows, the `scripts` of every `package.json` (`--profile node`) | `.cs` of the five test roots and five source roots; `.sh`, `.ps1`, `.py` everywhere; JavaScript in the script folders; the `src_vs_code/src/test/` helpers that are not `*.test.ts` (read as scripts); workflows; `owner-blind` in scripts and workflows through the mounted classifier (started through `node`) |
+   | Reads | `*.test.*`, `.sh` and `.ps1` everywhere, `.github/scripts/*.{mjs,js,sh}`, workflows, the `scripts` of every `package.json` (`--profile node`) | `.cs` of the six test roots and six source roots (`tests/`, `src/` and the five projects' own); `.sh`, `.ps1`, `.py` everywhere; JavaScript in the script folders; the `src_vs_code/src/test/` helpers that are not `*.test.ts` (read as scripts); workflows; `owner-blind` in scripts and workflows through the mounted classifier (started through `node`) |
    | Runs | `docs.yml` (the required job `plan lifecycle · submodule pin`), after `npm ci --ignore-scripts --prefix .claude/rules/shared` | `LeftoversRepositoryGuardTests` in `CredsForDevs.ServiceDefaults.Tests`: `ci-clients.yml` (Linux, macOS, Windows), `sonarcloud.yml`, and the release jobs `cli-binaries` and `mcp-binaries` on every runner they use |
    | By hand | `node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` | `./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"` (`.exe` on Windows); the plants are `LeftoversGuardCredsTests` |
    | A scan of nothing | exit 2 and `scanned nothing under <dir> — discovery broke; the repository is not clean`; a `docs.yml` step runs it on an empty repository | `FilesScanned == 0` and the same sentence (the copied test) |
@@ -177,8 +177,8 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
    guard, `mktemp` in a workflow `run:` block (the C# copy reads it).
 7. **The exemptions.** `testsToDelete-exempt: <class> — <reason>` on the line or the line above; a class of the rule (never `owner-blind`, never
    `ryuk-off`), a reason of at least ten characters and three words. List them with `git grep -n testsToDelete-exempt -- . ':!todo' ':!research'`. A new
-   one is read by a reviewer; this page keeps no copy of the list. The product scripts `install.sh`, `deploy/restore.sh` and `deploy/restore-archive.sh`
-   carry one each for their own `mktemp`: their reasons do not say they clean up, because `install.sh` and `deploy/restore.sh` do not on every path.
+   one is read by a reviewer; this page keeps no copy of the list. The product scripts `install.sh` (two), `deploy/restore.sh` and `deploy/restore-archive.sh`
+   (one each) carry a marker for their own `mktemp`: their reasons do not say they clean up, because `install.sh` and `deploy/restore.sh` do not on every path.
 8. **The janitor.** `JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run` lists what a killed run left, for this token
    only (without `--dry-run` it removes). On Windows run it from Git for Windows' bash: it removes nothing there until F9. On macOS it needs bash 4 or newer (N20).
 9. **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, the legacy prefix spelling) are not swept; a person removes them by hand once per machine.

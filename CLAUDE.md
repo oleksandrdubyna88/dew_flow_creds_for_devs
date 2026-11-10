@@ -65,13 +65,13 @@ npm run package             # builds the .vsix
 npm run icon                # regenerates media/icon.png from the same glyph as icon.svg
 
 # --- test leftovers: the janitor and the two guards (research/module_tests.md, "Test leftovers") ---
-# What a killed run left, for this token only (a dry run; from Git for Windows' bash on Windows, where it removes nothing until F9):
+# What a killed run left, for this token only (a dry run; from Git for Windows' bash on Windows, where it removes nothing until F9; bash 4 or newer on macOS, N20):
 JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run
 # The shipped Node guard (the required docs.yml job runs it); it reads the mount's yaml, so install the mount's modules once:
 npm ci --ignore-scripts --prefix .claude/rules/shared
 node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"
 # The copied C# guard, a test of the service-defaults executable (it walks the file system, not git):
-./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"
+node $LP ./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"
 
 # --- deployment ---
 cd deploy && cp .env.example .env && $EDITOR .env && docker compose up -d
