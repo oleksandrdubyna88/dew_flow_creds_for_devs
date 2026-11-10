@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] — 2026-11-10 — A Terminal entry can run its command on a saved SSH connection
+
+### Added — Runs over SSH
+
+- **A Terminal entry has a new field, *Runs over SSH*,** in its *Terminal command* section. Pick one of your saved SSH
+  connections (the same account, an entry with a valid host, not in the Trash); the default is *— Do not use —*. A link to
+  an entry that was deleted shows *(missing entry)* and is kept until you change it.
+- **With a connection picked, the green arrow connects over SSH first and runs the command there**, with the
+  connection's key or password, host-key pin, jump host and forwards — the same preparation as *SSH Connect*. The command
+  is sent as one `ssh -t … -- user@host '<command>'` line, never typed after the connection opened. **The remote shell
+  stays open** after the command; a command that fails says its exit code first. Example: `tmux new -A -s {name}`.
+- ***Runs on* now means the remote system** for a linked entry (Linux or macOS); the local terminal is chosen as
+  *SSH Connect* chooses it. A Windows remote is refused, and the remote login shell must be POSIX-like (sh, bash, zsh, ksh).
+- **The trust question shows where the command runs**: it is asked for `ssh [-p] [-J] [-A] [forwards] -- user@host
+  '<command>'`, so a host, user, port, jump or forward that changes (for example by sync) asks again.
+- **The same works for a VPN's *Start*** (a launcher that uses `{config}` is refused when linked, because the file is
+  local), **for *Run All in Folder*** (every linked row is prepared before anything is typed; a row whose connection
+  changed while the question was open is not typed; a cancelled PIN or host-key question stops the whole run) **and for a
+  *Depends on* chain** (a linked step runs its command and ends; the chain asks first, then connects).
+- **A password connection opens its own terminal** each time, beside any open one, and a terminal that holds a password
+  is never reused by another run. Close it when the session ends.
+- ***Copy Command* and the viewer copy the trust line** of a linked entry, with a note that it uses your own ssh setup.
+- **Share with… and Export remove the link**; *Update it* on a shared entry keeps your own link.
+
 ### Changed
 
 - **An SSH Connect terminal is titled `Creds SSH: <folder> / <entry>`** instead of `SSH: <user>@<host>`. An entry at the
@@ -14,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   close it). A session is found by the entry, not by its tab: another entry with the same name in the same folder, or the
   same entry in another account, gets its own terminal, and a password connection closes only its own entry's earlier terminal.
 - **One-time effect.** An SSH terminal opened before this update keeps its old title, and Connect opens a new one beside it once.
+
+### Not yet over SSH
+
+- **Run with Secrets** and an agent's **`creds_run`** refuse a linked entry with one clear sentence. They never run it on
+  this computer.
+
+### Update every machine
+
+- **An older version of this extension does not know the link**: on a machine that still runs it, the entry would run its
+  command on that machine, and saving it there removes the link for every device (sync). Update the extension wherever you
+  use linked entries.
 
 ## [1.19.0] — 2026-11-10 — Security — on Windows, an entry's data can no longer run a local command through SSH Connect, and the consent dialog keeps its place until you answer
 
