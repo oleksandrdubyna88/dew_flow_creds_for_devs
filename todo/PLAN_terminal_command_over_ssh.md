@@ -5,6 +5,17 @@
 > launcher, Run with Secrets, agent `creds_run`), SSH Connect's preparation half, help in five languages, README,
 > `research/`. No server change, no HTTP contract change, no MCP tool shape change.
 
+## Plan changes
+
+> Epoch 1 · approved 2026-11-09 · by reviewers · state: open
+
+  (Approval: the plan gate's round 2, verdict good_enough, committed in e468285 with that round's accepted findings
+  and the three-epic split the same round's operator command ordered.)
+- 1.1 · 2026-11-10 · agent · approach — the E1.S2 spec measured the two parses: the stay-open wrapper becomes an `eval` form (a trailing comment or `&` broke the old one) and the PowerShell 5.1 refusal also covers a trailing `\`
+  (Not counted, each only makes the plan true as written: the trust line built from the prepared snapshot per §4.4,
+  the seam's range taking the password branch's preparation, `stopped` leaving nothing on disk, and the importer
+  count of `resolveCommand(` repaired.)
+
 ## 1. Goal
 
 Today a Terminal entry ("Terminal command") always runs on THIS machine: its line is typed into a local VS Code
@@ -28,7 +39,7 @@ machine.** An OLDER build does not know the field; that exposure is risk 1, not 
 | D1 | All human roads support SSH in v1: Run in Terminal (arrow), folder run, dependency-chain step, VPN launcher, Run with Secrets. | owner, 2026-11-09 |
 | D2 | Agent `creds_run` / CLI `run`: allowed only when the SSH entry itself is open to the agent for `exec`; else refused with a sentence. The consent dialog names the SSH entry and says the line runs there. | owner, 2026-11-09 |
 | D3 | After the remote command ends, the remote login shell stays open. The owner was told this works only on POSIX remotes. | owner, 2026-11-09 |
-| D4 | Share with… and Export remove the SSH link (as `vpnLauncherEntityId`). The recipient's copy then runs locally; accepted. | owner, 2026-11-09 |
+| D4 | Share with… and Export remove the SSH link (Share strips it in `shareFormat.ts` as it strips `vpnLauncherEntityId`; Export strips it in `exportSecrets.ts` `exportedNode`, where no reference is stripped today). The recipient's copy then runs locally; accepted. | owner, 2026-11-09 |
 | D5 | One ssh line, never "connect, then type": text typed after ssh starts can land in a password, passphrase or host-key prompt. | lead |
 | D6 | Trust (the "run this stored command?" modal and its fingerprint) covers the SSH target, not only the line — else a synced host change runs a trusted line on a new machine without a question. | lead |
 | D7 | Structure: ONE pure module is the only road from "entry + link" to a launch, and a structural scan test fails if a road reads a line another way. | lead + consultants (2 of 2 answered: codex, gemini; 1 row refused on a config limit), 2026-11-09 |
@@ -87,7 +98,8 @@ entry (command, args, terminalOs, sshEntityId)
 SshLink:  none | linked(ssh) | refused(sentence)
    │ planLaunch(entry, link, {stayOpen})            [pure]
    ▼
-LaunchPlan: empty | refused | local{line, trustLine} | remote{ssh, remoteCommand, trustLine}
+LaunchPlan: empty | refused | local{line} | remote{ssh, line, remoteCommand}
+            (the trust line is built AFTER prepare, from the prepared snapshot: trustLineFor(prepared.ssh, prepared.jump, line))
    │                                    │ prepareSshSession(ssh)   [vscode · sshSession.ts, cut from connectEntity]
    │                                    ▼
    │                         PreparedSsh: ready{options, platform, prefix, env?, cleanup} | refused | stopped
@@ -113,8 +125,10 @@ strip, agent-create deny-list entry. The *Runs on* hint adds: "With an SSH conne
 - `planLaunch(entry, link, {stayOpen})`: resolves the line through `resolveCommand` (the composer becomes one of the
   two allowed importers); refuses a linked entry whose *Runs on* is Windows (D9) or whose line has a newline, CR or
   NUL. Stay-open is for the INTERACTIVE roads only (arrow, folder run, VPN launcher); there the remote command is
-  `<line>; s=$?; [ "$s" -eq 0 ] || printf 'creds: the command ended with exit code %s\n' "$s" >&2; exec "${SHELL:-sh}" -l`,
-  so a failed command is said in the terminal before the login shell starts (the login shell's own exit status is
+  `eval '<line>'; s=$?; test $s -eq 0 || printf 'creds: the command ended with exit code %s\n' $s >&2; exec ${SHELL:-sh} -l`
+  (the line single-quoted with `'` → `'\''`; no `"` in the wrapper itself, so it never trips the PowerShell 5.1
+  refusal; `eval` parses the person's text as one script, so a trailing `# comment` or `&` cannot eat the wrapper —
+  entry 1.1, exact text in the E1.S2 spec §S2.4), so a failed command is said in the terminal before the login shell starts (the login shell's own exit status is
   not the command's). The chain step, Run with Secrets and the agent get the bare line, and ssh's exit status IS the
   remote command's.
 - `trustLineFor(ssh, jump, line)`: the canonical text trust is keyed on —
@@ -206,7 +220,7 @@ host while the trust dialog is open cannot send the line, or the secrets, to a h
   (refuses a PIN-locked or woven password), jump and pin as the agent exec does, `buildSshExecArgv` with the remote
   command WITHOUT stay-open, key deleted in `finally`. Trust uses the same trust line, so one approval covers the
   arrow and the agent. Consent text names the SSH entry and its target.
-- **Copy Command / viewer**: show and copy the trust line for a linked entry, with one sentence beside it: "This line
+- **Copy Command / viewer** (both copy roads: the Copy Command command and the viewer's full-command row, `entityViewCopy.ts`): show and copy the trust line for a linked entry, with one sentence beside it: "This line
   uses your own ssh setup (agent, `~/.ssh/config`); the vault's key and password are not in it — use Run to connect
   with them." The composed launch line is never copied: it holds a per-window key path and, on the relay route, a
   socket path.
@@ -221,7 +235,8 @@ send or spawn call sits on an allow-listed line; (4) a self-check that every pat
 
 Local shell: `quoteFor` single quotes (posix and PowerShell). Windows PowerShell 5.1 passes an argument that holds a
 double quote to a native program wrongly; when the pinned shell is `powershell.exe` (5.1) and the remote command holds
-`"`, the road refuses with "install PowerShell 7". Remote shell: the person's line is written for the remote login
+`"` or ends in `\` (5.1 wraps an argument with a space in `"…"` and does not escape either; entry 1.1), the road
+refuses with "install PowerShell 7". Remote shell: the person's line is written for the remote login
 shell and is not re-quoted. A login shell that is not POSIX-like (fish) is a recorded limitation.
 
 ## 5. Build order
@@ -245,7 +260,7 @@ Each step is mergeable alone: a road not yet built keeps step 1's refusal.
 | Guard accepts string / undefined, rejects a number | `test/typeGuards` style | a synced node is not dropped |
 | `sshLinkField` default, candidates, (missing entry); `execDetails` scrub by kind and self | `test/terminalOs.test.ts` style | the form never drops or forges a link |
 | post literal holds `sshEntityId: val('sshEntityId')` | file-text pin as `terminalOs.test.ts:101-109` | the key reaches the host |
-| share strip, export strip, quarantine remap | `shareFormat`, `externalBundle`, `idQuarantine` tests | D4, renamed ids |
+| share strip, export strip, quarantine remap | `shareFormat`, `exportSecrets`, `idQuarantine` tests | D4, renamed ids |
 | candidates: not self, not Trash, host required, kind ssh | `commandTargets` test | D13 |
 | every road refuses a linked entry (step 1) | arrow / folder / vpn / chain / secrets / agent worlds | D8 |
 | link none / linked / missing / trashed / self / no host; Windows refusal; newline refusal; wrapper text; trust line differs per host / user / port / jump and holds no `-i` | `test/remoteLaunch.test.ts` | D5, D6, D9 |
@@ -374,6 +389,9 @@ rest of it is an Opus judge's.
 
 ### E1 · Foundation: the field, the refusal on every road, the composer, the seam
 
+Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E1.md); cornerstone specs
+[E1.S2](PLAN_terminal_command_over_ssh_E1_S2_spec.md) and [E1.S3](PLAN_terminal_command_over_ssh_E1_S3_spec.md).
+
 - **Goal.** A Terminal entry can store an SSH link, the form round-trips it, every road refuses a linked entry with a
   sentence, ONE pure module is the only way from "entry + link" to a launch (held there by a structural test), and
   `prepareSshSession` does everything `connectEntity` does before it opens a terminal. After E1 no road can run a
@@ -489,4 +507,4 @@ rest of it is an Opus judge's.
   judgement is a Fable security judgement outside the quota, not a marked story. Stdin ownership, EOF, the group's
   `/dev/null`, secret-free argv and masking are an Opus judge's, with the fake-spawn test as the proof.
 
-Cornerstones: 0 of 2 — none marked yet
+Cornerstones: 2 of 2 — E1.S2, E1.S3
