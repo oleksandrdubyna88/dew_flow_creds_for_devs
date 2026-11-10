@@ -47,11 +47,11 @@ EOF
   start_child t2
   local cpid="$CH_PID"
   premise "T2 the child is alive when the record is read" await_file "$CTL/t2.ready" || { : > "$CTL/t2.stop"; wait "$cpid"; return 0; }
-  local d claim line extra n
+  local d claim line n
   d="$(first_line "$CTL/t2.dir")"
   claim="$d.owner"
   premise "T2 the claim exists" test -f "$claim" || { : > "$CTL/t2.stop"; wait "$cpid"; return 0; }
-  { IFS= read -r line; if IFS= read -r extra; then echo second > "$CTL/t2.second"; fi; } < "$claim"
+  { IFS= read -r line; if IFS= read -r _; then echo second > "$CTL/t2.second"; fi; } < "$claim"
   isfalse "T2 the claim is ONE line (a second read fails)" test -e "$CTL/t2.second"
   local re_head='^[uw][0-9]{1,10}:[^@:[:space:]]+@(linux|macos|windows):[1-9][0-9]*'
   [[ "$line" =~ $re_head ]] && ok "T2 the record starts with the grammar ($line)" || bad "T2 the record grammar" "$line"
@@ -245,7 +245,12 @@ EOF
     start_child tf5 WSL_DISTRO_NAME="$wsl"
     cpid="$CH_PID"
     premise "F5 the child is alive" await_file "$CTL/tf5.ready" || { kill -9 "$cpid"; return 0; }
-    d="$(ls -A "$CR" | grep -v '\.owner$' | head -n 1)"
+    d=""
+    for d in "$CR"/*; do # the first entry that is not a claim
+      case "$d" in *.owner) continue ;; esac
+      d="${d##*/}"
+      break
+    done
     line="$(first_line "$CR/$d.owner")"
     pid_for_ref="$cpid"
     if [ "$osclass" = windows ]; then pid_for_ref="$(first_line "/proc/$cpid/winpid")"; fi

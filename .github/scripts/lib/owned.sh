@@ -218,9 +218,9 @@ owned_signal() {
 
 # owned_holds <file> <text>: is <file> a regular file (not a link) of exactly ONE line equal to <text>?
 owned_holds() {
-  local line="" extra=""
+  local line=""
   if [ ! -f "$1" ] || [ -L "$1" ]; then return 1; fi
-  { IFS= read -r line && ! IFS= read -r extra; } < "$1" 2> /dev/null || return 1
+  { IFS= read -r line && ! IFS= read -r _; } < "$1" 2> /dev/null || return 1
   [ "$line" = "$2" ]
 }
 
@@ -313,9 +313,9 @@ owned_say_seams() {
 # owned_register <path>: step 2. The entry is kept in state claimed; its index is in OWNED_IDX.
 owned_register() {
   OWNED_IDX="${#OWNED_PATHS[@]}"
-  OWNED_PATHS[$OWNED_IDX]="$1"
-  OWNED_STATES[$OWNED_IDX]="claimed"
-  OWNED_TEXTS[$OWNED_IDX]="$OWNED_OWNER"
+  OWNED_PATHS[OWNED_IDX]="$1"
+  OWNED_STATES[OWNED_IDX]="claimed"
+  OWNED_TEXTS[OWNED_IDX]="$OWNED_OWNER"
 }
 
 # owned_release <index>: drop the own claim (while it is ours) and mark the entry released.
@@ -329,7 +329,7 @@ owned_release() {
 owned_settle() {
   local idx="$1" path="$2"
   if [ "$3" = 0 ]; then
-    if [ "${OWNED_KEEP:-}" = 1 ]; then OWNED_STATES[$idx]="kept"; else OWNED_STATES[$idx]="created"; fi
+    if [ "${OWNED_KEEP:-}" = 1 ]; then OWNED_STATES[idx]="kept"; else OWNED_STATES[idx]="created"; fi
     owned_leave
     return 0
   fi
@@ -448,12 +448,12 @@ owned_cleanup() {
           owned_remove_at "$i"
         else
           owned_say "the claim of ${OWNED_PATHS[$i]} is not what this run wrote - the folder is left"
-          OWNED_STATES[$i]="released"
+          OWNED_STATES[i]="released"
         fi
         ;;
       claimed)
         owned_unclaim "$i"
-        OWNED_STATES[$i]="released"
+        OWNED_STATES[i]="released"
         ;;
     esac
   done

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # The shared harness of the self-test of owned.sh (sourced by the area files; see owned.test.sh).
 # The self-test of owned.sh, the claim-first bash helper (rule common/test-leftovers.md section 2). It runs on Linux, on
 # macOS with /bin/bash (3.2) and on Git for Windows' bash, from ci-clients.yml, and by hand:
@@ -15,8 +16,9 @@
 # answers, its containers, volumes and networks. Before each run the test asserts that none of them has a name of the
 # owner form with the creds token, so the only entries they can act on are in the private roots made here.
 # SC2329: test_cleanup runs through owned_trap. SC2016: the child scripts are in single quotes on purpose. SC2015: ok never fails.
-# SC2012: ls -A only counts names of folders this test made.
-# shellcheck disable=SC2329,SC2016,SC2015,SC2012
+# SC2012: ls -A only counts names of folders this test made. SC2034: this file is sourced; the area files read the variables it
+# sets (janitor, TOK, repo_native, CH_RC, re_rec_linux), which ShellCheck cannot see from here.
+# shellcheck disable=SC2329,SC2016,SC2015,SC2012,SC2034
 set -o pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -71,6 +73,7 @@ test_cleanup() {
   fi
 }
 owned_trap test_cleanup
+ROOT="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2153)
 owned_dir ROOT selftest || { echo "FAIL owned_dir cannot make the private root" >&2; exit 1; }
 re_root='^testsToDelete-[uw][0-9]{1,10}-creds-selftest-[0-9a-f]{8}$'
 [[ "${ROOT##*/}" =~ $re_root ]] && ok "the private root has the owner-form name (${ROOT##*/})" || bad "private root name" "${ROOT##*/}"
@@ -91,7 +94,7 @@ native() { (cd "$1" 2>/dev/null && { pwd -W 2>/dev/null || pwd; }); }
 lib_native="$(native "$mount_lib")"
 repo_native="$(native "$repo")"
 NJS_PRE="import url from 'node:url'; import path from 'node:path'; const lib = (n) => import(url.pathToFileURL(path.join(process.env.LIB_DIR, n)).href);"
-njs() { LIB_DIR="$lib_native" TESTSTODELETE_OWNER= TESTSTODELETE_RUN= node --input-type=module -e "$NJS_PRE $1"; }
+njs() { LIB_DIR="$lib_native" TESTSTODELETE_OWNER='' TESTSTODELETE_RUN='' node --input-type=module -e "$NJS_PRE $1"; }
 
 # --- the harness -------------------------------------------------------------------------------------------------------
 CR=""

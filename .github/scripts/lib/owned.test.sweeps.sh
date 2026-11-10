@@ -26,7 +26,7 @@ run_janitor() { # <root>; sets J_RC, files $CTL/janitor.out and .err
   J_RC=$?
 }
 run_node_sweep() { # <root>; prints R/L/P lines (removed, listed, preserved)
-  ARG_TMP="$(native "$1")" ARG_REPO="$repo_native" LIB_DIR="$lib_native" TESTSTODELETE_OWNER= TESTSTODELETE_RUN= node --input-type=module -e "$NJS_PRE
+  ARG_TMP="$(native "$1")" ARG_REPO="$repo_native" LIB_DIR="$lib_native" TESTSTODELETE_OWNER='' TESTSTODELETE_RUN='' node --input-type=module -e "$NJS_PRE
     const s = await lib('leftovers-sweep.mjs');
     const r = s.sweepLeftovers({ tmp: process.env.ARG_TMP, token: 'creds', repo: process.env.ARG_REPO });
     for (const x of r.removed) console.log('R ' + JSON.stringify(x));
