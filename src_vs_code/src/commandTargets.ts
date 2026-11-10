@@ -5,6 +5,7 @@ import { executableLine } from './dependencyRun';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import { inheritedFolderType } from './defaultFolders';
 import { StorageManager } from './storageManager';
+import { isLinkTarget } from './remoteLaunch';
 
 /**
  * Turning what a command was INVOKED with into what it may act on.
@@ -118,6 +119,20 @@ function canLaunch(node: TreeNode, excludeEntityId: string): boolean {
 /** A Terminal entry with something to run — the same test the dependency chain uses. */
 function hasCommand(details: TreeNode['details']): boolean {
   return details !== undefined && executableLine(details) !== undefined;
+}
+
+/**
+ * The SSH entries a Terminal entry can run over (D13 of `PLAN_terminal_command_over_ssh.md`): never the entry itself, and
+ * every other entry the composer's own decision accepts (`remoteLaunch.isLinkTarget`: live at any depth, of the SSH kind,
+ * with a host `isSafeSshTarget` accepts). The decision is asked, not copied, so every entry offered here is one the
+ * composer can use and a change to the decision changes this list.
+ */
+export function collectSshCandidates(storage: StorageManager, accountId: string, excludeEntityId: string): KeyCandidate[] {
+  const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
+  return storage
+    .getNodes(accountId)
+    .filter((node) => node.id !== excludeEntityId && isLinkTarget(node, byId))
+    .map((node) => ({ id: node.id, name: node.name }));
 }
 
 /**

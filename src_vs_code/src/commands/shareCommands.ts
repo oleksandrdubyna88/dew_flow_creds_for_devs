@@ -95,6 +95,7 @@ export function registerShareCommands(host: ShareCommandsHost): void {
       // An entity authored FOR somebody else references nothing in this vault: a jump host id
       // here would name an entity the recipient does not have.
       jumpCandidates: [],
+      sshCandidates: [],
     });
     if (result === undefined) {
       return;

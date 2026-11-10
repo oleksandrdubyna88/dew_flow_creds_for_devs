@@ -13,6 +13,7 @@ import { describeError } from './describeError';
 import { ArrivalPins, Landing, declinedLanding, folderNameOf, landingOf } from './arrivalPin';
 import { CreatePin, SettledPin, applyCreatePin } from './pinOnCreate';
 import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
+import { withoutSshLink } from './remoteLaunch';
 
 /**
  * Landing an opened share in the recipient's tree — the receiving half of `ShareInbox`, after the
@@ -64,7 +65,8 @@ interface Arrival {
 const NO_PIN: CreatePin = { kind: 'none' };
 
 /** Land an opened payload in the recipient's tree — or leave it in the inbox, said why. */
-export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, pins: ArrivalPins): Promise<ShareLanding> {
+export async function landShare(deps: ShareInboxDeps, share: OwnedShare, received: SharePayload, pins: ArrivalPins): Promise<ShareLanding> {
+  const payload = unlinked(received);
   // Where the sender's folder chain lands — read, nothing written yet.
   const landing = landingOf(deps.storage, share.accountId, null, payload.folderPath ?? []);
   // Is this an update of something the SAME sender sent before? The map is ours,
@@ -87,6 +89,15 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
   await deps.state.update(ORIGINS_KEY, recordOrigin(origins, share.item.fromEmail, payload.node.id, arrival.node.id));
   await settleShare(deps, share, arrival.payload, arrival.node, unreadablePayment);
   return 'landed';
+}
+
+/**
+ * The payload with its SSH link taken off, before either road (a new entry, an update in place) sees it: a received
+ * entry never arrives linked (E1.S1, D4) — the id names an entity of the sender's vault. The same strip as an import's.
+ */
+function unlinked(payload: SharePayload): SharePayload {
+  const details = payload.node.details;
+  return details === undefined ? payload : { ...payload, node: { ...payload.node, details: withoutSshLink(details) } };
 }
 
 /**

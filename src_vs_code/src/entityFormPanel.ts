@@ -642,7 +642,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       agentForward: isSsh && bool(data, 'agentForward') ? true : undefined,
       hostKey: isSsh && !bool(data, 'clearHostKey') ? options.initial?.hostKey : undefined,
       tags: isSsh && tags.length > 0 ? tags : undefined,
-      ...execDetails(data, kind, dependsOn.length, options.entityId), // issue #103: OS, launcher, execute
+      ...execDetails(data, kind, dependsOn.length, options.entityId), // issue #103 and the SSH link: OS, SSH link, launcher, execute
       isSshEnabled: isSsh,
       isSshKey: isKey || undefined,
       // A key-only preference; kept as it was, because it is set from the tree menu rather

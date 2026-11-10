@@ -1,4 +1,4 @@
-import { loadWithVscode } from './vscodeStub';
+import { loadEachWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import * as sshProgram from '../sshProgram';
 
@@ -26,6 +26,7 @@ import * as sshProgram from '../sshProgram';
  */
 
 export type Connect = typeof import('../sshConnect');
+export type Seam = typeof import('../sshSession');
 
 export interface Terminal {
   name: string;
@@ -37,6 +38,8 @@ export interface Terminal {
 
 export interface World {
   mod: Connect;
+  /** `sshSession` from the SAME graph as `mod`, so both see one set of mocks. */
+  seam: Seam;
   materialised: string[];
   /** The opener each credential resolution was handed — a click opener on the human path (entry-PIN plan, D6). */
   openers: unknown[];
@@ -59,6 +62,8 @@ export interface World {
   installOffers: { tool: string; startGate?: AbortSignal }[];
   /** The gate each host-key conversation (`connectionOptions`) was handed, in order (E4.S4). */
   hostKeyAsked: (AbortSignal | undefined)[];
+  /** The per-session suffix each host-key conversation was handed, in order (E1.S3 `isolate`). */
+  pinSuffixes: (string | undefined)[];
   /** Every line put on the clipboard — a refusal's *Copy the Windows command* button. */
   copied: string[];
 }
@@ -68,6 +73,8 @@ export interface Parts {
   /** undefined = the host key was refused, so the connection must not proceed. */
   options?: Record<string, unknown>;
   materialiseFails?: boolean;
+  /** The options answer WHEN it depends on the session's suffix (`isolate`): the pin file name carries it. Wins over `options`. */
+  pinFor?: (suffix: string | undefined) => Record<string, unknown>;
   /** What `openSshTerminal` hands back; undefined = it could not open one. */
   sshTerminal?: unknown;
   existingNamed?: string;
@@ -93,6 +100,7 @@ export function world(parts: Parts): World {
   const closeListeners: ((t: unknown) => void)[] = [];
   const w: World = {
     mod: undefined as never,
+    seam: undefined as never,
     materialised: [],
     openers: [],
     forgotten: [],
@@ -105,6 +113,7 @@ export function world(parts: Parts): World {
     translated: [],
     installOffers: [],
     hostKeyAsked: [],
+    pinSuffixes: [],
     copied: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
@@ -116,8 +125,8 @@ export function world(parts: Parts): World {
   const opened = parts.sshTerminal === undefined ? undefined : { name: 'ssh', dispose: (): void => undefined };
   w.sshTerminalHandle = opened;
 
-  w.mod = loadWithVscode<Connect>(
-    '../sshConnect',
+  const [mod, seam] = loadEachWithVscode(
+    ['../sshConnect', '../sshSession'],
     vscodeStub(w, parts, closeListeners),
     {
       './sshCredential': {
@@ -129,18 +138,26 @@ export function world(parts: Parts): World {
       },
       './connectionOptions': {
         // RECORDED with the gate it was handed: the host-key question is the agent's request's to refuse (E4.S4).
-        connectionOptions: (_a: unknown, _e: unknown, _s: unknown, _d: unknown, startGate?: AbortSignal): Promise<unknown> => {
+        connectionOptions: (
+          _a: unknown,
+          _e: unknown,
+          _s: unknown,
+          _d: unknown,
+          startGate?: AbortSignal,
+          suffix?: string,
+        ): Promise<unknown> => {
           w.hostKeyAsked.push(startGate);
+          w.pinSuffixes.push(suffix);
           parts.duringHostKey?.();
-          return Promise.resolve(parts.options);
+          return Promise.resolve(parts.pinFor === undefined ? parts.options : parts.pinFor(suffix));
         },
       },
       './keyInstaller': {
-        materializePrivateKey: (_dir: string, entityId: string): string => {
+        materializePrivateKey: (_dir: string, entityId: string, _content: string, suffix?: string): string => {
           if (parts.materialiseFails === true) {
             throw new Error('disk full');
           }
-          const path = `/storage/keys/${entityId}.key`;
+          const path = `/storage/keys/${entityId}${suffix === undefined ? '' : `-${suffix}`}.key`;
           w.materialised.push(path);
           return path;
         },
@@ -189,6 +206,8 @@ export function world(parts: Parts): World {
       ...missingSsh(w, parts.sshMissing === true),
     },
   );
+  w.mod = mod as Connect;
+  w.seam = seam as Seam;
   return w;
 }
 

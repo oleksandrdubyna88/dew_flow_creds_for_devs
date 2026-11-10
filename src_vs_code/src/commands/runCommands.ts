@@ -22,6 +22,7 @@ import { confirmTrusted } from '../trustPrompt';
 import { dependencyRequest, runDependenciesFirst } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
 import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
+import { sshLinkRefusal } from '../remoteLaunch';
 
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
@@ -110,6 +111,11 @@ function windowRefusal(entry: Entry): string | undefined {
   return choice.kind === 'refused' ? choice.reason : undefined;
 }
 
+/** The SSH link first (E1.S1 of `PLAN_terminal_command_over_ssh.md`), then the window. */
+function arrowRefusal(entry: Entry): string | undefined {
+  return sshLinkRefusal(entry.details) ?? windowRefusal(entry);
+}
+
 // ---------- Run in Terminal ----------
 
 async function runCommand(host: RunCommandsHost, target: unknown): Promise<void> {
@@ -121,7 +127,7 @@ async function runCommand(host: RunCommandsHost, target: unknown): Promise<void>
 
 async function runEntryLine(host: RunCommandsHost, entry: Entry): Promise<void> {
   const line = arrowLine(entry);
-  if (line !== undefined && (await passGates(host, entry, line, windowRefusal(entry)))) {
+  if (line !== undefined && (await passGates(host, entry, line, arrowRefusal(entry)))) {
     await typeIntoEntryTerminal(entry, line);
   }
 }
@@ -259,13 +265,18 @@ function writeScriptFile(storageDir: string, fileName: string, body: string): st
  */
 async function runWithSecrets(host: RunCommandsHost, target: unknown): Promise<void> {
   const job = await secretsJobAt(host, target);
-  if (job === undefined || !(await passGates(host, job.entry, job.body, osMismatch(job.entry.name, job.entry.details.terminalOs, process.platform)))) {
+  if (job === undefined || !(await passGates(host, job.entry, job.body, secretsRefusal(job.entry)))) {
     return;
   }
   const refs = await resolvedRefs(host, job);
   if (refs !== undefined) {
     runMasked(host, job, refs);
   }
+}
+
+/** The SSH link first, then this machine's OS: neither gets as far as the trust modal or a secret read. */
+function secretsRefusal(entry: Entry): string | undefined {
+  return sshLinkRefusal(entry.details) ?? osMismatch(entry.name, entry.details.terminalOs, process.platform);
 }
 
 interface SecretsJobBase {

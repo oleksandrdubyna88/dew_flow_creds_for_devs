@@ -142,6 +142,11 @@ export interface EntityFormOptions {
    * `PLAN_depends_on.md` recorded; absent means "none offered".
    */
   launcherCandidates?: LauncherCandidate[];
+  /**
+   * The SSH entries a Terminal entry can run over (D13 of `PLAN_terminal_command_over_ssh.md`). OPTIONAL, like
+   * `launcherCandidates`, so cast fixtures keep compiling; absent means none.
+   */
+  sshCandidates?: KeyCandidate[];
   /** This machine's OS — what a NEW Terminal entry's OS dropdown starts on. The webview cannot know it. */
   hostOs?: OsName;
   /** A host key is pinned for this entity, and this is its fingerprint (audit B10). */

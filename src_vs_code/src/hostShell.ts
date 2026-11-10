@@ -76,6 +76,16 @@ export function shellFamily(platform: NodeJS.Platform, shellPath?: string): Shel
   return base.length === 0 && platform === 'win32' ? 'powershell' : 'posix';
 }
 
+/**
+ * Windows PowerShell 5.1 (`powershell.exe`, or `powershell` on a machine that lists it without the extension), as opposed
+ * to PowerShell 7 (`pwsh`): its native-argument parse differs and cannot carry a double quote. The same basename
+ * reading as `shellFamily`.
+ */
+export function isWindowsPowerShell51(shellPath: string | undefined): boolean {
+  const base = basenameOf(shellPath);
+  return base === 'powershell.exe' || base === 'powershell';
+}
+
 function basenameOf(shellPath: string | undefined): string {
   const normalized = (shellPath ?? '').toLowerCase().split('\\').join('/');
   return normalized.split('/').pop() ?? '';

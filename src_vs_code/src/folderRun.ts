@@ -1,4 +1,5 @@
 import { resolveCommand } from './commandLine';
+import { sshLinkRefusal } from './remoteLaunch';
 import { READ_EACH_LINE } from './dependencyRun';
 import { isInTrash } from './trash';
 import { escapeControl } from './transitSecretReport';
@@ -113,7 +114,7 @@ function lineOrReason(details: EntityMetadata, facts: FolderFacts): { line: stri
 }
 
 function judgedLine(details: EntityMetadata, line: string, facts: FolderFacts): { line: string } | { reason: string } {
-  const reason = lineRefusal(details.name, line) ?? facts.shellRefusal(details.name, details.terminalOs);
+  const reason = sshLinkRefusal(details) ?? lineRefusal(details.name, line) ?? facts.shellRefusal(details.name, details.terminalOs);
   return reason === undefined ? { line } : { reason };
 }
 

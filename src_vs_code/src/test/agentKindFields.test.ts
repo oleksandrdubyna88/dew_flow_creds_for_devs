@@ -166,6 +166,7 @@ const WINDOW_OWNED = [
   'hostKey',
   'sshKeyEntityId',
   'vpnLauncherEntityId',
+  'sshEntityId',
   'attachmentFileName',
   'imageFileName',
   'createdAt',

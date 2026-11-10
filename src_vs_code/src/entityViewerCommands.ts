@@ -154,6 +154,7 @@ function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions
     // cannot be compared with anything. A name and a SHA256 fingerprint can.
     keySourceName: nameOf(storage, accountId, details.sshKeyEntityId),
     jumpHostName: nameOf(storage, accountId, details.jumpHostEntityId),
+    sshLinkName: nameOf(storage, accountId, details.sshEntityId || undefined),
     hostKeyFingerprint: pinnedKey === undefined ? undefined : hostKeyFingerprint(pinnedKey),
     hasPassword: loaded.hasPassword,
     hasPrivateKey: loaded.hasPrivateKey,

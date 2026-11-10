@@ -5,7 +5,8 @@ import { VaultKeys } from '../vaultKeys';
 import { asElement } from '../commandTargets';
 import * as vscode from 'vscode';
 import { nodeAt } from '../entityViewerCommands';
-import { commandRefusal, describeCommand, shownCommandLine } from '../commandLine';
+import { CommandEntry, commandRefusal, describeCommand, shownCommandLine } from '../commandLine';
+import { sshLinkRefusal } from '../remoteLaunch';
 import { openEntityViewer } from '../entityViewerCommands';
 import { copySecret } from '../secretClipboard';
 import { copiedMessage } from '../secretClipboard';
@@ -217,12 +218,24 @@ async function installSshKey(host: EntityCommandsHost, target: unknown): Promise
   }
 }
 
-/** Copy Command: the resolved line; for a refused name the template, and it says so. */
+/**
+ * Copy Command: the resolved line; for a refused name the template, and it says so. An entry set to run over SSH
+ * (E1.S1 of `PLAN_terminal_command_over_ssh.md`) copies nothing: the line would run on the wrong machine.
+ */
 async function copyCommandLine(node: TreeNode): Promise<void> {
-  const entry = node.details ?? { name: node.name };
+  const entry = node.details ?? { id: node.id, name: node.name };
+  const linked = sshLinkRefusal(entry);
+  if (linked !== undefined) {
+    void vscode.window.showWarningMessage(linked);
+    return;
+  }
+  await copyLocalLine(node.name, entry);
+}
+
+async function copyLocalLine(name: string, entry: CommandEntry): Promise<void> {
   const line = shownCommandLine(entry);
   if (line.length === 0) {
-    void vscode.window.showWarningMessage(`"${node.name}" has no command yet.`);
+    void vscode.window.showWarningMessage(`"${name}" has no command yet.`);
     return;
   }
   const reason = commandRefusal(entry);
@@ -230,7 +243,7 @@ async function copyCommandLine(node: TreeNode): Promise<void> {
   await vscode.env.clipboard.writeText(line);
   void (reason === undefined
     ? vscode.window.showInformationMessage(`Copied: ${line}`)
-    : vscode.window.showWarningMessage(`Copied the template: "${node.name}" will not run: ${reason}`));
+    : vscode.window.showWarningMessage(`Copied the template: "${name}" will not run: ${reason}`));
 }
 
 async function showCommandText(node: TreeNode): Promise<void> {
