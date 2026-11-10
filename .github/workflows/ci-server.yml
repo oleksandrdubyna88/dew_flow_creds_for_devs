@@ -372,7 +372,8 @@ jobs:
           # catches (run 42635403255): `"real_ip_header" directive is duplicate in
           # /etc/nginx/conf.d/vault.conf` — nginx kept the plain-HTTP 503 config and HTTPS never opened.
           # --add-host: `nginx -t` resolves the `vault` upstream, which only exists in the compose network.
-          work="$(mktemp -d)"
+          work="$RUNNER_TEMP/nginx-config-test"
+          mkdir -p "$work"
           trap 'rm -rf "$work"' EXIT
           # Where each mode looks (entrypoint.sh: CERT_NAME): domain and ip read
           # live/<SERVER_NAME>/{fullchain,privkey}.pem, the Let's Encrypt layout; custom reads live/custom/.
