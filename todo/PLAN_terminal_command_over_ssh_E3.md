@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3: Run with Secrets, the agent's run, and the closing
 
-> Status: **stories of E3, nothing implemented yet, 2026-11-10. The parent's epoch 3 is open (after the re-review of entry 2.2); next: E3's plan round 2, then the code.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
+> Status: **stories of E3, nothing implemented yet, 2026-11-10. The parent's epoch 3 is open (after the re-review of entry 2.2); E3's plan round 2 passed (proceed) and its accepted findings and the lead's Opus review are written in (§E3.R2); next: the code.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
 > fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
 > `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
@@ -8,11 +8,14 @@
 > `Cornerstones: 2 of 2 — E1.S2, E1.S3`). Scenarios and briefs by Opus; code and tests by Sonnet; review by Opus. The
 > AUTHORISATION part of S2 is a Fable security judgement (outside the quota), in its own file:
 > [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md).
-> The eight amendments of E3's first plan round are written into the sections they change (§E3.R1 says where).
+> The eight amendments of E3's first plan round are written into the sections they change (§E3.R1 says where); so are
+> round 2's accepted findings and the lead's Opus review (§E3.R2 says where).
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on a5ddd73 and
 checked again on 454e990: of the cited source files only `sshSession.ts` moved (#336 added 4 lines at `:103`), and of the
-documents `research/module_extension.md` and `research/module_tests.md`; those references are updated. E3 finds no session
+documents `research/module_extension.md` and `research/module_tests.md`; those references are updated. Checked a third
+time on e57eb80f (main with #338): since 454e990 only `src_vs_code/CHANGELOG.md` and `todo/README.md` changed; the
+CHANGELOG references are updated (§S3.1, "What E3 does NOT do"). E3 finds no session
 by a terminal title: the masked run is its own pseudoterminal, and `sshTerminalOwners.ts` is SSH Connect's alone.
 
 ## The three stories
@@ -71,11 +74,11 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | E3-D2 | **The remote line is the trust line's line.** `secretsRemoteLine` = `rewriteRefs(plan.line, refs, 'linux')`; the references are planned from `plan.line` only (`planRefs([plan.line])`). | What the person approves (`trustLineFor(…, plan.line)`) is what runs, except that each `creds://` reference becomes `"$CREDS_REF_n"`. The local road plans from the parts, disabled rows included; a reference only in a disabled row is not in the line, so over SSH it is not read at all. Recorded as a deviation in S3. |
 | E3-D3 | **"No reference" is said BEFORE prepare.** Planning names reads no secret, so a linked entry with no `creds://` reference gets today's sentence and no PIN, no host-key question, no key file. | The parent's order (prepare → trust → dependencies → resolve values → spawn) is kept for everything that reads or asks. |
 | E3-D4 | **The secrets spawn prepares with `agentServesKey: false`.** `SshRoad.prepare` gains a third parameter `use: 'terminal' \| 'spawn'` (default `'terminal'`). For `'spawn'` a stored key is always written to its isolated file and `-i` names it. | A terminal reaches the extension's agent through the window's environment collection; a child spawned by the extension host does not. With no key file the child would use whatever `SSH_AUTH_SOCK` the host process has: the "silently authenticates with whatever keys" hazard `sshSession.ts:400-406` refuses on the relay route. |
-| E3-D5 | **`SshRoad.spawnLaunch(ssh, env)`** gives the program and the extra environment of a spawned ssh: `openSshBinary('ssh', ssh.agentForward === true, process.platform)` (never a bare name searched in the current folder on Windows) and `SSH_AUTH_SOCK` = the extension's agent socket when the SSH entry forwards the agent, plus the askpass `env`. Composed by ONE new pure function `sshSpawnLaunch` in `sshProgram.ts`, which `sshUseActions.ts` `agentAwareLaunch` (`:95-109`) also uses. Its `warning` (today only `NO_AGENT_TO_FORWARD`, `sshProgram.ts:251-253`, from `agentForwardEnv` `:267-279`) goes into the banner (E3-D12). | The agent's exec already does exactly this; one composition, two callers (reuse-first). `SshRoadDeps` gains an optional `agentSocket`; `sshRoadOf(sshDeps)` already receives it (`sshUseActions.ts:398`), so `extension.ts` does not change. |
+| E3-D5 | **`SshRoad.spawnLaunch(ssh, env)`** answers `{ kind: 'spawn', program, cwd, env, warning? }` or `{ kind: 'refused', reason }` for a spawned ssh. **Program:** `sshSpawnLaunch(ssh, socket, process.platform).program` (that is `openSshBinary('ssh', ssh.agentForward === true, …)`), then `spawnableSshProgram(program, process.platform, process.env.PATH, fs.existsSync)` (new, pure, `sshProgram.ts`). Off Windows the program is kept (`execvp` searches `PATH`, not the current folder). On Windows a program with a drive letter or a `\\` prefix is kept (the built-in that `openSshBinary` chose); a bare name becomes the FIRST `ssh.exe` in an absolute folder of `PATH` (`pathDirsOf(PATH, ';')`, `sshProgram.ts:116-118`; an entry with no drive letter and no `\\` prefix — `.`, `tools`, `\dir` — is skipped), else `builtInOpenSsh('ssh')` when it exists, else `undefined` → `refused` with `NO_SSH_TO_SPAWN`. **Folder:** `cwd` = `deps.storageDir`, NEVER the workspace folder (round 2, B1). **Environment:** `SSH_AUTH_SOCK` = the extension's agent socket when the SSH entry forwards the agent, plus the askpass `env`. `sshSpawnLaunch` is ONE new pure function in `sshProgram.ts`, which `sshUseActions.ts` `agentAwareLaunch` (`:95-109`) also uses; `spawnableSshProgram` and the folder are the masked run's only (`ssh:exec` is not changed, flag 8). Its `warning` (today only `NO_AGENT_TO_FORWARD`, `sshProgram.ts:251-253`, from `agentForwardEnv` `:267-279`) goes into the banner (E3-D12). | The agent's exec composes the program and the agent socket this way; one composition, two callers (reuse-first). **B1 (the lead's Opus review; CWE-426):** without agent forwarding `openSshBinary` answers the bare word `ssh` (`sshProgram.ts:182-216`), and `spawnChild` gives the child the first workspace folder as its `cwd` (`maskedTerminal.ts:151-153`, `:160`). On Windows libuv searches the child's `cwd` before `PATH` (the hole named at `sshProgram.ts:186-197`), so a repository with an `ssh.exe` in its root would receive the askpass password and every value on stdin. The absolute program closes the search; the folder closes it a second time and on POSIX too (a `PATH` with `.` or an empty entry). Why `storageDir` and not the home folder: it is the extension's own folder (its key files, pins and the window lock, `leasedWrites.ts:32`), no repository and no other program writes there, and the remote command does not use the local folder at all. It exists whenever the vault was ever written (the window lock lives in it); if it is missing, the spawn fails with "Could not start" and the run ends — never a fallback to the workspace. Why the PATH lookup before the built-in: it keeps the client a bare spawn finds (the person's own, minus the current folder), as `openSshBinary`'s doc wants (`:200-203`). `SshRoadDeps` gains an optional `agentSocket`; `sshRoadOf(sshDeps)` already receives it (`sshUseActions.ts:398`), and `storageDir` (`sshRoad.ts:36`), so `extension.ts` does not change. |
 | E3-D6 | **Local window only, checked before prepare**: `windowKind(vscode.env.remoteName) !== 'local'` → `secretsLocalOnly(name)`, nothing prepared. `secretsLaunch` also refuses a prepared session with a relay `prefix` or a client `program` (fail closed; unreachable in a local window). | Parent §4.4 "local window only". The extension host spawns on THIS machine; a WSL or Remote-SSH window's preparation is composed for another shell. |
-| E3-D7 | **ONE atomic, once-only hand-over from the owner to the masked run** (round 1, item 5). `OwnedSessions` gains `handOverToRun(ready: ReadySsh): () => void`: it takes `ready` off the owner's list and answers the run's cleanup, a once-only wrapper of `ready.cleanup()` (a second call does nothing). The road calls it and then `runInMaskedTerminal({ …, onEnded: ended })` in ONE synchronous block with no `await` between them; when `runInMaskedTerminal` throws (the terminal was never made), the road's `catch` calls `ended()` and rethrows. `MaskedRunOptions.onEnded` is called EXACTLY ONCE for a run whose terminal was made: child `close`, child `error`, a failed start, or the terminal closed before the child started — whichever comes first; a throw from `createTerminal` is the caller's to clean. So `ready.cleanup()` runs exactly once on every exit: the run's end, a failed creation, a creation that ended and then threw, a close before the start; the owner's `finally` never sees a handed-over session again. | Parent §4.4: after the spawn the owner is the child's exit handler. The pty spawns in `open()`, after `createTerminal` returns, so the hand-over is to the run, which owns every later exit. A hand-over in two steps (create, then leave the list) cleans twice when the creation fails after the run ended, and a list entry that outlives the hand-over is a second owner. |
+| E3-D7 | **ONE atomic, once-only hand-over from the owner to the masked run** (round 1, item 5; round 2, R2-2). `OwnedSessions` keeps ONE once-only end per owned session, `once(() => ready.cleanup())` (a local `done` flag: a second call does nothing), and `cleanAll()` calls that end, not `ready.cleanup()` directly. It gains `handOverToRun(ready: ReadySsh, start: (ended: () => void) => void): void`, in three steps: (1) take `ready`'s once-only end (`ready` is put on the list first when it is not on it); (2) `start(ended)` — the road's `runInMaskedTerminal({ …, onEnded: ended })`; (3) only when `start` returned, take `ready` off the list. The road calls it INSIDE its `try … finally` (§S1.1), with no `await` in it, so the hand-over and the creation are one guarded block. A throw from step 1 or step 2 leaves `ready` ON the list, so the owner's `finally` (`cleanAll`) is the ONE path that cleans it, before and after a run's end alike, through the same once-only end: a run that already called `ended` is not cleaned twice. After step 3 only the run cleans it. `MaskedRunOptions.onEnded` is called EXACTLY ONCE for a run whose terminal was made: child `close`, child `error`, a failed start, the terminal closed before the child started, or a throw from `terminal.show()` (`maskedTerminal.ts:117`; the masked run then ends the run itself, disposes the terminal and rethrows, so a later `open()` finds the run over and spawns nothing — round 2, Minor 7) — whichever comes first. A throw from `createTerminal` is the caller's to clean (no terminal, no run): `ready` is still on the list. So `ready.cleanup()` runs exactly once on every exit: the run's end, a failed creation, a creation that ended and then threw, a throwing `show()`, a close before the start; the owner's `finally` never cleans a session the run has taken. | Parent §4.4: after the spawn the owner is the child's exit handler. The pty spawns in `open()`, after `createTerminal` returns, so the hand-over is to the run, which owns every later exit. Round 1 called `handOverToRun` BEFORE the `try` and cleaned in the road's `catch`: a throw inside the hand-over then had no cleaner when `ready` was already off the list, and two cleaners (the `catch` and the `finally`) when it was not. With the removal LAST and one once-only end shared by the list and the run, every state before the removal is the owner's and every state after it is the run's. |
 | E3-D8 | **The SSH child's environment never holds a value** (D12; round 1, item 4). `MaskedRunOptions.env` in argv mode is `spawnLaunch`'s answer only: the askpass variables of a password SSH entry (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `sshAskpass.ts:43-45`) and `SSH_AUTH_SOCK`; no `CREDS_REF_n` and no resolved value. The values reach the remote only in `stdinText`. The askpass variables carry the SSH entry's own password and are the ACCEPTED LIMIT of `research/PLAN_windows_shell_quoting_injection.md` §8 (owner, 2026-11-10; `research/module_extension.md:221`): a person's own `SendEnv` pattern that matches them, with a server `AcceptEnv` that matches too, sends the password to the server. E3 adds no `-o SendEnv=-NAME`: it was MEASURED not to remove a wildcard pattern (OpenSSH removes only a literally equal one; `ssh -G` on OpenSSH 10.2p1 and Windows OpenSSH 9.5p2 still listed `sendenv CREDS_*`), so it would only look like protection. | D12 promises the values never in argv, the remote `ps` or a history; nothing gains by putting them in the local ssh's environment, and there no `SendEnv` can reach them. The password limit is the same on SSH Connect and E2's password terminals today; this road does not widen it. |
-| E3-D11 | **The masked run is bounded** (round 1, item 1). (a) Connecting: the argv carries `-o ConnectTimeout=10` in both branches (`sshExecCommand.ts:115`), and the password branch `NumberOfPasswordPrompts=1` (`:106`), the key branch `BatchMode=yes` (`:107`): ssh answers no prompt from stdin. That is what we ASK ssh; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang). (b) Closing: the terminal's `close()` calls `killChild(child, { tree: true })` (`childKill.ts:81-87`) as today: on Windows `taskkill /pid <pid> /T /F` (`:32-37`) ends `ssh.exe` and a jump host's helper `ssh`; on POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` = 2000 (`:23`), to the child, which in argv mode IS `ssh` (no shell between). (c) Stdin: the script is written once, in `open()`, right after the spawn; when the run ends (E3-D7's once-only `ended()`), the child's stdin is DESTROYED, so a part of the script not yet taken by the child (it holds the values) is dropped, never written later; `open()` after the run ended spawns nothing and writes nothing. | Parent §4.4: no byte to stdin before trust, and the run must end. A child that never reads stdin (stalled before the server answers) would otherwise keep the script, values included, in the extension host's write buffer for as long as it lives. |
+| E3-D11 | **The masked run is bounded** (round 1, item 1). (a) Connecting: the argv carries `-o ConnectTimeout=10` in both branches (`sshExecCommand.ts:115`), and the password branch `NumberOfPasswordPrompts=1` (`:106`), the key branch `BatchMode=yes` (`:107`): ssh answers no prompt from stdin. That is what we ASK ssh; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang). (b) Closing: the terminal's `close()` calls `killChild(child, { tree: true })` (`childKill.ts:81-87`) as today: on Windows `taskkill /pid <pid> /T /F` (`:32-37`) ends `ssh.exe` and a jump host's helper `ssh`; on POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` = 2000 (`:23`), to the child, which in argv mode IS `ssh` (no shell between). (c) Stdin: the script is written once, in `open()`, right after the spawn; when the run ends (E3-D7's once-only `ended()`), the child's stdin is DESTROYED, so a part of the script not yet taken by the child (it holds the values) is dropped, never written later; `open()` after the run ended spawns nothing and writes nothing — also after a throw from `terminal.show()`, which ends the run before it rethrows (E3-D7). (d) This is the LOCAL end (round 2, R2-1): see §S1.2 for the remote command. | Parent §4.4: no byte to stdin before trust, and the run must end. A child that never reads stdin (stalled before the server answers) would otherwise keep the script, values included, in the extension host's write buffer for as long as it lives. |
 | E3-D12 | **The launch's warning is a line of the banner, not a toast** (round 1, item 3). `maskedOverSshBanner(described, warning, target, secrets)` (pure, `remoteLaunch.ts`) joins with `\r\n`: `described`; `Note: <warning>.` when `warning` is set; `secretsOverSshBanner(target, secrets)`. Nothing calls `showWarningMessage` for it. | A one-argument toast is not awaited and races the launch: the run's output can be on screen before it, or the person closes the toast unread. The banner is written in `open()` before the first byte of output. |
 | E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Counted as parent entry 2.2; since the epoch-3 revision, parent §4.5 (1) names this list, and the guarantee that the import target served is held by the no-local-sink tests (parent §4.5 (5); §S1.6 LN1-LN11, §S2.5 AG8). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
 | E3-D9 | **The agent's SSH call is injected**, as `overSsh` on the deps of `terminalRunAction`. Its implementation `execOverSsh(deps)` lives in `sshUseActions.ts` (the `vscode` side) and is shared with `sshExecAction`. `sshDepsFor` (`sshUseActions.ts:383-405`) returns it, and `agentDeps` already spreads `sshDeps` (`extension.ts:629-637`). | `agentUseActions.ts` imports no `vscode` and its tests load it directly; `resolveExecAuth` and `materializeKnownHosts` reach `vscode` (`keyInstaller.ts:5`, `hostKeyTrust.ts:3`). And `extension.ts` is at its size ratchet (1003). |
@@ -88,7 +91,8 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | `secretsLocalOnly(name)` | `remoteLaunch.ts` | `Run with Secrets over SSH works only in a local VS Code window, and this window is not one. Nothing was run: open "<name>" from a local window.` |
 | `NO_REFERENCE(name)` | `commands/runCommands.ts` (today's literal at `:369-371`, made a function; text unchanged) | `"<name>" holds no creds:// reference. Write one as a value — creds://<account email>/<entity>/<field> — then run this again. Nothing was run.` |
 | `secretsOverSshBanner(target, secrets)` | `remoteLaunch.ts` | `Over SSH to <target>. The values go to the remote login shell on its standard input, never on a command line, and are replaced with <CREDS_MASKED:NAME> in what it prints here.<caveat> This run is not interactive: there is no terminal, and the command reads an empty input, so a command that asks a question usually stops. To answer questions, use Run in Terminal instead; the values are not injected there.` |
-| `<caveat>` = `shortValuesCaveat(secrets)` | `outputMask.ts` (new export, the words of `extension.ts:972-976` moved, not changed) | `''`, or ` NOT masked, because they are too short to replace without mangling ordinary output: <labels> — a one-time code is six digits, so treat this window as showing it.` |
+| `<caveat>` = `shortValuesCaveat(secrets)` | `outputMask.ts` (new export, beside `maskingBanner`, which moves there too, round 2 M7; the words of `extension.ts:972-976` moved, not changed) | `''`, or ` NOT masked, because they are too short to replace without mangling ordinary output: <labels> — a one-time code is six digits, so treat this window as showing it.` |
+| `NO_SSH_TO_SPAWN` | `sshProgram.ts` (E3-D5) | `No ssh client was found to start: no absolute folder of PATH holds ssh.exe, and C:\Windows\System32\OpenSSH\ssh.exe is not there. Nothing was run: install the OpenSSH client, then run this again.` |
 | `maskedOverSshBanner(described, warning, target, secrets)` | `remoteLaunch.ts` (E3-D12) | the lines `described`, then `Note: <warning>.` only when `warning !== undefined`, then `secretsOverSshBanner(target, secrets)`, joined with `\r\n` (no trailing `\r\n`; `open()` adds the `\n`) |
 
 `<target>` is the `target` of `secretsLaunch`'s `spawn` answer, which is `ready.target` (`describeSshTarget`: `user@host`
@@ -135,36 +139,36 @@ try {
 `trustedThenSpawned` (split as needed: ≤ 50 lines, complexity ≤ 4 per function):
 
 - `const launch = secretsLaunch(plan, ready)`; `refused` → warn; return. (Pure, before anyone is asked: E2-D6.)
+- `const spawn = host.sshRoad.spawnLaunch(ready.snapshot, ready.env)` (E3-D5); `refused` → warn `spawn.reason`; return.
+  (No value is read and nobody is asked yet; the owner's `finally` cleans the session.) Its `warning` is NOT shown as a
+  toast: it is a line of the banner (E3-D12), on screen before the first byte of output. No `showWarningMessage` on this
+  path.
 - `passGates(host, job.entry, trustLineFor(ready.entity, ready.jump, plan.line), undefined)` false → return. This is the
   trust modal and then `runDependenciesFirst` (`:101-111`). No child exists and no byte is written yet.
 - `const resolution = await resolveSecretRefs(refs.refs, host.refSource)`; not ok → today's error message; return.
 - `const resolved = withValues(refs, resolution.values, { env: {}, body: '' })` (`:401-411`, unchanged).
-- `const spawn = host.sshRoad.spawnLaunch(ready.snapshot, ready.env)`. Its `warning` is NOT shown as a toast: it is a
-  line of the banner (E3-D12), on screen before the first byte of output. No `showWarningMessage` on this path.
-- The hand-over (E3-D7), in `maskedOverSsh`, ONE synchronous block — no `await` from `handOverToRun` to the end of the
-  `try`:
+- The hand-over (E3-D7; round 2, R2-2), in `maskedOverSsh`: ONE synchronous call, no `await` in it, inside
+  `spawnOverSsh`'s `try … finally` (the guarded block). No `catch` of its own:
 
 ```ts
-const ended = sessions.handOverToRun(ready);   // off the owner's list; the once-only cleanup of this session
-try {
+sessions.handOverToRun(ready, (ended) => {          // the session stays on the owner's list until this returns
   runInMaskedTerminal({
     name: maskedRunTitle(name),
     argv: [spawn.program, ...launch.argv],
+    cwd: spawn.cwd,                                                  // the extension's storage folder, never the workspace (E3-D5)
     env: spawn.env,                                                  // askpass + SSH_AUTH_SOCK only (E3-D8)
     stdinText: secretsStdin(resolved.env, secretsRemoteLine(plan, refs)),
     secrets: resolved.secrets,
     banner: maskedOverSshBanner(described, spawn.warning, launch.target, resolved.secrets),
-    onEnded: ended,
+    onEnded: ended,                                                  // the list's own once-only end
   });
-} catch (error) {
-  ended();          // no terminal was made, so the run can never end on its own
-  throw error;      // the owner's finally runs; the session is no longer on its list
-}
+});
+// A throw from the hand-over or from the creation leaves the session on the list: the owner's finally cleans it, once.
 ```
 
 **ONE SNAPSHOT** (as code review checks it): from `prepare` to the spawn there is no `storage.getNode` of the SSH id, no
-`sshLinkOf`, and `plan.ssh` is not read again. The trust line, the argv, the spawn program and the banner target are
-built from `ready` only (`ready.entity`, `ready.jump`, `ready.options`, `ready.snapshot`, `ready.target`).
+`sshLinkOf`, and `plan.ssh` is not read again. The trust line, the argv, the spawn program, its folder and the banner
+target are built from `ready` only (`ready.entity`, `ready.jump`, `ready.options`, `ready.snapshot`, `ready.target`).
 
 ### S1.2 What ssh does with stdin, why nothing else reads it, and what ends the run
 
@@ -179,9 +183,16 @@ whole to the remote command. No `-t`: no remote pty. The remote command is `SECR
 | Moment | What bounds it | Who observes it |
 |---|---|---|
 | connecting, authenticating | `-o ConnectTimeout=10` (both branches) and no prompt answered from stdin (`BatchMode=yes` or `NumberOfPasswordPrompts=1` with `SSH_ASKPASS_REQUIRE=force`) — what we ASK ssh | K1 and K2 assert the words are SENT; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang) |
-| the remote command runs | the person: the masked terminal is the run's only handle; closing it is the stop | — (by design: a long command is allowed to run) |
+| the remote command runs | the person: the masked terminal is the run's only handle; closing it stops the LOCAL `ssh` (next row), not always the remote command (below the table) | — (by design: a long command is allowed to run) |
 | the terminal closes | `pty.close()` → `killChild(child, { tree: true })` (`maskedTerminal.ts:107`, unchanged): Windows `taskkill /T /F` on the tree; POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` | M9: a child that ignores `SIGTERM` is gone after the close; the kill is recorded with `{ tree: true }` |
-| the run ends (any of the four ways of E3-D7) | `ended()` destroys the child's stdin: an unwritten tail of the script (values included) is dropped, never written later; `open()` after the end does nothing | M9 (stdin destroyed with a script larger than the pipe takes), M6b (`close()` then `open()` spawns nothing) |
+| the run ends (any of the ways of E3-D7) | `ended()` destroys the child's stdin: an unwritten tail of the script (values included) is dropped, never written later; `open()` after the end does nothing, also after a throw from `terminal.show()` | M9 (stdin destroyed with a script larger than the pipe takes), M6b (`close()` then `open()` spawns nothing), M10b (`show()` throws, then `open()` spawns nothing) |
+
+**This table is the LOCAL end** (round 2, R2-1). It says when the run on THIS machine ends. The remote command can keep
+running after a close: there is no `-t`, so it has no terminal on the server, and sshd sends it no hangup when the
+connection drops. A command that only computes or sleeps runs on until it ends by itself; one that writes to the closed
+connection usually ends on `SIGPIPE`. That is sshd's behaviour, not ours, and no unit test here observes it. The help
+says so (§S1.3, the `usage` text: "Closing its terminal stops ssh on this machine; the command on the server has no
+terminal, so it can keep running there until it ends").
 
 Not observed by a unit test, and so written as a request, not a fact: on POSIX `childKill` signals `ssh` only; with a jump
 host, `ssh`'s `ProxyJump` helper is its own child, and that helper ending with it is OpenSSH's behaviour, not ours. Hand
@@ -202,39 +213,54 @@ masked terminal is closed mid-run. S3 hands that line to the owner with hand che
 | `export function secretsRemoteLine(plan: RemotePlan, refs: RefPlan): string` | `rewriteRefs(plan.line, refs, 'linux')` (E3-D2). Doc: the remote shell is POSIX (D9), so the reads are `"$CREDS_REF_n"`. |
 | `export function secretsLocalOnly(name: string): string` | The E3.0 text. |
 | `export function secretsOverSshBanner(target: string, secrets: readonly { value: string; label: string }[]): string` | The E3.0 text. |
+| `sshLinkRefusal`'s doc, its paragraph `:120-123` (round 2, Minor 8) | "Run with Secrets (until E3)" becomes "Run with Secrets for a SCRIPT that a sync linked (a linked command runs over SSH since E3.S1)". S2 takes "the agent's run" out of the same list (§S2.3). |
 
-**`outputMask.ts`** (pure) — add `export function shortValuesCaveat(secrets: readonly { value: string; label: string }[]): string`
-with the words of `extension.ts:969-976` (the `short` filter on `MIN_MASKABLE_LENGTH` and the `caveat` text).
-**`extension.ts`** — in place, no line added: `maskingBanner` (`:968-978`) uses `shortValuesCaveat(secrets)`; the import on
-`:88` names both (`MIN_MASKABLE_LENGTH` stays only if another line still uses it). The file shrinks; `test/sizeRatchet.test.ts`
-accepts a shrink. The banner text of the local road does not change (`test/maskedTerminal.test.ts` and the banner tests
-stay green unchanged).
+**`outputMask.ts`** (pure; 100 → about 140 lines; round 2, M7) — `maskingBanner` MOVES here from `extension.ts:958-978`
+(its doc and its body, the text unchanged), and beside it `export function shortValuesCaveat(secrets: readonly { value:
+string; label: string }[]): string` with the `short` filter on `MIN_MASKABLE_LENGTH` and the `caveat` words
+(`extension.ts:969-976`); `maskingBanner` calls it. `MIN_MASKABLE_LENGTH` is already re-exported here (`:35`).
+**`extension.ts`** — no line added: the block `:958-978` is deleted, and the import on `:88`
+(`import { MIN_MASKABLE_LENGTH } from './outputMask';`, used only by that block) becomes, on the same line,
+`export { maskingBanner } from './outputMask';`. So `commands/runCommands.ts:15` (`import { maskingBanner } from
+'../extension'`) and the worlds that stand `../extension` in (`test/arrowWorld.ts:74`, `test/commandLineHandlers.test.ts:38`,
+`test/sshLinkRoads.test.ts:203`, `test/sshRoadCopies.test.ts:111`) do not change, and no unit test loads `../extension`
+(K9 tests the banner in `outputMask`). The file shrinks by about 21 lines; `test/sizeRatchet.test.ts` accepts a shrink. The
+banner text of the local road does not change (`test/maskedTerminal.test.ts` and the banner tests stay green unchanged).
 
-**`maskedTerminal.ts`** (172 → about 230 lines)
+**`maskedTerminal.ts`** (172 → about 250 lines)
 
 | Place | Change |
 |---|---|
-| `MaskedRunOptions` `:27-53` | `commandLine` and `shell` become optional, and three fields are added: `argv?: readonly string[]` — the program and its arguments, spawned with `shell: false`; when set, `commandLine` and `shell` are not read; `stdinText?: string` — written to the child's stdin once, right after the spawn, then stdin is closed; keystrokes are then NOT forwarded; `onEnded?: () => void` — called exactly once for a run whose terminal was made, when the run ends (E3-D7: `close`, `error`, a failed start, or a close before the start); a throw from `createTerminal` is the caller's to clean. The `env` doc says: on top of the parent environment; in argv mode it carries no value (E3-D8). Exactly one of `commandLine` and `argv` must be set: put this in the type (a union), not in a comment. |
-| `spawnChild` `:155-172` | One spawn line, from a helper `launchOf(options)` that answers `{ program, args, shell }`: argv mode → `{ program: argv[0], args: argv.slice(1), shell: false }`; else `{ program: options.commandLine, args: [], shell: shellOption(options.shell) }` (today). The line becomes `const child = childProcess.spawn(launch.program, launch.args, {` with `shell: launch.shell`. |
-| `runInMaskedTerminal` `:66-119`, new state | Beside `let child` (`:69`): `let over = false`, and `const ended = (): void => { if (over) { return; } over = true; child?.stdin.destroy(); options.onEnded?.(); }` (E3-D11 (c): the unwritten tail of the script is dropped with the stdin). |
-| `open()` `:74-98` | First line: `if (over) { return; }` (a close before the start: nothing is spawned, nothing written). After `child = started.child`: `if (options.stdinText !== undefined) { child.stdin.end(options.stdinText); }` (the `stdin` `error` listener of `:167` is already on). `ended()` is called on `!started.ok` (after `closer.fire(1)`), and in the child's `error` (`:87-90`) and `close` (`:91-97`) handlers, after their writes. |
-| `close()` `:99-108` | `child === undefined` → `ended()` (the terminal closed before the child started); else `killChild(child, { tree: true })` as today (its `close` event then calls `ended()`). |
-| `handleInput` `:109-113` | `stdinText !== undefined` → return without echo or write (stdin is the script, and closed). |
+| `MaskedRunOptions` `:27-53` | A union, so exactly one of `commandLine` and `argv` is set (in the type, not in a comment): the shell variant `{ commandLine: string; shell?: string; cwd?: string }` (today), and the argv variant `{ argv: readonly [string, ...string[]]; cwd: string }` — the program and its arguments, spawned with `shell: false`; `cwd` is REQUIRED there, so argv mode never falls back to the workspace folder (E3-D5, round 2 B1). Two fields for both: `stdinText?: string` — written to the child's stdin once, right after the spawn, then stdin is closed; keystrokes are then NOT forwarded; `onEnded?: () => void` — called exactly once for a run whose terminal was made, when the run ends (E3-D7: `close`, `error`, a failed start, a close before the start, a throw from `show()`); a throw from `createTerminal` is the caller's to clean. The `env` doc says: on top of the parent environment; in argv mode it carries no value (E3-D8). The `cwd` doc says: the first workspace folder when omitted, shell variant only. |
+| `spawnChild` `:155-172` | One spawn line, from an exported helper `launchOf(options)` that answers `{ program, args, shell, cwd }`: argv mode → `{ program: argv[0], args: argv.slice(1), shell: false, cwd: options.cwd }`; else `{ program: options.commandLine, args: [], shell: shellOption(options.shell), cwd: workingDirectory(options.cwd) }` (today, `:151-153`). The line becomes `const child = childProcess.spawn(launch.program, launch.args, {` with `shell: launch.shell` and `cwd: launch.cwd`. |
+| `runInMaskedTerminal` `:66-119` (round 2, M5) | About 45 code lines today; with the additions it goes over `max-lines-per-function` (50, `eslint.config.mjs:31`; a nested function's lines count for the outer one). So the pseudoterminal gets its own function: `maskedRun(options): { pty: vscode.Pseudoterminal; ended: () => void }` holds the run's state (`child`, `over`) and builds the pty; its `open`, `close` and `handleInput` each call one named module function (`openRun`, `closeRun`, `inputRun`) with that state. `runInMaskedTerminal` keeps only `const run = maskedRun(options)`, `createTerminal({ name: options.name, pty: run.pty })`, the guarded `show()` (row below) and `return terminal`. Every function ≤ 50 code lines, complexity ≤ 4; no `eslint-disable`. |
+| the run's state (was beside `let child`, `:69`) | `over = false`, and `ended = (): void => { if (over) { return; } over = true; child?.stdin.destroy(); options.onEnded?.(); }` (E3-D11 (c): the unwritten tail of the script is dropped with the stdin). |
+| `open()` `:74-98` → `openRun` | First line: `if (over) { return; }` (a close before the start, or a `show()` that threw: nothing is spawned, nothing written). After `child = started.child`: `if (options.stdinText !== undefined) { child.stdin.end(options.stdinText); }` (the `stdin` `error` listener of `:167` is already on). `ended()` is called on `!started.ok` (after `closer.fire(1)`), and in the child's `error` (`:87-90`) and `close` (`:91-97`) handlers, after their writes. |
+| `close()` `:99-108` → `closeRun` | `child === undefined` → `ended()` (the terminal closed before the child started); else `killChild(child, { tree: true })` as today (its `close` event then calls `ended()`). |
+| `handleInput` `:109-113` → `inputRun` | `stdinText !== undefined` → return without echo or write (stdin is the script, and closed). |
+| `terminal.show()` `:117` (round 2, Minor 7) | In a `try`. A throw comes AFTER `createTerminal`, so VS Code may still call `open()` later. The `catch`: `run.ended()` first (the run is over: a later `open()` spawns nothing and writes nothing; `onEnded` is called, once), then `terminal.dispose()` (its `close()` finds the run over and does nothing), then rethrow. The road's session is still on the owner's list, and its once-only end has already run, so the `finally` cleans nothing twice (E3-D7). |
 | `killChild` comment `:103-106` | Add: in argv mode there is no shell and the child IS the program (`ssh`); `tree: true` stays — on Windows it also ends a jump host's helper `ssh`; on POSIX that helper is OpenSSH's to end (E3-D11, hand check 3). |
 | file doc `:8-25` | One paragraph: the argv mode of Run with Secrets over SSH (E3.S1): no shell, a script on stdin then end of input, no keystrokes forwarded; the run ends exactly once (`onEnded`), and its end destroys stdin. The sentence `:24` ("Input is forwarded…") gains "— except in argv mode with a script on stdin". |
 
 **`sshProgram.ts`** (pure) — add `export function sshSpawnLaunch(entity: EntityMetadata, socket: string | undefined, platform: NodeJS.Platform): { program: string; env: NodeJS.ProcessEnv; warning?: string }`
 = `openSshBinary('ssh', entity.agentForward === true, platform)` and `agentForwardEnv({}, entity.agentForward === true, socket)`.
 `sshUseActions.ts` `agentAwareLaunch` (`:95-109`) calls it and merges `env` over its base; its `deps.note` of the warning stays.
+Also add (round 2, B1; used by `SshRoad.spawnLaunch` only) `export function spawnableSshProgram(program: string, platform:
+NodeJS.Platform, pathValue: string | undefined, exists: (candidate: string) => boolean): string | undefined` with the rules
+of E3-D5 (off Windows: `program`; on Windows: kept when it has a drive letter or a `\\` prefix, else the first
+`path.win32.join(dir, 'ssh.exe')` that exists for an absolute `dir` of `pathDirsOf(pathValue, ';')`, else
+`builtInOpenSsh('ssh')` when it exists, else `undefined`), and `export const NO_SSH_TO_SPAWN` (the E3.0 text). Its doc
+names CWE-426 and points at `openSshBinary`'s doc (`:186-197`): this is the same hole closed for a spawn that also gets a
+working folder.
 
 **`sshRoad.ts`** (226 → about 260 lines)
 
 | Place | Change |
 |---|---|
-| `SshRoad` `:21-33` | `prepare(accountId, ssh, use?: 'terminal' \| 'spawn')` with a doc for `'spawn'` (E3-D4); new `spawnLaunch(ssh: EntityMetadata, env: Readonly<Record<string, string>> \| undefined): { program: string; env: Record<string, string>; warning?: string }` (E3-D5): `sshSpawnLaunch(ssh, deps.agentSocket?.(), process.platform)`, its `env` with `env` merged on top. |
+| `SshRoad` `:21-33` | `prepare(accountId, ssh, use?: 'terminal' \| 'spawn')` with a doc for `'spawn'` (E3-D4); new `spawnLaunch(ssh: EntityMetadata, env: Readonly<Record<string, string>> \| undefined): SpawnLaunch` with `type SpawnLaunch = { kind: 'spawn'; program: string; cwd: string; env: Record<string, string>; warning?: string } \| { kind: 'refused'; reason: string }` (E3-D5): `const base = sshSpawnLaunch(ssh, deps.agentSocket?.(), process.platform)`; `const program = spawnableSshProgram(base.program, process.platform, process.env.PATH, fs.existsSync)`; `undefined` → `{ kind: 'refused', reason: NO_SSH_TO_SPAWN }`; else `{ kind: 'spawn', program, cwd: deps.storageDir, env: { ...base.env, ...env }, warning: base.warning }` (the `warning` key absent when undefined). |
 | `SshRoadDeps` `:36` | `Pick<SshUseDeps, 'storage' \| 'storageDir' \| 'relays' \| 'servesKeyForEntity'> & Partial<Pick<SshUseDeps, 'agentSocket'>>`. |
 | `sshRoadOf` `:38-52` | `optionsFor(ssh, use)`: `agentServesKey: use === 'spawn' ? false : deps.servesKeyForEntity?.(ssh) === true`; everything else as today (`isolate: true`). |
-| `OwnedSessions` `:61-81` | Add `handOverToRun(ready: ReadySsh): () => void` with the doc of E3-D7: `owned.delete(ready)`, then answer `once(() => ready.cleanup())` — a local `let done = false` guard, so a second call does nothing even if a future `cleanup()` is not idempotent. The class doc (`:54-60`) gains: "A session `handOverToRun`ed to a spawned run leaves the list; the run's end cleans it, once." |
+| `OwnedSessions` `:61-81` (round 2, R2-2) | The list becomes a `Map<ReadySsh, () => void>`: `own(ready)` stores `once(() => ready.cleanup())` (a local `let done = false` guard, so a second call does nothing even if a future `cleanup()` is not idempotent); `cleanAll()` calls each stored end; `handOver` (the terminal's) deletes as today. Add `handOverToRun(ready: ReadySsh, start: (ended: () => void) => void): void` with the doc of E3-D7, in its three steps: `const ended = owned.get(ready) ?? stored(ready)` (put on the list when absent), `start(ended)`, then `owned.delete(ready)`. The class doc (`:54-60`) gains: "A session `handOverToRun`ed to a spawned run stays on the list until the run exists, and the list and the run share its one once-only end; a throw while the run is being made is cleaned by `cleanAll`, once." |
 
 **`commands/runCommands.ts`** (436 → about 520 lines)
 
@@ -245,15 +271,15 @@ stay green unchanged).
 | new `runSecretsHere(host, job)` | Today's `:301-307` (gates with `secretsRefusal`, `resolvedRefs`, `runMasked`), unchanged. |
 | `secretsRefusal` `:311-313` | Unchanged (the script with a synced link, and the OS check). Its doc: the script path and the local road; a linked command goes over SSH (E3.S1). |
 | `resolvedRefs` `:369-371` | The literal becomes `NO_REFERENCE(job.entry.name)`; same text. |
-| new `runSecretsOverSsh`, `spawnOverSsh`, `trustedThenSpawned`, `maskedOverSsh` | §S1.1 step 4 and 5. `maskedOverSsh(sessions, run)` — `run` a small record `{ job, plan, refs, ready, launch, resolved, spawn }` — is the ONLY function that calls `handOverToRun` and `runInMaskedTerminal`, in the one synchronous block of §S1.1 (keep each ≤ 50 lines, complexity ≤ 4, parameters ≤ 4). No `showWarningMessage` for `spawn.warning` (E3-D12). |
+| new `runSecretsOverSsh`, `spawnOverSsh`, `trustedThenSpawned`, `maskedOverSsh` | §S1.1 step 4 and 5. `maskedOverSsh(sessions, run)` — `run` a small record `{ job, plan, refs, ready, launch, resolved, spawn }` — is the ONLY function that calls `handOverToRun` and `runInMaskedTerminal`, in the one synchronous call of §S1.1, with no `catch` of its own (keep each ≤ 50 lines, complexity ≤ 4, parameters ≤ 4). `spawnLaunch` is called right after `secretsLaunch`, before `passGates`; its `refused` is a warning and a return (E3-D5). No `showWarningMessage` for `spawn.warning` (E3-D12). |
 | file doc of Run with Secrets `:288-298` | One paragraph: a linked command runs over SSH (E3.S1): the order, ssh by argv, the script on stdin, local window only, the banner. |
 
 **Test helpers**
 
 | File | Change |
 |---|---|
-| `test/arrowWorld.ts` `:23` and `:134` | The `masked` record type takes the new options (`argv?`, `env`, `stdinText?`, `secrets`, `banner`, `onEnded?`, `commandLine?`). `ArrowOptions` gains `remoteName?: string`, set on the stub's `env.remoteName` (absent = a local window). Expose `events` pushes: the mock of `runInMaskedTerminal` pushes `'spawn'` into the road's shared `events` when the test passes one (`ArrowOptions.events?: string[]`); the vault's `refSource` read pushes `'resolve'` the same way (wrap `vaultOf`'s source in the test). `ArrowOptions` also gains `onMasked?: (options: <the masked record>) => void`, called by the mock AFTER it records the run: a test throws from it (a failed terminal creation, O5) or calls `options.onEnded?.()` in it (a run that ended while being created, O8). |
-| `test/sshRoadWorld.ts` `fakeRoad` `:76-` | `prepare(accountId, ssh, use)` records `use` in a NEW array `uses: string[]` (NOT in `calls`: E2 tests deep-equal `calls`). New `spawnLaunch(ssh, env)` → `{ program: 'ssh', env: { ...(env ?? {}) }, warning: spawnWarning }` (`warning` key absent when `spawnWarning` is undefined), recorded in `launches`; `spawnWarning` is a new LAST parameter of `fakeRoad` (`fakeRoad(script, lookup, events, spawnWarning?)`), so E2's calls are unchanged. New `cleanupCalls: string[]`: one `'<sshId>#<n>'` per call of a ready's `cleanup`, repeats INCLUDED (`cleaned` keeps recording only the call that did something, `:107-112`), so a test can see "exactly once" through an idempotent cleanup. |
+| `test/arrowWorld.ts` `:23` and `:134` | The `masked` record type takes the new options (`argv?`, `cwd?`, `env`, `stdinText?`, `secrets`, `banner`, `onEnded?`, `commandLine?`). `ArrowOptions` gains `remoteName?: string`, set on the stub's `env.remoteName` (absent = a local window). Expose `events` pushes: the mock of `runInMaskedTerminal` pushes `'spawn'` into the road's shared `events` when the test passes one (`ArrowOptions.events?: string[]`); the vault's `refSource` read pushes `'resolve'` the same way (wrap `vaultOf`'s source in the test). `ArrowOptions` also gains `onMasked?: (options: <the masked record>) => void`, called by the mock AFTER it records the run: a test throws from it (a failed terminal creation, O5) or calls `options.onEnded?.()` in it (a run that ended while being created, O8; a `show()` that threw after the masked run ended itself, the same shape). |
+| `test/sshRoadWorld.ts` `fakeRoad` `:76-` | `prepare(accountId, ssh, use)` records `use` in a NEW array `uses: string[]` (NOT in `calls`: E2 tests deep-equal `calls`). New `spawnLaunch(ssh, env)` → `{ kind: 'spawn', program: 'ssh', cwd: '/storage', env: { ...(env ?? {}) }, warning: spawnWarning }` (`warning` key absent when `spawnWarning` is undefined), or `{ kind: 'refused', reason: spawnRefused }` when `spawnRefused` is set, recorded in `launches`; `spawnWarning` and `spawnRefused` are new LAST parameters of `fakeRoad` (`fakeRoad(script, lookup, events, spawnWarning?, spawnRefused?)`), so E2's calls are unchanged. New `cleanupCalls: string[]`: one `'<sshId>#<n>'` per call of a ready's `cleanup`, repeats INCLUDED (`cleaned` keeps recording only the call that did something, `:107-112`), so a test can see "exactly once" through an idempotent cleanup. |
 
 **The road scan — `test/launchRoadScan.test.ts`** (same commit; the stale-entry test forces it)
 
@@ -287,21 +313,49 @@ that still refuse (do not reorder the list before it: `test/sshRoadHelp.test.ts:
 | RU | `*Run with Secrets* и запуск агентом пока отказывают такой записи и объясняют почему.` | `*Run with Secrets* тоже выполняет её там, из локального окна; запуск агентом пока отказывает такой записи и объясняет почему.` |
 | UK | `*Run with Secrets* і запуск агентом поки відмовляють такому запису й пояснюють чому.` | `*Run with Secrets* теж виконує його там, із локального вікна; запуск агентом поки відмовляє такому запису й пояснює чому.` |
 
-And the article `secret-references`, field `usage` (`help<Lang>.ts:180`): append at its end:
+And the article `secret-references` (`help<Lang>.ts:175-182`). Round 2 (the lead's Opus review, Minor 5; R2-1): `whatItIs`
+(`:177`) and the first sentence of `usage` (`:180`) say today that the value reaches ONLY the child's environment, which
+is false over SSH, and the first draft's "never in the server's process list" was too strong: on the server the values
+are in the environment of the remote command (`ps e`, `/proc/<pid>/environ`, for the same user and root). So the two
+places are REWORDED in all five languages (replaced, not appended to), and the over-SSH text is appended at the end of
+`usage`. The apostrophe is the file's own `’`. The rest of each field stays as it is.
 
-- EN: ` For an entry set to run over SSH, the values go to the server's login shell on its standard input as export lines — never on a command line, never in the server's process list or history — and the output is masked the same way. That run is not interactive: the command's input is empty, so a command that asks a question usually stops; use *Run in Terminal* for such a command (the values are then not injected). It works only in a local VS Code window.`
-- DE: ` Für einen Eintrag, der über SSH laufen soll, gehen die Werte als export-Zeilen über die Standardeingabe an die Login-Shell des Servers — nie auf eine Befehlszeile, nie in die Prozessliste oder den Verlauf des Servers —, und die Ausgabe wird genauso maskiert. Dieser Lauf ist nicht interaktiv: Die Eingabe des Befehls ist leer, darum hält ein Befehl, der eine Frage stellt, meist an; nutzen Sie für einen solchen Befehl *Run in Terminal* (die Werte werden dann nicht eingesetzt). Das geht nur in einem lokalen VS-Code-Fenster.`
-- ES: ` En una entrada que se ejecuta por SSH, los valores van a la shell de inicio de sesión del servidor por su entrada estándar como líneas export — nunca en una línea de comandos, nunca en la lista de procesos ni en el historial del servidor — y la salida se enmascara igual. Esa ejecución no es interactiva: la entrada del comando está vacía, así que un comando que hace una pregunta suele detenerse; use *Run in Terminal* para ese comando (los valores no se inyectan entonces). Solo funciona en una ventana local de VS Code.`
-- RU: ` Для записи, которая выполняется через SSH, значения идут в оболочку входа сервера через её стандартный ввод строками export — никогда не в командную строку, никогда в список процессов или историю сервера, — а вывод маскируется так же. Такой запуск не интерактивен: ввод команды пуст, поэтому команда, которая задаёт вопрос, обычно останавливается; для такой команды используйте *Run in Terminal* (значения тогда не подставляются). Это работает только в локальном окне VS Code.`
-- UK: ` Для запису, що виконується через SSH, значення йдуть до оболонки входу сервера через її стандартне введення рядками export — ніколи не в командний рядок, ніколи в список процесів чи історію сервера, — а виведення маскується так само. Такий запуск не інтерактивний: введення команди порожнє, тож команда, що ставить запитання, зазвичай зупиняється; для такої команди використовуйте *Run in Terminal* (значення тоді не підставляються). Це працює лише в локальному вікні VS Code.`
+`whatItIs` — the whole new value:
+
+- EN: `` Write `creds://you@corp.com/prod-db/password` where a value would go, then Run with Secrets: the value is never on a command line — on this machine it goes only into the child process’s environment, and over SSH it goes on standard input to the server’s login shell, which puts it into the command’s environment there. Every appearance of it in the output is replaced with a named marker. ``
+- DE: `` Schreiben Sie `creds://you@corp.com/prod-db/password` dorthin, wo ein Wert stünde, und dann Run with Secrets: der Wert steht nie auf einer Kommandozeile — auf diesem Rechner geht er nur in die Umgebung des Kindprozesses, und über SSH geht er über die Standardeingabe an die Login-Shell des Servers, die ihn dort in die Umgebung des Befehls setzt. Jedes Vorkommen davon in der Ausgabe wird durch einen benannten Marker ersetzt. ``
+- ES: `` Escriba `creds://you@corp.com/prod-db/password` donde iría un valor, y luego Run with Secrets: el valor nunca va en una línea de comandos — en esta máquina va sólo al entorno del proceso hijo, y por SSH va por la entrada estándar a la shell de inicio de sesión del servidor, que allí lo pone en el entorno del comando. Cada aparición suya en la salida se sustituye por un marcador con nombre. ``
+- RU: `` Пишете `creds://you@corp.com/prod-db/password` вместо значения, затем Run with Secrets: значение никогда не попадает в командную строку — на этой машине оно идёт только в окружение дочернего процесса, а через SSH — через стандартный ввод в оболочку входа сервера, которая кладёт его там в окружение команды. Каждое его появление в выводе заменяется именованным маркером. ``
+- UK: `` Напишіть `creds://you@corp.com/prod-db/password` там, де мало б стояти значення, і виконайте Run with Secrets: значення ніколи не потрапляє в командний рядок — на цій машині воно йде лише в середовище дочірнього процесу, а через SSH — через стандартне введення до оболонки входу сервера, яка кладе його там у середовище команди. Кожна його поява у виводі замінюється іменованим маркером. ``
+
+`usage` — its FIRST sentence, replaced (the sentence about the broker after it stays):
+
+- EN: `argv carries the reference NAME; the value travels in an environment only — the local child’s or, over SSH, the remote command’s (it reaches the server on standard input, never in argv).`
+- DE: `argv trägt den NAMEN des Verweises; der Wert reist nur in einer Umgebung — der des lokalen Kindes oder, über SSH, der des Befehls auf dem Server (dorthin gelangt er über die Standardeingabe, nie in argv).`
+- ES: `argv lleva el NOMBRE de la referencia; el valor viaja sólo en un entorno — el del hijo local o, por SSH, el del comando en el servidor (llega allí por la entrada estándar, nunca en argv).`
+- RU: `argv несёт ИМЯ ссылки; значение едет только в окружении — локального потомка или, через SSH, команды на сервере (туда оно попадает через стандартный ввод, никогда не через argv).`
+- UK: `У argv їде НАЗВА посилання; значення подорожує лише середовищем — локального дочірнього процесу або, через SSH, команди на сервері (туди воно потрапляє через стандартне введення, ніколи не через argv).`
+
+`usage` — appended at its end (a leading space):
+
+- EN: ``  For an entry set to run over SSH, the values go to the server’s login shell on its standard input as export lines — never on a command line or in the shell history; on the server they are in the environment of the command, where the same user and root can read them (for example with `ps e` or `/proc/<pid>/environ`), as for a run on this machine. The output is masked the same way. That run is not interactive: the command’s input is empty, so a command that asks a question usually stops; use *Run in Terminal* for such a command (the values are then not injected). Closing its terminal stops ssh on this machine; the command on the server has no terminal, so it can keep running there until it ends. It works only in a local VS Code window. ``
+- DE: ``  Für einen Eintrag, der über SSH laufen soll, gehen die Werte als export-Zeilen über die Standardeingabe an die Login-Shell des Servers — nie auf eine Befehlszeile und nie in den Verlauf der Shell; auf dem Server stehen sie in der Umgebung des Befehls, wo derselbe Benutzer und root sie lesen können (zum Beispiel mit `ps e` oder `/proc/<pid>/environ`), wie bei einem Lauf auf diesem Rechner. Die Ausgabe wird genauso maskiert. Dieser Lauf ist nicht interaktiv: Die Eingabe des Befehls ist leer, darum hält ein Befehl, der eine Frage stellt, meist an; nutzen Sie für einen solchen Befehl *Run in Terminal* (die Werte werden dann nicht eingesetzt). Das Schließen seines Terminals beendet ssh auf diesem Rechner; der Befehl auf dem Server hat kein Terminal und kann dort weiterlaufen, bis er endet. Das geht nur in einem lokalen VS-Code-Fenster. ``
+- ES: ``  En una entrada que se ejecuta por SSH, los valores van a la shell de inicio de sesión del servidor por su entrada estándar como líneas export — nunca en una línea de comandos ni en el historial de la shell; en el servidor están en el entorno del comando, donde el mismo usuario y root pueden leerlos (por ejemplo con `ps e` o `/proc/<pid>/environ`), igual que en una ejecución en esta máquina. La salida se enmascara igual. Esa ejecución no es interactiva: la entrada del comando está vacía, así que un comando que hace una pregunta suele detenerse; use *Run in Terminal* para ese comando (los valores no se inyectan entonces). Cerrar su terminal detiene ssh en esta máquina; el comando en el servidor no tiene terminal y puede seguir ejecutándose allí hasta que termine. Solo funciona en una ventana local de VS Code. ``
+- RU: ``  Для записи, которая выполняется через SSH, значения идут в оболочку входа сервера через её стандартный ввод строками export — никогда не в командную строку и не в историю оболочки; на сервере они находятся в окружении команды, где их может прочитать тот же пользователь и root (например, через `ps e` или `/proc/<pid>/environ`), как и при запуске на этой машине. Вывод маскируется так же. Такой запуск не интерактивен: ввод команды пуст, поэтому команда, которая задаёт вопрос, обычно останавливается; для такой команды используйте *Run in Terminal* (значения тогда не подставляются). Закрытие его терминала останавливает ssh на этой машине; у команды на сервере нет терминала, и она может продолжать работать там, пока не завершится. Это работает только в локальном окне VS Code. ``
+- UK: ``  Для запису, що виконується через SSH, значення йдуть до оболонки входу сервера через її стандартне введення рядками export — ніколи не в командний рядок і не в історію оболонки; на сервері вони є в середовищі команди, де їх може прочитати той самий користувач і root (наприклад, через `ps e` або `/proc/<pid>/environ`), як і під час запуску на цій машині. Виведення маскується так само. Такий запуск не інтерактивний: введення команди порожнє, тож команда, що ставить запитання, зазвичай зупиняється; для такої команди використовуйте *Run in Terminal* (значення тоді не підставляються). Закриття його терміналу зупиняє ssh на цій машині; команда на сервері не має терміналу й може працювати там далі, доки не завершиться. Це працює лише в локальному вікні VS Code. ``
+
+The code spans (`` `ps e` ``, `` `/proc/<pid>/environ` ``) are written with plain backticks inside the double-quoted string,
+as `whatItIs` already does for `creds://…`; no `"` in any text.
 
 Check the line numbers of `secret-references` in each file before the edit (`grep -n "'secret-references'"`: 175 in all
-five on a5ddd73; `usage` is the fifth line after it).
+five on a5ddd73 and on e57eb80f; `whatItIs` is the second line after it, `usage` the fifth). No existing test pins
+the old `whatItIs` or `usage` words (checked: no test file quotes them).
 
 **README** (`src_vs_code/README.md`)
 - `:256-260` (the *Runs over SSH* bullet): `*Run with Secrets* and an agent's run still refuse such an entry` → *Run with
   Secrets* runs it there too, from a local window; an agent's run still refuses such an entry (wrapped like its neighbours).
-- `## Secret references and *Run with Secrets*` (`:379-`): one paragraph at its end, the EN `usage` sentences above.
+- `## Secret references and *Run with Secrets*` (`:379-`): one paragraph at its end, the EN sentences appended to `usage`
+  above (round 2: the reworded ones, with the remote environment and the close).
 
 **research/**
 - `research/module_extension.md` `:2367-2369` ("The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on
@@ -312,8 +366,10 @@ five on a5ddd73; `usage` is the fifth line after it).
   with Secrets over SSH (E3.S1)**: the order; the checks before prepare (plan, local window, no reference);
   `prepare(…, 'spawn')` and why (E3-D4); `secretsLaunch` (argv, `-o BatchMode=yes` or askpass, `ConnectTimeout=10`,
   `SECRETS_REMOTE_COMMAND` last); `secretsRemoteLine` (E3-D2); the script on stdin then end of input; `spawnLaunch`
-  (E3-D5) and its warning as a banner line (E3-D12); the one owner and the once-only `handOverToRun` with `onEnded`
-  (E3-D7); what ends the run (E3-D11: the close kills through `childKill`, the end destroys stdin); the child's environment
+  (E3-D5: on Windows an absolute program, and the storage folder as the working folder, never the workspace — CWE-426)
+  and its warning as a banner line (E3-D12); the one owner and the once-only `handOverToRun` that leaves the list only
+  when the run exists (E3-D7); what ends the run (E3-D11: the close kills through `childKill`, the end destroys stdin;
+  the remote command may keep running, §S1.2); the child's environment
   holds no value (E3-D8) and the askpass variables are the known `SendEnv` limit of `:221` (link that paragraph, do not
   repeat it); the banner.
 - `research/module_tests.md`: a new section `## Run with Secrets and the agent's run over SSH (E3 of PLAN_terminal_command_over_ssh.md)`
@@ -326,12 +382,21 @@ five on a5ddd73; `usage` is the fifth line after it).
 
 | File | Now | After S1 | Ceiling | How |
 |---|---|---|---|---|
-| `extension.ts` | 1003 | ≤ 1003 | ratchet 1003 | edits in place only; it shrinks |
+| `extension.ts` | 1003 | about 982 | ratchet 1003 | `maskingBanner` moves out, `:88` rewritten in place (M7); it shrinks |
 | `commands/runCommands.ts` | 436 | about 520 | 800 | — |
 | `remoteLaunch.ts` | 369 | about 430 | 800 | — |
-| `maskedTerminal.ts` | 172 | about 230 | 800 | — |
+| `maskedTerminal.ts` | 172 | about 250 | 800 | the pty in its own function (M5) |
+| `outputMask.ts` | 100 | about 140 | 800 | `maskingBanner` and `shortValuesCaveat` |
+| `sshProgram.ts` | 321 | about 370 | 800 | `sshSpawnLaunch`, `spawnableSshProgram`, `NO_SSH_TO_SPAWN` |
 | `sshRoad.ts` | 226 | about 260 | 800 | — |
 | `help<Lang>.ts` | 319 each | 319 each | 800 | in-place string edits |
+
+**No stale `eslint-disable`** (round 2, Minor 1). `eslint.config.mjs:20` sets `reportUnusedDisableDirectives: 'error'`, so a
+directive that stops being needed after a move fails `npm run lint`. After S1's moves, run lint; a rule it reports as an
+unused directive is removed from that directive in the same commit (the whole comment when it names no rule left). S1
+expects none: the files it touches carry no directive except `extension.ts:1` (`max-lines, max-lines-per-function,
+complexity`, file-wide), and the file stays over 800 lines with its other long functions. No new directive is added: every
+new or split function stays ≤ 50 code lines and complexity ≤ 4. S2 has its own list (§S2.4).
 
 ### S1.5 What the tests must not get wrong
 
@@ -344,8 +409,8 @@ five on a5ddd73; `usage` is the fifth line after it).
   stdin is `secretsStdin(…)`; the remote command is `SECRETS_REMOTE_COMMAND`.
 - **One positive per file** (testing.md): `sshRoadSecrets.test.ts` holds the happy run S7, which fails when the fixture
   is wrong.
-- **Every real-child test is bounded, and kills what it started** (round 1, items 1 and 7). In `test/maskedTerminal.test.ts`
-  every NEW test is `test(name, { timeout: 15_000 }, async () => …)` and waits with a new helper
+- **Every real-child test is bounded, and kills what it started** (round 1, items 1 and 7; round 2, R2-4). In
+  `test/maskedTerminal.test.ts` every NEW test — M8 and M11 with their fake `ssh` included — is `test(name, { timeout: 15_000 }, async () => …)` and waits with a new helper
   `closedWithin(w, ms)` instead of `closed(w)` (`:93-106`, whose 20-second wait kills nothing): it polls `w.exitCode()`
   every 10 ms; at `ms` (5 000 unless a row says otherwise) it calls `w.pty().close()` — which is `killChild(child,
   { tree: true })` — waits up to `KILL_GRACE_MS + 1_000` for the exit code, and then rejects with
@@ -375,41 +440,89 @@ fake road's first ready.
 | K6 | `an_entity_with_no_safe_host_is_refused_with_the_no_host_sentence` | `entity.host: '-oProxyCommand=x'` → `refused` with `noHostSentence('prod box')` | no export |
 | K7 | `the_remote_line_reads_each_reference_from_the_posix_environment` | `secretsRemoteLine(PLAN, planRefs([PLAN.line]))` equals `'printenv "$CREDS_REF_1"'`; it holds no `creds://` | no export |
 | K8 | `the_banner_is_exact_and_names_the_target` | `secretsOverSshBanner('deploy@prod.example:2222', [{ value: 'x'.repeat(12), label: 'CREDS_REF_1' }])` equals the E3.0 text literally, with `<caveat>` empty; with a 6-character value it holds `shortValuesCaveat(…)` and names `CREDS_REF_1` | no export |
-| K9 | `the_short_value_caveat_is_the_words_the_local_banner_had` | `maskingBanner(secrets)` (from `../extension`, through the stub) still includes `shortValuesCaveat(secrets)` for a short value — the local banner did not change | no export |
 | K10 | `the_launch_warning_is_a_banner_line_before_the_secrets_text` | `maskedOverSshBanner('CREDS_REF_1 = password of me/alert', NO_AGENT_TO_FORWARD, 'deploy@prod.example', S)` with `S = [{ value: 'x'.repeat(12), label: 'CREDS_REF_1' }]` equals `['CREDS_REF_1 = password of me/alert', `Note: ${NO_AGENT_TO_FORWARD}.`, secretsOverSshBanner('deploy@prod.example', S)].join('\r\n')`; with `warning` undefined it equals the first and the last joined by `\r\n` (no empty line, no `Note:`) | no export |
 
-**`test/maskedTerminal.test.ts`** (append; its `world()`, a real child, as the file's doc says). POSIX only (`/bin/sh`): on
-win32 each new test is skipped with a printed reason. Every new test is bounded per §S1.5 (`{ timeout: 15_000 }` and
-`closedWithin`). `world()` gains an optional `mocks` argument passed to `loadWithVscode` (`test/vscodeStub.ts:16-28`,
-keyed by the request string `maskedTerminal.ts` writes): `spawnSpy(w)` = `{ 'node:child_process': { ...childProcess,
-spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); return c; } } }` and `killSpy(w)` =
-`{ './childKill': { ...childKill, killChild: (c, o) => { w.kills.push(o); childKill.killChild(c, o); } } }` (`w.children`,
-`w.kills` new arrays on the world). A helper `runArgv(w, options)` is `run()` (`:76-91`) with `argv`, `stdinText`,
-`onEnded` in place of `commandLine`/`shell`, and it does NOT wait (each test waits with `closedWithin`).
+**`test/outputMask.test.ts`** (append; pure, round 2, M7: no unit test loads `../extension`, and `test/arrowWorld.ts:10`,
+`:74` stand it in for exactly that reason)
 
 | # | Test | Assertion | RED today |
 |---|---|---|---|
-| M1 | `argv_mode_runs_no_shell` | `argv: ['/bin/echo', '$HOME;id']`: the screen shows `$HOME;id` literally | `argv` is ignored, `commandLine` undefined: the spawn fails |
-| M2 | `stdin_text_is_written_once_then_closed` | `argv: ['/bin/sh', '-c', 'cat; echo END']`, `stdinText: 'hello-from-stdin\n'`; `await closedWithin(w, 3_000)`: the screen holds `hello-from-stdin` then `END`, and `[exit 0]` (cat ended, so stdin was closed) | no stdin write: `cat` waits; at 3 s `closedWithin` closes the pty (`killChild`, tree) and rejects `child never closed within 3000 ms; killed; …` — the test fails in about 3 s and no `cat` is left (round 1, item 7) |
-| M3 | `keystrokes_are_not_forwarded_when_stdin_is_a_script` | M2's child with `sleep 1` before `cat`; `pty.handleInput('typed\r')` during the sleep: the screen does not hold `typed` | `typed` is echoed and written |
-| M4 | `on_ended_is_called_once_when_the_child_exits` | `argv: ['/bin/true']`, a counter: after the close, `1` | no option |
-| M5 | `on_ended_is_called_once_when_the_program_does_not_exist` | `argv: ['/nonexistent/ssh-xyz']`: the screen says it could not start, and after both `error` and any `close` (wait 200 ms after the exit code), the counter is `1` | no option |
-| M6 | `on_ended_is_called_once_when_the_terminal_closes_before_the_child_starts` | `pty.close()` before `pty.open()`: counter `1` | no option |
-| M6b | `a_run_closed_before_it_started_never_spawns_or_writes` | with `spawnSpy`: `pty.close()`, then `pty.open()` (VS Code should not, the code must not care): `w.children` `[]`, counter still `1`, the screen holds the banner at most | `open()` spawns after the close |
-| M7 | `the_env_of_argv_mode_reaches_the_child` | `argv: ['/bin/sh', '-c', 'printf %s "$ASKPASS_PROBE"']`, `env: { ASKPASS_PROBE: 'probe-value-1234' }`: shown | `argv` ignored |
-| M8 | `end_to_end_values_echoed_to_stdout_and_stderr_are_masked` | A fake `ssh` in an `ownedDir(t, 'ssh')` (the pattern of `test/remoteLaunchDelivery.test.ts:66-80`): it records its argv NUL-separated and its environment (`env -0`) to two files, skips its options to `--`, skips the destination, and runs the last argument with `/bin/sh -c` (what sshd does with an exec request), stdin inherited. Run `argv: [fake, ...secretsLaunch(PLAN, ready).argv]`, `env: {}`, `stdinText: secretsStdin(env, 'printf "%s\\n" "$CREDS_REF_1"; printf "%s\\n" "$CREDS_REF_2" >&2')` with `CREDS_REF_1 = "it's $HOME \"quoted\" value"` and `CREDS_REF_2 = 'second-secret-value-42'`, `secrets` both with their labels. The screen holds `<CREDS_MASKED:CREDS_REF_1>` and `<CREDS_MASKED:CREDS_REF_2>` and neither raw value; the recorded argv holds neither value; the recorded environment holds neither value | no argv mode |
-| M9 | `closing_the_terminal_kills_a_stalled_child_and_drops_the_unwritten_script` (round 1, item 1) | with `spawnSpy` and `killSpy`: `argv: ['/bin/sh', '-c', "echo PID=$$; trap '' TERM; exec sleep 300"]` (the shell becomes `sleep`, same pid, and `SIGTERM` stays ignored across `exec`), `stdinText: 'x'.repeat(4 * 1024 * 1024)` (more than a pipe takes; `sleep` never reads), a counter. Wait for `PID=<n>` on the screen (≤ 3 s), then `pty.close()`; `await closedWithin(w, KILL_GRACE_MS + 3_000)`. Then: the screen ends with `[exit killed]`; the counter is `1`; `w.kills` deep-equals `[{ tree: true }]`; `process.kill(n, 0)` throws `ESRCH`; `w.children[0].stdin.destroyed === true` | no argv mode |
+| K9 | `the_local_banner_is_unchanged_and_names_its_short_values` | `maskingBanner(secrets)` from `../outputMask`: for one 12-character value it equals today's text, written once in the test from `extension.ts:970-977` on this commit (the moved words are not changed); for a 6-character value it includes `shortValuesCaveat(secrets)` and names its label | no export (the stub answers `''`) |
+
+**`test/maskedTerminal.test.ts`** (append; its `world()`, a real child, as the file's doc says). POSIX only (`/bin/sh`): on
+win32 each new real-child test is skipped with a printed reason (M12 and M14 are not real-child tests and run everywhere).
+Every new real-child test is bounded per §S1.5 (`{ timeout: 15_000 }` and `closedWithin`). `world()` gains an optional
+`mocks` argument passed to `loadWithVscode` (`test/vscodeStub.ts:16-28`, keyed by the request string `maskedTerminal.ts`
+writes): `spawnSpy(w)` = `{ 'node:child_process': { ...childProcess, spawn: (...a) => { const c = childProcess.spawn(...a);
+w.children.push(c); return c; } } }` and `killSpy(w)` = `{ './childKill': { ...childKill, killChild: (c, o) => {
+w.kills.push(o); childKill.killChild(c, o); } } }` (`w.children`, `w.kills` new arrays on the world). It also gains two
+options: `workspaceDir?: string` (the stub's `workspace.workspaceFolders` becomes `[{ uri: { fsPath: workspaceDir } }]`;
+today it is `undefined`, `:70`) and `showThrows?: boolean` (the terminal's `show()` throws `new Error('no show')`, and a
+`w.disposed` counter records `dispose()`). A helper `runArgv(w, options)` is `run()` (`:76-91`) with `argv`, `cwd` (an
+`ownedDir` unless a row says otherwise), `stdinText`, `onEnded` in place of `commandLine`/`shell`, and it does NOT wait
+(each test waits with `closedWithin`).
+
+**The order, and so what "RED today" means** (round 2, Minor 3). The tests below do not compile against today's
+`MaskedRunOptions` (`commandLine` is required, `argv` does not exist). So the FIRST edit is the type only: the union with
+`argv`, `cwd`, `stdinText` and `onEnded`, and `launchOf` exported with today's behaviour (it answers the shell launch for
+every input). No behaviour changes in that edit. Then the tests are written and run, and "RED today" is read on that
+code: an argv-mode run calls `childProcess.spawn(undefined, [], …)`, which throws `ERR_INVALID_ARG_TYPE`; `spawnChild`
+catches it, the screen says `Could not start: The "file" argument must be of type string. Received undefined` at once,
+`closer.fire(1)` ends the run with code 1, and `onEnded` is never called. So these tests fail at once on their own
+assertion, not on a timeout.
+
+**The fake `ssh` of M8 and M11** (round 2, R2-4 and Minor 6). An executable `/bin/sh` script in an `ownedDir(t, 'ssh')`
+(the pattern of `test/remoteLaunchDelivery.test.ts:66-80`). It appends its own PID (`$$`) to `pids`, records its argv
+NUL-separated to `argv` and its environment (`env -0`) to `env`, then sets `SHELL=/bin/sh` and exports it (as sshd sets
+the login shell; the runner's own `$SHELL` can be fish, and the remote command `"${SHELL:-sh}" -s` would then not read
+the POSIX script), skips its options to `--`, skips the destination, and runs the last argument with `/bin/sh -c` (what
+sshd does with an exec request), stdin inherited. The script on stdin starts with `echo $$ >> <dir>/pids` (the remote
+`sh -s` records its own PID). Each of M8 and M11 runs in `try { … await closedWithin(w, 5_000) … } finally { … }`, and
+the `finally` checks every PID in `pids` with `process.kill(pid, 0)`: each must throw `ESRCH`, when the test passed and
+when it failed. A live one is killed with `SIGKILL`, and the test fails naming it (`fake ssh process <pid> was left
+running`). So the fake's process tree is proved gone on success and on failure, and a RED run leaves nothing behind.
+
+| # | Test | Assertion | RED today (on the type-only edit) |
+|---|---|---|---|
+| M1 | `argv_mode_runs_no_shell` | `argv: ['/bin/echo', '$HOME;id']`: the screen shows `$HOME;id` literally | `Could not start: …` at once; `$HOME;id` absent |
+| M2 | `stdin_text_is_written_once_then_closed` | `argv: ['/bin/sh', '-c', 'cat; echo END']`, `stdinText: 'hello-from-stdin\n'`; `await closedWithin(w, 3_000)`: the screen holds `hello-from-stdin` then `END`, and `[exit 0]` (cat ended, so stdin was closed) | `Could not start: …` at once (code 1); `hello-from-stdin` and `END` absent. (Once argv mode spawns but before the stdin write exists, `cat` waits: at 3 s `closedWithin` closes the pty — `killChild`, tree — and rejects `child never closed within 3000 ms; killed; …`, with no `cat` left: round 1, item 7) |
+| M3 | `keystrokes_are_not_forwarded_when_stdin_is_a_script` | M2's child with `sleep 1` before `cat`; `pty.handleInput('typed\r')` during the sleep: the screen does not hold `typed` | `Could not start: …`, and `handleInput` still echoes: the screen holds `typed` |
+| M4 | `on_ended_is_called_once_when_the_child_exits` | `argv: ['/bin/true']`, a counter: after the close, `1` | counter `0` (`onEnded` is not read) |
+| M5 | `on_ended_is_called_once_when_the_program_does_not_exist` | `argv: ['/nonexistent/ssh-xyz']`: the screen says it could not start, and after both `error` and any `close` (wait 200 ms after the exit code), the counter is `1` | counter `0` |
+| M6 | `on_ended_is_called_once_when_the_terminal_closes_before_the_child_starts` | `pty.close()` before `pty.open()`: counter `1` | counter `0` |
+| M6b | `a_run_closed_before_it_started_never_spawns_or_writes` | with `spawnSpy`: `pty.close()`, then `pty.open()` (VS Code should not, the code must not care): `w.children` `[]`, counter still `1`, the screen holds the banner at most | counter `0`; the screen holds `Could not start: …` (`open()` tried to spawn after the close) |
+| M7 | `the_env_of_argv_mode_reaches_the_child` | `argv: ['/bin/sh', '-c', 'printf %s "$ASKPASS_PROBE"']`, `env: { ASKPASS_PROBE: 'probe-value-1234' }`: shown | `Could not start: …`; the value absent |
+| M8 | `end_to_end_values_echoed_to_stdout_and_stderr_are_masked` | The fake `ssh` above. Run `argv: [fake, ...secretsLaunch(PLAN, ready).argv]`, `env: {}`, `stdinText: secretsStdin(env, 'echo $$ >> <dir>/pids; printf "%s\\n" "$CREDS_REF_1"; printf "%s\\n" "$CREDS_REF_2" >&2')` with `CREDS_REF_1 = "it's $HOME \"quoted\" value"` and `CREDS_REF_2 = 'second-secret-value-42'`, `secrets` both with their labels; `await closedWithin(w, 5_000)`. The screen holds `<CREDS_MASKED:CREDS_REF_1>` and `<CREDS_MASKED:CREDS_REF_2>` and neither raw value; `[exit 0]`; the recorded argv holds neither value; the recorded environment holds neither value; `pids` holds two PIDs, both gone (the `finally`) | `Could not start: …` at once; the fake never ran (`argv`, `env` and `pids` absent) |
+| M9 | `closing_the_terminal_kills_a_stalled_child_and_drops_the_unwritten_script` (round 1, item 1) | with `spawnSpy` and `killSpy`: `argv: ['/bin/sh', '-c', "echo PID=$$; trap '' TERM; exec sleep 300"]` (the shell becomes `sleep`, same pid, and `SIGTERM` stays ignored across `exec`), `stdinText: 'x'.repeat(4 * 1024 * 1024)` (more than a pipe takes; `sleep` never reads), a counter. Wait for `PID=<n>` on the screen (≤ 3 s), then `pty.close()`; `await closedWithin(w, KILL_GRACE_MS + 3_000)`. Then: the screen ends with `[exit killed]`; the counter is `1`; `w.kills` deep-equals `[{ tree: true }]`; `process.kill(n, 0)` throws `ESRCH`; `w.children[0].stdin.destroyed === true` | `Could not start: …`: no `PID=` within 3 s, and the test fails on that wait |
 | M10 | `a_terminal_that_cannot_be_created_throws_and_never_spawns` (round 1, item 5) | a world whose `createTerminal` throws `new Error('no terminal')`, with `spawnSpy`: `runInMaskedTerminal(…)` throws that error; the counter stays `0` (the caller cleans, E3-D7); `w.children` `[]` | (green before and after: a guard that pins E3-D7's "a throw from `createTerminal` is the caller's" — say so) |
-| M11 | `the_ssh_childs_environment_holds_no_secret_value` (round 1, item 4; D12) | M8's fake `ssh` and launch, with `env` = a password session's askpass set `{ SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' }` and the resolved values `CREDS_REF_1 = 'first-secret-value-0001'`, `CREDS_REF_2 = 'second-secret-value-42'` ONLY in `stdinText`: the environment the fake recorded (`env -0`, split on NUL) holds no entry whose value contains either resolved value and no name starting `CREDS_REF_`; it DOES hold `SSH_ASKPASS_REQUIRE=force` (the positive control: the recording works). The askpass password IS there — the accepted limit (E3-D8), asserted present, not hidden | no argv mode |
+| M10b | `a_show_that_throws_ends_the_run_and_a_later_open_spawns_nothing` (round 2, Minor 7) | `world({ showThrows: true })` with `spawnSpy`, `argv: ['/bin/echo', 'x']`, a counter: `runInMaskedTerminal(…)` throws `no show`; the counter is `1`; `w.disposed === 1`; then `pty.open()`: `w.children` `[]`, the screen is empty, the counter still `1` | the throw passes through and the run is not ended: counter `0`, `w.disposed === 0` |
+| M11 | `the_ssh_childs_environment_holds_no_secret_value` (round 1, item 4; D12) | M8's fake `ssh` and launch, with `env` = a password session's askpass set `{ SSH_ASKPASS: '/keys/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'ssh-entry-password-77' }` and the resolved values `CREDS_REF_1 = 'first-secret-value-0001'`, `CREDS_REF_2 = 'second-secret-value-42'` ONLY in `stdinText`; `await closedWithin(w, 5_000)`: the environment the fake recorded (`env -0`, split on NUL) holds no entry whose value contains either resolved value and no name starting `CREDS_REF_`; it DOES hold `SSH_ASKPASS_REQUIRE=force` (the positive control: the recording works). The askpass password IS there — the accepted limit (E3-D8), asserted present, not hidden. `pids`: both gone (the `finally`) | `Could not start: …` at once; the fake's `env` record absent |
+| M12 | `launch_of_argv_mode_takes_its_own_folder_never_the_workspace` (round 2, B1) | `world({ workspaceDir: '/work/repo' })`; `mod.launchOf({ name: 't', argv: ['C:/Windows/System32/OpenSSH/ssh.exe', '-o', 'BatchMode=yes'], cwd: 'C:/Users/me/AppData/Roaming/Code/User/globalStorage/x', env: {}, secrets: [], banner: '' })` deep-equals `{ program: 'C:/Windows/System32/OpenSSH/ssh.exe', args: ['-o', 'BatchMode=yes'], shell: false, cwd: 'C:/Users/me/AppData/Roaming/Code/User/globalStorage/x' }`; the shell variant without `cwd` still answers `cwd: '/work/repo'` (the local road unchanged). Pure: nothing is spawned | the stub `launchOf` answers the shell launch: `program` undefined, `shell: true`, `cwd: '/work/repo'` |
+| M13 | `an_argv_run_starts_in_its_own_folder` (round 2, B1) | `world({ workspaceDir: <ownedDir A> })`, `runArgv` with `argv: ['/bin/sh', '-c', 'pwd']`, `cwd: <ownedDir B>`; `await closedWithin(w, 3_000)`: the screen holds B's real path and not A's | `Could not start: …`; B absent |
+| M14 | typed fixture `src/test/fixtures/typed/argv_run_needs_a_cwd.ts` (round 2, B1) | `runInMaskedTerminal({ name: 't', argv: ['ssh'], env: {}, secrets: [], banner: '' })` with no `cwd` is REFUSED by the compiler; the header line names the code the compiler gives, as its neighbours do (`typedFixtures.test.ts:11`) | on the type-only edit it is already refused (the type is the fix); watched RED by making `cwd` optional for one run, never committed |
+
+**`test/sshProgram.test.ts`** (append; pure, any host: the platform, the `PATH` value and `exists` are injected; round 2, B1)
+
+`WIN_PATH` = `'.;tools;\\rooted;C:\\Git\\usr\\bin;C:\\Windows\\System32\\OpenSSH'` (in the test, each `\\` is one backslash).
+
+| # | Test | Assertion | RED today |
+|---|---|---|---|
+| P1 | `on_windows_a_bare_ssh_becomes_the_first_absolute_path_folder_that_holds_it` | `exists` true for every `…\\ssh.exe`: `spawnableSshProgram('ssh', 'win32', WIN_PATH, exists)` equals `path.win32.join('C:\\Git\\usr\\bin', 'ssh.exe')` — `.`, `tools` and the drive-relative `\\rooted` are skipped, never asked (the recorded `exists` calls name none of them) | no export |
+| P2 | `on_windows_with_no_ssh_on_the_path_the_built_in_is_used` | `PATH` `'C:\\bin'`, `exists` true only for `builtInOpenSsh('ssh')`: the answer is `builtInOpenSsh('ssh')` | no export |
+| P3 | `on_windows_with_no_client_at_all_the_answer_is_undefined` | `exists` always false: `undefined` | no export |
+| P4 | `on_windows_an_absolute_program_is_kept_and_nothing_is_searched` | `program` = `builtInOpenSsh('ssh')`: kept; `exists` was not called | no export |
+| P5 | `off_windows_the_bare_name_is_kept_and_nothing_is_searched` | `'linux'` and `'darwin'`: `'ssh'`; `exists` not called | no export |
+| P6 | `on_windows_the_spawned_program_is_never_a_bare_name` | for `agentForward` true and false: `spawnableSshProgram(sshSpawnLaunch(entity, '/tmp/a.sock', 'win32').program, 'win32', WIN_PATH, exists)` matches `/^[A-Za-z]:[\\\/]/` (a drive letter); with `exists` always false it is `undefined`, never `'ssh'` | no export |
 
 **`test/sshRoad.test.ts`** (append; its `loadWithVscode` world)
 
 | # | Test | Assertion | RED today |
 |---|---|---|---|
 | H6 | `a_spawn_preparation_never_relies_on_the_agent` | `servesKeyForEntity` answers true; `prepare(acct, ssh, 'spawn')` → the mocked `prepareSshSession` got `agentServesKey === false` and `isolate === true`; `prepare(acct, ssh)` still gets `true` | the third argument is ignored |
-| H7 | `spawn_launch_names_the_built_in_client_and_the_extensions_agent_for_a_forwarding_entry` | `agentSocket: () => '/tmp/agent.sock'`, `ssh.agentForward: true`: `program` equals `openSshBinary('ssh', true, process.platform)`; `env.SSH_AUTH_SOCK === '/tmp/agent.sock'`; the askpass `env` passed in is merged; without forwarding, no `SSH_AUTH_SOCK` | no method |
-| H8 | `hand_over_to_run_leaves_the_list_and_answers_a_once_only_cleanup` (round 1, item 5) | `r` with a COUNTING `cleanup` (not idempotent: it counts every call); `own(r)`; `const ended = handOverToRun(r)`; `cleanAll()` → count 0; `ended(); ended()` → count 1 | no method |
-| H9 | `a_hand_over_of_a_session_never_owned_still_cleans_once` | no `own`; `handOverToRun(r)()` twice → count 1; a later `cleanAll()` → still 1 | no method |
+| H7 | `spawn_launch_names_the_client_its_folder_and_the_extensions_agent_for_a_forwarding_entry` | `agentSocket: () => '/tmp/agent.sock'`, `storageDir: '/storage'`, `ssh.agentForward: true`: `kind 'spawn'`; `program` equals `spawnableSshProgram(openSshBinary('ssh', true, process.platform), process.platform, process.env.PATH, fs.existsSync)` (read from the functions, never retyped); `cwd === '/storage'` (round 2, B1: the storage folder, never the workspace); `env.SSH_AUTH_SOCK === '/tmp/agent.sock'`; the askpass `env` passed in is merged; without forwarding, no `SSH_AUTH_SOCK` | no method |
+| H8 | `hand_over_to_run_leaves_the_list_only_after_the_run_exists_and_shares_one_end` (round 1, item 5; round 2, R2-2) | `r` with a COUNTING `cleanup` (not idempotent: it counts every call); `own(r)`; `handOverToRun(r, (e) => { ended = e; })`; `cleanAll()` → count 0 (the run owns it now); `ended(); ended()` → count 1 | no method |
+| H9 | `a_hand_over_of_a_session_never_owned_still_cleans_once` | no `own`; `handOverToRun(r, (e) => { ended = e; })`; `ended(); ended()` → count 1; a later `cleanAll()` → still 1 | no method |
+| H10 | `a_throw_while_the_run_is_made_leaves_the_session_to_the_owner_once` (round 2, R2-2) | (a) `own(r)`; `start` throws: `handOverToRun` rethrows; `cleanAll()` → count 1. (b) `own(r)`; `start` calls `e()` and then throws: count 1 after the throw; `cleanAll()` → still 1 (one shared once-only end). (c) never owned; `start` throws: `cleanAll()` → count 1 | no method |
 
 **`test/sshRoadSecrets.test.ts`** (new; `arrowWorld({ others: [S1, alert], sshRoad: road, events }, [], vault.source)` and `aw.runWithSecrets(LINKED)`)
 
@@ -417,11 +530,11 @@ spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); retur
 |---|---|---|---|
 | S1 | `the_order_is_prepare_trust_dependencies_resolve_spawn` | `LINKED` + `dependsOn: ['dep']`, `runDependencies: true`, `dep` a trusted local step; trust modal answered Run: one ordered `events`: `prepare s1#1`, the trust modal, `dep` executed, `resolve`, `spawn` | E1's sentence, nothing |
 | S2 | `no_child_and_no_value_before_the_trust_answer` | the trust modal HELD: `aw.masked` `[]`, `vault.calls` `[]`, `road.calls.length === 1`; then answered: one masked run | E1's sentence |
-| S3 | `the_child_is_ssh_by_argv_with_no_value_in_argv_or_env` | after the run: `masked[0].argv` deep-equals `['ssh', ...secretsLaunch(PLAN, r1).argv]`; `commandLine` undefined; no element of `argv` and no value of `env` holds `correct-horse-battery-staple`; `road.uses` deep-equals `['spawn']` | E1's sentence |
+| S3 | `the_child_is_ssh_by_argv_with_no_value_in_argv_or_env` | after the run: `masked[0].argv` deep-equals `['ssh', ...secretsLaunch(PLAN, r1).argv]`; `commandLine` undefined; no element of `argv` and no value of `env` holds `correct-horse-battery-staple`; `road.uses` deep-equals `['spawn']`; `masked[0].cwd === road.launches[0].cwd` (`'/storage'`, the folder `spawnLaunch` gave, never the workspace; round 2, B1) | E1's sentence |
 | S4 | `stdin_carries_the_exports_and_the_line_in_a_group_then_exit` | `masked[0].stdinText === secretsStdin({ CREDS_REF_1: 'correct-horse-battery-staple' }, 'printenv "$CREDS_REF_1"')`; it holds `} </dev/null` and ends with `exit $?\n` | E1's sentence |
 | S5 | `the_output_is_masked_and_the_banner_says_not_interactive` | `masked[0].secrets` deep-equals `[{ value: 'correct-horse-battery-staple', label: 'CREDS_REF_1' }]`; `masked[0].banner` ends with `secretsOverSshBanner(r1.target, masked[0].secrets)` and holds no `Note:` (the fake road gives no warning) | E1's sentence |
 | S6 | `trust_is_asked_on_the_trust_line_and_one_approval_covers_the_arrow` | the modal text includes `trustLineFor(r1.entity, r1.jump, PLAN.line)`; afterwards `isCommandTrusted(aw.trust, 'e1', thatLine)` true; a local trust of `PLAN.line` alone does NOT skip the modal | E1's sentence |
-| S7 | `a_linked_entry_runs_with_secrets_over_ssh` | the happy run, trusted: one masked run; `cleaned` `[]` and `road.cleanupCalls` `[]` after the road returned (the run owns it now; the owner's `finally` did not touch it); then `masked[0].onEnded()` twice → `road.cleanupCalls` `['s1#1']` (exactly one call) | E1's sentence |
+| S7 | `a_linked_entry_runs_with_secrets_over_ssh` | the happy run, trusted: one masked run; `cleaned` `[]` and `road.cleanupCalls` `[]` after the road returned (the hand-over took it off the list once the run existed; the owner's `finally` did not touch it); then `masked[0].onEnded()` twice → `road.cleanupCalls` `['s1#1']` (exactly one call) | E1's sentence |
 | S8 | `a_password_entry_puts_askpass_in_the_child_env_never_in_argv` | script `{ password: true }`: `masked[0].env` includes every key and value of `r1.env`; `argv` holds `NumberOfPasswordPrompts=1`; no `argv` element holds `r1.env.CREDS_ASKPASS_PASSWORD` (the fake road's name for the password variable, `test/sshRoadWorld.ts:54`; the real one is `CREDS_SSH_PASSWORD`, `sshAskpass.ts:45`) | E1's sentence |
 | S9 | `the_child_env_is_the_askpass_and_agent_variables_only_and_holds_no_value` (round 1, item 4; E3-D8) | for a key session and for `{ password: true }`: every key of `masked[0].env` is a key of `r1.env ?? {}` or `SSH_AUTH_SOCK`; no key starts with `CREDS_REF_`; no value contains `correct-horse-battery-staple`; and `masked[0].stdinText` DOES contain it (the value went somewhere: stdin, and only there) | E1's sentence |
 | S10 | `the_spawn_warning_is_in_the_banner_and_no_toast_races_the_run` (round 1, item 3; E3-D12) | `fakeRoad(…, …, events, NO_AGENT_TO_FORWARD)`, `recordDialogs(aw, events)` (`test/sshRoadWorld.ts:119-128`): `masked[0].banner === maskedOverSshBanner(described, NO_AGENT_TO_FORWARD, r1.target, masked[0].secrets)` with `described` = the banner's first line; the `Note:` line comes before `secretsOverSshBanner(…)`; `events` holds no `dialog:` entry that includes `NO_AGENT_TO_FORWARD` | E1's sentence |
@@ -429,9 +542,10 @@ spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); retur
 | O2 | `owner_a_cancelled_dependency_spawns_nothing_and_cleans` | S1's world, the chain modal answered `undefined`: `masked` `[]`, `vault.calls` `[]`, `cleaned` `['s1#1']` | E1's sentence |
 | O3 | `owner_a_failed_resolution_spawns_nothing_and_cleans` | a reference to `creds://me/gone/password` (no such entity): the error message is today's `Nothing was run: …`; `masked` `[]`; `cleaned` `['s1#1']` | E1's sentence |
 | O4 | `owner_a_thrown_error_cleans` | a `refSource` that throws: `await assert.rejects(aw.runWithSecrets(LINKED))`; `cleaned` `['s1#1']` | E1's sentence, no throw |
-| O5 | `owner_a_failed_terminal_creation_cleans_exactly_once` (round 1, item 5) | `onMasked` throws: `aw.runWithSecrets(LINKED)` rejects with that error; `road.cleanupCalls` `['s1#1']` — ONE call (the road's `catch`), not two (the owner's `finally` no longer holds the session) | E1's sentence |
-| O8 | `owner_a_run_that_ended_while_its_terminal_was_made_and_then_threw_cleans_once` (round 1, item 5) | `onMasked` calls `options.onEnded()` and then throws: rejects; `road.cleanupCalls` `['s1#1']` | E1's sentence |
+| O5 | `owner_a_failed_terminal_creation_cleans_exactly_once` (round 1, item 5) | `onMasked` throws: `aw.runWithSecrets(LINKED)` rejects with that error; `road.cleanupCalls` `['s1#1']` — ONE call, by the owner's `finally` (the session was still on its list: the hand-over removes it only after the run exists; round 2, R2-2) | E1's sentence |
+| O8 | `owner_a_run_that_ended_while_its_terminal_was_made_and_then_threw_cleans_once` (round 1, item 5; round 2, R2-2 and Minor 7) | `onMasked` calls `options.onEnded()` and then throws (the shape of a `show()` that threw after the masked run ended itself): rejects; `road.cleanupCalls` `['s1#1']` — the run's end cleaned it, and the owner's `finally` called the same once-only end, which did nothing | E1's sentence |
 | O9 | `owner_a_close_before_start_cleans_once_and_a_late_end_does_nothing` (round 1, item 5) | `onMasked` calls `options.onEnded()` (the terminal closed before its child started) and returns: the road resolves; `road.cleanupCalls` `['s1#1']`; then the test calls `masked[0].onEnded()` again → still `['s1#1']` | E1's sentence |
+| O10 | `a_refused_spawn_launch_asks_nothing_and_cleans` (round 2, B1) | `fakeRoad(…, …, events, undefined, NO_SSH_TO_SPAWN)`: the warning is `NO_SSH_TO_SPAWN`; no trust modal; `vault.calls` `[]`; `masked` `[]`; `road.cleanupCalls` `['s1#1']` | E1's sentence |
 | O6 | `a_stopped_preparation_asks_nothing_and_spawns_nothing` | script `'stopped'`: no modal, `masked` `[]`, `refusedShown` 0 | E1's sentence |
 | O7 | `a_refused_preparation_shows_the_remedy_and_spawns_nothing` | script `'refused'`: `refusedShown` 1, no trust modal, `masked` `[]` | E1's sentence |
 | N1 | `snapshot_a_host_changed_during_the_trust_question_does_not_reach_the_child` | modal held; `aw.nodes['s1']` REPLACED with host `evil.example`; answered Run: `masked[0].argv` holds `deploy@prod.example` and nothing holds `evil`; `aw.reads('s1')` after `prepare` returned is 0 | E1's sentence |
@@ -446,8 +560,8 @@ spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); retur
 
 | # | Test | Assertion | RED today |
 |---|---|---|---|
-| Hp6 | `every_language_says_run_with_secrets_runs_over_ssh_from_a_local_window` | each language's `basics` body includes the S1 sentence of its row above; the `secret-references` body (`bodyFor`, `fallback === false`) includes `*Run in Terminal*` and `export` | absent |
-| Hp7 | `the_english_secrets_text_is_exact` | the EN `secret-references` body includes the EN `usage` text above, literally | absent |
+| Hp6 | `every_language_says_run_with_secrets_runs_over_ssh_from_a_local_window` | each language's `basics` body includes the S1 sentence of its row above; the `secret-references` body (`bodyFor`, `fallback === false`) includes its language's new `whatItIs` value, the new first sentence of `usage` and the appended text above, and no longer includes the old `whatItIs` clause (EN `the value reaches only the child process’s environment`) | absent |
+| Hp7 | `the_english_secrets_text_is_exact` | the EN `secret-references` body includes, literally, the EN `whatItIs`, the EN first sentence of `usage` and the EN appended text above; it includes `ps e` and `can keep running there` (round 2: the remote environment and the close are said) and not `never in the server’s process list` | absent |
 
 **`test/linkedNeverLocal.test.ts`** (new; parent §4.5 (5), added by the epoch-3 re-review). The road scan reads imports, not
 where a resolved line flows. Five roads resolve the line before they read the link, or treat the link as absent by
@@ -459,8 +573,9 @@ construction (parent §4.4 table): the arrow (`runEntryLine` → `arrowLine` →
 `-oProxyCommand=x`: `sshLinkOf` answers `refused`). `BARE` = `resolveCommand(LINKED)`'s line, read in the test. The local
 sinks: the arrow's `typeIntoEntryTerminal` (seen as a terminal whose `sent` holds `BARE` as one whole send) and the local
 masked run (seen as an `aw.masked` record with `commandLine` set), the chain's typed step (`dependencyRunHost.ts`:
-`terminal.sendText(step.typed)`, or `executeCommand` with shell integration; seen in the chain world's terminal records
-as `BARE`), and the launcher's local send (seen as a terminal whose `sent` holds the launcher's bare line).
+`terminal.sendText(step.typed, true)` without shell integration, `:449`, or `integration.executeCommand(line)` with it,
+`:518`; seen as `BARE` in a terminal record's `sent` OR its `executed` — every chain test checks BOTH, through
+`sentAnywhere` and `executedAnywhere` as in `test/sshRoadChain.test.ts:78-79`; round 2), and the launcher's local send (seen as a terminal whose `sent` holds the launcher's bare line).
 
 **Trust in the fixture.** In every trusted case the trust store ALSO trusts `BARE` (the bare local line), not only the
 trust line. Without that, a bypassed road would stop at the local trust modal, and the test would stay green for the wrong
@@ -474,11 +589,11 @@ reason.
 | LN4 | `run_with_secrets_never_runs_a_valid_link_here` | VALID, trusted: no `aw.masked` record has `commandLine`; the one record has `argv` | RED with the bypass: `runWithSecrets` sends every link to `runSecretsHere` AND `secretsRefusal` skips `sshLinkRefusal` (both walls, parent §4.5 (5)) |
 | LN5 | `run_with_secrets_never_runs_a_missing_link_here` | MISSING: `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
 | LN6 | `run_with_secrets_never_runs_a_refused_link_here` | REFUSED (each case): `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
-| LN7 | `a_chain_never_types_the_bare_line_of_a_valid_linked_step` | a local entry that `dependsOn` a VALID linked step, `runDependencies: true`, trusted: no chain terminal record holds `BARE`; the linked step runs over SSH (E2.S3) | GREEN on E2's code; RED with the bypass of BOTH walls: `addStep` sends every step to `addLocalStep` AND `stepRefusal` skips `sshLinkRefusal` (`:203`) |
-| LN8 | `a_chain_never_types_the_bare_line_of_a_missing_linked_step` | MISSING: no chain terminal record holds `BARE`; the chain is refused before any step is typed | the same bypass |
+| LN7 | `a_chain_never_types_the_bare_line_of_a_valid_linked_step` | a local entry that `dependsOn` a VALID linked step, `runDependencies: true`, trusted: neither `sentAnywhere(aw)` nor `executedAnywhere(aw)` holds `BARE`; the linked step runs over SSH (E2.S3) | GREEN on E2's code; RED with the bypass of BOTH walls: `addStep` sends every step to `addLocalStep` AND `stepRefusal` skips `sshLinkRefusal` (`:203`) |
+| LN8 | `a_chain_never_types_the_bare_line_of_a_missing_linked_step` | MISSING: neither `sentAnywhere(aw)` nor `executedAnywhere(aw)` holds `BARE`; the chain is refused before any step is typed | the same bypass |
 | LN9 | `a_chain_never_types_the_bare_line_of_a_refused_linked_step` | REFUSED (each case): as LN8 | the same bypass |
 | LN10 | `an_agents_vpn_start_never_types_a_linked_launcher_here` | an agent's start (no road, `linkOf` answers `none`) of a VPN whose launcher is linked, trusted: no terminal sent anything; the answer is E1's shared sentence | GREEN (E2-D2); RED with the bypass of its one wall: `launcherRefusal` skips `sshLinkRefusal` (`vpnLauncherRun.ts:157`) |
-| LN11 | `a_chain_with_no_lookup_never_types_a_linked_step_here` | the same agent start, the launcher unlinked, one chain step linked (the walk has no `lookup`, so `NO_LINK`): no terminal record holds that step's `BARE`; the answer is E1's shared sentence | GREEN; RED with the bypass of its one wall: `stepRefusal` skips `sshLinkRefusal` |
+| LN11 | `a_chain_with_no_lookup_never_types_a_linked_step_here` | the same agent start, the launcher unlinked, one chain step linked (the walk has no `lookup`, so `NO_LINK`): neither `sentAnywhere(aw)` nor `executedAnywhere(aw)` holds that step's `BARE`; the answer is E1's shared sentence | GREEN; RED with the bypass of its one wall: `stepRefusal` skips `sshLinkRefusal` |
 
 Each bypass is a temporary local edit, run once, never committed. The summary of S1 names each RED message and the pass.
 LN1-LN3 and LN7-LN11 are guards of E2's merged code (tests only), written in S1 because S1 changes the routing of the same
@@ -494,7 +609,7 @@ cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint
 node $LP npm run compile
-node $LP node --test out/test/secretsLaunch.test.js out/test/maskedTerminal.test.js out/test/sshRoad.test.js out/test/sshRoadSecrets.test.js out/test/sshRoadHelp.test.js out/test/linkedNeverLocal.test.js
+node $LP node --test out/test/secretsLaunch.test.js out/test/outputMask.test.js out/test/sshProgram.test.js out/test/typedFixtures.test.js out/test/maskedTerminal.test.js out/test/sshRoad.test.js out/test/sshRoadSecrets.test.js out/test/sshRoadHelp.test.js out/test/linkedNeverLocal.test.js
 node $LP node --test out/test/launchRoadScan.test.js out/test/commandRoadScan.test.js out/test/sshLinkRoads.test.js out/test/remoteLaunch.test.js out/test/remoteLaunchDelivery.test.js out/test/sshRoadArrow.test.js out/test/sshRoadFolder.test.js out/test/sshRoadChain.test.js out/test/runPlan.test.js out/test/secretMasker.test.js out/test/promptSites.test.js out/test/sizeRatchet.test.js out/test/agentUseActions.test.js out/test/sshExecCommand.test.js
 node $LP node scripts/size-ratchet.mjs
 ```
@@ -613,7 +728,7 @@ the credential). Its tests stay green unchanged; if one goes red, stop and repor
 |---|---|
 | `useActions.ts` or `agentUseActions.ts` (`vscode`-free) | `export interface OverSshCall { readonly ssh: EntityMetadata; readonly jump: () => JumpChain; readonly remoteCommand: string; readonly timeoutMs: number }` and `export type OverSsh = (ctx: UseActionContext, call: OverSshCall) => Promise<UseActionResult>`. `JumpChain` = the return type of `resolveJumpChain` (`sshOptions.ts`, pure). |
 | `agentUseActions.ts` (437 → about 490) | `terminalRunAction(deps: AgentUseDeps & { onPath?: …; overSsh: OverSsh })`; §S2.2 as small functions (`runHere`, `runThere`, the gate from the Fable spec), each ≤ 50 lines, complexity ≤ 4. Imports: `planLaunch`, `sshLinkOf`, `trustLineFor`, `refusalSaid` from `./remoteLaunch`; `resolveJumpChain` from `./sshOptions`; drop `resolveCommand` and `sshLinkRefusal`. The doc of `terminalRunAction` (`:181-187`): one paragraph on the linked road. |
-| `remoteLaunch.ts` | `export function refusalSaid(entry: LaunchEntry, reason: string): string` = today's `refusedCopyReason` (`:367-369`), renamed and exported; `copyOfPlan` (`:351`) calls it. |
+| `remoteLaunch.ts` | `export function refusalSaid(entry: LaunchEntry, reason: string): string` = today's `refusedCopyReason` (`:367-369`), renamed and exported; `copyOfPlan` (`:351`) calls it. `sshLinkRefusal`'s doc (`:120-123`, as S1 left it): "the agent's run" leaves the list of callers (round 2, Minor 8). |
 | `sshUseActions.ts` (405 → about 440) | `execOverSsh` (§S2.2); `sshExecAction.run` calls it; `sshDepsFor` (`:383-405`) adds `overSsh: execOverSsh(deps)` to the record it returns (build the record in a `const`, then return it with the field). `agentAwareLaunch` uses `sshSpawnLaunch` (S1). |
 | `extension.ts` | No change from this brief: `agentDeps` spreads `sshDeps` (`:629`). The security spec's §7 changes `:516` and `:69` in place (`maskEntriesWithLink`); not one line longer. |
 | `test/agentUseActions.test.ts` `fakeDeps` `:38-53`, `test/sshLinkRoads.test.ts` `:166-177`, `test/promptSites.test.ts:214` | Their deps gain `overSsh: async () => { throw new Error('this world has no SSH road'); }` (a test that reaches it fails loudly). |
@@ -657,6 +772,14 @@ spec decided it, the bare line, `execOverSsh` shared with `ssh:exec`, the trust 
 | `sshUseActions.ts` | 405 | about 440 | 800 |
 | `extension.ts` | 1003 (≤ after S1) | unchanged | ratchet |
 | `terminalRunAction`'s `run` | 48 code lines | ≤ 20 | 50 per function |
+
+**No stale `eslint-disable`** (round 2, Minor 1; the rule of §S1.4). S2's moves make three directives likely unused:
+`agentUseActions.ts:197` (`complexity`, on `terminalRunAction`'s `run`, which becomes a short dispatcher),
+`sshUseActions.ts:221` (`max-lines-per-function`, on `sshExecAction`, whose `run` body moves into `execOverSsh`) and
+`sshUseActions.ts:245` (`complexity`, on that `run`). Run lint after the moves; each directive it reports as unused is
+removed in the same commit, and one it does not report stays. The other directives of those files (`agentUseActions.ts:121`,
+`:131`, `:296`, `:319`: `scriptRunAction` and `dbQueryAction`) are not touched by S2. `execOverSsh`, `runHere`, `runThere` and
+the gate get no directive: each ≤ 50 code lines and complexity ≤ 4, split when needed.
 
 ### S2.5 Scenarios — RED first (the non-authorisation part)
 
@@ -710,8 +833,8 @@ The lead runs the full `npm test`.
 |---|---|
 | help ×5, the paragraph that starts EN `To run a line on a server` (the E2 advice) | Append the risk-1 note (the limits "POSIX login shells only" and "a Windows server is refused" are already in that paragraph since E2). EN: ` An older version of CredsForDevs does not know *Runs over SSH*: it runs such an entry on its own machine, and a save there removes the choice for every machine. Update CredsForDevs on all your machines before you choose an SSH entry.` DE: ` Eine ältere Version von CredsForDevs kennt *Runs over SSH* nicht: Sie führt einen solchen Eintrag auf ihrem eigenen Rechner aus, und ein Speichern dort entfernt die Wahl für alle Rechner. Aktualisieren Sie CredsForDevs auf allen Ihren Rechnern, bevor Sie einen SSH-Eintrag wählen.` ES: ` Una versión anterior de CredsForDevs no conoce *Runs over SSH*: ejecuta esa entrada en su propia máquina, y guardarla allí quita la elección en todas las máquinas. Actualice CredsForDevs en todas sus máquinas antes de elegir una entrada SSH.` RU: ` Старая версия CredsForDevs не знает *Runs over SSH*: она выполняет такую запись на своей машине, а сохранение записи там убирает выбор на всех машинах. Обновите CredsForDevs на всех своих машинах, прежде чем выбирать запись SSH.` UK: ` Старша версія CredsForDevs не знає *Runs over SSH*: вона виконує такий запис на своїй машині, а збереження запису там прибирає вибір на всіх машинах. Оновіть CredsForDevs на всіх своїх машинах, перш ніж обирати запис SSH.` The paragraph's existing text stays first, so `EN_ADVICE` (`test/sshRoadHelp.test.ts:38`) stays a substring. New test Hp9 `every_language_warns_that_an_older_version_runs_a_linked_entry_locally` (each language includes its sentence; RED: absent). |
 | `src_vs_code/README.md` | Read every mention of *Runs over SSH*, the trust line, the refusals, *Run with Secrets* and the agent (`grep -n "Runs over SSH\|Run with Secrets\|ssh … --\|creds_run"`); each must describe the system as built after S1 and S2. Add the risk-1 note after the E2 advice paragraph (`:300-`). The feature table row (`:44`) adds: over SSH, the values go on ssh's standard input. |
-| `src_vs_code/CHANGELOG.md` `## [Unreleased]` | The field, the arrow, a VPN's *Start*, *Run All in Folder*, a dependency step, the trust line, *Copy Command*, share and export and the older-build note are already in `## [1.20.0]` (#338, E1 and E2); do not repeat them. E3's own block: `### Added — Run with Secrets and an agent's run over SSH`: *Run with Secrets* on a linked entry (values on the remote login shell's standard input, masked output, not interactive, local window only, a Windows server refused); an agent's `creds_run` only when the SSH entry itself is *Usable by agents*, else one sentence naming only the Terminal entry, code `denied` (was `not_supported` in 1.20.0); the consent names the SSH entry and its target; the agent's output is also masked with the SSH entry's values. Remove nothing from 1.20.0: its *Not yet over SSH* section stays true of that release. Cite `file:line` as the existing entries do. |
-| `research/module_extension.md` | Read the whole SSH-link section (from `#### Terminal entry SSH link`, about `:2356`, to the end of the E3 paragraphs) as ONE text: no sentence says a road "still refuses" that runs now; "The refusal on every road" lists exactly the remaining callers of `sshLinkRefusal` (scan 4's list); the module map names `remoteLaunch.ts`, `sshSession.ts`, `sshRoad.ts`, `entityCommandRows.ts`, the scan. |
+| `src_vs_code/CHANGELOG.md` `## [Unreleased]` (`:7`) | The field, the arrow, a VPN's *Start*, *Run All in Folder*, a dependency step, the trust line, *Copy Command*, share and export and the older-build note are already in `## [1.20.0]` (#338, E1 and E2); do not repeat them. E3's own block: `### Added — Run with Secrets and an agent's run over SSH`: *Run with Secrets* on a linked entry (values on the remote login shell's standard input, masked output, not interactive, local window only, a Windows server refused); an agent's `creds_run` only when the SSH entry itself is *Usable by agents*, else one sentence naming only the Terminal entry, code `denied` (was `not_supported` in 1.20.0); the consent names the SSH entry and its target; the agent's output is also masked with the SSH entry's values. Remove nothing from 1.20.0: its *Not yet over SSH* section (`:42-45`) stays true of that release. (Line numbers re-checked on e57eb80f, main with #338: `## [1.20.0]` is `:9-51`, `## [1.19.0]` starts at `:53`.) Cite `file:line` as the existing entries do. |
+| `research/module_extension.md` | Read the whole SSH-link section (from `#### Terminal entry SSH link` at `:2371` to the end of the E3 paragraphs; round 2, Minor 8) as ONE text: no sentence says a road "still refuses" that runs now; "The refusal on every road" lists exactly the remaining callers of `sshLinkRefusal` (scan 4's list); the module map names `remoteLaunch.ts`, `sshSession.ts`, `sshRoad.ts`, `entityCommandRows.ts`, the scan. |
 | `research/module_tests.md` | The E1, E2 and E3 sections: every new test file has a row; each row's flow is covered or `not covered` with a reason; one **Not covered** line names the hand checks of parent §10 and who runs them. |
 | parent §10 | Hand check 3 is handed to the owner (it is owed, not a gate for the merge); the summary says so. With it go the observations E3 could not make in a unit test (E3-D11): with a jump host, closing the masked terminal mid-run leaves no `ssh` helper on this machine (`pgrep -f 'ssh .*-W'` empty after a few seconds), and an unreachable host ends the run with ssh's error after about 10 s. They are the owner's to run, written into the hand-over message, not into the parent (§E3.R1, flag 7). |
 
@@ -749,6 +872,8 @@ The steps, in this order:
 1. While every file is still in `todo/`: each status line becomes `> Status: **IMPLEMENTED, <YYYY-MM-DD>.**` with its
    deviations. The parent's deviations section collects at least: E1 §S4 F1-F7; E2's four recorded deviations and its
    flags 2-5; E3-D2 (references only from the line that runs, over SSH); E3-D4 (a spawn always writes the key file);
+   E3-D5 (round 2, B1: the masked ssh child is an absolute program on Windows and starts in the storage folder, never
+   the workspace; `ssh:exec` and the agent's run keep their own program and folder, flag 8);
    **E3-D13 and entry 2.2: the first §4.5 (1) importer target was given up** — `commands/runCommands.ts` still imports
    `resolveCommand` for the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not
    widened (E3's plan round 1); the epoch-3 revision wrote the shipped list into §4.5 (1) and put the guarantee on the
@@ -791,14 +916,15 @@ The steps, in this order:
 - **No change to the local Run with Secrets** (its shell, its line from the parts, its references in disabled rows, its
   banner text), to `runMasked`, or to `secretsStdin`, `SECRETS_REMOTE_COMMAND`, `trustLineFor`, `planLaunch`,
   `LaunchPlan` (E3-D13), `prepareSshSession`, `cleanup()`, `childKill.ts`, the trust store or `commandFingerprint`.
-- **No change to `ssh:exec`'s behaviour**: its body moves into `execOverSsh`, in the same order.
+- **No change to `ssh:exec`'s behaviour**: its body moves into `execOverSsh`, in the same order, with its own program and
+  folder (B1's absolute program and storage folder are the masked run's, E3-D5; flag 8).
 - **No fix of risk 7** (askpass answers a jump host's password prompt): a password SSH entry with a jump host has it on
   these roads too (`PLAN_askpass_answers_the_hop.md`).
 - **No `SendEnv` control, and no `-o SendEnv=-NAME`** (E3-D8). The removal form was MEASURED not to work on a wildcard
   pattern (`research/PLAN_windows_shell_quoting_injection.md` §8), so it would only look like protection. A password SSH
   entry's askpass variables stay in the LOCAL ssh's environment; a person's own `SendEnv` pattern together with a
   server's `AcceptEnv` could send that password to the server — the limit the owner accepted and documented on
-  2026-11-10 (`research/module_extension.md:221`, `src_vs_code/CHANGELOG.md:34-36`, release 1.19.0), the same as on SSH Connect today.
+  2026-11-10 (`research/module_extension.md:221`, `src_vs_code/CHANGELOG.md:66-71`, release 1.19.0, the *Known limits* bullet), the same as on SSH Connect today.
   The resolved VALUES are never in that environment (stdin only, M11 and S9), so no `SendEnv` can carry them.
 - **No overall time limit on a masked run.** It is bounded by `ConnectTimeout` while connecting and by the person after
   that (closing the terminal kills it, E3-D11), as the local Run with Secrets is today.
@@ -832,6 +958,9 @@ The steps, in this order:
 6. **Both-sides rule.** This document was written alone (one file). The parent's `### E3` needs the line `Stories:
    [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md).` and `todo/README.md` needs this
    document's row, in the SAME commit as this file; the security spec's row comes with the spec.
+   (Stale since the first commit of this document; re-checked on e57eb80f: the parent's `### E3` carries the Stories
+   line (`PLAN_terminal_command_over_ssh.md:671`), and `todo/README.md` has this document's row (`:33`) and the security
+   spec's (`:34`). Nothing is owed.)
 7. **Round-1 amendments that may touch the parent (flagged by the Opus judge who wrote them in, 2026-11-10; not decided
    here, in doubt they count).** (a) E3-D13 leaves parent §4.5 (1)'s structural target ("`resolveCommand(` is imported
    only by `commandLine.ts` and `remoteLaunch.ts`") unreached for good, not for a while: the parent's structural-test
@@ -847,6 +976,14 @@ The steps, in this order:
    the guarantee from the import target to behavioural tests (parent §4.5 (5), here §S1.6 LN1-LN11 and §S2.5 AG8). (b) and (c) are not
    counted. The revision also wrote the round-1 bounds and the child's clean environment into parent §4.4, as the
    baseline of epoch 3, not as entries.)
+
+8. **Outside B1, named so the lead decides it (round 2, found while writing B1).** `ssh:exec` spawns through
+   `runSshExec` with no `cwd` (`sshUseActions.ts:278-283`, `sshExecRunner.ts:129-133`), so its child starts in the
+   extension host's own folder, and on Windows without agent forwarding its program is the bare `ssh`
+   (`agentAwareLaunch`, `:95-109`). S2's agent run over SSH goes through the same `execOverSsh`. B1's fix (an absolute
+   program, the storage folder) is written for the masked run only, because "What E3 does NOT do" keeps `ssh:exec`'s
+   behaviour; widening it to `ssh:exec` (and so to the agent's run) changes a shipped road and is the lead's choice.
+   The workspace folder is NOT that road's folder, so B1's repository attack does not apply to it as written.
 
 ## E3.L — Lead decisions on the flags (2026-11-10)
 
@@ -874,3 +1011,28 @@ Written into the sections they change by an Opus judge on 2026-11-10, before rou
 | 8 | S3's promotion, document by document | §S3.2 (the table, the one `research/README.md` row, the steps, then `plan-lifecycle.mjs`); §S3.3 |
 
 Line references re-checked on 454e990 (header). Parent-plan questions raised while applying: flag 7.
+
+## E3.R2 — applied (round 2 of 2026-11-10 and the lead's Opus review)
+
+E3's plan round 2 (coai session 8da9aab9) answered `proceed`. Its findings 1, 2 and 4 were accepted (here R2-1, R2-2,
+R2-4); findings 0 and 3 were rejected, with their reasons, in that session. The lead's own Opus review of the same text
+gave the other rows. An Opus judge wrote all of them into the sections they change on 2026-11-10. The lead judged NONE of
+them a parent change: each only makes the plan true as written, and no owner decision moves. This is a record of where
+each went, not a ledger (a stories document keeps none; the parent's ledger is unchanged).
+
+| # | Finding | Now in | Why it is not a parent change |
+|---|---|---|---|
+| R2-1 | The table of what ends the run is the LOCAL end; the remote command can keep running after a close | §S1.2 (the paragraph under the table, the "remote command runs" row); E3-D11 (d); the help `usage` text (§S1.3) | Wording: parent §4.4's bound ("closing its terminal kills the child") is kept; the remote command's end was never promised |
+| R2-2 | The hand-over sits inside the guarded block, so a throw from the hand-over or the creation has one cleaner | E3-D7; §S1.1 (the call); §S1.3 `sshRoad.ts` `OwnedSessions`; H8-H10; O5, O8 | Makes round 1's "atomic, once-only" and parent §4.4's one owner true; no contract moves |
+| R2-4 | M8 and M11 are bounded by `closedWithin` and prove the fake ssh's processes gone | §S1.5; the fake `ssh` paragraph of §S1.6; M8, M11 | Tests only, for parent §6's bounded-run row as written |
+| B1 | Argv mode on Windows spawned a bare `ssh` in the workspace folder (CWE-426) | E3-D5; the texts table (`NO_SSH_TO_SPAWN`); §S1.1; §S1.3 `maskedTerminal.ts`, `sshProgram.ts`, `sshRoad.ts`, test helpers; P1-P6, M12-M14, H7, S3, O10; §S3.2 step 1; flag 8 | Makes E3-D5's own promise and parent D12 ("never in argv…") true; parent §4.4 names the program "as the agent's `ssh:exec` chooses them", and it is the same client, only resolved to an absolute path; the working folder is not a parent subject |
+| M5 | `runInMaskedTerminal` would pass the 50-line limit | §S1.3 `maskedTerminal.ts` (`maskedRun`, `openRun`, `closeRun`, `inputRun`); §S1.4 | A function split for the lint limit; no behaviour |
+| M6 | The branch has #338; the CHANGELOG references | the header; §S3.1 CHANGELOG row; "What E3 does NOT do" (`:66-71`) | References only |
+| M7 | K9 would load `../extension` in a unit test | §S1.3 `outputMask.ts` and `extension.ts`; K9 in `outputMask.test.ts`; §S1.4 | A test seam; the local banner text is unchanged and `extension.ts` gets no line longer |
+| Minor 1 | An `eslint-disable` left unused by a move fails lint | §S1.4, §S2.4 | The lint rule as configured (`eslint.config.mjs:20`) |
+| Minor 3 | M2's "RED today" was wrong; the tests do not compile before the type | §S1.6 (the order paragraph, the RED column) | Test order and text |
+| Minor 5 | "Never in the server's process list" was too strong; `whatItIs` and `usage` said "child environment only" | §S1.3 help (reworded in five languages); Hp6, Hp7; README | Help wording made accurate; D12 is not changed |
+| Minor 6 | M8 and M11 used the runner's `$SHELL` | the fake `ssh` paragraph of §S1.6 | Test fixture |
+| Minor 7 | A throw from `terminal.show()` could leave a run that spawns later | E3-D7; E3-D11 (c); §S1.2; §S1.3 `maskedTerminal.ts` (the `show()` row); M10b; O8 | Makes E3-D11 (c) ("`open()` after the end does nothing") true for that exit too |
+| Minor 8 | `module_extension.md`'s SSH-link section starts at `:2371`; `sshLinkRefusal`'s doc needs an edit; flag 6 is stale | §S3.1; §S1.3 and §S2.3 `remoteLaunch.ts`; flag 6 | References and a doc comment |
+| LN7-LN9 | The chain tests must look at both sinks, `sent` and `executed` | §S1.6 (the sinks paragraph, LN7-LN9, LN11) | Makes parent §4.4's chain sink ("`sendText`, or `executeCommand`") fully observed |
