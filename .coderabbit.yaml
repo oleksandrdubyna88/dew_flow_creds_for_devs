@@ -91,4 +91,7 @@ knowledge_base:
     enabled: true
     filePatterns:
       - "CLAUDE.md"
-      - ".claude/rules/**/*.md"
+      - "AGENTS.md"
+      - ".agents/PROJECT.md"
+      - ".agents/rules/**/*.md"
+      - ".agents/conventions/**/*.md"

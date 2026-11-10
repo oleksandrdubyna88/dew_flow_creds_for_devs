@@ -384,7 +384,7 @@ test('[S1.8] helpers that cannot be loaded: one line naming the submodule comman
     harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
     platform: 'linux',
     loadHelpers: async () => {
-      throw new Error('leftovers: the shared rules are not mounted (x/owned.mjs is missing) — run: git submodule update --init .claude/rules/shared');
+      throw new Error('leftovers: the shared rules are not mounted (x/owned.mjs is missing) — run: git submodule update --init .agents/conventions');
     },
     sweep: () => {
       sweeps += 1;
@@ -401,7 +401,7 @@ test('[S1.8] helpers that cannot be loaded: one line naming the submodule comman
   assert.equal(sweeps, 0, 'nothing was swept');
   const said = text.join('').split('\n').filter((line) => line !== '');
   assert.equal(said.length, 1, said.join(' | '));
-  assert.match(said[0], /^run-itests: .*git submodule update --init \.claude\/rules\/shared/);
+  assert.match(said[0], /^run-itests: .*git submodule update --init \.agents\/conventions/);
 });
 
 test('[S1.10] a SIGTERM while the first harness runs: it reaches the harness, the second never starts, the runner exits 143', posixOnly, async (t) => {
@@ -445,7 +445,7 @@ test('[S1.8] the same on the Windows branch: no `run` is made when the helpers c
     harnesses: [harness(dir, 'quiet', 'process.exit(0);')],
     platform: 'win32',
     loadHelpers: async () => {
-      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .claude/rules/shared');
+      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .agents/conventions');
     },
     run: countingRun(events),
   });
@@ -698,7 +698,7 @@ test('[S1.20] a signal during a helper load that then fails still prints the sum
     signals,
     loadHelpers: async () => {
       signals.emit('SIGTERM');
-      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .claude/rules/shared');
+      throw new Error('leftovers: the shared rules are not mounted — run: git submodule update --init .agents/conventions');
     },
   });
 

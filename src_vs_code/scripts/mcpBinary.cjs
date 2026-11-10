@@ -31,7 +31,7 @@ const EXE = path.join(
 );
 
 /** The one command that actually rebuilds it — named in every failure, because the obvious one does not. */
-const BUILD = 'dotnet build src_mcp/src/CredsMcp.csproj';
+const BUILD = 'dotnet build src_mcp/src/CredsMcp.csproj -m:4';
 
 /**
  * Is the executable at least as new as the newest source it is built from?

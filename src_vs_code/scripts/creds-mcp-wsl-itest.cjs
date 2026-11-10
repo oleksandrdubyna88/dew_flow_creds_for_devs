@@ -198,7 +198,7 @@ async function preconditions() {
     skip('no WSL on this machine');
   }
   if (!fs.existsSync(path.join(windowsBuild('src_mcp'), 'creds-mcp.exe'))) {
-    skip('the Windows MCP server is not built', 'run: dotnet build src_mcp/src/CredsMcp.csproj');
+    skip('the Windows MCP server is not built', 'run: dotnet build src_mcp/src/CredsMcp.csproj -m:4');
   }
   const tools = await wslStep({}, 'tools', ['dotnet', 'node', 'python3']);
   if (tools.stdout.includes('missing')) {

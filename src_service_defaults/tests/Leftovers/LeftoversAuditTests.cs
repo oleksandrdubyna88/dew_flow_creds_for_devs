@@ -220,7 +220,7 @@ public sealed class LeftoversAuditTests : IDisposable
         lines[0].Should().Be("creds tests: this run left 4 folder(s) it claimed — 2 never disposed, 1 disposed but not removed, 1 claimed in the temp root");
         lines[1..5].Should().Equal("  never disposed: /t/a", "  never disposed: /t/c", "  disposed but not removed: /t/b", "  claimed in the temp root: /t/d");
         lines.Should().HaveCount(6);
-        lines[5].Should().StartWith("remedy: dispose the OwnedDir or OwnedScope").And.Contain("bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run");
+        lines[5].Should().StartWith("remedy: dispose the OwnedDir or OwnedScope").And.Contain("bash .agents/conventions/tools/janitor.sh --token creds --dry-run");
     }
 
     [Fact]

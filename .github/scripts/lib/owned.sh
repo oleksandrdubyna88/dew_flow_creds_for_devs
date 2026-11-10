@@ -75,7 +75,7 @@ owned_token() {
       if ! command -v node > /dev/null 2>&1; then
         why="node is not on PATH"
       else
-        dir="$(cd "$OWNED_HERE/../../../.claude/rules/shared/tools/lib" 2> /dev/null && { pwd -W 2> /dev/null || pwd; })"
+        dir="$(cd "$OWNED_HERE/../../../.agents/conventions/tools/lib" 2> /dev/null && { pwd -W 2> /dev/null || pwd; })"
         if [ -z "$dir" ] || [ ! -f "$dir/owned.mjs" ]; then
           why="the shared rules are not mounted"
         else

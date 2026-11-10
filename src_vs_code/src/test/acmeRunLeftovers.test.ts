@@ -285,7 +285,7 @@ function makeTree(text: string): { dir: string; script: string; tmp: string; stu
   const script = put(RUN, text, 0o755);
   put(COMPOSE, REAL_COMPOSE, 0o644);
   put('.github/scripts/lib/owned.sh', OWNED_SH, 0o644);
-  put('.claude/rules/shared/tools/janitor.sh', JANITOR, 0o644);
+  put('.agents/conventions/tools/janitor.sh', JANITOR, 0o644);
   for (const [name, body] of Object.entries({ docker: DOCKER, curl: CURL, openssl: OPENSSL, sleep: SLEEP })) put(`bin/${name}`, body, 0o755);
   fs.mkdirSync(path.join(dir, 'tmp'));
   return { dir, script, tmp: path.join(dir, 'tmp'), stub: path.dirname(put('stub/seen', '', 0o644)), calls: put('calls', '', 0o644) };
@@ -625,7 +625,7 @@ test('the janitor call: 0 and 3 are fine and silent; 127 names the command that 
   }
   const unmounted = runAcme(REAL_RUN, { STUB_JANITOR_RC: '127' });
   assert.equal(unmounted.status, 0, unmounted.output);
-  assert.match(unmounted.output, /janitor: exit code 127.*git submodule update --init \.claude\/rules\/shared/);
+  assert.match(unmounted.output, /janitor: exit code 127.*git submodule update --init \.agents\/conventions/);
   const other = runAcme(REAL_RUN, { STUB_JANITOR_RC: '2' });
   assert.equal(other.status, 0, other.output);
   assert.equal(other.output.split('\n').filter((line) => /janitor/i.test(line)).length, 1, other.output);
@@ -666,7 +666,7 @@ async function loadGuard(): Promise<GuardModule | string> {
   try {
     module.loadYaml(undefined);
   } catch {
-    return 'the mounted guard cannot load its yaml module (run npm ci in .claude/rules/shared)';
+    return 'the mounted guard cannot load its yaml module (run npm ci in .agents/conventions)';
   }
   return module;
 }

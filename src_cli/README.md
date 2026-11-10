@@ -68,8 +68,8 @@ PowerShell with `Get-AuthenticodeSignature .\creds.exe`. The plan is
 ## Building and testing
 
 ```bash
-# from the repository root; local runs follow .claude/rules/shared/common/local-cpu-budget.md
-LP=.claude/rules/shared/tools/low-priority.mjs
+# from the repository root; local runs follow .agents/conventions/common/local-cpu-budget.md
+LP=.agents/conventions/tools/low-priority.mjs
 node $LP dotnet build   src_cli/src/CredsCli.csproj -m:4 --disable-build-servers
 node $LP dotnet build   src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers
 node $LP ./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe      # run the executable, never `dotnet test`

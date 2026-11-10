@@ -206,7 +206,7 @@ jobs:
           retention-days: 1
 
   # ONE publish, after the WHOLE matrix — the rule from
-  # .claude/rules/shared/common/development-workflow.md, applied here because this workflow was the
+  # .agents/conventions/common/development-workflow.md, applied here because this workflow was the
   # thing it warns about. Every leg used to run `gh release create … || true` and upload its own
   # asset, so the release went public the moment the FIRST leg finished and every later one added to
   # it. A leg that failed, or sat queued on a retired runner image, therefore left a PUBLISHED release
@@ -361,7 +361,7 @@ jobs:
       # workflowMount.test.ts keeps every job that runs a C# test executable honest. (A release runs only on a tag: the first real run of this step is the
       # next release - testing.md: a check that only runs during a release has never run. The text test above is the check a pull request has.)
       - name: Fetch the shared rules
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       # The same executable starts `node` (the guard's script classifier, the Windows handoff test), and the shared rules' reference is an ES module loaded
       # with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
@@ -530,7 +530,7 @@ jobs:
 
   # Same shape as server-release, and here for the same reason: the defect was at all three sites,
   # so the fix is at all three. Fixing only the one that was noticed is the failure
-  # .claude/rules/shared/common/security.md calls "a measure applied at SOME of its sites".
+  # .agents/conventions/common/security.md calls "a measure applied at SOME of its sites".
   cli-release:
     name: publish cli release
     needs: [cli-binaries, cli-sign]
@@ -639,7 +639,7 @@ jobs:
       # workflowMount.test.ts keeps every job that runs a C# test executable honest. (A release runs only on a tag: the first real run of this step is the
       # next release - testing.md: a check that only runs during a release has never run. The text test above is the check a pull request has.)
       - name: Fetch the shared rules
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       # The same executable starts `node` (the guard's script classifier, the Windows handoff test), and the shared rules' reference is an ES module loaded
       # with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
@@ -857,7 +857,7 @@ jobs:
       # mount and sweeps and audits through it; without the mount the wrapper refuses.
       - name: Fetch the shared rules
         working-directory: .
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

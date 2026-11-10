@@ -2,7 +2,7 @@
 // The Node WRAPPER over the mounted test-leftovers reference: `common/test-leftovers.md`, bound to this repository's
 // token (the `creds` row of the `## Tokens` table of the mounted detail).
 //
-// Nothing of the reference is copied here. The mount (`.claude/rules/shared/tools/lib/owned.mjs`) is loaded, its
+// Nothing of the reference is copied here. The mount (`.agents/conventions/tools/lib/owned.mjs`) is loaded, its
 // functions are bound to the token ONCE with `ownedFor`, and re-exported as they are; a defect in the reference is
 // fixed in `dew_flow_conventions` and taken by a pin bump, never patched here (decision 11 of the merged core). What
 // this file adds is three things of this repository's own: `shortSocketRoot()`, `ownedFile()` and `writeStub()`.
@@ -22,13 +22,13 @@ const REPO_TOKEN = 'creds';
 const REPO_ROW = 'the developer-credentials server and extension';
 
 // `scripts/lib` is three folders below the repository root.
-const MOUNT = path.resolve(__dirname, '..', '..', '..', '.claude', 'rules', 'shared');
+const MOUNT = path.resolve(__dirname, '..', '..', '..', '.agents', 'conventions');
 const LIB = path.join(MOUNT, 'tools', 'lib');
 
 function loadReference() {
   if (!fs.existsSync(path.join(LIB, 'owned.mjs'))) {
     throw new Error(
-      `leftovers: the shared rules are not mounted (${path.join(LIB, 'owned.mjs')} is missing) — run: git submodule update --init .claude/rules/shared`,
+      `leftovers: the shared rules are not mounted (${path.join(LIB, 'owned.mjs')} is missing) — run: git submodule update --init .agents/conventions`,
     );
   }
   return require(path.join(LIB, 'owned.mjs'));

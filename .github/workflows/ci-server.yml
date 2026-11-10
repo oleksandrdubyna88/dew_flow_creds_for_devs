@@ -29,7 +29,7 @@ on:
       # The backup harness makes its scratch through the extension's leftovers wrapper and the mounted shared rules (E2.2), so a
       # change to either re-runs this pipeline.
       - 'src_vs_code/scripts/lib/**'
-      - '.claude/rules/shared'
+      - '.agents/conventions'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -54,7 +54,7 @@ jobs:
       # The backup harness below makes its scratch through src_vs_code/scripts/lib/leftovers.cjs, a WRAPPER over the shared rules'
       # test-leftovers reference. No mount, no helper, no harness: the wrapper refuses with this very command.
       - name: Fetch the shared rules
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -80,7 +80,7 @@ jobs:
 
       # xUnit v3 on Microsoft Testing Platform: the test project builds into a
       # self-contained runner executable. `dotnet test` has no VSTest host here and
-      # would abort — never use it (.claude/rules/shared/common/testing.md).
+      # would abort — never use it (.agents/conventions/common/testing.md).
       # No `.exe` suffix on Linux; the same binary is CredVaultServer.Tests.exe locally.
       - name: Test
         run: ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
@@ -127,7 +127,7 @@ jobs:
   # wire against a running server — routing, the auth scheme, the status codes, the serialized
   # shape. Its first run found a 500 that 164 green tests could not see, because every envelope
   # they build happens to send the optional field a client may omit.
-  # See http/README.md and .claude/rules/shared/common/http-contracts.md.
+  # See http/README.md and .agents/conventions/common/http-contracts.md.
   contract:
     name: http · contract suite
     runs-on: ubuntu-latest
@@ -136,7 +136,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: git submodule update --init --depth 1 .claude/rules/shared
+      - run: git submodule update --init --depth 1 .agents/conventions
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -230,7 +230,7 @@ jobs:
 
       - name: Run it
         run: |
-          node .claude/rules/shared/tools/http-run.mjs \
+          node .agents/conventions/tools/http-run.mjs \
             --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
           # The REAL TypeScript client against the REAL server, over the wire — the check two green
           # suites agreeing with contract/backup-targets-v1.json is not. Same exit-code contract:
@@ -266,12 +266,12 @@ jobs:
       # Exit 1 while a route has no request. Every route has one today, so this starts armed
       # rather than as a warning — the state a repository earns by finishing its backfill.
       - name: Every route has a request
-        run: node .claude/rules/shared/tools/http-coverage.mjs --source src_minimalapi_server
+        run: node .agents/conventions/tools/http-coverage.mjs --source src_minimalapi_server
 
       # Shape only — no network, nothing executed. The items themselves run after a deploy,
       # from rsd-server-deploy.yml.
       - name: The post-deploy checklist is still well formed
-        run: node .claude/rules/shared/tools/post-deploy-check.mjs
+        run: node .agents/conventions/tools/post-deploy-check.mjs
 
   # The deployment stack ships with the server, so it is verified in the same
   # pipeline — a broken compose file or entrypoint is a server release defect.

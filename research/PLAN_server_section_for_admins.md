@@ -501,7 +501,7 @@ offers — a person who selects the row or presses Enter lands on the backup tab
 The other two rows carry no command: the issue asks for an icon, not an action, on the version, and the
 vault footprint has no page of its own.
 
-**UTC, converted once, at the edge** ([utc-timestamps.md](../.claude/rules/shared/common/utc-timestamps.md)
+**UTC, converted once, at the edge** ([utc-timestamps.md](../.agents/conventions/common/utc-timestamps.md)
 rule 4). `lastRunAt` is unix **milliseconds** — a true instant, not a calendar day — so it carries no
 offset and cannot shift: `new Date(ms).toLocaleString()` in the tree, and nowhere else. The pure row
 builder takes the formatter as an argument so the test pins a fixed locale rather than the runner's.
@@ -557,7 +557,7 @@ fault, and it is the one nobody could see."*).
 | **GitHub unreachable / rate-limited** | no icon, no suffix, no toast. The deployed version still renders |
 | **`Version: "unknown"`** (dev build) | rendered verbatim, never compared (§2.5) |
 
-**Durable status** ([durable-status.md](../.claude/rules/shared/common/durable-status.md)): the section
+**Durable status** ([durable-status.md](../.agents/conventions/common/durable-status.md)): the section
 is **read-only**. The one status-changing action reachable from it — *Configure backup…* → run a backup
 — already satisfies the rule on the server side (`BackupRunResults.InProgress` written before the work,
 `BackupRun.cs:9`; `Running` derived from one field, `:22-30`; the tab re-reads it). This plan adds the
@@ -611,7 +611,7 @@ tree section that renders a `checking…` row for a week is worse than no sectio
 
 Server: `dotnet build dew_flow_creds_for_devs.slnx -c Debug` then
 `./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe` — **never `dotnet test`**
-([testing.md](../.claude/rules/shared/common/testing.md); CLAUDE.md *Commands*). Extension:
+([testing.md](../.agents/conventions/common/testing.md); CLAUDE.md *Commands*). Extension:
 `cd src_vs_code && npm test` (node:test over `out/test/*.test.js`).
 
 ### 4.1 Server — `tests/OpsTests.cs`, `MetricsEndpointTests` (`:149-203`)
@@ -676,7 +676,7 @@ nothing else. Ordering across files is not guaranteed, so the enrolment lives in
 `http/README.md:14` and `:51` mention `/api/metrics` as officer-only — `:51` must be reworded.
 
 **Report the verdict by exit code, never the log tail**
-([http-contracts.md](../.claude/rules/shared/common/http-contracts.md)): `0` pass · `1` **contract
+([http-contracts.md](../.agents/conventions/common/http-contracts.md)): `0` pass · `1` **contract
 regression** · `3`/`4`/`5` environment/config/no-report — the last three mean the API was not exercised
 and prove nothing.
 
@@ -750,7 +750,7 @@ rendering an empty section — hence that row.
 
 ## 8. What this plan could NOT verify
 
-Named rather than assumed, per [planning-docs.md](../.claude/rules/shared/common/planning-docs.md) —
+Named rather than assumed, per [planning-docs.md](../.agents/conventions/common/planning-docs.md) —
 *a conclusion may not be wider than the conditions checked*.
 
 1. **Issue #56's own text.** Taken from the task brief; `gh issue view 56` was **not** run (the session

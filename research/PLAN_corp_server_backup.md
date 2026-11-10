@@ -282,7 +282,7 @@ a target is a second opinion about which archives exist and the expensive way to
 ## The boundary with the plans on either side
 
 Named here **and** in the other document, per
-[planning-docs.md](../.claude/rules/shared/common/planning-docs.md) § *A boundary between two plans is
+[planning-docs.md](../.agents/conventions/common/planning-docs.md) § *A boundary between two plans is
 named on BOTH sides*. This is the whole division; anything not in the table belongs to this plan.
 
 | Item | Built by | The other plan's part | Order |

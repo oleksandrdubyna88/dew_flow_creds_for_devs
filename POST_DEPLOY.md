@@ -1,6 +1,6 @@
 # Post-deploy checks — cred vault server
 
-Per [`.claude/rules/shared/common/post-deploy-checks.md`](.claude/rules/shared/common/post-deploy-checks.md).
+Per [`.agents/conventions/common/post-deploy-checks.md`](.agents/conventions/common/post-deploy-checks.md).
 Every item below is something a green build cannot tell you, because it is decided by the host rather
 than by the code: the reverse proxy, the certificate, an environment variable, and whether the deploy
 happened at all. Twelve is the cap; there are seven.
@@ -45,7 +45,7 @@ prove authorization, storage and the proxy in one call — and it cannot run una
 and Google tokens exist only after an interactive sign-in, and the `Local` scheme's key mints a token
 for *any* email, so putting it where CI can reach it is a decision nobody has made. The three options
 are recorded in
-[`todo/PLAN_prod_checks_and_http_contracts.md`](.claude/rules/shared/todo/PLAN_prod_checks_and_http_contracts.md)
+[`todo/PLAN_prod_checks_and_http_contracts.md`](.agents/conventions/todo/PLAN_prod_checks_and_http_contracts.md)
 in the conventions repository. Until one is chosen, items 1–5 are what runs.
 
 **The extension.** It ships on its own clock, to the marketplace, and its post-deploy checks belong
@@ -73,7 +73,7 @@ door, which is exactly the failure item 2 exists to catch.
 ## Running it
 
 ```bash
-node .claude/rules/shared/tools/post-deploy-check.mjs --target https://vault.example.com
+node .agents/conventions/tools/post-deploy-check.mjs --target https://vault.example.com
 ```
 
 Nothing is executed without `--target`; without it the check only reads this file's shape (the cap, a
@@ -81,5 +81,5 @@ command or an admitted `manual` on every item, the stamp). The prod-safe half of
 the same idea one level down:
 
 ```bash
-node .claude/rules/shared/tools/http-run.mjs --tag prod --target https://vault.example.com
+node .agents/conventions/tools/http-run.mjs --tag prod --target https://vault.example.com
 ```

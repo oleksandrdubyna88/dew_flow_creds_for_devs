@@ -104,7 +104,7 @@ harnessScope.run(async (scope) => {
   // The SKIP comes before any folder: a machine without the CLI leaves nothing.
   if (!fs.existsSync(EXE)) {
     console.log(`SKIP  the CLI is not built at ${EXE}`);
-    console.log('      run: dotnet build src_cli/src/CredsCli.csproj');
+    console.log('      run: dotnet build src_cli/src/CredsCli.csproj -m:4');
     return 0;
   }
 
