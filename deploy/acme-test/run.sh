@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Proves the certificate pipeline actually issues — end to end, in about a minute,
-# without touching Let's Encrypt.
+# Proves the certificate pipeline actually issues — end to end, without touching Let's Encrypt. A run
+# that passes takes a few minutes (image pulls, then the issuance). A run that fails reports after at most
+# about ten minutes: port 80 is waited for up to 60 s, the certificate for 150 tries of 2 s plus one
+# `docker run` each, and nginx's port 443 for 24 tries of up to 9 s.
 #
 #   ./run.sh                                  # uses the published :edge image
 #   VAULT_IMAGE=cred-vault-server:local ./run.sh
@@ -22,13 +24,14 @@
 # resource carries the owner label, and the state is in named volumes of that project, so the one
 # exit clean-up (`down -v`, then the helper's removal of the folder) takes all of it. A run that is
 # killed with signal 9 leaves its project, its volumes and the folder with a dead owner; the NEXT
-# run's first act is the shared janitor, which collects them once they are 10 minutes old. An
-# interrupt (INT, TERM, HUP) ends the run with 128 + n and the same clean-up runs once.
+# run's first act is the shared janitor, which collects them once they are 10 minutes old. On
+# Windows (Git Bash) the pinned janitor only does a dry run unless JANITOR_WINDOWS_E2E_GREEN is set,
+# so there it removes nothing: a killed run's project and folder wait for a person. An interrupt
+# (INT, TERM, HUP) ends the run with 128 + n and the same clean-up runs once.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# shellcheck source-path=SCRIPTDIR
-# shellcheck source=../../.github/scripts/lib/owned.sh
+# shellcheck source-path=SCRIPTDIR source=../../.github/scripts/lib/owned.sh
 source ../../.github/scripts/lib/owned.sh
 # The owner record goes into the compose file's labels. It is read in THIS shell (a `$( )` would
 # lose the helper's cache) and before anything is made.
@@ -64,12 +67,22 @@ expect() { # expect <description> <expected> <actual>
 
 # The clean-up of this script, run by the helper's exit trap before the helper removes the owned
 # folder. It skips what is not made yet: a failure before PROJECT is set must not run a teardown
-# against an empty name. `down -v` removes the containers, the network and the named volumes. The
-# helper calls it from a subshell, so it never removes the folder itself.
+# against an empty name. `down -v` removes the containers, the network and the named volumes; when it
+# fails, the run says so (what is left waits for the next run's janitor). `owned_cleanup` removes the
+# folder and its claim; the helper runs this function in a subshell and calls `owned_cleanup` again in
+# the script's shell, which finds nothing left and says nothing.
 # shellcheck disable=SC2317,SC2329
 cleanup() {
+  local out="" rc=0
   if [ -n "${PROJECT:-}" ]; then
-    docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans >/dev/null 2>&1 || true
+    out=$(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans 2>&1) || rc=$?
+    if [ "$rc" != 0 ]; then
+      echo "clean-up: docker compose down -v ended with exit code $rc:"
+      echo "$out"
+    fi
+  fi
+  if [ -n "${STATE:-}" ]; then
+    owned_cleanup
   fi
 }
 # The helper owns EXIT, INT, TERM and HUP: this script sets no trap of its own.

@@ -277,6 +277,15 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
 });
 
+test('F9: a `down -v` that fails is reported with its exit code and its own words, and the run still ends with its own status; a clean one says nothing', () => {
+  const failing = runAcme(REAL_RUN, { STUB_FAIL: 'down' });
+  assert.equal(failing.status, 0, failing.output);
+  assert.match(failing.output, /clean-up: docker compose down -v ended with exit code 1:\nstub docker: down fails/);
+  assert.doesNotMatch(runAcme(REAL_RUN).output, /clean-up:/);
+  const silent = mutate(REAL_RUN, 'down -v --remove-orphans 2>&1)', 'down -v --remove-orphans >/dev/null 2>&1)');
+  assert.doesNotMatch(runAcme(silent, { STUB_FAIL: 'down' }).output, /stub docker: down fails/, 'the plant (everything to /dev/null) hides the reason: the real text must differ');
+});
+
 /** The volume rules of a run: `compose create` comes before the first `docker run` that mounts a project volume, and every such `-v` source is `<folder's project>_<one of the four>`. */
 function volumeProblems(run: Run): string[] {
   const problems: string[] = [];
