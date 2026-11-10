@@ -80,10 +80,22 @@ expect() { # expect <description> <expected> <actual>
 # the script's shell, which finds nothing left and says nothing.
 # shellcheck disable=SC2317,SC2329
 cleanup() {
-  local out="" rc=0
-  # A probe that is still running (an interrupt came during the certificate wait) is ended first.
-  if [ -n "${probe_pid:-}" ]; then kill "$probe_pid" 2>/dev/null || true; fi
+  local out="" rc=0 volume ids id
+  # A probe that is still running (an interrupt came during the certificate wait) is ended first: TERM, up to 10 s for it to
+  # go (this runs in a subshell, so `wait` cannot be used: `kill -0` is polled), then KILL.
+  if [ -n "${probe_pid:-}" ]; then
+    kill "$probe_pid" 2>/dev/null || true
+    for _ in $(seq 1 50); do kill -0 "$probe_pid" 2>/dev/null || break; sleep 0.2; done
+    if kill -0 "$probe_pid" 2>/dev/null; then kill -KILL "$probe_pid" 2>/dev/null || true; fi
+  fi
   if [ -n "${PROJECT:-}" ]; then
+    # The killed docker client passes TERM to the probe's `--rm` container, which is removed asynchronously, and until it is gone it
+    # holds the certs-conf volume: `down -v` would fail with "volume is in use" and leave the volume. So anything that still holds a
+    # volume of this project goes first, by the project's own volume names (this also covers a container whose client is gone).
+    for volume in data logs certs-conf certs-www; do
+      ids=$(docker ps -aq --filter "volume=${PROJECT}_${volume}" 2>/dev/null) || ids=""
+      for id in $ids; do docker rm -f "$id" >/dev/null 2>&1 || true; done
+    done
     out=$(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans 2>&1) || rc=$?
     if [ "$rc" != 0 ]; then
       echo "clean-up: docker compose down -v ended with exit code $rc:"

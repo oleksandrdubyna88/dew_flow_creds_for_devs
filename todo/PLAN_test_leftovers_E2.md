@@ -2881,6 +2881,14 @@ The last edits to the probe; kept minimal.
 
 **Checks before the last commit.** `shellcheck -x deploy/acme-test/run.sh` (0.11.0) clean; acme and docker tests pass; lint clean.
 
+### E2.4 build record part 2h — a race in `cleanup`: the killed probe's container still holds the volume (2026-11-10, branch `feat/test-leftovers-e2.4`)
+
+**The finding (CodeRabbit, valid).** After an INT or TERM during a certificate probe, `cleanup` killed the probe and at once ran `docker compose … down -v`. The killed docker client passes TERM to the probe's `--rm` container, which is removed asynchronously; while it exists it holds `<project>_certs-conf`, so `down -v` could fail with "volume is in use" and leave the volume. Only the line `clean-up: docker compose down -v ended with exit code …` would show it. `cleanup` runs in a subshell (the helper's exit chain), so `wait` on the probe pid does not work.
+
+**RED.** The stub docker keeps a "probe container" in its world when a probe is interrupted: it holds `certs-conf` until `docker rm -f probe-held` is called, and `compose down -v` fails with `Error response from daemon: remove certs-conf: volume is in use - [probe-held]` (exit 1, the volume stays) while it is held. Against the current script, the INT and TERM tests (both bounds) failed: the volume was left and the output carried `clean-up: docker compose down -v ended with exit code 1:` (33 pass, 1 fail of 34).
+
+**Fix, two parts.** (1) After TERM, `cleanup` polls `kill -0 "$probe_pid"` (50 × 0.2 s), then sends KILL if the probe is still there. (2) Inside the `PROJECT` guard and before `down -v`, every container that still holds a project volume is removed: for each of `data`, `logs`, `certs-conf`, `certs-www`, `docker ps -aq --filter "volume=${PROJECT}_<name>"`, then `docker rm -f <id>`, each `|| true`. The names come from the project only; there is no `docker inspect`. This also covers a container whose client is gone but whose removal has not finished. GREEN: 34 pass; for INT and TERM in both modes the run ends 130 and 143, the volume is gone, the held container is removed before `down -v` (the calls are checked in order), no `down -v ended with exit code` line, nothing left. The leftovers guard over the repository: 5 findings, none in `run.sh`; `shellcheck -x deploy/acme-test/run.sh` (0.11.0) clean; lint clean. The comment in `cleanup` and `module_tests.md`'s S4 paragraph say so.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
