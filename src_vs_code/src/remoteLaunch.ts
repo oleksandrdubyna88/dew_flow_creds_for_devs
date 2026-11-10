@@ -2,6 +2,9 @@ import { EntityMetadata, TreeNode } from './types';
 import { commandRefusal, resolveCommand } from './commandLine';
 import { resolveKind } from './entityKind';
 import { HostShell, asOsName, isWindowsPowerShell51, quoteFor } from './hostShell';
+import { buildSshExecArgv } from './sshExecCommand';
+import { RefPlan, rewriteRefs } from './runPlan';
+import { shortValuesCaveat } from './outputMask';
 import { SshCommandOptions, buildSshCommand, isSafeSshTarget, noHostSentence, portArgv, sshDestination, withAcceptNew } from './sshCommand';
 import { resolveJumpChain, sshOptionArgv } from './sshOptions';
 import { isInTrash } from './trash';
@@ -119,8 +122,9 @@ export type LinkedEntry = Pick<EntityMetadata, 'id' | 'name' | 'sshEntityId'>;
  *
  * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 replaced the person's roads by
  * `planLaunch` (the arrow, the folder run, a VPN's Start on the person's click, a chain step with a road). It is still
- * called by the roads that have no SSH road: Run with Secrets (until E3), the agent's run, an agent's VPN start, and a
- * dependency chain with no road (`launchRoadScan.test.ts` lists the callers); a road that moves to `planLaunch` leaves that list.</p>
+ * called by the roads that have no SSH road: Run with Secrets for a SCRIPT that a sync linked (a linked command runs over SSH
+ * since E3.S1), the agent's run, an agent's VPN start, and a dependency chain with no road (`launchRoadScan.test.ts` lists the
+ * callers); a road that moves to `planLaunch` leaves that list.</p>
  */
 export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
   return sshLinkOf(entry, () => undefined).kind === 'none'
@@ -366,4 +370,94 @@ function copyOfTrustLine(shown: ReturnType<typeof shownTrustLine>): CopiedLine {
 /** A `{name}` refusal reads as the arrow says it (`runCommands.ts`); every other reason is `planLaunch`'s own sentence. */
 function refusedCopyReason(entry: LaunchEntry, reason: string): string {
   return reason === commandRefusal(entry) ? `"${entry.name}" will not run: ${reason}` : reason;
+}
+
+// ---- Run with Secrets over SSH (E3.S1) --------------------------------------------------------------------------------
+
+/**
+ * What `secretsLaunch` needs of `prepareSshSession`'s `ReadySsh`: structural, so a `ReadySsh` is assignable with no adapter, and it
+ * reads the SNAPSHOT only (the entity, the options, the jump, the target) — never the plan's own copy of the SSH entry.
+ */
+export interface PreparedForSpawn {
+  /** The snapshot with `sshKeyPath` set to the materialised file (a spawn always has one, E3-D4) or cleared. */
+  readonly entity: EntityMetadata;
+  readonly options: Pick<SshCommandOptions, 'knownHostsFile' | 'program'>;
+  /** The resolved `-J` value, or undefined. */
+  readonly jump: string | undefined;
+  /** The relay prefix: a spawn has none, so a session that has one is not for this road. */
+  readonly prefix: string | undefined;
+  /** The askpass environment of a password session; `undefined` for a key. */
+  readonly env: Readonly<Record<string, string>> | undefined;
+  /** `describeSshTarget`; `undefined` when the entity has no host. */
+  readonly target: string | undefined;
+}
+
+export type SecretsLaunch =
+  | { readonly kind: 'spawn'; readonly argv: readonly string[]; readonly target: string }
+  | { readonly kind: 'refused'; readonly reason: string };
+
+/**
+ * The sentence for a Run with Secrets over SSH started from a window that is not a local one (E3-D6): the extension host spawns
+ * on THIS machine, and a WSL or Remote-SSH window's preparation is composed for another shell.
+ */
+export function secretsLocalOnly(name: string): string {
+  return `Run with Secrets over SSH works only in a local VS Code window, and this window is not one. Nothing was run: open "${name}" from a local window.`;
+}
+
+/**
+ * The argv of the `ssh` child of Run with Secrets (E3.S1, rows K1-K3), after its program word: `buildSshExecArgv` with the remote
+ * login shell reading stdin (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), no `-t`, and no value anywhere in it
+ * (D12). The key branch says `-o BatchMode=yes`, the password branch `-o NumberOfPasswordPrompts=1` (askpass answers, nothing is
+ * read from stdin), and both `-o ConnectTimeout=10` (E3-D11 (a): what we ASK ssh; hand check 3 observes the effect).
+ *
+ * <p>A prepared session with a relay `prefix` or a client `program` was composed for another shell (a WSL or Remote-SSH window):
+ * it is refused as not local (K1), fail closed, though a local window never produces one. It reads the prepared snapshot only (one
+ * snapshot): the trust line, this argv, the spawn program's folder and the banner's target all come from the same `ready`.</p>
+ */
+export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn): SecretsLaunch {
+  if (composedForAnotherShell(prepared)) {
+    return { kind: 'refused', reason: secretsLocalOnly(plan.entryName) };
+  }
+  const argv = secretsArgv(prepared);
+  return argv === undefined || prepared.target === undefined ? { kind: 'refused', reason: noHostSentence(plan.sshName) } : { kind: 'spawn', argv, target: prepared.target };
+}
+
+/** A relay prefix or a client program word: what a WSL or Remote-SSH window's preparation adds. */
+function composedForAnotherShell(prepared: PreparedForSpawn): boolean {
+  return prepared.prefix !== undefined || prepared.options.program !== undefined;
+}
+
+function secretsArgv(prepared: PreparedForSpawn): string[] | undefined {
+  const auth = prepared.env === undefined ? 'key' : 'askpass';
+  return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, auth, { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile });
+}
+
+/**
+ * The line the remote login shell runs, with each `creds://` reference read from the POSIX environment (`"$CREDS_REF_n"`; the remote
+ * shell is POSIX, D9). It is the trust line's line (`plan.line`, E3-D2): what the person approved is what runs, except that each
+ * reference became its read.
+ */
+export function secretsRemoteLine(plan: RemotePlan, refs: RefPlan): string {
+  return rewriteRefs(plan.line, refs, 'linux');
+}
+
+/**
+ * What the masked terminal of Run with Secrets over SSH says before any output (E3.0 texts). `shortValuesCaveat` names the values
+ * too short to mask, as the local banner does.
+ */
+export function secretsOverSshBanner(target: string, secrets: readonly { value: string; label: string }[]): string {
+  return (
+    `Over SSH to ${target}. The values go to the remote login shell on its standard input, never on a command line, and are replaced with ` +
+    `<CREDS_MASKED:NAME> in what it prints here.${shortValuesCaveat(secrets)} This run is not interactive: there is no terminal, and the command reads an empty ` +
+    'input, so a command that asks a question usually stops. To answer questions, use Run in Terminal instead; the values are not injected there.'
+  );
+}
+
+/**
+ * The whole banner (E3-D12): `described` (which reference is which), then `Note: <warning>.` only when the launch has a warning
+ * (a toast would race the run and could be closed unread), then the secrets text, joined with CRLF and with no trailing break.
+ */
+export function maskedOverSshBanner(described: string, warning: string | undefined, target: string, secrets: readonly { value: string; label: string }[]): string {
+  const note = warning === undefined ? [] : [`Note: ${warning}.`];
+  return [described, ...note, secretsOverSshBanner(target, secrets)].join('\r\n');
 }
