@@ -22,7 +22,7 @@ Plus the class root: `quoteFor('powershell')` doubled only the ASCII `'`, but Po
 single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
 [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md).
 
-## 2. Fix (as written in 782444a)
+## 2. Fix (as built on this branch, 4779685)
 
 - `quoteFor('powershell')` doubles `'` ‘ ’ ‚ ‛ each with itself.
 - A win32 word of the ssh line that holds `$`, a backtick, `"` or “ ” „ becomes a PowerShell single-quoted word;
@@ -35,19 +35,20 @@ single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
 
 ## 3. Delivery
 
-1. A branch from `origin/main` holding only these changes and their tests (a Sonnet coder extracts them from
-   782444a); full `npm test`; its own coai code round.
+1. **Done:** this branch, from origin/main, holding only these changes and their tests; full suite 7112 tests,
+   0 failures, 9 skipped.
 2. **The push, the PR text and the release are the owner's decision**: this repository is public, and the PR names
    defects that every released extension since the askpass and the win32 line shipped carries. Disclosure wording and
    timing belong to the owner.
-3. `PLAN_terminal_command_over_ssh` E1 is rebased onto this commit.
+3. The terminal-over-SSH work is rebased onto this commit (the plan is `todo/PLAN_terminal_command_over_ssh.md` on
+   branch `feat/terminal-command-over-ssh-e1`).
 
 ## 4. Tests
 
-The RED tests named in 782444a: hostShell per typographic quote; sshCommand S1–S4 (hostile `-i`, pin file, `$`
-login, jump) and the C1 matrix of 156 literals, six of which change on purpose (fixture `a$HOME`); sshAskpass
-(no `%VAR%`, delayed expansion; the real cmd.exe case runs on Windows only and has run NOWHERE yet); wslRelay; the
-scan. The pwsh delivery case runs on CI (pwsh on ubuntu-latest).
+RED tests first: hostShell per typographic quote; sshCommand S1–S4 (hostile `-i`, pin file, `$` login, jump) and the
+C1 matrix of 156 literals, six of which change on purpose (fixture `a$HOME`); sshAskpass (no `%VAR%`, delayed
+expansion); wslRelay; the scan. The cases that need a real shell skip when cmd.exe or pwsh is not on the machine; the
+real cmd.exe case runs on Windows only and has run NOWHERE yet.
 
 ## 5. Hand checks (owner)
 
