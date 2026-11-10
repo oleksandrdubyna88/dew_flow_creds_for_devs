@@ -361,7 +361,15 @@ ci · server         src_minimalapi_server/**, deploy/**, the MSBuild baseline
                          │ workflow_run, only on success
                          ▼
 docker image        build -> RUN it -> wait for healthy -> assert 401 on /api/vault
+                    (its containers and volumes are named in the owner form, labelled, and removed by
+                    one always-run step that never decides the verdict; a check step after it fails
+                    the job while one is left)
                     -> on main: push :edge and :sha-<commit> to ghcr.io, multi-arch
+
+deploy/acme-test    by hand, never in CI: run.sh owns its run. The compose project is the lower-cased
+                    name of an owned folder, every container, the network and the four named
+                    volumes carry the owner label, `down -v` and the helper's folder removal run on
+                    every exit, and the next run's janitor call collects a killed run's leftovers
 
 docs · plans        plan-lifecycle.mjs + pin-check.mjs from the shared submodule
 

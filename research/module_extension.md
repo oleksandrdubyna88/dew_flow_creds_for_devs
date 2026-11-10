@@ -3619,8 +3619,9 @@ which decides everything it can. **What the local alias and MCP doors gain, exac
 (legitimate use is a person in a terminal or an agent that thinks between calls), and a call they refuse before its dialog no
 longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
 `'call'` grant that is still `pending`, and nothing else). Below the ceiling no call is answered differently, with two
-exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog now leaves the
-place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `query`, `run` or
+exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog, and a dialog
+nobody answers within the call's five minutes, now leave the place taken until the person clicks or dismisses the dialog, so the next call is
+*busy* where `main` raised a second modal; and a running `query`, `run` or
 `exec` on an entry that does not forward the agent, or while the agent socket is down at the Allow, no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
 where the call used to reach `usable`. The registry's cap evicts in the order
 of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
@@ -3633,22 +3634,52 @@ could be), and a quiet loop at sixty calls a minute can no longer evict the call
 mint, inside the dialog's five minutes: the person's answer was lost and the journal said `ALLOWED` for a grant that no longer existed). **One dialog at a time stays global** because the person is one person with
 one screen, and **the place belongs to the dialog, not to the call**: `OneInFlight` hands out a `Holding` per admission; once a
 dialog of a throttled door is on screen (`prompted`) the call ending frees nothing, and the place is freed when the dialog
-closes (`ConsentGate.ask` calls `dialogClosed` from a `finally`: the person's click, or the five-minute timeout, although VS
-Code cannot take the modal down), so a client that hangs up during its dialog does not let the next call raise a second modal on
-top of it, and a long action does not make every other door `busy`. A stale release or close (a different holding) frees nothing
+closes — when the dialog's own promise resolves, the person's click or Escape (`ConsentGate.ask` calls `dialogClosed` then), and **never at the
+call's timeout** (E1.5): the five minutes of `CONSENT_TIMEOUT_MS` only answer the CALL, `consent_timeout` (504) with a sentence that says the question
+is still on screen and, for a call counted on the place, that the place is the dialog's until it is answered (`CONSENT_TIMED_OUT_ON_PLACE`; a local
+token call, counted on no door, hears the shorter `CONSENT_TIMED_OUT`; `create` and `delete` on the MCP door are counted and hear the first). VS Code
+cannot take the modal down, so the standing dialog keeps the place; whatever ends it later (`ConsentGate.lateAnswer`) frees it with `keep` false and
+decides nothing: for an Allow or a Deny it writes one `ignored` line, `"Allow" answered after its call had ended; the answer changed nothing`, and shows a
+notice (`LATE_ANSWER_NOTICE`, *That request had already ended, so this answer changed nothing.*: the speaker knows the call had ended and that the
+answer decided nothing, and says no more — not what ran before, not what the next call will do), the same road for a click after every waiter left; an Escape frees the place and says nothing. An Escape is its own
+outcome, `dismissed`, and is answered as it always was, 504 with the door's own sentence: `The human did not allow this grant.` on the alias, MCP use and token doors, `The human did not allow this.` on `create` and the folder verbs, `The human did not allow this deletion.` on `delete`. A client that hangs up during its dialog,
+and a call that timed out, therefore do not let the next call raise a second modal on top of the standing one, and a long action does not make
+every other door `busy`. The `busy` sentence is `BUSY_PLACE` and names what may hold the place (every clause a *may*, so it is true whichever holder stands): a standing
+dialog, a prompt the request raised after its consent, asked or not (a PIN box, an install offer, a trust modal, a VPN question: on the never-ask road a call raises it with no Allow), a running dependency step, a request that may prompt again and still runs with nothing on screen yet (the D.3
+quiet caller), and the window that owns it; it says what the person can do, not what the next call will do, and its last step is the remedy for a modal VS Code hid without resolving its promise: reloading that window frees the place (the place is one broker's in-memory state; nothing persists it). A bridged dialog shows Deny first (`BRIDGED_BUTTONS`); a local one is unchanged. A stale release or close (a different holding) frees nothing
 of a later holder's place. **The one exception is the call that may ask again** (Amendment 3, C.3): an Allow keeps the place, past
 the dialog's close, until the call's own `release` when the call declares that it may put a prompt of its own on screen after the
 Allow — `UseAction.asksAfterConsent`: `terminal`, `up` and `down` of the VPN (the install offer), `rotate` (the PIN and copy prompts of
 `rotationStore.ts`), and `exec` **per entity**, a function `(target) => boolean` true for an entry with `agentForward` while the agent
 socket is up (the signing modal arrives through the socket, `sshSignPrompt.ts`, by no static path; `asksAfter` in `useActions.ts` reads
 either form, when the dialog closes on an Allow), and `create` at the door (the folder PIN box and the "count taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
-carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed` — a `followUp` that is a function (`exec`'s) is asked THERE, when the dialog closes on an Allow, not before it opens (change 6.1: a socket that comes up while the dialog is on screen is seen; one that went down is too) — and `OneInFlight` remembers (`endedId`) a holding
-whose call ended while its dialog was up, so a kept place dies with its call. A Deny, a timeout, a dialog nobody waits for any
+carries it, `ConsentGate.answered` passes `keep = Allow && followUp` to `dialogClosed` (read after `stillWanted()`: an Allow nobody waits for never keeps the place) — a `followUp` that is a function (`exec`'s) is asked THERE, when the dialog closes on an Allow, not before it opens (change 6.1: a socket that comes up while the dialog is on screen is seen; one that went down is too) — and `OneInFlight` remembers (`endedId`) a holding
+whose call ended while its dialog was up, so a kept place dies with its call. A Deny, an Escape, a dialog nobody waits for any
 more, and every Allow of an action without the flag (`query`, `run`, and an `exec` on an entry that does not forward the agent, or
 while the socket is down; a bridge serves `exec` and `query` and refuses a forwarding entry, so no bridged action keeps one) free the
 place at the dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
 a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
 (`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
+
+**A quiet call that may prompt again holds the place too** (E1.5, D.3): a local MCP call whose entry's policy already answered raises no dialog, but
+when its action declares `asksAfterConsent` for THIS target (`asksAfter(action, target)`, read before admission through `BrokerDoor.asksAfter`) it is
+admitted with `admit(…, followUp)`, takes the place with `admitSilentPlace` (the place first, then the silent window, which gives it back when it refuses)
+and holds it until its slot is released: the prompt it may raise next opens over nothing, and an asking call, or a second such quiet call, that arrives
+meanwhile is answered *busy* (`BUSY_PLACE`). No modal stamp, no asking stamp.
+
+**An agent's `up`: the request ends with its client, and a standing question keeps the place** (E1.5, D14 and the epoch-8 fix-forward F1): on an agent call
+(`startGate` set) the OpenVPN Connect import question (`vpnRun.ts`) and the dependency chain's *Continue* question (`dependencyRunHost.ts`) are modals,
+raced against the request with `untilGone` (`requestLife.ts`: it removes its abort listener when either side settles, and drops a throw from `onLate`).
+Before the race, each is handed to `ctx.standingPrompt`, the seam `performCall` builds and `vpnAction` hands down (`vpnAction` → `agentVpnOpener` → `runVpn` →
+`VpnRunContext` → `vpnDependencies` → `DependencyRunRequest`), which calls `TokenlessCeilings.followUpStands`: the throttle marks the holder's dialog as on
+screen, and when the question's promise settles, by any road (a click, an Escape, a rejection), the dialog is closed with `keep = true`. So a client that leaves
+ends the request at once (its `ABANDONED` line, nothing more typed or written), while the place stays the question's until a person settles it, with no timer;
+a call still running keeps the place by its flag, a call that has ended frees it. A click that lands after the client left writes the late-answer line
+through `ctx.lateAnswer` (`performCall`, from the broker's `log`) and writes no profile and types nothing. `executed` (the running step) calls no seam: no
+question is up, and the place frees at the call's end; it also finishes on the gate and disposes its listeners, and reads the gate before it types
+(`'untyped'`: a request that has gone gets nothing typed and the journal does not claim a step), so a stale execution that ends later reaches no question
+and no next step. The person's own Start is unchanged (a toast, no gate, no seam), and so is the install offer (`toolEnsure.ts`), which frees at the click,
+not when the client leaves.
 
 **The partial-E1 closing commit** (E1.3's last, `88befcd`, and its fix commit `a04ca33`; Amendment 6 of the E1.3 spec). What it
 builds, and what a person can and cannot reach with it today.

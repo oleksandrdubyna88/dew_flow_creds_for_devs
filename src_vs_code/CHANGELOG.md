@@ -6,6 +6,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the broker's one consent dialog: the place is the dialog's until you answer it, never a timer's
+
+- **An unanswered dialog keeps the place until you click or dismiss it.** After five minutes the agent is still told `consent_timeout`
+  (504) and the call is over, but the dialog stays on screen and the place stays taken (`brokerConsent.ts:204-215`, `ask` and `timedOut`: nothing is
+  told to the throttle at the timer). The next alias or MCP call that would ask hears *busy*, where 1.18.0 raised a second modal over the
+  first. 1.18.0's "until you click it or five minutes pass" no longer holds: only your click or an Escape gives the place back.
+- **The *busy* answer names every holder of the place, the quiet one included** (`aliasThrottle.ts:280`, `BUSY_PLACE`): *Another request holds this
+  window's dialog place.*, then a consent dialog that may be standing unanswered, a prompt the request raised after its consent, asked or not (a PIN box, an install offer, a
+  trust modal, a VPN question), a dependency step that may still be running in a terminal, or a request that may prompt again and may still be running
+  with nothing on screen yet, in the VS Code window that owns the place; answer or finish it there, or wait for the running request to end, then try
+  again, and if nothing is on screen there, reloading that window frees the place. It replaces
+  *Another request is already waiting for the person to answer. Try again once they have.* and no longer says what the next call will do.
+- **The timeout answer says the question is still on your screen** (`brokerProtocol.ts:102-110`, `CONSENT_TIMED_OUT_ON_PLACE` and
+  `CONSENT_TIMED_OUT`). On the local alias and MCP doors, and for an agent's `create`, `delete` and folder verbs, it adds that the question keeps this
+  window's shared dialog place until you answer it; a local call that carries a token holds no place and hears the shorter sentence. Both replace
+  *The human did not allow this grant.* (*…did not allow this.* and *…this deletion.* for `create` and `delete`) on a timeout (`credsAgentServer.ts:664`;
+  `brokerMcpDoor.ts:165`; the one chooser is `brokerRequests.ts:39`, `consentRefusal`). A Deny is answered as before.
+- **A click on a dialog whose call had already ended is written down, and the notice says only that it changed nothing** (`brokerConsent.ts:249-252` and `:285-291`,
+  `lateAnswer` and `ignored`; `brokerCall.ts:206-212` for the questions of an agent's `up`). An Allow or Deny on a dialog whose call timed out, or
+  whose client had left, writes one journal line, `"Allow" answered after its call had ended; the answer changed nothing` (it used to read `answered
+  after the request had gone — nothing decided`, and only for a client that had left), shows *That request had already ended, so this answer changed
+  nothing.*, and decides nothing, as before. It does not say whether the call ran, or whether the next call will ask: neither is known there. An Escape on
+  such a dialog gives the place back and says nothing.
+- **An Escape on a live dialog is answered as before; a dialog that cannot open is now answered like an Escape** (`brokerConsent.ts:237-243` and
+  `:258-267`, `shown` and `apply`). An Escape is refused with 504 `consent_timeout` and the door's own words, nothing is remembered, and the place goes
+  back at once, as in 1.18.0: *The human did not allow this grant.* on the alias, MCP use and token doors, *The human did not allow this.* for `create`
+  and the folder verbs, *The human did not allow this deletion.* for `delete`; the new timeout sentence is never said for it. A dialog that threw before it
+  opened was answered 500 `internal` with the generic *The request failed inside this window…* sentence in 1.18.0, and is now answered as an Escape. A
+  dialog whose promise failed after it opened (the window going down under it) was an unhandled error in 1.18.0 that kept the place until the five minutes ran
+  out and the call was answered as a timeout; it is now answered as an Escape at once.
+- **A quiet local MCP call that may prompt again holds the place while it runs, and is itself refused *busy* while the place is held**
+  (`aliasThrottle.ts:365-375`, `admitSilentPlace`; `credsAgentServer.ts:273`, `doorFor`). When an entry's consent setting lets an MCP call through with no
+  dialog, the call now takes the one dialog place until it ends if its action may put a prompt of its own on screen next: `terminal`, `up`, `down`,
+  `rotate`, and an `exec` on an entry that forwards your SSH agent while the agent is running. Before, no quiet call took a place or heard *busy*, and a
+  prompt such a call raised could open over another call's dialog. An asking call that arrives meanwhile hears *busy*; so does a second such quiet call.
+  Any other quiet call is unchanged.
+- **An agent's `up`: its request ends when its client leaves, and a question left standing keeps the place until you answer it** (`vpnRun.ts:218-231`,
+  `untilSettled` and `openVpnConnect`; `dependencyRunHost.ts:373-379`, `askToContinue`; `aliasThrottle.ts:441-449`, `followUpStands`;
+  `dependencyRunHost.ts:337-370`, `executed`). The OpenVPN Connect import question and the dependency chain's *Continue* question are now modals when an agent asked for the `up`. A client
+  that leaves while one stands ends the request at once: its journal line is written then, not at your click, and nothing more is typed or written for it. The
+  question stays on screen and keeps the place until you click it or dismiss it, as before; the alias and MCP doors hear *busy* meanwhile, and a click that lands
+  afterwards imports nothing, types nothing and leaves the late-answer line above. A client that leaves while a dependency step is running and no question is up
+  ends the request and gives the place back at once; before, the call stayed alive until the step ended, and the place stayed taken for ever when it never did.
+  Your own Start and Stop are unchanged: the same toasts, and no request behind them.
+
 ### Fixed
 
 - **The help and the README now show how to run tmux over `ssh` from a local window on Windows.** The line is

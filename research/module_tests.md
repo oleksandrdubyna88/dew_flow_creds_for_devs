@@ -359,6 +359,67 @@ release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'cred
 line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
 version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
 
+**The bash helper `owned.sh` has a self-test in real child processes (2026-11-09, E2.4.S1 of
+[PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).** `.github/scripts/lib/owned.sh` gives a shell script one owned
+folder, `testsToDelete-<owner>-creds-<what>-<8 hex>`, in the rule's order (claim by an exclusive write of the owner record, register
+the traps, create with `mkdir`), and removes it on every exit path by its exact name. `.github/scripts/lib/owned.test.sh` runs three area files (`owned.test.record.sh`, `owned.test.exit.sh`, `owned.test.sweeps.sh`, each in its own bash with its own private root, sharing `owned.test.lib.sh`) with 20
+cases (T1 to T21 of the spec; T3, T12 and T14 are Windows only) and every case starts a real `bash` with its own temp root: the
+name and the record against the mounted `owned.mjs` (the claim is byte for byte the reference's `formatOwner`, `:<start>:<ns>` on
+Linux), claim-first, a taken claim, a squatter folder that is never removed, `owned_remove` limited to this run's folders, a
+removal that gives up, `kill -9` between the claim and the `mkdir` and after it (the shipped janitor and the mounted Node sweep
+collect the claim on Linux and macOS; on Windows the Node sweep lists it `unverified:` and the janitor is a dry run), `OWNED_KEEP`,
+the exit chain under `set -e`, `set -u` with an empty registry, and a signal that arrives while `mkdir` runs. `ci-clients.yml` runs it
+on the three legs (macOS with `/bin/bash`, 3.2); `ci-server.yml` shellchecks all six files (ShellCheck 0.11.0, clean). `owned_cleanup` is idempotent and a function given to `owned_trap` may call it: when an entry's claim and folder are both gone it is released without a warning (case H3; the function runs in a subshell, so its release is lost to the helper's own call), while a claim that is gone with the folder still there keeps its warning (H3b). What it does not cover: a trap a caller sets
+itself (T7d measures the replacement, T7a scans the callers), a race of two live scripts on one name, the Windows
+collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
+whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two successes), so `owned_create_dir` uses perl's `mkdir`
+where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
+(the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE. A seam `OWNED_PROC` (the /proc root) lets a test give the helper a minimal /proc: the record then ends after the pid (T G4).
+
+**The shell scripts take their scratch from `owned.sh` (2026-11-10, E2.4.S2 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`mcp-listen-smoke.test.sh`, `version-smoke.test.sh`, `start-server-and-wait.test.sh` and `deploy/restore-archive-itest.sh` make their
+folders with `owned_dir` (the test with its own clean-up function sets it with `owned_trap` first); none of them sets a trap of its
+own, and `owned.test.sh`'s caller scan (T7a) reads all of them. The two smoke scripts, with no log root and no `RUNNER_TEMP`, make
+their scratch with `owned_dir` too (a given root is unchanged, so the release jobs need no `owned.sh`); each smoke self-test has two
+new cases that run the smoke that way, with a private `TMPDIR`, once failing after the folder is made and once passing, and ask for an empty root.
+`start-server-and-wait.sh` with no `START_SERVER_LOG` writes `server.log` in a claimed, KEPT owned folder (case `j` reads the folder, the
+claim, the record's pid and that the old `start-server-*.log` is gone); its own trap became the `owned_trap` clean-up function, so an
+interrupt ends it with 128 plus the signal. `restore-archive-itest.sh` makes its nine worlds with `owned_dir` and gives the restore child
+`TMPDIR="$WORLD"`; `deploy/nginx/entrypoint.test.sh` makes its folder with `owned_dir` too. The two smokes, the start script and their self-tests, the itest and the nginx test are on the shellcheck lines of `ci-server.yml` (`-x`, `source-path=SCRIPTDIR`). Under Git Bash the helper needs Node and the shared rules mount. Each of the four CI steps runs its script with `TMPDIR="$RUNNER_TEMP/leftovers-<step>"` and fails when anything is left in that root.
+Watched RED first (a private `TMPDIR`): a stub `chmod` that fails before the old removal left one `tmp.*` in each smoke self-test;
+the smoke scripts off CI left `creds-mcp-listen-smoke-<pid>` and `creds-version-smoke-<pid>`; `start-server-and-wait.sh` left
+`start-server-<id>.log`; the itest left nine `tmp.*`; a SIGTERM or SIGHUP to the process group of `mcp-listen-smoke.test.sh` left its `tmp.*`
+(a SIGINT does not, on the old script: bash waits for the child, which ends normally, and goes on). With `owned.sh` every root is empty, and INT, TERM and HUP give 130, 143 and 129.
+
+**The image smoke is a carve-out of the contract (2026-11-10, E2.4.S3 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`docker.yml`'s two smoke containers and two volumes are named `testsToDelete-u1001-creds-{cv,refused,refused-data,refused-logs}-${SMOKE_ID}` and carry
+the label `testsToDelete.owner`; `u1001` is the uid of the hosted `ubuntu-latest` runner. The step that makes the id has the uid check as its
+FIRST command (`[ "$(id -u)" = 1001 ] || exit 1`) and comes after checkout and before `docker/setup-buildx-action` (which starts a builder container) and *Build*, so on any other runner nothing is made; it then checks the id (`openssl rand -hex 4`) against `^[0-9a-f]{8}$` before it writes `SMOKE_ID`. One remover step
+(`if: always()`, `continue-on-error`, `shell: bash`, an unquoted name and `|| true` on each of four removals) runs after the last step that reads
+the containers; the step after it (`if: always()`, `shell: bash`, NO `continue-on-error`) asks for each of the four names with
+`out=$(docker ps -a -q --filter "name=^<name>$")` (and `docker volume ls -q` for the volumes), then `[ -z "$out" ]`, and fails the job while one is left: the listing is assigned first, so a failing `docker` (no daemon) fails the step instead of reading as nothing left (the rollout's entry 8.1). `Publish` keeps its implicit
+`success()`, so a failed smoke stays failed and nothing is published. `src_vs_code/src/test/dockerSmokeLeftovers.test.ts` reads `docker.yml` and
+RUNS the naming body under `bash -e` (it has no `shell:`) and the remover and check bodies under `bash --noprofile --norc -eo pipefail` against a stub `docker` that keeps a world of named
+resources (a name in `STUB_STUCK` fails its removal and stays): all four removals are called after a failed first one; the check is red for each of
+the four names left, and for a remover that forgets a volume; the check fails with a stub `docker` that says it cannot reach the daemon; the naming step ends at once, writing nothing, under a uid that is not 1001, with a failing `openssl`, and with an id that is not 8 hex digits. The check's exact-name filters are tried against siblings whose names overlap (`…-<id>5`, and a name with a prefix), so a filter without its `^` or `$` fails. The names of every container and volume the smoke makes must be exactly the four the remover and the check are written for. Each rule
+also has a planted fault (a mutated copy of the real text) that it must refuse (each rule was also weakened by hand once, and its plant test went red), and, when the mounted guard can load its `yaml` module, the
+shipped guard reads the real file with 0 findings and each plant (a quoted remover name, a `-v` source alone in quotes, a `docker inspect` or `docker
+logs` after the remover, a short name) with the finding it should have. What no test here can see is Docker itself: the hosted dispatches of the
+build record (parts 3 and 2b) do: runs P 42735113631, R 42735252947, G1 42735352830, G2 42735473885, S3.2 42735590128 and G3 42738357610 (which showed the `$` anchor keeping a sibling out, and the check failing the job while the container still held a volume).
+
+**The acme harness owns its run (2026-11-10, E2.4.S4 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+`deploy/acme-test/run.sh` makes an owned folder with `owned_dir STATE acme`; its lower-cased name, `PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`,
+is the compose project and nothing else is (there is no `name:` in the compose file). The compose file's `x-owned` label `testsToDelete.owner` is on the four services,
+the network and the four named volumes (`certs-conf`, `certs-www`, `data`, `logs`); no state is a bind mount, because a container writes root-owned files that a
+janitor running as the user cannot delete. The script sets its clean-up with `owned_trap cleanup` and no trap of its own: `cleanup` runs
+`docker compose -p "$PROJECT" … down -v --remove-orphans` only when `PROJECT` is set (a failure of it is printed with its exit code and its own words). Before it, a probe still running is ended (TERM, `kill -0` polled for up to 10 s, then KILL: the clean-up runs in a subshell, so `wait` is no use) and every container that still holds one of the project's four volumes is removed (`docker ps -aq --filter volume=<project>_<name>`, then `docker rm -f`): the killed docker client's `--rm` probe container goes asynchronously and holds `certs-conf`, so `down -v` would fail with "volume is in use" and leave the volume. A stub world holds such a container until `rm -f` and fails `down -v` while it is held; INT and TERM during a probe must still end with 130 and 143, the volume gone and the container removed first, then `owned_cleanup` behind the `STATE` guard removes the folder; the helper's own call after it finds nothing and says nothing. The first act of a run is the shared
+janitor (`--token creds`, 10 minutes), which collects what a `kill -9` left (on Windows under Git Bash the pinned janitor is a dry run unless `JANITOR_WINDOWS_E2E_GREEN` is set, so it removes nothing there). The wait for the certificate has ONE deadline read from the clock (`ACME_CERT_DEADLINE`, 300 s) and prints `still waiting for the certificate: N s of 300 s` every 30 s (`ACME_CERT_NOTE_EVERY`); when it gives up it says `no certificate was issued within 300 s (the last try found no file)`. Its probe is a one-shot container that prints `cert:yes` or `cert:no` and exits 0 either way: only that exact marker is an answer, and a non-zero code, a timeout (30 s per probe, `timeout -k 5` or a portable polling bound that sends KILL 5 s after TERM; `ACME_PROBE_TIMEOUT` and `ACME_PROBE_WATCHDOG` are test seams), empty or other output is a docker failure that ends the wait at the FIRST one with its code and up to three lines of its words. Tests: exit 125 and exit 1 with no marker, the odd outputs, a stalled probe and a probe that ignores TERM (both bounds, nothing left, the probe process gone, the run over within the bound plus five seconds), a slow probe that keeps saying `cert:no` (the wait stops at the deadline, not after a count of tries) and an INT or TERM during a probe (130 and 143, the probe killed). The issued certificate is checked through a one-shot `alpine` container that mounts
+`certs-conf` read-only, never from the host: certbot's live folder is `drwx------ root`. `src_vs_code/src/test/acmeRunLeftovers.test.ts` copies `run.sh` into a temp
+tree and RUNS it against a stub `docker`, `curl`, `openssl`, `sleep` and janitor (green; a stack that does not start; no certificate; SIGINT during the janitor call;
+SIGINT and SIGTERM during `compose up`; an owned folder that cannot be made), and reads the text for the `PROJECT` line, the trap and the compose labels; each rule has
+a planted fault it must refuse (`PROJECT=acme`, an unlabelled volume, an unguarded clean-up, a host-side certificate check, a trap of its own); it also pins that `compose create` comes before the first container run that mounts a project volume and that every `-v` source is the folder's project plus one of the four volume names (plants: `acme_data`, and the create moved after the chown). Docker itself is seen only
+by the hosted dispatch of the build record (part 4).
+
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
 reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
@@ -629,6 +690,20 @@ script's design is its order and reading cannot check an order. It is what says 
 stopped"* as a fact about what reached `docker`. The round found the unfinished-restore check sitting
 after `docker compose down`; scenario 4 is what catches that class now, and it was watched failing
 against the old ordering.
+
+**And one for the nginx config the entrypoint renders: `deploy/nginx/entrypoint.test.sh`** (2026-11-09). It runs the
+real `entrypoint.sh` — through the seams `CRED_VAULT_CERT_LIVE`, `CRED_VAULT_TEMPLATE`,
+`CRED_VAULT_CONF_DIR` and `CRED_VAULT_RENDER_ONLY`, all unset in production — for `domain`, `ip`,
+`custom` and `none`, each with and without a certificate in a private folder, and asserts that
+`real_ip_header` and `real_ip_recursive` occur once, no `set_real_ip_from` range is listed twice, and
+the four private ranges are there (one home, never zero). It also asserts the intended state was the one
+rendered (a 443 listener only with a certificate and nginx-owned TLS). Needs only sh, bash, envsubst and
+grep, so it runs locally. **Watched RED** on main's template: 12 failures, all in the three TLS modes with
+a certificate — `real_ip_header occurs 2 times` (`13:` and `62:`) — and GREEN with the block in one place;
+RED again with main's template put back. The parser is the real authority, so the *compose · scripts* job
+also runs the shipped entrypoint in `nginx:1.27-alpine` (the stack's pin) per mode and then `nginx -t`;
+that step needs Docker and runs only in CI. The older `deploy/acme-test/run.sh` would also have caught this
+(it reaches the certificate state) but is not part of any workflow.
 
 **What none of it covers.** Nothing drives VS Code itself: the modal that shows the key once, the save
 dialog, the webview's own script and the tree menu are exercised only through their pure halves. So a
@@ -1517,7 +1592,7 @@ code **78**. The operator who reads the file after a deploy is who it is for.
 | layer | test | runs where | what it proves |
 |---|---|---|---|
 | the BUILT JIT binary | `StartupRefusalProcessTests` | every server CI leg (Linux, Windows, macOS) | exit 78 and the Fatal line, for a refusal after the first log line (no auth) and one before it (a UNC data dir — the case whose file used to be EMPTY) |
-| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes |
+| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes; the containers and volumes are named under the leftovers contract and removed on every path (`dockerSmokeLeftovers.test.ts`) |
 | `Program` in-process | `StartupGuardTests` | every server CI leg | each of the five guards stops the real `Program` and its message reaches the file at Fatal; the accepted cases must really start |
 | the guards alone | `StartupGuardsTests` | every server CI leg | each message byte for byte, the inner exception, the order (configuration before the disk) |
 
@@ -1658,6 +1733,7 @@ server's first log line. On this PR's first run the build step took 27 s and the
 | g. TERM to the script while it waits | exit non-zero, `interrupted`, and the server it started is gone — a cancelled step leaves nothing behind |
 | h. accepts the connection, never answers, deadline 2 s | exit 1 within 4.5 s — no probe runs past the deadline |
 | i. the start line (on c's run) | names the program only, never its arguments, which may carry a secret |
+| j. no `START_SERVER_LOG`, no `RUNNER_TEMP`, a private `TMPDIR` (E2.4.S2) | the root holds one `testsToDelete-<owner>-creds-server-log-<id>` folder with `server.log` and its claim (a well-formed record, the script's own gone pid), and no loose `start-server-*.log` |
 
 Runs in the contract job before the build, and the pinned shellcheck of *compose · scripts* reads both scripts.
 **Watched RED** with the old inline loop as the implementation (`START_SERVER_SCRIPT`): all six cases failed, and
@@ -2192,6 +2268,7 @@ every other session lagged. How this repository follows it, entry point by entry
 | the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props`, except when `CI=true` | `node $LP <exe>`, one executable at a time |
 | `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
 | `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
+| `deploy/nginx/entrypoint.test.sh` | one bash process, `sh entrypoint.sh` once per case | the same self-re-run under `nice` as the harness above |
 | the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
 | a one-file run | one worker | `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` |
 

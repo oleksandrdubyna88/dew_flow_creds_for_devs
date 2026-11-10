@@ -15,14 +15,25 @@
 # What it deliberately does NOT prove: that a PUBLIC name resolves to your host and
 # that port 80 is reachable from the internet. Those are properties of your network,
 # and no local harness can assert them.
+#
+# Who owns what it makes (rule common/test-leftovers.md). There is NO fixed project name: run.sh
+# makes an owned folder `testsToDelete-<owner>-creds-acme-<id>` and gives compose its lower-cased
+# name with `-p`, so two runs never share a project and one run never tears down another's stack.
+# Every container, the network and every volume carries the owner label, so the next run's janitor
+# collects what a killed run left. The state lives in NAMED volumes of that project, never in a
+# folder of the checkout: a container writes root-owned files, and a janitor that runs as the
+# user cannot delete those from a bind mount. `down -v` removes the volumes with the project.
 
-name: cred-vault-acme-test
+x-owned: &owned
+  labels:
+    testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}"
 
 services:
   # The test CA. `httpPort: 80` makes it validate against the ordinary port, so the
   # nginx config under test is the one that answers — not a special-cased one.
   pebble:
     image: ghcr.io/letsencrypt/pebble:latest
+    <<: *owned
     command: -config /pebble-config.json
     volumes:
       - ./pebble-config.json:/pebble-config.json:ro
@@ -35,6 +46,7 @@ services:
 
   vault:
     image: ${VAULT_IMAGE}
+    <<: *owned
     restart: unless-stopped
     expose: ["8080"]
     environment:
@@ -44,13 +56,14 @@ services:
       Auth__Local__SigningKey: acme-test-key-acme-test-key-32ch
       Logging__Directory: /logs
     volumes:
-      - ./state/data:/data
-      - ./state/logs:/logs
+      - data:/data
+      - logs:/logs
     networks:
       edge:
 
   nginx:
     image: nginx:1.27-alpine
+    <<: *owned
     depends_on: [vault]
     ports:
       - "18081:80"
@@ -65,8 +78,8 @@ services:
     volumes:
       - ../nginx/entrypoint.sh:/docker-entrypoint.d/40-cred-vault.sh:ro
       - ../nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro
-      - ./state/certs/conf:/etc/letsencrypt:ro
-      - ./state/certs/www:/var/www/certbot:ro
+      - certs-conf:/etc/letsencrypt:ro
+      - certs-www:/var/www/certbot:ro
     networks:
       edge:
         # This is what makes pebble's HTTP-01 validation reach nginx by NAME,
@@ -81,6 +94,7 @@ services:
 
   certbot:
     image: certbot/certbot:latest
+    <<: *owned
     depends_on: [nginx, pebble]
     environment:
       TLS_MODE: domain
@@ -94,13 +108,24 @@ services:
       # test is the one that ships.
       CERTBOT_EXTRA_ARGS: "--server https://pebble:14000/dir --no-verify-ssl"
     volumes:
-      - ./state/certs/conf:/etc/letsencrypt
-      - ./state/certs/www:/var/www/certbot
+      - certs-conf:/etc/letsencrypt
+      - certs-www:/var/www/certbot
       - ../certbot/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     networks:
       edge:
 
+volumes:
+  certs-conf:
+    <<: *owned
+  certs-www:
+    <<: *owned
+  data:
+    <<: *owned
+  logs:
+    <<: *owned
+
 networks:
   edge:
     driver: bridge
+    <<: *owned

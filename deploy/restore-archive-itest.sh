@@ -35,14 +35,23 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="${HERE}/restore-archive.sh"
 FAILS=0
 
+# Every world is an owned folder (.github/scripts/lib/owned.sh): claimed first, removed by the helper's one exit trap,
+# on every way the harness ends. This file sets no trap of its own. The helper is read AFTER the `nice` re-exec above,
+# which keeps the pid, so the claim names the process that runs the worlds.
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../.github/scripts/lib/owned.sh
+source "${HERE}/../.github/scripts/lib/owned.sh" || exit 1
+
 pass() { printf 'ok    %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; [[ -n "${2:-}" ]] && printf '      %s\n' "$2"; FAILS=$((FAILS + 1)); }
 check() { if [[ "$2" == "yes" ]]; then pass "$1"; else fail "$1" "${3:-}"; fi }
 yesno() { if "$@" >/dev/null 2>&1; then echo yes; else echo no; fi }
 
 # ---- a world: a deploy/ directory, a fake archive, and a docker on PATH that we control ---------
+# `TMPDIR` is never exported here: the next owned_dir would nest inside this world. The child that makes temp paths
+# (restore-archive.sh does) gets this world as its TMPDIR, on its command line, so its scratch goes with the world.
 world() {
-  WORLD="$(mktemp -d)"
+  owned_dir WORLD world || exit 1
   mkdir -p "${WORLD}/deploy" "${WORLD}/bin"
   cp "$SCRIPT" "${WORLD}/deploy/restore-archive.sh"
   chmod +x "${WORLD}/deploy/restore-archive.sh"
@@ -125,7 +134,7 @@ SHIM
 }
 
 run_restore() {
-  (cd "${WORLD}/deploy" && printf 'y\n' | ./restore-archive.sh "${WORLD}/archive.cvbk" \
+  (cd "${WORLD}/deploy" && printf 'y\n' | TMPDIR="$WORLD" ./restore-archive.sh "${WORLD}/archive.cvbk" \
     --key-file "${WORLD}/key.txt" "$@" 2>&1)
 }
 
@@ -136,10 +145,10 @@ printf '\nrestore-archive.sh, driven as a program (docker is a shim)\n\n'
 
 # ---- 1. the arguments --------------------------------------------------------------------------
 world; key
-out="$(cd "${WORLD}/deploy" && ./restore-archive.sh 2>&1)"
+out="$(cd "${WORLD}/deploy" && TMPDIR="$WORLD" ./restore-archive.sh 2>&1)"
 check "no archive named: refused with the usage" \
   "$(yesno grep -q 'which archive' <<<"$out")" "$out"
-out="$(cd "${WORLD}/deploy" && ./restore-archive.sh /nope.cvbk --key-file "${WORLD}/key.txt" 2>&1)"
+out="$(cd "${WORLD}/deploy" && TMPDIR="$WORLD" ./restore-archive.sh /nope.cvbk --key-file "${WORLD}/key.txt" 2>&1)"
 check "an archive that does not exist: refused by name" \
   "$(yesno grep -q 'does not exist' <<<"$out")" "$out"
 check "...and nothing was asked of docker" \

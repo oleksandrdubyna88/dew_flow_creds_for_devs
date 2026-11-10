@@ -12,11 +12,18 @@
 #     never open when the client left, so a pass would say nothing about defect A).
 # And, with SMOKE_VERSION asked: a log naming that version must PASS; one naming `1.0.0` or a longer `0.10.10`
 # must FAIL (research/PLAN_release_binaries_carry_their_version.md).
+# Under Git Bash (Windows) the helper needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 smoke="$here/mcp-listen-smoke.sh"
-work="$(mktemp -d)"
+# The scratch folder is an owned folder (lib/owned.sh): claimed first, removed by the helper's exit trap on EVERY way
+# the test ends — a failing command under set -e, an interrupt, a normal end. The test sets no trap of its own.
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+work="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
+owned_dir work smoke-test || exit 1
 fake="$work/fake-creds-mcp.sh"
 failures=0
 
@@ -69,7 +76,32 @@ expect 'a server whose log says 0.10.10 fails the asked 0.10.1' 0 yes 1 0.10.1 0
 FAKE_LATER_LINE='note: started: serve, version 0.10.1, pid 3, parent 4' \
   expect 'a server whose START line says 1.0.0 fails even when a later line names 0.10.1' 0 yes 1 0.10.1 1.0.0 'does not name version 0.10.1'
 
-rm -rf "$work"
+# off_ci <name> <exit code the smoke must give> <text its output must hold> [smoke arguments...]
+# The smoke as a person runs it: no log root and no RUNNER_TEMP, so it makes its own scratch in TMPDIR — a private
+# root here — and that root must be empty when the smoke is gone, whether the smoke passed or failed (E2.4.S2, sc. 4).
+off_ci_count=0
+off_ci() {
+  local name="$1" wanted="$2" says="$3" code=0 left
+  shift 3
+  off_ci_count=$((off_ci_count + 1))
+  mkdir "$work/root-$off_ci_count"
+  env -u RUNNER_TEMP -u SMOKE_VERSION TMPDIR="$work/root-$off_ci_count" bash "$smoke" "$@" > "$work/run.log" 2>&1 || code=$?
+  left="$(ls -A "$work/root-$off_ci_count")"
+  if [[ "$code" -eq "$wanted" ]] && grep -qF -- "$says" "$work/run.log" && [[ -z "$left" ]]; then
+    echo "ok   $name (the smoke exited $code and left nothing)"
+  else
+    echo "FAIL $name — expected exit $wanted saying '$says' and an empty root; exit $code, left: [$left]; its output:"
+    sed 's/^/     /' "$work/run.log"
+    failures=$((failures + 1))
+  fi
+}
+
+# Plain text with no `#!` line and no .sh or .exe name: no operating system calls it executable. (Git Bash answers `[[ -x ]]` true for a file
+# whose first line is `#!`, which made an earlier plant a program on the Windows leg of CI.)
+printf 'not a program\n' > "$work/not-a-program"
+off_ci 'off CI: a binary that is not executable fails after the folder is made and leaves nothing' 1 'not an executable' "$work/not-a-program"
+off_ci 'off CI: a passing run leaves nothing' 0 'listen smoke passed' "$fake"
+
 if [[ "$failures" -eq 0 ]]; then
   echo "all smoke self-test checks passed"
 else

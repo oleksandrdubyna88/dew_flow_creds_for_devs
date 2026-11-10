@@ -167,7 +167,20 @@ jobs:
       # that never listens, one that exits 78, one that listens late, one that answers 500, a usage error,
       # and a URL something else already answers (research/PLAN_contract_suite_waits_for_a_built_server.md).
       - name: Self-test the start script
-        run: .github/scripts/start-server-and-wait.test.sh
+        run: |
+          # E2.4.S2: the script runs with its own temp root, and the step fails when anything is left in it
+          # (RUNNER_TEMP belongs to this job, so the root needs no exemption).
+          root="$RUNNER_TEMP/leftovers-start-server-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" .github/scripts/start-server-and-wait.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "start-server-and-wait.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
 
       # Built in its OWN step, never inside the health wait. Until 2026-10-12 `dotnet run` compiled the
       # server inside a 60 s wait that did not fail: a cold build took 67.3 s on #240 (run 38270198889)
@@ -297,12 +310,21 @@ jobs:
           # restore-archive.sh is here from the day it lands: it is the one script whose failure mode
           # is a stack that is down with the data moved aside, so a typo in it costs an outage. Its
           # harness is here too — one that cannot parse proves nothing and says so quietly.
-          $SHELLCHECK deploy/update.sh deploy/backup.sh deploy/restore-archive.sh \
-            deploy/restore-archive-itest.sh
+          $SHELLCHECK deploy/update.sh deploy/backup.sh deploy/restore-archive.sh
+          # -x follows the one `source` of owned.sh (E2.4.S2).
+          $SHELLCHECK -x deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+          # Its harness is bash, like the other two; -x follows its one `source` of owned.sh (E2.4).
+          $SHELLCHECK -x deploy/nginx/entrypoint.test.sh
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
-          $SHELLCHECK .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
+          # -x follows the one `source` of owned.sh each of them has (E2.4.S2).
+          $SHELLCHECK -x .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
+          # E2.4.S1: the bash helper and its self-test. -x follows the one `source` of the self-test.
+          $SHELLCHECK -x .github/scripts/lib/owned.sh .github/scripts/lib/owned.test.sh .github/scripts/lib/owned.test.lib.sh \
+            .github/scripts/lib/owned.test.record.sh .github/scripts/lib/owned.test.exit.sh .github/scripts/lib/owned.test.sweeps.sh
+          # E2.4.S4: the acme harness. -x follows the one `source` of owned.sh.
+          $SHELLCHECK -x deploy/acme-test/run.sh
 
       - name: Drive restore-archive.sh as a program
         run: |
@@ -311,7 +333,72 @@ jobs:
           # return — and order is exactly what reading cannot check. A review round found the
           # unfinished-restore check sitting after `docker compose down`, so a retry took the running
           # stack offline before refusing; scenario 4 in here is what catches that class.
-          bash deploy/restore-archive-itest.sh
+          # E2.4.S2: its own temp root, and the step fails when anything is left in it (nine worlds made one entry each).
+          root="$RUNNER_TEMP/leftovers-restore-archive-itest"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" bash deploy/restore-archive-itest.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "restore-archive-itest.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
+
+      - name: Render the nginx config in every TLS mode and count the once-only directives
+        run: |
+          # Runs the real entrypoint.sh against a private folder, with and without a certificate. A
+          # block written twice (the real_ip block, once by the entrypoint and once by the TLS
+          # template) is invisible until a certificate exists, and then nginx refuses the config.
+          # E2.4: its own temp root, and the step fails when anything is left in it.
+          root="$RUNNER_TEMP/leftovers-nginx-entrypoint-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" bash deploy/nginx/entrypoint.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "entrypoint.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
+
+      - name: nginx itself accepts the config the entrypoint renders
+        run: |
+          # The count above is a proxy; the parser is the authority. This runs the shipped entrypoint
+          # inside the SAME image the stack pins (deploy/docker-compose.yml) in each TLS mode, with a
+          # throwaway certificate where the mode reads one, then `nginx -t`. Measured failure this
+          # catches (run 42635403255): `"real_ip_header" directive is duplicate in
+          # /etc/nginx/conf.d/vault.conf` — nginx kept the plain-HTTP 503 config and HTTPS never opened.
+          # --add-host: `nginx -t` resolves the `vault` upstream, which only exists in the compose network.
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          # Where each mode looks (entrypoint.sh: CERT_NAME): domain and ip read
+          # live/<SERVER_NAME>/{fullchain,privkey}.pem, the Let's Encrypt layout; custom reads live/custom/.
+          for name in vault.example.test custom; do
+            mkdir -p "$work/live/$name"
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=vault.example.test" \
+              -keyout "$work/live/$name/privkey.pem" -out "$work/live/$name/fullchain.pem" 2>/dev/null
+          done
+          for mode in domain ip custom none; do
+            echo "-- TLS_MODE=$mode"
+            # The premise: a nginx-owned TLS mode must render the TLS server, `none` must not. Without
+            # this a mode that fell back to plain HTTP would pass `nginx -t` and prove nothing.
+            if [ "$mode" = none ]; then
+              premise='! grep -q "listen 443" /etc/nginx/conf.d/vault.conf'
+            else
+              premise='grep -q "listen 443 ssl" /etc/nginx/conf.d/vault.conf'
+            fi
+            docker run --rm --add-host vault:127.0.0.1 \
+              -v "$PWD/deploy/nginx/entrypoint.sh:/entry.sh:ro" \
+              -v "$PWD/deploy/nginx/vault.conf.template:/etc/cred-vault/vault.conf.template:ro" \
+              -v "$work/live:/etc/letsencrypt/live:ro" \
+              -e TLS_MODE="$mode" -e SERVER_NAME=vault.example.test -e MAX_BODY_MB=16 \
+              -e HSTS_MAX_AGE=31536000 -e CRED_VAULT_RENDER_ONLY=1 \
+              --entrypoint sh nginx:1.27-alpine -c "sh /entry.sh && ${premise} && nginx -t" \
+              || { echo "TLS_MODE=$mode: the premise failed (TLS server not rendered as expected) or nginx refused the config"; exit 1; }
+          done
 
 
   # ---------------------------------------------------------------------------

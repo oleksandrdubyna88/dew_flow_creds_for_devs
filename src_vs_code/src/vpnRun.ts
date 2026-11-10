@@ -17,7 +17,7 @@ import { TrustStore } from './commandTrust';
 import { NO_CHAIN, liveDetails, runDependenciesFirst } from './dependencyRunHost';
 import { quoteFor } from './hostShell';
 import { VpnRunContext, afterTheChain, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
-import { requestGone } from './requestLife';
+import { requestGone, untilGone } from './requestLife';
 import type { VpnUseDeps } from './agentUseActions';
 import { resolveVpnLauncher } from './vpnExec';
 import { onPath } from './installFlow';
@@ -36,9 +36,9 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  * refusal the person saw never reaches the agent as "opened".
  */
 export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore): VpnUseDeps['open'] {
-  return async (accountId, entityId, action, startGate) => {
+  return async (accountId, entityId, action, startGate, lateAnswer, standingPrompt) => {
     const node = storage.getNode(accountId, entityId);
-    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate);
+    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate, lateAnswer, standingPrompt);
   };
 }
 
@@ -70,6 +70,10 @@ function notePersonsAct(vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, startGat
  * before it types anything; once the client that asked has gone, nothing more is written or typed for it,
  * and `false` is answered without a word to a person who did not ask. A line already typed is the
  * shell's, and a tunnel already up stays up: this gates the start, it does not take one back.</p>
+ *
+ * <p>`lateAnswer` is the broker's seam for a late click on a question of this start's own, whose request had gone (E1.5): the OpenVPN Connect
+ * question and the chain's *Continue* are modals on an agent call, raced against `startGate`; a click that lands after the client left is journalled
+ * through it and does nothing. Absent for the person's own Start.</p>
  */
 export async function runVpn(
   target: unknown,
@@ -79,6 +83,8 @@ export async function runVpn(
   vaultKeys: Pick<VaultKeys, 'noteUserActivity'>,
   trust: TrustStore,
   startGate: AbortSignal | undefined,
+  lateAnswer?: (what: string) => void,
+  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
 ): Promise<boolean> {
   notePersonsAct(vaultKeys, startGate);
   const entry = vpnEntry(target);
@@ -88,7 +94,7 @@ export async function runVpn(
   // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
   // computer's, and a tunnel there is not the one the person asked for.
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer, standingPrompt }, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {
@@ -203,6 +209,18 @@ async function noCli(ctx: VpnRunContext, launcher: ReturnType<typeof resolveVpnL
   return false;
 }
 
+const IMPORT_QUESTION = 'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.';
+const IMPORT_BUTTON = 'Import profile';
+
+/**
+ * The import question's race: a client that leaves ends the request at once; the question keeps the place until a person settles it (`standingPrompt`, F1), and a
+ * click that lands later is journalled and does nothing. The question itself is asked in `openVpnConnect`, a modal on an agent call and a toast on the person's own Start (D14).
+ */
+function untilSettled(ctx: VpnRunContext, question: Thenable<string | undefined>): Promise<string | undefined> {
+  ctx.standingPrompt?.(question);
+  return untilGone(question, ctx.startGate, (late) => (late === undefined ? undefined : ctx.lateAnswer?.(late)));
+}
+
 async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, action: 'start' | 'stop'): Promise<boolean> {
   if (action === 'stop') {
     return refuse('This machine uses OpenVPN Connect — disconnect from its own window.', 'info');
@@ -210,12 +228,9 @@ async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, ac
   // The GUI can IMPORT a profile; it cannot be driven like the CLI. Importing is the
   // honest half we can do — connecting stays in its window, where the tunnel may in
   // fact already be up.
-  const open = await vscode.window.showInformationMessage(
-    'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.',
-    'Import profile',
-  );
+  const open = await untilSettled(ctx, vscode.window.showInformationMessage(IMPORT_QUESTION, { modal: ctx.startGate !== undefined }, IMPORT_BUTTON));
   // The profile is written only once the import is accepted — and `writeVpnConfig` reads the request last.
-  const configPath = open === 'Import profile' ? await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name)) : undefined;
+  const configPath = open === IMPORT_BUTTON ? await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name)) : undefined;
   if (configPath === undefined) {
     return false;
   }
