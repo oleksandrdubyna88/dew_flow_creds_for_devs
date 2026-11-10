@@ -40,6 +40,7 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     storage: {
       getNode: () => ({ details: { id: 'e1', name: 'prod-db' } }),
       getDbConnection: async () => 'postgresql://u:p@h:5432/db',
+      getAccounts: () => [{ accountId: 'acct-1' }],
     },
     storageDir: '/tmp/does-not-matter',
     signal: new AbortController().signal,
@@ -48,6 +49,9 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     trustStore: { get: () => [] as string[], update: async () => undefined },
     applyEnv: async () => ({ written: [] as string[], withheld: [] }),
     onPath: () => false,
+    overSsh: async () => {
+      throw new Error('this world has no SSH road');
+    },
   };
   return { ...base, ...over } as never;
 }
@@ -344,16 +348,18 @@ test('X2: undefined, empty and wsl admit; every other window refuses with exactl
   }
 });
 
-test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow) and on no other action of this module', () => {
+test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow), and `run` declares it per entry; no other action of this module declares it', () => {
   const flags = {
     'vpn up': vpnAction(fakeDeps(), 'up').asksAfterConsent,
     'vpn down': vpnAction(fakeDeps(), 'down').asksAfterConsent,
     scriptRun: scriptRunAction(fakeDeps()).asksAfterConsent,
-    terminalRun: terminalRunAction(fakeDeps()).asksAfterConsent,
+    terminalRun: typeof terminalRunAction(fakeDeps()).asksAfterConsent,
     exportEnv: credentialExportEnvAction(fakeDeps()).asksAfterConsent,
     dbQuery: dbQueryAction(fakeDeps()).asksAfterConsent,
   };
-  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: undefined, exportEnv: undefined, dbQuery: undefined });
+  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: 'function', exportEnv: undefined, dbQuery: undefined });
+  const perEntry = terminalRunAction(fakeDeps()).asksAfterConsent;
+  assert.equal(typeof perEntry === 'function' ? perEntry(ctx) : perEntry, false, 'an entry with no link keeps nothing once the dialog closes');
 });
 
 // `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): the agent runs the line the Run button would type.

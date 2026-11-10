@@ -102,7 +102,7 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
  * E3-D13) and remoteLaunch.ts (parent §4.5 (1)). It proves who imports, not where a resolved line flows: that a linked entry reaches no
  * local sink is linkedNeverLocal.test.ts (parent §4.5 (5)).
  */
-const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
+const RESOLVE_IMPORTERS = ['commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
@@ -168,7 +168,7 @@ const ALLOWED_SENDS: AllowList = {
       because: "the VPN launcher with no link, or an agent's start: the local road, unchanged",
     },
   ],
-  'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
+  'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run of an entry with no link: the local road' }],
   'sshUseActions.ts': [
     {
       line: 'const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });',
@@ -206,7 +206,6 @@ test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
 
 /** `file:function` pairs, one per match of the pattern: the declaration, then every call (a function that calls twice is listed twice). E2 and E3 shrink it. */
 const REFUSAL_SITES = [
-  'agentUseActions.ts:terminalRunAction',
   'commands/runCommands.ts:secretsRefusal',
   'dependencyRun.ts:stepRefusal',
   'remoteLaunch.ts:sshLinkRefusal',

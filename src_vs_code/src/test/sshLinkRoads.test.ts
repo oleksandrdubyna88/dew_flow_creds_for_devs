@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { after, test } from 'node:test';
 import { commandFingerprint } from '../commandTrust';
-import { terminalRunAction } from '../agentUseActions';
+import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
 import { planDependencyRun, StepRefusal } from '../dependencyRun';
 import { FolderFacts, planFolderRun } from '../folderRun';
 import { osMismatch } from '../hostShell';
@@ -161,10 +161,10 @@ test('a_linked_launcher_starts_nothing_and_asks_nothing', async () => {
 
 // ---- the agent --------------------------------------------------------------------------------------------------
 
-test('the_agent_run_refuses_a_linked_entry_before_the_trust_check_and_the_slot', async () => {
+test('the_agent_run_refuses_a_linked_entry_whose_ssh_entry_is_missing_with_the_one_sentence_before_the_trust_check_and_the_slot', async () => {
   let slotCalls = 0;
   const deps = {
-    storage: { getNode: () => ({ details: LINKED }), getDbConnection: async () => '' },
+    storage: { getNode: () => ({ details: LINKED }), getAccounts: () => [{ accountId: 'acct-1' }], getDbConnection: async () => '' },
     storageDir: '/tmp/does-not-matter',
     signal: new AbortController().signal,
     acquireExecSlot: () => {
@@ -175,12 +175,15 @@ test('the_agent_run_refuses_a_linked_entry_before_the_trust_check_and_the_slot',
     trustStore: { get: () => [commandFingerprint('e1', 'echo linked')], update: async () => undefined },
     applyEnv: async () => ({ written: [] as string[], withheld: [] }),
     onPath: () => false,
+    overSsh: async () => {
+      throw new Error('this world has no SSH road');
+    },
   } as never;
   const ctx = { accountId: 'acct-1', entityId: 'e1', entityName: 'deploy', signal: new AbortController().signal };
   const result = await terminalRunAction(deps).run(ctx, {});
   const error = (result.body as { error?: { code?: string; message?: string } }).error;
-  assert.equal(error?.code, 'not_supported');
-  assert.equal(error?.message, SENTENCE('deploy'));
+  assert.equal(error?.code, 'denied');
+  assert.equal(error?.message, linkedRunRefused('deploy'));
   assert.equal(slotCalls, 0);
 });
 

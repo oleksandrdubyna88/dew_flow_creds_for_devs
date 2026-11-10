@@ -123,7 +123,7 @@ export type LinkedEntry = Pick<EntityMetadata, 'id' | 'name' | 'sshEntityId'>;
  * <p>Moved here from `sshLinkGate.ts` with its name and signature unchanged (S2-D7). E2 replaced the person's roads by
  * `planLaunch` (the arrow, the folder run, a VPN's Start on the person's click, a chain step with a road). It is still
  * called by the roads that have no SSH road: Run with Secrets for a SCRIPT that a sync linked (a linked command runs over SSH
- * since E3.S1), the agent's run, an agent's VPN start, and a dependency chain with no road (`launchRoadScan.test.ts` lists the
+ * since E3.S1), an agent's VPN start, and a dependency chain with no road (`launchRoadScan.test.ts` lists the
  * callers); a road that moves to `planLaunch` leaves that list.</p>
  */
 export function sshLinkRefusal(entry: LinkedEntry): string | undefined {
@@ -357,7 +357,7 @@ function copyOfPlan(entry: LaunchEntry, plan: LaunchPlan, lookup: NodeLookup): C
     case 'remote':
       return copyOfTrustLine(shownTrustLine(plan, lookup));
     case 'refused':
-      return { kind: 'refused', reason: refusedCopyReason(entry, plan.reason) };
+      return { kind: 'refused', reason: refusalSaid(entry, plan.reason) };
     default:
       return { kind: 'local' };
   }
@@ -367,8 +367,11 @@ function copyOfTrustLine(shown: ReturnType<typeof shownTrustLine>): CopiedLine {
   return shown.kind === 'shown' ? { kind: 'linked', line: shown.line, note: COPY_NOTE } : { kind: 'refused', reason: shown.reason };
 }
 
-/** A `{name}` refusal reads as the arrow says it (`runCommands.ts`); every other reason is `planLaunch`'s own sentence. */
-function refusedCopyReason(entry: LaunchEntry, reason: string): string {
+/**
+ * A `{name}` refusal reads as the arrow says it (`runCommands.ts`); every other reason is `planLaunch`'s own sentence. The one reader of a
+ * `refused` plan's reason: the copies and the agent's run say it the same way (E3.S2).
+ */
+export function refusalSaid(entry: LaunchEntry, reason: string): string {
   return reason === commandRefusal(entry) ? `"${entry.name}" will not run: ${reason}` : reason;
 }
 
