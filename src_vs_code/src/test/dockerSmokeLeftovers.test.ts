@@ -10,8 +10,8 @@
 //   4. a failed smoke stays failed: nothing in the job turns a failure green, and `Publish` carries no status function of its own.
 //
 // "A check that only runs during a release has never run" (testing.md): `docker.yml` never runs for a pull request, and this machine
-// has no Docker. So the step bodies are RUN here, under the shell GitHub gives them, against a stub `docker` that keeps a small world
-// of named resources. Every rule is then shown to be able to fail: each has a planted fault (a mutated copy of the real text) that
+// has no Docker. So the step bodies are RUN here, under the shell GitHub gives them (`bash -e {0}` for a step with no `shell:`,
+// `bash --noprofile --norc -eo pipefail {0}` for `shell: bash`), against a stub `docker` that keeps a small world of named resources. Every rule is then shown to be able to fail: each has a planted fault (a mutated copy of the real text) that
 // the same check must refuse. A check that cannot go red is not one.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -118,18 +118,34 @@ function blockStart(lines: string[], from: number): number {
   return first;
 }
 
+/** The line of a step's header: `- name: <key>`, or a `- uses: <key>…` step (a key that starts the action's name, as `docker/setup-buildx-action@`). */
+function headerOf(lines: string[], key: string): number {
+  const at = lines.findIndex((line) => line === `      - name: ${key}` || line.startsWith(`      - uses: ${key}`));
+  assert.ok(at >= 0, `no step ${key}`);
+  return at;
+}
+
 /** The text with the step `name` (and the comment lines just above it) cut out and put again right after the step `after`. */
 function moveStepAfter(text: string, name: string, after: string): string {
   const lines = text.split('\n');
-  const from = lines.indexOf(`      - name: ${name}`);
-  assert.ok(from >= 0, `no step ${name}`);
+  const from = headerOf(lines, name);
   const first = blockStart(lines, from);
   const block = lines.slice(first, blockEnd(lines, from));
   const rest = [...lines.slice(0, first), ...lines.slice(blockEnd(lines, from))];
-  const target = rest.indexOf(`      - name: ${after}`);
-  assert.ok(target >= 0, `no step ${after}`);
+  const target = headerOf(rest, after);
   const stop = blockEnd(rest, target);
   return [...rest.slice(0, stop), ...block, ...rest.slice(stop)].join('\n');
+}
+
+/** The text with the step `name` cut out and put again as the very first step of the job (before checkout). */
+function moveStepFirst(text: string, name: string): string {
+  const lines = text.split('\n');
+  const from = headerOf(lines, name);
+  const first = blockStart(lines, from);
+  const block = lines.slice(first, blockEnd(lines, from));
+  const rest = [...lines.slice(0, first), ...lines.slice(blockEnd(lines, from))];
+  const firstStep = rest.findIndex((line) => /^ {6}- /.test(line));
+  return [...rest.slice(0, firstStep), ...block, ...rest.slice(firstStep)].join('\n');
 }
 
 // --- the rules: each a function of the workflow text that answers a problem or nothing, so a planted fault goes through the same check --
@@ -155,7 +171,25 @@ const missingName = (mentions: (name: string) => boolean): [string, string] | un
 const NAMING_CHECKS: Check[] = [
   onStep(NAMING, (_found, text) => unless(indexOfStep(text, 'Build') > indexOfStep(text, NAMING), 'the naming step comes after Build (or there is no Build): an image is built before the uid is known')),
   onStep(NAMING, (_found, text) => unless(stepsOf(text).findIndex((candidate) => /actions\/checkout@/.test(candidate.text)) < indexOfStep(text, NAMING), 'the naming step does not come after checkout')),
+  onStep(NAMING, (_found, text) => unless(indexOfStep(text, NAMING) < stepsOf(text).findIndex((candidate) => /docker\/setup-buildx-action@/.test(candidate.text)), 'the naming step does not come before docker/setup-buildx-action, which starts a builder container')),
   onStep(NAMING, (found) => unless(firstCommand(found.run) === FIRST_COMMAND, `the first command is ${JSON.stringify(firstCommand(found.run))}, not ${FIRST_COMMAND}`)),
+];
+
+/** The smoke steps' own names: every `--name "…"` and the name of every `docker volume create`, as the workflow spells them. */
+function smokeNames(text: string): string[] {
+  const smoke = [step(text, 'Smoke-test'), step(text, REFUSED)].map((found) => found?.run ?? '').join('\n');
+  const containers = [...smoke.matchAll(/--name "([^"]+)"/g)].map((hit) => hit[1]);
+  const volumes = [...smoke.matchAll(/docker volume create [^\n]*"([^"]+)"\s*$/gm)].map((hit) => hit[1]);
+  return [...containers, ...volumes].sort();
+}
+
+/** The set of names the smoke makes is exactly the four names the remover and the check are written for. */
+const NAME_SET_CHECKS: Check[] = [
+  (text) => {
+    const made = smokeNames(text);
+    const wanted = Object.values(names('${SMOKE_ID}')).sort();
+    return unless(JSON.stringify(made) === JSON.stringify(wanted), `the smoke makes ${JSON.stringify(made)}, the remover and the check are written for ${JSON.stringify(wanted)}`);
+  },
 ];
 
 /** Row E2.4-b, the text half: ONE remover, in its place, `shell: bash`, always, `|| true` on each of four unquoted removals. */
@@ -215,6 +249,14 @@ const namingProblems = (text: string): string[] => problemsOf(NAMING_CHECKS, tex
 const removerProblems = (text: string): string[] => problemsOf(REMOVER_CHECKS, text);
 const checkProblems = (text: string): string[] => problemsOf(CHECK_CHECKS, text);
 const verdictProblems = (text: string): string[] => problemsOf(VERDICT_CHECKS, text);
+const nameSetProblems = (text: string): string[] => problemsOf(NAME_SET_CHECKS, text);
+
+/** The shell GitHub runs a step with: `bash -e` when it has no `shell:`, the long form for `shell: bash`. */
+const shellArgsOf = (text: string, name: string): string[] => {
+  const found = step(text, name);
+  assert.ok(found !== undefined, `no step ${name}`);
+  return keyOf(found, 'shell') === 'bash' ? ['--noprofile', '--norc', '-eo', 'pipefail'] : ['-e'];
+};
 
 // --- what runs: a stub `docker` with a world of named resources ----------------------------------------------------------------
 
@@ -328,6 +370,25 @@ test('E2.4-c: the rule refuses a naming step without the check, with the check s
 
   const moved = moveStepAfter(REAL, NAMING, 'Build');
   assert.match(namingProblems(moved).join('\n'), /after Build/);
+
+  // before checkout: the rule that it follows checkout
+  assert.match(namingProblems(moveStepFirst(REAL, NAMING)).join('\n'), /does not come after checkout/);
+  // between setup-buildx and Build: buildx starts a builder container, so an id made after it is too late (D5: before any container)
+  const afterBuildx = moveStepAfter(REAL, NAMING, 'docker/setup-buildx-action@');
+  assert.match(namingProblems(afterBuildx).join('\n'), /before docker\/setup-buildx-action/);
+  assert.doesNotMatch(namingProblems(afterBuildx).join('\n'), /after Build/, 'that plant is before Build: only the buildx rule may refuse it');
+});
+
+test('the harness runs each step the way GitHub does: bash -e for the naming step, the long form for `shell: bash`', () => {
+  assert.deepEqual(shellArgsOf(REAL, NAMING), ['-e']);
+  assert.deepEqual(shellArgsOf(REAL, REMOVER), ['--noprofile', '--norc', '-eo', 'pipefail']);
+  assert.deepEqual(shellArgsOf(REAL, CHECK), ['--noprofile', '--norc', '-eo', 'pipefail']);
+  // a pipeline whose first stage fails ends a pipefail shell and not a plain `bash -e`: the two shells are really different here
+  const dir = ownedDir(scope, 'shells');
+  const script = path.join(dir, 'pipe.sh');
+  fs.writeFileSync(script, 'false | true\n');
+  assert.equal(spawnSync('bash', [...shellArgsOf(REAL, NAMING), script]).status, 0);
+  assert.equal(spawnSync('bash', [...shellArgsOf(REAL, REMOVER), script]).status, 1);
 });
 
 test('E2.4-c: on a runner whose uid is not 1001 the naming step ends at once with nothing made; on 1001 it writes the id and the owner record', () => {
@@ -340,7 +401,8 @@ test('E2.4-c: on a runner whose uid is not 1001 the naming step ends at once wit
     fs.writeFileSync(envFile, '');
     const script = path.join(dir, `naming-${uid}.sh`);
     fs.writeFileSync(script, bodyOf(REAL, NAMING));
-    const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', script], { env: { PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_ENV: envFile }, encoding: 'utf8', timeout: 30000 });
+    // The naming step has no `shell:`, so GitHub runs it as `bash -e {0}`, without pipefail.
+    const result = spawnSync('bash', [...shellArgsOf(REAL, NAMING), script], { env: { PATH: `${bin}:${process.env.PATH ?? ''}`, GITHUB_ENV: envFile }, encoding: 'utf8', timeout: 30000 });
     return { status: result.status, output: `${result.stdout}${result.stderr}`, env: fs.readFileSync(envFile, 'utf8') };
   };
 
@@ -386,12 +448,21 @@ test('E2.4-b: the remover leaves nothing standing when nothing fails, and does n
   assert.deepEqual(none.calls, [], 'with no smoke id nothing was named: no docker call may be made');
 });
 
+test('E2.4-b: the rule refuses a remover without continue-on-error, one before the last reader, and one after Log in', () => {
+  assert.match(removerProblems(mutate(REAL, `        if: always()\n        continue-on-error: true\n        shell: bash\n`, `        if: always()\n        shell: bash\n`)).join('\n'), /no continue-on-error: true/);
+  // before the last reader: the refused-start step (it reads the container's logs) now comes after the remover
+  assert.match(removerProblems(moveStepAfter(REAL, REFUSED, REMOVER)).join('\n'), /not after the last step that reads the containers/);
+  // after Log in: the remover would run only after the publish credentials were used
+  assert.match(removerProblems(moveStepAfter(REAL, REMOVER, LOGIN)).join('\n'), /not after the last step that reads the containers and before Log in/);
+});
+
 test('E2.4-b: the rule refuses a remover without `shell: bash`, without always(), quoted, a second remover, or one before the last reader', () => {
   assert.match(removerProblems(mutate(REAL, `        if: always()\n        continue-on-error: true\n        shell: bash\n`, `        if: always()\n        continue-on-error: true\n`)).join('\n'), /no `shell: bash`/);
   assert.match(removerProblems(mutate(REAL, `        if: always()\n        continue-on-error: true\n`, `        continue-on-error: true\n`)).join('\n'), /not always\(\)/);
   assert.match(removerProblems(mutate(REAL, 'docker volume rm testsToDelete-u1001-creds-refused-data-${SMOKE_ID} || true', 'docker volume rm "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}" || true')).join('\n'), /quotes/);
   assert.match(removerProblems(mutate(REAL, /\n {10}docker volume rm testsToDelete-u1001-creds-refused-logs-\$\{SMOKE_ID\} \|\| true/, '')).join('\n'), /4 removal lines|no removal of logs/);
   assert.match(removerProblems(`${REAL.replace('      - name: Summary', `      - name: Again\n        run: |\n          docker rm -f x\n\n      - name: Summary`)}`).join('\n'), /2 steps remove/);
+  assert.match(removerProblems(moveStepAfter(REAL, REFUSED, REMOVER)).join('\n'), /not after the last step that reads the containers/);
 });
 
 // --- the check, E2.4-k -------------------------------------------------------------------------------------------------------
@@ -423,14 +494,39 @@ test('E2.4-k: a remover that forgets one volume is caught by the check, not by l
   assert.match(run.output, /left after removal:.*refused-logs/);
 });
 
-test('E2.4-k: the exact-name filter does not match a sibling job\'s resources, only this id\'s', () => {
-  const where = world('abcd1234');
-  fs.appendFileSync(where.worldFile, `c ${names('ffff0000').cv}\nv ${names('ffff0000').data}\n`);
+/** Siblings whose names OVERLAP this id's: one that continues it (`…-<id>5`) and one that holds it after a prefix (`x…-<id>`). */
+function addOverlappingSiblings(where: { worldFile: string }): string[] {
+  const own = names('abcd1234');
+  const longer = names('abcd12345');
+  const lines = [`c ${longer.cv}`, `c ${longer.refused}`, `v ${longer.data}`, `v ${longer.logs}`, `c x${own.cv}`, `v x${own.data}`];
+  fs.appendFileSync(where.worldFile, lines.join('\n') + '\n');
+  return lines;
+}
+
+function runBothInWorld(text: string, id: string): { status: number | null; output: string; left: string[]; siblings: string[] } {
+  const where = world(id);
+  const siblings = addOverlappingSiblings(where);
   const script = path.join(where.dir, 'both.sh');
-  fs.writeFileSync(script, `${bodyOf(REAL, REMOVER)}${bodyOf(REAL, CHECK)}`);
-  const result = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', script], { env: { PATH: `${where.stubs}:${process.env.PATH ?? ''}`, STUB_WORLD: where.worldFile, STUB_CALLS: where.callsFile, SMOKE_ID: 'abcd1234' }, encoding: 'utf8' });
-  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
-  assert.deepEqual(fs.readFileSync(where.worldFile, 'utf8').split('\n').filter(Boolean), [`c ${names('ffff0000').cv}`, `v ${names('ffff0000').data}`]);
+  fs.writeFileSync(script, `${bodyOf(text, REMOVER)}${bodyOf(text, CHECK)}`);
+  const result = spawnSync('bash', [...shellArgsOf(text, REMOVER), script], { env: { PATH: `${where.stubs}:${process.env.PATH ?? ''}`, STUB_WORLD: where.worldFile, STUB_CALLS: where.callsFile, SMOKE_ID: id }, encoding: 'utf8' });
+  return { status: result.status, output: `${result.stdout}${result.stderr}`, left: fs.readFileSync(where.worldFile, 'utf8').split('\n').filter(Boolean), siblings };
+}
+
+test('E2.4-k: the exact-name filter does not match a sibling whose id continues this id or whose name holds it after a prefix', () => {
+  const run = runBothInWorld(REAL, 'abcd1234');
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(run.left, run.siblings, 'only this id\'s four resources go; the six overlapping siblings stay, and the check does not count them');
+});
+
+test('E2.4-k: without the ^ and $ anchors the check calls the overlapping siblings its own and fails: the anchors are what the test above pins', () => {
+  const noEnd = mutate(REAL, 'filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}$"', 'filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}"');
+  const withoutEnd = runBothInWorld(noEnd, 'abcd1234');
+  assert.equal(withoutEnd.status, 1, `no $: ${withoutEnd.output}`);
+  assert.match(withoutEnd.output, /left after removal:.*refused-data/);
+  const noStart = mutate(REAL, 'filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$"', 'filter "name=testsToDelete-u1001-creds-cv-${SMOKE_ID}$"');
+  const withoutStart = runBothInWorld(noStart, 'abcd1234');
+  assert.equal(withoutStart.status, 1, `no ^: ${withoutStart.output}`);
+  assert.match(withoutStart.output, /left after removal:.*\bcv\b/);
 });
 
 test('E2.4-k: the rule refuses a check with continue-on-error, without always(), with `docker inspect`, or a name left out', () => {
@@ -438,6 +534,12 @@ test('E2.4-k: the rule refuses a check with continue-on-error, without always(),
   assert.match(checkProblems(mutate(REAL, `      - name: ${CHECK}\n        if: always()\n`, `      - name: ${CHECK}\n`)).join('\n'), /not always\(\)/);
   assert.match(checkProblems(mutate(REAL, '[ -z "$left" ] || { echo "left after removal:$left"; exit 1; }', '[ -z "$left" ] || { docker inspect testsToDelete-u1001-creds-cv-${SMOKE_ID}; exit 1; }')).join('\n'), /docker inspect/);
   assert.match(checkProblems(mutate(REAL, /\n {10}\[ -z "\$\(docker volume ls -q --filter "name=\^testsToDelete-u1001-creds-refused-logs-\$\{SMOKE_ID\}\$"\)" \] \|\| left="\$left refused-logs"/, '')).join('\n'), /refused-logs/);
+});
+
+test('E2.4-k: the rule refuses a check that is not right after the remover, without `shell: bash`, or one that removes something', () => {
+  assert.match(checkProblems(moveStepAfter(REAL, CHECK, LOGIN)).join('\n'), /not the step right after the remover/);
+  assert.match(checkProblems(mutate(REAL, `      - name: ${CHECK}\n        if: always()\n        shell: bash\n`, `      - name: ${CHECK}\n        if: always()\n`)).join('\n'), /no `shell: bash`/);
+  assert.match(checkProblems(mutate(REAL, '          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }', '          docker rm -f testsToDelete-u1001-creds-cv-${SMOKE_ID} || true\n          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }')).join('\n'), /the check removes something/);
 });
 
 test('E2.4-k: a check that never fails is refused by the run above: its plant leaves a container and exits 0', () => {
@@ -453,9 +555,31 @@ test('a failed smoke stays failed: no step turns a failure green, only the remov
   assert.deepEqual(verdictProblems(REAL), []);
 });
 
+test('the rule refuses a Publish with no if:, which would publish on every dispatch', () => {
+  assert.match(verdictProblems(mutate(REAL, `      - name: Publish\n        if: github.event.workflow_run.head_branch == 'main' || github.ref == 'refs/heads/main'\n`, `      - name: Publish\n`)).join('\n'), /Publish has no if/);
+});
+
 test('the rule refuses continue-on-error on the check or on a smoke step, and an always() Publish', () => {
   assert.match(verdictProblems(mutate(REAL, `      - name: Smoke-test\n`, `      - name: Smoke-test\n        continue-on-error: true\n`)).join('\n'), /Smoke-test" has continue-on-error/);
   assert.match(verdictProblems(mutate(REAL, `      - name: Publish\n        if: github.event.workflow_run.head_branch == 'main' || github.ref == 'refs/heads/main'`, `      - name: Publish\n        if: always() && github.ref == 'refs/heads/main'`)).join('\n'), /Publish" runs past a failure/);
+});
+
+test('the names the smoke makes are exactly the four the remover and the check are written for', () => {
+  assert.deepEqual(nameSetProblems(REAL), []);
+  assert.deepEqual(smokeNames(REAL), Object.values(names('${SMOKE_ID}')).sort());
+});
+
+test('the rule refuses a volume renamed in its create and its -v only, a name added, and a name left out', () => {
+  const renamed = mutate(mutate(REAL, 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"', 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logz-${SMOKE_ID}"'), '-v "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}:/logs"', '-v "testsToDelete-u1001-creds-refused-logz-${SMOKE_ID}:/logs"');
+  assert.match(nameSetProblems(renamed).join('\n'), /refused-logz/, 'the remover and the check still name refused-logs: the new name would be left by every run');
+  assert.deepEqual(removerProblems(renamed), [], 'only the name-set rule can see this plant: the remover rule is satisfied');
+  assert.deepEqual(checkProblems(renamed), [], 'and so is the check rule');
+  const extra = mutate(REAL, '--name "testsToDelete-u1001-creds-cv-${SMOKE_ID}"', '--name "testsToDelete-u1001-creds-cv-${SMOKE_ID}" --network-alias "x"');
+  assert.deepEqual(nameSetProblems(extra), [], 'a flag that is not a name changes nothing');
+  const third = mutate(REAL, 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"', 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"\n          docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-more-${SMOKE_ID}"');
+  assert.match(nameSetProblems(third).join('\n'), /refused-more/);
+  const missing = mutate(REAL, /\n {10}docker volume create --label "testsToDelete\.owner=\$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-data-\$\{SMOKE_ID\}"/, '');
+  assert.match(nameSetProblems(missing).join('\n'), /the smoke makes/);
 });
 
 test('every container and volume the smoke makes carries the owner label and an owner-form name; no short name is left; each `-v` is unquoted or quoted whole', () => {
