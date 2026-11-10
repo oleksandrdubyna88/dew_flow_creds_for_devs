@@ -426,7 +426,7 @@ that call. Never a hand-typed ssh line.
 From the repository root (`CLAUDE.md` §Commands; `common/local-cpu-budget.md`):
 
 ```bash
-LP=$PWD/.claude/rules/shared/tools/low-priority.mjs
+LP=$PWD/.agents/conventions/tools/low-priority.mjs
 cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint

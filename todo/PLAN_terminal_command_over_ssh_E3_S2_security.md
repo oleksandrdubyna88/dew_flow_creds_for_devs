@@ -469,7 +469,7 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 
 ## 16a. The both-sides rule
 
-`node .claude/rules/shared/tools/plan-lifecycle.mjs` reports one finding for this file alone: `todo/README.md omits
+`node .agents/conventions/tools/plan-lifecycle.mjs` reports one finding for this file alone: `todo/README.md omits
 PLAN_terminal_command_over_ssh_E3_S2_security.md`. The row belongs in the SAME commit as this file (planning-docs.md
 § *A boundary between two plans is named on BOTH sides*; the stories document says *the security spec's row comes with the
 spec*). This file was written alone, so the lead adds the row — and the link from `PLAN_terminal_command_over_ssh_E3.md`'s

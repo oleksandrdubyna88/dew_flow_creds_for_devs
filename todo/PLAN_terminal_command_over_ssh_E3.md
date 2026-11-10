@@ -53,7 +53,7 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 - **Scope.** Build step 9; DoD rows "Help changed in all five languages" and "Plan promoted"; hand check 3 handed to
   the owner.
 - **Depends on.** S1 and S2 built and reviewed.
-- **Done when.** §S3.3 checklist done; `node .claude/rules/shared/tools/plan-lifecycle.mjs` clean.
+- **Done when.** §S3.3 checklist done; `node .agents/conventions/tools/plan-lifecycle.mjs` clean.
 
 ## E3.0 — Decisions taken here (Opus)
 
@@ -375,7 +375,7 @@ fake road's first ready.
 From the repository root (`CLAUDE.md` §Commands; `common/local-cpu-budget.md`):
 
 ```bash
-LP=$PWD/.claude/rules/shared/tools/low-priority.mjs
+LP=$PWD/.agents/conventions/tools/low-priority.mjs
 cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint
@@ -594,12 +594,12 @@ The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, 
    `PLAN_terminal_runs_followups.md`, `PLAN_windows_shell_quoting_injection.md`, `PLAN_remote_bridge_scoped.md`) gain
    `../todo/`; (2) links to `research/` files (`PLAN_os_aware_execution.md`, `research/module_*.md`) drop `../research/`;
    (3) inbound links: `todo/README.md` rows go, `research/README.md` gets one mention per document (each stories
-   document is a plan to the checker); `todo/PLAN_windows_shell_quoting_injection.md:67` cites `todo/PLAN_terminal_command_over_ssh.md`;
+   document is a plan to the checker); `research/PLAN_windows_shell_quoting_injection.md:67` cites `todo/PLAN_terminal_command_over_ssh.md`;
    `remoteLaunch.ts:11` cites `todo/PLAN_terminal_command_over_ssh_E1_S2_spec.md` — both become `research/…`. Find the
    rest by `grep -rn "PLAN_terminal_command_over_ssh" --include=*.ts --include=*.md .`, not from memory.
 4. `git mv` each of the seven, `git add` each destination (the move staged the original bytes), and commit in the same
    breath with `todo/README.md`, `research/README.md` and the referrers.
-5. `node .claude/rules/shared/tools/plan-lifecycle.mjs` clean; every markdown link in `todo/` and `research/` resolves.
+5. `node .agents/conventions/tools/plan-lifecycle.mjs` clean; every markdown link in `todo/` and `research/` resolves.
 
 ### S3.3 Checklist
 
