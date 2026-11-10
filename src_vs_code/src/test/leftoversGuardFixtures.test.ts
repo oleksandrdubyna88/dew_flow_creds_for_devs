@@ -9,8 +9,11 @@
 // `scanText` reads the spelling, not discovery, so each plant path is also checked against `isScanned(path, 'node')`: a plant at a path the profile does not read would
 // prove the reader only. THIS FILE IS READ BY THE `docs.yml` GUARD STEP (`*.test.ts`), and each plant string is itself a finding there, so every plant line has a marker above.
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { guardOrSkip, judgeGuard, loadFailureReason, type MountedGuard } from './mountedGuard';
+import { REPO } from './repoFiles';
 
 const CJS = 'scripts/x.cjs';
 const SH = '.github/scripts/x.sh';
@@ -59,6 +62,34 @@ test('a whole legacy literal in a `.cjs` and in a `.sh` is one legacy-name each'
   const sh = await found(t, SH, SH_WHOLE);
   if (js !== undefined) assert.deepEqual(js, [{ cls: 'legacy-name', line: 1, text: WHOLE_TEXT }]);
   if (sh !== undefined) assert.deepEqual(sh, [{ cls: 'legacy-name', line: 1, text: WHOLE_TEXT }]);
+});
+
+// --- the files the C# guard leaves to this one (E2.5, the coai checkpoint) ---------------------------------------------------------------------------
+//
+// The copied C# guard skips the two docker classes for each path of `LeftoversGuard.DockerJudgedByNodeGuard` (today `.github/workflows/docker.yml`), because the shipped
+// Node guard judges that file. Nothing in the C# test proves the Node guard really READS it at the pin: a later pin whose discovery dropped the file would leave it
+// to neither guard. So the list is read from the C# source, as text, and each path must be one the `node` profile scans AND one where the shipped `scanText` gives a
+// docker-run finding for a plant.
+
+/** The paths of the C# constant, read as text from `LeftoversGuard.cs` (a path in a quoted literal inside the constant's collection expression). */
+function judgedByNodeGuard(): string[] {
+  const source = fs.readFileSync(path.join(REPO, 'src_service_defaults', 'tests', 'Support', 'Leftovers', 'LeftoversGuard.cs'), 'utf8');
+  const list = /DockerJudgedByNodeGuard\s*\{\s*get;\s*\}\s*=\s*\[([^\]]*)\]/.exec(source);
+  return list === null ? [] : [...list[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+const PLANTED_WORKFLOW = ['jobs:', '  smoke:', '    runs-on: ubuntu-latest', '    steps:', '      - run: docker ' + 'run busybox true', ''].join('\n');
+
+test('every path the C# guard leaves to the Node guard is read by the Node guard, which judges a docker-run there', async (t) => {
+  const guard = await guardOrSkip(t);
+  if (guard === undefined) return;
+  const paths = judgedByNodeGuard();
+
+  assert.ok(paths.length >= 1, 'premise: the list was found in LeftoversGuard.cs (a scan that finds nothing passes for ever)');
+  for (const file of paths) {
+    assert.equal(guard.isScanned(file, 'node'), true, `${file} is not a path the node profile reads: neither guard would judge its docker classes`);
+    assert.deepEqual(guard.scanText(file, PLANTED_WORKFLOW).map(({ cls, line }) => ({ cls, line })), [{ cls: 'docker-run', line: 5 }], `the shipped guard judges a container start planted at ${file}`);
+  }
 });
 
 // --- what `mountedGuard.ts` does with the answer of the load (E2.5 S2.4, G3) ---------------------------------------------------------------------------

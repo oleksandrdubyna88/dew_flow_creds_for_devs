@@ -163,7 +163,7 @@ E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke 
    `.cjs`, a `.ts` or a `.sh`; it does not read a name built through a variable, across lines or at run time. The step's comment in `docs.yml` has the
    whole sentence. The C# guard excludes the two docker classes (`docker-run`, `docker-name`) for exactly one file, `.github/workflows/docker.yml`
    (`LeftoversGuard.DockerJudgedByNodeGuard`, pinned by a test): the carve-out is read by the Node guard, which is green on it; the same text under
-   another workflow name keeps both findings. The wrapper `leftovers.cjs` is the fifth entry of `FoldingAllowances`; it changes no answer (the copy
+   another workflow name keeps both findings. `leftoversGuardFixtures.test.ts` reads that list from `LeftoversGuard.cs` as text and proves, through the mounted guard, that each path is one the `node` profile scans and that a container start planted there is a `docker-run` finding: a later pin whose discovery dropped the file would turn it red, instead of leaving the file to neither guard. The wrapper `leftovers.cjs` is the fifth entry of `FoldingAllowances`; it changes no answer (the copy
    folds `.cs` only), and a case in `LeftoversGuardCredsTests` pins that.
 
    The tests that read the shipped Node guard (`dockerSmokeLeftovers`, `acmeRunLeftovers`, `leftoversGuardFixtures`) get its path and its load from
