@@ -381,6 +381,13 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 
 ## 10. Hand checks (owner)
 
+Done 2026-11-10 by the lead, with the owner's leave, on the owner's IONOS server (a throwaway user, deleted after):
+hand check 4's delivery on a REAL peer — the E2 build's typed line (`buildSshCommand` with the `remote` word), run by
+the host's real pwsh 7.6.9 and Windows `ssh.exe` 9.5 against real sshd and bash: 8 of 8 hostile commands printed
+exactly what a local bash prints (`;`, `&&`, `|`, `$( )`, backticks, nested quotes, a tab, non-ASCII, typographic
+quotes, a `-oProxyCommand=` text); the stay-open wrapper printed the output, then the exit-code sentence, then the
+login shell. Hand checks 1-3 (the UI) stay the owner's.
+
 1. Local Windows, pwsh 7: arrow on an entry linked to a key SSH entry; `tmux new -A -s {name}`; detach; the remote
    shell stays.
 2. The same with a password SSH entry; a second run opens a second terminal.
