@@ -7,6 +7,7 @@
 # The stand-in is one bash script that plays either binary: as `creds-mcp` it answers `--version`, as `creds` it
 # writes the `relay-pipe` log a run with no agent writes. What it says is set by environment variables, so each
 # case below is a wrong answer the smoke must refuse — or the right one it must pass.
+# Under Git Bash (Windows) the helper needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

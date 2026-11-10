@@ -107,8 +107,10 @@ WSL's `bash.exe`. And on Windows `kill <pid>` ends the server without a graceful
 Where the server's log goes: CI sets `START_SERVER_LOG`; a run with no `START_SERVER_LOG` (the command above) puts it in
 `server.log` inside a new `testsToDelete-<owner>-creds-server-log-<id>` folder of the temp root, with its claim beside it.
 The script never removes that folder, because the log is handed on. The next sweep of the test-leftovers rule collects it
-10 minutes after the script ended, and it cannot see that the server still runs, so read the log in that time or set
-`START_SERVER_LOG` to a file of your own.
+once the script has ended and the folder is 10 minutes old, that is about 10 minutes after the server started, and it
+cannot see that the server still runs, so read the log in that time or set `START_SERVER_LOG` to a file of your own. Under
+Git Bash on Windows the owned folder needs Node and the shared rules mount (`git submodule update --init
+.claude/rules/shared`); without them the script stops before it starts the server, so set `START_SERVER_LOG` there.
 
 The verdict is the **exit code**, not the log tail: `0` pass · `1` contract regression · `3`
 environment · `4` configuration · `5` no valid report. Exit `3` means the API was never exercised —

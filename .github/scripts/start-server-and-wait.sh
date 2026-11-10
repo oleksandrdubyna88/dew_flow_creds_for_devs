@@ -16,9 +16,11 @@
 #      ($START_SERVER_LOG, else `server.log` in a new owned folder of lib/owned.sh, in $TMPDIR or /tmp), and records
 #      its pid. That folder is claimed and KEPT: the log is handed on (it is printed, and written to $GITHUB_OUTPUT), so
 #      the script never removes it. The claim names this script's shell: the next sweep of the test-leftovers rule
-#      collects folder and claim once that shell is gone and 10 minutes have passed — and it cannot tell that the SERVER
-#      outlives the script, so a log read later than 10 minutes after the script ended may be gone. Give START_SERVER_LOG
-#      (CI does) to keep the log where you say;
+#      collects folder and claim once that shell is gone and the folder is 10 minutes old — and it cannot tell that the
+#      SERVER outlives the script, so a log read later than about 10 minutes after the server started may be gone. Give
+#      START_SERVER_LOG (CI does) to keep the log where you say. Off CI under Git Bash (Windows) the folder needs Node and the
+#      shared rules mount (`git submodule update --init .claude/rules/shared`): without them the script stops before it starts
+#      anything — set START_SERVER_LOG there;
 #   3. probes <health-url> every ${START_SERVER_POLL_SECONDS:-1} s (curl: connect 2 s, at most 5 s a probe, and
 #      never past the deadline):
 #        - 2xx while the process is alive   → exit 0, the server left running, its pid and log printed and, when

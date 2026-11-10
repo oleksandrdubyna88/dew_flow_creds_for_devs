@@ -22,7 +22,7 @@
 # START_SERVER_SCRIPT points the cases at another implementation — how the old inline loop was shown to pass (a).
 # Needs bash, node, curl and GNU date. Its scratch folder is an owned folder (lib/owned.sh); the helper's exit trap
 # runs `cleanup`, which stops every pid this test recorded (only those — never anything by name), and then removes the
-# folder and its claim, however the test ends.
+# folder and its claim, however the test ends. Under Git Bash (Windows) the helper needs Node and the shared rules mount.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -238,13 +238,14 @@ if want j; then
   mkdir "$work/root-j"
   : > "$work/run.log"
   port="$(free_port)"
+  began="$(now_ms)"
   env -u START_SERVER_LOG -u RUNNER_TEMP -u GITHUB_OUTPUT TMPDIR="$work/root-j" \
     bash "$start" "http://127.0.0.1:$port/api/health" 30 -- node "$fake" refused "$port" > "$work/run.log" 2>&1 &
   script=$!
   pids+=("$script")
   code=0
-  ms=0
   wait "$script" || code=$?
+  ms=$(($(now_ms) - began))
   entries="$(ls -A "$work/root-j")"
   folder="$(printf '%s\n' "$entries" | grep -E '^testsToDelete-[uw][0-9]{1,10}-creds-server-log-[0-9a-f]{8}$' || true)"
   record=""

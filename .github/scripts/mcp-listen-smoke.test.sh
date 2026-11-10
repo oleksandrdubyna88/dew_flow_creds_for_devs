@@ -12,6 +12,7 @@
 #     never open when the client left, so a pass would say nothing about defect A).
 # And, with SMOKE_VERSION asked: a log naming that version must PASS; one naming `1.0.0` or a longer `0.10.10`
 # must FAIL (research/PLAN_release_binaries_carry_their_version.md).
+# Under Git Bash (Windows) the helper needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
