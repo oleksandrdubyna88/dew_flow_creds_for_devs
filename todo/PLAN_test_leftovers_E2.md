@@ -2871,6 +2871,16 @@ jobs:
 
 **Checks before the last commit.** `shellcheck -x deploy/acme-test/run.sh` (0.11.0) clean; acme and docker tests pass; lint clean.
 
+### E2.4 build record part 2g — two more findings of the coai checkpoint on the certificate probe (2026-11-10, branch `feat/test-leftovers-e2.4`)
+
+The last edits to the probe; kept minimal.
+
+**1. A probe that ignores TERM must not outlive the bound.** The `timeout` path is `timeout -k 5 "$bound"` (GNU, uutils here, busybox and Git Bash's coreutils take `-k`; checked here: with TERM ignored the command is killed and `timeout` exits 137, with a plain timeout 124). That code is read as a timeout when the probe ran for at least the bound. The portable path sends TERM at the bound, polls `kill -0` for 5 more seconds, then sends KILL and reaps. RED (a stub docker that traps and ignores TERM and sleeps, bound 2 s): against the old probe the test held the run until its 60 s limit (`timeout` waits for a child that ignores TERM). GREEN: both paths fail with `the probe timed out after 2 s` in about 7 s, the probe's pid is dead, the root is empty.
+
+**2. One overall deadline instead of a count of tries.** The certificate wait is bounded by elapsed time (bash's `SECONDS`): `ACME_CERT_DEADLINE`, 300 s by default; the 2 s sleep between probes stays; on expiry `no certificate was issued within N s (the last try found no file)`. The progress line is on a time interval (`ACME_CERT_NOTE_EVERY`, 30 s): `still waiting for the certificate: N s of 300 s`. The try counter, the "one more look after the last sleep" and the 150-try constant are gone. RED (a stub probe that answers `cert:no` after 1 s, deadline 3 s): the old run ignored the seam and ran its 150 tries. GREEN: the wait stops at the deadline with 2 to 6 probes, and the progress lines carry growing seconds. The stub `sleep` is now a 10 ms real sleep (the deadline is read from the clock), and the tests run with `ACME_CERT_DEADLINE=2` unless one sets its own (34 tests, 34 pass). The header's time bound is the true worst case: port 80 60 s; the certificate 300 s plus at most one more probe (30 s, and 5 s before a TERM-ignoring probe is killed) and the 2 s sleep, 340 s; nginx 216 s; 616 s of waits, about 10 to 11 minutes. `module_tests.md`'s S4 paragraph says so. Part 2f's "150 tries" and "every 15 tries" statements are replaced by this.
+
+**Checks before the last commit.** `shellcheck -x deploy/acme-test/run.sh` (0.11.0) clean; acme and docker tests pass; lint clean.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
