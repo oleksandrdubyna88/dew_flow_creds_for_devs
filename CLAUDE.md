@@ -60,9 +60,18 @@ Vault__DataDir=/tmp/cv Vault__AllowedDomains=example.com \
 cd src_vs_code
 npm ci
 npm run typecheck
-npm test                    # node:test over out/test/*.test.js — 8 workers, lowered by scripts/lower-priority.mjs; needs the shared-rules mount (the leftovers wrapper)
+npm test                    # node:test over out/test/*.test.js — 8 workers, lowered by scripts/lower-priority.mjs; needs the shared-rules mount (the leftovers wrapper); the guard-reading tests skip without the mount's modules (CI sets CREDS_GUARD_TESTS_REQUIRED=1, which makes them fail instead)
 npm run package             # builds the .vsix
 npm run icon                # regenerates media/icon.png from the same glyph as icon.svg
+
+# --- test leftovers: the janitor and the two guards (research/module_tests.md, "Test leftovers") ---
+# What a killed run left, for this token only (a dry run; from Git for Windows' bash on Windows, where it removes nothing until F9):
+JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run
+# The shipped Node guard (the required docs.yml job runs it); it reads the mount's yaml, so install the mount's modules once:
+npm ci --ignore-scripts --prefix .claude/rules/shared
+node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"
+# The copied C# guard, a test of the service-defaults executable (it walks the file system, not git):
+./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"
 
 # --- deployment ---
 cd deploy && cp .env.example .env && $EDITOR .env && docker compose up -d
