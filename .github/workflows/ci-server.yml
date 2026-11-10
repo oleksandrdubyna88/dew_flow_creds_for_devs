@@ -167,7 +167,20 @@ jobs:
       # that never listens, one that exits 78, one that listens late, one that answers 500, a usage error,
       # and a URL something else already answers (research/PLAN_contract_suite_waits_for_a_built_server.md).
       - name: Self-test the start script
-        run: .github/scripts/start-server-and-wait.test.sh
+        run: |
+          # E2.4.S2: the script runs with its own temp root, and the step fails when anything is left in it
+          # (RUNNER_TEMP belongs to this job, so the root needs no exemption).
+          root="$RUNNER_TEMP/leftovers-start-server-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" .github/scripts/start-server-and-wait.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "start-server-and-wait.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
 
       # Built in its OWN step, never inside the health wait. Until 2026-10-12 `dotnet run` compiled the
       # server inside a 60 s wait that did not fail: a cold build took 67.3 s on #240 (run 38270198889)
@@ -297,12 +310,14 @@ jobs:
           # restore-archive.sh is here from the day it lands: it is the one script whose failure mode
           # is a stack that is down with the data moved aside, so a typo in it costs an outage. Its
           # harness is here too — one that cannot parse proves nothing and says so quietly.
-          $SHELLCHECK deploy/update.sh deploy/backup.sh deploy/restore-archive.sh \
-            deploy/restore-archive-itest.sh
+          $SHELLCHECK deploy/update.sh deploy/backup.sh deploy/restore-archive.sh
+          # -x follows the one `source` of owned.sh (E2.4.S2).
+          $SHELLCHECK -x deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
           # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
-          $SHELLCHECK .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
+          # -x follows the one `source` of owned.sh each of them has (E2.4.S2).
+          $SHELLCHECK -x .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
           # E2.4.S1: the bash helper and its self-test. -x follows the one `source` of the self-test.
           $SHELLCHECK -x .github/scripts/lib/owned.sh .github/scripts/lib/owned.test.sh .github/scripts/lib/owned.test.lib.sh \
             .github/scripts/lib/owned.test.record.sh .github/scripts/lib/owned.test.exit.sh .github/scripts/lib/owned.test.sweeps.sh
@@ -314,7 +329,18 @@ jobs:
           # return — and order is exactly what reading cannot check. A review round found the
           # unfinished-restore check sitting after `docker compose down`, so a retry took the running
           # stack offline before refusing; scenario 4 in here is what catches that class.
-          bash deploy/restore-archive-itest.sh
+          # E2.4.S2: its own temp root, and the step fails when anything is left in it (nine worlds made one entry each).
+          root="$RUNNER_TEMP/leftovers-restore-archive-itest"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" bash deploy/restore-archive-itest.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "restore-archive-itest.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
 
 
   # ---------------------------------------------------------------------------

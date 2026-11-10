@@ -84,11 +84,37 @@ jobs:
       # server, on the same three operating systems the release runs it on — so the check that guards a release
       # is itself checked by every pull request, not first discovered broken on a tag.
       - name: Self-test the release smoke script
-        run: .github/scripts/mcp-listen-smoke.test.sh
+        run: |
+          # E2.4.S2: the script runs with its own temp root, and the step fails when anything is left in it
+          # (RUNNER_TEMP belongs to this job, so the root needs no exemption).
+          root="$RUNNER_TEMP/leftovers-mcp-listen-smoke-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" .github/scripts/mcp-listen-smoke.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "mcp-listen-smoke.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
       # The same for the version smoke (research/PLAN_release_binaries_carry_their_version.md): stand-in binaries
       # that say the wrong version, a longer one, CRLF, nothing at all, or never end.
       - name: Self-test the version smoke script
-        run: .github/scripts/version-smoke.test.sh
+        run: |
+          # E2.4.S2: the script runs with its own temp root, and the step fails when anything is left in it
+          # (RUNNER_TEMP belongs to this job, so the root needs no exemption).
+          root="$RUNNER_TEMP/leftovers-version-smoke-test"
+          mkdir -p "$root"
+          code=0
+          TMPDIR="$root" .github/scripts/version-smoke.test.sh || code=$?
+          left="$(ls -A "$root")"
+          if [ -n "$left" ]; then
+            echo "version-smoke.test.sh left entries in its temp root:"
+            ls -la "$root"
+            code=1
+          fi
+          exit "$code"
       # E2.4.S1: the bash helper of common/test-leftovers.md section 2 (claim, register, create; no temp-path API) in real
       # child processes on this leg's bash: Linux, macOS 3.2 (/bin/bash: Homebrew's bash 5 is first on PATH there), Git for
       # Windows. The kill between the two steps leaves an orphan claim that the janitor collects on Linux and macOS; on
