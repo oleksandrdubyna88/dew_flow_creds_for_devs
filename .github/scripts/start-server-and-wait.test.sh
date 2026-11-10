@@ -32,7 +32,7 @@ pids=()
 
 # The clean-up function of owned_trap, run by the helper's exit trap (it runs in a subshell, so it acts on processes
 # only). The folder and its claim are removed by the helper afterwards. Both codes, as in deploy/restore-archive.sh:
-# shellcheck 0.11 calls it SC2329, every version before it SC2317.
+# ShellCheck 0.11 calls it SC2329, every version before it SC2317.
 # shellcheck disable=SC2317,SC2329
 cleanup() {
   local p
@@ -41,9 +41,11 @@ cleanup() {
   done
 }
 # The trap is set before the folder exists (the helper owns every trap of this script; it sets none of its own).
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib/owned.sh
 source "$here/lib/owned.sh"
 owned_trap cleanup || exit 1
+work="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
 owned_dir work start-test || exit 1
 fake="$work/fake-server.cjs"
 

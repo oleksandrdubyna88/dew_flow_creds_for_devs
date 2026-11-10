@@ -27,6 +27,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../../.github/scripts/lib/owned.sh
 source ../../.github/scripts/lib/owned.sh
 # The owner record goes into the compose file's labels. It is read in THIS shell (a `$( )` would

@@ -44,8 +44,10 @@ if [[ -n "$root" ]]; then
   dir="$(cd "$root" && (pwd -W 2>/dev/null || pwd))/creds-mcp-listen-smoke-$$"
   mkdir -p "$dir"
 else
+  # shellcheck source-path=SCRIPTDIR
   # shellcheck source=lib/owned.sh
   source "$here/lib/owned.sh"
+  owned="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
   owned_dir owned smoke || exit 1
   dir="$(cd "$owned" && (pwd -W 2>/dev/null || pwd))"
 fi

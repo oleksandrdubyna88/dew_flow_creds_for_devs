@@ -18,8 +18,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 smoke="$here/mcp-listen-smoke.sh"
 # The scratch folder is an owned folder (lib/owned.sh): claimed first, removed by the helper's exit trap on EVERY way
 # the test ends — a failing command under set -e, an interrupt, a normal end. The test sets no trap of its own.
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib/owned.sh
 source "$here/lib/owned.sh"
+work="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
 owned_dir work smoke-test || exit 1
 fake="$work/fake-creds-mcp.sh"
 failures=0

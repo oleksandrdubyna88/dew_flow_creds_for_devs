@@ -71,8 +71,10 @@ case "$kind" in
       dir="$(cd "$root" && (pwd -W 2> /dev/null || pwd))/creds-version-smoke-$$"
       mkdir -p "$dir"
     else
+      # shellcheck source-path=SCRIPTDIR
       # shellcheck source=lib/owned.sh
       source "$(dirname "${BASH_SOURCE[0]}")/lib/owned.sh"
+      owned="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
       owned_dir owned smoke || exit 1
       dir="$(cd "$owned" && (pwd -W 2> /dev/null || pwd))"
     fi

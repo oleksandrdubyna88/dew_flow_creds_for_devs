@@ -111,6 +111,7 @@ show_log() {
 # fail after a resource exists; a script of its own `trap` on EXIT, INT, TERM or HUP would replace the helper's.
 waiting=0
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib/owned.sh
 source "$here/lib/owned.sh"
 owned_trap on_exit || exit 1
@@ -125,6 +126,7 @@ if [[ -n "${START_SERVER_LOG:-}" ]]; then
   log="$START_SERVER_LOG"
 else
   # The log is handed on, so its folder is claimed and made but never put in the clean-up list (OWNED_KEEP).
+  logdir="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
   OWNED_KEEP=1 owned_dir logdir server-log || exit 1
   log="$logdir/server.log"
 fi

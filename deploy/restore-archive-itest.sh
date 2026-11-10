@@ -38,6 +38,7 @@ FAILS=0
 # Every world is an owned folder (.github/scripts/lib/owned.sh): claimed first, removed by the helper's one exit trap,
 # on every way the harness ends. This file sets no trap of its own. The helper is read AFTER the `nice` re-exec above,
 # which keeps the pid, so the claim names the process that runs the worlds.
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../.github/scripts/lib/owned.sh
 source "${HERE}/../.github/scripts/lib/owned.sh" || exit 1
 
