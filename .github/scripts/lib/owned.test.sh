@@ -991,7 +991,7 @@ EOF
   run_child tg2b
   eq "G2 an empty token after a successful call: owned_dir returns 1" "$(first_line "$CTL/tg2b.rc")" 1
   eq "G2 an empty token: the variable is untouched" "$(first_line "$CTL/tg2b.d")" UNTOUCHED
-  eq "G2 an empty token: no testsToDelete--creds- entry is made" "$(count "$CR")" 0
+  eq "G2 an empty token: no entry with an empty owner segment is made" "$(count "$CR")" 0
   child tg2c << 'EOF'
 . "$T_OWNED_SH"
 owned_token > "$T_CTL/tg2c.first"

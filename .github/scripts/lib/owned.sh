@@ -33,7 +33,7 @@
 # end the script, as the caller's own exit would.
 
 # The token of this repository: the ONLY place it is written (rule section 1; the guard reads the name). OWNED_REPO is the same text for the patterns
-# below. Sourcing this file sets REPO_TOKEN and so overwrites a REPO_TOKEN of the caller: a caller must not use that name.
+# below. Sourcing this file sets the variable named on the next line and so overwrites one of the caller's with that name: a caller must not use it.
 REPO_TOKEN="creds"; OWNED_REPO="$REPO_TOKEN"
 
 # The state is set once. A second source of this file in the same shell keeps what the first one registered.
@@ -280,7 +280,7 @@ owned_dir() {
   fi
   owned_token > /dev/null || return 1
   owned_owner > /dev/null || return 1
-  # Whatever the reason, an empty token or record means nothing is made (a name like testsToDelete--creds-... is never drawn).
+  # Whatever the reason, an empty token or record means nothing is made (a name with an empty owner segment is never drawn).
   if [ -z "$OWNED_TOKEN" ] || [ -z "$OWNED_OWNER" ]; then owned_say "owned_dir: no owner token or record - nothing is made"; return 1; fi
   __owned_dir_root="${TMPDIR:-/tmp}"
   while [ "${__owned_dir_root%/}" != "$__owned_dir_root" ]; do __owned_dir_root="${__owned_dir_root%/}"; done
