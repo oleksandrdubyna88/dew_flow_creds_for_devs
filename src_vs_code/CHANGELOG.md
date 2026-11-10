@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] — 2026-11-10 — Security — on Windows, an entry's data can no longer run a local command through SSH Connect, and the consent dialog keeps its place until you answer
+
+### Security — Windows: SSH Connect passes every value through as plain text
+
+- **On a local Windows window, SSH Connect types its `ssh` line into PowerShell, and a password connection's askpass
+  script runs in `cmd.exe`.** Some values in that line and in that script come from the entry — and an entry can
+  arrive by sync, by *Accept Share* or by the ssh-config import. Before this release, a crafted key path, user name,
+  jump host or password could be read by PowerShell or `cmd` as code and run a command on your computer. Every such
+  value now reaches `ssh` unchanged: a word that PowerShell could read as code becomes a single-quoted word (PowerShell's
+  typographic quotes included), ordinary words keep their form, and the askpass script no longer lets `cmd` parse the
+  password. Upgrade if you use SSH Connect on Windows, above all with entries you did not write yourself.
+- **Observed on real parsers**: `cmd.exe`, Windows PowerShell 5.1 and PowerShell 7 run the new tests in CI on Windows,
+  and a real password login with Windows `ssh.exe` works with a password full of `cmd` special characters.
+- **Known limits, documented.** A password connection puts the password in the environment of the terminal SSH
+  Connect opens for it (as `CREDS_SSH_PASSWORD`, beside `SSH_ASKPASS` and `SSH_ASKPASS_REQUIRE`), so the askpass program
+  can answer `ssh`. Until that terminal is closed, the shell and any program you start in it can read the password:
+  close the terminal when the session ends. And if your own ssh config has a `SendEnv` pattern that matches
+  `CREDS_SSH_PASSWORD` (for example `SendEnv *` or `SendEnv CREDS_*`) AND the server accepts it with `AcceptEnv`, the
+  server can receive it. Neither is set by default.
+
 ### Changed — the broker's one consent dialog: the place is the dialog's until you answer it, never a timer's
 
 - **An unanswered dialog keeps the place until you click or dismiss it.** After five minutes the agent is still told `consent_timeout`
