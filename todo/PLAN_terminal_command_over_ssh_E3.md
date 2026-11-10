@@ -664,3 +664,16 @@ The documents: `PLAN_terminal_command_over_ssh.md`, `_E1.md`, `_E1_S2_spec.md`, 
 | 3 — references only from the line that runs; "no reference" said before prepare; the spawn always writes the key file | Implementation details within D12; recorded as deviations at promotion. |
 
 S2 security spec: [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) (Fable, 2026-11-10). Its finding F7 (outside this plan: `refusalFor` in `brokerRequests.ts` can confirm an entry's name to an agent on a guessed id) is reported to the owner, not built here.
+
+## E3.R1 — Owed after E3's first plan round (2026-11-10: revise, 7 gating of 6, 2 of 2 reviewers; all 8 findings accepted)
+
+To be written into the stories (and the S2 security spec where named) before round 2:
+
+1. The masked run is bounded: `ConnectTimeout`, and a run whose terminal closes kills the child tree; no stdin write can outlive the run (a test with a stalled child).
+2. E3.L flag 1 is WITHDRAWN: `LaunchPlan` (E1.S2's cornerstone type) is not changed; `commands/runCommands.ts` keeps importing `resolveCommand` for the local Run with Secrets, recorded as a deviation from §4.5 (1) at promotion.
+3. The spawn-road warning is part of the banner (or awaited before the run), not a one-argument toast racing the launch.
+4. **Security:** the askpass variables (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`) must not be sendable by the person's own `SendEnv`: the spawned ssh gets `-o SendEnv=-<name>` for each (OpenSSH removes a SendEnv pattern with a leading `-`), measured with a fake sshd/`ssh -G` that the effective SendEnv list holds none of them; a scenario with a `SendEnv CREDS_*` config. The same exposure exists TODAY in SSH Connect's password terminal and the E2 roads' password terminals — reported to the owner as its own security item, not fixed in E3.
+5. One atomic, idempotent hand-over from the owner to the masked run, covering terminal-creation failure and close-before-start; cleanup exactly once (tests).
+6. S2 (security spec): the gate runs BEFORE any refusal that reads the link or the SSH entry; every pre-gate outcome (missing, other account, unsafe host, malformed line, Windows remote) answers the one non-disclosing sentence; tests for each.
+7. M2's real-child test has a short explicit timeout and kills the child tree on timeout.
+8. S3's promotion lists, document by document, the `research/README.md` mention and the removed `todo/README.md` row for each of the seven documents, then runs `plan-lifecycle.mjs`.
