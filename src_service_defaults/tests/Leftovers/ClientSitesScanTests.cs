@@ -6,9 +6,8 @@ namespace CredsForDevs.Tests.Leftovers;
 /// <summary>
 /// The automated RED of the client, process, socket and server sites (E2.3.S3, S3.0; E2.3.S4, S4.0): the copied guard's <c>raw-temp</c> reading over the four client
 /// test trees and the server's. A temp-path API call, <c>Owned.TempRoot</c> outside the helper's folders and a <c>/tmp</c> or <c>/var/tmp</c> literal are findings, unless a marker on the line
-/// (or the line above) carries them. The findings that remain are EXACTLY three lines that create nothing and stay for E2.5's guard (the product's default
-/// socket path twice and a refused-path literal). The server tests' backup sites (E2.3.S5) left the list when S5 moved them. A list of zero
-/// would be red until E2.5; a list that grows is a new site.
+/// (or the line above) carries them. No unmarked temp site remains (E2.5.S2.3): the three lines that create nothing (the product's default socket path twice and a refused-path literal,
+/// all in <c>AgentRelayTests</c>) carry a marker since S2.2, so the expected list is EMPTY and any finding is a new site. The server tests' backup sites (E2.3.S5) left the list when S5 moved them.
 /// The scan reads a COPY of the trees in a scratch root, so the guard's own discovery (which keys on relative paths) runs unchanged and starts no script classifier.
 /// </summary>
 public sealed class ClientSitesScanTests : IDisposable
@@ -29,18 +28,12 @@ public sealed class ClientSitesScanTests : IDisposable
     private const string SanctionedFile = "src_service_defaults/tests/Support/Leftovers/OwnedCreds.cs";
 
     /// <summary>
-    /// The lines that create nothing (string literals), left for E2.5's guard: the file and a fragment of the line. The fragment, not the number, is the key, because
-    /// a line moves when a test above it gains a field (at HEAD of S3 they were AgentRelayTests.cs:33, :34 and :278). The brief lists a fourth,
-    /// CallerIdentityTests.cs:196 (a <c>/tmp</c> inside a RAW string literal that also holds a <c>"</c>: <c>"""{"a":"/tmp/p"}"""</c>). The guard DOES read a one-line raw string; it misses a
-    /// <c>/tmp</c> inside one that contains a quote, so that line is not a finding and not on this list - the guard's own reading decides (the brief says so for exactly this case).
-    /// A follow-up: the template guard's raw-string reading (E3 / E2.5).
+    /// The lines that create nothing and are NOT carried by a marker: none (E2.5.S2.3). The three string literals of <c>AgentRelayTests</c> that were listed here (the product's default
+    /// socket path twice, a refused-path literal) carry a marker now. The file and a fragment of the line is the key, never the number, so the list stays valid when a line moves; a finding
+    /// that is on no list is shown as UNEXPECTED with its place and text. A follow-up that is not E2.5's: the template guard's raw-string reading (a <c>/tmp</c> inside a raw string that
+    /// also holds a quote, <c>CallerIdentityTests.cs:196</c>, is not read, so it is not a finding).
     /// </summary>
-    private static readonly (string File, string Fragment)[] Expected =
-    [
-        ("src_cli/tests/AgentRelayTests.cs", "DefaultSocketPath(null, \"dev\")"),
-        ("src_cli/tests/AgentRelayTests.cs", "DefaultSocketPath(\"   \", \"dev\")"),
-        ("src_cli/tests/AgentRelayTests.cs", "new string('x', AgentRelay.MaxSocketPathBytes)"),
-    ];
+    private static readonly (string File, string Fragment)[] Expected = [];
 
     private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
@@ -81,7 +74,7 @@ public sealed class ClientSitesScanTests : IDisposable
             ?? $"UNEXPECTED {f.File}:{f.Line} {f.Text}").Order(StringComparer.Ordinal)];
 
     [Fact]
-    public void TheTestTrees_HoldNoUnmarkedTempSiteButTheThreeLinesThatCreateNothing()
+    public void TheTestTrees_HoldNoUnmarkedTempSite()
     {
         var sources = TestSources().Where(relative => !Copied.Contains(relative)).ToList();
         sources.Count.Should().BeGreaterThan(50, "premise: the scan sees the trees (about 125 files with the server's when this was written)");
@@ -91,7 +84,7 @@ public sealed class ClientSitesScanTests : IDisposable
 
         Named(RawTempFindings(Scratch(sources))).Should().Equal(
             [.. Expected.Select(e => $"{e.File} | {e.Fragment}").Order(StringComparer.Ordinal)],
-            "every temp site is a helper call or carries a marker; the three literals that create nothing stay for E2.5's guard");
+            "every temp site is a helper call or carries a marker: no unmarked temp site is left in the five test trees");
     }
 
     /// <summary>The callers pass the short <c>what</c>; the helper adds the owner, the repository token and the id, so a leading <c>creds-</c> reads as <c>creds-creds-</c>.</summary>
