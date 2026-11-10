@@ -17,7 +17,7 @@ internal sealed record ScriptFile(SourceFile Source, string[] Lines);
 /// <c>process.argv</c>, so a path with a quote, a backtick or a newline in it is data, never code.</para></summary>
 internal static class GuardScripts
 {
-    private const string ClassifierPath = ".claude/rules/shared/tools/lib/sweeper-scan.mjs";
+    private const string ClassifierPath = ".agents/conventions/tools/lib/sweeper-scan.mjs";
 
     private const string Program = """
         import { readFileSync } from "node:fs";

@@ -32,7 +32,7 @@ if (BackupArchiveCommand.Handles(args))
 var builder = WebApplication.CreateBuilder(args);
 
 // First statement after the builder: a host that crashes while wiring itself up is
-// exactly when the log matters (.claude/rules/shared/common/logging-serilog.md).
+// exactly when the log matters (.agents/conventions/common/logging-serilog.md).
 builder.AddCredVaultLogging("cred-vault-server");
 
 // ---------- configuration ----------
@@ -110,7 +110,7 @@ var localEnabled = !string.IsNullOrWhiteSpace(localKey);
 // caught HERE, at the top level: a refusal is logged at Fatal with its reason, the file is flushed, and
 // the process exits with a defined code. Uncaught, it was an unhandled exception: exit 139 under Native
 // AOT and a per-run file that did not say why (research/PLAN_server_startup_refusal_is_logged.md, and
-// .claude/rules/shared/common/logging-serilog.md, "Failures during startup must still be logged").
+// .agents/conventions/common/logging-serilog.md, "Failures during startup must still be logged").
 try
 {
     StartupGuards.Check(
@@ -1798,7 +1798,7 @@ try
 catch (Exception ex)
 {
     // The last frame before "nobody above me": a startup or shutdown fault must reach the
-    // log rather than only the exit code (.claude/rules/shared/common/reliability.md).
+    // log rather than only the exit code (.agents/conventions/common/reliability.md).
     Log.Fatal(ex, "cred-vault-server terminated unexpectedly");
     throw;
 }

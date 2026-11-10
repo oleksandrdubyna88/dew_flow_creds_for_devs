@@ -90,7 +90,7 @@ export function blobFingerprint(blob: FingerprintableBlob): string {
  * diagnostics-took-the-product-down failure `diagnosticLog.ts` is built to exclude. So it cannot.</p>
  *
  * <p><b>A deliberate exemption from the reliability doctrine, named as one.</b>
- * `.claude/rules/shared/common/reliability.md` (§Where try/catch lives) forbids exactly this shape —
+ * `.agents/conventions/common/reliability.md` (§Where try/catch lives) forbids exactly this shape —
  * a mid-layer catch-and-swallow — and it is right to, everywhere a failure means something. Here a
  * failure means only that a diagnostic did not happen, and the alternative is a logger deciding
  * whether a credential gets sealed. The exemption is this paragraph, so the next reader finds an

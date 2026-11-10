@@ -6,7 +6,7 @@
 // What this runner does, in order:
 //
 //   1. loads the leftovers helper (`scripts/lib/leftovers.cjs`, a wrapper over the MOUNTED reference). No mount, no run:
-//      one line naming `git submodule update --init .claude/rules/shared`, and `node --test` is never started;
+//      one line naming `git submodule update --init .agents/conventions`, and `node --test` is never started;
 //   2. sweeps what a KILLED earlier run left (rule section 4), in BOTH roots when the socket root differs from the temp
 //      root; it reports and never changes the exit code. It is the MOUNTED reference's `sweepLeftovers` (F22, release cc24f9e) with
 //      this repository's token bound AFTER the caller's options, so nothing can turn it onto another repository's folders; the

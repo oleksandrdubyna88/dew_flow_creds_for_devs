@@ -21,7 +21,7 @@
 // The lifecycle of common/test-leftovers.md, in the order this runner does it:
 //
 //   1. loads the helpers (`scripts/lib/leftovers.cjs`, `scripts/lib/processTree.mjs` and the mounted `proc.mjs`) fail-closed. No
-//      mount: one line naming `git submodule update --init .claude/rules/shared`, no harness started, exit 1;
+//      mount: one line naming `git submodule update --init .agents/conventions`, no harness started, exit 1;
 //   2. sweeps what a KILLED earlier run left, in BOTH roots (the temp root and the short socket root), through the wiring of
 //      `run-tests.mjs`. It reports and never changes the exit code (its lines start `run-itests:`). It is a start-of-run sweep: a
 //      single `itest:*` alias, or a harness started directly, does NOT sweep. A HARNESS makes and removes its own scratch through
@@ -76,8 +76,8 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 const HARNESSES = [
   { name: 'agent', script: 'agent-broker-itest.cjs', needs: 'nothing', windows: false },
   { name: 'git', script: 'git-transport-itest.cjs', needs: 'git', windows: false },
-  { name: 'cli', script: 'creds-cli-itest.cjs', needs: 'the .NET CLI built — dotnet build src_cli/src/CredsCli.csproj', windows: false },
-  { name: 'mcp', script: 'creds-mcp-itest.cjs', needs: 'creds-mcp built — dotnet build src_mcp/src/CredsMcp.csproj', windows: false },
+  { name: 'cli', script: 'creds-cli-itest.cjs', needs: 'the .NET CLI built — dotnet build src_cli/src/CredsCli.csproj -m:4', windows: false },
+  { name: 'mcp', script: 'creds-mcp-itest.cjs', needs: 'creds-mcp built — dotnet build src_mcp/src/CredsMcp.csproj -m:4', windows: false },
   { name: 'masked-run', script: 'masked-run-itest.cjs', needs: 'nothing', windows: false },
   {
     // The one harness outside this directory: it drives the SERVER binary, so it lives in the
@@ -85,7 +85,7 @@ const HARNESSES = [
     // catalogue with a hole in it is how a harness comes to prove nothing.
     name: 'backup-archive',
     script: '../../src_minimalapi_server/scripts/backup-archive-itest.cjs',
-    needs: 'the server built - dotnet build src_minimalapi_server/src/CredVaultServer.csproj',
+    needs: 'the server built - dotnet build src_minimalapi_server/src/CredVaultServer.csproj -m:4',
     windows: false,
   },
   { name: 'ssh-agent', script: 'ssh-agent-itest.cjs', needs: 'OpenSSH; its subject is the Windows named-pipe path', windows: true },

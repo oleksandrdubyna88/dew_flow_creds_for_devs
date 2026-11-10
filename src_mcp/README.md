@@ -32,8 +32,8 @@ check it in PowerShell with `Get-AuthenticodeSignature .\creds-mcp.exe`. The pla
 ## Building and testing
 
 ```bash
-# from the repository root; local runs follow .claude/rules/shared/common/local-cpu-budget.md
-LP=.claude/rules/shared/tools/low-priority.mjs
+# from the repository root; local runs follow .agents/conventions/common/local-cpu-budget.md
+LP=.agents/conventions/tools/low-priority.mjs
 node $LP dotnet build   src_mcp/src/CredsMcp.csproj -m:4 --disable-build-servers
 node $LP dotnet build   src_mcp/tests/CredsMcp.Tests.csproj -m:4 --disable-build-servers
 node $LP ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe      # run the executable, never `dotnet test`

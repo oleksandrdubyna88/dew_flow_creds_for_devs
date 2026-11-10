@@ -25,7 +25,7 @@ internal sealed record SourceFile(string Relative, string Absolute, SourceKind K
 /// <summary>Which files of a repository the guard reads, and which kind each is.</summary>
 internal static class GuardFiles
 {
-    private static readonly string[] NeverEntered = ["bin", "obj", "node_modules", ".git", ".claude", ".http-artifacts", "logs"];
+    private static readonly string[] NeverEntered = ["bin", "obj", "node_modules", ".git", ".claude", ".agents", ".http-artifacts", "logs"];
     private static readonly string[] ScriptExtensions = [".sh", ".ps1", ".py"];
     private static readonly string[] JavaScriptExtensions = [".mjs", ".js", ".cjs"];
     private static readonly string[] ScriptFolders = [".github/scripts/", "http/", "src_vs_code/scripts/", "src_minimalapi_server/scripts/"];
@@ -48,7 +48,7 @@ internal static class GuardFiles
     }
 
     /// <summary>Every file below <paramref name="dir"/>, except under a folder named <c>bin</c>, <c>obj</c>, <c>node_modules</c>,
-    /// <c>.git</c>, <c>.claude</c> (the mounted conventions are another repository), <c>.http-artifacts</c> or <c>logs</c>. A link to
+    /// <c>.git</c>, <c>.claude</c>, <c>.agents</c> (the mounted conventions are another repository), <c>.http-artifacts</c> or <c>logs</c>. A link to
     /// a folder is not entered.</summary>
     internal static IEnumerable<string> Walk(string dir) =>
         Directory.EnumerateFiles(dir).Concat(Directory.EnumerateDirectories(dir).Where(Enterable).SelectMany(Walk));

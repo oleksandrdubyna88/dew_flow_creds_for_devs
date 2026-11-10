@@ -7,7 +7,7 @@ import { DatedFile, agedOut } from './backupSchedule';
  * window. Closing the window is also how a grant is revoked — so the record of
  * what an agent did was destroyed at exactly the moment it stopped being live
  * and started being history. The shared rule
- * (`.claude/rules/shared/common/logging-serilog.md`) had already said this in
+ * (`.agents/conventions/common/logging-serilog.md`) had already said this in
  * general: "a log that only exists in a terminal buffer is gone the moment the
  * window closes", and required a file per run. This is that file.</p>
  *

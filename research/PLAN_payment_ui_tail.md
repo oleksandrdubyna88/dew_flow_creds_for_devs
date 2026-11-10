@@ -334,7 +334,7 @@ which is finding 1 of the review round doing its work. What is left is the recor
 (the second surface that renders no stored payment value), and the no-caller count closed.
 
 **D4.** Promotion: this plan moves to `research/` with `IMPLEMENTED <date>` and its deviations, per
-[planning-docs.md](../.claude/rules/shared/common/planning-docs.md); the two parent plans' open tail
+[planning-docs.md](../.agents/conventions/common/planning-docs.md); the two parent plans' open tail
 is updated to point at it; `todo/README.md` is brought back into agreement with the folder.
 
 **D5.** Release: `extension-v0.94.0` — the tag is what publishes, per CLAUDE.md's release table. Cut

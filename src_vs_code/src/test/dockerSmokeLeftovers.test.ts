@@ -656,7 +656,7 @@ async function loadGuard(): Promise<Guard | string> {
   try {
     module.loadYaml(undefined);
   } catch {
-    return 'the mounted guard cannot load its yaml module (run npm ci in .claude/rules/shared)';
+    return 'the mounted guard cannot load its yaml module (run npm ci in .agents/conventions)';
   }
   return { scan: (text) => module.scanText(WORKFLOW, text) };
 }

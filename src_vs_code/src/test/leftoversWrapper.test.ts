@@ -31,7 +31,7 @@ import {
 const SRC_VS_CODE = path.resolve(__dirname, '..', '..');
 const REPO_ROOT = path.resolve(SRC_VS_CODE, '..');
 const WRAPPER = path.join(SRC_VS_CODE, 'scripts', 'lib', 'leftovers.cjs');
-const DETAIL = path.join(REPO_ROOT, '.claude', 'rules', 'shared', 'common', 'test-leftovers-detail.md');
+const DETAIL = path.join(REPO_ROOT, '.agents', 'conventions', 'common', 'test-leftovers-detail.md');
 const TYPES = path.join(SRC_VS_CODE, 'scripts', 'lib', 'leftovers.d.cts');
 
 /** A private parent: scenarios that list a folder make it here, so a sibling test's folders never count. */
@@ -184,7 +184,7 @@ test('the types say what the module exports, in both directions', () => {
 });
 
 test('with the mount missing the wrapper refuses and names the command that restores it', (t) => {
-  // A copy of the wrapper in a tree that has no `.claude/rules/shared` beside it: the refusal is the loader's.
+  // A copy of the wrapper in a tree that has no `.agents/conventions` beside it: the refusal is the loader's.
   const root = ownedDir(t, 'nomount');
   const lib = path.join(root, 'src_vs_code', 'scripts', 'lib');
   fs.mkdirSync(lib, { recursive: true });
@@ -193,5 +193,5 @@ test('with the mount missing the wrapper refuses and names the command that rest
   const run = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(lib, 'leftovers.cjs'))})`], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
 
   assert.notEqual(run.status, 0, 'a missing mount is a refusal, not a silent pass');
-  assert.match(run.stderr, /git submodule update --init \.claude\/rules\/shared/);
+  assert.match(run.stderr, /git submodule update --init \.agents\/conventions/);
 });

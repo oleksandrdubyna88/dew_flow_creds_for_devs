@@ -8,7 +8,7 @@
       "label": "build cred-vault-server",
       "type": "shell",
       "command": "dotnet",
-      "args": ["build", "${workspaceFolder}/dew_flow_creds_for_devs.slnx"],
+      "args": ["build", "${workspaceFolder}/dew_flow_creds_for_devs.slnx", "-m:4"],
       "group": "build",
       "problemMatcher": "$msCompile",
       "presentation": { "reveal": "silent", "clear": true }

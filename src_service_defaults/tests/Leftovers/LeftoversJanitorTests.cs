@@ -14,7 +14,7 @@ namespace CredsForDevs.Tests.Leftovers;
 /// and reads every Windows claim as foreign; the Windows half is run by hand with Git for Windows' bash (S4 scenario 9).</para></summary>
 public sealed class LeftoversJanitorTests : IDisposable
 {
-    private const string Janitor = ".claude/rules/shared/tools/janitor.sh";
+    private const string Janitor = ".agents/conventions/tools/janitor.sh";
 
     private readonly OwnedScope _owned = new();
 
@@ -29,7 +29,7 @@ public sealed class LeftoversJanitorTests : IDisposable
         }
 
         var root = RepositoryRoot.Path;
-        File.Exists(Path.Combine(root, Janitor)).Should().BeTrue($"{Janitor} is mounted (git submodule update --init .claude/rules/shared)");
+        File.Exists(Path.Combine(root, Janitor)).Should().BeTrue($"{Janitor} is mounted (git submodule update --init .agents/conventions)");
         // The janitor reads TMPDIR exactly as Path.GetTempPath does, so the plants live in a PRIVATE temp root and its listing
         // cannot race the other tests of this run creating and removing folders in the real one (measured: a `find` on a folder
         // that vanished mid-listing makes the janitor exit 1, "a listing failed").

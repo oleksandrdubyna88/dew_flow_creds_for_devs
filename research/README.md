@@ -148,9 +148,9 @@ Newest first.
 
 ## Conventions
 
-The family-wide rules are a submodule at `.claude/rules/shared`. Repository-specific rules are in
-[../CLAUDE.md](../CLAUDE.md). The `research/` + `todo/` split, and the promotion procedure that moves
-a plan between them, are defined in `.claude/rules/shared/common/planning-docs.md` and enforced in CI
+The family-wide rules are a submodule at `.agents/conventions`. Repository-specific rules are in
+[../.agents/PROJECT.md](../.agents/PROJECT.md). The `research/` + `todo/` split, and the promotion procedure that moves
+a plan between them, are defined in `.agents/conventions/common/planning-docs.md` and enforced in CI
 by `plan-lifecycle.mjs`.
 - [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md) — the owner's batch of 2026-09-03: the payment surfaces, the weaving controls, the billing address as cells, generation with parameters, and the secret envelope §6 rests on.
 - [PLAN_readme_showcase.md](PLAN_readme_showcase.md) — the front door rewritten to lead with the one claim the field has not taken (SSH, database and VPN protocols, where every other agent broker proxies HTTP), the listing's live false screenshot promise removed, and `readmeClaims.test.ts` written so a claim cannot quietly stop being true. Carries the measurement the positioning rests on, and the record of the suite catching its own blind test.

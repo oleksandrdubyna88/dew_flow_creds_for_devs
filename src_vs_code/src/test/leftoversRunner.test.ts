@@ -243,7 +243,7 @@ test('the exit code is the child\'s own, 128 + the signal number, or 1 when the 
 });
 
 test('without the mount the runner refuses before node --test starts, and names the command that restores it', (t) => {
-  // The runner and its two helpers copied into a tree that has no `.claude/rules/shared`.
+  // The runner and its two helpers copied into a tree that has no `.agents/conventions`.
   const root = ownedDir(t, 'nomnt');
   const scripts = path.join(root, 'src_vs_code', 'scripts');
   fs.mkdirSync(path.join(scripts, 'lib'), { recursive: true });
@@ -263,7 +263,7 @@ test('without the mount the runner refuses before node --test starts, and names 
   const output = run.stderr;
 
   assert.equal(status, 1);
-  assert.match(output, /git submodule update --init \.claude\/rules\/shared/);
+  assert.match(output, /git submodule update --init \.agents\/conventions/);
   assert.equal(output.trim().split('\n').length, 1, 'one line');
   assert.equal(exists(path.join(root, 'ran')), false, 'node --test was never started');
 });

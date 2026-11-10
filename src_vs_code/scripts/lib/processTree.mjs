@@ -43,8 +43,8 @@
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
-import { processProbe } from '../../../.claude/rules/shared/tools/lib/owned.mjs';
-import { MAX_TIMER_MS, killTree, run } from '../../../.claude/rules/shared/tools/lib/proc.mjs';
+import { processProbe } from '../../../.agents/conventions/tools/lib/owned.mjs';
+import { MAX_TIMER_MS, killTree, run } from '../../../.agents/conventions/tools/lib/proc.mjs';
 
 /** How long the confirmation waits for the tree to disappear, how often it first asks, and the longest it waits between two questions [E2.1 code 5]. */
 export const CONFIRM_TIMEOUT_MS = 5000;
