@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E3: Run with Secrets, the agent's run, and the closing
 
-> Status: **stories of E3, nothing implemented yet, 2026-11-10.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
+> Status: **stories of E3, nothing implemented yet, 2026-11-10. The parent is stopped for re-review (entry 2.2): no E3 code until epoch 3 opens.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E3.
 > Branch `feat/terminal-command-over-ssh-e3`, started from E2's commit (a5ddd73, E1 + E2 on the Windows quoting security
 > fix) and rebased on 2026-11-10 onto `origin/main` 454e990 (E1 #335, E2 #337, and #336 — the SSH Connect tab title
 > `Creds SSH: <folder> / <entry>`, a session found by account + entry through `sshTerminalOwners.ts`, never by title); E3
@@ -40,8 +40,8 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
   bounded: `ConnectTimeout=10`, and closing its terminal kills the child through `childKill`; no stdin write outlives it.
 - **Scope.** Parent §4.4 bullet "Run with Secrets"; build step 7; D12. Help ×5 for Run with Secrets over SSH.
 - **Depends on.** E1 (`SECRETS_REMOTE_COMMAND`, `secretsStdin`, `trustLineFor`, the seam), E2 (`SshRoad`, `ownedSessions`).
-- **Done when.** §S1.6 scenarios green, each watched RED first; the scan edits of §S1.4; typecheck and lint green; no
-  file over its ceiling; `extension.ts` not one line longer.
+- **Done when.** §S1.6 scenarios green, each watched RED first (LN1-LN6 by the temporary bypass of parent §4.5 (5));
+  the scan edits of §S1.3; typecheck and lint green; no file over its ceiling; `extension.ts` not one line longer.
 
 ### S2 — The agent's run over SSH
 
@@ -77,7 +77,7 @@ authorisation in the Fable row "Security judgement", outside any quota. So the l
 | E3-D8 | **The SSH child's environment never holds a value** (D12; round 1, item 4). `MaskedRunOptions.env` in argv mode is `spawnLaunch`'s answer only: the askpass variables of a password SSH entry (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `sshAskpass.ts:43-45`) and `SSH_AUTH_SOCK`; no `CREDS_REF_n` and no resolved value. The values reach the remote only in `stdinText`. The askpass variables carry the SSH entry's own password and are the ACCEPTED LIMIT of `research/PLAN_windows_shell_quoting_injection.md` §8 (owner, 2026-11-10; `research/module_extension.md:221`): a person's own `SendEnv` pattern that matches them, with a server `AcceptEnv` that matches too, sends the password to the server. E3 adds no `-o SendEnv=-NAME`: it was MEASURED not to remove a wildcard pattern (OpenSSH removes only a literally equal one; `ssh -G` on OpenSSH 10.2p1 and Windows OpenSSH 9.5p2 still listed `sendenv CREDS_*`), so it would only look like protection. | D12 promises the values never in argv, the remote `ps` or a history; nothing gains by putting them in the local ssh's environment, and there no `SendEnv` can reach them. The password limit is the same on SSH Connect and E2's password terminals today; this road does not widen it. |
 | E3-D11 | **The masked run is bounded** (round 1, item 1). (a) Connecting: the argv carries `-o ConnectTimeout=10` in both branches (`sshExecCommand.ts:115`), and the password branch `NumberOfPasswordPrompts=1` (`:106`), the key branch `BatchMode=yes` (`:107`): ssh answers no prompt from stdin. That is what we ASK ssh; hand check 3 observes the effect (a wrong password or a dead host ends with ssh's error, not a hang). (b) Closing: the terminal's `close()` calls `killChild(child, { tree: true })` (`childKill.ts:81-87`) as today: on Windows `taskkill /pid <pid> /T /F` (`:32-37`) ends `ssh.exe` and a jump host's helper `ssh`; on POSIX `SIGTERM`, then `SIGKILL` after `KILL_GRACE_MS` = 2000 (`:23`), to the child, which in argv mode IS `ssh` (no shell between). (c) Stdin: the script is written once, in `open()`, right after the spawn; when the run ends (E3-D7's once-only `ended()`), the child's stdin is DESTROYED, so a part of the script not yet taken by the child (it holds the values) is dropped, never written later; `open()` after the run ended spawns nothing and writes nothing. | Parent §4.4: no byte to stdin before trust, and the run must end. A child that never reads stdin (stalled before the server answers) would otherwise keep the script, values included, in the extension host's write buffer for as long as it lives. |
 | E3-D12 | **The launch's warning is a line of the banner, not a toast** (round 1, item 3). `maskedOverSshBanner(described, warning, target, secrets)` (pure, `remoteLaunch.ts`) joins with `\r\n`: `described`; `Note: <warning>.` when `warning` is set; `secretsOverSshBanner(target, secrets)`. Nothing calls `showWarningMessage` for it. | A one-argument toast is not awaited and races the launch: the run's output can be on screen before it, or the person closes the toast unread. The banner is written in `open()` before the first byte of output. |
-| E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Recorded at promotion as a deviation from parent §4.5 (1) (S3.2). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
+| E3-D13 | **`LaunchPlan` is NOT changed** (round 1, item 2; E3.L flag 1 WITHDRAWN). `commands/runCommands.ts` keeps importing `resolveCommand` (`:9`) for its two LOCAL uses: `arrowLine` (`:170`) and the local Run with Secrets' `commandJob` (`:350`, whose `parts` feed `buildCommandLineWithRefs`, `:430`). After S2 the road scan's `RESOLVE_IMPORTERS` (`test/launchRoadScan.test.ts:103`) is `['commands/runCommands.ts', 'remoteLaunch.ts']`. Counted as parent entry 2.2; since the epoch-3 revision, parent §4.5 (1) names this list, and the guarantee that the import target served is held by the no-local-sink tests (parent §4.5 (5); §S1.6 LN1-LN6). | `LaunchPlan` is E1.S2's cornerstone type (`remoteLaunch.ts:152-167`); widening it for a local road reopens a reviewed cornerstone for no gain on the SSH roads, which already read only `planLaunch`. |
 | E3-D9 | **The agent's SSH call is injected**, as `overSsh` on the deps of `terminalRunAction`. Its implementation `execOverSsh(deps)` lives in `sshUseActions.ts` (the `vscode` side) and is shared with `sshExecAction`. `sshDepsFor` (`sshUseActions.ts:383-405`) returns it, and `agentDeps` already spreads `sshDeps` (`extension.ts:629-637`). | `agentUseActions.ts` imports no `vscode` and its tests load it directly; `resolveExecAuth` and `materializeKnownHosts` reach `vscode` (`keyInstaller.ts:5`, `hostKeyTrust.ts:3`). And `extension.ts` is at its size ratchet (1003). |
 | E3-D10 | **No new two-argument prompt and no renamed prompt function** (as E2-D10). If `test/promptSites.test.ts` goes red, stop and report to the judge. | The prompt ledger keys rows by `file#function#…`. |
 
@@ -449,6 +449,26 @@ spawn: (...a) => { const c = childProcess.spawn(...a); w.children.push(c); retur
 | Hp6 | `every_language_says_run_with_secrets_runs_over_ssh_from_a_local_window` | each language's `basics` body includes the S1 sentence of its row above; the `secret-references` body (`bodyFor`, `fallback === false`) includes `*Run in Terminal*` and `export` | absent |
 | Hp7 | `the_english_secrets_text_is_exact` | the EN `secret-references` body includes the EN `usage` text above, literally | absent |
 
+**`test/linkedNeverLocal.test.ts`** (new; parent §4.5 (5), added by the epoch-3 re-review). The road scan reads imports, not
+where a resolved line flows, and `commands/runCommands.ts` resolves the line before it reads the link (`runEntryLine` →
+`arrowLine` → `sshLinkOf`; `secretsJobAt` → `commandJob`). These tests hold the guarantee instead. The three links: VALID
+(`S1` in storage, a fake road that answers ready), MISSING (no `S1`), REFUSED (`S1` is not an SSH entry, or has the host
+`-oProxyCommand=x`: `sshLinkOf` answers `refused`). `BARE` = `resolveCommand(LINKED)`'s line, read in the test. The local
+sinks: the arrow's `typeIntoEntryTerminal` (seen as a terminal whose `sent` holds `BARE` as one whole send) and the local
+masked run (seen as an `aw.masked` record with `commandLine` set).
+
+| # | Test | Assertion | RED proof |
+|---|---|---|---|
+| LN1 | `the_arrow_never_types_the_bare_line_of_a_valid_link` | VALID, trusted: no terminal's `sent` holds an element equal to `BARE`; the one send equals the composed line (`typedLine`) | GREEN on E2's code; RED with the bypass: the routing in `runEntryLine` made `runLocalLine` for every link |
+| LN2 | `the_arrow_never_types_the_bare_line_of_a_missing_link` | MISSING, trusted: no terminal sent anything; the warning is `sshLinkOf`'s reason | the same bypass |
+| LN3 | `the_arrow_never_types_the_bare_line_of_a_refused_link` | REFUSED (each of the two cases), trusted: no terminal sent anything | the same bypass |
+| LN4 | `run_with_secrets_never_runs_a_valid_link_here` | VALID, trusted: no `aw.masked` record has `commandLine`; the one record has `argv` | RED with the bypass: `runWithSecrets` sends every link to `runSecretsHere` AND `secretsRefusal` skips `sshLinkRefusal` (both walls, parent §4.5 (5)) |
+| LN5 | `run_with_secrets_never_runs_a_missing_link_here` | MISSING: `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
+| LN6 | `run_with_secrets_never_runs_a_refused_link_here` | REFUSED (each case): `aw.masked` `[]`; `vault.calls` `[]` | the same bypass |
+
+Each bypass is a temporary local edit, run once, never committed. The summary of S1 names each RED message and the pass.
+LN1-LN3 are guards of E2's merged code, written in S1 because S1 changes the routing in the same file.
+
 ### S1.7 Commands
 
 From the repository root (`CLAUDE.md` §Commands; `common/local-cpu-budget.md`):
@@ -459,7 +479,7 @@ cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint
 node $LP npm run compile
-node $LP node --test out/test/secretsLaunch.test.js out/test/maskedTerminal.test.js out/test/sshRoad.test.js out/test/sshRoadSecrets.test.js out/test/sshRoadHelp.test.js
+node $LP node --test out/test/secretsLaunch.test.js out/test/maskedTerminal.test.js out/test/sshRoad.test.js out/test/sshRoadSecrets.test.js out/test/sshRoadHelp.test.js out/test/linkedNeverLocal.test.js
 node $LP node --test out/test/launchRoadScan.test.js out/test/commandRoadScan.test.js out/test/sshLinkRoads.test.js out/test/remoteLaunch.test.js out/test/remoteLaunchDelivery.test.js out/test/sshRoadArrow.test.js out/test/sshRoadFolder.test.js out/test/sshRoadChain.test.js out/test/runPlan.test.js out/test/secretMasker.test.js out/test/promptSites.test.js out/test/sizeRatchet.test.js out/test/agentUseActions.test.js out/test/sshExecCommand.test.js
 node $LP node scripts/size-ratchet.mjs
 ```
@@ -580,7 +600,7 @@ the credential). Its tests stay green unchanged; if one goes red, stop and repor
 | `agentUseActions.ts` (437 → about 490) | `terminalRunAction(deps: AgentUseDeps & { onPath?: …; overSsh: OverSsh })`; §S2.2 as small functions (`runHere`, `runThere`, the gate from the Fable spec), each ≤ 50 lines, complexity ≤ 4. Imports: `planLaunch`, `sshLinkOf`, `trustLineFor`, `refusalSaid` from `./remoteLaunch`; `resolveJumpChain` from `./sshOptions`; drop `resolveCommand` and `sshLinkRefusal`. The doc of `terminalRunAction` (`:181-187`): one paragraph on the linked road. |
 | `remoteLaunch.ts` | `export function refusalSaid(entry: LaunchEntry, reason: string): string` = today's `refusedCopyReason` (`:367-369`), renamed and exported; `copyOfPlan` (`:351`) calls it. |
 | `sshUseActions.ts` (405 → about 440) | `execOverSsh` (§S2.2); `sshExecAction.run` calls it; `sshDepsFor` (`:383-405`) adds `overSsh: execOverSsh(deps)` to the record it returns (build the record in a `const`, then return it with the field). `agentAwareLaunch` uses `sshSpawnLaunch` (S1). |
-| `extension.ts` | NOT touched: `agentDeps` spreads `sshDeps` (`:629`). |
+| `extension.ts` | No change from this brief: `agentDeps` spreads `sshDeps` (`:629`). The security spec's §7 changes `:516` and `:69` in place (`maskEntriesWithLink`); not one line longer. |
 | `test/agentUseActions.test.ts` `fakeDeps` `:38-53`, `test/sshLinkRoads.test.ts` `:166-177`, `test/promptSites.test.ts:214` | Their deps gain `overSsh: async () => { throw new Error('this world has no SSH road'); }` (a test that reaches it fails loudly). |
 
 **The road scan — `test/launchRoadScan.test.ts`**
@@ -674,7 +694,7 @@ The lead runs the full `npm test`.
 |---|---|
 | help ×5, the paragraph that starts EN `To run a line on a server` (the E2 advice) | Append the risk-1 note (the limits "POSIX login shells only" and "a Windows server is refused" are already in that paragraph since E2). EN: ` An older version of CredsForDevs does not know *Runs over SSH*: it runs such an entry on its own machine, and a save there removes the choice for every machine. Update CredsForDevs on all your machines before you choose an SSH entry.` DE: ` Eine ältere Version von CredsForDevs kennt *Runs over SSH* nicht: Sie führt einen solchen Eintrag auf ihrem eigenen Rechner aus, und ein Speichern dort entfernt die Wahl für alle Rechner. Aktualisieren Sie CredsForDevs auf allen Ihren Rechnern, bevor Sie einen SSH-Eintrag wählen.` ES: ` Una versión anterior de CredsForDevs no conoce *Runs over SSH*: ejecuta esa entrada en su propia máquina, y guardarla allí quita la elección en todas las máquinas. Actualice CredsForDevs en todas sus máquinas antes de elegir una entrada SSH.` RU: ` Старая версия CredsForDevs не знает *Runs over SSH*: она выполняет такую запись на своей машине, а сохранение записи там убирает выбор на всех машинах. Обновите CredsForDevs на всех своих машинах, прежде чем выбирать запись SSH.` UK: ` Старша версія CredsForDevs не знає *Runs over SSH*: вона виконує такий запис на своїй машині, а збереження запису там прибирає вибір на всіх машинах. Оновіть CredsForDevs на всіх своїх машинах, перш ніж обирати запис SSH.` The paragraph's existing text stays first, so `EN_ADVICE` (`test/sshRoadHelp.test.ts:38`) stays a substring. New test Hp9 `every_language_warns_that_an_older_version_runs_a_linked_entry_locally` (each language includes its sentence; RED: absent). |
 | `src_vs_code/README.md` | Read every mention of *Runs over SSH*, the trust line, the refusals, *Run with Secrets* and the agent (`grep -n "Runs over SSH\|Run with Secrets\|ssh … --\|creds_run"`); each must describe the system as built after S1 and S2. Add the risk-1 note after the E2 advice paragraph (`:300-`). The feature table row (`:44`) adds: over SSH, the values go on ssh's standard input. |
-| `src_vs_code/CHANGELOG.md` `## [Unreleased]` | One `### Added — a Terminal entry runs its command over a chosen SSH connection` block: the field (*Runs over SSH*); every road (arrow, VPN *Started by*, *Run All in Folder*, a dependency step, *Run with Secrets*, an agent's run) with one line each; the trust line (a changed host, user, port, jump, agent forwarding or forward asks again); *Copy Command* copies the trust line; the refusals (Windows server, non-local window for secrets, `{config}` in a linked launcher, a password dependency step, PowerShell 5.1 with `"` or a final `\`, an agent's VPN start with a linked launcher); share and export leave the link out, *Update it* keeps the recipient's own; the older-build note. One `### Changed` line: SSH Connect's preparation is shared (no behaviour change). Cite `file:line` as the existing entries do. |
+| `src_vs_code/CHANGELOG.md` `## [Unreleased]` | The field, the arrow, a VPN's *Start*, *Run All in Folder*, a dependency step, the trust line, *Copy Command*, share and export and the older-build note are already in `## [1.20.0]` (#338, E1 and E2); do not repeat them. E3's own block: `### Added — Run with Secrets and an agent's run over SSH`: *Run with Secrets* on a linked entry (values on the remote login shell's standard input, masked output, not interactive, local window only, a Windows server refused); an agent's `creds_run` only when the SSH entry itself is *Usable by agents*, else one sentence naming only the Terminal entry, code `denied` (was `not_supported` in 1.20.0); the consent names the SSH entry and its target; the agent's output is also masked with the SSH entry's values. Remove nothing from 1.20.0: its *Not yet over SSH* section stays true of that release. Cite `file:line` as the existing entries do. |
 | `research/module_extension.md` | Read the whole SSH-link section (from `#### Terminal entry SSH link`, about `:2356`, to the end of the E3 paragraphs) as ONE text: no sentence says a road "still refuses" that runs now; "The refusal on every road" lists exactly the remaining callers of `sshLinkRefusal` (scan 4's list); the module map names `remoteLaunch.ts`, `sshSession.ts`, `sshRoad.ts`, `entityCommandRows.ts`, the scan. |
 | `research/module_tests.md` | The E1, E2 and E3 sections: every new test file has a row; each row's flow is covered or `not covered` with a reason; one **Not covered** line names the hand checks of parent §10 and who runs them. |
 | parent §10 | Hand check 3 is handed to the owner (it is owed, not a gate for the merge); the summary says so. With it go the observations E3 could not make in a unit test (E3-D11): with a jump host, closing the masked terminal mid-run leaves no `ssh` helper on this machine (`pgrep -f 'ssh .*-W'` empty after a few seconds), and an unreachable host ends the run with ssh's error after about 10 s. They are the owner's to run, written into the hand-over message, not into the parent (§E3.R1, flag 7). |
@@ -713,14 +733,16 @@ The steps, in this order:
 1. While every file is still in `todo/`: each status line becomes `> Status: **IMPLEMENTED, <YYYY-MM-DD>.**` with its
    deviations. The parent's deviations section collects at least: E1 §S4 F1-F7; E2's four recorded deviations and its
    flags 2-5; E3-D2 (references only from the line that runs, over SSH); E3-D4 (a spawn always writes the key file);
-   **E3-D13: the §4.5 (1) importer target NOT reached** — `commands/runCommands.ts` still imports `resolveCommand` for
-   the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not widened (E3's plan
-   round 1); the `sshLinkRefusal` sentence's last callers (Flag 4); the CHANGELOG path; and, recorded as CHECKED and not
+   **E3-D13 and entry 2.2: the first §4.5 (1) importer target was given up** — `commands/runCommands.ts` still imports
+   `resolveCommand` for the local Run with Secrets and the arrow's local line, because `LaunchPlan` was deliberately not
+   widened (E3's plan round 1); the epoch-3 revision wrote the shipped list into §4.5 (1) and put the guarantee on the
+   no-local-sink tests (LN1-LN6), so this is history for the reader, not a gap; the `sshLinkRefusal` sentence's last callers (Flag 4); the CHANGELOG path; and, recorded as CHECKED and not
    built, `-o SendEnv=-NAME` for the askpass variables (measured not to remove a wildcard pattern,
    `PLAN_windows_shell_quoting_injection.md` §8; the limit stays accepted). A deviation that records something as
    impossible names what was CHECKED.
-2. The parent's ledger: read it whole. Entry 2.1 is the E3.S2 security judgement; a second entry of epoch 2 is the full
-   stop of `plan-change-control.md`, before anything is promoted. A stories document keeps no ledger.
+2. The parent's ledger: read it whole. Epoch 2 stopped at entry 2.2; E3 is built only after epoch 3 opens. A second
+   entry of the CURRENT epoch is a new full stop of `plan-change-control.md`, before anything is promoted. A stories
+   document keeps no ledger.
 3. Edit, still in `todo/`: every link of the table's last column, written for the DESTINATION; the two inbound paths;
    delete the seven `todo/README.md` rows; add the one `research/README.md` row.
 4. `git mv` each of the seven to `research/`, `git add` each DESTINATION (the move staged the original bytes;
@@ -736,7 +758,7 @@ The steps, in this order:
 - [ ] The help tests pass, five languages, English first; no help text says a road refuses that runs.
 - [ ] README, CHANGELOG, `module_extension.md`, `module_tests.md` describe the shipped system.
 - [ ] The seven documents promoted together, each with its `todo/README.md` row removed and its mention in the one
-      `research/README.md` row (§S3.2 table), deviations recorded (E3-D13 among them), links walked, then
+      `research/README.md` row (§S3.2 table), deviations recorded (E3-D13 and entry 2.2 among them), links walked, then
       `plan-lifecycle.mjs` clean.
 - [ ] Hand check 3 handed to the owner; hand checks 1, 2 and 4 still listed as owed if not done.
 
@@ -777,8 +799,8 @@ The steps, in this order:
    E2's `arrowLine` (`:169-172`). Reaching the target means adding `parts` to `LaunchPlan` (a change to E1.S2's
    cornerstone type, and `test/remoteLaunch.test.ts:223`'s expected value) or changing the local road's line. Either
    keep it as a recorded deviation, or count it.
-   (Settled by E3's plan round 1, item 2: `LaunchPlan` is not changed, E3-D13; the deviation is recorded at promotion.
-   Whether that deviation from parent §4.5 (1) is a parent-plan change is still the lead's to count — flag 7.)
+   (Settled by E3's plan round 1, item 2: `LaunchPlan` is not changed, E3-D13. Counted as parent entry 2.2, which
+   stopped the plan; the epoch-3 revision rewrote parent §4.5 (1) to the shipped list — flag 7.)
 2. **Possible plan change (contract), for the Fable spec.** Naming the SSH entry and its target in the consent
    (parent §4.4 "Agent", D2) needs the broker to know the target at the dialog; `UseAction.summarize(body)` has none
    (`useActions.ts:139`). An interface change of the broker's consent path may follow from the spec.
@@ -804,6 +826,11 @@ The steps, in this order:
    there would change a parent section. Everything else of round 1 (the bounded run, the warning in the banner, the
    once-only hand-over, the bounded tests, the gate first, the per-document promotion list) only makes parent §4.4 and
    the E3 epic true as written.
+   (Decided 2026-11-10: (a) counted as parent entry 2.2, the second change of epoch 2, which stopped the plan. The
+   epoch-3 revision rewrote parent §1, §4.4, §4.5, §6, the Definition of Done and the E1 and E3 epic texts; it moved
+   the guarantee from the import target to behavioural tests (parent §4.5 (5), here §S1.6 LN1-LN6). (b) and (c) are not
+   counted. The revision also wrote the round-1 bounds and the child's clean environment into parent §4.4, as the
+   baseline of epoch 3, not as entries.)
 
 ## E3.L — Lead decisions on the flags (2026-11-10)
 
