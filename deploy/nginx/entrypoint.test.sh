@@ -15,10 +15,10 @@
 # The entrypoint is RUN, not copied: its own seams (CRED_VAULT_CERT_LIVE, CRED_VAULT_TEMPLATE,
 # CRED_VAULT_CONF_DIR, CRED_VAULT_RENDER_ONLY) point it at a private folder and stop it before the
 # reload loop. Nothing is written outside that folder, an owned folder that is removed on exit. Under Git Bash
-# (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
+# (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init .agents/conventions`).
 set -uo pipefail
 
-# A local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md), the same
+# A local run goes below interactive work (.agents/conventions/common/local-cpu-budget.md), the same
 # way restore-archive-itest.sh does it. CI is exempt.
 ci_flag="$(printf '%s' "${CI:-}" | tr '[:upper:]' '[:lower:]')"
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) nice_level=10 ;; *) nice_level=19 ;; esac

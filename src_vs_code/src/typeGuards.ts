@@ -335,6 +335,7 @@ function hasValidRunFields(v: Record<string, unknown>): boolean {
     // writes must not make this one drop the entity.
     (v.terminalOs === undefined || typeof v.terminalOs === 'string') &&
     (v.vpnLauncherEntityId === undefined || typeof v.vpnLauncherEntityId === 'string') &&
+    (v.sshEntityId === undefined || typeof v.sshEntityId === 'string') &&
     (v.runDependencies === undefined || typeof v.runDependencies === 'boolean')
   );
 }

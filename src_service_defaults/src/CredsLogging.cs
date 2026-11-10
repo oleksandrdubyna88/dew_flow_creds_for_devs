@@ -24,7 +24,7 @@ public sealed record LogSetup(
 
 /// <summary>
 /// The one place logging is configured in this repository, per
-/// <c>.claude/rules/shared/common/logging-serilog.md</c>: the console in colour, and a file on disk with a
+/// <c>.agents/conventions/common/logging-serilog.md</c>: the console in colour, and a file on disk with a
 /// NEW FILE PER RUN under a folder named for the UTC day — <c>{root}/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log</c>.
 /// </summary>
 /// <remarks>

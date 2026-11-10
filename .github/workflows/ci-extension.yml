@@ -41,7 +41,7 @@ jobs:
       # submodule, as docs.yml does, and from the working directory of the repository root.
       - name: Fetch the shared rules
         working-directory: .
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -198,7 +198,10 @@ jobs:
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
   # are the wrapper's and the runner's own: the second starts a REAL `node --test` whose suite kills itself and leaves
   # a descendant behind, then asserts the descendant is gone and its folder removed. The extension suite as a whole
-  # still runs on Ubuntu only (`build-test`).
+  # still runs on Ubuntu only (`build-test`). The second step below OBSERVES the Windows parsers the quoting fix is
+  # written for (PLAN_windows_shell_quoting_injection): a REAL cmd.exe runs the askpass `.bat` with hostile passwords,
+  # and a REAL Windows PowerShell 5.1 and PowerShell 7 read the words `quoteFor` and `buildSshCommand` produce for
+  # hostile values, each with a marker side effect that must not happen. Both are preinstalled on the hosted image.
   runner-windows:
     name: runner lifecycle · windows
     runs-on: windows-latest
@@ -213,7 +216,7 @@ jobs:
 
       - name: Fetch the shared rules
         working-directory: .
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -229,3 +232,6 @@ jobs:
 
       - name: Runner lifecycle (wrapper and runner scenarios)
         run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js out/test/leftoversRunnerHardening.test.js out/test/leftoversRunnerAudit.test.js out/test/leftoversRunnerSweep.test.js out/test/itestRunner.test.js
+
+      - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting)
+        run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js

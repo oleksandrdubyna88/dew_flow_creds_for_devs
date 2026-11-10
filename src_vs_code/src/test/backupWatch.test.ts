@@ -22,7 +22,7 @@ const bob: StoredAccount = { accountId: 'acct-2', email: 'bob@corp.com', provide
  * <p>`{ isAdmin } as CorpPolicyState` compiles today and goes on compiling the day the interface
  * gains a required field — and what appears instead is a runtime failure in every test that used
  * the fixture, none of them pointing at the interface that changed
- * (`.claude/rules/shared/typescript/doctrine.md` rule 3). Real defaults cost four lines and fail at
+ * (`.agents/conventions/typescript/doctrine.md` rule 3). Real defaults cost four lines and fail at
  * the compiler instead.</p>
  */
 function policy(isAdmin: boolean): CorpPolicyState {

@@ -7,7 +7,7 @@
 ## Purpose
 
 The repository's ONE Serilog configuration, per the family rule
-(`.claude/rules/shared/common/logging-serilog.md`): a coloured console and a file per run under a folder per UTC day,
+(`.agents/conventions/common/logging-serilog.md`): a coloured console and a file per run under a folder per UTC day,
 with retention owned by the host. Three hosts use it — the server, `creds-mcp` and `creds` — and it exists so that a
 fix to how a log is written is made once. Before it, only the server wrote files; the two AOT binaries wrote one
 `[creds-for-devs]` line to stderr, and the WSL orphan investigation could not read why a process lived or ended.

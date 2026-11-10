@@ -19,7 +19,7 @@
 #      collects folder and claim once that shell is gone and the folder is 10 minutes old — and it cannot tell that the
 #      SERVER outlives the script, so a log read later than about 10 minutes after the server started may be gone. Give
 #      START_SERVER_LOG (CI does) to keep the log where you say. Off CI under Git Bash (Windows) the folder needs Node and the
-#      shared rules mount (`git submodule update --init .claude/rules/shared`): without them the script stops before it starts
+#      shared rules mount (`git submodule update --init .agents/conventions`): without them the script stops before it starts
 #      anything — set START_SERVER_LOG there;
 #   3. probes <health-url> every ${START_SERVER_POLL_SECONDS:-1} s (curl: connect 2 s, at most 5 s a probe, and
 #      never past the deadline):

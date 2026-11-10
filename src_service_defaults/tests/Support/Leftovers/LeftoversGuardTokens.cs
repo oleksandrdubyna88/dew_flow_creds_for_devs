@@ -95,7 +95,7 @@ internal static class GuardTokens
     /// file actually read.</summary>
     internal static IReadOnlyList<Finding> RegisteredTokenFindings(string repoRoot, string token, string identity)
     {
-        var mount = Path.Combine(repoRoot, ".claude", "rules", "shared");
+        var mount = Path.Combine(repoRoot, ".agents", "conventions");
         var resolved = Resolve(mount, token, [DetailRule, CoreRule]);
         return resolved.Failure is { } failure ? [failure] : TokenFindings(resolved.Chosen!.Text!, token, identity, resolved.Chosen.Name);
     }
@@ -123,7 +123,7 @@ internal static class GuardTokens
     }
 
     private static Finding NeitherFinding(string mount, string token) =>
-        new(DetailRule, 1, "token", $"neither {DetailRule} (the canonical home of the table, so this finding is anchored on it) nor {CoreRule} under {mount} has a `## Tokens` section — the token `{token}` is not registered; an uninitialised submodule registers nothing, run `git submodule update --init .claude/rules/shared`");
+        new(DetailRule, 1, "token", $"neither {DetailRule} (the canonical home of the table, so this finding is anchored on it) nor {CoreRule} under {mount} has a `## Tokens` section — the token `{token}` is not registered; an uninitialised submodule registers nothing, run `git submodule update --init .agents/conventions`");
 
     /// <summary>The ONE constant (rule §2): over every <c>.cs</c>, <c>.mjs</c>, <c>.js</c>, <c>.cjs</c>, <c>.sh</c>, <c>.ps1</c> and
     /// <c>.py</c> file of the tree (the folders the scan never enters excepted), a non-comment line that declares <c>RepoToken</c> must

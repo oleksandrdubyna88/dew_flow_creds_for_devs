@@ -30,7 +30,7 @@ const NEEDS_MOUNT = new RegExp(`${RUNS_UNIT_TESTS.source}|${RUNS_HARNESS.source}
 /** The repository's one way of setting up Node for CI: the pinned action, with the 22.x line (Node 20.19 or 22.12 and later load the wrapper's ES module). */
 const SETS_UP_NODE_22 = /uses:\s*actions\/setup-node@\S+[^\n]*\n\s*with:\s*\n\s*node-version:\s*['"]?22\.x['"]?/;
 /** The repository's one way of fetching the mount. */
-const FETCHES_MOUNT = /git submodule update --init[^\n]*\.claude\/rules\/shared/;
+const FETCHES_MOUNT = /git submodule update --init[^\n]*\.agents\/conventions/;
 
 /** `[job, text]` of each job under `jobs:`: a job starts at a two-space key and runs to the next one. */
 function jobsOf(lines: string[]): Array<[string, string]> {
@@ -99,7 +99,7 @@ test('the scan still finds the jobs known to run a C# test executable, so it can
 
 test('a C# executable with no fetch before it is a job with no mount, and the fetch below it comes too late [E2.3 S1.5 a]', () => {
   const run = '      - run: ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests';
-  const fetch = '      - run: git submodule update --init --depth 1 .claude/rules/shared';
+  const fetch = '      - run: git submodule update --init --depth 1 .agents/conventions';
 
   assert.equal(lacksMountFirst(run), true, 'the executable with no fetch');
   assert.equal(lacksMountFirst([run, fetch].join('\n')), true, 'the fetch below the executable');
@@ -137,15 +137,15 @@ test('the scan still finds the jobs known to run a harness, so it cannot pass fo
 
 test('a harness with no fetch before it is a job with no mount: the harness has already refused by then [E2.2 S1.9]', () => {
   const noFetch = ['      - run: node src_minimalapi_server/scripts/backup-archive-itest.cjs'].join('\n');
-  const fetchFirst = ['      - run: git submodule update --init --depth 1 .claude/rules/shared', '      - run: npm run itest:agent'].join('\n');
+  const fetchFirst = ['      - run: git submodule update --init --depth 1 .agents/conventions', '      - run: npm run itest:agent'].join('\n');
 
   assert.equal(lacksMountFirst(noFetch), true, 'the backup harness with no fetch');
   assert.equal(lacksMountFirst(fetchFirst), false, 'the companion: the fetch before the harness is the mount');
 });
 
 test('a fetch step BELOW the tests is no fetch: the tests have already refused by then [E2.1 code7 4]', () => {
-  const job = ['      - run: npm test', '      - run: git submodule update --init --depth 1 .claude/rules/shared'].join('\n');
-  const fetchFirst = ['      - run: git submodule update --init --depth 1 .claude/rules/shared', '      - run: npm test'].join('\n');
+  const job = ['      - run: npm test', '      - run: git submodule update --init --depth 1 .agents/conventions'].join('\n');
+  const fetchFirst = ['      - run: git submodule update --init --depth 1 .agents/conventions', '      - run: npm test'].join('\n');
 
   assert.equal(lacksMountFirst(job), true, 'the fetch comes after npm test, so the job runs the tests with no mount');
   assert.equal(lacksMountFirst(fetchFirst), false, 'the companion: the fetch before the tests is the mount');

@@ -1,4 +1,5 @@
 import { TreeNode, isTreeNode } from './types';
+import { withoutSshLink } from './remoteLaunch';
 
 /**
  * Handing entities to someone OUTSIDE the organisation — a self-contained file.
@@ -92,7 +93,8 @@ export function remapExternalIds(
       ...node,
       id,
       parentId,
-      details: node.details !== undefined ? { ...node.details, id } : undefined,
+      // An imported entry never arrives linked (D4): the id would name an entity of the sender's vault.
+      details: node.details !== undefined ? { ...withoutSshLink(node.details), id } : undefined,
     };
   });
   const secrets: Record<string, ExternalSecrets> = {};

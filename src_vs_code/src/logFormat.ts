@@ -5,7 +5,7 @@
  * readable and greppable, and that a run has its own file — are unit tests rather than
  * hopes.</p>
  *
- * <p>The shape follows the family logging rule (`.claude/rules/shared/common/logging-serilog.md`):
+ * <p>The shape follows the family logging rule (`.agents/conventions/common/logging-serilog.md`):
  * a folder per day, a file per RUN rather than per day, and **UTC everywhere**. The last one is
  * not a preference — a window opened at 01:00 local on one side of midnight and a sync failing
  * at 23:00 on the other would land in two different day folders, and correlating them is the

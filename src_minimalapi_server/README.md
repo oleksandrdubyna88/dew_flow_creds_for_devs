@@ -118,8 +118,8 @@ no VSTest host here and it aborts with a `testhost.deps.json` error, which is a 
 not a test failure.
 
 ```bash
-# local runs: at most 8 workers, lowered (../.claude/rules/shared/common/local-cpu-budget.md)
-LP=../.claude/rules/shared/tools/low-priority.mjs
+# local runs: at most 8 workers, lowered (../.agents/conventions/common/local-cpu-budget.md)
+LP=../.agents/conventions/tools/low-priority.mjs
 node $LP dotnet build ../dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
 node $LP ./tests/bin/Debug/net10.0/CredVaultServer.Tests.exe                    # Linux: drop the .exe
 node $LP ./tests/bin/Debug/net10.0/CredVaultServer.Tests.exe --filter-class "*SharingTests"

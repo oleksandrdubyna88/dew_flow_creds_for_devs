@@ -1,11 +1,12 @@
 import { EntityMetadata } from './types';
 import { OS_LABELS, OS_NAMES, OsName, asOsName, osLabel } from './hostShell';
-import { LauncherCandidate } from './entityFormShape';
+import { KeyCandidate, LauncherCandidate } from './entityFormShape';
 import { escapeHtml } from './webviewHtml';
 
 /**
- * The form's three controls for issue #103 — what a Terminal entry is written for, which Terminal
- * entry starts a VPN, and whether an entry runs its dependencies first.
+ * The form's four controls — what a Terminal entry is written for and which Terminal entry starts a VPN
+ * (issue #103), which SSH entry a Terminal entry runs over (E1.S1 of `PLAN_terminal_command_over_ssh.md`), and
+ * whether an entry runs its dependencies first.
  *
  * <p>Their own module because `entityFormPage.ts` is at its line ceiling; each is one `${…}` there.
  * Pure: markup from data, no `vscode`, so the choices each control offers are unit tests.</p>
@@ -23,7 +24,7 @@ export function terminalOsField(d: EntityMetadata | undefined, mode: 'create' | 
   const foreign = isForeignOs(selected) ? [option(selected, selected, selected)] : [];
   return `<label for="terminalOs">Runs on</label>
     <select id="terminalOs">${[option('', '— not set (default terminal) —', selected), ...known, ...foreign].join('')}</select>
-    <p class="hint">Your default terminal is used when it is a shell of that system; otherwise the system's own — PowerShell (7 when installed) on Windows, bash on macOS and Linux. On any other system it is refused. "Not set" always uses your default terminal, as before.</p>`;
+    <p class="hint">Your default terminal is used when it is a shell of that system; otherwise the system's own — PowerShell (7 when installed) on Windows, bash on macOS and Linux. On any other system it is refused. "Not set" always uses your default terminal, as before. With an SSH connection chosen below, this is the remote system.</p>`;
 }
 
 function initialOs(d: EntityMetadata | undefined, mode: 'create' | 'edit', hostOs: OsName | undefined): string {
@@ -38,23 +39,53 @@ function isForeignOs(value: string): boolean {
   return value !== '' && asOsName(value) === undefined;
 }
 
+/** What one entry picker is made of: its element id, its label, the choice that stores nothing, and a hint paragraph (markup). */
+interface PickerText {
+  readonly id: string;
+  readonly label: string;
+  readonly none: string;
+  readonly hintHtml: string;
+}
+
+/**
+ * A `<select>` that points at another entity, in the shape both pickers share: "none" first, then what is offered, then —
+ * when the stored choice is no longer offered — the stored id shown as missing, so a save does not drop it silently.
+ */
+function entityPicker(text: PickerText, selected: string, offered: readonly { readonly id: string; readonly label: string }[]): string {
+  const options = offered.map((c) => option(c.id, c.label, selected));
+  const dangling = selected !== '' && !offered.some((c) => c.id === selected) ? [option(selected, '(missing entry)', selected)] : [];
+  return `<label for="${text.id}">${text.label}</label>
+    <select id="${text.id}">${[option('', text.none, selected), ...options, ...dangling].join('')}</select>
+    <p class="hint">${text.hintHtml}</p>`;
+}
+
 /** The launcher picker in the VPN section — a `<select>`, the way an SSH entry picks its key. */
 export function vpnLauncherField(d: EntityMetadata | undefined, candidates: readonly LauncherCandidate[]): string {
-  const selected = d?.vpnLauncherEntityId ?? '';
-  const offered = candidates.map((c) => option(c.id, launcherLabel(c), selected));
-  // A launcher that no longer exists is shown as such rather than silently dropped on save.
-  const dangling = isDangling(selected, candidates) ? [option(selected, '(missing entry)', selected)] : [];
-  return `<label for="vpnLauncherEntityId">Started by</label>
-    <select id="vpnLauncherEntityId">${[option('', '— built-in (detected) —', selected), ...offered, ...dangling].join('')}</select>
-    <p class="hint">A Terminal entry whose command starts this VPN. Write <code>{config}</code> where the path to the stored config file goes.</p>`;
+  const text: PickerText = {
+    id: 'vpnLauncherEntityId',
+    label: 'Started by',
+    none: '— built-in (detected) —',
+    hintHtml: 'A Terminal entry whose command starts this VPN. Write <code>{config}</code> where the path to the stored config file goes.',
+  };
+  return entityPicker(text, d?.vpnLauncherEntityId ?? '', candidates.map((c) => ({ id: c.id, label: launcherLabel(c) })));
 }
 
 function launcherLabel(c: LauncherCandidate): string {
   return c.os === undefined ? c.name : `${c.name} · ${osLabel(c.os)}`;
 }
 
-function isDangling(selected: string, candidates: readonly LauncherCandidate[]): boolean {
-  return selected !== '' && !candidates.some((c) => c.id === selected);
+/**
+ * The SSH-link picker in the Terminal section — the shape of `vpnLauncherField`. It starts on "Do not use", and a
+ * stored link that is no longer offered stays selectable (shown as missing) so a save does not drop it silently.
+ */
+export function sshLinkField(d: EntityMetadata | undefined, candidates: readonly KeyCandidate[]): string {
+  const text: PickerText = {
+    id: 'sshEntityId',
+    label: 'Runs over SSH',
+    none: '— Do not use —',
+    hintHtml: 'One of your SSH entries. This version saves the choice but cannot run a command over SSH yet: while one is chosen, every way of running this entry refuses and says why.',
+  };
+  return entityPicker(text, d?.sshEntityId ?? '', candidates.map((c) => ({ id: c.id, label: c.name })));
 }
 
 /** Inside the Depends-on body, so it is shown exactly while a dependency can be chosen. */
@@ -66,11 +97,11 @@ export function runDependenciesField(d: EntityMetadata | undefined): string {
       <p class="hint">Before Run in Terminal, Run Script, Run with Secrets or Start VPN, this entry's Terminal dependencies run in order, each waiting for the one before — and theirs too, where they ask for the same. Other dependencies stay notes; SSH connect does not run them.</p>`;
 }
 
-/** The three fields as the save writes them — the host half of the controls above. */
-type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'vpnLauncherEntityId' | 'runDependencies'>;
+/** The four fields as the save writes them — the host half of the controls above. */
+type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'sshEntityId' | 'vpnLauncherEntityId' | 'runDependencies'>;
 
 /**
- * Read the three fields from a posted form, scrubbed by kind the way every field around them in
+ * Read the four fields from a posted form, scrubbed by kind the way every field around them in
  * `toValues` is: an OS only on a Terminal entry, a launcher only on a VPN (and never itself), the
  * execute mark only while there is something to execute.
  *
@@ -85,7 +116,8 @@ export function execDetails(
 ): ExecDetails {
   return {
     terminalOs: kind === 'terminal' ? nonEmpty(text(data.terminalOs)) : undefined,
-    vpnLauncherEntityId: kind === 'vpn' ? launcherId(text(data.vpnLauncherEntityId), selfId) : undefined,
+    sshEntityId: kind === 'terminal' ? otherEntityId(text(data.sshEntityId), selfId) : undefined,
+    vpnLauncherEntityId: kind === 'vpn' ? otherEntityId(text(data.vpnLauncherEntityId), selfId) : undefined,
     runDependencies: runMark(dependsOnCount, data.runDependencies),
   };
 }
@@ -99,8 +131,8 @@ function nonEmpty(value: string): string | undefined {
   return value === '' ? undefined : value;
 }
 
-/** Never itself — the self-reference guard `jumpHostEntityId` applies too. */
-function launcherId(value: string, selfId: string | undefined): string | undefined {
+/** The id of ANOTHER entity — never itself (the self-reference guard `jumpHostEntityId` applies too), and not empty. */
+function otherEntityId(value: string, selfId: string | undefined): string | undefined {
   return value === '' || value === selfId ? undefined : value;
 }
 

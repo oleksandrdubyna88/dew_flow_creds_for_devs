@@ -4,7 +4,8 @@ import { cliCommandFor } from './cliCommandText';
 import { DEFAULT_SNIPPET_LANGUAGE, snippetFor } from './configSnippet';
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';
-import { commandRefusal, normalizeArgs, shownCommandLine } from './commandLine';
+import { normalizeArgs } from './commandLine';
+import { commandRowsOf } from './entityCommandRows';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 import { resolveScriptEnv } from './scriptRender';
 import { copyVariant, copyableValue } from './paymentViewMessages';
@@ -148,8 +149,10 @@ export async function copyValueFor(
     case 'tags': value = normalizeTags(d.tags).join(' '); break;
     case 'command': value = d.command; break;
     case 'commandNote': value = d.commandNote; break;
-    case 'fullCommand': value = shownCommandLine(d); break;
-    case 'commandRefusal': value = commandRefusal(d); break;
+    case 'fullCommand': value = commandRowsOf(d, options.sshCopy).full; break;
+    case 'commandRefusal': value = commandRowsOf(d, options.sshCopy).refusal; break;
+    case 'sshCopyNote': value = commandRowsOf(d, options.sshCopy).note; break;
+    case 'sshLink': value = options.sshLinkName; break;
     case 'createdAt':
       value = options.createdAt === undefined ? undefined : new Date(options.createdAt).toISOString();
       break;

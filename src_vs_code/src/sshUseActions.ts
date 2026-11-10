@@ -369,6 +369,9 @@ function brokerWindow(deps: SshUseDeps): RemoteWindowDeps | undefined {
   return deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined));
 }
 
+// `extension.ts` is under the size ratchet, so it imports the road host from the module that already assembles the SSH deps (E2-D9).
+export { sshRoadOf } from './sshRoad';
+
 /**
  * Everything the two SSH actions need, assembled in one place instead of in `activate()`.
  *

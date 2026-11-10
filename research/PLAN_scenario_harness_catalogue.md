@@ -28,7 +28,7 @@
 >
 > Related docs: [module_tests.md](module_tests.md),
 > `.claude/rules/shared/common/scenario-tests.md` (the rule this answers),
-> [testing.md](../.claude/rules/shared/common/testing.md), [http/README.md](../http/README.md).
+> [testing.md](../.agents/conventions/common/testing.md), [http/README.md](../http/README.md).
 
 ## The symptom
 

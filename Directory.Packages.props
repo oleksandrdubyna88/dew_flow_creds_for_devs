@@ -2,7 +2,7 @@
 
   <!--
     Package policy: bump to the latest STABLE release monthly, all at once, across the
-    dew_flow_* repositories (.claude/rules/shared/csharp/nuget-packages.md). Exceptions
+    dew_flow_* repositories (.agents/conventions/csharp/nuget-packages.md). Exceptions
     are pinned below with the reason, because an exception without a reason gets bumped
     by the next person who runs the sweep.
   -->
@@ -10,7 +10,7 @@
     <!-- Server: Entra / Google id-token validation. -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
 
-    <!-- Serilog: the one logging stack, per .claude/rules/shared/common/logging-serilog.md. Apache-2.0. -->
+    <!-- Serilog: the one logging stack, per .agents/conventions/common/logging-serilog.md. Apache-2.0. -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
 
     <!-- src_service_defaults: the shared sinks the server and both AOT binaries use. Serilog core is
@@ -33,7 +33,7 @@
   <ItemGroup>
     <!-- xUnit v3 on the native Microsoft Testing Platform: the test project builds into a
          self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
-         aborts — run the executable (.claude/rules/shared/common/testing.md). -->
+         aborts — run the executable (.agents/conventions/common/testing.md). -->
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
 
     <!-- Hosts the API in-process (TestServer) so the suite needs no free port and no

@@ -72,6 +72,12 @@
           "new": "--token creds --dry-run",
           "count": 1,
           "reason": "the remedy line names the token of this repository"
+        },
+        {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
         }
       ]
     },
@@ -146,6 +152,18 @@
           "reason": "the pin keeps its four entries; two of them lie in the folder of the tests here"
         },
         {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 2,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
+        },
+        {
+          "old": "\".claude\", \"rules\", \"shared\"",
+          "new": "\".agents\", \"conventions\"",
+          "count": 5,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C); the same path as separate Path.Combine segments"
+        },
+        {
           "old": "The_files_that_may_spell_the_word_in_pieces_are_these_four_and_all_of_them_exist",
           "new": "The_files_that_may_spell_the_word_in_pieces_are_these_five_and_all_of_them_exist",
           "count": 1,
@@ -168,6 +186,12 @@
           "old": "namespace Mcp.Tests.Leftovers;",
           "new": "namespace CredsForDevs.Tests.Leftovers;",
           "count": 1
+        },
+        {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 2,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
         }
       ]
     },
@@ -372,6 +396,12 @@
           "new": "creds tests:",
           "count": 1,
           "reason": "the doc comment names the first line of the audit message; the message itself is built from OwnedToken.RepoToken"
+        },
+        {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
         }
       ]
     },
@@ -488,6 +518,18 @@
           "reason": "S3 discovery for this tree (D7): a file under any test root is a test, under any source root is source"
         },
         {
+          "old": "\".git\", \".claude\", \".http-artifacts\"",
+          "new": "\".git\", \".claude\", \".agents\", \".http-artifacts\"",
+          "count": 1,
+          "reason": "the mounted conventions now live under .agents/conventions, another repository the guard must not read (story 3.C); .claude stays for the legacy and host files"
+        },
+        {
+          "old": "<c>.claude</c> (the mounted",
+          "new": "<c>.claude</c>, <c>.agents</c> (the mounted",
+          "count": 1,
+          "reason": "the doc comment names the folder that was added to the never-entered list"
+        },
+        {
           "old": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\";",
           "new": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\" or \".ts\";",
           "count": 1,
@@ -534,6 +576,12 @@
           "old": "namespace Mcp.Tests.Leftovers;",
           "new": "namespace CredsForDevs.Tests.Leftovers;",
           "count": 1
+        },
+        {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
         }
       ]
     },
@@ -564,6 +612,18 @@
           "new": "TokenFile = \"src_service_defaults/tests/Support/Leftovers/OwnedToken.cs\"",
           "count": 1,
           "reason": "the token file lies in the helper folder of this repository"
+        },
+        {
+          "old": ".claude/rules/shared",
+          "new": ".agents/conventions",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
+        },
+        {
+          "old": "\".claude\", \"rules\", \"shared\"",
+          "new": "\".agents\", \"conventions\"",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C); the same path as separate Path.Combine segments"
         }
       ]
     },
@@ -762,6 +822,12 @@
           "old": "namespace Mcp.Tests.Leftovers;",
           "new": "namespace CredsForDevs.Tests.Leftovers;",
           "count": 1
+        },
+        {
+          "old": "\".claude\", \"rules\", \"shared\"",
+          "new": "\".agents\", \"conventions\"",
+          "count": 1,
+          "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C); the same path as separate Path.Combine segments"
         }
       ]
     },

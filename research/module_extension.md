@@ -191,6 +191,35 @@ grew a `program` option for it rather than a second platform: **the client's ope
 the shell's are two facts**, and everywhere else in the codebase they were one value. Quoting still
 follows the SHELL; only the first word and the untranslated paths follow the client.
 
+**The Windows words (fix `fix/windows-shell-quoting-injection`, 2026-11-10).** In a LOCAL Windows window Connect types
+its line into PowerShell (pwsh 7, else 5.1), so every word that line carries is decided by ONE function, `windowsWord`
+in `sshCommand.ts`; a value from vault data (sync, a share, the ssh-config import) must never be able to run a local
+command there. The rule: a word is **bare** only when it is on the whitelist (letters, digits, `. _ : @ \ / [ ] = + -`;
+NOT `,`, because a bare `a,b` is a PowerShell array and a two-hop `-J a@b,c@d` would split) and does not start with `@`
+(a splat) or with `-` and hold `:` (`-p:1` splits). A path keeps its `"…"` spelling (cmd reads it too) only when the value
+holds no `$`, no backtick and no double-quote character (the ASCII one, U+201C, U+201D, U+201E, and by defence in depth
+U+201F and U+2033). Anything else is ONE PowerShell **single-quoted** word, built by `hostShell.quoteFor('powershell')`,
+which doubles every character PowerShell reads as a single quote (`'` and U+2018, U+2019, U+201A, U+201B), each with
+itself. `Name=value` words (`UserKnownHostsFile=`) go through the same rule, with the name inside the quotes when the
+value needs them. A password connection's askpass is a `.bat` run by cmd.exe: `askpassScript('win32')` has CRLF line ends
+(the file that is written is the file cmd reads) and uses `setlocal EnableDelayedExpansion` with `echo(!CREDS_SSH_PASSWORD!`,
+because cmd expands `%VAR%` BEFORE it parses the line and a delayed-expansion value is not parsed again. `envPrefix`
+(`wslRelay.ts`, the `env NAME='value' ` prefix of the relay line) REFUSES a value it cannot single-quote: a value that
+holds any character PowerShell reads as a single quote (the ASCII one and U+2018 to U+201B, because a WSL window's default
+profile can be pwsh) gets no prefix at all, and the Connect call site turns that into the `relay-socket-unusable` refusal
+instead of connecting without the agent (see the two refusals below for why a silent fallback is the wrong answer
+there). The POSIX `-p` word stays bare on purpose: `typeGuards.ts` (`hasValidSshFields`) accepts only a number as a port, so a
+string port never becomes an entity. **Where the proofs live:** `test/shellQuotingRoadScan.test.ts` lists every site that
+quotes, escapes or wraps a value for a shell (each counted, each with its parser and whether vault data reaches it), feeds
+a hostile value into every string field of the win32 line and reads the result word by word, and shows that
+`isEntityMetadata` refuses a string port; `test/windowsParsers.test.ts` hands the words to the REAL cmd.exe, Windows
+PowerShell 5.1 and pwsh and checks that the value is read back unchanged and that no injected command ran (it runs in
+the `runner-windows` job of `ci-extension.yml`, and every child it starts is killed as a whole tree on a timeout); the
+strings themselves are pinned in `hostShell.test.ts`, `sshCommand.test.ts`, `sshAskpass.test.ts` and `wslRelay.test.ts`.
+Record: [PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md).
+
+**Known limit — the askpass variables and `SendEnv` (accepted by the owner, 2026-11-10).** A password connection keeps `CREDS_SSH_PASSWORD` (with `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`) in the local `ssh` process's environment. A person's own `SendEnv` pattern that matches it, together with a server `AcceptEnv` that matches it, would send the password to the server. `-o SendEnv=-NAME` cannot prevent this: OpenSSH removes only a literally equal pattern, not a wildcard (measured with `ssh -G` on OpenSSH 10.2 and Windows OpenSSH 9.5). Recorded in `research/PLAN_windows_shell_quoting_injection.md` §8.
+
 
 `remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.
 The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key not accessible` —
@@ -215,6 +244,18 @@ not use; `openSshTerminal` is handed `terminalPlatform(side, process.platform)` 
 `EnvironmentVariableCollection`, which is a single namespace per window and so cannot serve a Windows
 terminal and a WSL one at once — the same limitation `PLAN_wsl_agent_relay.md` recorded when it
 declined to export the variable for you.
+
+Everything in that paragraph up to the terminal is `prepareSshSession` (`sshSession.ts`, E1.S3 — the seam):
+it opens no terminal and returns `ready`, `refused` or `stopped`, and `connectEntity` keeps only the open half
+and the refusal's modal. The contract is a table of what is on disk after each result: `stopped` and `refused`
+leave nothing (every exit after `connectionOptions` took its pin file back through one helper — or, for a failed
+translation, inside `withTranslatedKnownHosts` — and a stored key that cannot be written now does too — the one
+deviation from the old behaviour; a second, harmless one: a safe host with an unsafe `user` also gives its pin back,
+because `buildSshCommand` returns `undefined` through `isSafeSshTarget` while `knownHostsLine` checks only the host,
+so the pin was written, and the old code left it); `ready` holds the key and the
+pin, and its OWNER calls `cleanup()` (key and pin, idempotent) on every exit that did not hand the session to
+a terminal or a child. With `isolate: true` the key and the pin carry a per-preparation uuid, so two sessions of
+one SSH entry never share a file; `connectEntity` never sets it and keeps today's names.
 
 A **pinned host key survives** the WSL route: `UserKnownHostsFile` has no mode requirement, so the
 file is translated by asking the distribution (`translateWindowsPath` → `wslpath -a`, bounded and
@@ -2195,6 +2236,19 @@ C0, DEL, C1, the line and paragraph separators and the bidi controls U+202A-E, U
 readable in a name with no `{name}`: the field separator is `logSafe`'s own addition, because only a log line has fields to forge.
 The chain's modal (`describeRunPlan`) takes the same escaper on every road, for the owner, each step and each line.
 
+**The composer for a Terminal entry that runs over SSH (`remoteLaunch.ts`, E1.S2 of `PLAN_terminal_command_over_ssh.md`).** One
+pure module (no `vscode`) is the road from an entry and its `sshEntityId` link to a launch: `sshLinkOf(entry, lookup)` answers
+`none`, `linked` or `refused` with its own sentence (itself, missing, in the Trash, not an SSH entry, unsafe address);
+`planLaunch(entry, link, { stayOpen })` answers `empty`, `refused`, `local` or `remote` (the `{name}` refusal first, then the link, a
+Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds the typed line from the PREPARED snapshot
+(`PreparedForTyping`, which S3's `ReadySsh` satisfies as it is), and `trustLineFor` and `secretsStdin` give the approval text and
+the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
+(`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
+the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. Since E2.S1, E2.S2 and E2.S3 the person's roads (the arrow, a VPN's Start on the person's click, the copies, the folder run and a chain step with a road) plan through `planLaunch` and no longer call it. It is still called by Run with Secrets, the agent's run, an agent's VPN start and a dependency chain with no road (E3 follows).
+`launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
+send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
+
 *The chain.* `runDependenciesFirst(dependencyRequest(…, roots, folder.name, trust, plan.directIds))` with the details of the
 lines the chosen button types as roots and every direct entry as `exclude`. `planDependencyRun` keeps only roots with
 `runDependencies === true`, so a skipped (`open`, under `Run`) entry's dependencies do not run; an excluded entry is neither a
@@ -2208,6 +2262,19 @@ The lines themselves do not wait for each other.
 *Opening, never finding.* Each line goes through `typeIntoNew` (`terminalGuard.ts`, now exported): `openEntryTerminal`
 (`entryShell`'s pinned-or-default choice) creates and disposes nothing, then `typed` calls `noteSent` before `sendText`. It is
 never `findEntryTerminal`, and never `pinnedTerminal(name, { fresh: true })`, which disposes by name.
+
+*An SSH Connect tab names its entry (2026-11-10, the owner).* It was `SSH: <user>@<host>`; it is `Creds SSH: <folder> / <entry>`
+(`Creds SSH: <entry>` with no parent folder), built by `sshTerminalTitle(EntryTerminalKey)` beside the other titles. Its own prefix
+keeps it a different key from a linked Terminal entry's `Creds: …` terminal. `connectEntity` reads the key from storage once,
+after `prepareSshSession` (every dialog is behind it): `placeOf` builds `SshTerminalPlace { title, accountId }` from
+`entryTerminalKeyOf(storage, accountId, entity.id, entity.name)`, and `openReady` hands it to `openKeyTerminal` (which passes it
+to `openSshTerminal`) or to `openPasswordTerminal` (which names its terminal with it). The tab
+only shows: two entries may share a name in one folder, the same entry id may exist in two accounts, and a move changes the folder
+half. So a session is found by `sshTerminalOwners.ts` (no `vscode` import, a `WeakMap` keyed by the terminal object, which the
+extension host keeps for the terminal's life) by account and entry, whatever its tab. `openSshTerminal` reuses, and the password
+road disposes, only a live terminal opened for the SAME entry of the SAME account, so after a move the entry's own session still
+comes forward (under its old tab) and the password road still closes its old tab. A terminal from before a reload belongs to
+nobody, so it is neither reused nor closed.
 
 *The title is one key (2026-11-09, `PLAN_terminal_titles_folder.md`).* A terminal's title is both the name it is created under
 and the key every lookup matches exactly, so `terminalTitles.ts` (no `vscode` import) builds every Creds terminal title and
@@ -2300,6 +2367,92 @@ profile that already speaks the entry's system fixes all three without giving ba
 The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on THIS machine, not in a
 window, so for them an OS means: refused on another OS, the native shell on this one. The viewer's
 command row reads `Command · runs on Linux` (`commandRowLabel`).
+
+#### Terminal entry SSH link (E1.S1 of `PLAN_terminal_command_over_ssh.md`)
+
+A Terminal entry can name ONE SSH entry of its own vault in `details.sshEntityId` (form label *Runs over SSH*; the first option is
+*— Do not use —*, and the stored value is absent or `''` for "not linked"). In this build the link is only stored and shown: no road
+runs a command over SSH yet (E2 and E3 switch the roads to `planLaunch`), so every road REFUSES a linked entry.
+
+*The field.* `sshLinkField` (`execFormFields.ts`) is a `<select>` made by the same private `entityPicker` as the VPN launcher's
+*Started by*: "none" first, then the candidates, then a stored id that is no longer offered shown as *(missing entry)* so a save does
+not drop it. The candidates are `collectSshCandidates` (`commandTargets.ts`): never the entry itself, and every entry that
+`remoteLaunch.isLinkTarget` accepts (live at any depth, kind `ssh`, a host `isSafeSshTarget` accepts). `isLinkTarget` is the
+decision `sshLinkOf` takes, asked without an entry, so the list offers exactly what the composer can use and a change to the decision
+changes both. The save scrub (`execDetails`) keeps the id only on a Terminal entry, never itself, never empty. `typeGuards.ts`
+accepts a string or nothing; an agent can never set it (it is outside the agent-create allow-list).
+
+*Round trips.* A backup and a sync keep the link (the ids are one vault's own; a backup import that renames an SSH entry renames the
+link, `idQuarantine.ts`). A share and an export remove it: `shareableDetails` strips it, `exportedDetails` does it with
+`withoutSshLink`, and an import and an accepted share strip it again (`withoutSshLink` in `landShare` and the import), because the id
+names an entity of the SENDER's vault. **Update it** on a received share keeps the RECIPIENT's own link and never takes the sender's:
+`shareUpdateSeal.rebuilt` carries it with the recipient's other marks through `remoteLaunch.keepingSshLink(incoming, existing)`, so a
+payload that carries a link (hand-made, or from an older build) does not set one on an unlinked entry and does not replace a linked one.
+The viewer shows the linked entry's name in a *Runs over SSH* row.
+
+*The refusal on every road.* `sshLinkRefusal(entry)` (`remoteLaunch.ts`) is the ONE sentence: `"<name>" is set to run over SSH, which
+this version cannot do yet. To run it on this machine, edit it and set "Runs over SSH" to "Do not use".` It answers through
+`sshLinkOf` row L1, so "is this entry linked" has one reader. It is asked, before any question, dependency, secret read or spawn, by
+Run with Secrets (`commands/runCommands.ts`), the agent's run (`agentUseActions.ts`), a VPN launcher on an AGENT's start (`vpnLauncherRun.ts`,
+which has no road host) and a chain step with no road (the agent's start, `dependencyRun.ts`).
+The copies no longer say it: they show the trust line of a linked entry (`copiedLineOf`, below). `launchRoadScan.test.ts` pins this: `.sshEntityId`
+is read only by the plumbing and `sshLinkOf`/`keepingSshLink`, and `sshLinkRefusal(` is called only from the listed functions (a list
+that shrinks as E2 and E3 switch each road). The help article of all five languages and the README carry the field.
+
+*The arrow, the launcher and the copies over SSH (E2.S1 of PLAN_terminal_command_over_ssh.md).* The order of the green arrow and of a VPN's
+*Started by* (the person's own Start) on a linked entry: link (`sshLinkOf`) → `planLaunch` (its refusal is said before anyone is asked; no
+`windowRefusal`, *Runs on* is the remote's system) → prepare → the typed line's own refusal (`typedLine`, PowerShell 5.1) → the trust question
+on the trust line `trustLineFor(ready.entity, ready.jump, line)` → the dependencies → `sendGuarded` with the `ssh` target
+(`SendTarget`, `terminalGuard.ts`; SSH Connect's shell, `composedShellPath`, via `findSshTerminal` / `openSshEntryTerminal`). `sshRoad.ts`
+holds the road host: `SshRoad` (`prepare` through `prepareSshSession` with `isolate: true`, the window's route and the agent's answer for THAT
+entry; `sayRefused` is SSH Connect's modal through `offerTheFix`, with NO retry, the person runs the entry again) and `sshRoadOf`, which
+`extension.ts` imports through `sshUseActions.ts` (the size ratchet). Only the person's roads get it; an agent's `creds_vpn_up` passes none, so
+a linked launcher on an agent's start keeps E1's refusal (E2-D2). The arrow and the launcher share ONE road, `runOverSsh(road, accountId, plan, key, gates)`: prepare, the typed line's own refusal, `gates(trustLine)` (the road's trust question and
+dependencies), then the guarded send; `key` is a function because the launcher reads its terminal's key after the chain. ONE OWNER for every road that prepares (the arrow, the launcher, the folder run, the chain):
+`ownedSessions()` gives `{ own, handOver, cleanAll }`; a road `own`s a session the moment `prepare` answers it and `cleanAll`s in its `finally` (declined trust, cancelled dependency,
+a throw, a failed terminal creation, a declined busy question); `handOver(ready, terminal, earlierEnded)` removes it from the list and makes that terminal's close clean it. A
+`WeakMap` keeps the sessions of each terminal under ONE listener (lead amendment A1, corrected by the E2 fix pass): a terminal reused after a `finished` verdict (`GuardedSend.earlierEnded`, true only
+on that path) cleans what it held at the hand-over, because that ssh has ended; after "Type It Anyway" into a busy or unknown terminal the earlier ssh may still be running, so the terminal keeps BOTH
+sessions and its close cleans all of them. ONE SNAPSHOT: from `prepare` to the send nothing reads the SSH entry from storage again.
+A session that signs in with a password has an environment, which a terminal takes only at creation: its send opens a NEW terminal beside any
+live one and disposes nothing (D10), and a terminal opened with an environment is NEVER found for reuse by any later run — the SSH finder, the local road's finder and the pinned finder all skip it (`carriesEnvironment`, read from `creationOptions.env`) — so a later key session or an unlinked local line never runs with a password's askpass variables. `sshReaderShell()` (`pinnedTerminal.ts`) is the shell that reads the typed line (only the PowerShell 5.1
+check). A linked launcher whose line uses `{config}` is refused before prepare (`linkedConfigRefusal`): the file is on this machine. The copies
+read `copiedLineOf` (`remoteLaunch.ts`): a linked entry shows `ssh … -- user@host '<line>'` with `COPY_NOTE` (it uses the person's own ssh
+setup, the vault's key and password are not in it) in Copy Command, the viewer's *Full command* and *About this line* rows and copy, and Copy
+All (`entityCommandRows.ts`); a broken link or a bad plan shows why and copies nothing. The copied line is REQUIRED by `commandRowsOf` and `commandBlockOf` (no fallback reading): `EntityViewOptions.sshCopy` is a required field, and `formatEntityBlock` throws for a Terminal entry given none.
+
+*The folder run over SSH (E2.S2 of PLAN_terminal_command_over_ssh_E2.md).* A Terminal row that runs over an SSH entry is planned by `planLaunch` (not
+by `resolveCommand`; `folderRun.ts` no longer imports it and no longer calls `sshLinkRefusal`) and its `line` is the SHOWN trust line
+(`shownTrustLine`, from the vault as the plan reads it), so the modal lists `name: ssh … -- user@host '<line>'`, `(new)` is `isCommandTrusted(row.id, trustLine)`
+and `trustAll` records the trust line, the key the arrow uses: one approval covers both roads. Of the local checks, a linked row keeps the `{name}` rule, the
+control-character and line-break refusals and `{config}`, and is NOT asked `facts.shellRefusal` (the table is in `linkedLine`'s doc, lead amendment A3). After the
+modal, the trust and the chain, `prepareLinked` prepares each linked row IN ROW ORDER, one after another and before the synchronous `typeAll`: the Terminal entry is
+read again from storage (`liveDetails`, then `linkedNow` of `sshRoad.ts`, the same read the chain makes: a row removed, trashed or unlinked during the wait is not prepared and fails as changed), `SshRoad.prepare` answers, and `recheckedLine` (`sshRoad.ts`, shared with the chain) rebuilds the trust line from the prepared snapshot, which must be the one the modal showed, or the row fails with
+`CHANGED_ROW` (its SSH entry or jump host changed while the dialog was open — run the folder again); a refused preparation fails that row alone
+(`refusedRowReason`), no modal per row. A `stopped` row (an SSH connection could not be prepared: a question was cancelled, or SSH Connect said why) stops the WHOLE run: no further `prepare`, nothing typed,
+linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared (`ownedSessions()`, made before the first `prepare`), and `prepareAndType`'s
+`finally` (`cleanAll`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
+with the session's own environment for a password, D10) is handed over (`handOver`) and that terminal's close cleans it.
+
+*A dependency step over SSH (E2.S3 of PLAN_terminal_command_over_ssh_E2.md, as amended by E2.A).* `planDependencyRun` takes an optional `lookup`. Without it (an
+agent's start, which passes no road, E2-D2) a linked step still refuses the whole chain with `sshLinkRefusal`'s sentence in `stepRefusal`. With it, a step whose
+`sshLinkOf` is not `none` is planned by `planLaunch(node, link, { stayOpen: false })` (D11: the BARE line, so the step ends and ssh's exit status is the remote command's,
+which the chain reads). Of the local checks a linked step keeps the `{name}` rule, the line-break refusal, the Windows-remote sentence and `{config}`, and is NOT asked
+`refusalOf`, the local OS (D14); the table is in `addLinkedStep`'s doc (lead amendment A3). The chain follows the FOLDER model (A2): `runDependenciesFirst` shows each
+linked step by its trust line from `shownTrustLine` (`shownSteps`, NO preparation: no PIN, no host-key question, no key file before the person has agreed), the
+approval is keyed on that trust line (`isCommandTrusted(trust, step.id, trustLine)`, the key the arrow uses), and only after the approval and the request's own check does
+`prepareAndRun` prepare the linked steps IN STEP ORDER, before any step runs. Each step's link is read again then (`linkedNow` over `request.nodeOf`, so a step gone or trashed reads as changed, and the SSH entry as it is now; the read the folder run shares); `stopped` is quiet, `refused` shows SSH
+Connect's remedy through `sayRefused` with no retry, and the prepared snapshot is checked by `recheckedLine` (`sshRoad.ts`, shared with the folder run): its trust line rebuilt by `trustLineFor(ready.entity,
+ready.jump, remote.line)` must be the shown one, else the chain stops with `changedStepRefusal` ("changed while the dialog was open — run it again") before any step; a
+session with an `env` (a password) is refused with `passwordStepRefusal`, because the chain's one terminal has one environment (so the PIN of a password entry may be asked
+before the refusal, which only the credential kind inside `prepareSshSession` can tell); then `typedLine` (the PowerShell 5.1 refusal). The chain stops preparing at the FIRST step that cannot run (a stop, a refusal, a changed line, a password session): no later step is prepared, so no later PIN or host-key question and no later key file. The chain terminal is pinned when
+any step is linked and `composedShellPath()` is set (a local window). ONE OWNER (A4): `prepareAndRun` makes the owner (`ownedSessions()`) BEFORE the first `prepare`, a session joins it
+the moment `prepare` answers, and its `finally` cleans every session on it — a refused step, a thrown later `prepare`, a closed chain terminal, a *Stop*, a thrown request end;
+`runAll` also cleans a step's own session when THAT step ends (its exit, the Continue answer), before the next step, so a step's key and pin are gone before the root is typed.
+Every preparation is `isolate: true` (`sshRoad.ts`), so a step linked to the same SSH entry as its parent or another step has its own key and pin files and its `cleanup()`
+cannot delete theirs. The chain's two sends (`sendText` without shell integration, `executeCommand` with it) type `step.typed`; `launchRoadScan.test.ts` now also scans
+`.executeCommand(`. The person's callers pass the road (`withSshSteps`: the arrow, Run Script and Run with Secrets chains through `chainRequest` in `runCommands.ts`, the folder run's chain in `folderRunCommand.ts`, and
+`vpnDependencies` when `ctx.sshRoad` is set); an agent's `creds_vpn_up` passes none and keeps E1's refusal.
 
 ### Which shell parses the line (issue #103)
 
@@ -6079,7 +6232,7 @@ a file that churns is a file nobody reads the diff of.
 **Three ways that file could lie, all closed in S4.3's code round** (#95), and each was observed
 rather than predicted. **A stale binary**: the script's entire output is whatever the executable
 answers, and `dew_flow_creds_for_devs.slnx` used to list the minimal-API server and its tests and
-nothing else — so a `Program.cs` edit followed by `dotnet build dew_flow_creds_for_devs.slnx`
+nothing else — so a `Program.cs` edit followed by `dotnet build dew_flow_creds_for_devs.slnx -m:4`
 printed *Build succeeded, 0 Warning(s)* without rebuilding anything, regenerated the contract from
 yesterday's prose, and `--check` agreed, because both had asked the same stale process. **The
 solution file now carries `src_mcp/src` and `src_mcp/tests`**, which is the real repair and makes

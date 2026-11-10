@@ -102,7 +102,7 @@ async function preconditions() {
     skip('no WSL on this machine');
   }
   if (!fs.existsSync(path.join(windowsBuild('src_cli'), 'creds.exe'))) {
-    skip('the Windows CLI is not built', 'run: dotnet build src_cli/src/CredsCli.csproj');
+    skip('the Windows CLI is not built', 'run: dotnet build src_cli/src/CredsCli.csproj -m:4');
   }
   const tools = await wslStep({}, 'tools', ['dotnet', 'python3', 'ssh-add', 'ssh-keygen']);
   if (tools.stdout.includes('missing')) {

@@ -33,13 +33,24 @@ jobs:
       # Only that ONE submodule: `submodules: true` would drag in every other one
       # for what is a walk over markdown.
       - name: Fetch the shared rules
-        run: git submodule update --init --depth 1 .claude/rules/shared
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # The resolver's own dependencies, then the rule check: the install step the other migrated
+      # consumers run (conventions ROLLOUT.md, CI and fresh clone).
+      - name: Shared instruction dependencies and pin verification
+        run: |
+          npm ci --ignore-scripts --prefix .agents/conventions
+          node .agents/conventions/tools/rules.mjs check --repo .
 
       # Fails on a plan filed in the wrong folder, a missing status line, a link
       # between todo/ and research/ that does not resolve, or a todo/README.md index
       # that has drifted from the folder.
       - name: Plan lifecycle
-        run: node .claude/rules/shared/tools/plan-lifecycle.mjs
+        run: node .agents/conventions/tools/plan-lifecycle.mjs
       # The protection `main` is supposed to have is a FILE now — `.github/branch-protection.json` —
       # because branch protection is the one part of a repository's CI that is not IN the repository.
       # Nothing makes GitHub read it; what it buys is that the intent is reviewed, and that the drift
@@ -108,16 +119,21 @@ jobs:
       # Every submodule pin must equal its remote's tip — "a rule change and the pin
       # bumps are one task" is a check, not a habit.
       - name: Pin check
-        run: node .claude/rules/shared/tools/pin-check.mjs
+        run: node .agents/conventions/tools/pin-check.mjs
+
+      # The Claude host adapter, which nothing else can notice going wrong: a session that never
+      # received the rules behaves exactly like one that received them and chose badly.
+      - name: Adapter check
+        run: node .agents/conventions/tools/adapter-check.mjs .
 
       # The review-gate block is a shared rule now. This repository is where the stale
       # paste was measured — v2 against v5 — so it is the one that most needs the check.
       - name: Gate snippet
-        run: node .claude/rules/shared/tools/gate-snippet-check.mjs
+        run: node .agents/conventions/tools/gate-snippet-check.mjs
 
       # The root Directory.Build.rsp is really there and really says -nr:false. Measured on this
       # family's machine: five sessions building at once held 72 MSBuild workers and 10.7 GB,
       # because a worker busy in one build cannot be reused by another
-      # (see .claude/rules/shared/csharp/dotnet-build.md). A repository with no C# passes without an opinion.
+      # (see .agents/conventions/csharp/dotnet-build.md). A repository with no C# passes without an opinion.
       - name: Build flags
-        run: node .claude/rules/shared/tools/build-flags-check.mjs
+        run: node .agents/conventions/tools/build-flags-check.mjs

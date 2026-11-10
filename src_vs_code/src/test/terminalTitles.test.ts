@@ -9,6 +9,7 @@ import {
   entryTerminalKeyOf,
   entryTerminalTitle,
   maskedRunTitle,
+  sshTerminalTitle,
   vpnTerminalTitle,
 } from '../terminalTitles';
 import { TreeNode } from '../types';
@@ -85,4 +86,18 @@ test('the_module_imports_no_vscode', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'terminalTitles.ts'), 'utf8');
 
   assert.doesNotMatch(text, /from\s+['"]vscode['"]/);
+});
+
+// The owner, 2026-11-10: an SSH Connect tab said `SSH: root@82.165.44.219`, not which entry it was.
+test('an_ssh_terminal_names_its_folder_and_entry_under_its_own_prefix', () => {
+  assert.equal(sshTerminalTitle(entryTerminalKey('ionos server', folder('f', 'ssh connections'))), 'Creds SSH: ssh connections / ionos server');
+  assert.equal(sshTerminalTitle(entryTerminalKey('ionos server', undefined)), 'Creds SSH: ionos server');
+  assert.equal(sshTerminalTitle(entryTerminalKey('x', folder('f', 'a\tb'))), `Creds SSH: ${escapeControl('a\tb')} / x`);
+});
+
+test('an_ssh_title_never_equals_the_entry_terminal_title_of_the_same_entry', () => {
+  // Both are lookup keys: a linked Terminal entry's arrow (entryTerminalTitle) must never find an SSH Connect session.
+  for (const key of [entryTerminalKey('x', folder('f', 'ops')), entryTerminalKey('x', undefined)]) {
+    assert.notEqual(sshTerminalTitle(key), entryTerminalTitle(key));
+  }
 });

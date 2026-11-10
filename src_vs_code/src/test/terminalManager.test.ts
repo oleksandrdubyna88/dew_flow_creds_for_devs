@@ -97,21 +97,64 @@ test('a terminal is created, shown, and sent the command', () => {
 
   assert.ok(opened !== undefined);
   assert.equal(w.created.length, 1);
-  assert.match(w.created[0].name, /^SSH: /);
+  assert.equal(w.created[0].name, 'Creds SSH: prod', 'no title given: the entry name under the SSH prefix');
   assert.equal(w.created[0].shown, 1);
   assert.match(w.created[0].sent[0], /ssh/, 'the command is actually sent, not just typed');
 });
 
-test('a LIVE terminal for the same target is reused, not duplicated', () => {
-  // Clicking Connect twice should bring the session forward, not open a second one beside it.
-  const existing = fake('SSH: deploy@prod.example.com');
-  const w = world([existing]);
+// The owner, 2026-11-10: the tab names the entry and its folder, not user@host. The title is also the lookup key, and
+// two entries may share a name in one folder — so a session is found again only for the entry it was opened for.
+const TITLE = 'Creds SSH: ssh connections / prod';
 
-  const opened = w.mod.openSshTerminal(entity());
+test('the tab is the title it is given, and Connect twice brings the same session forward', () => {
+  const w = world();
 
-  assert.equal(opened, existing as never);
-  assert.equal(w.created.length, 0, 'nothing new was created');
-  assert.equal(existing.shown, 1, 'the existing one was brought forward');
+  const first = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  const again = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+
+  assert.equal(w.created.length, 1, 'nothing new was created');
+  assert.equal(w.created[0].name, TITLE);
+  assert.equal(again, first);
+  assert.equal(w.created[0].shown, 2, 'the existing one was brought forward');
+});
+
+test('another entry with the same title gets its own terminal, never the first entry\'s session', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(entity({ id: 'e1' }), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  w.mod.openSshTerminal(entity({ id: 'e2', host: 'other.example.com' }), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+
+  assert.equal(w.created.length, 2, 'a session on the wrong server would have been brought forward');
+  assert.match(w.created[1].sent[0], /other\.example\.com/);
+});
+
+test('after the entry moved, Connect still brings ITS session forward — found by the entry, not by the title', () => {
+  const w = world();
+
+  const first = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: 'Creds SSH: old / prod', accountId: 'a1' });
+  const again = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: 'Creds SSH: new / prod', accountId: 'a1' });
+
+  assert.equal(w.created.length, 1, 'a second session was opened beside the first');
+  assert.equal(again, first);
+});
+
+test('the same entry id in another account gets its own terminal', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a2' });
+
+  assert.equal(w.created.length, 2);
+});
+
+test('a live terminal this window did not open for the entry is not reused, even under its title', () => {
+  const stranger = fake(TITLE);
+  const w = world([stranger]);
+
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+
+  assert.equal(w.created.length, 1);
+  assert.equal(stranger.shown, 0);
 });
 
 test('a terminal that has EXITED is not reused — it cannot run anything', () => {
@@ -139,10 +182,10 @@ test('two different hosts get two terminals', () => {
   const w = world();
 
   w.mod.openSshTerminal(entity());
-  w.mod.openSshTerminal(entity({ id: 'e2', host: 'stage.example.com' }));
+  w.mod.openSshTerminal(entity({ id: 'e2', name: 'stage', host: 'stage.example.com' }));
 
   assert.equal(w.created.length, 2);
-  assert.notEqual(w.created[0].name, w.created[1].name);
+  assert.notEqual(w.created[0].name, w.created[1].name, 'the tabs name two different entries');
 });
 
 // Added with the remote-window fix. Until then this function read `process.platform` — the

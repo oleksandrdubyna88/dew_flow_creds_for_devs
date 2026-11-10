@@ -1,5 +1,5 @@
 // Types for `leftovers.cjs`, the Node WRAPPER over the mounted test-leftovers reference
-// (`.claude/rules/shared/tools/lib/owned.mjs`). One `export` line per name the module exports: a test reads
+// (`.agents/conventions/tools/lib/owned.mjs`). One `export` line per name the module exports: a test reads
 // this file and compares the list with `Object.keys(require('./leftovers.cjs'))` in both directions, so a name
 // added to one and not the other is a red suite.
 

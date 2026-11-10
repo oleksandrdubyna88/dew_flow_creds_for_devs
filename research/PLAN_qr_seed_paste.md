@@ -167,4 +167,4 @@ produces.
       silently — `a picture with no QR code in it says so instead of inventing one`, and
       `a QR that is not an authenticator code says what it actually is`.
 - [x] `research/module_extension.md` updated; this plan promoted per
-      [planning-docs.md](../.claude/rules/shared/common/planning-docs.md).
+      [planning-docs.md](../.agents/conventions/common/planning-docs.md).

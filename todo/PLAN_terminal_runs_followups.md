@@ -51,6 +51,10 @@ of an entry named `before x`, which also goes against a folder run's `Run` leavi
 
 ### 5. `quoteFor('powershell', …)` and typographic quotes
 
+**Closed 2026-11-10 by [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md)**
+(#331, released in 1.19.0): `quoteFor('powershell')` doubles `'` ‘ ’ ‚ ‛ each with itself, observed on real pwsh 7 and
+Windows PowerShell 5.1. Kept below as written.
+
 **Symptom, from memory and not measured:** PowerShell reads `‘` and `’` as quotes, and `quoteFor` (`src/hostShell.ts:117-125`) doubles only
 the ASCII `'`, so a value holding a typographic quote could end the string. No `pwsh` on the machine this was written on. **First step:**
 measure it where `pwsh` exists. It reaches `{config}` paths (`substituteConfig`, `src/vpnLauncher.ts`); `{name}` is not exposed, because

@@ -40,24 +40,21 @@ const VERBATIM: readonly string[] = [
   'a.b:c',
   'a_b_c',
   'tmux 3.6',
-  'ssh -t <host> tmux new -A -s {name}',
   'pwsh',
   'PowerShell 7',
   'Windows PowerShell 5.1',
-  'Command Prompt',
-  'OpenSSH for Windows 9.5',
   'Creds: before <folder>',
   '32',
   '4000',
 ];
 
-/** Subfolders · a control character · the lines do not wait · our own line seen to finish · without integration every time · a dependency never exits · tmux only detaches · a local window on Windows. */
+/** Subfolders · a control character · the lines do not wait · our own line seen to finish · without integration every time · a dependency never exits · tmux only detaches. (The by-hand `ssh -t <host> …` paragraph and its "local window on Windows" pins left with E2.S1, which replaced that advice with the *Runs over SSH* field.) */
 const OWN_WORDS: Readonly<Record<HelpLanguage, readonly RegExp[]>> = {
-  en: [/Subfolders are not run/, /control character/, /do not wait for each other/, /typed a line there and saw that command finish/, /without shell integration it asks every time/, /never exits/, /only detaches/, /From a local window on Windows/],
-  de: [/Unterordner laufen nicht mit/, /Steuerzeichen/, /warten nicht aufeinander/, /Zeile getippt und diesen Befehl hat enden sehen/, /ohne Shell-Integration jedes Mal/, /nie endet/, /trennt sich nur/, /Aus einem lokalen Fenster unter Windows/],
-  es: [/subcarpetas no se ejecutan/, /carácter de control/, /no se esperan entre sí/, /escribió allí una línea y vio terminar ese comando/, /sin integración de shell, cada vez/, /nunca termina/, /solo se desconecta/, /Desde una ventana local en Windows/],
-  ru: [/Подпапки не запускаются/, /управляющим символом/, /не ждут друг друга/, /ввело там строку и увидело завершение этой команды/, /без интеграции с оболочкой — каждый раз/, /никогда не завершается/, /только отсоединяется/, /Из локального окна на Windows/],
-  uk: [/Підпапки не запускаються/, /керувальним символом/, /не чекають один на одного/, /ввело там рядок і побачило завершення цієї команди/, /без інтеграції з оболонкою — щоразу/, /ніколи не завершується/, /лише від'єднується/, /З локального вікна на Windows/],
+  en: [/Subfolders are not run/, /control character/, /do not wait for each other/, /typed a line there and saw that command finish/, /without shell integration it asks every time/, /never exits/, /only detaches/],
+  de: [/Unterordner laufen nicht mit/, /Steuerzeichen/, /warten nicht aufeinander/, /Zeile getippt und diesen Befehl hat enden sehen/, /ohne Shell-Integration jedes Mal/, /nie endet/, /trennt sich nur/],
+  es: [/subcarpetas no se ejecutan/, /carácter de control/, /no se esperan entre sí/, /escribió allí una línea y vio terminar ese comando/, /sin integración de shell, cada vez/, /nunca termina/, /solo se desconecta/],
+  ru: [/Подпапки не запускаются/, /управляющим символом/, /не ждут друг друга/, /ввело там строку и увидело завершение этой команды/, /без интеграции с оболочкой — каждый раз/, /никогда не завершается/, /только отсоединяется/],
+  uk: [/Підпапки не запускаються/, /керувальним символом/, /не чекають один на одного/, /ввело там рядок і побачило завершення цієї команди/, /без інтеграції з оболонкою — щоразу/, /ніколи не завершується/, /лише від'єднується/],
 };
 
 test('every_language_holds_the_labels_and_the_commands_byte_for_byte', () => {

@@ -42,9 +42,23 @@ export function entryTerminalKeyOf(
  * tab or a newline in it never reaches a title; the entry half is written as it is.
  */
 export function entryTerminalTitle(key: EntryTerminalKey): string {
+  return titleUnder('Creds', key);
+}
+
+/**
+ * The terminal of SSH Connect: `Creds SSH: <folder> / <entry>`, or `Creds SSH: <entry>` with no folder (the owner,
+ * 2026-11-10 — the tab said `SSH: <user>@<host>`). Its own prefix keeps it a different key from the entry's own
+ * terminal: a linked Terminal entry's arrow finds `Creds: …` and must never find an SSH session.
+ */
+export function sshTerminalTitle(key: EntryTerminalKey): string {
+  return titleUnder('Creds SSH', key);
+}
+
+/** `<prefix>: <folder> / <entry>`, the folder through `escapeControl`; `<prefix>: <entry>` with no folder. */
+function titleUnder(prefix: string, key: EntryTerminalKey): string {
   return key.folderName === undefined
-    ? `Creds: ${key.entryName}`
-    : `Creds: ${escapeControl(key.folderName)} / ${key.entryName}`;
+    ? `${prefix}: ${key.entryName}`
+    : `${prefix}: ${escapeControl(key.folderName)} / ${key.entryName}`;
 }
 
 /** The terminal that runs an entry's dependencies before the owner's line. */

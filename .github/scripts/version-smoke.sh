@@ -7,7 +7,7 @@
 # The `cli` kind with no log root and no RUNNER_TEMP keeps its log in an owned folder (lib/owned.sh) that is removed
 # when the script ends, whatever way it ends; pass a root to keep the log of a failed run.
 # Off CI under Git Bash (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init
-# .claude/rules/shared`); without them the script stops before it makes anything — pass a log root there.
+# .agents/conventions`); without them the script stops before it makes anything — pass a log root there.
 #
 # Why it exists: until 2026-10-11 `release.yml` published both binaries without `-p:Version`, so every release
 # of `creds-mcp` answered `--version` with `creds-mcp 1.0.0` and every `creds` log said `version 1.0.0` — the SDK

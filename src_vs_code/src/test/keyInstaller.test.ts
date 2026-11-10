@@ -335,3 +335,19 @@ test('an ordinary uuid is left exactly as it is', () => {
 
   assert.equal(path.basename(keyPath), 'a1b2c3d4-e5f6-7890-abcd-ef1234567890.key');
 });
+
+test('a suffix reaches the REAL file name: <id>-<suffix>.key beside, never over, today’s <id>.key (E1.S3 isolate)', () => {
+  // The mocks of the session tests build their own names, so only a real write shows the suffix arrives.
+  const w = world();
+  const uuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
+  const plain = w.mod.materializePrivateKey(w.storage, 'ent-1', 'ONE');
+  const isolated = w.mod.materializePrivateKey(w.storage, 'ent-1', 'TWO', uuid);
+
+  assert.equal(path.basename(isolated), `ent-1-${uuid}.key`);
+  assert.equal(path.dirname(isolated), w.mod.materializedKeysDir(w.storage), 'inside the purged keys directory');
+  assert.equal(path.basename(plain), 'ent-1.key', 'without the suffix the name is today’s');
+  assert.notEqual(plain, isolated);
+  assert.equal(fs.readFileSync(plain, 'utf8'), 'ONE\n', 'the isolated write did not touch the shared file');
+  assert.equal(fs.readFileSync(isolated, 'utf8'), 'TWO\n');
+});

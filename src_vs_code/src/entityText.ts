@@ -8,7 +8,7 @@
 
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
 import { sshLineFor } from './sshCommand';
-import { describeCommand } from './commandLine';
+import { CopiedLine, commandBlockOf } from './entityCommandRows';
 import { resolveScriptEnv } from './scriptRender';
 import { EntityMetadata } from './types';
 import { EntityFields } from './entityFields';
@@ -20,6 +20,7 @@ export function formatEntityBlock(
   dbConnection?: string,
   notes?: string,
   fields?: EntityFields,
+  sshCopy?: CopiedLine,
 ): string {
   const lines = [`Name: ${details.name}`];
   if (fields?.login !== undefined) {
@@ -33,8 +34,13 @@ export function formatEntityBlock(
   // exactly what this block wants — the line, what it is for, and what each argument
   // means. It was written for the tooltip and simply was not reached from here, which
   // is why the details view showed a name and nothing else.
+  // An entry set to run over SSH (E1.S1) has no local line to copy: the block says why instead, because this
+  // is the one road every Copy All takes (the viewer, for the entry and for a revision).
   if (details.isTerminal) {
-    const described = describeCommand(details);
+    if (sshCopy === undefined) {
+      throw new Error('formatEntityBlock: a Terminal entry needs its copied line (copiedLineOf), read with storage');
+    }
+    const described = commandBlockOf(details, sshCopy);
     if (described.length > 0) {
       lines.push('', described);
     }

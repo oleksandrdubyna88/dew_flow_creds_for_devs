@@ -19,7 +19,7 @@
 # rather than "the script printed something reassuring".
 set -uo pipefail
 
-# A local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md): the script
+# A local run goes below interactive work (.agents/conventions/common/local-cpu-budget.md): the script
 # re-runs itself once under `nice -n 19`, and everything it starts inherits that. CI is exempt, read the
 # way the shared tool's isCi() reads it: CI unset, empty, "false" or "0" means a local run.
 # Git Bash (MSYS/Cygwin) maps nice 19 to the Windows Idle class, which the rule forbids; nice 10 maps to

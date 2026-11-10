@@ -287,19 +287,33 @@ They version separately, on separate tags, and each half has its own CI workflow
 - [research/SECURITY_REVIEW_2026-08-23.md](research/SECURITY_REVIEW_2026-08-23.md) — the security,
   reliability and architecture review, with what was fixed and what was not
 - [todo/](todo/) — what is still open, as executable plans
-- [CLAUDE.md](CLAUDE.md) — the rules a contributor, human or agent, works under here
+- [.agents/PROJECT.md](.agents/PROJECT.md) — the rules a contributor, human or agent, works under here
 
 ## Building everything
 
 ```bash
-git submodule update --init .claude/rules/shared   # shared conventions
+git submodule update --init .agents/conventions   # shared conventions
+npm ci --ignore-scripts --prefix .agents/conventions   # the resolver's packages (yaml, picomatch)
 
-# local runs: at most 8 workers, at lowered CPU priority (.claude/rules/shared/common/local-cpu-budget.md)
-LP=.claude/rules/shared/tools/low-priority.mjs
+# local runs: at most 8 workers, at lowered CPU priority (.agents/conventions/common/local-cpu-budget.md)
+LP=.agents/conventions/tools/low-priority.mjs
 node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe   # Linux/macOS: no .exe
 
 cd src_vs_code && npm ci && npm run typecheck && npm test   # npm test lowers itself
+```
+
+**A clone from before 2026-11-10.** The shared rules moved from `.claude/rules/shared` to `.agents/conventions`.
+A pull does not remove the old folder, and the resolver then refuses the non-empty `.claude/rules` (instruction
+loading stays INCOMPLETE). Once, after the pull: check that the old copy holds no local change (it is a copy of the
+release, so the first command should print nothing), then remove it and set up the new path.
+
+```bash
+git -C .claude/rules/shared status --porcelain   # must print nothing; save anything it lists first
+rm -rf .claude/rules
+git submodule sync
+git submodule update --init .agents/conventions
+npm ci --ignore-scripts --prefix .agents/conventions
 ```
 
 ## Reporting a vulnerability

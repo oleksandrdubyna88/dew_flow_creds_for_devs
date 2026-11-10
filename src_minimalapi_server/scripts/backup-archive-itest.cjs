@@ -103,7 +103,7 @@ harnessScope.run(async (scope) => {
   const cmd = serverCommand();
   if (!cmd) {
     console.log('SKIP: no CredVaultServer build found. Build it first:');
-    console.log('  dotnet build src_minimalapi_server/src/CredVaultServer.csproj');
+    console.log('  dotnet build src_minimalapi_server/src/CredVaultServer.csproj -m:4');
     console.log('  (or set CVBK_SERVER to a published binary)');
     return 0;
   }
