@@ -286,25 +286,29 @@ test('F9: a `down -v` that fails is reported with its exit code and its own word
   assert.doesNotMatch(runAcme(silent, { STUB_FAIL: 'down' }).output, /stub docker: down fails/, 'the plant (everything to /dev/null) hides the reason: the real text must differ');
 });
 
-/** The volume rules of a run: `compose create` comes before the first `docker run` that mounts a project volume, and every such `-v` source is `<folder's project>_<one of the four>`. */
-function volumeProblems(run: Run): string[] {
-  const problems: string[] = [];
-  const mounts = run.calls.filter((call) => call.startsWith('run ') && /\s-v\s/.test(call));
+const isMount = (call: string): boolean => call.startsWith('run ') && /\s-v\s/.test(call);
+
+/** `compose create` must be called, and before the first container run that mounts a project volume. */
+function orderProblem(run: Run): string | undefined {
   const created = run.calls.findIndex((call) => /^compose .* create\b/.test(call));
-  const firstMount = run.calls.findIndex((call) => call.startsWith('run ') && /\s-v\s/.test(call));
-  if (created < 0) problems.push('no `compose create` was called');
-  else if (firstMount >= 0 && created > firstMount) problems.push(`the first docker run that mounts a project volume (call ${firstMount}) comes before compose create (call ${created})`);
-  if (mounts.length === 0) problems.push('no docker run mounts a volume: the order cannot be proved');
-  const allowed = new Set(VOLUMES.map((name) => `${run.folderProject}_${name}`));
-  for (const call of mounts) {
-    for (const source of [...call.matchAll(/\s-v\s+([^:\s]+):/g)].map((hit) => hit[1])) {
-      if (!allowed.has(source)) problems.push(`the -v source ${source} is not ${run.folderProject}_ plus one of ${VOLUMES.join(', ')}: ${call}`);
-    }
-  }
-  return problems;
+  const firstMount = run.calls.findIndex(isMount);
+  if (created < 0) return 'no `compose create` was called';
+  return firstMount >= 0 && created > firstMount ? `the first container run that mounts a project volume (call ${firstMount}) comes before compose create (call ${created})` : undefined;
 }
 
-test('E2.4-f: compose create comes before the first docker run that mounts a project volume, and every -v source is the folder\'s project plus one of the four volumes', () => {
+/** Every `-v` source of a mounting call is the folder's project plus one of the four volume names. */
+function sourceProblems(run: Run): string[] {
+  const allowed = new Set(VOLUMES.map((name) => `${run.folderProject}_${name}`));
+  return run.calls.filter(isMount).flatMap((call) => [...call.matchAll(/\s-v\s+([^:\s]+):/g)].map((hit) => hit[1]).filter((source) => !allowed.has(source)).map((source) => `the -v source ${source} is not ${run.folderProject}_ plus one of ${VOLUMES.join(', ')}: ${call}`));
+}
+
+/** The volume rules of a run: the order of create and the first mount, and the names of the sources. */
+function volumeProblems(run: Run): string[] {
+  const noMount = run.calls.some(isMount) ? undefined : 'no container run mounts a volume: the order cannot be proved';
+  return [orderProblem(run), noMount, ...sourceProblems(run)].filter((problem): problem is string => problem !== undefined);
+}
+
+test('E2.4-f: compose create comes before the first container run that mounts a project volume, and every -v source is the folder\'s project plus one of the four volumes', () => {
   const run = runAcme(REAL_RUN);
   assert.equal(run.status, 0, run.output);
   assert.deepEqual(volumeProblems(run), []);

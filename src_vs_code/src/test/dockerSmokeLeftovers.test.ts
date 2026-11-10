@@ -175,11 +175,11 @@ const NAMING_CHECKS: Check[] = [
   onStep(NAMING, (found) => unless(firstCommand(found.run) === FIRST_COMMAND, `the first command is ${JSON.stringify(firstCommand(found.run))}, not ${FIRST_COMMAND}`)),
 ];
 
-/** The smoke steps' own names: every `--name "…"` and the name of every `docker volume create`, as the workflow spells them. */
+/** The smoke steps' own names: every `--name "…"` and the last quoted name of every volume-create line, as the workflow spells them. */
 function smokeNames(text: string): string[] {
   const smoke = [step(text, 'Smoke-test'), step(text, REFUSED)].map((found) => found?.run ?? '').join('\n');
   const containers = [...smoke.matchAll(/--name "([^"]+)"/g)].map((hit) => hit[1]);
-  const volumes = [...smoke.matchAll(/docker volume create [^\n]*"([^"]+)"\s*$/gm)].map((hit) => hit[1]);
+  const volumes = [...smoke.matchAll(/volume create [^\n]*"([^"]+)"\s*$/gm)].map((hit) => hit[1]);
   return [...containers, ...volumes].sort();
 }
 
@@ -627,7 +627,7 @@ test('the rule refuses a volume renamed in its create and its -v only, a name ad
   assert.deepEqual(nameSetProblems(extra), [], 'a flag that is not a name changes nothing');
   const third = mutate(REAL, 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"', 'docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}"\n          docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-more-${SMOKE_ID}"');
   assert.match(nameSetProblems(third).join('\n'), /refused-more/);
-  const missing = mutate(REAL, /\n {10}docker volume create --label "testsToDelete\.owner=\$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-data-\$\{SMOKE_ID\}"/, '');
+  const missing = mutate(REAL, '\n          docker volume create --label "testsToDelete.owner=$SMOKE_OWNER" "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}"', '');
   assert.match(nameSetProblems(missing).join('\n'), /the smoke makes/);
 });
 
