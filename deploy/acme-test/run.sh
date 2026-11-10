@@ -2,7 +2,8 @@
 # Proves the certificate pipeline actually issues — end to end, without touching Let's Encrypt. A run
 # that passes takes a few minutes (image pulls, then the issuance). A run that fails reports after at most
 # about ten minutes: port 80 is waited for up to 60 s, the certificate for 150 tries of 2 s plus one
-# `docker run` each, and nginx's port 443 for 24 tries of up to 9 s.
+# `docker run` each (a line "still waiting for the certificate: try N of 150" every 15 tries), and
+# nginx's port 443 for 24 tries of up to 9 s.
 #
 #   ./run.sh                                  # uses the published :edge image
 #   VAULT_IMAGE=cred-vault-server:local ./run.sh
@@ -143,14 +144,17 @@ echo "-- 2. issuance -------------------------------------------------"
 # certbot's live folder is `drwx------ root`: the job's user cannot see into it from the host (a host
 # `[ -f ]` said "no certificate" while certbot had one). A one-shot container reads the volume as root.
 have_cert() { docker run --rm -v "${PROJECT}_certs-conf:/s:ro" alpine test -f /s/live/vaulthost/fullchain.pem; }
-for _ in $(seq 1 150); do
+tries=150
+for n in $(seq 1 "$tries"); do
   have_cert 2>/dev/null && break
+  # The wait can last five minutes: say so every 15 tries, so a hosted log or a person does not look at a silent job.
+  if [ $((n % 15)) = 0 ]; then echo "  still waiting for the certificate: try $n of $tries"; fi
   sleep 2
 done
 if have_cert 2>/dev/null; then
   pass "certbot obtained a certificate through a real HTTP-01 challenge"
 else
-  fail "no certificate was issued"
+  fail "no certificate was issued after $tries tries"
   "${COMPOSE[@]}" logs certbot | tail -25
 fi
 
