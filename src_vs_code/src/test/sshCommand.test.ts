@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildSshCommand, describeSshTarget, isSafeSshHost, isSafeSshUser } from '../sshCommand';
+import { SshCommandOptions, buildSshCommand, describeSshTarget, isSafeSshHost, isSafeSshUser } from '../sshCommand';
 import { EntityMetadata } from '../types';
 import { BUILT_IN_DIR, GIT_SSH, pathWith } from './sshPath';
 
@@ -232,4 +232,397 @@ test('a domain login on a WINDOWS shell is left alone, where a backslash is lite
   );
 
   assert.match(String(line), /CORP\\alice@h\.example\.com$/);
+});
+
+// --- the line is byte-identical to the old builder, except where the Windows quoting fix changes it (PLAN_windows_shell_quoting_injection.md) ---
+
+// C1 compares the builder with literal strings, NOT with itself. Every string below was PRINTED by the builder as it stood
+// at commit db450e5 (`git show db450e5:src_vs_code/src/sshCommand.ts`, compiled and run once, outside the repository),
+// then pasted. Rows are fixtures, columns are option shapes, per platform.
+// A row that differs from db450e5 is named in the comment above it, with the reason.
+const FIXTURES: EntityMetadata[] = [
+  entity(),
+  entity({ port: 2222 }),
+  entity({ port: 22 }),
+  entity({ user: undefined }),
+  entity({ user: 'CORP\\alice' }),
+  entity({ user: 'a$HOME' }),
+  entity({ sshKeyPath: '/keys/e1.key' }),
+  entity({ sshKeyPath: 'C:\\Users\\me\\e1.key', port: 2200 }),
+  entity({ sshKeyPath: 'C:\\Users\\me\\my keys\\e1.key' }),
+  entity({ agentForward: true }),
+  entity({ agentForward: true, portForwards: [{ kind: 'local', bindPort: 5432, host: 'db', hostPort: 5432 }] }),
+  entity({ host: '[2001:db8::1]' }),
+  entity({ host: '82.165.44.219', user: 'root' }),
+];
+
+/** Functions, because two shapes carry callbacks. The PATH is pinned so the program word is the same on every machine. */
+const OPTION_SHAPES: (() => SshCommandOptions)[] = [
+  () => ({ builtInExists: () => false, pathProbe: pathWith() }),
+  () => ({ program: 'ssh' }),
+  () => ({ program: '/usr/bin/ssh', knownHostsFile: '/kh/known_hosts' }),
+  () => ({ program: 'ssh', jump: 'j@b:2200', builtInExists: () => true }),
+  () => ({ builtInExists: () => true, pathProbe: pathWith(GIT_SSH, BUILT_IN_DIR) }),
+  () => ({ program: 'ssh', knownHostsFile: 'C:\\Users\\me\\kh\\known_hosts' }),
+  // Column 6 is NEW (no db450e5 print): a two-hop jump chain. On win32 its literal differs from the single-hop column 3 ON
+  // PURPOSE: a bare `a,b` is a PowerShell ARRAY in argument mode, so the chain is one single-quoted word there.
+  () => ({ program: 'ssh', jump: 'j@b:2200,k@c', builtInExists: () => true }),
+];
+
+const EXPECTED: Record<'win32' | 'linux', string[][]> = {
+  win32: [
+    // 0: entity()
+    [
+      'ssh deploy@example.com',
+      'ssh deploy@example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 deploy@example.com',
+      'ssh deploy@example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 1: port 2222
+    [
+      'ssh -p 2222 deploy@example.com',
+      'ssh -p 2222 deploy@example.com',
+      '/usr/bin/ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -p 2222 -J j@b:2200 deploy@example.com',
+      'ssh -p 2222 deploy@example.com',
+      'ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -p 2222 -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 2: port 22
+    [
+      'ssh deploy@example.com',
+      'ssh deploy@example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 deploy@example.com',
+      'ssh deploy@example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 3: no user
+    [
+      'ssh example.com',
+      'ssh example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" example.com',
+      'ssh -J j@b:2200 example.com',
+      'ssh example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" example.com',
+      "ssh -J 'j@b:2200,k@c' example.com",
+    ],
+    // 4: user CORP\\alice
+    [
+      'ssh CORP\\alice@example.com',
+      'ssh CORP\\alice@example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" CORP\\alice@example.com',
+      'ssh -J j@b:2200 CORP\\alice@example.com',
+      'ssh CORP\\alice@example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" CORP\\alice@example.com',
+      "ssh -J 'j@b:2200,k@c' CORP\\alice@example.com",
+    ],
+    // 5: user a$HOME. DIFFERS from db450e5, which printed the destination bare (`ssh a$HOME@example.com`) in all six columns:
+    // PowerShell expands `$HOME` in a bare word, so the login was changed on the way. It is now one single-quoted word.
+    [
+      "ssh 'a$HOME@example.com'",
+      "ssh 'a$HOME@example.com'",
+      "/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"/kh/known_hosts\" 'a$HOME@example.com'",
+      "ssh -J j@b:2200 'a$HOME@example.com'",
+      "ssh 'a$HOME@example.com'",
+      "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"C:\\Users\\me\\kh\\known_hosts\" 'a$HOME@example.com'",
+      "ssh -J 'j@b:2200,k@c' 'a$HOME@example.com'",
+    ],
+    // 6: sshKeyPath /keys/e1.key
+    [
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "/keys/e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      'ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"/keys/e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 7: sshKeyPath C:\\Users\\me\\e1.key, port 2200
+    [
+      'ssh -i "C:\\Users\\me\\e1.key" -p 2200 deploy@example.com',
+      'ssh -i "C:\\Users\\me\\e1.key" -p 2200 deploy@example.com',
+      '/usr/bin/ssh -i "C:\\Users\\me\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\e1.key" -p 2200 -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\Users\\me\\e1.key" -p 2200 deploy@example.com',
+      'ssh -i "C:\\Users\\me\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"C:\\Users\\me\\e1.key\" -p 2200 -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 8: sshKeyPath with a space
+    [
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "C:\\Users\\me\\my keys\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" deploy@example.com',
+      'ssh -i "C:\\Users\\me\\my keys\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"C:\\Users\\me\\my keys\\e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
+    ],
+    // 9: agentForward
+    [
+      'ssh -A deploy@example.com',
+      'ssh -A deploy@example.com',
+      '/usr/bin/ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 -A deploy@example.com',
+      'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com',
+      'ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' -A deploy@example.com",
+    ],
+    // 10: agentForward + local forward
+    [
+      'ssh -A -L 5432:db:5432 deploy@example.com',
+      'ssh -A -L 5432:db:5432 deploy@example.com',
+      '/usr/bin/ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 -A -L 5432:db:5432 deploy@example.com',
+      'C:/Windows/System32/OpenSSH/ssh.exe -A -L 5432:db:5432 deploy@example.com',
+      'ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' -A -L 5432:db:5432 deploy@example.com",
+    ],
+    // 11: host [2001:db8::1]
+    [
+      'ssh deploy@[2001:db8::1]',
+      'ssh deploy@[2001:db8::1]',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@[2001:db8::1]',
+      'ssh -J j@b:2200 deploy@[2001:db8::1]',
+      'ssh deploy@[2001:db8::1]',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@[2001:db8::1]',
+      "ssh -J 'j@b:2200,k@c' deploy@[2001:db8::1]",
+    ],
+    // 12: host 82.165.44.219, user root
+    [
+      'ssh root@82.165.44.219',
+      'ssh root@82.165.44.219',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" root@82.165.44.219',
+      'ssh -J j@b:2200 root@82.165.44.219',
+      'ssh root@82.165.44.219',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" root@82.165.44.219',
+      "ssh -J 'j@b:2200,k@c' root@82.165.44.219",
+    ],
+  ],
+  linux: [
+    // 0: entity()
+    [
+      'ssh deploy@example.com',
+      'ssh deploy@example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 deploy@example.com',
+      'ssh deploy@example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 1: port 2222
+    [
+      'ssh -p 2222 deploy@example.com',
+      'ssh -p 2222 deploy@example.com',
+      '/usr/bin/ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -p 2222 -J j@b:2200 deploy@example.com',
+      'ssh -p 2222 deploy@example.com',
+      'ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -p 2222 -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 2: port 22
+    [
+      'ssh deploy@example.com',
+      'ssh deploy@example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 deploy@example.com',
+      'ssh deploy@example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 3: no user
+    [
+      'ssh example.com',
+      'ssh example.com',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" example.com',
+      'ssh -J j@b:2200 example.com',
+      'ssh example.com',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" example.com',
+      'ssh -J j@b:2200,k@c example.com',
+    ],
+    // 4: user CORP\\alice
+    [
+      'ssh "CORP\\\\alice@example.com"',
+      'ssh "CORP\\\\alice@example.com"',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" "CORP\\\\alice@example.com"',
+      'ssh -J j@b:2200 "CORP\\\\alice@example.com"',
+      'ssh "CORP\\\\alice@example.com"',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" "CORP\\\\alice@example.com"',
+      'ssh -J j@b:2200,k@c "CORP\\\\alice@example.com"',
+    ],
+    // 5: user a$HOME
+    [
+      'ssh "a\\$HOME@example.com"',
+      'ssh "a\\$HOME@example.com"',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" "a\\$HOME@example.com"',
+      'ssh -J j@b:2200 "a\\$HOME@example.com"',
+      'ssh "a\\$HOME@example.com"',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" "a\\$HOME@example.com"',
+      'ssh -J j@b:2200,k@c "a\\$HOME@example.com"',
+    ],
+    // 6: sshKeyPath /keys/e1.key
+    [
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "/keys/e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "/keys/e1.key" deploy@example.com',
+      'ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "/keys/e1.key" -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 7: sshKeyPath C:\\Users\\me\\e1.key, port 2200
+    [
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 deploy@example.com',
+      '/usr/bin/ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 8: sshKeyPath with a space
+    [
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      '/usr/bin/ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -J j@b:2200 deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\my keys\\\\e1.key" -J j@b:2200,k@c deploy@example.com',
+    ],
+    // 9: agentForward
+    [
+      'ssh -A deploy@example.com',
+      'ssh -A deploy@example.com',
+      '/usr/bin/ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 -A deploy@example.com',
+      'ssh -A deploy@example.com',
+      'ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c -A deploy@example.com',
+    ],
+    // 10: agentForward + local forward
+    [
+      'ssh -A -L 5432:db:5432 deploy@example.com',
+      'ssh -A -L 5432:db:5432 deploy@example.com',
+      '/usr/bin/ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@example.com',
+      'ssh -J j@b:2200 -A -L 5432:db:5432 deploy@example.com',
+      'ssh -A -L 5432:db:5432 deploy@example.com',
+      'ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c -A -L 5432:db:5432 deploy@example.com',
+    ],
+    // 11: host [2001:db8::1]
+    [
+      'ssh deploy@[2001:db8::1]',
+      'ssh deploy@[2001:db8::1]',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" deploy@[2001:db8::1]',
+      'ssh -J j@b:2200 deploy@[2001:db8::1]',
+      'ssh deploy@[2001:db8::1]',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@[2001:db8::1]',
+      'ssh -J j@b:2200,k@c deploy@[2001:db8::1]',
+    ],
+    // 12: host 82.165.44.219, user root
+    [
+      'ssh root@82.165.44.219',
+      'ssh root@82.165.44.219',
+      '/usr/bin/ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="/kh/known_hosts" root@82.165.44.219',
+      'ssh -J j@b:2200 root@82.165.44.219',
+      'ssh root@82.165.44.219',
+      'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" root@82.165.44.219',
+      'ssh -J j@b:2200,k@c root@82.165.44.219',
+    ],
+  ],
+};
+
+test('C1 the_line_is_byte_identical_to_the_old_builder_except_the_quoting_fix', () => {
+  let compared = 0;
+  for (const platform of ['win32', 'linux'] as const) {
+    assert.equal(EXPECTED[platform].length, FIXTURES.length, `${platform}: a fixture without an expected row`);
+    FIXTURES.forEach((fixture, row) => {
+      OPTION_SHAPES.forEach((shape, column) => {
+        const without = buildSshCommand(fixture, platform, shape());
+        assert.equal(without, EXPECTED[platform][row][column], `${platform} fixture ${row} shape ${column}`);
+        compared += 1;
+      });
+    });
+  }
+  assert.equal(compared, FIXTURES.length * OPTION_SHAPES.length * 2);
+});
+
+// ---- the vault-data road into the line the pinned PowerShell parses (E1.S2 review, F1-sweep) ------------------------
+//
+// `sshKeyPath`, `user` and the jump value are entry data: sync, share and import write them, and nothing validates a key
+// path beyond "is a string". On win32 the line is typed into PowerShell, where a DOUBLE-quoted word expands `$(…)`, `$name`
+// and the backtick, and ends at U+201C, U+201D and U+201E as well as at the ASCII `"`. Every case below is a value that
+// used to run LOCALLY on the click of Connect. The ordinary path keeps its `"…"` spelling (cmd reads it too).
+
+const WIN = { builtInExists: () => false, pathProbe: pathWith() } as const;
+
+test('S1 win32 an_ordinary_key_path_keeps_the_double_quoted_spelling', () => {
+  assert.equal(buildSshCommand(entity({ sshKeyPath: "C:\\Users\\O'Brien\\my key" }), 'win32', WIN), `ssh -i "C:\\Users\\O'Brien\\my key" deploy@example.com`);
+  assert.equal(buildSshCommand(entity({ sshKeyPath: 'C:\\Users\\a\u2019b\\k' }), 'win32', WIN), `ssh -i "C:\\Users\\a\u2019b\\k" deploy@example.com`, 'a curly SINGLE quote is literal inside a double-quoted word');
+});
+
+test('S2 win32 a_key_path_that_a_double_quoted_powershell_word_would_run_is_a_single_quoted_word', () => {
+  const cases: readonly (readonly [string, string])[] = [
+    ['C:\\k\\$(calc)\\id', "'C:\\k\\$(calc)\\id'"],
+    ['C:\\k\\$env:USERNAME', "'C:\\k\\$env:USERNAME'"],
+    ['C:\\k\\`id`', "'C:\\k\\`id`'"],
+    ['C:\\k\\a"; calc; "', `'C:\\k\\a"; calc; "'`],
+    ['C:\\k\\a\u201C; calc; \u201D', "'C:\\k\\a\u201C; calc; \u201D'"],
+    ['C:\\k\\a\u201E; calc; \u201E', "'C:\\k\\a\u201E; calc; \u201E'"],
+    // Defence in depth: U+201F and U+2033 are not read as a double quote by 5.1 or 7 today, but they look like one.
+    ['C:\\k\\a\u201F; calc; \u201F', "'C:\\k\\a\u201F; calc; \u201F'"],
+    ['C:\\k\\a\u2033; calc; \u2033', "'C:\\k\\a\u2033; calc; \u2033'"],
+    ["C:\\k\\a$(x)'b", "'C:\\k\\a$(x)''b'"],
+    ['C:\\k\\a$(x)\u2019b', "'C:\\k\\a$(x)\u2019\u2019b'"],
+  ];
+  for (const [path, word] of cases) {
+    assert.equal(buildSshCommand(entity({ sshKeyPath: path }), 'win32', WIN), `ssh -i ${word} deploy@example.com`, JSON.stringify(path));
+  }
+});
+
+test('S3 win32 a_pin_file_path_the_same_way_as_a_key_path_is_one_word', () => {
+  assert.equal(
+    buildSshCommand(entity(), 'win32', { ...WIN, knownHostsFile: 'C:\\Users\\me\\a$b\\known_hosts' }),
+    `ssh -o StrictHostKeyChecking=yes -o 'UserKnownHostsFile=C:\\Users\\me\\a$b\\known_hosts' deploy@example.com`,
+  );
+  assert.equal(
+    buildSshCommand(entity(), 'win32', { ...WIN, knownHostsFile: 'C:\\Users\\me\\known_hosts' }),
+    `ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\known_hosts" deploy@example.com`,
+  );
+});
+
+test('S4 win32 a_dollar_in_a_login_is_not_a_powershell_variable_in_the_destination_or_the_jump_value', () => {
+  // `isSafeSshUser` admits `$` (a machine account is `HOST$`), and a bare `a$HOME@host` is expanded by PowerShell.
+  assert.equal(buildSshCommand(entity({ user: 'a$HOME' }), 'win32', WIN), "ssh 'a$HOME@example.com'");
+  assert.equal(buildSshCommand(entity({ user: 'CORP\\WS01$' }), 'win32', WIN), "ssh 'CORP\\WS01$@example.com'");
+  assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'a$HOME@bastion:2200' }), "ssh -J 'a$HOME@bastion:2200' deploy@example.com");
+  // The ordinary words stay bare, and a domain backslash is literal in PowerShell.
+  assert.equal(buildSshCommand(entity({ user: 'CORP\\alice' }), 'win32', { ...WIN, jump: 'j@b:2200' }), 'ssh -J j@b:2200 CORP\\alice@example.com');
+});
+
+test('S4 win32 a_two_hop_jump_chain_is_one_single_quoted_word_because_a_bare_comma_is_a_powershell_array', () => {
+  // `joinHops` writes `hop1,hop2`; PowerShell's argument mode turns a bare `a,b` into an ARRAY, and `-J hop1 hop2 <dest>` then
+  // makes the second hop the destination.
+  assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'j@b:2200,k@c' }), "ssh -J 'j@b:2200,k@c' deploy@example.com");
+  assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'a@b,c@d,e@f' }), "ssh -J 'a@b,c@d,e@f' deploy@example.com");
+  assert.equal(buildSshCommand(entity(), 'linux', { ...WIN, jump: 'a@b,c@d' }), 'ssh -J a@b,c@d deploy@example.com', 'POSIX shells keep the chain bare');
+});
+
+test('S5 win32 a_word_PowerShell_argument_mode_would_read_as_something_else_is_quoted_and_a_plain_one_stays_bare', () => {
+  // Measured on Windows PowerShell 5.1 (2026-11-10): `,` makes an array; a leading `@` is a splat or an error; a word that
+  // starts with `-` and holds `:` splits at the colon (`-p:1` is `-p` and `1`). `= + @ [ ] :` inside a word are literal.
+  const jump = (value: string): string | undefined => buildSshCommand(entity(), 'win32', { ...WIN, jump: value });
+  assert.equal(jump('a@b'), 'ssh -J a@b deploy@example.com');
+  assert.equal(jump('a=b+c@[2001:db8::1]:22'), 'ssh -J a=b+c@[2001:db8::1]:22 deploy@example.com');
+  assert.equal(jump('@x'), "ssh -J '@x' deploy@example.com");
+  assert.equal(jump('-p:1'), "ssh -J '-p:1' deploy@example.com");
+  assert.equal(jump('a,b'), "ssh -J 'a,b' deploy@example.com");
+  // The port is a number by type and a string by data (sync and import write JSON): it is a word like any other.
+  assert.equal(buildSshCommand(entity({ port: 2200 }), 'win32', WIN), 'ssh -p 2200 deploy@example.com');
+  assert.equal(buildSshCommand(entity({ port: '2200;calc' as never }), 'win32', WIN), "ssh -p '2200;calc' deploy@example.com");
 });

@@ -19,6 +19,8 @@
  * of a mechanism that half-works.</p>
  */
 
+import { hasPowerShellSingleQuote } from './hostShell';
+
 /** Marks the block we append, so appending twice does nothing the second time. */
 export const RC_MARKER = '# CredsForDevs — the SSH agent, relayed from the VS Code window';
 
@@ -94,7 +96,8 @@ const WINDOWS_BINARY_VARIABLE = 'CREDS_WINDOWS_BINARY';
  * line.</p>
  */
 export function envPrefix(name: string, value: string): string {
-  const usable = value.length > 0 && !value.includes("'");
+  // The ASCII quote AND the curly ones: a WSL window's default profile can be pwsh, which reads U+2018..U+201B as quotes.
+  const usable = value.length > 0 && !hasPowerShellSingleQuote(value);
   return usable ? `env ${name}='${value}' ` : '';
 }
 

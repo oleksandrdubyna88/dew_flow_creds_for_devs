@@ -21,7 +21,14 @@ export interface AskpassScript {
 /** The static helper script. Not a secret — it names a variable, it holds no value. */
 export function askpassScript(platform: NodeJS.Platform): AskpassScript {
   if (platform === 'win32') {
-    return { name: 'askpass.bat', content: '@echo off\necho %CREDS_SSH_PASSWORD%\n' };
+    // `%VAR%` is expanded before cmd parses the line, so a password holding `&`, `|` or `>` would run as a command here.
+    // `!VAR!` is substituted after the parse, and `echo(` prints whatever follows it, an empty value included.
+    // CRLF, because the file is written as it is (`writeAskpassScriptFile`) and cmd.exe is documented to read a batch
+    // file with CRLF line ends; the real-cmd test runs the file exactly as written.
+    return {
+      name: 'askpass.bat',
+      content: '@echo off\r\nsetlocal EnableDelayedExpansion\r\necho(!CREDS_SSH_PASSWORD!\r\n',
+    };
   }
   return { name: 'askpass.sh', content: '#!/bin/sh\nprintf %s "$CREDS_SSH_PASSWORD"\n' };
 }
