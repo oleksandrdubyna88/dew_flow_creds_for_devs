@@ -256,8 +256,8 @@ removed and reordered, and a live preview shows exactly what will run.
 - **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. With one chosen,
   *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain connect with that
   entry — its key or password, its pinned host key, its jump host — and run the line there; *Runs on*
-  then names the server's system. *Run with Secrets* and an agent's run still refuse such an entry
-  and say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
+  then names the server's system. *Run with Secrets* runs it there too, from a local window; an
+  agent's run still refuses such an entry and says why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
   out of a share and an export.
 
 **Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
@@ -403,6 +403,15 @@ PTY. A program that prompts interactively, draws a progress bar, or colours its 
 a terminal will behave as it does when piped — use *Run in Terminal* for those. And masking is
 textual: a program that base64s a value before printing it defeats it, which is why a script that
 prints its own variables is still flagged when you save it.
+
+For an entry set to run over SSH, the values go to the server's login shell on its standard input as
+`export` lines — never on a command line or in the shell history; on the server they are in the
+environment of the command, where the same user and root can read them (for example with `ps e` or
+`/proc/<pid>/environ`), as for a run on this machine. The output is masked the same way. That run is
+not interactive: the command's input is empty, so a command that asks a question usually stops; use
+*Run in Terminal* for such a command (the values are then not injected). Closing its terminal stops
+ssh on this machine; the command on the server has no terminal, so it can keep running there until
+it ends. It works only in a local VS Code window.
 
 ## Generating a secret instead of inventing one
 
