@@ -2662,6 +2662,51 @@ Expect, and quote from each step: S4.4 shellcheck: exit 0, no output. S4.1 RED: 
 9. The brief's S4.2 premise check (the volumes carry the label before the kill) is in the hosted step, not in `run.sh`: a run that checks itself would add a failure path to the thing under test. `compose create` plus the compose file test make the labels; the hosted step reads them from the daemon.
 10. One thing to know for the hosted green run: the compose images `nginx:1.27-alpine`, `certbot/certbot:latest`, `pebble:latest` are not pinned by digest; the observation runs at `59e1fac` and `6258f3e` were on certbot with Python 3.14.
 
+### E2.4 build record, part 2b — the fix round after the Opus review of S2, with findings on S1, S3 and S4 (2026-11-10, branch `feat/test-leftovers-e2.4`, not pushed, not merged)
+
+(The findings, their RED or before output, the fixes and the after output are added below, finding by finding.)
+
+#### For E2.5: module_tests.md lines
+
+By the brief's § 5 the `research/module_tests.md` text belongs to E2.5. The edits of S3 (`bfaaa0c`) and S4 (`d2d3ae4`) were taken out of `module_tests.md` in the commit that follows this one; the text they added is kept here, whole, so E2.5 can apply it. (S1's and S2's paragraphs in `module_tests.md` were not part of that instruction and stay.)
+
+**S3 — a new paragraph, after the S2 paragraph:**
+
+> **The image smoke is a carve-out of the contract (2026-11-10, E2.4.S3 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+> `docker.yml`'s two smoke containers and two volumes are named `testsToDelete-u1001-creds-{cv,refused,refused-data,refused-logs}-${SMOKE_ID}` and carry
+> the label `testsToDelete.owner`; `u1001` is the uid of the hosted `ubuntu-latest` runner. The step that makes the id has the uid check as its
+> FIRST command (`[ "$(id -u)" = 1001 ] || exit 1`) and comes before *Build*, so on any other runner nothing is made. One remover step
+> (`if: always()`, `continue-on-error`, `shell: bash`, an unquoted name and `|| true` on each of four removals) runs after the last step that reads
+> the containers; the step after it (`if: always()`, `shell: bash`, NO `continue-on-error`) asks for each of the four names with
+> `docker ps -a -q --filter "name=^<name>$"` and `docker volume ls -q --filter …`, and fails the job while one is left. `Publish` keeps its implicit
+> `success()`, so a failed smoke stays failed and nothing is published. `src_vs_code/src/test/dockerSmokeLeftovers.test.ts` reads `docker.yml` and
+> RUNS the naming, remover and check bodies under `bash --noprofile --norc -eo pipefail` against a stub `docker` that keeps a world of named
+> resources (a name in `STUB_STUCK` fails its removal and stays): all four removals are called after a failed first one; the check is red for each of
+> the four names left, and for a remover that forgets a volume; the naming step ends at once, writing nothing, under a uid that is not 1001. Each rule
+> also has a planted fault (a mutated copy of the real text) that it must refuse, and, when the mounted guard can load its `yaml` module, the
+> shipped guard reads the real file with 0 findings and each plant (a quoted remover name, a `-v` source alone in quotes, a `docker inspect` or `docker
+> logs` after the remover, a short name) with the finding it should have. What no test here can see is Docker itself: the hosted dispatches of the
+> build record (part 3) do.
+
+**S3 — the row of the table of container checks (`the AOT image, production shape`) now ends so:**
+
+> | the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes; the containers and volumes are named under the leftovers contract and removed on every path (`dockerSmokeLeftovers.test.ts`) |
+
+**S4 — a new paragraph, after the S3 paragraph:**
+
+> **The acme harness owns its run (2026-11-10, E2.4.S4 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md)).**
+> `deploy/acme-test/run.sh` makes an owned folder with `owned_dir STATE acme`; its lower-cased name, `PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"`,
+> is the compose project and nothing else is (there is no `name:` in the compose file). The compose file's `x-owned` label `testsToDelete.owner` is on the four services,
+> the network and the four named volumes (`certs-conf`, `certs-www`, `data`, `logs`); no state is a bind mount, because a container writes root-owned files that a
+> janitor running as the user cannot delete. The script sets its clean-up with `owned_trap cleanup` and no trap of its own: `cleanup` runs
+> `docker compose -p "$PROJECT" … down -v --remove-orphans` only when `PROJECT` is set, then the helper removes the folder. The first act of a run is the shared
+> janitor (`--token creds`, 10 minutes), which collects what a `kill -9` left. The issued certificate is checked through a one-shot `alpine` container that mounts
+> `certs-conf` read-only, never from the host: certbot's live folder is `drwx------ root`. `src_vs_code/src/test/acmeRunLeftovers.test.ts` copies `run.sh` into a temp
+> tree and RUNS it against a stub `docker`, `curl`, `openssl`, `sleep` and janitor (green; a stack that does not start; no certificate; SIGINT during the janitor call;
+> SIGINT and SIGTERM during `compose up`; an owned folder that cannot be made), and reads the text for the `PROJECT` line, the trap and the compose labels; each rule has
+> a planted fault it must refuse (`PROJECT=acme`, an unlabelled volume, an unguarded clean-up, a host-side certificate check, a trap of its own). Docker itself is seen only
+> by the hosted dispatch of the build record (part 4).
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
