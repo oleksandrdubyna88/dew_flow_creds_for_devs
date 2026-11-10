@@ -2245,7 +2245,7 @@ Windows remote, a line break); `typedLine(plan, prepared, localShell)` builds th
 the Run with Secrets stdin script. The remote command is ONE argument: `buildSshCommand` gained `options.remote`
 (`-t`, `--`, the destination, the word quoted by `quoteFor` for the LOCAL shell only; without it the line is byte-identical), and
 the stay-open wrapper is `eval '<line>'; …; exec ${SHELL:-sh} -l`. `sshLinkGate.ts` is gone: `sshLinkRefusal` and
-`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher, the copies and the folder run call it since E2.S1 and E2.S2; the chain (E2.S3), Run with Secrets and the agent (E3) follow.
+`withoutSshLink` live here, and `sshLinkRefusal` answers through `sshLinkOf`. The arrow, a VPN's launcher, the copies, the folder run and the chain call it since E2.S1, E2.S2 and E2.S3; Run with Secrets and the agent (E3) follow.
 `launchRoadScan.test.ts` holds that road: who imports `resolveCommand`, who reads `.sshEntityId`, which lines in the road files
 send or spawn, and who calls `sshLinkRefusal`, each as a list that shrinks per story.
 
@@ -2417,6 +2417,26 @@ read again, `SshRoad.prepare` answers, and the trust line rebuilt from the prepa
 linked or not, no terminal closed (`sshStopped`). The run OWNS the sessions it prepared: the `Prepared` list is made before the first `prepare`, and `prepareAndType`'s
 `finally` (`cleanUnsent`) cleans every session still on it, also when a later `prepare` throws (lead amendment A4); a row typed into a new terminal (the `ssh` target,
 with the session's own environment for a password, D10) leaves the list and that terminal's close cleans it (`cleanWhenClosed`).
+
+*A dependency step over SSH (E2.S3 of PLAN_terminal_command_over_ssh_E2.md, as amended by E2.A).* `planDependencyRun` takes an optional `lookup`. Without it (an
+agent's start, which passes no road, E2-D2) a linked step still refuses the whole chain with `sshLinkRefusal`'s sentence in `stepRefusal`. With it, a step whose
+`sshLinkOf` is not `none` is planned by `planLaunch(node, link, { stayOpen: false })` (D11: the BARE line, so the step ends and ssh's exit status is the remote command's,
+which the chain reads). Of the local checks a linked step keeps the `{name}` rule, the line-break refusal, the Windows-remote sentence and `{config}`, and is NOT asked
+`refusalOf`, the local OS (D14); the table is in `addLinkedStep`'s doc (lead amendment A3). The chain follows the FOLDER model (A2): `runDependenciesFirst` shows each
+linked step by its trust line from `shownTrustLine` (`shownSteps`, NO preparation: no PIN, no host-key question, no key file before the person has agreed), the
+approval is keyed on that trust line (`isCommandTrusted(trust, step.id, trustLine)`, the key the arrow uses), and only after the approval and the request's own check does
+`prepareAndRun` prepare the linked steps IN STEP ORDER, before any step runs. Each step's link is read again then (`linkNow`); `stopped` is quiet, `refused` shows SSH
+Connect's remedy through `sayRefused` with no retry, and the prepared snapshot is checked (`checkedLine`): its trust line rebuilt by `trustLineFor(ready.entity,
+ready.jump, remote.line)` must be the shown one, else the chain stops with `changedStepRefusal` ("changed while the dialog was open — run it again") before any step; a
+session with an `env` (a password) is refused with `passwordStepRefusal`, because the chain's one terminal has one environment (so the PIN of a password entry may be asked
+before the refusal, which only the credential kind inside `prepareSshSession` can tell); then `typedLine` (the PowerShell 5.1 refusal). The chain terminal is pinned when
+any step is linked and `composedShellPath()` is set (a local window). ONE OWNER (A4): `prepareAndRun` makes the `Sessions` list BEFORE the first `prepare`, a session joins it
+the moment `prepare` answers, and its `finally` cleans every session on it — a refused step, a thrown later `prepare`, a closed chain terminal, a *Stop*, a thrown request end;
+`runAll` also cleans a step's own session when THAT step ends (its exit, the Continue answer), before the next step, so a step's key and pin are gone before the root is typed.
+Every preparation is `isolate: true` (`sshRoad.ts`), so a step linked to the same SSH entry as its parent or another step has its own key and pin files and its `cleanup()`
+cannot delete theirs. The chain's two sends (`sendText` without shell integration, `executeCommand` with it) type `step.typed`; `launchRoadScan.test.ts` now also scans
+`.executeCommand(`. The person's callers pass the road (`withSshSteps`: the arrow, Run Script and Run with Secrets chains through `chainRequest` in `runCommands.ts`, and
+`vpnDependencies` when `ctx.sshRoad` is set); an agent's `creds_vpn_up` passes none and keeps E1's refusal.
 
 ### Which shell parses the line (issue #103)
 

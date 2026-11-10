@@ -1,6 +1,6 @@
 import { EntityMetadata } from './types';
 import { commandRefusal, shownCommandLine } from './commandLine';
-import { sshLinkRefusal } from './remoteLaunch';
+import { LaunchPlan, NodeLookup, RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal } from './remoteLaunch';
 import { escapeControl } from './transitSecretReport';
 import { USES_CONFIG, usesConfig } from './vpnLauncher';
 
@@ -38,6 +38,11 @@ export interface RunStep {
   readonly name: string;
   readonly line: string;
   readonly terminalOs?: string;
+  /**
+   * Set for a step linked to an SSH entry (E2.S3). `line` stays the person's line until the host replaces it by the
+   * trust line (shown and trusted); `remote.line` is always the person's line, `remote.remoteCommand` the BARE line (D11).
+   */
+  readonly remote?: RemotePlan;
 }
 
 export type RunPlan =
@@ -56,6 +61,8 @@ interface Walk {
   readonly steps: RunStep[];
   readonly seen: Set<string>;
   readonly missing: string[];
+  /** The vault, for a step's SSH link (E2.S3). Absent for an agent's start: a linked step then refuses the whole chain. */
+  readonly lookup?: NodeLookup;
   refusal?: string;
 }
 
@@ -71,8 +78,9 @@ export function planDependencyRun(
   nodeOf: NodeOf,
   refusalOf: StepRefusal,
   exclude: ReadonlySet<string> = new Set(),
+  lookup?: NodeLookup,
 ): RunPlan {
-  const walk: Walk = { nodeOf, refusalOf, exclude, steps: [], seen: new Set(), missing: [] };
+  const walk: Walk = { nodeOf, refusalOf, exclude, steps: [], seen: new Set(), missing: [], lookup };
   roots.filter((root) => root.runDependencies === true).forEach((root) => visitEdges(walk, root, [root.id]));
   return walk.refusal === undefined ? { ok: true, steps: walk.steps, missing: walk.missing } : { ok: false, reason: walk.refusal };
 }
@@ -137,12 +145,56 @@ function addStep(walk: Walk, node: EntityMetadata, line: string): void {
   if (walk.exclude.has(node.id)) {
     return;
   }
+  const link = walk.lookup === undefined ? NO_LINK : sshLinkOf(node, walk.lookup);
+  if (link.kind === 'none') {
+    addLocalStep(walk, node, line);
+  } else {
+    addLinkedStep(walk, node, link);
+  }
+}
+
+/** Only a road with a vault to look in (`walk.lookup`) reads a link: an agent's start keeps `stepRefusal`'s E1 sentence. */
+const NO_LINK: SshLink = { kind: 'none' };
+
+function addLocalStep(walk: Walk, node: EntityMetadata, line: string): void {
   walk.refusal ??= stepRefusal(walk, node, line);
   walk.steps.push({ id: node.id, name: node.name, line, terminalOs: node.terminalOs });
 }
 
 /**
- * A step that cannot run here: linked to an SSH entry (said first), written for another system, or asking for `{config}` — which only a
+ * A step linked to an SSH entry (E2.S3, lead amendment A3). It runs as the BARE line (`stayOpen: false`, D11), so the step
+ * ends and its exit code reaches the chain. Which local checks apply to it, and why:
+ *
+ * | Check | Linked step | Why |
+ * |---|---|---|
+ * | the `{name}` rule (`nameStepRefusal`, then `planLaunch`) | applies | it is about the entry's name, not the shell |
+ * | a control character or line break in the line (`planLaunch` P6) | applies | one remote command cannot carry it |
+ * | a Windows remote (`planLaunch` D9) | applies | a Windows remote is not supported yet |
+ * | `{config}` | applies | the config is a file on THIS machine |
+ * | `walk.refusalOf`, the local OS and shell (D14) | does NOT apply | *Runs on* names the remote; the local shell is SSH Connect's |
+ *
+ * The step keeps the person's line in `line` and `remote.line`; the host shows and trusts the trust line instead.
+ */
+function addLinkedStep(walk: Walk, node: EntityMetadata, link: SshLink): void {
+  const plan = planLaunch(node, link, { stayOpen: false });
+  walk.refusal ??= nameStepRefusal(node) ?? linkedRefusal(node, plan);
+  const step = { id: node.id, name: node.name, terminalOs: node.terminalOs };
+  walk.steps.push(plan.kind === 'remote' ? { ...step, line: plan.line, remote: plan } : { ...step, line: '' });
+}
+
+function linkedRefusal(node: EntityMetadata, plan: LaunchPlan): string | undefined {
+  if (plan.kind === 'refused') {
+    return plan.reason;
+  }
+  return plan.kind === 'remote' && usesConfig(plan.line) ? configRefusal(node) : undefined;
+}
+
+function configRefusal(node: EntityMetadata): string {
+  return `"${node.name}" ${USES_CONFIG}. Pick it as the VPN's launcher there instead of running it as a dependency.`;
+}
+
+/**
+ * A step that cannot run here: linked to an SSH entry on a road with no vault to look in (said first), written for another system, or asking for `{config}` — which only a
  * VPN's *Started by* fills in. Run as a plain dependency it would be typed literally (the owner's
  * example entered through Depends on alone), so it is refused with the way to do it instead.
  */
@@ -153,7 +205,7 @@ function stepRefusal(walk: Walk, node: EntityMetadata, line: string): string | u
     return linked;
   }
   if (usesConfig(line)) {
-    return `"${node.name}" ${USES_CONFIG}. Pick it as the VPN's launcher there instead of running it as a dependency.`;
+    return configRefusal(node);
   }
   return nameStepRefusal(node) ?? walk.refusalOf(node.name, node.terminalOs);
 }
@@ -174,6 +226,16 @@ export function executableLine(node: EntityMetadata): string | undefined {
   }
   const line = shownCommandLine(node);
   return line.length > 0 ? line : undefined;
+}
+
+/** A step whose SSH connection signs in with a password is refused: the chain's one terminal has one environment. */
+export function passwordStepRefusal(stepName: string, sshName: string): string {
+  return `"${stepName}" runs over the SSH connection "${sshName}", which signs in with a password. A dependency step cannot, because the chain's one terminal has one environment. Use a key for "${sshName}", or run "${stepName}" with its own arrow.`;
+}
+
+/** A linked step whose prepared connection no longer gives the line the dialog showed: not run. */
+export function changedStepRefusal(stepName: string): string {
+  return `The SSH connection of "${stepName}" changed while the dialog was open — run it again.`;
 }
 
 /** What every modal that vouches for several lines at once says last. */

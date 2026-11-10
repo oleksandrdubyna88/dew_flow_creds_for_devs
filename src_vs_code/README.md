@@ -254,9 +254,9 @@ removed and reordered, and a live preview shows exactly what will run.
   system's own shell does otherwise; on another system it is refused. *Not set* keeps your default
   terminal, exactly as before.
 - **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. With one chosen,
-  *Run in Terminal*, a VPN's *Started by* and *Run All in Folder* connect with that entry — its key or
-  password, its pinned host key, its jump host — and run the line there; *Runs on* then names the
-  server's system. A dependency chain, *Run with Secrets* and an agent's run still refuse such an entry
+  *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain connect with that
+  entry — its key or password, its pinned host key, its jump host — and run the line there; *Runs on*
+  then names the server's system. *Run with Secrets* and an agent's run still refuse such an entry
   and say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
   out of a share and an export.
 
@@ -264,7 +264,10 @@ removed and reordered, and a live preview shows exactly what will run.
 before *Run in Terminal*, *Run Script*, *Run with Secrets* or *Start VPN*, its Terminal
 dependencies run in order, each one awaited — "install openvpn", then "start openvpn", then the
 VPN. You read the chain before its first run; a step that fails asks whether to go on; a circular
-chain is refused. Waiting for a step needs VS Code **1.93** or newer.
+chain is refused. Waiting for a step needs VS Code **1.93** or newer. A step set to run over SSH runs there
+and ends there, so the chain sees its exit code; its connection is made, and its PIN or host key asked,
+before the chain is shown. A step whose SSH entry signs in with a password is refused, because the chain's
+one terminal has one environment.
 
 **`{name}` in the command or an enabled argument row is the entry's own name**, so
 `tmux attach -t {name}` needs the name once and follows a rename. The line with the name filled in

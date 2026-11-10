@@ -17,7 +17,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 const RESOLVE_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bresolveCommand\b[^}]*\}\s*from/g;
 const SSH_LINK_READS = [/\.\s*sshEntityId\b/g, /\{[^{}]*\bsshEntityId\b[^{}]*\}\s*=[^=>]/g, /\[\s*['"`]sshEntityId['"`]\s*\]/g];
-const SENDS = [/\.sendText\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
+const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
 const REFUSAL_CALL = /\bsshLinkRefusal\s*\(/g;
 
 /** The road files of spec §S2.7 scan 3: where a line is typed into a terminal or handed to a child. */
@@ -151,7 +151,10 @@ const ALLOWED_SENDS: AllowList = {
       because: "Run Folder, one linked row into a new terminal: the line typedLine built from the row's prepared snapshot, with a password session's own environment (E2.S2)",
     },
   ],
-  'dependencyRunHost.ts': [{ line: 'terminal.sendText(step.line, true);', because: 'the dependency chain step: E2 types the composed line' }],
+  'dependencyRunHost.ts': [
+    { line: 'terminal.sendText(step.typed, true);', because: "a chain step with no shell integration: the line is the step's typed text, from the prepared snapshot when linked (E2.S3)" },
+    { line: 'execution = integration.executeCommand(line);', because: "a chain step through shell integration: the line is the step's typed text (E2.S3)" },
+  ],
   'vpnLauncherRun.ts': [
     {
       line: "const sent = await sendGuarded(launcherKey(ctx, launcher), { kind: 'entry', terminalOs: launcher.terminalOs }, (family) => withConfig(line, configPath, family), ctx.startGate);",
@@ -214,4 +217,5 @@ test('the_scan_still_finds_what_it_is_about', () => {
   const sendLiteral = 'terminal\n  .sendText(\n    line,\n    true,\n  );';
   assert.equal(sitesIn('literal.ts', sendLiteral, SENDS).length, 1);
   assert.equal(sitesIn('literal.ts', 'x = sshLinkRefusal\n(\n  d)', [REFUSAL_CALL]).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x\n  .executeCommand(\n y)', SENDS).length, 1);
 });

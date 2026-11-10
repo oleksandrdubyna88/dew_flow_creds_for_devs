@@ -8,7 +8,7 @@ import { LaunchPlan, RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal,
 import { SshRoad, ownedSession } from './sshRoad';
 import type { ReadySsh } from './sshSession';
 import { executableLine } from './dependencyRun';
-import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
+import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from './dependencyRunHost';
 import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
 import { shellContext, sshReaderShell } from './pinnedTerminal';
@@ -57,9 +57,14 @@ export interface VpnRunContext {
   readonly sshRoad?: SshRoad;
 }
 
-/** The dependency chain of `roots`, carrying the request this start serves. */
+/**
+ * The dependency chain of `roots`, carrying the request this start serves. On the person's Start (`ctx.sshRoad` set) a step
+ * linked to an SSH entry runs over it (E2.S3); an agent's start has no road and keeps E1's refusal (E2-D2).
+ */
 export function vpnDependencies(ctx: VpnRunContext, roots: readonly EntityMetadata[], exclude?: ReadonlySet<string>): DependencyRunRequest {
-  return { ...dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude), startGate: ctx.startGate, lateAnswer: ctx.lateAnswer, standingPrompt: ctx.standingPrompt };
+  const request = dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude);
+  const withRoad = ctx.sshRoad === undefined ? request : withSshSteps(request, ctx.sshRoad, ctx.accountId, ctx.storage);
+  return { ...withRoad, startGate: ctx.startGate, lateAnswer: ctx.lateAnswer, standingPrompt: ctx.standingPrompt };
 }
 
 /** A linked launcher's line may not use `{config}`: the file is on this machine, the line runs on the SSH host (E2.S1). */

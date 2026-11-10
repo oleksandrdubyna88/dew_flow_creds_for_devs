@@ -19,7 +19,7 @@ import { EntryTerminalKey, entryTerminalKeyOf, entryTerminalTitle, maskedRunTitl
 import { registerFolderRun } from './folderRunCommand';
 import { trackTerminalActivity } from '../terminalActivityTracker';
 import { confirmTrusted } from '../trustPrompt';
-import { dependencyRequest, runDependenciesFirst } from '../dependencyRunHost';
+import { DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
 import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
 import { RemotePlan, SshLink, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from '../remoteLaunch';
@@ -108,8 +108,13 @@ async function passGates(host: RunCommandsHost, entry: Entry, body: string, refu
   const trust = host.context.globalState;
   return (
     (await confirmTrusted(trust, entry.id, entry.name, body)) &&
-    (await runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))).ready
+    (await runDependenciesFirst(chainRequest(host, entry))).ready
   );
+}
+
+/** The entry's dependency chain, with the person's SSH road: a step linked to an SSH entry runs over it (E2.S3). */
+function chainRequest(host: RunCommandsHost, entry: Entry): DependencyRunRequest {
+  return withSshSteps(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, host.context.globalState), host.sshRoad, entry.accountId, host.storage);
 }
 
 /** Why this window's terminal may not run the entry's own line — `entryShell`'s refusal, if any. */
@@ -256,7 +261,7 @@ async function passScriptGates(host: RunCommandsHost, ready: ReadyScript): Promi
   return (
     (await confirmTrusted(trust, entry.id, entry.name, script)) &&
     (await printsConfirmed(host, ready)) &&
-    (await runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))).ready
+    (await runDependenciesFirst(chainRequest(host, entry))).ready
   );
 }
 
