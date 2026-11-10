@@ -1,5 +1,6 @@
 import { loadEachWithVscode } from './vscodeStub';
-import { EntityMetadata } from '../types';
+import { EntityMetadata, TreeNode } from '../types';
+import { StorageManager } from '../storageManager';
 import * as sshProgram from '../sshProgram';
 
 /**
@@ -45,7 +46,7 @@ export interface World {
   openers: unknown[];
   forgotten: string[];
   /** Terminals opened through `openSshTerminal`, with the key path each was given. */
-  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string }[];
+  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string; title?: string }[];
   created: Terminal[];
   existing: Terminal[];
   warnings: string[];
@@ -188,8 +189,9 @@ export function world(parts: Parts): World {
           options: unknown,
           platform?: string,
           prefix?: string,
+          place?: { title: string; accountId: string },
         ): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix });
+          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title });
           return opened;
         },
         buildSshCommand: (entity: { host?: string }): string | undefined =>
@@ -291,7 +293,27 @@ function missingSsh(w: World, missing: boolean): Record<string, unknown> {
 export const entity = (extra: Partial<EntityMetadata> = {}): EntityMetadata =>
   ({ id: 'e1', name: 'prod', kind: 'ssh', host: 'prod.corp.com', ...extra }) as unknown as EntityMetadata;
 
-export const storage = {} as never;
+/**
+ * The entry `e1` sits in the folder "ssh connections", so a connect names that folder in its terminal title (the owner,
+ * 2026-11-10).
+ */
+const E1_IN_FOLDER: TreeNode = { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' };
+const FOLDER: TreeNode = { id: 'f1', name: 'ssh connections', type: 'folder', folderType: 'ssh', parentId: null };
+/** The entry `e1` at the root, for a test that moves it out of its folder. */
+export const E1_AT_ROOT: TreeNode = { ...E1_IN_FOLDER, parentId: null };
+
+/**
+ * A storage that knows exactly these nodes. The connect path reads only `getNode` here (the terminal title's folder)
+ * besides the modules these tests replace, so that member is typed against the real `StorageManager`; the one cast is
+ * here, and `PrepareOptions.storage` carries the note (typescript.doctrine § 3).
+ */
+export function storageWith(...nodes: TreeNode[]): StorageManager {
+  const read: Pick<StorageManager, 'getNode'> = { getNode: (_accountId, id) => nodes.find((node) => node.id === id) };
+  return read as StorageManager;
+}
+export const storage = storageWith(E1_IN_FOLDER, FOLDER);
+/** The title every connect of `entity()` gives its terminal. */
+export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };
 
 /** The shape materializeKnownHosts actually writes: keys/<pid>/, which is what the deletion guard keys on. */

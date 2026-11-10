@@ -2263,6 +2263,19 @@ The lines themselves do not wait for each other.
 (`entryShell`'s pinned-or-default choice) creates and disposes nothing, then `typed` calls `noteSent` before `sendText`. It is
 never `findEntryTerminal`, and never `pinnedTerminal(name, { fresh: true })`, which disposes by name.
 
+*An SSH Connect tab names its entry (2026-11-10, the owner).* It was `SSH: <user>@<host>`; it is `Creds SSH: <folder> / <entry>`
+(`Creds SSH: <entry>` with no parent folder), built by `sshTerminalTitle(EntryTerminalKey)` beside the other titles. Its own prefix
+keeps it a different key from a linked Terminal entry's `Creds: …` terminal. `connectEntity` reads the key from storage once,
+after `prepareSshSession` (every dialog is behind it): `placeOf` builds `SshTerminalPlace { title, accountId }` from
+`entryTerminalKeyOf(storage, accountId, entity.id, entity.name)`, and `openReady` hands it to `openKeyTerminal` (which passes it
+to `openSshTerminal`) or to `openPasswordTerminal` (which names its terminal with it). The tab
+only shows: two entries may share a name in one folder, the same entry id may exist in two accounts, and a move changes the folder
+half. So a session is found by `sshTerminalOwners.ts` (no `vscode` import, a `WeakMap` keyed by the terminal object, which the
+extension host keeps for the terminal's life) by account and entry, whatever its tab. `openSshTerminal` reuses, and the password
+road disposes, only a live terminal opened for the SAME entry of the SAME account, so after a move the entry's own session still
+comes forward (under its old tab) and the password road still closes its old tab. A terminal from before a reload belongs to
+nobody, so it is neither reused nor closed.
+
 *The title is one key (2026-11-09, `PLAN_terminal_titles_folder.md`).* A terminal's title is both the name it is created under
 and the key every lookup matches exactly, so `terminalTitles.ts` (no `vscode` import) builds every Creds terminal title and
 nothing else does (`terminalTitleScan.test.ts` pins it). An entry's terminal is `Creds: <folder> / <entry>`, or `Creds: <entry>`

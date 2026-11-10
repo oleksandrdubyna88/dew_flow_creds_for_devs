@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
-import { buildSshCommand, openSshTerminal } from './terminalManager';
+import { SshTerminalPlace, buildSshCommand, openSshTerminal } from './terminalManager';
+import { claimSshTerminal, isSshTerminalOf } from './sshTerminalOwners';
+import { entryTerminalKeyOf, sshTerminalTitle } from './terminalTitles';
 import { requestGone } from './requestLife';
 import { withAcceptNew } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
@@ -66,7 +68,17 @@ export async function connectEntity(
   }
   return prepared.kind === 'refused'
     ? offerAfterRefusal(prepared, accountId, entity, connect)
-    : openReady(prepared);
+    : openReady(prepared, placeOf(accountId, entity, connect));
+}
+
+/**
+ * The tab and the owner of the terminal about to open, read from storage AFTER prepare (every dialog is behind it),
+ * so an entry moved meanwhile is named where it is now (the owner, 2026-11-10: `Creds SSH: <folder> / <entry>`, not
+ * `SSH: <user>@<host>`). The tab only shows; the session is found again by this account and entry
+ * (`sshTerminalOwners`), never by its tab.
+ */
+function placeOf(accountId: string, entity: EntityMetadata, connect: ConnectOptions): SshTerminalPlace {
+  return { title: sshTerminalTitle(entryTerminalKeyOf(connect.storage, accountId, entity.id, entity.name)), accountId };
 }
 
 /** The window refused: the modal is OURS (a road shows its own sentence), and so is the one retry. */
@@ -86,13 +98,13 @@ function offerAfterRefusal(
 }
 
 /** Prepared: the open half. Rows 24-26 of the seam's table — synchronous, so no gate is needed here. */
-function openReady(ready: ReadySsh): boolean {
-  return ready.env === undefined ? openKeyTerminal(ready) : openPasswordTerminal(ready);
+function openReady(ready: ReadySsh, place: SshTerminalPlace): boolean {
+  return ready.env === undefined ? openKeyTerminal(ready, place) : openPasswordTerminal(ready, place);
 }
 
 /** The key, the agent's answer or no credential: one terminal, with the key wiped when it ends. */
-function openKeyTerminal(ready: ReadySsh): boolean {
-  const terminal = openSshTerminal(ready.entity, ready.options, ready.platform, ready.prefix);
+function openKeyTerminal(ready: ReadySsh, place: SshTerminalPlace): boolean {
+  const terminal = openSshTerminal(ready.entity, ready.options, ready.platform, ready.prefix, place);
   const materialized = ready.materializedKeyPath;
   // Wipe the decrypted key from disk as soon as the session ends.
   if (materialized !== undefined) {
@@ -110,12 +122,16 @@ function openKeyTerminal(ready: ReadySsh): boolean {
   return terminal !== undefined;
 }
 
-function disposeLiveTerminalNamed(name: string): void {
-  vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
+/**
+ * This entry's earlier live terminal, found by account and entry and never by its tab: after a move its tab names the
+ * old folder and it still holds the password; another entry may share the tab, and its session is not ours to end.
+ */
+function disposeOwnLiveTerminal(accountId: string, entryId: string): void {
+  vscode.window.terminals.find((t) => t.exitStatus === undefined && isSshTerminalOf(t, accountId, entryId))?.dispose();
 }
 
 /** A password: its own terminal, whose ENVIRONMENT carries it. */
-function openPasswordTerminal(ready: ReadySsh): boolean {
+function openPasswordTerminal(ready: ReadySsh, place: SshTerminalPlace): boolean {
   const command = buildSshCommand(ready.entity, ready.platform, ready.options);
   if (command === undefined || ready.target === undefined || ready.env === undefined) {
     // Unreachable: `prepareSshSession` stopped on `no-host` first.
@@ -123,14 +139,14 @@ function openPasswordTerminal(ready: ReadySsh): boolean {
   }
   // A FRESH terminal every time: the env carries this entity's password, and reusing
   // one would run the new session with the previous entity's credentials.
-  const name = `SSH: ${ready.target}`;
-  disposeLiveTerminalNamed(name);
+  disposeOwnLiveTerminal(place.accountId, ready.entity.id);
   const passTerminal = vscode.window.createTerminal({
-    name,
+    name: place.title,
     // Composed for `platform` — pinned in a local window, as `openSshTerminal` is (issue #103).
     shellPath: composedShellPath(),
     env: ready.env,
   });
+  claimSshTerminal(passTerminal, place.accountId, ready.entity.id);
   passTerminal.show();
   passTerminal.sendText(withAcceptNew(command, ready.acceptNew), true);
   return true;
