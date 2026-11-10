@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal } from '../bridgeAllowList';
 import { call, share, world } from './brokerWorld';
 
 /**
@@ -63,5 +64,23 @@ test('the_broker_hands_run_the_summary_it_showed', async () => {
     assert.notEqual(quiet.seen.ranWith[0], undefined);
   } finally {
     q.server.dispose();
+  }
+});
+
+test('the_bridge_allow_list_says_run_is_decided_and_the_other_refused_rows_do_not_name_run', () => {
+  // G13, the table half (spec §8): `run` gets a branch of its own in `useRoute`, so its three rows say E3 decided, and the default-deny
+  // line of `terminal`, `up` and `down` no longer talks about `run`. The first wall still stands on every prefix.
+  const refused = BRIDGE_ROUTES.filter((route) => !route.decision.served);
+  const rows = (word: string) => refused.filter((route) => route.path.endsWith(`/${word}`) && /^\/v1\/(use|alias|mcp\/use)\//.test(route.path));
+  assert.equal(rows('run').length, 3, 'run is named on all three prefixes');
+  for (const route of rows('run')) {
+    assert.ok(route.decision.why.includes('E3 decided'), `${route.path}: ${route.decision.why}`);
+    assert.deepEqual(bridgeRouteRefusal('POST', route.path), { code: 'not_supported', message: BRIDGE_NOT_SERVED });
+  }
+  for (const word of ['terminal', 'up', 'down']) {
+    assert.equal(rows(word).length, 3, `${word} is named on all three prefixes`);
+    for (const route of rows(word)) {
+      assert.ok(!/\brun\b/.test(route.decision.why), `${route.path} must not talk about run: ${route.decision.why}`);
+    }
   }
 });
