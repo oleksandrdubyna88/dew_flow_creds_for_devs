@@ -364,6 +364,10 @@ None new. Materialised key files already have an owner: deleted on terminal clos
 
 ## 9. Not in this plan
 
+- An AGENT-started VPN (`creds_vpn_up`) whose launcher, or one of whose chain steps, is a linked Terminal entry: it
+  stays REFUSED with the shared sentence (fail closed, which meets §1). D2 opens only `creds_run`; opening this road is
+  an authorisation decision for a later plan with its own security judgement (raised by the E2 stories, 2026-11-10).
+
 - The Windows quoting security fix of SSH Connect (entry 1.2) — its own plan, [PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md), landing before E1.
 
 - A Windows remote (D9) — a later plan, after a hand check of Windows OpenSSH's default shell.
@@ -481,6 +485,8 @@ Stories: [PLAN_terminal_command_over_ssh_E1.md](PLAN_terminal_command_over_ssh_E
   the same commit.
 
 ### E2 · Terminal roads: arrow and VPN launcher, folder run, dependency chain
+
+Stories: [PLAN_terminal_command_over_ssh_E2.md](PLAN_terminal_command_over_ssh_E2.md).
 
 - **Goal.** A person's roads that type into a VS Code terminal run a linked entry on the chosen host, in the order
   "resolve and link → prepare → trust → dependencies → synchronous send", with `cleanup()` on every exit that sends
