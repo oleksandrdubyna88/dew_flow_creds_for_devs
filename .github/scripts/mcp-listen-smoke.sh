@@ -4,6 +4,11 @@
 #
 #   .github/scripts/mcp-listen-smoke.sh <creds-mcp binary> [log root]
 #
+# With no log root and no RUNNER_TEMP the log lives in an owned folder (lib/owned.sh) that is removed when the script
+# ends, whatever way it ends; pass a root to keep the log of a failed run.
+# Off CI under Git Bash (Windows) the owned folder needs Node and the shared rules mount (`git submodule update --init
+# .claude/rules/shared`); without them the script stops before it makes anything — pass a log root there.
+#
 # Why a script rather than a workflow step: so the same check runs on a developer's machine against a
 # locally published binary before a tag, in `release.yml` on every runner that can execute what it built,
 # and in `ci-clients.yml` on every pull request against the binary that job builds — on all three operating
@@ -32,9 +37,22 @@ set -euo pipefail
 binary="${1:?usage: mcp-listen-smoke.sh <creds-mcp binary> [log root]}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fixture="$here/../../src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-07-28.jsonl"
-root="${2:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}}"
-dir="$(cd "$root" && (pwd -W 2>/dev/null || pwd))/creds-mcp-listen-smoke-$$"
-mkdir -p "$dir"
+# A log root (the second argument, or RUNNER_TEMP in CI) is the caller's: the smoke makes its own leaf inside it and
+# leaves the leaf, so the caller can read the log after a failed run. With neither, a person is running it: the scratch
+# is an owned folder of owned.sh, claimed first and removed on every exit (a person who wants the log after a failed run
+# passes a root). `owned.sh` is read on that branch only, so the release jobs gain no dependency.
+root="${2:-${RUNNER_TEMP:-}}"
+if [[ -n "$root" ]]; then
+  dir="$(cd "$root" && (pwd -W 2>/dev/null || pwd))/creds-mcp-listen-smoke-$$"
+  mkdir -p "$dir"
+else
+  # shellcheck source-path=SCRIPTDIR
+  # shellcheck source=lib/owned.sh
+  source "$here/lib/owned.sh"
+  owned="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
+  owned_dir owned smoke || exit 1
+  dir="$(cd "$owned" && (pwd -W 2>/dev/null || pwd))"
+fi
 out="$dir/stdout.jsonl"
 stamp="$dir/stdin-closed"
 

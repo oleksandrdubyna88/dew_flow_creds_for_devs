@@ -7,11 +7,18 @@
 # The stand-in is one bash script that plays either binary: as `creds-mcp` it answers `--version`, as `creds` it
 # writes the `relay-pipe` log a run with no agent writes. What it says is set by environment variables, so each
 # case below is a wrong answer the smoke must refuse — or the right one it must pass.
+# Under Git Bash (Windows) the helper needs Node and the shared rules mount (`git submodule update --init .claude/rules/shared`).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 smoke="$here/version-smoke.sh"
-work="$(mktemp -d)"
+# The scratch folder is an owned folder (lib/owned.sh): claimed first, removed by the helper's exit trap on EVERY way
+# the test ends — a failing command under set -e, an interrupt, a normal end. The test sets no trap of its own.
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+work="" # set by owned_dir through printf -v, which ShellCheck cannot see (SC2154)
+owned_dir work smoke-test || exit 1
 fake="$work/fake-binary.sh"
 failures=0
 
@@ -78,7 +85,30 @@ expect 'cli: a binary that never ends fails at the guard'        1 'did not end 
 expect 'an expected version that is not X.Y.Z is refused'        1 'must be X.Y.Z' mcp 0.10.1-rc.1 FAKE_VERSION=0.10.1-rc.1
 expect 'an unknown kind is refused'                              1 'usage:' server 0.10.1 FAKE_VERSION=0.10.1
 
-rm -rf "$work"
+# off_ci <name> <exit code the smoke must give> <text its output must hold> <kind> <expected version> [VAR=value ...]
+# The smoke as a person runs it: no log root and no RUNNER_TEMP, so it makes its own scratch in TMPDIR — a private
+# root here — and that root must be empty when the smoke is gone, whether the smoke passed or failed (E2.4.S2, sc. 4).
+off_ci_count=0
+off_ci() {
+  local name="$1" wanted="$2" says="$3" kind="$4" version="$5" code=0 left
+  shift 5
+  off_ci_count=$((off_ci_count + 1))
+  mkdir "$work/root-$off_ci_count"
+  env -u RUNNER_TEMP SMOKE_GUARD_SECONDS=3 "$@" TMPDIR="$work/root-$off_ci_count" bash "$smoke" "$kind" "$fake" "$version" > "$work/run.log" 2>&1 || code=$?
+  left="$(ls -A "$work/root-$off_ci_count")"
+  if [[ "$code" -eq "$wanted" ]] && grep -qF -- "$says" "$work/run.log" && [[ -z "$left" ]]; then
+    echo "ok   $name (the smoke exited $code and left nothing)"
+  else
+    echo "FAIL $name — expected exit $wanted saying '$says' and an empty root; exit $code, left: [$left]; its output:"
+    sed 's/^/     /' "$work/run.log"
+    failures=$((failures + 1))
+  fi
+}
+
+# The cli kind makes its scratch only after the binary check, so a failure AFTER the folder is a log that was never written.
+off_ci 'off CI, cli: a run that writes no log fails after the folder is made and leaves nothing' 1 'wrote no log' cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_LOG=no
+off_ci 'off CI, cli: a passing run leaves nothing'                                              0 "$passes"      cli 0.4.1 FAKE_VERSION=0.4.1
+
 if [[ "$failures" -eq 0 ]]; then
   echo "all version smoke self-test checks passed"
 else
