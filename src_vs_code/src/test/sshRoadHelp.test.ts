@@ -33,7 +33,7 @@ test('every_language_explains_the_arrow_over_ssh_with_english_labels', () => {
 });
 
 const EN_BULLET =
-  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window; an agent's run still refuses such an entry and says why. A share and an export leave the choice out.";
+  "*Runs over SSH* can name one of your **ssh** entries; it starts on *— Do not use —*. With one chosen, *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs. A share and an export leave the choice out.";
 
 const EN_ADVICE =
   "To run a line on a server, choose its **ssh** entry under *Runs over SSH* instead of writing `ssh` into the line. The arrow then connects with that entry — its key or password, its pinned host key, its jump host — and the line runs in your login shell there, which stays open after the line ends; a line that fails says its exit code first. Write the line for the server, such as `tmux new -A -s {name}` with *Runs on* set to Linux or macOS; a Windows server is refused. The login shell must be sh, bash, zsh, ksh or dash; fish and csh are not supported. The approval names the host, so a changed host, user, port, jump host, agent forwarding or port forward asks again. If the SSH entry signs in with a password, every run opens a new terminal beside any open one. Windows PowerShell 5.1 cannot pass a double quote or a final backslash to ssh, so such a line is refused there; install PowerShell 7 (`pwsh`). After a run, the arrow asks before it types into that terminal again, because the login shell is still open. A VPN's *Started by* runs over SSH the same way, but a launcher line with `{config}` is refused, because the config is a file on this machine, and an agent's VPN start with such a launcher is refused. *Copy Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent, `~/.ssh/config`), and the vault's key and password are not in it.";
@@ -62,11 +62,11 @@ test('every_language_explains_the_folder_run_over_ssh_in_its_own_paragraph', () 
 
 // Hp5 (E2.S3): the bullet of the terminal kind, and the end of the Depends on paragraph, in every language.
 const CHAIN_BULLET: Record<HelpLanguage, string> = {
-  en: "*Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window; an agent's run still refuses such an entry and says why.",
-  de: 'Ist einer gewählt, führen *Run in Terminal*, *Started by* eines VPN, *Run All in Folder* und eine Abhängigkeitskette die Zeile auf diesem Host aus, und *Runs on* nennt dann das System des Hosts. *Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster; der Lauf eines Agenten lehnt einen solchen Eintrag weiterhin ab und sagt warum.',
-  es: 'Con una elegida, *Run in Terminal*, el *Started by* de una VPN, *Run All in Folder* y una cadena de dependencias ejecutan la línea en ese host, y *Runs on* indica entonces el sistema del host. *Run with Secrets* también la ejecuta allí, desde una ventana local; la ejecución de un agente sigue rechazando esa entrada y dice por qué.',
-  ru: 'Если запись выбрана, *Run in Terminal*, *Started by* у VPN, *Run All in Folder* и цепочка зависимостей выполняют строку на этом хосте, а *Runs on* тогда указывает систему хоста. *Run with Secrets* тоже выполняет её там, из локального окна; запуск агентом пока отказывает такой записи и объясняет почему.',
-  uk: 'Якщо запис вибрано, *Run in Terminal*, *Started by* у VPN, *Run All in Folder* і ланцюжок залежностей виконують рядок на цьому хості, а *Runs on* тоді вказує систему хоста. *Run with Secrets* теж виконує його там, із локального вікна; запуск агентом поки відмовляє такому запису й пояснює чому.',
+  en: "*Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain run the line on that host, and *Runs on* then names the host's system. *Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs.",
+  de: 'Ist einer gewählt, führen *Run in Terminal*, *Started by* eines VPN, *Run All in Folder* und eine Abhängigkeitskette die Zeile auf diesem Host aus, und *Runs on* nennt dann das System des Hosts. *Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster, und der Lauf eines Agenten auch, aber nur, wenn der SSH-Eintrag selbst *Usable by agents* ist; sonst wird der Agent abgelehnt und nichts läuft.',
+  es: 'Con una elegida, *Run in Terminal*, el *Started by* de una VPN, *Run All in Folder* y una cadena de dependencias ejecutan la línea en ese host, y *Runs on* indica entonces el sistema del host. *Run with Secrets* también la ejecuta allí, desde una ventana local, y la ejecución de un agente también, pero solo cuando la propia entrada SSH es *Usable by agents*; si no, el agente se rechaza y no se ejecuta nada.',
+  ru: 'Если запись выбрана, *Run in Terminal*, *Started by* у VPN, *Run All in Folder* и цепочка зависимостей выполняют строку на этом хосте, а *Runs on* тогда указывает систему хоста. *Run with Secrets* тоже выполняет её там, из локального окна, и запуск агентом тоже, но только если сама запись SSH — *Usable by agents*; иначе агенту отказывают и ничего не выполняется.',
+  uk: 'Якщо запис вибрано, *Run in Terminal*, *Started by* у VPN, *Run All in Folder* і ланцюжок залежностей виконують рядок на цьому хості, а *Runs on* тоді вказує систему хоста. *Run with Secrets* теж виконує його там, із локального вікна, і запуск агентом теж, але лише коли сам запис SSH — *Usable by agents*; інакше агентові відмовляють і нічого не виконується.',
 };
 
 const CHAIN_SENTENCES: Record<HelpLanguage, string> = {
@@ -94,11 +94,11 @@ test('the_english_chain_sentences_name_what_the_person_sees', () => {
 
 // Hp6 (E3.S1): Run with Secrets runs over SSH from a local window — the terminal bullet, and the `secret-references` article, in every language.
 const RUNS_BULLET_SENTENCE: Record<HelpLanguage, string> = {
-  en: "*Run with Secrets* runs it there too, from a local window; an agent's run still refuses such an entry and says why.",
-  de: "*Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster; der Lauf eines Agenten lehnt einen solchen Eintrag weiterhin ab und sagt warum.",
-  es: "*Run with Secrets* también la ejecuta allí, desde una ventana local; la ejecución de un agente sigue rechazando esa entrada y dice por qué.",
-  ru: "*Run with Secrets* тоже выполняет её там, из локального окна; запуск агентом пока отказывает такой записи и объясняет почему.",
-  uk: "*Run with Secrets* теж виконує його там, із локального вікна; запуск агентом поки відмовляє такому запису й пояснює чому.",
+  en: "*Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs.",
+  de: "*Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster, und der Lauf eines Agenten auch, aber nur, wenn der SSH-Eintrag selbst *Usable by agents* ist; sonst wird der Agent abgelehnt und nichts läuft.",
+  es: "*Run with Secrets* también la ejecuta allí, desde una ventana local, y la ejecución de un agente también, pero solo cuando la propia entrada SSH es *Usable by agents*; si no, el agente se rechaza y no se ejecuta nada.",
+  ru: "*Run with Secrets* тоже выполняет её там, из локального окна, и запуск агентом тоже, но только если сама запись SSH — *Usable by agents*; иначе агенту отказывают и ничего не выполняется.",
+  uk: "*Run with Secrets* теж виконує його там, із локального вікна, і запуск агентом теж, але лише коли сам запис SSH — *Usable by agents*; інакше агентові відмовляють і нічого не виконується.",
 };
 
 const SECRETS_WHAT_IT_IS: Record<HelpLanguage, string> = {
@@ -154,4 +154,21 @@ test('the_english_secrets_text_is_exact', () => {
     assert.ok(body.includes(needle), `the remote environment and the close are said: ${needle}`);
   }
   assert.ok(!body.includes('never in the server’s process list'), 'too strong: on the server the values are in the environment of the command');
+});
+
+// Hp8 (E3.S2): the agent's run over SSH, in every language. Only when the SSH entry itself is *Usable by agents* — the SSH entry's own ask policy is not consulted.
+const AGENT_RUN_SENTENCE: Record<HelpLanguage, string> = {
+  en: "*Run with Secrets* runs it there too, from a local window, and so does an agent's run, but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused and nothing runs.",
+  de: "*Run with Secrets* führt sie dort ebenfalls aus, aus einem lokalen Fenster, und der Lauf eines Agenten auch, aber nur, wenn der SSH-Eintrag selbst *Usable by agents* ist; sonst wird der Agent abgelehnt und nichts läuft.",
+  es: "*Run with Secrets* también la ejecuta allí, desde una ventana local, y la ejecución de un agente también, pero solo cuando la propia entrada SSH es *Usable by agents*; si no, el agente se rechaza y no se ejecuta nada.",
+  ru: "*Run with Secrets* тоже выполняет её там, из локального окна, и запуск агентом тоже, но только если сама запись SSH — *Usable by agents*; иначе агенту отказывают и ничего не выполняется.",
+  uk: "*Run with Secrets* теж виконує його там, із локального вікна, і запуск агентом теж, але лише коли сам запис SSH — *Usable by agents*; інакше агентові відмовляють і нічого не виконується.",
+};
+
+test('every_language_says_the_agents_run_needs_the_ssh_entry_usable_by_agents', () => {
+  for (const language of HELP_LANGUAGES) {
+    assert.ok(whole(language).includes(AGENT_RUN_SENTENCE[language]), `${language}: the terminal bullet does not say that an agent's run needs the SSH entry to be Usable by agents`);
+    assert.ok(whole(language).includes('*Usable by agents*'), `${language}: the label stays English`);
+  }
+  assert.ok(!whole('en').includes('an agent\'s run still refuses'), 'the E1 sentence is gone');
 });
