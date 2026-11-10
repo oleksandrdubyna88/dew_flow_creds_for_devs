@@ -170,14 +170,34 @@ test('every_language_says_the_agents_run_needs_the_ssh_entry_usable_by_agents', 
 // Hp10 (E3.4 F-S2): a linked run spends a one-use SSH entry, said right after the sentence that says the agent's run needs the SSH entry *Usable by agents*.
 const ONE_USE_SENTENCE: Record<HelpLanguage, string> = {
   en: "If that SSH entry is set to last until an agent uses it once, the agent's run is that use, and the SSH entry is deleted after it.",
-  de: 'Ist dieser SSH-Eintrag auf „bis ein Agent ihn einmal benutzt hat“ eingestellt, ist der Lauf des Agenten diese Benutzung, und der SSH-Eintrag wird danach gelöscht.',
+  de: 'Ist dieser SSH-Eintrag so eingestellt, dass er nur bis zur einmaligen Benutzung durch einen Agenten besteht, ist der Lauf des Agenten diese Benutzung, und der SSH-Eintrag wird danach gelöscht.',
   es: 'Si esa entrada SSH está configurada para durar hasta que un agente la use una vez, la ejecución del agente es ese uso, y la entrada SSH se borra después.',
-  ru: 'Если эта запись SSH настроена жить, пока агент не использует её один раз, запуск агентом и есть это использование, и запись SSH после него удаляется.',
-  uk: 'Якщо цей запис SSH налаштовано жити, доки агент не використає його один раз, запуск агентом і є цим використанням, і запис SSH після нього видаляється.',
+  ru: 'Если срок жизни этой записи SSH — до одного использования агентом, запуск агентом и есть это использование, и после него запись SSH удаляется.',
+  uk: 'Якщо час життя цього запису SSH — до одного використання агентом, запуск агентом і є цим використанням, і після нього запис SSH видаляється.',
 };
 
 test('every_language_says_a_linked_run_spends_a_one_use_ssh_entry', () => {
   for (const language of HELP_LANGUAGES) {
     assert.ok(whole(language).includes(`${RUNS_BULLET_SENTENCE[language]} ${ONE_USE_SENTENCE[language]}`), `${language}: the terminal bullet does not say, after the Usable by agents sentence, that a linked run spends a one-use SSH entry`);
+  }
+});
+
+// Hp9 (E3.S3.1, risk 1): the paragraph that advises choosing an ssh entry ends with the older-version note, in every language.
+const OLDER_VERSION_NOTE: Record<HelpLanguage, string> = {
+  en: ' An older version of CredsForDevs does not know *Runs over SSH*: it runs such an entry on its own machine, and a save there removes the choice for every machine. Update CredsForDevs on all your machines before you choose an SSH entry.',
+  de: ' Eine ältere Version von CredsForDevs kennt *Runs over SSH* nicht: Sie führt einen solchen Eintrag auf ihrem eigenen Rechner aus, und ein Speichern dort entfernt die Wahl für alle Rechner. Aktualisieren Sie CredsForDevs auf allen Ihren Rechnern, bevor Sie einen SSH-Eintrag wählen.',
+  es: ' Una versión anterior de CredsForDevs no conoce *Runs over SSH*: ejecuta esa entrada en su propia máquina, y guardarla allí quita la elección en todas las máquinas. Actualice CredsForDevs en todas sus máquinas antes de elegir una entrada SSH.',
+  ru: ' Старая версия CredsForDevs не знает *Runs over SSH*: она выполняет такую запись на своей машине, а сохранение записи там убирает выбор на всех машинах. Обновите CredsForDevs на всех своих машинах, прежде чем выбирать запись SSH.',
+  uk: ' Старша версія CredsForDevs не знає *Runs over SSH*: вона виконує такий запис на своїй машині, а збереження запису там прибирає вибір на всіх машинах. Оновіть CredsForDevs на всіх своїх машинах, перш ніж обирати запис SSH.',
+};
+
+test('every_language_warns_that_an_older_version_runs_a_linked_entry_locally', () => {
+  for (const language of HELP_LANGUAGES) {
+    const note = OLDER_VERSION_NOTE[language];
+    const body = whole(language);
+    assert.ok(body.includes(note), `${language}: the older-version note is absent`);
+    const paragraph = body.split('\n\n').find((p) => p.includes(note));
+    assert.ok(paragraph !== undefined && paragraph.includes('~/.ssh/config'), `${language}: the note is not at the end of the paragraph that advises choosing an ssh entry`);
+    assert.ok(paragraph.endsWith(note), `${language}: the note is not the last sentence of that paragraph`);
   }
 });
