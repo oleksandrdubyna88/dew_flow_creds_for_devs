@@ -144,6 +144,18 @@
           "new": "        const string helper = \"src_service_defaults/tests/Support/Leftovers/\";\n        const string tests = \"src_service_defaults/tests/Leftovers/\";\n\n        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\");",
           "count": 1,
           "reason": "the pin keeps its four entries; two of them lie in the folder of the tests here"
+        },
+        {
+          "old": "The_files_that_may_spell_the_word_in_pieces_are_these_four_and_all_of_them_exist",
+          "new": "The_files_that_may_spell_the_word_in_pieces_are_these_five_and_all_of_them_exist",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the pin lists five files, the fifth being the Node wrapper"
+        },
+        {
+          "old": "        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\");",
+          "new": "        // The fifth entry is the Node wrapper (D7). It changes no answer: the copy folds .cs only (IsFolded); LeftoversGuardCredsTests pins that it has no effect.\n        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\", \"src_vs_code/scripts/lib/leftovers.cjs\");",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the pin takes the Node wrapper as its fifth entry, with a comment that it has no effect at the pin"
         }
       ]
     },
