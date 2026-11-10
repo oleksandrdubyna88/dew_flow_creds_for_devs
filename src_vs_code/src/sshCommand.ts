@@ -98,28 +98,62 @@ const POWERSHELL_DOUBLE_QUOTED_UNSAFE = /["\u201C\u201D\u201E$`]/;
 /**
  * A bare PowerShell word that needs no quoting: letters, digits and the punctuation a host, a login, a port, a jump value
  * or an option name is made of. Anything else — `$` first of all — is quoted, because the line is typed into PowerShell.
+ *
+ * <p>Each character was read by Windows PowerShell 5.1 in ARGUMENT mode (2026-11-10). `,` is NOT here: `a,b` is an
+ * ARRAY of two arguments, so a two-hop jump `-J hop1,hop2` reached ssh as `-J hop1 hop2 <dest>` and the second hop
+ * became the destination. `= + : [ ] \ /` and a `@` inside a word are plain text. Two positions still change a word: a
+ * leading `@` (a splat, or a parse error) and a word that starts with `-` and holds `:` (`-p:1` splits into `-p` and
+ * `1`); the look-ahead refuses both.</p>
  */
-const POWERSHELL_BARE_SAFE = /^[A-Za-z0-9._:@\\/[\]=+,-]+$/;
+const POWERSHELL_BARE_SAFE = /^(?!@|-[^:]*:)[A-Za-z0-9._:@\\/[\]=+-]+$/;
+
+/** What an ordinary (nothing-to-escape) word looks like on win32: bare, or the `"…"` spelling a path has always had. */
+type WindowsOrdinary = 'bare' | 'double-quoted';
+
+/**
+ * THE one win32 word rule: the line is typed into PowerShell, so every word the line carries is decided here.
+ *
+ * <ul>
+ * <li>a value PowerShell would EXPAND or that could END a double-quoted word (`$`, the backtick, any double-quote
+ *   character) is ONE PowerShell single-quoted word, built by the one PowerShell quoter (`hostShell.quoteFor`);</li>
+ * <li>otherwise a path keeps its `"…"` spelling (`ordinary: 'double-quoted'`, which cmd reads too), byte-identical to
+ *   what the builder always wrote;</li>
+ * <li>otherwise a line word is bare when {@link POWERSHELL_BARE_SAFE} says so, and single-quoted when not.</li>
+ * </ul>
+ *
+ * <p>`keyPrefix` is the `Name=` of a key-value option (`UserKnownHostsFile=`): it is a fixed plain name, it stays outside
+ * the quotes of an ordinary path, and it goes INSIDE the single quotes when the value needs them, so `=` never splits
+ * the word.</p>
+ */
+function windowsWord(value: string, ordinary: WindowsOrdinary, keyPrefix = ''): string {
+  if (POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(value)) {
+    return quoteFor('powershell', `${keyPrefix}${value}`);
+  }
+  return ordinary === 'double-quoted' ? `${keyPrefix}"${value}"` : bareOrSingleQuoted(`${keyPrefix}${value}`);
+}
+
+/** A line word that nothing has to be escaped in: bare when plain, else one single-quoted word. */
+function bareOrSingleQuoted(word: string): string {
+  return POWERSHELL_BARE_SAFE.test(word) ? word : quoteFor('powershell', word);
+}
 
 /**
  * Quote a value for the integrated terminal's shell. On Windows shells
  * (PowerShell/cmd) backslashes are path separators, not escapes.
  *
- * <p>On win32 the ordinary value is a `"…"` word, which PowerShell and cmd both read. A value that PowerShell would
- * EXPAND or that could END the word (`$`, the backtick, any double-quote character, see above) is a PowerShell
- * single-quoted word instead, built by the one PowerShell quoter (`hostShell.quoteFor`): a sync, share or import can
- * write such a value into an entry. On POSIX shells escape the characters that are special inside double quotes.</p>
+ * <p>On win32 the word comes from `windowsWord` (see there). On POSIX shells escape the characters that are special
+ * inside double quotes.</p>
  */
 function shellQuote(value: string, platform: NodeJS.Platform = process.platform): string {
   if (platform === 'win32') {
-    return POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(value) ? quoteFor('powershell', value) : `"${value}"`;
+    return windowsWord(value, 'double-quoted');
   }
   return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
 }
 
-/** One argument the options composer made, as the line must carry it: on win32 quoted unless it is a plain word. */
+/** One argument the options composer made, as the line must carry it: on win32 through the one word rule. */
 function lineWord(word: string, platform: NodeJS.Platform): string {
-  return platform === 'win32' && !POWERSHELL_BARE_SAFE.test(word) ? quoteFor('powershell', word) : word;
+  return platform === 'win32' ? windowsWord(word, 'bare') : word;
 }
 
 /** `user@host:port` (port omitted when default) â€” the connection identity. */
@@ -164,7 +198,8 @@ export function buildSshCommand(
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));
   }
   if (entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT) {
-    parts.push('-p', String(entity.port));
+    // A number by type, a string by data (sync and import write JSON): on win32 it goes through the word rule like the rest.
+    parts.push('-p', lineWord(String(entity.port), platform));
   }
   // The connection-manager options (jump host, forwards, agent forwarding) are composed by
   // `sshOptions.ts` — the SAME function the agent's argv builder calls, so the two surfaces
@@ -223,10 +258,10 @@ function quotedDestination(destination: string, platform: NodeJS.Platform): stri
   return /[\\"$`]/.test(destination) ? shellQuote(destination, platform) : destination;
 }
 
-/** The `UserKnownHostsFile=<path>` word: on win32 a path PowerShell would expand is ONE single-quoted word, `=` included. */
+/** The `UserKnownHostsFile=<path>` word: on win32 a key-value word of the one word rule, `=` included in a quoted one. */
 function knownHostsOption(file: string, platform: NodeJS.Platform): string {
-  return platform === 'win32' && POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(file)
-    ? quoteFor('powershell', `UserKnownHostsFile=${file}`)
+  return platform === 'win32'
+    ? windowsWord(file, 'double-quoted', 'UserKnownHostsFile=')
     : `UserKnownHostsFile=${shellQuote(file, platform)}`;
 }
 

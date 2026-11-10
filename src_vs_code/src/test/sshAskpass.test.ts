@@ -52,7 +52,16 @@ test('the windows script reads the password by delayed expansion, never by perce
 
   assert.equal(content.includes('%CREDS_SSH_PASSWORD%'), false, 'percent expansion puts the password into the parsed line');
   assert.match(content, /setlocal EnableDelayedExpansion/);
-  assert.match(content, /^echo\(!CREDS_SSH_PASSWORD!$/m);
+  assert.match(content, /^echo\(!CREDS_SSH_PASSWORD!\r$/m);
+});
+
+test('the windows script has CRLF line ends, because cmd reads a batch file by line and the file is written as it is', () => {
+  const content = askpassScript('win32').content;
+
+  assert.equal(content.replace(/\r\n/g, '').includes('\n'), false, 'a bare LF is a line end cmd.exe reads in its own way');
+  assert.equal(content.replace(/\r\n/g, '').includes('\r'), false);
+  assert.equal(content.endsWith('\r\n'), true);
+  assert.equal(askpassScript('linux').content.includes('\r'), false, 'a CR in a POSIX script would break the shebang');
 });
 
 // The password through a REAL cmd.exe (the `.bat` run by the parser it is written for) is `windowsParsers.test.ts`: it runs on

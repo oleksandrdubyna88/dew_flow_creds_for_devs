@@ -264,6 +264,9 @@ const OPTION_SHAPES: (() => SshCommandOptions)[] = [
   () => ({ program: 'ssh', jump: 'j@b:2200', builtInExists: () => true }),
   () => ({ builtInExists: () => true, pathProbe: pathWith(GIT_SSH, BUILT_IN_DIR) }),
   () => ({ program: 'ssh', knownHostsFile: 'C:\\Users\\me\\kh\\known_hosts' }),
+  // Column 6 is NEW (no db450e5 print): a two-hop jump chain. On win32 its literal differs from the single-hop column 3 ON
+  // PURPOSE: a bare `a,b` is a PowerShell ARRAY in argument mode, so the chain is one single-quoted word there.
+  () => ({ program: 'ssh', jump: 'j@b:2200,k@c', builtInExists: () => true }),
 ];
 
 const EXPECTED: Record<'win32' | 'linux', string[][]> = {
@@ -276,6 +279,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@example.com',
       'ssh deploy@example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 1: port 2222
     [
@@ -285,6 +289,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -p 2222 -J j@b:2200 deploy@example.com',
       'ssh -p 2222 deploy@example.com',
       'ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -p 2222 -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 2: port 22
     [
@@ -294,6 +299,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@example.com',
       'ssh deploy@example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 3: no user
     [
@@ -303,6 +309,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 example.com',
       'ssh example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" example.com',
+      "ssh -J 'j@b:2200,k@c' example.com",
     ],
     // 4: user CORP\\alice
     [
@@ -312,6 +319,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 CORP\\alice@example.com',
       'ssh CORP\\alice@example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" CORP\\alice@example.com',
+      "ssh -J 'j@b:2200,k@c' CORP\\alice@example.com",
     ],
     // 5: user a$HOME. DIFFERS from db450e5, which printed the destination bare (`ssh a$HOME@example.com`) in all six columns:
     // PowerShell expands `$HOME` in a bare word, so the login was changed on the way. It is now one single-quoted word.
@@ -322,6 +330,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       "ssh -J j@b:2200 'a$HOME@example.com'",
       "ssh 'a$HOME@example.com'",
       "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"C:\\Users\\me\\kh\\known_hosts\" 'a$HOME@example.com'",
+      "ssh -J 'j@b:2200,k@c' 'a$HOME@example.com'",
     ],
     // 6: sshKeyPath /keys/e1.key
     [
@@ -331,6 +340,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "/keys/e1.key" -J j@b:2200 deploy@example.com',
       'ssh -i "/keys/e1.key" deploy@example.com',
       'ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"/keys/e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 7: sshKeyPath C:\\Users\\me\\e1.key, port 2200
     [
@@ -340,6 +350,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "C:\\Users\\me\\e1.key" -p 2200 -J j@b:2200 deploy@example.com',
       'ssh -i "C:\\Users\\me\\e1.key" -p 2200 deploy@example.com',
       'ssh -i "C:\\Users\\me\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"C:\\Users\\me\\e1.key\" -p 2200 -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 8: sshKeyPath with a space
     [
@@ -349,6 +360,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "C:\\Users\\my name\\e1.key" -J j@b:2200 deploy@example.com',
       'ssh -i "C:\\Users\\my name\\e1.key" deploy@example.com',
       'ssh -i "C:\\Users\\my name\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -i \"C:\\Users\\my name\\e1.key\" -J 'j@b:2200,k@c' deploy@example.com",
     ],
     // 9: agentForward
     [
@@ -358,6 +370,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 -A deploy@example.com',
       'C:/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com',
       'ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' -A deploy@example.com",
     ],
     // 10: agentForward + local forward
     [
@@ -367,6 +380,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 -A -L 5432:db:5432 deploy@example.com',
       'C:/Windows/System32/OpenSSH/ssh.exe -A -L 5432:db:5432 deploy@example.com',
       'ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@example.com',
+      "ssh -J 'j@b:2200,k@c' -A -L 5432:db:5432 deploy@example.com",
     ],
     // 11: host [2001:db8::1]
     [
@@ -376,6 +390,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@[2001:db8::1]',
       'ssh deploy@[2001:db8::1]',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" deploy@[2001:db8::1]',
+      "ssh -J 'j@b:2200,k@c' deploy@[2001:db8::1]",
     ],
     // 12: host 82.165.44.219, user root
     [
@@ -385,6 +400,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 root@82.165.44.219',
       'ssh root@82.165.44.219',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\Users\\me\\kh\\known_hosts" root@82.165.44.219',
+      "ssh -J 'j@b:2200,k@c' root@82.165.44.219",
     ],
   ],
   linux: [
@@ -396,6 +412,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@example.com',
       'ssh deploy@example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c deploy@example.com',
     ],
     // 1: port 2222
     [
@@ -405,6 +422,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -p 2222 -J j@b:2200 deploy@example.com',
       'ssh -p 2222 deploy@example.com',
       'ssh -p 2222 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -p 2222 -J j@b:2200,k@c deploy@example.com',
     ],
     // 2: port 22
     [
@@ -414,6 +432,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@example.com',
       'ssh deploy@example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c deploy@example.com',
     ],
     // 3: no user
     [
@@ -423,6 +442,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 example.com',
       'ssh example.com',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" example.com',
+      'ssh -J j@b:2200,k@c example.com',
     ],
     // 4: user CORP\\alice
     [
@@ -432,6 +452,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 "CORP\\\\alice@example.com"',
       'ssh "CORP\\\\alice@example.com"',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" "CORP\\\\alice@example.com"',
+      'ssh -J j@b:2200,k@c "CORP\\\\alice@example.com"',
     ],
     // 5: user a$HOME
     [
@@ -441,6 +462,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 "a\\$HOME@example.com"',
       'ssh "a\\$HOME@example.com"',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" "a\\$HOME@example.com"',
+      'ssh -J j@b:2200,k@c "a\\$HOME@example.com"',
     ],
     // 6: sshKeyPath /keys/e1.key
     [
@@ -450,6 +472,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "/keys/e1.key" -J j@b:2200 deploy@example.com',
       'ssh -i "/keys/e1.key" deploy@example.com',
       'ssh -i "/keys/e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "/keys/e1.key" -J j@b:2200,k@c deploy@example.com',
     ],
     // 7: sshKeyPath C:\\Users\\me\\e1.key, port 2200
     [
@@ -459,6 +482,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -J j@b:2200 deploy@example.com',
       'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 deploy@example.com',
       'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\me\\\\e1.key" -p 2200 -J j@b:2200,k@c deploy@example.com',
     ],
     // 8: sshKeyPath with a space
     [
@@ -468,6 +492,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -J j@b:2200 deploy@example.com',
       'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" deploy@example.com',
       'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -i "C:\\\\Users\\\\my name\\\\e1.key" -J j@b:2200,k@c deploy@example.com',
     ],
     // 9: agentForward
     [
@@ -477,6 +502,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 -A deploy@example.com',
       'ssh -A deploy@example.com',
       'ssh -A -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c -A deploy@example.com',
     ],
     // 10: agentForward + local forward
     [
@@ -486,6 +512,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 -A -L 5432:db:5432 deploy@example.com',
       'ssh -A -L 5432:db:5432 deploy@example.com',
       'ssh -A -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@example.com',
+      'ssh -J j@b:2200,k@c -A -L 5432:db:5432 deploy@example.com',
     ],
     // 11: host [2001:db8::1]
     [
@@ -495,6 +522,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 deploy@[2001:db8::1]',
       'ssh deploy@[2001:db8::1]',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" deploy@[2001:db8::1]',
+      'ssh -J j@b:2200,k@c deploy@[2001:db8::1]',
     ],
     // 12: host 82.165.44.219, user root
     [
@@ -504,6 +532,7 @@ const EXPECTED: Record<'win32' | 'linux', string[][]> = {
       'ssh -J j@b:2200 root@82.165.44.219',
       'ssh root@82.165.44.219',
       'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\\\Users\\\\me\\\\kh\\\\known_hosts" root@82.165.44.219',
+      'ssh -J j@b:2200,k@c root@82.165.44.219',
     ],
   ],
 };
@@ -571,4 +600,26 @@ test('S4 win32 a_dollar_in_a_login_is_not_a_powershell_variable_in_the_destinati
   assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'a$HOME@bastion:2200' }), "ssh -J 'a$HOME@bastion:2200' deploy@example.com");
   // The ordinary words stay bare, and a domain backslash is literal in PowerShell.
   assert.equal(buildSshCommand(entity({ user: 'CORP\\alice' }), 'win32', { ...WIN, jump: 'j@b:2200' }), 'ssh -J j@b:2200 CORP\\alice@example.com');
+});
+
+test('S4 win32 a_two_hop_jump_chain_is_one_single_quoted_word_because_a_bare_comma_is_a_powershell_array', () => {
+  // `joinHops` writes `hop1,hop2`; PowerShell's argument mode turns a bare `a,b` into an ARRAY, and `-J hop1 hop2 <dest>` then
+  // makes the second hop the destination.
+  assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'j@b:2200,k@c' }), "ssh -J 'j@b:2200,k@c' deploy@example.com");
+  assert.equal(buildSshCommand(entity(), 'win32', { ...WIN, jump: 'a@b,c@d,e@f' }), "ssh -J 'a@b,c@d,e@f' deploy@example.com");
+  assert.equal(buildSshCommand(entity(), 'linux', { ...WIN, jump: 'a@b,c@d' }), 'ssh -J a@b,c@d deploy@example.com', 'POSIX shells keep the chain bare');
+});
+
+test('S5 win32 a_word_PowerShell_argument_mode_would_read_as_something_else_is_quoted_and_a_plain_one_stays_bare', () => {
+  // Measured on Windows PowerShell 5.1 (2026-11-10): `,` makes an array; a leading `@` is a splat or an error; a word that
+  // starts with `-` and holds `:` splits at the colon (`-p:1` is `-p` and `1`). `= + @ [ ] :` inside a word are literal.
+  const jump = (value: string): string | undefined => buildSshCommand(entity(), 'win32', { ...WIN, jump: value });
+  assert.equal(jump('a@b'), 'ssh -J a@b deploy@example.com');
+  assert.equal(jump('a=b+c@[2001:db8::1]:22'), 'ssh -J a=b+c@[2001:db8::1]:22 deploy@example.com');
+  assert.equal(jump('@x'), "ssh -J '@x' deploy@example.com");
+  assert.equal(jump('-p:1'), "ssh -J '-p:1' deploy@example.com");
+  assert.equal(jump('a,b'), "ssh -J 'a,b' deploy@example.com");
+  // The port is a number by type and a string by data (sync and import write JSON): it is a word like any other.
+  assert.equal(buildSshCommand(entity({ port: 2200 }), 'win32', WIN), 'ssh -p 2200 deploy@example.com');
+  assert.equal(buildSshCommand(entity({ port: '2200;calc' as never }), 'win32', WIN), "ssh -p '2200;calc' deploy@example.com");
 });

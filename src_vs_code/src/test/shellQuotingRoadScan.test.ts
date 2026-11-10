@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { SshCommandOptions, buildSshCommand } from '../sshCommand';
+import { resolveJumpChain } from '../sshOptions';
+import { EntityMetadata } from '../types';
 
 /**
  * Every place that builds a shell word for a shell WE do not control the parse of (E1.S2 review, F1-sweep;
@@ -23,8 +26,8 @@ import { test } from 'node:test';
 const SRC = path.join(__dirname, '..', '..', 'src');
 const TESTS = path.join(__dirname, '..', '..', 'src', 'test');
 
-/** The quoters and the one win32 word guard: every CALL (and definition) of them. */
-const QUOTER_CALLS = /\b(?:quoteFor|shellQuote|lineWord)\s*\(/g;
+/** The quoters and the one win32 word rule: every CALL (and definition) of them. */
+const QUOTER_CALLS = /\b(?:quoteFor|shellQuote|lineWord|windowsWord)\s*\(/g;
 
 /** A replace whose pattern or search text holds a quote character, the ASCII ones, the backtick and U+2018..U+201F. */
 const QUOTE_ESCAPERS = /\.replace(?:All)?\(\s*(?:\/(?:[^/\n\\]|\\.)*['"`‘-‟](?:[^/\n\\]|\\.)*\/[a-z]*|'(?:["`‘-‟]|\\')'|"(?:['`‘-‟]|\\")"|`['"‘-‟]`)/g;
@@ -57,15 +60,19 @@ const SITES: Record<'calls' | 'escapers' | 'templates' | 'batch', readonly Site[
     { file: 'commands/runCommands.ts', line: 'return [job.script.plan.command, ...job.script.plan.args, quoteFor(pinnedShell().family, scriptPath)].join(\' \');', parser: 'powershell', vault: 'none', because: 'the same path, shown in the secrets question' },
     { file: 'hostShell.ts', line: 'export function quoteFor(family: ShellFamily, value: string): string {', parser: 'powershell', vault: 'definition', because: 'the one quoter: PowerShell doubles each of the four curly single quotes and the ASCII one with itself' },
     { file: 'remoteCliInstall.ts', line: 'const env = prefix.length > 0 ? `CREDS_PREFIX=${quoteFor(\'posix\', prefix)} ` : \'\';', parser: 'posix', vault: 'none', because: 'the install prefix a person typed, quoted for the remote POSIX shell' },
-    { file: 'sshCommand.ts', line: 'function shellQuote(value: string, platform: NodeJS.Platform = process.platform): string {', parser: 'cmd-or-powershell', vault: 'definition', because: 'win32: "…" for a plain value, a PowerShell single-quoted word for any value PowerShell would expand or end' },
-    { file: 'sshCommand.ts', line: 'return POWERSHELL_DOUBLE_QUOTED_UNSAFE.test(value) ? quoteFor(\'powershell\', value) : `"${value}"`;', parser: 'cmd-or-powershell', vault: 'guarded', because: 'the -i key path is entry data and nothing validates it', proof: `${SSH_COMMAND} :: S2 win32` },
-    { file: 'sshCommand.ts', line: 'function lineWord(word: string, platform: NodeJS.Platform): string {', parser: 'powershell', vault: 'definition', because: 'win32: a bare word only when it is plain, else one single-quoted word' },
-    { file: 'sshCommand.ts', line: 'return platform === \'win32\' && !POWERSHELL_BARE_SAFE.test(word) ? quoteFor(\'powershell\', word) : word;', parser: 'powershell', vault: 'guarded', because: 'a login may hold `$`', proof: `${SSH_COMMAND} :: S4 win32` },
+    { file: 'sshCommand.ts', line: 'function shellQuote(value: string, platform: NodeJS.Platform = process.platform): string {', parser: 'cmd-or-powershell', vault: 'definition', because: 'win32: the word comes from windowsWord; POSIX: a double-quoted word with its specials escaped' },
+    { file: 'sshCommand.ts', line: 'function windowsWord(value: string, ordinary: WindowsOrdinary, keyPrefix = \'\'): string {', parser: 'powershell', vault: 'definition', because: 'THE one win32 word rule: a single-quoted word for anything PowerShell would expand or read as something else, else bare or "…"' },
+    { file: 'sshCommand.ts', line: 'return quoteFor(\'powershell\', `${keyPrefix}${value}`);', parser: 'powershell', vault: 'guarded', because: 'a value PowerShell would expand or end: the key-value prefix goes inside the single quotes', proof: `${SSH_COMMAND} :: S2 win32` },
+    { file: 'sshCommand.ts', line: 'return POWERSHELL_BARE_SAFE.test(word) ? word : quoteFor(\'powershell\', word);', parser: 'powershell', vault: 'guarded', because: 'a line word is bare only when it is plain: a login with `$`, a jump chain with `,`, a leading `@` are quoted', proof: `${SSH_COMMAND} :: S4 win32` },
+    { file: 'sshCommand.ts', line: 'parts.push(\'-p\', lineWord(String(entity.port), platform));', parser: 'powershell', vault: 'guarded', because: 'the port is a number by type and a string by data (sync, import)', proof: `${SSH_COMMAND} :: S5 win32` },
+    { file: 'sshCommand.ts', line: 'return windowsWord(value, \'double-quoted\');', parser: 'cmd-or-powershell', vault: 'guarded', because: 'the -i key path is entry data and nothing validates it', proof: `${SSH_COMMAND} :: S2 win32` },
+    { file: 'sshCommand.ts', line: 'function lineWord(word: string, platform: NodeJS.Platform): string {', parser: 'powershell', vault: 'definition', because: 'win32: the line word of the one word rule' },
+    { file: 'sshCommand.ts', line: 'return platform === \'win32\' ? windowsWord(word, \'bare\') : word;', parser: 'powershell', vault: 'guarded', because: 'a login may hold `$`; a jump chain holds `,`', proof: `${SSH_COMMAND} :: S4 win32` },
     { file: 'sshCommand.ts', line: 'parts.push(...sshOptionArgv(entity, options.jump).map((word) => lineWord(word, platform)));', parser: 'powershell', vault: 'guarded', because: 'the -J value and the forwards come from entries', proof: `${SSH_COMMAND} :: S4 win32` },
     { file: 'sshCommand.ts', line: 'return lineWord(destination, platform);', parser: 'powershell', vault: 'guarded', because: 'the destination: a login may hold `$`', proof: `${SSH_COMMAND} :: S4 win32` },
     { file: 'sshCommand.ts', line: 'return /[\\\\"$`]/.test(destination) ? shellQuote(destination, platform) : destination;', parser: 'posix', vault: 'guarded', because: 'the destination for a POSIX shell: `\\`, `"`, `$` and the backtick are escaped in a double-quoted word', proof: `${SSH_COMMAND} :: a domain login survives a POSIX shell` },
-    { file: 'sshCommand.ts', line: '? quoteFor(\'powershell\', `UserKnownHostsFile=${file}`)', parser: 'powershell', vault: 'none', because: 'the pin file is a sanitised name under the extension storage', proof: `${SSH_COMMAND} :: S3 win32` },
-    { file: 'sshCommand.ts', line: ': `UserKnownHostsFile=${shellQuote(file, platform)}`;', parser: 'cmd-or-powershell', vault: 'none', because: 'the same pin file' },
+    { file: 'sshCommand.ts', line: ': `UserKnownHostsFile=${shellQuote(file, platform)}`;', parser: 'cmd-or-powershell', vault: 'none', because: 'the same pin file, for a POSIX shell' },
+    { file: 'sshCommand.ts', line: '? windowsWord(file, \'double-quoted\', \'UserKnownHostsFile=\')', parser: 'powershell', vault: 'none', because: 'the pin file is a sanitised name under the extension storage', proof: `${SSH_COMMAND} :: S3 win32` },
     { file: 'sshCommand.ts', line: 'parts.push(\'-i\', shellQuote(entity.sshKeyPath, platform));', parser: 'cmd-or-powershell', vault: 'guarded', because: 'the -i key path is entry data (import of a ~/.ssh/config IdentityFile, sync, share)', proof: `${SSH_COMMAND} :: S2 win32` },
     { file: 'vpnCommand.ts', line: 'return \'Start-Process -Verb RunAs -FilePath \' + quoteFor(\'powershell\', exe) + \' -ArgumentList \' + quoteFor(\'powershell\', args);', parser: 'powershell', vault: 'none', because: 'a program path and the arguments the extension composed; the quoter is the fixed one' },
     { file: 'vpnCommand.ts', line: 'return \'Start-Process -Verb RunAs -FilePath \' + quoteFor(\'powershell\', exe) + \' -ArgumentList \' + quoteFor(\'powershell\', args);', parser: 'powershell', vault: 'none', because: 'a program path and the arguments the extension composed; the quoter is the fixed one' },
@@ -100,7 +107,7 @@ const SITES: Record<'calls' | 'escapers' | 'templates' | 'batch', readonly Site[
     { file: 'wslRelay.ts', line: 'return usable ? `env ${name}=\'${value}\' ` : \'\';', parser: 'posix', vault: 'none', because: 'a socket path from the relay; a value holding any of the four curly quotes or the ASCII one is dropped, not quoted', proof: 'wslRelay.test.ts :: curly single quote' },
   ],
   batch: [
-    { file: 'sshAskpass.ts', line: 'return { name: \'askpass.bat\', content: \'@echo off\\nsetlocal EnableDelayedExpansion\\necho(!CREDS_SSH_PASSWORD!\\n\' };', parser: 'cmd', vault: 'guarded', because: 'the password is read by delayed expansion, after cmd has parsed the line', proof: 'sshAskpass.test.ts :: delayed expansion' },
+    { file: 'sshAskpass.ts', line: 'content: \'@echo off\\r\\nsetlocal EnableDelayedExpansion\\r\\necho(!CREDS_SSH_PASSWORD!\\r\\n\',', parser: 'cmd', vault: 'guarded', because: 'the password is read by delayed expansion, after cmd has parsed the line; the file has CRLF line ends', proof: 'sshAskpass.test.ts :: delayed expansion' },
   ],
 };
 
@@ -183,9 +190,138 @@ test('the patterns match the shapes they are written for, across line breaks too
   assert.equal(foundIn('f.ts', "'@echo off\\n'", BATCH_FILES).length, 1);
 });
 
-test('a new unquoted PowerShell quoting site would be found: a line added to a source file shows up', () => {
+test('the patterns count a quoting line added to a source file (they find the new line; they do not judge whether it is quoted)', () => {
   const text = fs.readFileSync(path.join(SRC, 'sshCommand.ts'), 'utf8');
   const withNew = `${text}\nconst bad = \`-i "\${entity.sshKeyPath}"\`;\nconst worse = quoteFor('powershell', entity.sshKeyPath);\n`;
   assert.equal(foundIn('sshCommand.ts', withNew, QUOTER_CALLS).length, foundIn('sshCommand.ts', text, QUOTER_CALLS).length + 1);
   assert.equal(foundIn('sshCommand.ts', withNew, SHELL_TEMPLATES).length, foundIn('sshCommand.ts', text, SHELL_TEMPLATES).length + 1);
+});
+
+// ---- the words the win32 line PUSHES, quoted or not: every string field of the entity, fed a hostile value ---------------
+//
+// The scan above pins the CALLS that quote. It cannot see a word that is pushed into the line with no call at all (the
+// destination was one, until this fix). So this road test goes the other way round: for every string field `buildSshCommand`
+// reads on win32, a hostile value goes in, and the line that comes out is read WORD BY WORD. Each word must be a plain
+// whitelisted word, a well-formed `"…"` word with nothing PowerShell expands in it, or a well-formed PowerShell
+// single-quoted word. A value the field's own validator refuses makes `buildSshCommand` return undefined (or drop the
+// forward), which is also fine: the hostile text then is not in the line at all.
+
+/**
+ * The checker's OWN grammar of a safe word (not imported from the source: a check that shares the source's mistake agrees
+ * with it). A word is one of: a plain word (and not one that starts with `@`, or with `-` and holds `:`); a `"…"` word,
+ * optionally behind a `Name=`, that holds nothing PowerShell expands or reads as a closing double quote; a single-quoted
+ * word that closes with the quote it opened with and holds no single-quote character except as a doubled pair of the same one.
+ * A word ends at a space or at the end of the line.
+ */
+const SINGLE_QUOTE_CHARS = "'\u2018\u2019\u201A\u201B";
+const DOUBLED_SINGLE = [...SINGLE_QUOTE_CHARS].map((q) => `${q}${q}`).join('|');
+const SAFE_SINGLE = [...SINGLE_QUOTE_CHARS].map((q) => `${q}(?:[^${SINGLE_QUOTE_CHARS}]|${DOUBLED_SINGLE})*${q}`).join('|');
+const SAFE_DOUBLE = '(?:[A-Za-z]+=)?"[^"\u201C\u201D\u201E$`]*"';
+const SAFE_PLAIN = '(?![@]|-[^: ]*:)[A-Za-z0-9._:@\\\\/[\\]=+-]+';
+const SAFE_WORD = new RegExp(`(?:${SAFE_SINGLE}|${SAFE_DOUBLE}|${SAFE_PLAIN})(?= |$)`, 'y');
+
+/** What is wrong with the win32 line as PowerShell would read it, or `undefined` when every word is safe. */
+function lineProblem(line: string): string | undefined {
+  let at = 0;
+  while (at < line.length) {
+    if (line[at] === ' ') {
+      at += 1;
+      continue;
+    }
+    SAFE_WORD.lastIndex = at;
+    const word = SAFE_WORD.exec(line);
+    if (word === null) {
+      return `the word at ${at} is not plain, "…" or single-quoted: ${JSON.stringify(line)}`;
+    }
+    at += word[0].length;
+  }
+  return undefined;
+}
+
+test('the word checker of the road test below refuses what it is written to refuse, and accepts an ordinary line', () => {
+  const bad = [
+    'ssh -J a@b,c@d deploy@example.com',
+    'ssh a$(x)b@example.com',
+    'ssh "a$HOME" x',
+    'ssh \'a\'b\' x',
+    'ssh a;b',
+    'ssh -i "a\u201C; x; \u201Db" h',
+    'ssh \'a\u2019b\' h',
+    'ssh @x h',
+    'ssh -p:1 h',
+    'ssh a`b h',
+    'ssh "unclosed h',
+  ];
+  for (const line of bad) {
+    assert.notEqual(lineProblem(line), undefined, line);
+  }
+  const good = [
+    'ssh deploy@example.com',
+    'ssh -i "C:\\Users\\my name\\k" -p 2200 -J \'a@b,c@d\' -L 5432:db:5432 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="C:\\k h" \'a$HOME@h\'',
+    "ssh 'a''b' 'a\u2019\u2019b' deploy@[2001:db8::1]",
+  ];
+  for (const line of good) {
+    assert.equal(lineProblem(line), undefined, line);
+  }
+});
+
+/** Values a vault entry could carry into any field. */
+const HOSTILE = ['a$(x)b', "a'b", 'a\u2019b', 'a\u2018b', 'a,b', 'a;b', 'a b', 'a`b', 'a"b', 'a\u201Cb', 'a$b', 'a|b', 'a&b', 'a%b', 'a(b)', 'a<b', 'a!b', '@a', '-p:1'];
+
+const ROAD_BASE: EntityMetadata = { id: 'e1', name: 'prod', host: 'example.com', user: 'deploy', isSshEnabled: true };
+
+interface RoadCase {
+  readonly entity: EntityMetadata;
+  readonly options?: SshCommandOptions;
+}
+
+/** A jump chain of one hop, made by the walk that produces the real `-J` value. */
+function viaJump(hop: Partial<EntityMetadata>): RoadCase {
+  const hopEntity: EntityMetadata = { ...ROAD_BASE, id: 'h1', name: 'hop', user: 'j', host: 'bastion', ...hop };
+  const entity: EntityMetadata = { ...ROAD_BASE, jumpHostEntityId: 'h1' };
+  const chain = resolveJumpChain(entity, (id) => (id === 'h1' ? hopEntity : undefined));
+  return { entity, options: { jump: chain.ok ? chain.value : undefined } };
+}
+
+/** Every string field `buildSshCommand` reads on win32, each with a way to put a value into it. */
+const ROAD_FIELDS: Record<string, (v: string) => RoadCase> = {
+  sshKeyPath: (v) => ({ entity: { ...ROAD_BASE, sshKeyPath: v } }),
+  user: (v) => ({ entity: { ...ROAD_BASE, user: v } }),
+  host: (v) => ({ entity: { ...ROAD_BASE, host: v } }),
+  port: (v) => ({ entity: { ...ROAD_BASE, port: v as never } }),
+  'forward.bindAddress': (v) => ({ entity: { ...ROAD_BASE, portForwards: [{ kind: 'local', bindAddress: v, bindPort: 1, host: 'db', hostPort: 2 }] } }),
+  'forward.host': (v) => ({ entity: { ...ROAD_BASE, portForwards: [{ kind: 'remote', bindPort: 1, host: v, hostPort: 2 }] } }),
+  'jump hop user': (v) => viaJump({ user: v }),
+  'jump hop host': (v) => viaJump({ host: v }),
+  'jump hop port': (v) => viaJump({ port: v as never }),
+  'options.jump': (v) => ({ entity: ROAD_BASE, options: { jump: v } }),
+  'options.knownHostsFile': (v) => ({ entity: ROAD_BASE, options: { knownHostsFile: v } }),
+};
+
+/** One field fed every hostile value: how many reached a line, and the first thing wrong with a line, if any. */
+function roadOf(put: (v: string) => RoadCase): { reached: number; problem?: string } {
+  let reached = 0;
+  for (const value of HOSTILE) {
+    const { entity, options } = put(value);
+    const line = buildSshCommand(entity, 'win32', { program: 'ssh', ...options });
+    if (line === undefined) {
+      continue; // the field's own validator refused the value: nothing of it reached a line
+    }
+    reached += 1;
+    const problem = lineProblem(line);
+    if (problem !== undefined) {
+      return { reached, problem: `${JSON.stringify(value)}: ${problem}` };
+    }
+  }
+  return { reached };
+}
+
+test('road: every string field the win32 line reads, given a hostile value, is refused or comes out as plain, "…" or single-quoted words only', () => {
+  for (const [field, put] of Object.entries(ROAD_FIELDS)) {
+    const road = roadOf(put);
+    assert.equal(road.problem, undefined, `${field} = ${road.problem}`);
+    // The fields nothing validates must have been fed for real, or the test proves nothing about them.
+    const open = ['sshKeyPath', 'options.jump', 'options.knownHostsFile'].includes(field);
+    assert.ok(!open || road.reached === HOSTILE.length, `${field}: every hostile value must have reached a line (${road.reached})`);
+  }
 });

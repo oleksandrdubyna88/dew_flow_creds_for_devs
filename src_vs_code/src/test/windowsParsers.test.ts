@@ -4,8 +4,10 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { quoteFor } from '../hostShell';
+import { resolveJumpChain } from '../sshOptions';
 import { askpassScript } from '../sshAskpass';
 import { SshCommandOptions, buildSshCommand } from '../sshCommand';
+import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
@@ -21,10 +23,11 @@ after(() => scope.close());
  * (security.md). Here the strings are handed to the real parsers, with a hostile value carrying a marker side effect,
  * and two things are asserted: the parser read back exactly the raw value, and the side effect did not happen.</p>
  *
- * <p>Every case skips, with its reason printed, when its shell is not on this machine. On Linux and macOS this file
- * is a no-op (cmd.exe and Windows PowerShell exist there only through WSL interop, which is a different machine's
- * filesystem, so they are not used); on `windows-latest` all three exist and the file runs in the `runner-windows`
- * job of `ci-extension.yml`. It reads nothing from the vault and writes only into owned folders.</p>
+ * <p>OFF Windows a case skips, with its reason printed, when its shell is not on this machine: on Linux and macOS cmd.exe
+ * and Windows PowerShell exist only through WSL interop (a different machine's filesystem, so they are not used) and
+ * `pwsh` is used when installed. ON Windows nothing skips: a missing or failing `cmd.exe`, `powershell.exe` or `pwsh.exe`
+ * FAILS (a green run that observed nothing is the failure this file exists to prevent), and it runs in the
+ * `runner-windows` job of `ci-extension.yml`. It reads nothing from the vault and writes only into owned folders.</p>
  *
  * <p><b>How PowerShell receives the line.</b> `-EncodedCommand` (UTF-16LE base64), not `-Command <text>`: with
  * `-Command` the text passes through the Windows command-line parser first, which treats `"` and trailing backslashes
@@ -49,7 +52,7 @@ const PS_PROBE = ['-NoProfile', '-NonInteractive', '-Command', 'exit 0'];
 interface PowerShellUnderTest {
   readonly name: string;
   readonly program: string;
-  /** Why this one is skipped, or `false` when it runs. */
+  /** Why this one is skipped, or `false` when it runs. Always `false` on Windows: there a missing shell is a failure. */
   readonly skip: string | false;
 }
 
@@ -57,16 +60,14 @@ const POWERSHELLS: readonly PowerShellUnderTest[] = [
   {
     name: 'Windows PowerShell 5.1',
     program: 'powershell.exe',
-    skip: !ON_WINDOWS
-      ? 'skipped: Windows PowerShell 5.1 is used only on Windows (off Windows a powershell.exe is a WSL interop stub on another filesystem)'
-      : !runs('powershell.exe', PS_PROBE)
-        ? 'skipped: powershell.exe does not start on this machine'
-        : false,
+    skip: ON_WINDOWS
+      ? false
+      : 'skipped: Windows PowerShell 5.1 is used only on Windows (off Windows a powershell.exe is a WSL interop stub on another filesystem)',
   },
   {
     name: 'PowerShell 7 (pwsh)',
     program: ON_WINDOWS ? 'pwsh.exe' : 'pwsh',
-    skip: !runs(ON_WINDOWS ? 'pwsh.exe' : 'pwsh', PS_PROBE) ? 'skipped: pwsh is not installed on this machine' : false,
+    skip: ON_WINDOWS || runs('pwsh', PS_PROBE) ? false : 'skipped: pwsh is not installed on this machine (it is required on Windows)',
   },
 ];
 
@@ -87,9 +88,12 @@ test(
   'a REAL cmd.exe prints a password full of cmd syntax unchanged and runs none of it',
   { skip: ON_WINDOWS ? false : 'skipped: cmd.exe is the parser under test and exists here only on Windows' },
   () => {
-    const dir = ownedDir(scope, 'askpass');
-    const script = path.join(dir, askpassScript('win32').name);
-    fs.writeFileSync(script, askpassScript('win32').content.replace(/\n/g, '\r\n'));
+    // The file exactly as production writes it (`writeAskpassScriptFile`, the same bytes the connect path hands to ssh),
+    // with no line-end fix-up here: a test that repaired the file would test a file nobody ships.
+    const installer = loadWithVscode<typeof import('../keyInstaller')>('../keyInstaller', {});
+    const script = installer.writeAskpassScriptFile(ownedDir(scope, 'askpassStore'), 'win32');
+    assert.equal(path.basename(script), askpassScript('win32').name);
+    assert.equal(fs.readFileSync(script, 'utf8'), askpassScript('win32').content, 'the file is the script, byte for byte');
     for (const password of CMD_PASSWORDS) {
       const run = spawnSync('cmd.exe', ['/d', '/c', script], {
         env: { ...process.env, CREDS_SSH_PASSWORD: password },
@@ -166,6 +170,10 @@ function assertNoMarker(dir: string, shell: PowerShellUnderTest, what: string): 
 }
 
 for (const shell of POWERSHELLS) {
+  test(`${shell.name}: starts on this machine (on Windows a missing shell FAILS, it does not skip)`, { skip: shell.skip }, () => {
+    assert.equal(runs(shell.program, PS_PROBE), true, `${shell.program} does not start: nothing below can be observed`);
+  });
+
   test(`${shell.name}: the marker the hostile values would create CAN be created here (the control that keeps the cases below honest)`, { skip: shell.skip }, () => {
     const dir = ownedDir(scope, 'psControl');
     const marker = path.join(dir, 'control');
@@ -212,6 +220,13 @@ for (const shell of POWERSHELLS) {
     assert.deepEqual(read(lineOf({ user: 'a$HOME' })), ['a$HOME@example.com']);
     assert.deepEqual(read(lineOf({}, { jump: 'a$HOME@bastion:2200' })), ['-J', 'a$HOME@bastion:2200', 'deploy@example.com']);
     assert.deepEqual(read(lineOf({}, { jump: 'j@b:2200' })), ['-J', 'j@b:2200', 'deploy@example.com']);
+    // A TWO-hop chain: `joinHops` writes `a@b,c@d`, and a bare comma is a PowerShell ARRAY in argument mode, so the chain used
+    // to arrive as `-J a@b c@d` with the second hop as the destination. Built through the walk that produces it.
+    const hop = (id: string, user: string, host: string, next?: string): EntityMetadata => ({ ...base, id, name: id, user, host, jumpHostEntityId: next });
+    const byId = new Map([hop('h1', 'c', 'd', 'h2'), hop('h2', 'a', 'b')].map((e) => [e.id, e]));
+    const chain = resolveJumpChain({ ...base, jumpHostEntityId: 'h1' }, (id) => byId.get(id));
+    assert.deepEqual(chain, { ok: true, value: 'a@b,c@d' });
+    assert.deepEqual(read(lineOf({}, { jump: (chain as { value: string }).value })), ['-J', 'a@b,c@d', 'deploy@example.com']);
     // The pinned known_hosts file, ordinary and holding a `$`.
     for (const file of ['C:\\Users\\me\\known_hosts', 'C:\\Users\\a$b\\known_hosts', 'C:\\Program Files\\kh']) {
       assert.deepEqual(
