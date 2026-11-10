@@ -10,7 +10,7 @@
 // prove the reader only. THIS FILE IS READ BY THE `docs.yml` GUARD STEP (`*.test.ts`), and each plant string is itself a finding there, so every plant line has a marker above.
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { guardOrSkip, judgeGuard, type MountedGuard } from './mountedGuard';
+import { guardOrSkip, judgeGuard, loadFailureReason, type MountedGuard } from './mountedGuard';
 
 const CJS = 'scripts/x.cjs';
 const SH = '.github/scripts/x.sh';
@@ -91,4 +91,29 @@ test('a guard that cannot load FAILS the test with the reason where CREDS_GUARD_
 
   assert.throws(() => judgeGuard(REASON, context, { CREDS_GUARD_TESTS_REQUIRED: '1' }), (error: Error) => error.message.includes(REASON) && error.message.includes('CREDS_GUARD_TESTS_REQUIRED=1'));
   assert.deepEqual(context.calls, []);
+});
+
+// --- the reason a failed load gives (E2.5 review 7): the real cause, and `yaml` only when it is the missing module ----------------------------------------
+
+test('a missing yaml module is named as the yaml module, with the error\'s own message', () => {
+  const missing = new Error('leftovers-check: the `yaml` package (version 2) is needed to read workflows and cannot be found');
+  missing.name = 'YamlMissingError';
+  const notFound = Object.assign(new Error("Cannot find package 'yaml' imported from /x/leftovers-check.mjs"), { code: 'ERR_MODULE_NOT_FOUND' });
+
+  for (const error of [missing, notFound]) {
+    const reason = loadFailureReason(error);
+    assert.match(reason, /cannot load its yaml module \(run npm ci --ignore-scripts --prefix /);
+    assert.ok(reason.includes(error.message), `the message is kept: ${reason}`);
+  }
+});
+
+test('any other load failure is reported as itself and never as a yaml problem', () => {
+  const syntax = new SyntaxError('Unexpected token } in leftovers-check.mjs');
+  const otherModule = Object.assign(new Error("Cannot find package 'picomatch' imported from /x/leftovers-check.mjs"), { code: 'ERR_MODULE_NOT_FOUND' });
+
+  for (const error of [syntax, otherModule, 'a thrown string']) {
+    const reason = loadFailureReason(error);
+    assert.doesNotMatch(reason, /yaml/i, reason);
+    assert.ok(reason.includes(typeof error === 'string' ? error : error.message), `the message is kept: ${reason}`);
+  }
 });
