@@ -59,6 +59,7 @@ owned_say() { printf 'owned: %s\n' "$*" >&2; }
 
 owned_uname() {
   if [ -z "$OWNED_UNAME" ]; then OWNED_UNAME="$(uname -s)"; fi
+  if [ -z "$OWNED_UNAME" ]; then owned_say "cannot tell the system: uname gave no answer - nothing is made"; return 1; fi
 }
 
 # owned_token: print the owner token of the caller and keep it in OWNED_TOKEN.
@@ -66,7 +67,7 @@ owned_uname() {
 # reference (owned.mjs, thisOwnerToken) - so the token is the one every other reader computes.
 owned_token() {
   if [ -n "$OWNED_TOKEN" ]; then printf '%s\n' "$OWNED_TOKEN"; return 0; fi
-  owned_uname
+  owned_uname || return 1
   case "$OWNED_UNAME" in
     MINGW* | MSYS* | CYGWIN*)
       local dir why="" token="" re='^w[0-9]{1,10}$'
@@ -98,17 +99,47 @@ owned_token() {
 # owned_norm <text>: each run of '@', ':' or white space becomes ONE '-' (nothing is trimmed, the case is kept).
 # The result is in OWNED_NORM. The same rule as owned.mjs hostName.
 owned_norm() {
-  local s="$1" out="" c i=0 gap=0
-  while [ "$i" -lt "${#s}" ]; do
-    c="${s:$i:1}"
-    if [[ "$c" == [@:[:space:]] ]]; then
-      if [ "$gap" = 0 ]; then out="$out-"; gap=1; fi
-    else
-      out="$out$c"; gap=0
-    fi
-    i=$((i + 1))
-  done
-  OWNED_NORM="$out"
+  local s="$1"
+  # Pairs of separators shrink to one until no pair is left, so a run becomes ONE separator; real hyphens stay as they are.
+  while [[ "$s" == *[@:[:space:]][@:[:space:]]* ]]; do s="${s//[@:[:space:]][@:[:space:]]/@}"; done
+  OWNED_NORM="${s//[@:[:space:]]/-}"
+}
+
+# owned_host: the host part of the record in OWNED_HOST: the DNS host name, normalised, and under WSL ~ and the distribution name.
+owned_host() {
+  local host wsl
+  if ! host="$(hostname)" || [ -z "$host" ]; then owned_say "cannot read the host name"; return 1; fi
+  owned_norm "$host"; host="$OWNED_NORM"
+  wsl="${WSL_DISTRO_NAME:-}"
+  if [ -n "${wsl//[[:space:]]/}" ]; then owned_norm "$wsl"; host="$host~$OWNED_NORM"; fi
+  OWNED_HOST="$host"
+}
+
+# owned_linux_suffix <proc root>: sets OWNED_SUFFIX to :<start>:<ns>, or to nothing when /proc cannot give both (the record stays
+# judgeable as unknown, never wrong). Field 22 of <proc>/<pid>/stat is the 20th word AFTER THE LAST ')' (a command name may hold
+# spaces and ')'); the start is btime + field 22 / CLK_TCK in whole seconds, as the reference's startFromProcStat gives it.
+owned_linux_suffix() {
+  local proc="$1" line rest btime="" k v tick nsl had_f=1 re_num='^[0-9]+$' re_pos='^[1-9][0-9]*$' re_ns='^pid:\[([0-9]+)\]$'
+  local -a words
+  OWNED_SUFFIX=""
+  IFS= read -r line < "$proc/$$/stat" 2> /dev/null || return 0
+  rest="${line##*)}"
+  # No pathname expansion of the fields (a * in a field must stay a word); the caller's own setting is put back.
+  case "$-" in *f*) ;; *) had_f=0; set -f ;; esac
+  # shellcheck disable=SC2206
+  words=($rest) # word splitting is wanted: the stat fields are separated by one space
+  if [ "$had_f" = 0 ]; then set +f; fi
+  if [ -r "$proc/stat" ]; then
+    while IFS=' ' read -r k v; do
+      if [ "$k" = btime ]; then btime="$v"; break; fi
+    done < "$proc/stat"
+  fi
+  tick="$(getconf CLK_TCK 2> /dev/null)" || tick=""
+  nsl="$(readlink "$proc/self/ns/pid" 2> /dev/null)" || nsl=""
+  if [ "${#words[@]}" -ge 20 ] && [[ "${words[19]}" =~ $re_num ]] && [[ "$btime" =~ $re_num ]] && [[ "$tick" =~ $re_pos ]] \
+    && [[ "$nsl" =~ $re_ns ]]; then
+    OWNED_SUFFIX=":$((10#$btime + 10#${words[19]} / 10#$tick)):${BASH_REMATCH[1]}"
+  fi
 }
 
 # owned_owner: print the owner record <token>:<host>@<os>:<pid>[:<start>:<ns>] and keep it in OWNED_OWNER.
@@ -117,46 +148,21 @@ owned_owner() {
   if [ -n "$OWNED_OWNER" ]; then printf '%s\n' "$OWNED_OWNER"; return 0; fi
   owned_token > /dev/null || return 1
   if [ -z "$OWNED_TOKEN" ]; then owned_say "no owner token - nothing is made"; return 1; fi
-  local proc="${OWNED_PROC:-/proc}"
-  local os host wsl pid rec line rest btime k v tick nsl start="" ns="" re_num='^[0-9]+$' re_pos='^[1-9][0-9]*$' re_ns='^pid:\[([0-9]+)\]$'
-  local -a words
+  owned_uname || return 1
+  local os pid rec
   case "$OWNED_UNAME" in
     Linux) os=linux ;;
     Darwin) os=macos ;;
     MINGW* | MSYS* | CYGWIN*) os=windows ;;
     *) owned_say "no owner record for the system '$OWNED_UNAME'"; return 1 ;;
   esac
-  if ! host="$(hostname)" || [ -z "$host" ]; then owned_say "cannot read the host name"; return 1; fi
-  owned_norm "$host"; host="$OWNED_NORM"
-  wsl="${WSL_DISTRO_NAME:-}"
-  if [ -n "${wsl//[[:space:]]/}" ]; then owned_norm "$wsl"; host="$host~$OWNED_NORM"; fi
+  owned_host || return 1
   pid="$$"
   if [ "$os" = windows ]; then
     if ! IFS= read -r pid < "/proc/$$/winpid" 2> /dev/null || [ -z "$pid" ]; then owned_say "cannot read the Windows pid of this shell"; return 1; fi
   fi
-  rec="$OWNED_TOKEN:$host@$os:$pid"
-  if [ "$os" = linux ]; then
-    # Field 22 of /proc/<pid>/stat is the 20th word AFTER THE LAST ')' (a command name may hold spaces and ')').
-    if IFS= read -r line < "$proc/$$/stat" 2> /dev/null; then
-      rest="${line##*)}"
-      # shellcheck disable=SC2206
-      words=($rest) # word splitting is wanted: the stat fields are separated by one space
-      btime=""
-      if [ -r "$proc/stat" ]; then
-        while IFS=' ' read -r k v; do
-          if [ "$k" = btime ]; then btime="$v"; break; fi
-        done < "$proc/stat"
-      fi
-      tick="$(getconf CLK_TCK 2> /dev/null)" || tick=""
-      nsl="$(readlink "$proc/self/ns/pid" 2> /dev/null)" || nsl=""
-      if [ "${#words[@]}" -ge 20 ] && [[ "${words[19]}" =~ $re_num ]] && [[ "$btime" =~ $re_num ]] && [[ "$tick" =~ $re_pos ]] \
-        && [[ "$nsl" =~ $re_ns ]]; then
-        ns="${BASH_REMATCH[1]}"
-        start=$((10#$btime + 10#${words[19]} / 10#$tick))
-        rec="$rec:$start:$ns"
-      fi
-    fi
-  fi
+  rec="$OWNED_TOKEN:$OWNED_HOST@$os:$pid"
+  if [ "$os" = linux ]; then owned_linux_suffix "${OWNED_PROC:-/proc}"; rec="$rec$OWNED_SUFFIX"; fi
   if [ "${#rec}" -gt 500 ]; then owned_say "the owner record is too long (${#rec} characters)"; return 1; fi
   OWNED_OWNER="$rec"
   printf '%s\n' "$OWNED_OWNER"
@@ -270,70 +276,101 @@ owned_next_id() { # sets OWNED_ID
   fi
 }
 
-# owned_dir <var> <what>: set <var> to a new owned folder. Returns 0 with the variable set; else 1, variable untouched.
-owned_dir() {
-  local __owned_dir_var="${1-}" __owned_dir_what="${2-}" __owned_dir_root __owned_dir_path __owned_dir_i __owned_dir_draws=0 __owned_dir_rc __owned_dir_re='^[A-Za-z_][A-Za-z0-9_]*$'
-  if ! [[ "$__owned_dir_var" =~ $__owned_dir_re ]]; then owned_say "owned_dir: '$__owned_dir_var' is not a variable name"; return 1; fi
-  if [ -z "$__owned_dir_what" ] || [[ "$__owned_dir_what" == *[/\\]* ]] || [[ "$__owned_dir_what" == *[[:cntrl:]]* ]] || [ "${__owned_dir_what#-}" != "$__owned_dir_what" ] || [ "${#__owned_dir_what}" -gt 22 ]; then
-    owned_say "owned_dir: '$__owned_dir_what' is not a good name part (not empty, no / or \\ or control character, no leading -, at most 22 characters)"
+# owned_prepare <var> <what>: the checks and the setup before the first draw. Sets OWNED_ROOT (an absolute temp root) and, on the first
+# call, the traps. Returns 1 with one line when something is wrong; nothing is made then.
+owned_prepare() {
+  local var="$1" what="$2" re='^[A-Za-z_][A-Za-z0-9_]*$' root
+  if ! [[ "$var" =~ $re ]]; then owned_say "owned_dir: '$var' is not a variable name"; return 1; fi
+  if [ -z "$what" ] || [[ "$what" == *[/\\]* ]] || [[ "$what" == *[[:cntrl:]]* ]] || [ "${what#-}" != "$what" ] || [ "${#what}" -gt 22 ]; then
+    owned_say "owned_dir: '$what' is not a good name part (not empty, no / or \\ or control character, no leading -, at most 22 characters)"
     return 1
   fi
   owned_token > /dev/null || return 1
   owned_owner > /dev/null || return 1
   # Whatever the reason, an empty token or record means nothing is made (a name with an empty owner segment is never drawn).
   if [ -z "$OWNED_TOKEN" ] || [ -z "$OWNED_OWNER" ]; then owned_say "owned_dir: no owner token or record - nothing is made"; return 1; fi
-  __owned_dir_root="${TMPDIR:-/tmp}"
-  while [ "${__owned_dir_root%/}" != "$__owned_dir_root" ]; do __owned_dir_root="${__owned_dir_root%/}"; done
+  root="${TMPDIR:-/tmp}"
+  while [ "${root%/}" != "$root" ]; do root="${root%/}"; done
   # A relative root would break the cleanup after a `cd`: the root is made absolute here, once.
-  case "$__owned_dir_root" in
+  case "$root" in
     /*) ;;
-    *) if ! __owned_dir_root="$(cd "${__owned_dir_root:-.}" 2> /dev/null && pwd)" || [ -z "$__owned_dir_root" ]; then owned_say "owned_dir: the temp root '${TMPDIR:-/tmp}' cannot be entered"; return 1; fi ;;
+    *) if ! root="$(cd "${root:-.}" 2> /dev/null && pwd)" || [ -z "$root" ]; then owned_say "owned_dir: the temp root '${TMPDIR:-/tmp}' cannot be entered"; return 1; fi ;;
   esac
-  # The seams are named on stderr, once each, so nobody takes a test run for a real one.
+  OWNED_ROOT="$root"
+  owned_say_seams
+  # The traps are set BEFORE the first claim is written (a signal right after the write must find them).
+  if [ -z "$OWNED_TRAP_SET" ]; then owned_install_traps; fi
+}
+
+# The seams are named on stderr, once each, so nobody takes a test run for a real one.
+owned_say_seams() {
   if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ] && [ -z "$OWNED_SEAM_HOOK_SAID" ]; then OWNED_SEAM_HOOK_SAID=1; owned_say "test seam OWNED_HOOK_AFTER_CLAIM is set"; fi
   if [ -n "${OWNED_TEST_IDS:-}" ] && [ -z "$OWNED_SEAM_IDS_SAID" ]; then OWNED_SEAM_IDS_SAID=1; owned_say "test seam OWNED_TEST_IDS is set"; fi
   if [ -n "${OWNED_PROC:-}" ] && [ -z "$OWNED_SEAM_PROC_SAID" ]; then OWNED_SEAM_PROC_SAID=1; owned_say "test seam OWNED_PROC is set"; fi
-  # The traps are set BEFORE the first claim is written (a signal right after the write must find them).
-  if [ -z "$OWNED_TRAP_SET" ]; then owned_install_traps; fi
+}
+
+# owned_register <path>: step 2. The entry is kept in state claimed; its index is in OWNED_IDX.
+owned_register() {
+  OWNED_IDX="${#OWNED_PATHS[@]}"
+  OWNED_PATHS[$OWNED_IDX]="$1"
+  OWNED_STATES[$OWNED_IDX]="claimed"
+  OWNED_TEXTS[$OWNED_IDX]="$OWNED_OWNER"
+}
+
+# owned_release <index>: drop the own claim (while it is ours) and mark the entry released.
+owned_release() {
+  owned_unclaim "$1"
+  OWNED_STATES[$1]="released"
+}
+
+# owned_settle <index> <path> <mkdir status>: the end of one draw, inside the busy window. Returns 0 created (or kept), 2 draw again
+# (a squatter), 1 another error. A signal that came meanwhile is raised by owned_leave, after the state is recorded.
+owned_settle() {
+  local idx="$1" path="$2"
+  if [ "$3" = 0 ]; then
+    if [ "${OWNED_KEEP:-}" = 1 ]; then OWNED_STATES[$idx]="kept"; else OWNED_STATES[$idx]="created"; fi
+    owned_leave
+    return 0
+  fi
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    owned_say "the name $path is already used by something that is not ours: left as it is, another name is drawn"
+    owned_release "$idx"
+    owned_leave
+    return 2
+  fi
+  owned_release "$idx"
+  owned_leave
+  owned_say "cannot make the folder $path"
+  return 1
+}
+
+# owned_draw <what>: one draw: claim, register, create. Sets OWNED_DRAWN. Returns 0 made, 2 draw again, 1 error.
+owned_draw() {
+  local path rc
+  owned_next_id
+  path="$OWNED_ROOT/testsToDelete-${OWNED_TOKEN}-${OWNED_REPO}-$1-${OWNED_ID}"
+  OWNED_BUSY=1
+  owned_claim "$path" && rc=0 || rc=$?   # 1. CLAIM
+  if [ "$rc" = 2 ]; then owned_leave; return 2; fi
+  if [ "$rc" != 0 ]; then owned_leave; owned_say "cannot write the claim $path.owner"; return 1; fi
+  owned_register "$path"                  # 2. REGISTER
+  if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ]; then "$OWNED_HOOK_AFTER_CLAIM" "$path" || true; fi
+  owned_create_dir "$path" && rc=0 || rc=$?   # 3. CREATE
+  owned_settle "$OWNED_IDX" "$path" "$rc" && rc=0 || rc=$?
+  OWNED_DRAWN="$path"
+  return "$rc"
+}
+
+# owned_dir <var> <what>: set <var> to a new owned folder. Returns 0 with the variable set; else 1, variable untouched.
+# The locals have long names: printf -v sets the CALLER's variable, and a caller may name it dir, var, what or rc.
+owned_dir() {
+  local __owned_dir_var="${1-}" __owned_dir_what="${2-}" __owned_dir_draws=0 __owned_dir_rc
+  owned_prepare "$__owned_dir_var" "$__owned_dir_what" || return 1
   while [ "$__owned_dir_draws" -lt 3 ]; do
     __owned_dir_draws=$((__owned_dir_draws + 1))
-    owned_next_id
-    __owned_dir_path="$__owned_dir_root/testsToDelete-${OWNED_TOKEN}-${OWNED_REPO}-${__owned_dir_what}-${OWNED_ID}"
-    OWNED_BUSY=1
-    # 1. CLAIM
-    owned_claim "$__owned_dir_path" && __owned_dir_rc=0 || __owned_dir_rc=$?
-    if [ "$__owned_dir_rc" = 2 ]; then owned_leave; continue; fi
-    if [ "$__owned_dir_rc" != 0 ]; then
-      owned_leave
-      owned_say "cannot write the claim $__owned_dir_path.owner"
-      return 1
-    fi
-    # 2. REGISTER
-    __owned_dir_i="${#OWNED_PATHS[@]}"
-    OWNED_PATHS[$__owned_dir_i]="$__owned_dir_path"
-    OWNED_STATES[$__owned_dir_i]="claimed"
-    OWNED_TEXTS[$__owned_dir_i]="$OWNED_OWNER"
-    if [ -n "${OWNED_HOOK_AFTER_CLAIM:-}" ]; then "$OWNED_HOOK_AFTER_CLAIM" "$__owned_dir_path" || true; fi
-    # 3. CREATE
-    owned_create_dir "$__owned_dir_path" && __owned_dir_rc=0 || __owned_dir_rc=$?
-    if [ "$__owned_dir_rc" = 0 ]; then
-      if [ "${OWNED_KEEP:-}" = 1 ]; then OWNED_STATES[$__owned_dir_i]="kept"; else OWNED_STATES[$__owned_dir_i]="created"; fi
-      owned_leave
-      printf -v "$__owned_dir_var" '%s' "$__owned_dir_path"
-      return 0
-    fi
-    if [ -e "$__owned_dir_path" ] || [ -L "$__owned_dir_path" ]; then
-      owned_say "the name $__owned_dir_path is already used by something that is not ours: left as it is, another name is drawn"
-      owned_unclaim "$__owned_dir_i"
-      OWNED_STATES[$__owned_dir_i]="released"
-      owned_leave
-      continue
-    fi
-    owned_unclaim "$__owned_dir_i"
-    OWNED_STATES[$__owned_dir_i]="released"
-    owned_leave
-    owned_say "cannot make the folder $__owned_dir_path"
-    return 1
+    owned_draw "$__owned_dir_what" && __owned_dir_rc=0 || __owned_dir_rc=$?
+    if [ "$__owned_dir_rc" = 0 ]; then printf -v "$__owned_dir_var" '%s' "$OWNED_DRAWN"; return 0; fi
+    if [ "$__owned_dir_rc" = 1 ]; then return 1; fi
   done
   owned_say "no free name for '$__owned_dir_what' after 3 draws"
   return 1
