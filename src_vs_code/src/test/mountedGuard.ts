@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { describeError } from '../describeError';
 import { REPO } from './repoFiles';
 
 /** Where the shared-rules mount lies, relative to the repository root, with forward slashes. */
@@ -45,17 +46,29 @@ interface GuardModule extends MountedGuard {
 /** Is the flag of a CI job that installed the modules on purpose set? */
 export const guardRequired = (env: NodeJS.ProcessEnv = process.env): boolean => env[GUARD_REQUIRED_VARIABLE] === '1';
 
-/** The mounted guard, or the reason it cannot be had: the mount is absent, the module does not load, or its `yaml` is not installed. */
+/** The mounted guard, or the reason it cannot be had: the mount is absent, or the load failed (`loadFailureReason`). */
 export async function loadMountedGuard(file: string = guardPath): Promise<MountedGuard | string> {
   if (!fs.existsSync(file)) return `the shared rules are not mounted (${MOUNT})`;
   let module: GuardModule;
   try {
     module = (await import(pathToFileURL(file).href)) as GuardModule;
     module.loadYaml(undefined);
-  } catch {
-    return `the mounted guard cannot load its yaml module (run npm ci --ignore-scripts --prefix ${MOUNT})`;
+  } catch (error) {
+    return loadFailureReason(error);
   }
   return module;
+}
+
+/** Is this error the guard's own "yaml is missing" (`YamlMissingError`), or Node's not-found for the package `yaml`? Any other failure is not. */
+const isMissingYaml = (error: unknown): boolean =>
+  error instanceof Error && (error.name === 'YamlMissingError' || ((error as { code?: string }).code === 'ERR_MODULE_NOT_FOUND' && /package 'yaml'/.test(error.message)));
+
+/** The reason a failed load gives: the error's own message always, and the words "yaml module" and the install command only when it is the missing yaml. */
+export function loadFailureReason(error: unknown): string {
+  const message = describeError(error).split('\n')[0];
+  return isMissingYaml(error)
+    ? `the mounted guard cannot load its yaml module (run npm ci --ignore-scripts --prefix ${MOUNT}): ${message}`
+    : `the mounted guard cannot be loaded: ${message}`;
 }
 
 /**
