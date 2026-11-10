@@ -476,6 +476,28 @@ each "reads as no change" below.
   build it (S1.3) with its reason in the manifest; reads as no change (it carries out D7). Not built, the sc. 2 plant
   `xWorld.ts ⇒ 1` cannot hold: that would be the change.
 
+**The coordinator's answers (2026-11-10, before the plan gate).** Every answer below is the recommended option, and none
+is counted as a change: epoch 8 stays at entry 8.1.
+
+- Q1 (C): both are built now; the second of #328 and E2.5 to merge renames `<mount>`. The two command lines go in the file
+  that holds the project's *Commands* at merge time (`CLAUDE.md` today, `.agents/PROJECT.md` if #328 merges first).
+- Q2 (B): the fifth allowance entry is built as written, with its op on the pin and a comment that it has no effect at
+  the pin (the copy folds `.cs` only). Building what the story lists satisfies the plan as written; dropping it would be
+  the change.
+- Q3 (A): a marker above each of the three lines, and `ClientSitesScanTests`' expected list emptied.
+- Q4 (A): `work="$RUNNER_TEMP/nginx-config-test"; mkdir -p "$work"`, the trap kept. A site of the planned kind that
+  arrived after the inventory, as E2.4's part 2d did for `entrypoint.test.sh`.
+- Q5 (A): the check is restated as measured (no leaf under the machine's temp root; the two names only in their
+  given-root branch). Reported to the parent with the E2.5 entry.
+- Q6: what really happens is recorded (the step is red at the start, naming the missing module); the outcome "red,
+  naming the cause" holds.
+- Q7 (A): all three jobs that run the unit suite install the mount's modules, with the `workflowMount` rule.
+- Q8: the PR quotes both pairs (base 64/84 as sc. 1's RED; head 5/10 as the switch-on's RED).
+- Q9 (A): a limit, stated in § 7 part 6, on the PR and as note N22.
+- Q10 (A): the Windows leg is observed green on the PR head before the merge; it is not made required.
+- Q11 (A): one todo line each, not built.
+- Q12: built (S1.3), with its reason in the manifest; it carries out D7.
+
 ## 11. Differences from the plan, found by this brief
 
 Each is in a question above: the C#-only findings (Q3, Q4); the wrapper allowance with no effect (Q2); E2.5-b's check
