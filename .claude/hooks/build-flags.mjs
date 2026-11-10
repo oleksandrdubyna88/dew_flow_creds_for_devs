@@ -63,8 +63,9 @@ function segments(command) {
       continue;
     }
     if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
-    const two = text.slice(i, i + 2);
-    if (two === '&&' || two === '||' || two === '$(') { out.push(cur); cur = ''; i += 1; continue; }
+    // Two characters compared in place, not sliced: a new string per character was the code gate's finding (2026-11-10).
+    const next = text[i + 1];
+    if ((ch === '&' && next === '&') || (ch === '|' && next === '|') || (ch === '$' && next === '(')) { out.push(cur); cur = ''; i += 1; continue; }
     if (ch === ';' || ch === '|' || ch === '\n' || ch === '`' || ch === '(' || ch === ')') {
       out.push(cur); cur = '';
       continue;
@@ -143,6 +144,22 @@ function unboundedBuild(segment, depth = 0) {
   return isBuild && !bounded(parts) ? segment.trim() : '';
 }
 
+/**
+ * The build verb as the segment spells it: `dotnet <verb>` (also a quoted path, and the .exe/.cmd/.bat names
+ * `executableName` reads as dotnet) or `msbuild`. It must start a word or a path part — never after `=`, where it is an
+ * assignment's value (`BUILDER=msbuild dotnet build`; CodeRabbit on #147).
+ */
+const VERB_IN_TEXT = /(?<=^|[\s"'\/\\&])(dotnet(?:\.exe|\.cmd|\.bat)?["']?\s+(?:build|msbuild|publish|pack|restore)|msbuild(?:\.exe|\.cmd|\.bat)?["']?)(?=\s|$)/i;
+
+/**
+ * The command to type instead: -m:4 directly after the build verb, where it is valid whatever follows. Appending it to
+ * the segment put it inside a trailing comment (coai code gate, 2026-11-10); a spelling the pattern does not know keeps
+ * the old append, so the text is never worse than before.
+ */
+function boundedSuggestion(offending) {
+  return VERB_IN_TEXT.test(offending) ? offending.replace(VERB_IN_TEXT, verb => `${verb} -m:4`) : `${offending} -m:4`;
+}
+
 /** The reason to refuse, or an empty string when there is nothing to say. */
 export function buildFlagsRefusal(command) {
   const offending = segments(command).map(part => unboundedBuild(part)).find(Boolean);
@@ -150,7 +167,7 @@ export function buildFlagsRefusal(command) {
 
   return (
     'csharp/dotnet-build.md: this build does not bound its worker pool. Add -m:4 (or the number this '
-    + 'repository sets) to the command:\n\n    ' + offending + ' -m:4\n\n'
+    + 'repository sets) to the command:\n\n    ' + boundedSuggestion(offending) + '\n\n'
     + "Measured on this family's machine: without it one build peaks at 11 MSBuild workers and 1222 MB, "
     + 'with it 3 workers and 365 MB, and it is no slower. Several sessions build here at once, so the '
     + 'peaks add up — 72 workers holding 10.7 GB is what this prevents. -m cannot be put in '

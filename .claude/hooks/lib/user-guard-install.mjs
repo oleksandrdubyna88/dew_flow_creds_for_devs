@@ -195,9 +195,14 @@ const OPTOUT_TEXT = 'subagent-model guard was removed on purpose (install-user-h
  * Install the hook. `beforeWrite` is a test seam (runs after the merge is computed and the backup is
  * taken, before the final re-read) and is deliberately not reachable from the CLI.
  */
-/** Provenance of the installed copy: where it came from, which bytes, which version, who put it there. */
-function writeManifest(t, source, sourceBytes, by) {
-  const manifest = { source: path.resolve(source), sha256: sha256(sourceBytes), version: guardVersion(sourceBytes.toString('utf8')), installedAt: new Date().toISOString(), by };
+/**
+ * Provenance of the installed copy: where it came from, which bytes, which version, who put it there — and `previous`,
+ * the hash of the bytes it replaces (null on a first install), so an install cut short after this write and before the
+ * hook copy is not taken for a local edit.
+ */
+function writeManifest(t, source, sourceBytes, by, replaced) {
+  const manifest = { source: path.resolve(source), sha256: sha256(sourceBytes), previous: replaced === null ? null : sha256(replaced),
+    version: guardVersion(sourceBytes.toString('utf8')), installedAt: new Date().toISOString(), by };
   writeAtomic(t.manifest, serialise(manifest));
 }
 
@@ -251,6 +256,21 @@ function downgradeRefusal(t, sourceBytes, force) {
   return from > to ? `installed guard is version ${from}, newer than the source's ${to}; nothing changed — pass --force to replace it` : '';
 }
 
+/**
+ * Refuses to replace an installed copy changed since its install, unless forced; '' when the install may go ahead.
+ * Changed means: a manifest exists, and the installed bytes match neither its hash nor the source. The second half
+ * keeps an install cut short after the new hook (before its manifest) from reading as a local edit. Reading only the
+ * version replaced a user's edited guard without a word (coai code gate, 2026-11-10). No manifest (an install from
+ * before manifests existed) cannot be judged and goes ahead as before.
+ */
+function changedRefusal(t, sourceBytes, force) {
+  const installed = readOrNull(t.hook);
+  const manifest = readManifest(t);
+  if (force || installed === null || manifest === null || installed.equals(sourceBytes)) return '';
+  return [manifest.sha256, manifest.previous].includes(sha256(installed)) ? ''
+    : `installed guard ${t.hook} was changed since it was installed (its sha256 differs from ${t.manifest}); nothing changed — pass --force to replace it`;
+}
+
 export function install({ home, source, beforeWrite = () => {}, clearOptout = false, force = false, by = 'cli' }) {
   const t = targets(home);
   if (!fs.existsSync(source)) return result(1, [`source hook not found: ${source} — pass --source <file>`]);
@@ -259,7 +279,7 @@ export function install({ home, source, beforeWrite = () => {}, clearOptout = fa
   if (parsed.error) return unparsable(t.settings, parsed.error);
   const merged = mergeEntry(parsed.settings, t.hook);
   const sourceBytes = fs.readFileSync(source);
-  const refusal = downgradeRefusal(t, sourceBytes, force);
+  const refusal = downgradeRefusal(t, sourceBytes, force) || changedRefusal(t, sourceBytes, force);
   if (refusal) return result(1, [refusal]);
   const upToDate = original !== null && original.equals(Buffer.from(serialise(merged))) && sameBytes(readOrNull(t.hook), sourceBytes) && isRegistered(t);
   if (upToDate) return result(0, [...dropOptout(t, clearOptout), 'already installed']);
@@ -267,10 +287,14 @@ export function install({ home, source, beforeWrite = () => {}, clearOptout = fa
   if (original !== null) lines.push(`backup ${writeBackup(t.settings, original)}`);
   beforeWrite();
   if (!sameBytes(readOrNull(t.settings), original)) return result(1, [...lines, CHANGED]);
-  writeAtomic(t.settings, serialise(merged));
-  // The copy comes AFTER the registration: a refusal above leaves no unregistered hook file behind.
+  // Every refusal is above, so a refused install never writes the hook, the manifest or settings.json (the backup and
+  // the opt-out removal above are older behaviour). Order: the manifest (naming the bytes it replaces), the hook, then
+  // the registration. A stop after the manifest leaves the old bytes, which its `previous` vouches for; a stop after the
+  // hook leaves an unregistered file the host never runs, which the next session start registers. The old order could
+  // leave a registration of a missing script, run on every Agent call (2026-11-10).
+  writeManifest(t, source, sourceBytes, by, readOrNull(t.hook));
   writeAtomic(t.hook, sourceBytes);
-  writeManifest(t, source, sourceBytes, by);
+  writeAtomic(t.settings, serialise(merged));
   return result(0, [`wrote ${t.hook}`, ...lines, `wrote ${t.settings} (hooks.PreToolUse: ${MATCHER})`]);
 }
 
@@ -443,7 +467,12 @@ export function check({ home, source }) {
   const manifest = readManifest(t);
   if (manifest === null) return result(1, [...lines, 'provenance manifest missing or unreadable: ' + t.manifest, effort]);
   const shown = `provenance: ${JSON.stringify(manifest)}`;
-  if (installed !== null && manifest.sha256 !== sha256(installed)) lines.push('installed hook no longer matches the sha256 in its provenance manifest (edited after install)');
+  if (installed !== null && manifest.sha256 !== sha256(installed)) {
+    // The bytes the manifest says it replaced: an install stopped after its manifest, before the hook — not an edit.
+    lines.push(manifest.previous === sha256(installed)
+      ? 'the last install was cut short after its manifest (the hook still holds the bytes it replaced) — run --install to finish it'
+      : 'installed hook no longer matches the sha256 in its provenance manifest (edited after install)');
+  }
   return lines.length ? result(1, [shown, ...lines, effort]) : result(0, ['installed and current', shown, effort]);
 }
 

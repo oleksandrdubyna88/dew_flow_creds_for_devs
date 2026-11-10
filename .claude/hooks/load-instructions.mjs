@@ -57,42 +57,58 @@ function resolverIn(root) {
   return fs.existsSync(selfHosted) && fs.existsSync(path.join(root, 'ENTRY.md')) ? selfHosted : '';
 }
 
-function incomplete(reason) {
-  process.stdout.write(
-    'Instruction loading is INCOMPLETE — the shared resolver could not run.\n\n'
+/**
+ * How long the resolver may take at a session start. A read takes well under a second; the host's own default for a
+ * command hook is 600 s, so this bound is the one that ends a stuck resolver — 120 s held a session start for two
+ * minutes with nothing on screen (coai code gate on dew_flow_creds_for_devs #328, 2026-11-10).
+ */
+export const RESOLVER_TIMEOUT_MS = 30_000;
+
+/** The notice for a resolver that could not run, in `ENTRY.md`'s own words, with the commands that fix it. */
+export function incompleteText(reason) {
+  return 'Instruction loading is INCOMPLETE — the shared resolver could not run.\n\n'
     + `${reason}\n\n`
     + 'Restore it inside the authorized task:\n'
     + '  git submodule update --init .agents/conventions\n'
     + '  npm ci --ignore-scripts --prefix .agents/conventions\n\n'
     + 'Until then, read .agents/PROJECT.md and .agents/conventions/ENTRY.md directly, and treat\n'
-    + 'edits to affected files as blocked rather than defaulting to your own conventions.\n',
-  );
+    + 'edits to affected files as blocked rather than defaulting to your own conventions.\n';
 }
 
-try {
-  const root = repoRoot();
+/** Why the resolver failed, in one line: a timeout says so with its bound, anything else is the resolver's own words. */
+function failureReason(error, timeoutMs) {
+  if (error?.code === 'ETIMEDOUT') return `The resolver did not answer within ${timeoutMs / 1000} s.`;
+  return String(error?.stderr || error?.message || error).trim();
+}
+
+/** What a session start in `root` is given: the rules for every task, or the INCOMPLETE notice. Never throws. */
+export function sessionInstructions({ root, timeoutMs = RESOLVER_TIMEOUT_MS }) {
   const resolver = resolverIn(root);
-  if (resolver === '') {
-    incomplete(`No resolver under ${root} — the conventions submodule is not checked out.`);
-    process.exit(0);
+  if (resolver === '') return incompleteText(`No resolver under ${root} — the conventions submodule is not checked out.`);
+  try {
+    // `inspect` is the neutral task: what comes back is what applies to every task, which is the only
+    // selection a session start can honestly make.
+    const emitted = execFileSync(process.execPath, [resolver, 'read', '--repo', root, '--task', 'inspect'], {
+      encoding: 'utf8', timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return 'Project instructions for this repository, loaded at session start by '
+      + '.claude/hooks/load-instructions.mjs from the pinned canonical source.\n\n'
+      + 'These are the rules that apply to EVERY task. Rules selected by which files you change are\n'
+      + 'not here: before editing, follow the entry procedure and run\n'
+      + '  node <resolver> explain --repo <root> --task <task> --file <path>\n'
+      + 'then read what it selects. Re-run it after a compaction or when the scope changes.\n\n'
+      + emitted;
+  } catch (error) {
+    return incompleteText(failureReason(error, timeoutMs));
   }
+}
 
-  // `inspect` is the neutral task: what comes back is what applies to every task, which is the only
-  // selection a session start can honestly make.
-  const emitted = execFileSync(process.execPath, [resolver, 'read', '--repo', root, '--task', 'inspect'], {
-    encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  process.stdout.write(
-    'Project instructions for this repository, loaded at session start by '
-    + '.claude/hooks/load-instructions.mjs from the pinned canonical source.\n\n'
-    + 'These are the rules that apply to EVERY task. Rules selected by which files you change are\n'
-    + 'not here: before editing, follow the entry procedure and run\n'
-    + '  node <resolver> explain --repo <root> --task <task> --file <path>\n'
-    + 'then read what it selects. Re-run it after a compaction or when the scope changes.\n\n'
-    + emitted,
-  );
-} catch (error) {
-  incomplete(String(error?.stderr || error?.message || error).trim());
+if (process.argv[1]?.endsWith('load-instructions.mjs')) {
+  try {
+    process.stdout.write(sessionInstructions({ root: repoRoot() }));
+  } catch (error) {
+    // Only `repoRoot()` throws here (sessionInstructions never does), so the words are git's, not the resolver's.
+    process.stdout.write(incompleteText(`git could not find the repository root: ${String(error?.stderr || error?.message || error).trim()}`));
+  }
 }
