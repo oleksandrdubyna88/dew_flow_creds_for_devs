@@ -26,9 +26,9 @@ const JS_WHOLE = "const p = 'testsToDelete" + "-agent-x';"; // two pieces: lefto
 // testsToDelete-exempt: legacy-name — a planted spelling: the guard under test must find it in scanText
 const SH_WHOLE = 'p="testsToDelete' + '-agent-x"'; // two pieces, as above
 
-// testsToDelete-exempt: legacy-name — a planted spelling: the detail text the guard prints for a joined or whole spelling
+// testsToDelete-exempt: legacy-name — expected detail text, not a plant: what the guard prints for a joined or whole plant, so it holds the word itself
 const WHOLE_TEXT = '`testsToDelete-agent`';
-// testsToDelete-exempt: legacy-name — a planted spelling: the detail text the guard prints for a half of the prefix word
+// testsToDelete-exempt: legacy-name — expected detail text, not a plant: what the guard prints for a plus-split shell plant, so it holds half of the word
 const PIECE_TEXT = '`testsTo (a piece of the prefix word)`';
 
 /** One plant: the class, the line and the detail text the guard gives it, and the path the `node` profile reads. */
