@@ -93,6 +93,8 @@ esac
 owned_dir STATE acme || exit 1
 PROJECT="$(printf '%s' "${STATE##*/}" | tr '[:upper:]' '[:lower:]')"
 COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)
+echo "owned folder: ${STATE}"
+echo "compose project: ${PROJECT}"
 
 # `create` makes the project's network and its four named volumes, labelled, before anything starts.
 # The app runs unprivileged (uid 10001) and a fresh volume belongs to root, so its two folders are

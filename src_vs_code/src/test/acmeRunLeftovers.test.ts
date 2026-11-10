@@ -262,6 +262,9 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   const projects = projectsOf(run);
   assert.ok(projects.length >= 4, `too few compose calls to prove it: ${projects.length}`);
   assert.deepEqual([...new Set(projects)], [run.folderProject]);
+  // The run says which project and folder it made, so a person (or a hosted check) can look for exactly those afterwards.
+  assert.match(run.output, new RegExp(`^compose project: ${run.folderProject}$`, 'm'));
+  assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
 });
 
 test('E2.4-h: run under stubs, `PROJECT=acme` names a project that is not the folder\'s', () => {
