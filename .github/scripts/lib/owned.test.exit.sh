@@ -28,7 +28,7 @@ callers_set_no_trap_of_their_own() {
   if printf '%s\n' "# a note that ends in a backslash \\" "trap cleanup EXIT" | trap_scan > /dev/null; then ok "T7a a comment ending in a backslash does not hide the next line"; else bad "T7a comment backslash" "the trap line after it was missed"; fi
   fixture='# trap cleanup EXIT is what a caller must never write'
   if printf '%s\n' "$fixture" | trap_scan > /dev/null; then bad "T7a comment" "a comment line was found"; else ok "T7a a comment about a trap is not a trap"; fi
-  callers="$(git -C "$repo" grep -l 'lib/owned.sh' -- '*.sh' 2>/dev/null | grep -Ev '^\.github/scripts/lib/owned(\.test(\.[a-z]+)?)?\.sh$')"
+  callers="$(git -C "$repo" grep -l 'lib/owned.sh' -- '*.sh' 2>/dev/null | grep -Ev '^\.github/scripts/lib/owned(\.test.*)?\.sh$')"
   if [ -z "$callers" ]; then
     echo "T7a note: no caller sources lib/owned.sh yet (E2.4.S2 and S4 write them); only the fixture is checked"
     return 0
@@ -431,6 +431,44 @@ EOF
 }
 
 
+# case H1 - a hook that calls owned_dir: the outer draw settles its own entry, the nested one keeps its own
+hook_that_calls_owned_dir_leaves_both_entries_in_their_own_state() {
+  case_root th1
+  child th1 << 'EOF'
+. "$T_OWNED_SH"
+hook() { if [ ! -e "$T_CTL/th1.nested" ]; then : > "$T_CTL/th1.nested"; owned_dir inner y || exit 91; fi; }
+OWNED_HOOK_AFTER_CLAIM=hook
+owned_dir outer x || exit 92
+owned_remove "$outer"; echo "$?" > "$T_CTL/th1.rc"
+[ -d "$inner" ] && echo inner > "$T_CTL/th1.left"
+[ ! -e "$outer" ] && [ ! -e "$outer.owner" ] && echo outer-gone >> "$T_CTL/th1.left"
+EOF
+  rm -f "$CTL/th1.nested" "$CTL/th1.left"
+  run_child th1
+  eq "H1 the child exits 0" "$CH_RC" 0
+  eq "H1 owned_remove of the outer folder returns 0 (its entry is created)" "$(first_line "$CTL/th1.rc")" 0
+  eq "H1 the outer folder and claim are gone, the nested folder remains" "$(tr '\n' ' ' < "$CTL/th1.left")" "inner outer-gone "
+  eq "H1 the exit chain removes the nested folder and its claim (the root is empty)" "$(count "$CR")" 0
+}
+
+# case H2 - the hook seam runs a defined function only, never a command
+hook_seam_runs_a_defined_function_only() {
+  case_root th2
+  mkdir "$CTL/hookbin"
+  printf '#!/bin/sh\n: > "%s/th2.ran"\n' "$CTL" > "$CTL/hookbin/hookcmd"
+  chmod +x "$CTL/hookbin/hookcmd"
+  child th2 << 'EOF'
+. "$T_OWNED_SH"
+owned_dir a x; echo "$?" > "$T_CTL/th2.rc1"
+owned_dir b x; echo "$?" > "$T_CTL/th2.rc2"
+EOF
+  rm -f "$CTL/th2.ran"
+  run_child th2 OWNED_HOOK_AFTER_CLAIM=hookcmd PATH="$CTL/hookbin:$PATH"
+  eq "H2 owned_dir still returns 0 with a hook that is no function" "$(first_line "$CTL/th2.rc1")$(first_line "$CTL/th2.rc2")" 00
+  isfalse "H2 a command of that name was not run" test -e "$CTL/th2.ran"
+  eq "H2 one line says the hook is not a defined function" "$(grep -c "not a defined" "$CTL/th2.err")" 1
+}
+
 # --- run ---
-callers_set_no_trap_of_their_own; owned_trap_runs_the_function_then_the_cleanup; first_owned_dir_sets_the_traps; a_trap_set_after_the_call_replaces_the_helper_and_leaves_the_folder; squatter_folder_is_never_adopted_or_removed; owned_remove_refuses_other_runs_folders; owned_remove_refuses_an_unregistered_folder_with_our_own_record; owned_remove_removes_an_own_folder_once; owned_remove_gives_up_with_one_line_on_a_read_only_parent; exit_status_survives_the_chain_under_set_e; helper_works_under_set_u_with_nothing_registered; a_signal_during_mkdir_is_held_until_the_state_is_recorded; caller_function_that_exits_or_hits_unbound_does_not_stop_the_cleanup; second_signal_in_the_chain_does_not_cut_it_short; traps_exist_before_the_first_claim_is_written
+callers_set_no_trap_of_their_own; owned_trap_runs_the_function_then_the_cleanup; first_owned_dir_sets_the_traps; a_trap_set_after_the_call_replaces_the_helper_and_leaves_the_folder; squatter_folder_is_never_adopted_or_removed; owned_remove_refuses_other_runs_folders; owned_remove_refuses_an_unregistered_folder_with_our_own_record; owned_remove_removes_an_own_folder_once; owned_remove_gives_up_with_one_line_on_a_read_only_parent; exit_status_survives_the_chain_under_set_e; helper_works_under_set_u_with_nothing_registered; a_signal_during_mkdir_is_held_until_the_state_is_recorded; caller_function_that_exits_or_hits_unbound_does_not_stop_the_cleanup; second_signal_in_the_chain_does_not_cut_it_short; traps_exist_before_the_first_claim_is_written; hook_that_calls_owned_dir_leaves_both_entries_in_their_own_state; hook_seam_runs_a_defined_function_only
 owned_test_finish
