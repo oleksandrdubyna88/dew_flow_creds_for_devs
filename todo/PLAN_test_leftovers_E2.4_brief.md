@@ -1,6 +1,6 @@
 # PLAN — Test leftovers, E2.4 brief: shell, the Docker smoke, acme (stories S2–S4)
 
-> Status: **brief only, nothing built, 2026-11-07; no plan gate yet.** Scope: the build brief of stories E2.4.S2, S3 and
+> Status: **S2, S3 and S4 built on `feat/test-leftovers-e2.4` (PR #329), unmerged, 2026-11-10.** The plan gate (coai `263fa36d`) said `proceed`; the build record is `PLAN_test_leftovers_E2.md`, parts 2 to 2e, 3 and 4. *Was: "brief only, nothing built, 2026-11-07; no plan gate yet."* Scope: the build brief of stories E2.4.S2, S3 and
 > S4 of [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md) (§ *Epics* → E2.4, § S4, D5, D6). E2.4.S1 (`owned.sh`, a
 > cornerstone) has its own spec by Fable, [PLAN_test_leftovers_E2.4_S1_spec.md](PLAN_test_leftovers_E2.4_S1_spec.md),
 > written beside this brief. This brief uses `owned.sh`'s API as that spec's § 3 fixes it (the stories' § S4 block plus

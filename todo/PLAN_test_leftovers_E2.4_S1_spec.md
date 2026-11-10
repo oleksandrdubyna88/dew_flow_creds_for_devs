@@ -1,6 +1,6 @@
 # PLAN — Test leftovers, E2.4.S1 spec: `owned.sh`, the claim-first bash helper, and its self-test
 
-> Status: **spec only, nothing built, 2026-11-07; no plan gate yet.** Scope: the cornerstone story E2.4.S1 of
+> Status: **built on `feat/test-leftovers-e2.4` (PR #329), unmerged, 2026-11-10.** The plan gate (coai `263fa36d`) said `proceed`; the build record is `PLAN_test_leftovers_E2.md`, parts 1, 1b and 2b to 2e. *Was: "spec only, nothing built, 2026-11-07; no plan gate yet."* Scope: the cornerstone story E2.4.S1 of
 > [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md) (§ *Epics* → E2.4.S1; § S4, the helper's block and sc. 3). Branch
 > `feat/test-leftovers-e2.4`, cut from `main` `0ae0211`, where E2.1 (#294), E2.2 (#310) and E2.3 (#311) are merged; the mount
 > is release `37b9aa5`. Spec by Fable; code by a Sonnet coder; review by Opus. The second consultation (codex, cadence
