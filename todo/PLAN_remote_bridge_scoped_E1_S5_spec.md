@@ -259,7 +259,8 @@ whatever stands (the stated exception; nothing here changes it).
    byte; the help names the four things §4.10 names (the standing dialog, a follow-up prompt, a running dependency step, the window that owns the place). The
    help's wording for the local-token exception is **not** written here: it waits for M10 (the parent's §7 M10 row).
    *[Superseded by the Amendment for epoch 8, F4: the help names the quiet holder too, and its last sentence no longer says what the next request
-   does. The new sentence is F4's, byte for byte.]*
+   does. The new sentence is F4's, byte for byte. Superseded again by change 8.1 (`7ce9804`): the follow-up clause is *a prompt the request raised after its
+   consent, asked or not … a VPN question*, and the help ends with the reload remedy. The current sentence is quoted byte for byte in §S5.12 (epoch 8, review fixes), item 1.]*
 2. **The timeout answer**, 504 `consent_timeout`, per door (the parent's §4.10 row 3, byte for byte):
    - a call counted on the place (`CONSENT_TIMED_OUT_ON_PLACE`): *Nobody answered within five minutes. The question is still on the person's screen and keeps this
      window's shared dialog place until they answer it. This request did not run.*
@@ -468,7 +469,7 @@ decided Q-A (change 7.1) and the others were judged to satisfy the plan as writt
 
 - **Q-A — closed by change 7.1 (`bf7d2ff`).** A dismissal (Escape) rode the timeout's road (`brokerConsent.ts:206-209,319-321`; `credsAgentServer.ts:663-664`), so the
   new 504 sentence would have been false after it, and §4.10 said nothing of Escape's wire answer. The parent now says: an Escape is its own outcome, `dismissed`,
-  frees the place as a click does, and keeps today's answer (504 `consent_timeout`, *The human did not allow this grant.*). Binding here as §S5.8 item 3; built in
+  frees the place as a click does, and keeps today's answer (504 `consent_timeout`, *The human did not allow this grant.*; on `create` and the folder verbs *The human did not allow this.*, on `delete` *The human did not allow this deletion.*: each door's own dismissal sentence). Binding here as §S5.8 item 3; built in
   §S5.2; C5, C15, C19 (b) pin it. Counted as one change by the consultants.
 - **Q-B — settled: satisfies the plan as written (consultants, 2026-11-09).** §4.10 names `main`'s `credsAgentServer.ts:625` as the sentence E1.5 replaces; two more
   timeout sentences exist on the MCP door: `consentNotGiven` (`brokerMcpDoor.ts:145-158`) answers a timed-out `create` with `'The human did not allow this.'` (`:486`)
@@ -730,6 +731,9 @@ written), and the place frees at the person's click, with no timer. The preceden
    //   const settled = (): void => this.flight.dialogClosed(held, true);
    //   void Promise.resolve(prompt).then(settled, settled);      // a rejection settles it too; `settled` cannot throw
    ```
+   *[Superseded in its signature and first lines by review fix 3 (`eb45850`, coai finding 0): the seam is `followUpStands(owner, grant, via, prompt)`, and it marks the
+   holding recorded for that call's own response object (`this.owned.get(owner)`), never `this.flight.holder()`, the global holder, which could mark another call's place.
+   The rest of the sketch stands. See §S5.12 (epoch 8, review fixes), item 3.]*
    No modal stamp: the follow-up question is not a consent dialog and is not counted in the modal window (as today).
 2. `brokerCall.ts`: `CallDeps` gains `standing?(prompt: PromiseLike<unknown>): void;` with a doc line; `startNow`'s context literal (`:201`) gains
    `standingPrompt: deps.standing`. `credsAgentServer.ts`, `runAndDeliver`'s literal (`:677-690`), **one line**:
@@ -818,10 +822,12 @@ synchronously and record nothing in `w.dialogs`).
 
 **The sentence (one static sentence, one static help; `aliasThrottle.ts:278-279`), byte for byte:**
 
+*[Superseded by change 8.1 (`7ce9804`), which replaces the clause *a prompt that followed an Allow* with *a prompt the request raised after its consent, asked or not … a VPN question* (a never-ask call raises its question with no Allow), and by the reload remedy added to its end. The current sentence is quoted byte for byte in §S5.12 (epoch 8, review fixes), item 1, and is `BUSY_PLACE` in `aliasThrottle.ts`. The text below is the F4 sentence as first written.]*
+
 > Another request holds this window's dialog place. A consent dialog may be standing unanswered, a prompt that followed an Allow may be open (a PIN box, an install offer, a trust modal), a dependency step may still be running in a terminal, or a request that may prompt again may still be running with nothing on screen yet, in the VS Code window that owns the place. Answer or finish it there, or wait for the running request to end; then try again.
 
 The first sentence is §4.10's (the row *The dialog is on screen*, `:563`). The clause *a request that may prompt again may still be running with nothing on screen yet* is
-F4's (`:605`); an orphaned follow-up question is *a prompt that followed an Allow*. **The last sentence is rewritten, and the rule is why:** the
+F4's (`:605`); an orphaned follow-up question was to be *a prompt that followed an Allow* (change 8.1 corrected that). **The last sentence is rewritten, and the rule is why:** the
 built tail *Answer or finish it there; the next request is then asked.* claims what the next call will do, which the `busy` speaker does not know:
 the quiet D.3 caller hears `busy` (`brokerMcpDoor.ts:223`, admitted with `prompts` false) and is never asked afterwards, and a call on a grant
 allowed meanwhile is not asked either. The new tail says only what the person can do. Every clause is a *may*, so the help is true whichever

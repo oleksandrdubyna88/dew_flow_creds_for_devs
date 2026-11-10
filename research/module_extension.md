@@ -3642,7 +3642,7 @@ cannot take the modal down, so the standing dialog keeps the place; whatever end
 decides nothing: for an Allow or a Deny it writes one `ignored` line, `"Allow" answered after its call had ended; the answer changed nothing`, and shows a
 notice (`LATE_ANSWER_NOTICE`, *That request had already ended, so this answer changed nothing.*: the speaker knows the call had ended and that the
 answer decided nothing, and says no more — not what ran before, not what the next call will do), the same road for a click after every waiter left; an Escape frees the place and says nothing. An Escape is its own
-outcome, `dismissed`, and is answered as it always was, 504 with `The human did not allow this grant.`. A client that hangs up during its dialog,
+outcome, `dismissed`, and is answered as it always was, 504 with the door's own sentence: `The human did not allow this grant.` on the alias, MCP use and token doors, `The human did not allow this.` on `create` and the folder verbs, `The human did not allow this deletion.` on `delete`. A client that hangs up during its dialog,
 and a call that timed out, therefore do not let the next call raise a second modal on top of the standing one, and a long action does not make
 every other door `busy`. The `busy` sentence is `BUSY_PLACE` and names what may hold the place (every clause a *may*, so it is true whichever holder stands): a standing
 dialog, a prompt the request raised after its consent, asked or not (a PIN box, an install offer, a trust modal, a VPN question: on the never-ask road a call raises it with no Allow), a running dependency step, a request that may prompt again and still runs with nothing on screen yet (the D.3

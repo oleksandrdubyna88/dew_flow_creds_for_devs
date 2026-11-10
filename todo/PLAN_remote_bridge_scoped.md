@@ -583,7 +583,8 @@ One dialog at a time **per VS Code window** (the place is the window's: a second
 | A quiet call with the follow-up flag is admitted (D.3) | open, running | none, until its own prompt opens | the call's until its release (`admitSilentPlace`) | the action runs |
 | A quiet call without the flag, a pre-consented MCP call without the flag, a local token call | open | none, or (the token) a dialog counted nowhere | none | the action runs, or the token's dialog asks |
 | The consent dialog is shown | open | the first dialog | the dialog's (`prompted`) | none |
-| Allow, Deny or Escape before the timer, a waiter alive | answered | settled | freed at the close, except an Allow whose flag reads true at that moment: then the call's until its release (6.1) | an Allow starts the action |
+| Deny or Escape before the timer, a waiter alive | answered (403 for a Deny, 504 for an Escape, the door's own sentence) | settled | freed at the close | none |
+| Allow before the timer, a waiter alive | open, running (answered when the action ends) | settled | freed at the close, except an Allow whose flag reads true at that moment: then the call's until its release (6.1) | the action starts |
 | The timer wins (`CONSENT_TIMEOUT_MS`) | answered 504, the per-door sentence | still standing | the dialog's | none |
 | The client leaves while the first dialog stands | ended, `ABANDONED` | still standing, defused | the dialog's | none |
 | A late click or Escape on a standing first dialog | (already over) | settled | freed | none; a click leaves the late line and the notice, an Escape neither |
