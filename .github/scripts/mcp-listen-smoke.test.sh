@@ -16,7 +16,11 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 smoke="$here/mcp-listen-smoke.sh"
-work="$(mktemp -d)"
+# The scratch folder is an owned folder (lib/owned.sh): claimed first, removed by the helper's exit trap on EVERY way
+# the test ends — a failing command under set -e, an interrupt, a normal end. The test sets no trap of its own.
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+owned_dir work smoke-test || exit 1
 fake="$work/fake-creds-mcp.sh"
 failures=0
 
@@ -93,7 +97,6 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$work/not-executable.sh"
 off_ci 'off CI: a binary that is not executable fails after the folder is made and leaves nothing' 1 'not an executable' "$work/not-executable.sh"
 off_ci 'off CI: a passing run leaves nothing' 0 'listen smoke passed' "$fake"
 
-rm -rf "$work"
 if [[ "$failures" -eq 0 ]]; then
   echo "all smoke self-test checks passed"
 else

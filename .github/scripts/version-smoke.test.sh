@@ -11,7 +11,11 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 smoke="$here/version-smoke.sh"
-work="$(mktemp -d)"
+# The scratch folder is an owned folder (lib/owned.sh): claimed first, removed by the helper's exit trap on EVERY way
+# the test ends — a failing command under set -e, an interrupt, a normal end. The test sets no trap of its own.
+# shellcheck source=lib/owned.sh
+source "$here/lib/owned.sh"
+owned_dir work smoke-test || exit 1
 fake="$work/fake-binary.sh"
 failures=0
 
@@ -102,7 +106,6 @@ off_ci() {
 off_ci 'off CI, cli: a run that writes no log fails after the folder is made and leaves nothing' 1 'wrote no log' cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_LOG=no
 off_ci 'off CI, cli: a passing run leaves nothing'                                              0 "$passes"      cli 0.4.1 FAKE_VERSION=0.4.1
 
-rm -rf "$work"
 if [[ "$failures" -eq 0 ]]; then
   echo "all version smoke self-test checks passed"
 else
