@@ -162,6 +162,18 @@
           "new": "\".agents\", \"conventions\"",
           "count": 5,
           "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C); the same path as separate Path.Combine segments"
+        },
+        {
+          "old": "The_files_that_may_spell_the_word_in_pieces_are_these_four_and_all_of_them_exist",
+          "new": "The_files_that_may_spell_the_word_in_pieces_are_these_five_and_all_of_them_exist",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the pin lists five files, the fifth being the Node wrapper"
+        },
+        {
+          "old": "        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\");",
+          "new": "        // The fifth entry is the Node wrapper (D7). It changes no answer: the copy folds .cs only (IsFolded); LeftoversGuardCredsTests pins that it has no effect.\n        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\", \"src_vs_code/scripts/lib/leftovers.cjs\");",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the pin takes the Node wrapper as its fifth entry, with a comment that it has no effect at the pin"
         }
       ]
     },
@@ -180,6 +192,18 @@
           "new": ".agents/conventions",
           "count": 2,
           "reason": "the conventions mount moved from .claude/rules/shared to .agents/conventions (story 3.C, rules-layout migration); the path text names the mount of this repository"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversRepositoryGuardTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversRepositoryGuardTests.cs",
+      "blob": "956f18ffca4793673525f46742edc5ec18b3c428",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
         }
       ]
     },
@@ -414,6 +438,36 @@
           "new": "        \"src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",",
           "count": 1,
           "reason": "the four folding allowances re-pointed to where each file lies here (the pin of LeftoversGuardTests keeps its four entries)"
+        },
+        {
+          "old": "    public static IReadOnlyList<string> ExcludedFiles { get; } = [];\n",
+          "new": "    public static IReadOnlyList<string> ExcludedFiles { get; } = [];\n\n    /// <summary>The workflows whose docker classes (<c>docker-run</c>, <c>docker-name</c>) this guard does not read: exactly one entry, pinned by a test. The\n    /// container carve-out of rule §5 (a smoke container started without the remove flag, then removed by one always-run remover) is read by the SHIPPED Node\n    /// guard, which is green on the file; this copy does not know the carve-out and would call both smoke starts a finding. Every other class still reads the\n    /// file, and the same text under another workflow name keeps both docker findings.</summary>\n    internal static IReadOnlyList<string> DockerJudgedByNodeGuard { get; } = [\".github/workflows/docker.yml\"];\n",
+          "count": 1,
+          "reason": "E2.5.S1.2 (D7): the one workflow whose docker classes the shipped Node guard judges, pinned by name; the carve-out of rule §5 lives in that file"
+        },
+        {
+          "old": "                .Concat(Tag(\"docker-run\", ContainerWithoutRemoveFlag(line)))\n                .Concat(Tag(\"docker-name\", GuardDocker.NameHits(line)))\n",
+          "new": "                .Concat(DockerHits(source, line))\n",
+          "count": 1,
+          "reason": "E2.5.S1.2: the two docker classes are read through one method that skips the pinned workflow (one method keeps the complexity of this one at 4)"
+        },
+        {
+          "old": "    /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>\n",
+          "new": "    /// <summary>The two docker classes of a line, none for a workflow of <see cref=\"DockerJudgedByNodeGuard\"/>.</summary>\n    private static IEnumerable<(string Class, string Text)> DockerHits(SourceFile source, string line) =>\n        DockerJudgedByNodeGuard.Contains(source.Relative)\n            ? []\n            : Tag(\"docker-run\", ContainerWithoutRemoveFlag(line)).Concat(Tag(\"docker-name\", GuardDocker.NameHits(line)));\n\n    /// <summary>The classes that only the C# files carry: the bare prefix and the temp root.</summary>\n",
+          "count": 1,
+          "reason": "E2.5.S1.2: the method of the docker classes, skipped for the pinned workflow"
+        },
+        {
+          "old": "        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",\n    ];",
+          "new": "        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",\n        // The Node wrapper (D7). No effect at the pin: this copy folds .cs only (IsFolded), so the entry changes no answer; LeftoversGuardCredsTests pins that.\n        \"src_vs_code/scripts/lib/leftovers.cjs\",\n    ];",
+          "count": 1,
+          "reason": "E2.5.S1.5 (Q2 (B), D7): the fifth folding allowance, the Node wrapper, with a comment that it has no effect at the pin (the copy folds .cs only)"
+        },
+        {
+          "old": "Pinned by a test; a fifth\n    /// file is a decision, not a convenience.",
+          "new": "Pinned by a test; a sixth\n    /// file is a decision, not a convenience (the fifth, the Node wrapper, changes no answer here: the copy folds .cs only).",
+          "count": 1,
+          "reason": "E2.5.S1.5: the sentence follows the pin's new count"
         }
       ]
     },
@@ -474,6 +528,30 @@
           "new": "<c>.claude</c>, <c>.agents</c> (the mounted",
           "count": 1,
           "reason": "the doc comment names the folder that was added to the never-entered list"
+        },
+        {
+          "old": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\";",
+          "new": "    public bool HasBlockComments => Extension is \".cs\" or \".mjs\" or \".js\" or \".cjs\" or \".ts\";",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): a TypeScript helper has // and /* */ comments and string literals the walk must respect, as the JavaScript of the script folders"
+        },
+        {
+          "old": "    private static readonly Regex WorkflowPath = new(@\"^\\.github/workflows/[^/]+\\z\", RegexOptions.CultureInvariant);\n",
+          "new": "    private static readonly Regex WorkflowPath = new(@\"^\\.github/workflows/[^/]+\\z\", RegexOptions.CultureInvariant);\n\n    /// <summary>The folder of the extension's tests: a <c>*.test.ts</c> there is the shipped Node guard's, any other <c>.ts</c> there is a helper this guard reads as a script.</summary>\n    private const string ExtensionTestFolder = \"src_vs_code/src/test/\";\n",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the one folder whose non-test .ts files are read, by name"
+        },
+        {
+          "old": "    private static bool IsScript(string extension, string relative) =>\n        ScriptExtensions.Contains(extension) ||",
+          "new": "    private static bool IsScript(string extension, string relative) =>\n        IsExtensionTestHelper(extension, relative) ||\n        ScriptExtensions.Contains(extension) ||",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the .ts helpers of src_vs_code/src/test/ that are not *.test.ts are scripts to this guard"
+        },
+        {
+          "old": "    private static bool IsScript(string extension, string relative) =>",
+          "new": "    /// <summary>A <c>.ts</c> file of the extension's test folder whose name does not end in <c>.test.ts</c>: a world, a fixture or a harness the tests import. The Node guard's\n    /// <c>node</c> profile reads <c>*.test.ts</c> only, so without this reading a temp call in such a helper is seen by neither guard.</summary>\n    private static bool IsExtensionTestHelper(string extension, string relative) =>\n        extension == \".ts\" && relative.StartsWith(ExtensionTestFolder, StringComparison.Ordinal) && !relative.EndsWith(\".test.ts\", StringComparison.OrdinalIgnoreCase);\n\n    private static bool IsScript(string extension, string relative) =>",
+          "count": 1,
+          "reason": "E2.5.S1.3 (D7, Q12): the file-name test for the helpers, a little more than a path op: it names a folder and excludes *.test.ts"
         }
       ]
     },

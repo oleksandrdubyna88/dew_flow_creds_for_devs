@@ -60,6 +60,7 @@ if [ -n "${CREDS_VERSION:-}" ]; then
   version="$CREDS_VERSION"
 else
   api="https://api.github.com/repos/$REPO/releases"
+  # testsToDelete-exempt: raw-temp — a product script a person runs to install creds, not a test: its temp file is the installer's own
   tmp_api=$(mktemp)
   fetch "$api" "$tmp_api" || die "could not reach $api"
   version=$(tr ',' '\n' < "$tmp_api" | grep '"tag_name"' | sed 's/.*"cli-v\([^"]*\)".*/\1/' | grep -v '"' | head -1)
@@ -73,6 +74,7 @@ base="https://github.com/$REPO/releases/download/cli-v$version"
 
 echo "creds-install: $name"
 
+# testsToDelete-exempt: raw-temp — a product script a person runs to install creds, not a test: its temp folder is the installer's own
 work=$(mktemp -d)
 # Leaves nothing behind, including when a checksum refuses the install.
 trap 'rm -rf "$work"' EXIT INT TERM

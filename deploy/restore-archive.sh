@@ -58,6 +58,7 @@ ARCHIVE="$(realpath "$ARCHIVE")"
 # ---- the key, and never on a command line ------------------------------------------------------
 # An argument is visible in `ps` to every user on the box and lands in the shell history. A file
 # with mode 600 in a tmpfs is not, which is why even the typed form goes through one.
+# testsToDelete-exempt: raw-temp — a product script an operator runs on the server, not a test: its scratch folder is the restore's own
 SCRATCH="$(mktemp -d)"
 chmod 700 "$SCRATCH"
 cleanup() { rm -rf "$SCRATCH"; }

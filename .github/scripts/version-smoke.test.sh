@@ -109,6 +109,21 @@ off_ci() {
 off_ci 'off CI, cli: a run that writes no log fails after the folder is made and leaves nothing' 1 'wrote no log' cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_LOG=no
 off_ci 'off CI, cli: a passing run leaves nothing'                                              0 "$passes"      cli 0.4.1 FAKE_VERSION=0.4.1
 
+# A log root that does not exist (or cannot be entered) is refused with a message, for the cli kind that makes its leaf in the root. The leaf must NOT be
+# made at the filesystem root, which is what `$(cd "$root" && pwd)` gave when the `cd` failed: an empty answer, and `/version-smoke-log-<pid>`.
+# The root of this case is private; the check looks at `/` and at HOME for a leaf (on Git Bash the filesystem root is writable).
+leaf_somewhere() { compgen -G "/version-smoke-log-*" > /dev/null || compgen -G "${HOME:-/nonexistent}/version-smoke-log-*" > /dev/null; }
+mkdir "$work/root-missing"
+code=0
+env -u RUNNER_TEMP SMOKE_GUARD_SECONDS=3 FAKE_VERSION=0.4.1 TMPDIR="$work/root-missing" bash "$smoke" cli "$fake" 0.4.1 "$work/no-such-root" > "$work/run.log" 2>&1 || code=$?
+if [[ "$code" -eq 1 ]] && grep -qF -- "the log root '$work/no-such-root' cannot be entered" "$work/run.log" && ! leaf_somewhere && [[ -z "$(ls -A "$work/root-missing")" ]]; then
+  echo "ok   cli: a log root that does not exist is refused with a message and no leaf is made at / or in HOME (the smoke exited $code)"
+else
+  echo "FAIL cli: a log root that does not exist — expected exit 1 saying the root cannot be entered, no leaf at / or in HOME; exit $code; its output:"
+  sed 's/^/     /' "$work/run.log"
+  failures=$((failures + 1))
+fi
+
 if [[ "$failures" -eq 0 ]]; then
   echo "all version smoke self-test checks passed"
 else

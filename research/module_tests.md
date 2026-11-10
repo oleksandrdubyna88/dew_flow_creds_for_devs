@@ -122,6 +122,69 @@ implied. Its assertions and CI status are read off the file; whether they still 
 until someone starts a server and runs it. That is the honest state, and it is why it sits last in
 `itest:all` with its prerequisite spelled out.
 
+## Test leftovers (2026-11-10, E2.5 of [PLAN_test_leftovers_E2.md](../todo/PLAN_test_leftovers_E2.md))
+
+The map of what a test, a harness or a CI script of this repository makes outside its own process, and who removes it. The detail of each
+helper stays in the paragraph that built it: E2.1 (the unit suite, next section), E2.2 (the harnesses, *Prerequisites, timeouts and cleanup*),
+E2.3 (the C# executables), E2.4 (`owned.sh`, the shell scripts, the image smoke and the acme harness; all in that same section).
+
+1. **The rule and the name.** The contract is `.agents/conventions/common/test-leftovers.md` and its detail
+   (`test-leftovers-detail.md`). The token of this repository is `creds`. A thing a test makes is named
+   `testsToDelete-<owner>-creds-<what>-<id>`; a folder is claimed first, by the file `<folder>.owner` beside it (never inside).
+2. **The three helpers** (one per language; none is a second implementation of the rule's decisions):
+
+   | Helper | What it is | Who makes the folder | Collected at the start of a run | Audit at the end | Windows |
+   |---|---|---|---|---|---|
+   | Node: `src_vs_code/scripts/lib/leftovers.cjs` (with `harnessScope.cjs`) | a wrapper over the mounted reference `tools/lib/owned.mjs`; nothing of it is copied | `ownedDir(t, what)` or a `cleanupScope()` | `npm test` and `npm run itest:all`, in both roots (the temp root and the short socket root) | `scripts/run-tests.mjs` removes what this run's record claimed and left, and only once the process tree is PROVEN ended (Linux). On macOS it removes nothing (it cannot look for a descendant that left the process group): it lists the folders this run claimed and left, and fails the run; a run that claimed none keeps its own exit code | the Node sweep only lists `unverified:` (F16); the audit removes nothing (the supervisor cannot confirm its job is empty): it lists a folder this run claimed and fails the run; claims that carry this record but are older than the runner are listed `unproven:` and left alone |
+   | C#: `src_service_defaults/tests/Support/Leftovers/` | an adapted copy of `dew_flow_mcp` at `197cc76`, changed only by the operations of `template-manifest.json` (checked by `TheAdaptedCopyTests`), linked into the five xUnit executables | `OwnedScope`, `OwnedDir` | each executable's sweep (`LeftoversSweepFixture`, shown by `SweepRanTests`) | the audit after the run | the C# sweep collects, under both keys; two executables at once can race (F29); what an elevated run leaves waits for a person (F31) |
+   | bash: `.github/scripts/lib/owned.sh` | written here, with a self-test in real child processes | `owned_dir <var> <what>`; its root is `TMPDIR` (a CI step hands it `RUNNER_TEMP`: the helper reads no other variable) | no sweep of its own: the next `npm test` or xUnit run, or the janitor | the exit trap removes the folder by its exact name | needs Git Bash, Node and the mount; the janitor is a dry run there until F9 |
+
+3. **Containers.** The image smoke of `docker.yml` is a carve-out of the contract: owner-form names with the runner's uid as a literal, one
+   always-run remover, a check step that lists what is left, and a smoke that stays failed. `deploy/acme-test/run.sh` owns its compose project,
+   labels and state and calls the janitor first. See the paragraphs *The image smoke is a carve-out of the contract* and *The acme harness owns its run*.
+4. **Who collects what a killed run left** (`kill -9` runs no trap; the claim and the folder stay):
+
+   | OS | Collected by |
+   |---|---|
+   | Linux, macOS | the next `npm test`, `npm run itest:all` or xUnit executable; or the janitor (below) |
+   | Windows | the C# sweep of the xUnit executables, under both keys; the Node sweep only lists (F16); the janitor is a dry run until F9; new files of `BUILTIN\Administrators` wait for a person (F31: the review at a persistent Windows machine, or 2026-12-05) |
+
+5. **The two guards.** Both read the files of the repository text by text, are green on the head, and are checked on every pull request.
+
+   | | The shipped Node guard | The copied C# guard |
+   |---|---|---|
+   | Reads | `*.test.*`, `.sh` and `.ps1` everywhere, `.github/scripts/*.{mjs,js,sh}`, workflows, the `scripts` of every `package.json` (`--profile node`) | `.cs` of the six test roots and six source roots (`tests/`, `src/` and the five projects' own); `.sh`, `.ps1`, `.py` everywhere; JavaScript in the script folders; the `src_vs_code/src/test/` helpers that are not `*.test.ts` (read as scripts); workflows; `owner-blind` in scripts and workflows through the mounted classifier (started through `node`) |
+   | Runs | `docs.yml` (the required job `plan lifecycle · submodule pin`), after the step that installs the mount's modules (`npm ci --ignore-scripts --prefix .agents/conventions`) | `LeftoversRepositoryGuardTests` in `CredsForDevs.ServiceDefaults.Tests`: `ci-clients.yml` (Linux, macOS, Windows), `sonarcloud.yml`, and the release jobs `cli-binaries` and `mcp-binaries` on every runner they use |
+   | By hand | `npm ci --ignore-scripts --prefix .agents/conventions` once (a fresh checkout's mount has no `node_modules`, and the guard cannot load `yaml`), then `node .agents/conventions/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` | `./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*LeftoversRepositoryGuardTests"` (`.exe` on Windows); the plants are `LeftoversGuardCredsTests` |
+   | A scan of nothing | exit 2 and `scanned nothing under <dir> — discovery broke; the repository is not clean`; a `docs.yml` step runs it on an empty repository | `FilesScanned == 0` and the same sentence (the copied test) |
+
+   What a clean Node run means: zero for the guard's listed spellings (table D2 of `dew_flow_conventions` `todo/PLAN_F30_folding_reader.md` at
+   the pin `37b9aa5`), in the files its `node` profile reads. It reads `'a' + 'b'`, `.concat`, `['a', 'b'].join('')` and unquoted-piece joins in a
+   `.cjs`, a `.ts` or a `.sh`; it does not read a name built through a variable, across lines or at run time. The step's comment in `docs.yml` has the
+   whole sentence. The C# guard excludes the two docker classes (`docker-run`, `docker-name`) for exactly one file, `.github/workflows/docker.yml`
+   (`LeftoversGuard.DockerJudgedByNodeGuard`, pinned by a test): the carve-out is read by the Node guard, which is green on it; the same text under
+   another workflow name keeps both findings. `leftoversGuardFixtures.test.ts` reads that list from `LeftoversGuard.cs` as text and proves, through the mounted guard, that each path is one the `node` profile scans and that a container start planted there is a `docker-run` finding: a later pin whose discovery dropped the file would turn it red, instead of leaving the file to neither guard. The wrapper `leftovers.cjs` is the fifth entry of `FoldingAllowances`; it changes no answer (the copy
+   folds `.cs` only), and a case in `LeftoversGuardCredsTests` pins that.
+
+   The tests that read the shipped Node guard (`dockerSmokeLeftovers`, `acmeRunLeftovers`, `leftoversGuardFixtures`) get its path and its load from
+   `src_vs_code/src/test/mountedGuard.ts`: ONE constant for the mount path. The guard loads `yaml` from the mount's own `node_modules`, so a job that
+   runs the whole unit suite installs it (`npm ci --ignore-scripts --prefix .agents/conventions`) and sets `CREDS_GUARD_TESTS_REQUIRED=1` on the step:
+   there a guard that cannot load FAILS the test with the reason; a person's `npm test` without the modules still skips with the reason.
+   `workflowMount.test.ts` pins both for the three jobs (`ci-extension.yml`, `sonarcloud.yml`, the `release.yml` extension job).
+6. **What neither guard reads** (measured at E2.5): a split spelling in `src_vs_code/scripts/*.cjs` or `src_minimalapi_server/scripts/*.cjs` (the `node`
+   profile does not discover those folders and the C# copy folds `.cs` only); `${TMPDIR…}` in a `.sh` (it is a root, not a temp call); a name built
+   through a variable or across lines; compose files; a `/tmp` inside a raw string that also holds a quote (the template's limit); and, for the Node
+   guard, `mktemp` in a workflow `run:` block (the C# copy reads it).
+7. **The exemptions.** `testsToDelete-exempt: <class> — <reason>` on the line or the line above; a class of the rule (never `owner-blind`, never
+   `ryuk-off`), a reason of at least ten characters and three words. List them with `git grep -n testsToDelete-exempt -- . ':!todo' ':!research'`. A new
+   one is read by a reviewer; this page keeps no copy of the list. The product scripts `install.sh` (two), `deploy/restore.sh` and `deploy/restore-archive.sh`
+   (one each) carry a marker for their own `mktemp`: their reasons do not say they clean up, because `install.sh` and `deploy/restore.sh` do not on every path.
+8. **The janitor.** `JANITOR_MIN_AGE_MINUTES=10 bash .agents/conventions/tools/janitor.sh --token creds --dry-run` lists what a killed run left, for this token
+   only (without `--dry-run` it removes). On Windows run it from Git for Windows' bash: it removes nothing there until F9. On macOS it needs bash 4 or newer (N20).
+9. **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, the legacy prefix spelling) are not swept; a person removes them by hand once per machine.
+10. **What stays open.** `kill -9` runs no trap (the next run or the janitor collects); F16 (the Node sweep on Windows), F9 (the janitor on Windows), F31, N6
+    (`${TMPDIR…}` is no finding), N20 (bash 3.2), N21 (a flaky Windows dry run), and the Windows clients leg is not a required check.
+
 ## What the unit suite leaves behind (E2.1, 2026-11-02)
 
 `npm test` makes only folders that are **named, claimed, removed and collected** under

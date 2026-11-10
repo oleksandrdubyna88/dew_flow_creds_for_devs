@@ -52,6 +52,14 @@ jobs:
       - name: Install
         run: npm ci
 
+      # The shipped leftovers guard loads `yaml` from the mount's own node_modules, and three of the tests below read that guard
+      # (dockerSmokeLeftovers, acmeRunLeftovers, leftoversGuardFixtures, through mountedGuard.ts). With the modules missing they would
+      # SKIP, and a skip is green: so they are installed here, and the step that runs the tests sets CREDS_GUARD_TESTS_REQUIRED=1, which turns a
+      # guard that cannot load into a failure. --ignore-scripts: SonarCloud githubactions:S6505.
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -72,6 +80,8 @@ jobs:
       # node:test over the compiled out/. Every module that needs a unit test is
       # written free of `vscode`, which is why no VS Code test harness is needed.
       - name: Test
+        env:
+          CREDS_GUARD_TESTS_REQUIRED: "1"
         run: npm test
 
       # Drives the REAL broker over real HTTP and spawns the real CLI as a subprocess — the

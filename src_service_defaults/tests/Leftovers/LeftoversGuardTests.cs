@@ -644,12 +644,13 @@ public sealed class LeftoversGuardTests : IDisposable
     // ---- 6: the exclusion list -----------------------------------------------------------------------------------------
 
     [Fact]
-    public void The_files_that_may_spell_the_word_in_pieces_are_these_four_and_all_of_them_exist()
+    public void The_files_that_may_spell_the_word_in_pieces_are_these_five_and_all_of_them_exist()
     {
         const string helper = "src_service_defaults/tests/Support/Leftovers/";
         const string tests = "src_service_defaults/tests/Leftovers/";
 
-        LeftoversGuard.FoldingAllowances.Should().Equal(helper + "Owned.cs", helper + "LeftoversGuard.cs", tests + "LeftoversGuardTests.cs", tests + "LeftoversGuardScriptsTests.cs");
+        // The fifth entry is the Node wrapper (D7). It changes no answer: the copy folds .cs only (IsFolded); LeftoversGuardCredsTests pins that it has no effect.
+        LeftoversGuard.FoldingAllowances.Should().Equal(helper + "Owned.cs", helper + "LeftoversGuard.cs", tests + "LeftoversGuardTests.cs", tests + "LeftoversGuardScriptsTests.cs", "src_vs_code/scripts/lib/leftovers.cjs");
         LeftoversGuard.FoldingAllowances.Should().OnlyContain(file => File.Exists(Path.Combine(RepositoryRoot.Path, file)));
     }
 
