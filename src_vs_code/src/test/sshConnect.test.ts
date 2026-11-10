@@ -441,3 +441,26 @@ test('a request already gone at a late refusal is shown no modal, and its pin fi
   assert.deepEqual(w.forgotten, [OUR_PIN], 'the pin file written for the connection was left behind');
   assert.deepEqual(w.sshTerminals, []);
 });
+
+test('after the entry moved, the password road still closes ITS earlier terminal', async () => {
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+  const atRoot = { getNode: (_a: string, id: string) => (id === 'e1' ? { id: 'e1', name: 'prod', type: 'entity', parentId: null } : undefined) } as never;
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+  w.existing.push(w.created[0]);
+  await w.mod.connectEntity('a1', entity(), { storage: atRoot, storageDir: '/storage' });
+
+  assert.equal(w.created[0].disposed, true, 'the old tab, holding the password, was left open');
+  assert.equal(w.created[1].name, 'Creds SSH: prod');
+});
+
+test('the password road never closes the same entry id\'s terminal of another account', async () => {
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+  w.existing.push(w.created[0]);
+  await w.mod.connectEntity('a2', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(w.created[0].disposed, false);
+  assert.equal(w.created.length, 2);
+});

@@ -171,9 +171,9 @@ export function world(parts: Parts): World {
           options: unknown,
           platform?: string,
           prefix?: string,
-          title?: string,
+          place?: { title: string; accountId: string },
         ): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title });
+          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title });
           return opened;
         },
         buildSshCommand: (entity: { host?: string }): string | undefined =>

@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **An SSH Connect terminal is titled `Creds SSH: <folder> / <entry>`** instead of `SSH: <user>@<host>`. An entry at the
   root is titled `Creds SSH: <entry>`. The folder is the entry's direct parent, as for the other Creds terminals. Connect a
-  second time and the same session comes forward. That is only true for the entry that opened it: another entry with the same
-  name in the same folder gets its own terminal, and a password connection closes only its own entry's earlier terminal.
+  second time and the same session comes forward, also after you moved the entry (its tab keeps the old folder until you
+  close it). A session is found by the entry, not by its tab: another entry with the same name in the same folder, or the
+  same entry in another account, gets its own terminal, and a password connection closes only its own entry's earlier terminal.
 - **One-time effect.** An SSH terminal opened before this update keeps its old title, and Connect opens a new one beside it once.
 
 ## [1.19.0] — 2026-11-10 — Security — on Windows, an entry's data can no longer run a local command through SSH Connect, and the consent dialog keeps its place until you answer

@@ -1524,9 +1524,12 @@ check 8. Translations are checked for facts, not for quality.
 `escapeControl`, and that an SSH title never equals the entry title of the same key. `terminalManager.test.ts` holds that the tab is
 the title given (default `Creds SSH: <entry>`), that Connect twice brings the same session forward, that another entry with the same
 title gets its own terminal (a session on the wrong server otherwise), and that a live terminal this window did not open for the
-entry is not reused. `sshConnect.test.ts` (its world's `storage` now answers `getNode`: `e1` sits in "ssh connections", and
+entry is not reused; after a move (a new title) the same session still comes forward, and the same entry id in another account
+gets its own terminal. `sshConnect.test.ts` (its world's `storage` now answers `getNode`: `e1` sits in "ssh connections", and
 `SSH_TITLE` is the title it gives) holds the password road's title, that it disposes only this entry's earlier terminal, that a
-stranger under the same title is left alone, and that the key road hands the title on. Red first: with the old `sshConnect.ts`
+stranger under the same title is left alone, that after a move it still closes its own earlier terminal (whose tab names the
+old folder and holds the password), that it never closes the same entry id's terminal of another account, and that the key
+road hands the title on. A further red check: with the title added back to the key road's lookup, the move case failed. Red first: with the old `sshConnect.ts`
 the title cases failed; without the ownership check in `openSshTerminal` the same-title and stranger cases failed.
 
 ## Terminal titles name the folder (2026-11-09, S1-S3 and S5 of PLAN_terminal_titles_folder.md)

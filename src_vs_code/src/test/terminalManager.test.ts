@@ -109,8 +109,8 @@ const TITLE = 'Creds SSH: ssh connections / prod';
 test('the tab is the title it is given, and Connect twice brings the same session forward', () => {
   const w = world();
 
-  const first = w.mod.openSshTerminal(entity(), {}, process.platform, '', TITLE);
-  const again = w.mod.openSshTerminal(entity(), {}, process.platform, '', TITLE);
+  const first = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  const again = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
 
   assert.equal(w.created.length, 1, 'nothing new was created');
   assert.equal(w.created[0].name, TITLE);
@@ -121,18 +121,37 @@ test('the tab is the title it is given, and Connect twice brings the same sessio
 test('another entry with the same title gets its own terminal, never the first entry\'s session', () => {
   const w = world();
 
-  w.mod.openSshTerminal(entity({ id: 'e1' }), {}, process.platform, '', TITLE);
-  w.mod.openSshTerminal(entity({ id: 'e2', host: 'other.example.com' }), {}, process.platform, '', TITLE);
+  w.mod.openSshTerminal(entity({ id: 'e1' }), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  w.mod.openSshTerminal(entity({ id: 'e2', host: 'other.example.com' }), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
 
   assert.equal(w.created.length, 2, 'a session on the wrong server would have been brought forward');
   assert.match(w.created[1].sent[0], /other\.example\.com/);
+});
+
+test('after the entry moved, Connect still brings ITS session forward — found by the entry, not by the title', () => {
+  const w = world();
+
+  const first = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: 'Creds SSH: old / prod', accountId: 'a1' });
+  const again = w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: 'Creds SSH: new / prod', accountId: 'a1' });
+
+  assert.equal(w.created.length, 1, 'a second session was opened beside the first');
+  assert.equal(again, first);
+});
+
+test('the same entry id in another account gets its own terminal', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a2' });
+
+  assert.equal(w.created.length, 2);
 });
 
 test('a live terminal this window did not open for the entry is not reused, even under its title', () => {
   const stranger = fake(TITLE);
   const w = world([stranger]);
 
-  w.mod.openSshTerminal(entity(), {}, process.platform, '', TITLE);
+  w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
 
   assert.equal(w.created.length, 1);
   assert.equal(stranger.shown, 0);
