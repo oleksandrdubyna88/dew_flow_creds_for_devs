@@ -32,6 +32,13 @@
 > (`SshExecOptions.noTty`, set by `secretsArgv` and by no other caller). The first text of this amendment put it into
 > `buildSshExecArgv` for all five callers; that changed shipped roads, which is outside this plan. `ssh:exec`, the agent's
 > linked run and the three clicks of `commands/agentCommands.ts` keep today's argv (§18.1, §18.4 T1 and T2, §19).
+> Corrected again 2026-11-10 by two more decisions of the lead (after a consultant's reading, coai b73776c0) and by the
+> Opus reviewer's findings m3, m4, m7 and m8. (a) The agent's linked run says `-T` too, by a per-call `noTty: true` on
+> its `OverSshCall`; `ssh:exec` and `commands/agentCommands.ts` keep today's argv (§18.1). (b) On E3's two roads the
+> extension host's `SSH_AUTH_SOCK` is REMOVED from the child's environment, and the extension's own socket is added only
+> when its agent serves the run, so the approved text about the child's environment is true again (§18.2 (a), F6). Also:
+> U6 (c) is a guard; `burnInTurn` burns the used entry in a `finally`; §11 says U1–U11; every RED is an assertion after
+> a no-op type (§13); §2.5 says where the spent marker lives.
 
 ## 0. The decisions, in one table
 
@@ -54,8 +61,8 @@ A4 and A5.
 | # | Question | Decision |
 |---|---|---|
 | A1 | A one-use SSH entry (`burnPolicy: 'oneUse'`) behind a linked Terminal entry (parent entry 3.2) | **Burn it too (B), in the broker.** A linked run is an agent's use of S. The action names S to the broker (`UseAction.uses`, the gate first). The broker gives S the measures it gives the grant's entry: S's one-use turn in the same `OneUseLane` that `creds_exec` on S queues in, S's spent marker asked first, and S burned and marked after a call that answered 200. The turns of T and S are taken in ONE fixed order (ascending lane key), so no two calls can wait for each other. T's own one-use turn and burn are unchanged. Refusing a one-use S in the gate (A) is NOT chosen: it makes D2's road smaller and leaves the cause in place (§2.5). |
-| A2 | A remote pty for a spawned ssh (`RequestTTY force` in the person's ssh config) | **Run with Secrets only** (the lead's decision, 2026-11-10): `secretsArgv` passes `noTty: true`, a new `SshExecOptions.noTty?: boolean`, and `buildSshExecArgv` then puts `-T` first. No other caller sets it, so `ssh:exec`, the agent's linked run and the three person clicks keep today's argv. The danger is where a script goes on stdin, and only this road has one. No `-o EscapeChar=none`: with no pty ssh reads no escape, so the option would be inert, and an inert measure is deleted, not kept (§18.1). |
-| A3 | The spawned ssh inherits the extension host's `SSH_AUTH_SOCK` | Two facts, two answers. (a) Identities of the person's own agent can be offered: this is the person's own ssh setup, a recorded limit, and the false doc text is corrected. (b) `-A` with the extension's agent not up forwards the person's own agent while the banner says that nothing is forwarded: on E3's two roads (Run with Secrets, the agent's linked run) the argv then has NO `-A` and has `-o ForwardAgent=no`. `ssh:exec` keeps today's argv in this plan, by a REQUIRED per-call word (`ownAgentOnly: false`), and gets its own plan (§18.2). |
+| A2 | A remote pty for a spawned ssh (`RequestTTY force` in the person's ssh config) | **E3's two roads** (the lead's decisions, 2026-11-10): Run with Secrets and the agent's linked run. A new `SshExecOptions.noTty?: boolean` makes `buildSshExecArgv` put `-T` first. `secretsArgv` passes `noTty: true`; the linked run passes `noTty: true` on its `OverSshCall`, and `execOverSsh` hands it on. `ssh:exec` (it names no `noTty`) and the three person clicks keep today's argv; the forced pty there is a recorded limit of the shipped road (§16 item 11). No `-o EscapeChar=none`: with no pty ssh reads no escape, so the option would be inert, and an inert measure is deleted, not kept (§18.1). |
+| A3 | The spawned ssh inherits the extension host's `SSH_AUTH_SOCK` | On E3's two roads (Run with Secrets, the agent's linked run) the host's variable does NOT reach ssh (the lead's decision, 2026-11-10: the approved text promised it). (a) The child's environment: the run REMOVES the host's `SSH_AUTH_SOCK`; it ADDS only the askpass variables and, when the extension's agent serves the run, its own `SSH_AUTH_SOCK`; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. The mechanism is the environment, which is ours to set and to observe (F6). `-o IdentityAgent=none` is NOT sent (§18.2 (a) says why, and what was measured). (b) When the SSH entry asks for forwarding and the extension's agent is not up, the argv has NO `-A` and has `-o ForwardAgent=no`. `ssh:exec` keeps today's environment and argv in this plan, by a REQUIRED per-call word (`ownAgentOnly: false`), and has its own plan (§18.2). |
 | A4 | The summary compare is skipped when `ctx.summary` is absent | For a LINKED gate a missing summary refuses with `changedWhileAsking`, and so does a `ctx.uses` that is absent or names another SSH entry than the gate's (the id, so a relink to an entry that looks the same refuses too). The skip stays for a `local` gate only. The test worlds hand the run what the broker hands it, through one fixture function (§2.3 step 3, §12). |
 | A5 | The mask table holds S's STORED password while a rotated value of S waits | The broker releases a waiting value of the used entry (`releaseWaiting(call.uses)`) after the grant's own and before the table is read, so the table holds the value ssh will use (§7). |
 | A6 | askpass answers a jump host's prompt with S's password ([PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md)) | E3 does not refuse a password S with a jump on the agent road: the same agent reaches the same defect by `creds_exec` on the same S, which the gate requires to be usable, so a refusal here would be a measure at one of its many sites and would make the road smaller for no gain. The limit is recorded; that plan gains E3's roads in its table and moves up to the next plan on the SSH roads (§18.3). |
@@ -192,10 +199,10 @@ answers `linked`, the agent reads `not_found`, `BRIDGE_NOT_SERVED` or `linkedRun
 6. `isCommandTrusted(deps.trustStore, ctx.entityId, trustLineFor(plan.ssh, chain.value, plan.line))` false →
    `untrusted(ctx.entityName, 'the line')` (`agentUseActions.ts:108-113`).
 7. The slot; `too_many_requests` as today.
-8. `deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined), ownAgentOnly: true })`
+8. `deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined), ownAgentOnly: true, noTty: true })`
    in `try … finally release()` (§S2.2). Everything from `resolveExecAuth` on is `execOverSsh`'s and is `ssh:exec`'s body.
-   `ownAgentOnly: true` is the third amendment's (A3, §18.2): the linked run never sends `-A` without the extension's
-   own agent.
+   `ownAgentOnly: true` and `noTty: true` are the third amendment's (A3, §18.2; A2, §18.1): the linked run never has
+   the extension host's `SSH_AUTH_SOCK`, never sends `-A` without the extension's own agent, and asks ssh for no pty.
 
 For an UNLINKED entry (`local`) step 3 still runs — `linkedSummary` answers today's words for it, so it passes for an
 entry that was unlinked when the dialog stood, and refuses one whose link was removed while it stood (§2.4 row 4,
@@ -313,7 +320,10 @@ settles, on failure as on success (`keyedQueue.ts:4-6`), so a held turn always e
 Terminal entry and S an SSH entry; U7 proves it with two scripted actions that use each other's entry.
 
 **The burn.** `deliver` (`brokerCall.ts:211-229`) passes `burn: (status) => burnInTurn(deps, call, status)`:
-`await deps.burn(status)`, then `await deps.burn(status, call.uses)` when `call.uses` is defined. `CallDeps.burn` becomes
+`try { await deps.burn(status); } finally { if (call.uses !== undefined) { await deps.burn(status, call.uses); } }`.
+The `finally` is the Opus reviewer's m7: `burnAndMark` catches a delete that fails, but its one-use question reads
+storage before that and can throw, and a throw for the grant's entry must not leave a USED S unburned and unmarked.
+`CallDeps.burn` becomes
 `burn(status: number, of?: UsedEntry): Promise<void>`, and the server's closure (`credsAgentServer.ts:687`) becomes
 `(status, of = grant) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, of, status, this.note)`.
 So S gets exactly what the grant's entry gets, from the same function: the one-use question asked BEFORE the delete,
@@ -363,8 +373,14 @@ marked. With an ordinary S nothing else happens (U5). With a one-use S both are 
   `extension.ts`, which is under a line ratchet) is not worth this case.
 - A person's own run of T (the arrow, Run with Secrets, a folder run) never burns S: *only the broker spends an entry*
   (`burnOnUse.ts:13-16`), the owner's decision.
-- The marker is per window (`oneUseLane.ts:42-48`). A second window whose storage still holds S (a failed delete, a sync
-  that has not arrived) does not know it. This is today's limit of the lane for every one-use entry.
+- **Where the marker lives** (the accepted finding of the coai document review). S's marker is a member of the lane's
+  EXISTING `spent` set (`oneUseLane.ts:42-48`): one set per window, in memory, at most `MAX_SPENT` = 512 keys, the
+  oldest dropped first (`:52-63`, `:101-109`). It is the same set, the same key form (`laneKeyFor`) and the same cap
+  as the marker of a `creds_exec` on a one-use entry: `burnAndMark` writes both. So the limits are the same too. A
+  second window whose storage still holds S (a failed delete, a sync that has not arrived) does not know the marker;
+  the marker is gone when the window is reloaded; and past 512 spent entries in one window the oldest marker falls out.
+  Each of these matters only for an entry whose delete FAILED (a deleted entry needs no marker). A recorded limit of
+  the lane for every one-use entry, and for S not weaker than `creds_exec`'s one-use.
 - After the burn, T's link points at nothing. A person's run says *runs over an SSH connection that is no longer in this
   vault* (`remoteLaunch.ts:96`); the agent reads the one sentence. Nothing unlinks T.
 
@@ -737,23 +753,24 @@ table names every file the amendment touches.
 
 | File | Change |
 |---|---|
-| `useActions.ts` (210 lines) | `export interface UsedEntry`; `UseAction.uses?(target: CallTarget): UsedEntry \| undefined`; `UseActionContext.uses?: UsedEntry`; the doc of `UseActionContext.summary` (§5). `OverSshCall` gains the REQUIRED `readonly ownAgentOnly: boolean` (§18.2). |
+| `useActions.ts` (210 lines) | `export interface UsedEntry`; `UseAction.uses?(target: CallTarget): UsedEntry \| undefined`; `UseActionContext.uses?: UsedEntry`; the doc of `UseActionContext.summary` (§5). `OverSshCall` gains the REQUIRED `readonly ownAgentOnly: boolean` (§18.2) and the optional `readonly noTty?: boolean` (§18.1). |
 | `brokerCall.ts` (249 lines) | `CallSubject.uses: UsedEntry \| undefined` (the key required); `CallDeps.burn(status, of?: UsedEntry)`; `CallDeps.refuse(code, message, why?: string)`; `export function usedEntrySpent(name: string): string`; the turns of §2.5 in place of `queuedIfOneUse` and `takesItsTurn` (`:108-123`); `burnInTurn`; `startNow` (`:203`) adds `uses: call.uses`. The doc block `:93-107` gains the fixed order and why. About 300 lines after; each function ≤ 50 lines, complexity ≤ 4, no new lint directive. |
 | `credsAgentServer.ts` (793 of 800) | After `:530`: `const uses = useAction.uses?.(grant);`, and `uses` joins the object of `:544`. `:583`: `await this.releaseWaiting(grant);` then `await this.releaseWaiting(call.uses);`, and the method (`:620-626`) takes `{ accountId: string; entityId: string } \| undefined`. `:683`: the `refuse` closure takes `why` (§2.5). `:687`: the `burn` closure takes `of = grant`. At most 797 lines after. If it would be more, `releaseWaiting` moves to `brokerCall.ts` as a function of the hook; the ceiling is not raised. |
-| `agentUseActions.ts` (644 lines) | `usedEntryOf(deps, target)` (the row of §2.2); `terminalRunAction` declares `uses`; `changedSince` (`:313-315`) becomes the two-part compare of §2.3 step 3; `overSshWithSlot` (`:382-391`) passes `ownAgentOnly: true`. |
-| `sshUseActions.ts` | `execOverSsh` (`:226-248`) passes `ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined` in the options of `buildSshExecArgv`; `sshExecAction` passes `ownAgentOnly: false` with a comment that names the plan of §18.2. |
+| `agentUseActions.ts` (644 lines) | `usedEntryOf(deps, target)` (the row of §2.2); `terminalRunAction` declares `uses`; `changedSince` (`:313-315`) becomes the two-part compare of §2.3 step 3; `overSshWithSlot` (`:382-391`) passes `ownAgentOnly: true` and `noTty: true`. |
+| `sshUseActions.ts` | `execOverSsh` (`:226-248`) passes `ownAgent: call.ownAgentOnly ? deps.agentSocket() !== undefined : undefined` and `noTty: call.noTty` in the options of `buildSshExecArgv`, and for `ownAgentOnly` it hands `agentAwareLaunch` the environment WITHOUT the host's `SSH_AUTH_SOCK` (`envWithout`, §18.2 (a)). `sshExecAction` passes `ownAgentOnly: false`, with a comment that names the plan of §18.2, and no `noTty`. |
+| `sshProgram.ts` | `export const AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK'` and the pure `export function envWithout(base, names, platform)` (§18.2 (a)). `sshSpawnLaunch` and `agentForwardEnv` are not changed. |
 | `sshExecCommand.ts` | `SshExecOptions.noTty?: boolean`: when it is `true`, `-T` is the first element of the argv; absent or `false`, the argv is today's, element for element (§18.1). `SshExecOptions.ownAgent?: boolean` and its rule (§18.2). This file leaves the "Not changed" list above. |
-| `remoteLaunch.ts`, `sshRoad.ts`, `commands/runCommands.ts`, `maskedTerminal.ts` (doc) | S1's part of §18.1: `secretsArgv` (`remoteLaunch.ts:433-436`) passes `noTty: true`. S1's part of §18.2: `SpawnLaunch.ownAgent`, `secretsLaunch(plan, prepared, ownAgent)`, `launchesOf` asks `spawnLaunch` first; the doc texts of §18.2 (a). |
+| `remoteLaunch.ts`, `sshRoad.ts`, `commands/runCommands.ts`, `maskedTerminal.ts` | S1's part of §18.1: `secretsArgv` (`remoteLaunch.ts:433-436`) passes `noTty: true`. S1's part of §18.2: `SpawnLaunch.ownAgent` and `SpawnLaunch.withoutEnv`; `secretsLaunch(plan, prepared, ownAgent)`; `launchesOf` asks `spawnLaunch` first; `maskedOverSsh` (`commands/runCommands.ts:576-590`) passes `withoutEnv`; the argv variant of `MaskedRunOptions` gains `withoutEnv?: readonly string[]` and `spawnChild` (`maskedTerminal.ts:278-294`) takes those names out of the inherited environment; the doc texts say the sentence of §18.2 (a). |
 | `test/agentSshWorld.ts` | `asBroker`, `oneUseStorage` (§12). |
 | `test/agentSshGate.test.ts` | G11 rewritten, G17 extended, G23, G24; the `run` helper (`:172`) hands the run what the broker hands it (§13). |
 | `test/agentSshRun.test.ts` | the `run` helper (`:19`) the same; no expected value changes. |
-| `test/agentSshOneUse.test.ts` (new) | U1–U10 (§13). |
+| `test/agentSshOneUse.test.ts` (new) | U1–U11 (§13). |
 | `test/brokerWorld.ts` | one option, `vault?: { isOneUse; burnAfterUse }`, read by `hooksFor` (`:331-345`) in place of the two stubs when it is given. Today `options.hooks` cannot carry them: the shaped collaborators overwrite it (`:336-337`). |
 | `test/brokerCallLaunch.test.ts` | `callFor` (`:63`) gains `uses: undefined`. |
-| `test/sshExecCommand.test.ts`, `test/secretsLaunch.test.ts`, `test/sshRoad.test.ts`, `test/sshRoadSecrets.test.ts`, `test/sshExecOver.test.ts` | the rows of §18 (T1, T2, F1–F5). |
+| `test/sshExecCommand.test.ts`, `test/secretsLaunch.test.ts`, `test/sshRoad.test.ts`, `test/sshRoadSecrets.test.ts`, `test/sshExecOver.test.ts`, `test/sshProgram.test.ts`, `test/maskedTerminal.test.ts`, `test/launchRoadScan.test.ts` | the rows of §18 (T1, T2, F1–F6). |
 
 Not changed by the third amendment: `oneUseLane.ts`, `keyedQueue.ts`, `burnOnUse.ts`, `brokerResponse.ts`,
-`brokerHooks.ts`, `extension.ts`, `maskEntries.ts`, `mcpEntries.ts`, `sshProgram.ts`, the stamp, the bridge.
+`brokerHooks.ts`, `extension.ts`, `maskEntries.ts`, `mcpEntries.ts`, `sshExecAuth.ts`, the stamp, the bridge.
 
 ## 12. The fixture — `test/agentSshWorld.ts`
 
@@ -811,6 +828,18 @@ Write each test, run it, watch it fail for the reason in "RED today", then build
 answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fails on its assertion, not on a missing name.
 `ONE` = `linkedRunRefused('deploy')`, read from the function.
 
+**How a RED of the third amendment is watched** (the Opus reviewer's m4). `npm test` runs `tsc` first. A test that
+names a field, an option or a method that does not exist yet does not COMPILE, and a compile error is not a RED: it
+says nothing about the behaviour. So for every new name the FIRST step is the type alone, as a no-op: the optional
+field, option or method is declared, and nothing reads it or sets it. The names: `UseAction.uses?`,
+`UseActionContext.uses?`, `CallSubject.uses` (given as `undefined`), `CallDeps.burn`'s `of?`, `CallDeps.refuse`'s
+`why?`, `OverSshCall.noTty?` and `OverSshCall.ownAgentOnly?`, `SshExecOptions.noTty?` and `.ownAgent?`,
+`SpawnLaunch.ownAgent?` and `.withoutEnv?`, `MaskedRunOptions.withoutEnv?`, the third parameter of `secretsLaunch`
+(taken, not used). A new function is a stub that answers the wrong thing (`usedEntrySpent = () => ''`, `envWithout`
+answers `base`, `asBroker` answers `ctx`). Then the test compiles and fails on its ASSERTION, and that failure is what
+the "RED today" column of the rows below and of §18.4 says. The two fields that are REQUIRED in the end
+(`ownAgentOnly`, the third parameter of `secretsLaunch`) are optional for this step and become required in the build.
+
 **`test/agentSshGate.test.ts`** (new)
 
 | # | Test | Assertion | RED today |
@@ -838,7 +867,7 @@ answers the wrong thing (`return ''`, `return { kind: 'local' }`) so the test fa
 | G21 | `after_the_gate_passes_plan_refusals_name_only_the_terminal_entry` (round 1, item 6) | The same (d), (e), (f) with S USABLE and the line trusted: `run(ctx)` → `not_supported`, message `=== refusalSaid(T, planLaunch(T, sshLinkOf(T, lookup), { stayOpen: false }).reason)`; it holds T's quoted name (`"deploy"`, or `"a b"` for (f)) and not `prod box` or `prod.example`; (g) → `no_credential`, `"deploy" has no command.`; `overSsh` 0; slot 0. The positive half of G20: the gate decides WHEN these are said, not whether | E1's sentence |
 | G22 | `before_the_gate_passes_the_follow_up_flag_says_nothing_about_the_ssh_entry` (the second amendment) | Every world has `agentSocket: () => '/tmp/a.sock'`. Six states of S that the gate refuses, each built TWICE, with `agentForward: true` and without it: (a) closed (`sshNode('s1', { mcp: { view: true } })`); (b) no `mcp`; (c) PIN-hidden (`usableSsh('s1', { pinProtected: true })`); (d) under a Trash folder; (e) usable but only in `acct-2`; (f) missing. For all twelve, `asksAfter(action, ctx) === false`, which is also the answer for an unlinked T: the forwarding world and the non-forwarding world of each state give the same bit. Then the door's admission with that bit, through the REAL throttle, as `test/consentContract.test.ts:99-113` does: `const ceilings = new TokenlessCeilings(); ceilings.admit(true, 0)` (another call holds the place); `ceilings.admit(false, 1, LOCAL_DOOR, asksAfter(action, ctx)).refusal === undefined` for all twelve (a quiet call is admitted, never *busy*), and then `validate({}, ctx)` answers `{ ok: false, code: 'denied', message: ONE }`, byte-equal across the twelve. `notes` is empty after `asksAfter` alone (the flag writes no note). POSITIVE CONTROL, so the test can see what it guards: `usableSsh('s1', { agentForward: true })` → `asksAfter(action, ctx) === true`, and the same `admit` call answers `BUSY_PLACE` | With the stub that reads the link alone (`sshLinkOf(…).kind === 'linked' && link.ssh.agentForward === true` and the socket): the forwarding worlds of (a), (b) and (c) answer `true`, and their quiet call is told `BUSY_PLACE`. That is the leak. (With no stub the control is RED: `undefined` today) |
 
-| G23 | `uses_names_the_ssh_entry_only_after_the_gate` (third amendment, A1) | `terminalRunAction(deps).uses(ctx)`: usable S → deep-equals `{ accountId: 'acct-1', entityId: 's1', entityName: 'prod box' }`; a one-use usable S → the same (the gate does not refuse one-use: B); unlinked T → `undefined`; the six refused states of G22 (a)–(f) → `undefined` for each; `notes` is empty after `uses` alone; `storage.calls` after `uses` on the closed world equals `storage.calls` after `validate` on a fresh copy of it (no read of S beyond the gate's two). `typeof sshExecAction(deps).uses === 'undefined'` (no other action declares it) | `uses` is `undefined`: `TypeError` on the call. With the stub that reads the link alone (`sshLinkOf(…).kind === 'linked'`): the closed, PIN-hidden and other-account worlds answer S |
+| G23 | `uses_names_the_ssh_entry_only_after_the_gate` (third amendment, A1) | `terminalRunAction(deps).uses(ctx)`: usable S → deep-equals `{ accountId: 'acct-1', entityId: 's1', entityName: 'prod box' }`; a one-use usable S → the same (the gate does not refuse one-use: B); unlinked T → `undefined`; the six refused states of G22 (a)–(f) → `undefined` for each; `notes` is empty after `uses` alone; `storage.calls` after `uses` on the closed world equals `storage.calls` after `validate` on a fresh copy of it (no read of S beyond the gate's two). `typeof sshExecAction(deps).uses === 'undefined'` (no other action declares it) | After the no-op type, with no `uses` on the action: the assertion `typeof action.uses === 'function'`, which the test makes first, fails (`'undefined'`). Then with the stub that reads the link alone (`sshLinkOf(…).kind === 'linked'`): the closed, PIN-hidden and other-account worlds answer S, not `undefined` |
 | G24 | `a_linked_run_over_another_ssh_entry_than_the_one_the_broker_holds_is_refused` (third amendment, A4) | World: `usableSsh('s1')` and `usableSsh('s2')` with the SAME `name`, `host`, `user` and `port`; both trust lines trusted. `shown = asBroker(action, w.ctx)` (it names `s1`); then `T.sshEntityId = 's2'`. `summarize({}, ctx) === shown.summary` (the setup: the texts ARE equal). `action.run(shown, {})` → `denied`, `=== changedWhileAsking('deploy')`; `overSsh` 0; `slots.taken` 0. Then: `action.run({ ...shown, uses: undefined }, {})` on the unchanged world → the same refusal; an UNLINKED world with `uses: { accountId: 'acct-1', entityId: 's1', entityName: 'prod box' }` → the same refusal, and nothing ran locally (`runBounded` not reached: `slots.taken` 0) | the relinked world RUNS over `s2` today: `overSsh.calls[0].ssh === s2.details` |
 
 **`test/agentSshOneUse.test.ts`** (new; third amendment, A1 and A5). Through the REAL broker (`brokerWorld`, with the
@@ -856,12 +885,12 @@ world's scripted stub (it records in `w.ran`). `STARTED` = `overSsh.calls.length
 | U3 | `a_one_use_ssh_entry_that_could_not_be_deleted_stays_spent_on_both_roads` | `storage.failDelete = true`. `run(t1)` → 200; the journal holds `"prod box" was one-use but could NOT be deleted`; `s1` is still in storage, still one-use and still usable (`validate` of a second call answers `{ ok: true }`: asserted, so the test cannot pass by the gate). `run(t1)` again, Allow → `denied`, `usedEntrySpent('deploy')`; `run(t2)` → `denied`, `usedEntrySpent('deploy2')`; `exec(s1)` → `not_found`, `"prod box" was one-use and has already been used.`; `STARTED === 1` | the second `run(t1)` answers 200 and `STARTED` grows with every call |
 | U4 | `linked_runs_over_an_ordinary_ssh_entry_are_not_queued_and_burn_nothing` | `s1` with no `burnPolicy`. `run(t1)` and `run(t2)` together under `overlapping`: both 200; the peak inside `overSsh` is 2; `s1`, `t1`, `t2` are all still in storage; the journal holds no `was one-use` line; `lane.isSpent` is false for all three keys (read through a third call: `run(t1)` again → 200) | (green today: a guard for *an ordinary entry keeps running in parallel*. Watch it RED once, with the `isOneUse` filter of §2.5 step 3 removed: the peak is 1) |
 | U5 | `a_one_use_terminal_entry_burns_as_before_and_both_burn_when_both_are_one_use` | (a) `t1` one-use, `s1` ordinary: `run(t1)` → 200; `t1` is gone, `s1` is there; the journal holds the deleted note for `deploy` and none for `prod box`; `run(t1)` again → the door's answer for an entry that is gone, `STARTED === 1`. (b) both one-use: `run(t1)` → 200; both are gone; the two deleted notes stand in the order `deploy`, `prod box`; `exec(s1)` → `not_found`. (c) `t1` one-use, two `run(t1)` together: `STARTED === 1`, the loser reads `not_found` and `"deploy" was one-use and has already been used.` (today's sentence, for the grant's own entry) | (a) and (c) are green today (the guard for *T's own burn is unchanged*); (b): `s1` is still in storage |
-| U6 | `a_linked_run_that_did_not_answer_200_spends_nothing` | S one-use. (a) the trust line NOT trusted: `run(t1)` → the untrusted refusal; `s1` is there; then trust it: `run(t1)` → 200 and `s1` is gone. (b) `overSsh` answers `{ status: 500, … }` (`Could not run ssh`): `s1` is there and a later `run(t1)` → 200. (c) the summary differs at run time (S's host changed while the dialog stood, `holdDialogs`): `changedWhileAsking`; `s1` is there and is not marked (a later `exec(s1)` runs) | the first half of each is green today (nothing is ever spent); the second half is RED: after the later 200, `s1` is still in storage |
+| U6 | `a_linked_run_that_did_not_answer_200_spends_nothing` | S one-use. (a) the trust line NOT trusted: `run(t1)` → the untrusted refusal; `s1` is there; then trust it: `run(t1)` → 200 and `s1` is gone. (b) `overSsh` answers `{ status: 500, … }` (`Could not run ssh`): `s1` is there and a later `run(t1)` → 200. (c) the summary differs at run time (S's host changed while the dialog stood, `holdDialogs`): `changedWhileAsking`; `s1` is there and is not marked (a later `exec(s1)` runs) | (a) and (b): the first half is green today (nothing is ever spent); the second half is RED: after the later 200, `s1` is still in storage. (c) is a GUARD (the Opus reviewer's m3): green today and after the build. Watch it RED once with the mutation *burn on any status* (the `status === 200` test taken out of `burnAndMark`, `oneUseLane.ts:136`, and of `spent`, `brokerResponse.ts:301-303`): `s1` is gone after the refused run, and the later `exec(s1)` is told that it was already used |
 | U7 | `the_turns_are_taken_in_key_order_so_two_calls_that_use_each_others_entry_both_end` (`performCall` with the real `OneUseLane` and `burnAndMark`, scripted actions, as `test/brokerCallLaunch.test.ts` builds its calls) | Entries `a` and `b`, both one-use. Call X: the grant names `b`, `uses` is `a`. Call Y: the grant names `a`, `uses` is `b`. Both started in one tick; each action waits 50 ms. Within 2 s (`Promise.race` with a timer that fails the test): both calls have ended; exactly one action ran; both entries are burned and marked; the other call was refused before its action ran, with `usedEntrySpent` or today's own-entry sentence, whichever turn it met first. The same with X and Y started in the other order | With the turns taken in the order *the grant's entry, then the used entry* (not sorted): X holds `b` and waits for `a`, Y holds `a` and waits for `b`; the 2 s timer fails the test. This is the proof of the fixed order |
 | U8 | `a_waiting_value_of_the_ssh_entry_goes_in_before_the_table_is_read` (A5) | `hooks: { releaseWaiting: record }` and a recording `masker`: for `run(t1)` the recorded order is `['release acct-1/t1', 'release acct-1/s1', 'mask acct-1/t1']`; for `exec(s1)` it is `['release acct-1/s1', 'mask acct-1/s1']` (unchanged); for an unlinked T there is no second release | no `release acct-1/s1` in the first list |
 | U9 | `the_agents_output_masks_the_ssh_password_that_the_run_used` (A5; the pattern of `test/waitingRotationVisible.test.ts:574-604`) | Real `memoryStorage`, the real `maskEntriesWithLink`, the real `releaseBeforeAutomaticUse` as the hook. `s1` stores the password `OLD` and holds a rotated `NEW` waiting (`holdRotated`). The recording `overSsh` opens S's password the automatic way (`automaticOpenerFor`) and answers it in `stdout`. `run(t1)` → 200; `storage.getPassword('acct-1', 's1')` carries `NEW` (the setup: the release happened); `JSON.stringify(answer.body)` does NOT include `NEW` | the answer holds `NEW` in the clear: the table was read with `OLD` in it, and the run stored and used `NEW` |
-| U10 | `every_per_entry_hook_of_the_broker_has_a_decision_for_the_used_entry` (the sweep of §2.5, left behind as a test) | A table in the test: `maskEntriesFor: 'the link (maskEntriesWithLink)'`, `releaseWaiting: 'uses'`, `isOneUse: 'uses'`, `burnAfterUse: 'uses'`, `rememberMcpConsent: "the grant's only (spec §3.2)"`, and each other name of `BROKER_HOOK_NAMES` (`brokerHooks.ts:196-215`) with `'takes no entry of a grant'`. The test reads that list and fails, naming the hook, when a name has no row. Companion: the list is not empty and holds `burnAfterUse` (a scan that matches nothing passes forever) | a new hook with no row; today: the table does not exist |
-| U11 | `the_sentence_for_a_spent_used_entry_names_one_entry` | `usedEntrySpent.length === 1`; `usedEntrySpent('Q').match(/"[^"]*"/g)` deep-equals `['"Q"']`; the text holds no `prod box` for any input | no export |
+| U10 | `every_per_entry_hook_of_the_broker_has_a_decision_for_the_used_entry` (the sweep of §2.5, left behind as a test) | A table in the test: `maskEntriesFor: 'the link (maskEntriesWithLink)'`, `releaseWaiting: 'uses'`, `isOneUse: 'uses'`, `burnAfterUse: 'uses'`, `rememberMcpConsent: "the grant's only (spec §3.2)"`, and each other name of `BROKER_HOOK_NAMES` (`brokerHooks.ts:196-215`) with `'takes no entry of a grant'`. The test reads that list and fails, naming the hook, when a name has no row. Companion: the list is not empty and holds `burnAfterUse` (a scan that matches nothing passes forever) | Watch it RED once with `burnAfterUse` left out of the test's table: the test fails and names `burnAfterUse`. (The test reads no new name of the product, so it compiles today.) |
+| U11 | `the_sentence_for_a_spent_used_entry_names_one_entry` | `usedEntrySpent.length === 1`; `usedEntrySpent('Q').match(/"[^"]*"/g)` deep-equals `['"Q"']`; the text holds no `prod box` for any input | With the stub `usedEntrySpent = () => ''`: `.length` is 0, not 1, and the match answers `null` |
 
 **Existing tests whose expected values change**
 
@@ -946,8 +975,10 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 | A link moved to a second SSH entry that looks the same (name, host, user, port), while the dialog stands | `changedWhileAsking`: the id is compared, and the broker holds the first entry's turn | G24 |
 | A caller that reaches `run` on a linked entry with no summary (a new door, a wrapper that forgets it) | `changedWhileAsking`; nothing ran | G11 |
 | The person's ssh config says `RequestTTY force`, and the person runs Run with Secrets over SSH | the argv says `-T`: ssh asks for no pty, the script on stdin is not echoed, and a value with a control byte or a `~` at a line start is only data | T1; the effect is hand check 3's (§18.1) |
-| The same config, and an agent's `creds_run` on a linked entry (or `creds_exec`) | today's argv, no `-T`: ssh asks for a pty; no script is on stdin, so nothing is echoed; `stdout` and `stderr` are joined and a value of more than one line is not masked. A recorded limit, shared with the shipped `ssh:exec` (§18.1, §16 item 11) | T2 (a guard that the argv is not changed) |
-| S forwards the agent, the extension's agent has no key, and the extension host has an `SSH_AUTH_SOCK` of the person's own | E3's two roads: no `-A`, and `-o ForwardAgent=no`; nothing is forwarded, as the banner says. `ssh:exec` on S: today's argv, its own plan (§18.2) | F1–F5 |
+| The same config, and an agent's `creds_run` on a linked entry | the linked run says `-T` too (`noTty: true` on its call): ssh asks for no pty, `stdout` and `stderr` stay apart, and a value of more than one line is masked in the agent's answer | T2 |
+| The same config, and an agent's `creds_exec` on the SSH entry | today's argv, no `-T`: ssh asks for a pty; `stdout` and `stderr` are joined and a value of more than one line is not masked. A recorded limit of the shipped road, not of E3's (§16 item 11) | T2 (its guard half) |
+| S forwards the agent, the extension's agent has no key, and the extension host has an `SSH_AUTH_SOCK` of the person's own | E3's two roads: the child has no `SSH_AUTH_SOCK` of the host; no `-A`, and `-o ForwardAgent=no`; nothing is forwarded, as the banner says. `ssh:exec` on S: today's environment and argv, its own plan (§18.2) | F1–F6 |
+| The extension host has an `SSH_AUTH_SOCK` of the person's own, and S does not forward the agent: ssh would offer that agent's keys before the vault's key | E3's two roads: the variable is removed from the child's environment, so no key comes from it; ssh has the key that `-i` names (or askpass), the person's default key files and what their ssh config names | F6 |
 
 ## 15. Opus review checklist
 
@@ -998,8 +1029,8 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 - [ ] The turns: spent is asked before one-use, for both entries; only one-use entries are queued; the order is by lane
       key with a plain compare, not *the grant first* (U7 was watched RED with the unsorted order); `answer` is the only
       thing inside the innermost turn.
-- [ ] The burn: the grant's entry first, then the used entry, through the SAME `burnAndMark`; both are awaited before
-      `answer`'s promise settles. `oneUseLane.ts`, `burnOnUse.ts` and `brokerResponse.ts` are not in the diff.
+- [ ] The burn: the grant's entry first, then the used entry in a `finally` (m7), through the SAME `burnAndMark`; both
+      are awaited before `answer`'s promise settles. `oneUseLane.ts`, `burnOnUse.ts` and `brokerResponse.ts` are not in the diff.
 - [ ] `usedEntrySpent` has one parameter, names the grant's entry only, code `denied`; S's name is in the journal line
       and not in any answer to a `run` (U2 asserts it).
 - [ ] The existing one-use suite (`test/oneUseAndCap.test.ts`) is green and is not in the diff.
@@ -1007,15 +1038,21 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
 - [ ] `releaseWaiting(call.uses)` stands after the grant's release and before `tableOrFail`; U9 was watched RED with the
       value in the answer.
 - [ ] `credsAgentServer.ts` is at most 797 lines; no ceiling and no lint rule was changed.
-- [ ] `-T` is the first word of the argv of Run with Secrets and of no other argv: `noTty: true` stands at exactly one
-      production site, `secretsArgv` (grep `noTty`); `sshExecCommand.ts` writes the word, not the composer. The argv of
-      `ssh:exec`, of the linked run and of the three clicks of `commands/agentCommands.ts` is today's (T2). No
+- [ ] `-T` is the first word of the argv of Run with Secrets and of the agent's linked run, and of no other argv:
+      `noTty: true` stands at exactly two production sites, `secretsArgv` and the linked run's call in
+      `agentUseActions.ts` (T2's scan); `sshExecCommand.ts` writes the word, not a composer. The argv of `ssh:exec` and
+      of the three clicks of `commands/agentCommands.ts` is today's (T2's guard half). No
       `-o EscapeChar=none` was added; no test says that `-T` PREVENTS a pty — the tests say it is sent, and hand check 3
       holds the effect.
 - [ ] `ownAgentOnly` is a REQUIRED field of `OverSshCall`: the linked run says `true`, `ssh:exec` says `false` with the
       plan named beside it, and F5 finds exactly that one `false`. `secretsLaunch` has a required third parameter.
-- [ ] The doc of `sshRoad.ts` (`:29-33`, `:37-41`) and of E3-D4, E3-D5 and E3-D8 says what the child's environment
-      really is (§18.2 (a)); no text says that the person's own agent is never used.
+- [ ] The child's environment on E3's two roads: the host's `SSH_AUTH_SOCK` is taken out by `envWithout`, with no
+      condition, and the extension's own is laid on top only when it serves. F6 was watched RED with the host's socket in
+      the record. `ssh:exec`'s environment is not changed (F6's guard). No `-o IdentityAgent` word was added.
+- [ ] The doc of `sshRoad.ts` (`:29-33`, `:37-41`), of `MaskedRunOptions.env` and of E3-D4, E3-D5 and E3-D8 says the
+      sentence of §18.2 (a) and no more: it does not say that no agent of the person can ever be used (a config
+      `IdentityAgent` still can, §16 item 15).
+- [ ] Every RED of the third amendment was an assertion that failed after a no-op type, never a compile error (§13).
 
 ## 16. Flags for the lead (possible plan changes — flagged, not decided here)
 
@@ -1067,19 +1104,38 @@ compile unchanged. `test/maskEntries.test.ts` is not edited (§7).
     a person may use today. The three person clicks of `commands/agentCommands.ts` (`:197`, `:222`, `:351`) build the
     same argv and belong to the same plan. NOT the plan `PLAN_ssh_exec_absolute_program.md`: that one waits for E3 and
     is not exploitable today; this one should not wait.
-11. **A forced pty on the agent's roads is a recorded limit, not fixed here** (§18.1; the lead's decision, 2026-11-10).
-    With `RequestTTY force` in the person's ssh config, `ssh:exec` and the agent's linked run get a pty: `stdout` and
-    `stderr` are joined, line ends become CR LF, and a value of more than one line is then not masked in the agent's
-    answer. For the linked run this is a limit of D15's *masked with the SSH entry's values too*. `-T` is not sent
-    there, because it would change the shipped `ssh:exec` (a person may rely on a forced pty, for `sudo` for example).
-    It belongs to the plan of item 10, which already decides what a spawned ssh of the agent takes from the person's
-    ssh setup. For the lead to route; text for that plan, not for E3's CHANGELOG.
+11. **A forced pty on `ssh:exec` is a recorded limit of the shipped road, not fixed here** (§18.1; the lead's
+    decisions, 2026-11-10). With `RequestTTY force` in the person's ssh config, `ssh:exec` and the three clicks of
+    `commands/agentCommands.ts` get a pty: `stdout` and `stderr` are joined, line ends become CR LF, and a value of more
+    than one line is then not masked in the agent's answer. E3's two roads say `-T` and do NOT have this limit (the
+    first correction of this amendment left the linked run with it; the second one took it away). `-T` is not sent on
+    `ssh:exec`, because it would change a shipped road (a person may rely on a forced pty, for `sudo` for example). It
+    belongs to [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md), which decides what a
+    spawned ssh of the agent takes from the person's ssh setup; that plan's text must say `ssh:exec` only, not *and an
+    agent's linked run*. Text for that plan, not for E3's CHANGELOG.
 12. **Parent §4.4 says of Run with Secrets: *the agent socket as the agent's `ssh:exec` chooses it*.** After A3 the two
     differ in one case (the entry forwards, the extension's agent is not up). The parent's words change.
 13. **`PLAN_askpass_answers_the_hop.md` names two paths; E1, E2 and E3 add roads to both** (§18.3). Its table and its
     place in the order change; the both-sides rule asks for the rows there and in parent §7 and §7a.
 14. **The help does not say that a linked run spends a one-use SSH entry** (§17). An entry is deleted by it, so a person
     must be able to read it before it happens.
+15. **A person's ssh config can still name an agent on E3's roads** (§18.2 (a)). `IdentityAgent` in `~/.ssh/config`
+    wins over the variable (measured), so ssh then uses that agent whatever the child's environment holds. E3 removes
+    the INHERITED variable, which is what the approved text promised, and does not override the line a person wrote in
+    their own config. The stronger rule — *ssh on E3's roads has the extension's agent or none* — is one option on the
+    command line (`-o IdentityAgent=none`, or `-o IdentityAgent=SSH_AUTH_SOCK` when the extension's agent serves; both
+    measured to win over the config). It is the same question as `SendEnv` and `ProxyCommand`: does the person's ssh
+    config apply to a spawned ssh. `PLAN_askpass_answers_the_hop.md` owns it. For the lead, if the owner wants it sooner.
+16. **Windows, not checked** (§18.2 (a)). With no `SSH_AUTH_SOCK`, the Windows OpenSSH client may use its default
+    agent pipe (`\\.\pipe\openssh-ssh-agent`) when the Windows agent service runs. Then a key of that service could
+    still be offered on E3's roads. Checked: ssh_config(5) and `ssh -G` on OpenSSH_10.2p1 (Linux). Not checked: a
+    Windows client. Hand check 3's third line (§18.2 (a)) run on Windows answers it; if a key of the service signs in,
+    item 15's option is the fix and the lead decides.
+17. **An SSH entry with no stored key and no password** signs in today, on the terminal roads, with whatever agent the
+    terminal has. On E3's two roads it then has only the person's default key files and their ssh config, because the
+    inherited variable is removed. Nothing of E3 is released, so nothing that works today stops. A sentence for the
+    help or the CHANGELOG, if the lead wants one: *Run with Secrets and an agent's run over SSH do not use the agent
+    of your own shell.*
 
 ## 16a. The both-sides rule
 
@@ -1088,7 +1144,7 @@ PLAN_terminal_command_over_ssh_E3_S2_security.md`, and that the lead adds the ro
 file's row, the stories document links this file from its status block, and
 `node .agents/conventions/tools/plan-lifecycle.mjs` answers `clean` (run on e57eb80f, 2026-11-10, before and after the
 second amendment). The README row is another file and is the lead's: it names the scenarios `G1–G19`; this file now
-holds G1–G24 and U1–U11, and §18 names T1, T2 and F1–F5 for the stories document. `plan-lifecycle.mjs` answers `clean`
+holds G1–G24 and U1–U11, and §18 names T1, T2 and F1–F6 for the stories document. `plan-lifecycle.mjs` answers `clean`
 after the third amendment (run on this file's commit).
 
 ## 17. Help ×5
@@ -1106,7 +1162,7 @@ to last until an agent uses it once, the agent's run is that use, and the SSH en
 ## 18. The ssh that E3 spawns (third amendment; decisions for S1 and for the shared builder)
 
 These three decisions are about the ssh child, not about the gate. They are in this file because they are security
-judgements of the same re-review. The stories document carries the brief and the scenarios (T1, T2, F1–F5), as it
+judgements of the same re-review. The stories document carries the brief and the scenarios (T1, T2, F1–F6), as it
 carries `execOverSsh`.
 
 ### 18.1 `-T` (A2)
@@ -1122,7 +1178,8 @@ read as an escape; there `stdout` and `stderr` are joined and line ends become C
 is not masked in the agent's answer.
 
 **Decision (the lead's, 2026-11-10; it replaces this section's first text).** `-T` goes on the argv of Run with Secrets
-over SSH, and on no other argv. The first text put `-T` into `buildSshExecArgv` for all five callers
+over SSH — and, by the second decision below, on the argv of the agent's linked run — and on no other argv. The first
+text put `-T` into `buildSshExecArgv` for all five callers
 (`sshUseActions.ts:238`, `remoteLaunch.ts:435`, `commands/agentCommands.ts:197`, `:222`, `:351`). The lead refused that:
 it changes the shipped `ssh:exec` and three shipped clicks, none of which puts a script on stdin; a person may rely on
 `RequestTTY force` there (for `sudo`, for example); and a change of shipped roads is outside this plan. The danger of
@@ -1131,15 +1188,25 @@ the echo, of a control byte and of `~` exists only where a script goes on stdin,
 **How: an option of the builder, not a word that the composer adds.** `SshExecOptions` (`sshExecCommand.ts`) gains
 `noTty?: boolean`. With `noTty: true`, `buildSshExecArgv` returns `-T` as its FIRST element:
 `['-T', '-o', 'BatchMode=yes' | 'NumberOfPasswordPrompts=1', …]`. Absent or `false`, the argv is today's, element for
-element. `secretsArgv` (`remoteLaunch.ts:433-436`) passes `{ jump, knownHostsFile, ownAgent, noTty: true }`, and no
-other caller names the option. Why the option and not `['-T', ...argv]` in `secretsArgv`: every ssh option word is
+element. `secretsArgv` (`remoteLaunch.ts:433-436`) passes `{ jump, knownHostsFile, ownAgent, noTty: true }`. The
+agent's linked run passes `noTty: true` on its call (`OverSshCall.noTty?: boolean`, beside `ownAgentOnly`), and
+`execOverSsh` hands `noTty: call.noTty` to the builder. `ssh:exec` names no `noTty`, and the three clicks name none.
+Why the option and not `['-T', ...argv]` in `secretsArgv`: every ssh option word is
 written in ONE file today, and that file knows where a word may stand (before `--`, before the destination). A second
 place that adds a word to a finished argv is a second composer. With the option, K1 keeps its form (a deep-equal with
 `buildSshExecArgv`), and one grep for `noTty` shows who asks.
 
-**What is left open, on purpose.** With `RequestTTY force`, `ssh:exec` and the agent's linked run still get a pty.
-This is a measure at one of its sites, by decision and in the open: §16 item 11 records the limit and sends it to the
-plan that owns the shipped road, and T2 holds that this plan did not change those argvs.
+**The second decision (the lead's, 2026-11-10, after a consultant's reading, coai b73776c0): the agent's linked run
+says `-T` too.** The linked run puts no script on stdin, so nothing is echoed there. But its output is the agent's
+answer, and D15 promises that this answer is masked with S's values. With a forced pty `stdout` and `stderr` are
+joined and line ends are CR LF, so a value of more than one line is not masked. The first correction recorded that as
+a limit of E3's new road. A per-call word gives the NEW road `-T` and leaves the shipped `ssh:exec` as it is, so the
+limit is taken away from E3: `overSshWithSlot` passes `noTty: true` (§2.3 step 8).
+
+**What is left open, on purpose.** With `RequestTTY force`, the shipped `ssh:exec` and the three clicks still get a
+pty. This is a measure at some of its sites, by decision and in the open: §16 item 11 records the limit and sends it
+to the plan that owns the shipped road, and T2 holds both halves — the linked run's argv starts with `-T`, and
+`ssh:exec`'s argv is today's.
 
 **No `-o EscapeChar=none`.** ssh reads an escape only in a session with a pty (ssh(1): *`-e` … Sets the escape
 character for sessions with a pty*; *When a pseudo-terminal has been requested, ssh supports a number of functions
@@ -1159,23 +1226,83 @@ at a line start does not end the session. If that line fails, stop and report: t
 
 ### 18.2 The agent socket (A3)
 
-**(a) What the child's environment is.** `maskedTerminal.ts:284` spawns with `{ ...process.env, ...options.env }`, and
+**(a) The child's environment** (rewritten 2026-11-10 by the lead's decision).
+
+*What the code of 7c6e4ffb does.* `maskedTerminal.ts:284` spawns with `{ ...process.env, ...options.env }`, and
 `execOverSsh` with `{ ...process.env, … }` from `sshExecAuth.ts` (`:95`, `:139`, `:155`) under `agentAwareLaunch`
 (`sshUseActions.ts:107`). So the child has the extension host's whole environment. `SSH_AUTH_SOCK` in it is the
 extension's own agent only when the SSH entry forwards the agent and that agent is up (`sshProgram.ts:268-280`).
-In every other case it is whatever the extension host has: the person's own agent, or nothing. Two texts say
-otherwise and are corrected: `sshRoad.ts:31-33` (*never "whatever `SSH_AUTH_SOCK` the host process has"*) and
-`sshRoad.ts:39-41` (*the environment holds `SSH_AUTH_SOCK` (when the entry forwards the agent) and the askpass variables*),
-with E3-D4, E3-D5 and E3-D8 of the stories document, which say the same. True words: *the run ADDS only the askpass
-variables and, for a forwarding entry with the extension's agent up, `SSH_AUTH_SOCK`; the child also has the extension
-host's own environment. A stored key is written to its own file and `-i` names it, but ssh can still offer the keys of
-the person's own agent first: that is the person's own ssh setup, as `~/.ssh/config` is.*
+In every other case it is whatever the extension host has: the person's own agent, or nothing, and ssh can offer that
+agent's keys before the key that `-i` names. The approved texts say otherwise: parent §4.4 (*The ssh child's
+environment holds no resolved value: only the askpass variables of a password SSH entry and `SSH_AUTH_SOCK`*),
+`sshRoad.ts:31-33` (*never "whatever `SSH_AUTH_SOCK` the host process has"*), `sshRoad.ts:39-41`, and E3-D4, E3-D5 and
+E3-D8 of the stories document.
 
-This is a recorded limit, not changed here. `-o IdentitiesOnly=yes` or `-o IdentityAgent=none` would stop it, and
-would also stop an SSH entry that holds no key and no password and signs in with the person's own agent, which works
-today on every road. Whether the person's own ssh setup applies to a spawned ssh is one question for all its parts
-(`SendEnv`, `ForwardAgent`, the agent's keys, `ProxyCommand`), and `PLAN_askpass_answers_the_hop.md` already owns it
-(its Definition of Done, third row).
+*What this section said first, and why it is replaced.* The first text made the words true by taking the promise back:
+the person's own agent was *the person's own ssh setup, a recorded limit*. A consultant (coai b73776c0) read that as a
+narrowing: the approved text promised a protection, and the revision withdrew it. The lead decided the other way: the
+CODE is made true to the promise.
+
+**Decision.** On E3's two roads the extension host's `SSH_AUTH_SOCK` does not reach ssh, unless the extension's own
+agent serves the run — and then the variable is the extension's, not the host's. The sentence that is true after the
+build, for the plan and for the docs: *the run ADDS only the askpass variables and, when the extension's agent serves
+the run, its `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK`; other ordinary variables (`PATH`, `HOME`, …) are
+inherited as by every spawned program.* *The extension's agent serves the run* means what it means in the code today:
+the SSH entry forwards the agent and the agent's socket is up (`sshSpawnLaunch`, `sshProgram.ts:333-342`). A stored
+key is never served by the agent on these roads: it is a file that `-i` names (E3-D4; `resolveExecAuth`).
+
+**The mechanism: the environment, and only the environment.**
+
+- `sshProgram.ts` gains `export const AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK'` and the pure
+  `export function envWithout(base: NodeJS.ProcessEnv, names: readonly string[], platform: NodeJS.Platform): NodeJS.ProcessEnv`:
+  a COPY of `base` without those names. On `win32` a name matches in any letter case, because a Windows environment
+  does not tell `SSH_AUTH_SOCK` from `Ssh_Auth_Sock`; on every other platform it matches exactly.
+- Run with Secrets. The `spawn` shape of `SpawnLaunch` (`sshRoad.ts:52-54`) gains `readonly withoutEnv: readonly
+  string[]`, and `spawnLaunchOf` always answers `[AGENT_SOCKET_ENV]`. The argv variant of `MaskedRunOptions` gains
+  `withoutEnv?: readonly string[]` (*names taken out of the inherited environment before `env` is laid on top*), and
+  `spawnChild` (`maskedTerminal.ts:278-294`) spawns with `{ ...envWithout(process.env, options.withoutEnv ?? [],
+  process.platform), ...options.env }`. `maskedOverSsh` (`commands/runCommands.ts:576-590`) passes `withoutEnv:
+  launches.spawn.withoutEnv`. The removal has NO condition: when the extension's agent serves, its socket is in
+  `spawn.env` and is laid on top; when it does not, the child has no `SSH_AUTH_SOCK` at all.
+- The agent's linked run. `execOverSsh` (`sshUseActions.ts:239`) calls `agentAwareLaunch(deps, call.ssh,
+  call.ownAgentOnly ? envWithout(prepared.env, [AGENT_SOCKET_ENV], process.platform) : prepared.env)`.
+  `agentAwareLaunch` lays the extension's socket on top when it serves, as today (`:107`). `ssh:exec`
+  (`ownAgentOnly: false`) keeps today's environment: its own plan (§16 item 10).
+
+**Why not `-o IdentityAgent=none`** (the other mechanism, alone or beside this one).
+
+1. The promise is about the variable the child inherits. The environment of a child that we spawn is OURS to set, and
+   its effect is seen in a test with a child that records its environment (F6). An option is a request to ssh, and its
+   effect is seen only in a real session (security.md: *a control at a boundary you do not own is a request until you
+   have seen the answer*). So the environment is the measure that can be proved here.
+2. With the variable gone, `IdentityAgent=none` changes something in ONE case: the person's own ssh config names an
+   agent (`IdentityAgent`). That is a line the person wrote. Whether a person's ssh config applies to a spawned ssh is
+   one question for all its parts (`SendEnv`, `ProxyCommand`, the agent), and `PLAN_askpass_answers_the_hop.md` owns it
+   (its Definition of Done, third row). E3 overrides the person's config in one place only, `-o ForwardAgent=no` of
+   (b), and only so that its own banner is true.
+3. It is not needed for (b): with no `-A` and with `-o ForwardAgent=no` nothing is forwarded, whatever agent ssh has.
+
+So it is not sent. §16 item 15 gives the lead the stronger rule as one option on the command line, with what was
+measured.
+
+**Measured** (OpenSSH_10.2p1, `ssh -G`, 2026-11-10). No config and no option: no `identityagent` line (the variable
+decides). A config with `IdentityAgent /tmp/person-agent.sock`: `identityagent /tmp/person-agent.sock`, with the
+variable set and with it unset — the config wins over the variable, as ssh_config(5) says (*This option overrides the
+SSH_AUTH_SOCK environment variable*). That config with `-o IdentityAgent=none`: `identityagent none`. That config
+with `-o IdentityAgent=SSH_AUTH_SOCK`: `identityagent SSH_AUTH_SOCK`. So the command line wins over the config. And
+with `spawn` of node v26.12.1 and the program `env`: an environment built without the name gives a child with no
+`SSH_AUTH_SOCK`; with the extension's laid on top the child has that one, once. NOT observed: a real session. NOT
+checked: Windows OpenSSH with the variable unset (§16 item 16).
+
+**What it costs, said plainly.** An SSH entry that holds no key and no password, and that signed in through the
+person's own agent by the inherited variable, does not sign in that way on E3's two roads. ssh still has the person's
+default key files and what their ssh config names. Nothing of E3 is released, so nobody loses a thing they have, and
+the terminal roads are not changed (a terminal has its own environment). §16 item 17.
+
+**Hand check 3 gains a third line.** With a key that is ONLY in the person's own agent (not a default key file) and
+that the server accepts, an `SSH_AUTH_SOCK` of that agent in the extension host, and an SSH entry whose stored key the
+server does NOT accept: Run with Secrets ends with ssh's `Permission denied`. (Before the build it signs in with the
+agent's key.) On Windows the same line, with the key in the Windows agent service, answers §16 item 16.
 
 **(b) `-A` with the extension's agent not up.** `sshOptionArgv` sends `-A` whenever the entry asks (`sshOptions.ts:197`).
 With no socket of the extension, `agentForwardEnv` adds nothing and answers the warning *agent forwarding is on for this
@@ -1238,31 +1365,36 @@ environment, so a hop that asks for a password is answered with S's. That plan n
 
 ### 18.4 Scenarios for the stories document — RED first
 
-Each says what is SENT. None says that an option protects: the two effects are hand check 3's lines (§18.1, §18.2).
+T1, T2 and F1–F5 say what is SENT. None of them says that an option protects: those effects are hand check 3's lines
+(§18.1, §18.2). F6 is of another kind: the child's environment is ours, so F6 OBSERVES it, in a child that records its
+environment. Every "RED today" is an assertion that fails after a no-op type, as §13 says.
 
 | # | File | Test | Assertion | RED today |
 |---|---|---|---|---|
 | T1 | `test/sshExecCommand.test.ts`; `test/secretsLaunch.test.ts` (K1 and K2 gain it) | `no_tty_is_said_first_and_only_when_the_caller_asks` | The builder: with `{ noTty: true }`, for `'key'` and for `'askpass'`: `argv[0] === '-T'`; exactly one element is `-T`; no element is `-t` or `-tt`; no element is `EscapeChar=none`; `argv.slice(1)` deep-equals the argv of the same call without `noTty` (the option adds one word and moves nothing). With no `noTty`, and with `noTty: false`: no element is `-T`, and `argv[0] === '-o'`. K1 and K2: `launch.argv[0] === '-T'`, said by name, and the expected argv of the deep-equal is `buildSshExecArgv(…, { jump, knownHostsFile, ownAgent, noTty: true })` | `argv[0] === '-o'` for `{ noTty: true }` (the option is not read); K1: `launch.argv[0] === '-o'` |
-| T2 | `test/sshExecOver.test.ts`; `test/launchRoadScan.test.ts` (with F5) | `the_agents_ssh_keeps_its_argv_no_tty_word_is_added` (a GUARD) | `execOverSsh` as the linked run calls it and as `ssh:exec` calls it: no element of `runs[0].argv` is `-T`, and `runs[0].argv[0] === '-o'`; the deep-equal of `:134` keeps its expected value but for `ownAgent`. The scan: `noTty` stands at exactly one production site outside `sshExecCommand.ts`, in `secretsArgv` of `remoteLaunch.ts`; a failure names file and line; companion: the scan finds that one | (green today, a guard: say so. Watch it RED once, with `noTty: true` passed in `execOverSsh`: `runs[0].argv[0] === '-T'`.) The scan half is RED before the build: the companion finds no site |
+| T2 | `test/sshExecOver.test.ts`; `test/launchRoadScan.test.ts` (with F5) | `the_linked_run_says_no_tty_and_ssh_exec_does_not` | `execOverSsh` as the linked run calls it (`noTty: true`): `runs[0].argv[0] === '-T'`, exactly one element is `-T`, and `runs[0].argv.slice(1)` deep-equals the argv of the same call without `noTty`. As `ssh:exec` calls it (no `noTty`): no element is `-T`, and `runs[0].argv[0] === '-o'` — the GUARD half: the shipped road is not changed. The scan: `noTty: true` stands at exactly TWO production sites, in `secretsArgv` of `remoteLaunch.ts` and in the linked run's call (`overSshWithSlot`) of `agentUseActions.ts`; no file of `commands/` and no `sshExecAction` names `noTty`; a failure names file and line; companion: the scan finds those two | After the no-op type (`OverSshCall.noTty?` declared and passed by the test, `execOverSsh` not reading it): the linked call's `runs[0].argv[0]` is `'-o'`. The guard half is green before and after; watch it RED once with `noTty: true` written in `sshExecAction`. The scan half: the companion finds no site before the build |
 | F1 | `test/sshExecCommand.test.ts` | `a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_no` | entity with `agentForward: true` and one `-L` forward. `{ ownAgent: false }`: no element is `-A`; the pair `-o`, `ForwardAgent=no` stands once; the `-L` is still there. `{ ownAgent: true }`: `-A`, and no `ForwardAgent=no`. No `ownAgent`: `-A` (today's argv). An entity that does not forward, `{ ownAgent: false }`: neither word. `{ bridged: true }`: the six options as before (`:125`), unchanged | `ownAgent` is not read: `-A` is in the argv of the first case |
-| F2 | `test/sshRoad.test.ts` (H7 gains it) | `spawn_launch_says_whether_the_agent_is_ours` | forwarding and a socket: `ownAgent === true`, `env.SSH_AUTH_SOCK` is the socket. Forwarding and no socket: `ownAgent === false`, `warning === NO_AGENT_TO_FORWARD`, `'SSH_AUTH_SOCK' in env` is false. Not forwarding, a socket: `ownAgent === false`, no warning | no such field |
+| F2 | `test/sshRoad.test.ts` (H7 gains it) | `spawn_launch_says_whether_the_agent_is_ours` | forwarding and a socket: `ownAgent === true`, `env.SSH_AUTH_SOCK` is the socket. Forwarding and no socket: `ownAgent === false`, `warning === NO_AGENT_TO_FORWARD`, `'SSH_AUTH_SOCK' in env` is false. Not forwarding, a socket: `ownAgent === false`, no warning | After the no-op optional field (declared, never set): `launch.ownAgent` is `undefined`, not `true`, in the first case |
 | F3 | `test/sshRoadSecrets.test.ts` | `a_run_with_secrets_that_forwards_with_no_agent_up_sends_no_dash_a` | the world of the warning test (`:233`): `masked[0].argv` holds no `-A` and holds the pair `-o`, `ForwardAgent=no`; the banner holds `Note: ${NO_AGENT_TO_FORWARD}.`; the trust line that was asked still holds ` -A ` (the approval is not changed). With the socket up: `-A` in the argv and `masked[0].env.SSH_AUTH_SOCK` is the socket | `-A` is in the argv while the banner says that nothing is forwarded |
 | F4 | `test/sshExecOver.test.ts` | `the_linked_run_never_sends_dash_a_without_our_agent_and_ssh_exec_is_not_changed` | `execOverSsh` with `ownAgentOnly: true`, a forwarding entry, `agentSocket: () => undefined`: `runs[0].argv` holds no `-A` and holds `ForwardAgent=no`; the note holds `NO_AGENT_TO_FORWARD`. With a socket: `-A`, and `runs[0].env.SSH_AUTH_SOCK` is the socket. With `ownAgentOnly: false` (as `ssh:exec` calls it) and no socket: `-A` is in the argv — the guard that this plan did not change the shipped road | the first case holds `-A` |
 | F5 | `test/launchRoadScan.test.ts` (or a scan file of its own) | `only_ssh_exec_still_sends_dash_a_without_our_agent` | over the production `*.ts` files, comments removed, matched across lines: `ownAgentOnly: false` stands at exactly one site, in `sshExecAction` of `sshUseActions.ts`; `ownAgentOnly: true` stands in `agentUseActions.ts`; the calls of `buildSshExecArgv(` whose options name no `ownAgent` are exactly the three of `commands/agentCommands.ts` (a list that may only get shorter). A failure names file and line. Companion: the scan finds the one `false` and the three calls (a scan that matches nothing passes forever) | the companion fails: no site |
+| F6 | `test/sshProgram.test.ts`; `test/maskedTerminal.test.ts` (beside M11); `test/sshRoadSecrets.test.ts`; `test/sshExecOver.test.ts` | `the_hosts_agent_socket_does_not_reach_the_ssh_of_e3s_two_roads` | (1) `envWithout({ SSH_AUTH_SOCK: '/h', PATH: '/p' }, ['SSH_AUTH_SOCK'], 'linux')` deep-equals `{ PATH: '/p' }`, and its argument still holds both names (a copy); on `'win32'`, `{ Ssh_Auth_Sock: '/h', Path: 'p' }` loses `Ssh_Auth_Sock`; on `'linux'` that other spelling stays (it is another variable there). (2) M11's fake `ssh`, which records `env -0`: with `process.env.SSH_AUTH_SOCK = '/tmp/host-agent.sock'` set for the test and put back in `finally`, an argv run with `withoutEnv: ['SSH_AUTH_SOCK']` and the askpass set as `env`: the record holds NO `SSH_AUTH_SOCK` entry; it holds a `PATH=` entry (the positive control: ordinary variables are inherited) and `SSH_ASKPASS_REQUIRE=force`. The same run with `env.SSH_AUTH_SOCK = '/tmp/ours.sock'`: the record holds `SSH_AUTH_SOCK=/tmp/ours.sock` exactly once, and nowhere `/tmp/host-agent.sock`. (3) Run with Secrets: `masked[0].withoutEnv` deep-equals `['SSH_AUTH_SOCK']` for a key session, for a password session and for a forwarding entry. (4) `execOverSsh` with `process.env.SSH_AUTH_SOCK = '/tmp/host-agent.sock'`. As the linked run calls it (`ownAgentOnly: true`): with `agentSocket: () => undefined`, `'SSH_AUTH_SOCK' in runs[0].env` is false and `runs[0].env.PATH === process.env.PATH`; with a forwarding entry and a socket, `runs[0].env.SSH_AUTH_SOCK` is the extension's socket; with a socket and an entry that does not forward, no `SSH_AUTH_SOCK`. As `ssh:exec` calls it (`ownAgentOnly: false`): `runs[0].env.SSH_AUTH_SOCK === '/tmp/host-agent.sock'` — the GUARD that the shipped road is not changed | After the no-op types (`withoutEnv?` declared and not read; `envWithout` a stub that answers `base`; `ownAgentOnly?` not read): (1) the result still holds `SSH_AUTH_SOCK`; (2) the record holds `SSH_AUTH_SOCK=/tmp/host-agent.sock`; (3) `masked[0].withoutEnv` is `undefined`; (4) the linked run's `runs[0].env.SSH_AUTH_SOCK` is `/tmp/host-agent.sock`. The `ssh:exec` guard is green before and after |
 
 Two existing rows of the stories document change their NAME, because the name said more than the test sees: S9
 (`the_child_env_is_the_askpass_and_agent_variables_only_and_holds_no_value`) reads `masked[0].env`, which is what the
 run ADDS, not the child's whole environment; it becomes `the_run_adds_only_the_askpass_and_agent_variables_and_no_value`.
-Its assertions do not change. No test that pins an argv of `ssh:exec`, of the linked run or of a click of
-`commands/agentCommands.ts` changes for `-T`: those argvs are today's.
+Its assertions do not change, and it stays beside F6, which reads the child's REAL environment. No test that pins an
+argv of `ssh:exec` or of a click of `commands/agentCommands.ts` changes for `-T`: those argvs are today's. A test that
+pins the argv or the recorded call of the LINKED run gains `-T` as the first element of the argv and `noTty: true` in
+the call, and changes nothing else.
 
 ## 19. What the third amendment does to scope, the Definition of Done, the merge conditions and the release
 
 | # | Decision | Smaller? | Why |
 |---|---|---|---|
 | A1 | a linked run spends a one-use S (B) | no | D2's road is as wide as before: a one-use S that is open to agents still runs, once, which is what its form says. The Definition of Done and the merge conditions GAIN rows (U1–U11, G23, G24). A — the refusal — would have been a narrowing, and is not chosen |
-| A2 | `-T` on the argv of Run with Secrets only | no | it makes *no tty* true as the parent wrote it for that road; nothing of E3 is released, so nobody loses a thing they have; no shipped road changes (the lead's decision). The forced pty on the agent's roads is a recorded limit, not a smaller plan: the parent promised *no tty* for Run with Secrets only |
-| A3 | no `-A` without the extension's agent, on E3's two roads | no | nothing of E3 is released, so nobody loses a thing they have; the parent never promised that the person's own agent is forwarded, and the banner says the opposite. `ssh:exec` is not changed |
+| A2 | `-T` on the argv of E3's two roads | no | it makes *no tty* true as the parent wrote it for Run with Secrets, and it keeps D15's *masked with the SSH entry's values too* whole for the linked run (no forced pty joins the streams); nothing of E3 is released, so nobody loses a thing they have; no shipped road changes. The forced pty stays a recorded limit of the shipped `ssh:exec` only, which this plan never promised to change |
+| A3 | the host's `SSH_AUTH_SOCK` removed from the child's environment, and no `-A` without the extension's agent, on E3's two roads | no | the protection that the approved text promised (the child's environment holds only the askpass variables and the extension's `SSH_AUTH_SOCK`) is KEPT and built. The first text of this amendment withdrew it as a recorded limit; a consultant read that as a narrowing, and it is not withdrawn any more. Nothing of E3 is released, so nobody loses a thing they have; the parent never promised that the person's own agent is used or forwarded, and the banner says the opposite. `ssh:exec` is not changed |
 | A4 | a linked run needs the shown summary and the used entry | no | the broker always gives both; only a call that no door makes is refused |
 | A5 | the waiting value of S goes in first | no | it makes §7 true as written |
 | A6 | no refusal of a password S with a jump | no | nothing is refused; the limit is recorded |
