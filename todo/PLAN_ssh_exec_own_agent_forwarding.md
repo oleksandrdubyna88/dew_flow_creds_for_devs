@@ -1,0 +1,71 @@
+# PLAN — `ssh:exec` forwards only the extension's own agent, never the person's own one
+
+> Status: **not started; needs the owner's yes, 2026-11-10.** Scope: the extension's `ssh:exec` road
+> (`src_vs_code/src/sshUseActions.ts`), the three person clicks of `src_vs_code/src/commands/agentCommands.ts` that build
+> the same argv, and their tests. Found by the E3.S2 security spec's third amendment
+> ([PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md) §16 items 10
+> and 11, §18.2), in the re-review of epoch 4 of [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md)
+> (D17, risk 9, §7a, §9). Read in the code on 5b221602, **not observed on a host**.
+
+## Symptom
+
+An SSH entry with agent forwarding on, opened to agents, on a machine where the extension's own agent has no key (no
+socket: `sshAgentManager.ts:205-207`) and the extension host has an `SSH_AUTH_SOCK` (a desktop session's agent):
+
+- `buildSshExecArgv` sends `-A` whenever the entry asks (`sshOptions.ts:197`);
+- the spawned ssh inherits the extension host's environment, so its `SSH_AUTH_SOCK` is the person's OWN agent
+  (`sshExecAuth.ts` spreads `process.env`; `agentAwareLaunch`, `sshUseActions.ts:95-109`);
+- the journal says *nothing will be forwarded until one is loaded into the agent* (`NO_AGENT_TO_FORWARD`,
+  `sshProgram.ts:251-254`).
+
+So the agent's FREE command runs on the server with the person's own agent forwarded, and that agent signs with no
+prompt, where the extension's agent would ask for each signature. Shipped since `-A` was wired for a spawned ssh. The
+three clicks of `commands/agentCommands.ts` (`:197`, `:222`, `:351`) build the same argv with no `ownAgent`.
+
+A second limit of the same roads (security spec §16 item 11): with `RequestTTY force` in the person's ssh config,
+`ssh:exec` and an agent's linked run get a remote pty: `stdout` and `stderr` are joined, line ends become CR LF, and a
+value of more than one line is then not masked in the agent's answer. Run with Secrets over SSH sends `-T` (parent D16);
+these roads do not, because a person may rely on a forced pty (`sudo`, for example).
+
+## What the terminal-over-SSH plan already leaves ready (E3, not yet merged)
+
+- `SshExecOptions.ownAgent` in `sshExecCommand.ts`: with `false` and a forwarding entry, no `-A` and
+  `-o ForwardAgent=no` (`-A` wins over the option in either order, measured with `ssh -G` on OpenSSH 10.2p1).
+- `OverSshCall.ownAgentOnly`, a REQUIRED per-call word: the agent's linked run says `true`, `ssh:exec` says `false`
+  with a comment naming this plan, and the scan F5 pins exactly one `false` and the three calls of `agentCommands.ts`
+  with no `ownAgent` (a list that may only get shorter).
+
+| Item | Which plan builds it | The other one's part |
+|---|---|---|
+| `ownAgent`, `ownAgentOnly`, the F5 scan | terminal over SSH (E3) | none here |
+| `ssh:exec` turned to `ownAgentOnly: true`; the three clicks pass `ownAgent` | this plan | none there: E3 changes no shipped argv |
+| `-T` (or not) on `ssh:exec`, the linked run and the clicks | this plan decides | E3 sends `-T` on Run with Secrets only |
+| whether the person's ssh setup applies to a spawned ssh at all (`SendEnv`, `ProxyCommand`, the agent's keys) | [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) (its Definition of Done, third row) | this plan decides only `-A` and the pty |
+
+Order: E3 merges first (it adds the words); this plan comes after it. The table is complete: nothing else of these
+roads is in either plan.
+
+## Fix idea and build order (to be decided with the owner)
+
+1. Observe it first on a real host: a forwarding entry, no key in the extension's agent, the person's own agent with
+   a key, `ssh:exec` of `ssh-add -l` on the server. Expected (not yet seen): it lists the person's key.
+2. `ssh:exec` says `ownAgentOnly: true` (one word); the three clicks pass `ownAgent` by the same rule.
+3. Decide the forced pty: `-T` on these roads, or a recorded limit, with the owner (it may take away a `sudo` that
+   works today).
+
+The fix takes away something a person may use today (their own agent forwarded by an agent's call), so it needs the
+owner's yes before it is planned in full.
+
+## Test plan (outline)
+
+- RED first: `test/sshExecOver.test.ts` F4's last case (`ownAgentOnly: false`, no socket: `-A` in the argv) turns into
+  the new expectation (no `-A`, `ForwardAgent=no`); the F5 scan's `false` list becomes empty.
+- The clicks: one test per call site of `commands/agentCommands.ts`.
+- A hand check on a real host (step 1), before and after.
+
+## Definition of Done
+
+- [ ] The owner said yes; the behaviour was observed on a host before the fix.
+- [ ] No road of an agent forwards the person's own agent; the journal's sentence is true on every road.
+- [ ] The forced pty is decided and either fixed or recorded with the owner's word.
+- [ ] Tests green, the first ones watched RED; the coai gate ran on plan and code; this plan promoted.

@@ -1,6 +1,6 @@
 # PLAN — Off a bridge, a jump hop can be answered with the destination's password
 
-> Status: **plan only, nothing implemented yet, 2026-11-05 (revised the same day with the parent's epoch 4 revision).** Scope: `src_vs_code` (`sshAskpass.ts`, `sshExecAuth.ts`, `sshExecCommand.ts`,
+> Status: **plan only, nothing implemented yet, 2026-11-05 (revised the same day with the parent's epoch 4 revision; its roads and priority updated 2026-11-10 by the terminal-over-SSH plan's re-review).** Scope: `src_vs_code` (`sshAskpass.ts`, `sshExecAuth.ts`, `sshExecCommand.ts`,
 > `sshConnect.ts`, `sshCommand.ts`). Found by the review of E1.3's Amendment 3 and judged in Amendment 4 (D.1) of
 > [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md). The **bridged** legs are fixed by the parent's SSH contract
 > ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9, story E1.6); the two paths below are outside that plan's scope (its §8 row)
@@ -15,14 +15,23 @@ An entry that authenticates by password rides `SSH_ASKPASS` with `SSH_ASKPASS_RE
 authentication, the nested ssh answers with the DESTINATION entry's password, and the hop receives it. A keyboard-interactive prompt's text
 is the server's, so filtering by prompt text in the script would be spoofable.
 
-Two paths have it:
+Two paths have it, and the terminal-over-SSH plan
+([PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md), risk 7 and §7a; its E3.S2 security spec §18.3)
+puts more roads on each (added 2026-11-10, the both-sides rule):
 
-| Path | Where |
-|---|---|
-| The agent's local `exec` (main port, socket) | `sshUseActions.ts` → `buildSshExecArgv` with `auth: 'askpass'` and `jump` |
-| The person's own Connect | `sshConnect.ts` composes the same askpass environment and `sshCommand.ts` the same `-J` for the terminal |
+| Path | Where | Roads on it |
+|---|---|---|
+| The agent's local `exec` (main port, socket) | `sshUseActions.ts` → `buildSshExecArgv` with `auth: 'askpass'` and `jump` | `ssh:exec`; an agent's linked `creds_run` (`execOverSsh`, E3.S2); the same builder from `secretsArgv` (`remoteLaunch.ts`): *Run with Secrets* over SSH, which sends vault values on stdin through that connection (E3.S1). E3 not yet released |
+| The person's own Connect | `sshConnect.ts` composes the same askpass environment and `sshCommand.ts` the same `-J` for the terminal; since E1, `prepareSshSession` (`sshSession.ts`) is that preparation | SSH Connect; a linked Terminal entry's arrow, a VPN's launcher and *Run All in Folder* (E2, released in 1.20.0). A dependency step refuses a password SSH entry at plan time, so it is not on this path |
 
 Since 0.42.0, when askpass arrived; a jump was never asked about.
+
+**Priority (raised 2026-11-10).** The terminal-over-SSH plan makes a password SSH entry with a jump host a thing people
+link commands to, so more connections pass the defect, and *Run with Secrets* sends vault values through a connection
+whose hop was answered that way. That plan does NOT refuse such an entry on its roads (a refusal on one road would
+protect nothing while the others still pass it), so this plan is where the defect is fixed for every road, and it is
+the next plan on the SSH roads after that plan's E3. It is not a condition of E3's merge or release: no road of E3
+adds a new way to reach the defect.
 
 ## What the bridge does (parent §4.9, E1.6), to be weighed here for the two local paths
 
