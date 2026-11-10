@@ -374,7 +374,7 @@ itself (T7d measures the replacement, T7a scans the callers), a race of two live
 collection (F16, F31), and the real temp root of a machine. On the WSL machine of this repository `mkdir` is uutils coreutils 0.10.0,
 whose plain `mkdir` is not always exclusive in a race (41 of 300 draws gave two successes), so `owned_create_dir` uses perl's `mkdir`
 where perl exists, and T5 races the helper's own create for 20 rounds and asserts one winner each; without perl on uutils the limit stays
-(the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE.
+(the helper then relies on its exclusive claim for two live runs) and T5 prints a NOTE. A seam `OWNED_PROC` (the /proc root) lets a test give the helper a minimal /proc: the record then ends after the pid (T G4).
 
 **The release workflow's signing wiring is a test (2026-11-03,
 [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
