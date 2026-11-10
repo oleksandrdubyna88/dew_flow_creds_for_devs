@@ -76,6 +76,14 @@ function cleanupBody(text: string): string[] {
   return lines.slice(start + 1, end < 0 ? lines.length : start + 1 + end).map((line) => line.trim()).filter((line) => line !== '' && !line.startsWith('#'));
 }
 
+/** `owned_cleanup` stands between the STATE `if` and the `fi` that closes it, not merely somewhere in the function. */
+function ownedCleanupIsGuarded(body: string[]): boolean {
+  const open = body.indexOf('if [ -n "${STATE:-}" ]; then');
+  const close = body.indexOf('fi', open + 1);
+  const call = body.indexOf('owned_cleanup');
+  return open >= 0 && close > open && call > open && call < close;
+}
+
 /** Rule 5 and the folder rules of the script's text: the helper's trap, no trap of its own, no state folder, no sudo. */
 const SCRIPT_CHECKS: Check[] = [
   (text) => unless(liveLines(text).filter((line) => line === 'owned_trap cleanup').length === 1, 'the script does not call `owned_trap cleanup` exactly once'),
@@ -90,7 +98,7 @@ const SCRIPT_CHECKS: Check[] = [
     return unless(bad === undefined, `the script still names a state folder of the checkout: ${bad}`);
   },
   (text) => unless(!/\brm -rf\b/.test(text), 'the script removes a folder itself (owned_cleanup does)'),
-  (text) => unless(cleanupBody(text).some((line) => line === 'if [ -n "${STATE:-}" ]; then') && cleanupBody(text).some((line) => line === 'owned_cleanup'), 'the clean-up does not call owned_cleanup behind the STATE guard (brief § 3.3 item 1)'),
+  (text) => unless(ownedCleanupIsGuarded(cleanupBody(text)), 'the clean-up does not call owned_cleanup INSIDE the STATE guard (brief § 3.3 item 1)'),
 ];
 
 /** The lines of the top-level block that starts at `header` (indent 0), up to the next top-level key. */
@@ -175,6 +183,7 @@ echo "stub docker: unexpected call: $*" >&2
 exit 99
 `;
 const CURL = `#!/bin/bash
+echo "$*" >> "$STUB_DIR/curl.calls"
 url="\${!#}"
 key="$STUB_DIR/curl.$(printf '%s' "$url" | tr -c 'a-zA-Z0-9' _)"
 n=$(cat "$key" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$key"
@@ -208,6 +217,8 @@ interface Run {
   readonly left: string[];
   /** The project the compose calls should name: the lower-cased name of the folder the script made (read at `create`). */
   readonly folderProject: string | undefined;
+  /** Every curl call's arguments, in order. */
+  readonly curlCalls: string[];
 }
 
 const lowerCased = (text: string | undefined): string | undefined => text?.toLowerCase();
@@ -238,7 +249,7 @@ function execute(text: string, env: Record<string, string>, noRoot: boolean): Ru
   const childEnv = { PATH: `${path.join(tree.dir, 'bin')}:${String(process.env.PATH)}`, HOME: tree.dir, TMPDIR: root, STUB_CALLS: tree.calls, STUB_DIR: tree.stub, ...env };
   const result = spawnSync('bash', [tree.script], { cwd: tree.dir, env: childEnv, encoding: 'utf8', timeout: 60000 });
   const folder = splitLines(fs.readFileSync(path.join(tree.stub, 'seen'), 'utf8')).find((entry) => !entry.endsWith('.owner'));
-  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
+  return { status: result.status, output: `${result.stdout}${result.stderr}`, calls: splitLines(fs.readFileSync(tree.calls, 'utf8')), curlCalls: splitLines(fs.existsSync(path.join(tree.stub, 'curl.calls')) ? fs.readFileSync(path.join(tree.stub, 'curl.calls'), 'utf8') : ''), left: fs.readdirSync(tree.tmp), folderProject: lowerCased(folder) };
 }
 
 const runAcme = (text: string, env: Record<string, string> = {}): Run => execute(text, env, false);
@@ -275,6 +286,21 @@ test('E2.4-h: run under stubs, every compose call names the owner-form project o
   // The run says which project and folder it made, so a person (or a hosted check) can look for exactly those afterwards.
   assert.match(run.output, new RegExp(`^compose project: ${run.folderProject}$`, 'm'));
   assert.match(run.output, /^owned folder: \S+-creds-acme-[0-9a-f]{8}$/m);
+});
+
+test('the guard of owned_cleanup is a block: owned_cleanup moved out of the STATE `if` is refused', () => {
+  const out = mutate(REAL_RUN, '  if [ -n "${STATE:-}" ]; then\n    owned_cleanup\n  fi\n', '  if [ -n "${STATE:-}" ]; then\n    :\n  fi\n  owned_cleanup\n');
+  assert.match(scriptProblems(out).join('\n'), /INSIDE the STATE guard/);
+  assert.deepEqual(scriptProblems(REAL_RUN), []);
+});
+
+test('every curl call is bounded by --max-time (a hung port 80 cannot hold a try for ever), on port 80 and on 443', () => {
+  const run = runAcme(REAL_RUN);
+  assert.equal(run.status, 0, run.output);
+  assert.ok(run.curlCalls.length >= 6, `too few curl calls to prove it: ${run.curlCalls.length}`);
+  const unbounded = run.curlCalls.filter((call) => !/--max-time \d+/.test(call));
+  assert.deepEqual(unbounded, [], 'a curl call with no --max-time');
+  assert.ok(run.curlCalls.some((call) => call.includes(':18081')), 'no call to port 80 was seen');
 });
 
 test('F9: a `down -v` that fails is reported with its exit code and its own words, and the run still ends with its own status; a clean one says nothing', () => {
