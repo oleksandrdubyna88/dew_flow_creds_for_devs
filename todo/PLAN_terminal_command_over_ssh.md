@@ -520,6 +520,8 @@ Stories: [PLAN_terminal_command_over_ssh_E2.md](PLAN_terminal_command_over_ssh_E
 
 ### E3 · Non-interactive roads and closing: Run with Secrets, agent, the rest of the documents
 
+Stories: [PLAN_terminal_command_over_ssh_E3.md](PLAN_terminal_command_over_ssh_E3.md).
+
 - **Goal.** The two roads that run a child process instead of typing into a terminal run a linked entry over SSH
   without a secret in argv, in the remote `ps` or in a history; the agent road runs only when the SSH entry itself is
   open to the agent for `exec`, and refuses with the exact sentence otherwise. Then every document describes the
