@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Before this change an agent could send an id and learn from the refusal that the entry or the folder exists, and learn its name,
 although the person never opened it to agents. Now a lookup of an id that the agent may not view gives the answer of an id that
 does not exist. The rule is applied in the two lookups and in the test of a move's destination, so each tool and each door gets it.
-The error codes, the statuses and the shapes of the answers do not change, and nothing changes for a node that the agent may view
-(an entry with *View* on and *Usable by agents* off still gets the sentence that names it and the switch to turn on).
+No new error code, status or answer shape is added: a request gets one of two answers that already existed. **But the answer for a
+hidden entry or a hidden folder does change: the HTTP status goes from 403 `denied` to 404 `not_found`** (the cases below say which
+tools). A move to a destination that the agent may not view keeps 403 `denied`, with a new sentence. Nothing changes for a node that
+the agent may view (an entry with *View* on and *Usable by agents* off still gets the sentence that names it and the switch to turn on).
 
 What an agent or a script reads now, case by case:
 
