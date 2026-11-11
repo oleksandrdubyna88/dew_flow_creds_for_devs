@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.2] — 2026-11-11 — A Terminal entry run over SSH now finds the tools of the server's login shell
+
 ### Security — Run with Secrets over SSH: a crafted value can no longer run as code on the server
 
 A secret value can hold a line break, so it could hold a whole line that looked like the first line of the script that Run with Secrets
