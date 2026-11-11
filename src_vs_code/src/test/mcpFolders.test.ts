@@ -193,9 +193,16 @@ test('a folder cannot swallow itself, and the refusal says so instead of succeed
 });
 
 test('a missing destination and one that is not open get one answer; a visible closed one gets another', () => {
-  const v = vault([folder('open', 'project', { mcp: { folderEdit: true } })]);
+  const v = vault([
+    folder('open', 'project', { mcp: { folderEdit: true } }),
+    folder('unlisted', 'private'),
+    folder('closed', 'shut', { mcp: { view: true } }),
+  ]);
+  const moving = v.local('open') as TreeNode;
 
-  assert.equal(moveRefusal(v.local('open') as TreeNode, 'ghost', v.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, 'ghost', v.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, 'unlisted', v.local), 'no_such_destination', 'a folder that is not open to view is one answer with a missing id');
+  assert.equal(moveRefusal(moving, 'closed', v.local), 'destination_closed', 'a folder that is visible and closed to editing keeps its own answer (G4)');
 });
 
 /** The fixture's folders, read the way `folderHooks` reads them: by account and id, and by id inside one account. */
