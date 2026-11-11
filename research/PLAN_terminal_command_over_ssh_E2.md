@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E2: the arrow and the VPN launcher, the folder run, the dependency chain
 
-> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e2 (local, not pushed), promotes with the parent.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E2.
+> Status: **IMPLEMENTED, 2026-11-11.** Merged as #337 (44f3f3dc) and released in extension 1.20.0 (#341), with the parent. Deviations: "Recorded deviations" at the end of this document, its flags 2-5, and the parent's §12. Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E2.
 > Branch `feat/terminal-command-over-ssh-e2`, started from E1's commit (2a42365); E2 lands as ONE PR. Scope: `src_vs_code`
 > only. Three stories, no cornerstone (the parent's ledger stays `Cornerstones: 2 of 2 — E1.S2, E1.S3`). Scenarios and
 > briefs by Opus; code and tests by Sonnet; review by Opus.
@@ -426,7 +426,7 @@ that call. Never a hand-typed ssh line.
 From the repository root (`CLAUDE.md` §Commands; `common/local-cpu-budget.md`):
 
 ```bash
-LP=$PWD/.claude/rules/shared/tools/low-priority.mjs
+LP=$PWD/.agents/conventions/tools/low-priority.mjs
 cd src_vs_code
 node $LP npm run typecheck
 node $LP npm run lint

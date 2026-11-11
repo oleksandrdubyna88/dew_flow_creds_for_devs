@@ -12,9 +12,21 @@
 
 import type { BridgeContext } from './bridgeContext';
 import type { ErrorCode } from './brokerProtocol';
+import type { JumpChain } from './sshOptions';
+import type { EntityMetadata } from './types';
 
 /** What a call is aimed at, as a grant names it: enough to read the live entity. */
 export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
+
+/**
+ * Another entry whose credential a call uses, beside the one its grant names: the SSH entry of a linked Terminal entry (E3.4, spec §2.5). The
+ * action names it to the broker (`UseAction.uses`), and the broker gives it what it gives the grant's entry.
+ */
+export interface UsedEntry {
+  readonly accountId: string;
+  readonly entityId: string;
+  readonly entityName: string;
+}
 
 /** Whether an action may prompt after the Allow: always, never, or by the call's target. */
 export type FollowUp = boolean | ((target: CallTarget) => boolean);
@@ -61,6 +73,18 @@ export interface UseActionContext {
    * Set by the broker: a prompt of this action's own is on screen; the one dialog place is that prompt's until it settles. Absent for a start that serves no request.
    */
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
+  /**
+   * The summary `summarize` answered for this call before consent: the dialog showed it, or it was computed for a call a policy settled.
+   * Absent for a start that serves no request. Set by the broker (`brokerCall.ts`); read by nothing but the linked run, which compares
+   * it with the summary rebuilt at run time, so a switch, a link or a target that changed while the dialog stood is refused, never run
+   * (E3.S2 security spec §2.3 step 3, §5). INTERNAL: no contract names it.
+   */
+  readonly summary?: string;
+  /**
+   * What `UseAction.uses` answered for this call; the broker holds this entry's one-use turn. Set by the broker (`brokerCall.ts`), in the same step
+   * as `summary`; read by the linked run, which compares it with the SSH entry the gate answers now (spec §2.3 step 3). INTERNAL: no contract names it.
+   */
+  readonly uses?: UsedEntry;
 }
 
 /**
@@ -85,6 +109,32 @@ export interface UseActionResult {
   readonly body: unknown;
 }
 
+/**
+ * One command run over SSH, as the caller decided it (E3.S2, E3-D9): the SSH entry AS THE CALLER READ IT (one snapshot), the chain of
+ * its jump hosts as a thunk (so `ssh:exec` keeps resolving it AFTER the credential, as it always did), the ONE remote argument,
+ * and the bound on the run.
+ */
+export interface OverSshCall {
+  readonly ssh: EntityMetadata;
+  readonly jump: () => JumpChain;
+  readonly remoteCommand: string;
+  readonly timeoutMs: number;
+  /**
+   * The extension's own agent is the only one this call may use or forward (parent D17): its environment loses the host's `SSH_AUTH_SOCK` and every
+   * `CREDS_REF_` name, and a forwarding entry sends no `-A` while that agent is not up. REQUIRED, so each caller decides where it is written;
+   * `ssh:exec` says `false` (todo/PLAN_ssh_exec_own_agent_forwarding.md), the agent's linked run `true`.
+   */
+  readonly ownAgentOnly: boolean;
+  /** Ask ssh for no remote pty (`-T` first, parent D16): only the agent's linked run says it; `ssh:exec` keeps today's argv. */
+  readonly noTty?: boolean;
+}
+
+/**
+ * `execOverSsh`'s shape (`sshUseActions.ts`): credential, argv, spawn, answer, key file removed. Injected into the actions that
+ * run over SSH, so a module that imports no `vscode` can start an ssh without importing the one that does.
+ */
+export type OverSsh = (ctx: UseActionContext, call: OverSshCall) => Promise<UseActionResult>;
+
 export interface UseAction {
   readonly kind: string;
   readonly action: string;
@@ -98,7 +148,6 @@ export interface UseAction {
    * to" a database the day a second kind arrived.
    */
   readonly verb: string;
-  /** Reject a malformed body before any dialog or side effect. */
   /**
    * Whether this action can WRITE a stored secret while it runs.
    *
@@ -124,19 +173,34 @@ export interface UseAction {
    * (`create`, `terminal`, `up`, `down`, `rotate`); a function of the call's target for one that may on some entries only: `exec`,
    * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket), read when the dialog
    * closes on an Allow (`ConsentQuestion.followUp`), not before it opens: the socket may come up or go down while the dialog is on screen.
-   * `query`, `run` and a non-forwarding `exec` keep nothing once the dialog closes.
+   * `run` on some entries only: a Terminal entry whose linked SSH entry is usable by the agent and forwards the agent while the agent
+   * socket is up (E3.S2, the signing prompt of `ssh -A`; the gate is asked first, so the flag says nothing of an SSH entry the agent may
+   * not use). `query`, a stored script, a `run` with no such link and a non-forwarding `exec` keep nothing once the dialog closes.
    */
   readonly asksAfterConsent?: FollowUp;
 
   /**
-   * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
+   * Reject a malformed body — or a target this window refuses on purpose (`credentialExportEnvAction`; the linked run's gate) — before any
+   * dialog or side effect.
+   *
+   * <p>`code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
    * body. A well-formed request this window refuses on purpose (an export into another computer's
    * terminals) names `denied`: a client does not read it as its own mistake, and, unlike a 404, does
-   * not read it as "this window does not have the entry" and go looking in the next one.
+   * not read it as "this window does not have the entry" and go looking in the next one.</p>
+   *
+   * <p>`target` is REQUIRED (E3.S2 security spec §5): a call that forgets the grant does not compile, so "the gate runs before the
+   * dialog" is not a thing each call site must remember.</p>
    */
-  validate(body: unknown): { ok: true } | { ok: false; message: string; code?: ErrorCode };
-  /** One line for the first-use consent dialog (e.g. the command about to run). */
-  summarize(body: unknown): string;
+  validate(body: unknown, target: CallTarget): { ok: true } | { ok: false; message: string; code?: ErrorCode };
+  /** One line for the first-use consent dialog (e.g. the command about to run). `target` is required for the same reason as `validate`'s. */
+  summarize(body: unknown, target: CallTarget): string;
+  /**
+   * The entry this call ALSO uses, or nothing. The broker asks once per call, in the same synchronous step as `summarize`, and then gives that
+   * entry what it gives the grant's entry: a waiting rotated value goes in before the mask table is read, its one-use turn is taken, and a
+   * one-use entry is burned after a call that answered 200 (spec §2.5). An action that answers must ask its gate first. OPTIONAL by decision: a
+   * required method would make every shipped action state today whether it uses a second entry (spec §2.5).
+   */
+  uses?(target: CallTarget): UsedEntry | undefined;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */
   describeOutcome(result: UseActionResult): string;
   /** Perform the action. Called only after validation and consent. */

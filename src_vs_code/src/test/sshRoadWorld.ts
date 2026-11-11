@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { isLinkTarget } from '../remoteLaunch';
 import { resolveJumpChain } from '../sshOptions';
-import type { SshRoad } from '../sshRoad';
+import { E3_INHERITED_DROP } from '../sshProgram';
+import type { SpawnLaunch, SshRoad } from '../sshRoad';
 import type { PreparedSsh, ReadySsh } from '../sshSession';
 import type { EntityMetadata, TreeNode } from '../types';
 import type { World } from './vpnWorld';
+import { OUR_SOCKET } from './fakePaths';
 
 /**
  * The world of the SSH roads (E2.S1 of `PLAN_terminal_command_over_ssh.md`): an SSH entry that passes the real link
@@ -39,6 +41,12 @@ export interface FakeRoad extends SshRoad {
   readonly cleaned: string[];
   /** Shared with the test: `prepare <sshId>#<n>` is pushed here, beside whatever the test pushes. */
   readonly events: string[];
+  /** The `use` of each `prepare`, in order (E3.S1): `'terminal'` when the road named none. NOT in `calls`: E2 tests deep-equal that. */
+  readonly uses: string[];
+  /** Every answer of `spawnLaunch`, in order. */
+  readonly launches: SpawnLaunch[];
+  /** One `'<sshId>#<n>'` per call of a ready's `cleanup`, repeats INCLUDED (`cleaned` keeps only the call that did something). */
+  readonly cleanupCalls: string[];
 }
 
 /** The `ReadySsh` of one preparation. The explicit return type is the compile-time pin: a drift of `ReadySsh` fails here. */
@@ -72,8 +80,18 @@ function jumpOf(ssh: EntityMetadata, lookup: ((id: string) => TreeNode | undefin
   return chain.ok ? chain.value : undefined;
 }
 
-/** A road that answers by `script` (ready, for every call, when none is given). */
-export function fakeRoad(script: RoadScript = () => ({}), lookup?: (id: string) => TreeNode | undefined, events: string[] = []): FakeRoad {
+/**
+ * A road that answers by `script` (ready, for every call, when none is given). `spawnWarning` is the warning every `spawnLaunch`
+ * answers with (the key is absent when undefined), and `spawnRefused` makes `spawnLaunch` refuse with that sentence (E3.S1): they
+ * are the LAST parameters, so E2's calls are unchanged.
+ */
+export function fakeRoad(
+  script: RoadScript = () => ({}),
+  lookup?: (id: string) => TreeNode | undefined,
+  events: string[] = [],
+  spawnWarning?: string,
+  spawnRefused?: string,
+): FakeRoad {
   const counts = new Map<string, number>();
   const road: FakeRoad = {
     calls: [],
@@ -81,10 +99,14 @@ export function fakeRoad(script: RoadScript = () => ({}), lookup?: (id: string) 
     cleaned: [],
     readies: [],
     events,
-    prepare: (_accountId, ssh): Promise<PreparedSsh> => {
+    uses: [],
+    launches: [],
+    cleanupCalls: [],
+    prepare: (_accountId, ssh, use): Promise<PreparedSsh> => {
       const n = (counts.get(ssh.id) ?? 0) + 1;
       counts.set(ssh.id, n);
       road.calls.push({ ssh, n });
+      road.uses.push(use ?? 'terminal');
       events.push(`prepare ${ssh.id}#${n}`);
       return Promise.resolve(answered(road, ssh, n, script(ssh, n), jumpOf(ssh, lookup)));
     },
@@ -92,8 +114,30 @@ export function fakeRoad(script: RoadScript = () => ({}), lookup?: (id: string) 
       road.refusedShown += 1;
       return Promise.resolve();
     },
+    spawnLaunch: (ssh, env): SpawnLaunch => {
+      const launch = launchAnswer(ssh, env, spawnWarning, spawnRefused);
+      road.launches.push(launch);
+      return launch;
+    },
   };
   return road;
+}
+
+/** What the fake road answers a spawn: the refusal, or a program `ssh` in `/storage` with the askpass environment it was given. */
+function launchAnswer(ssh: EntityMetadata, env: Readonly<Record<string, string>> | undefined, warning: string | undefined, refused: string | undefined): SpawnLaunch {
+  if (refused !== undefined) {
+    return { kind: 'refused', reason: refused };
+  }
+  const base = spawnedWith(ssh.agentForward === true && warning === undefined, env);
+  return warning === undefined ? base : { ...base, warning };
+}
+
+/** The extension agent's socket, as a fake road's launch gives it when the entry forwards and no warning was scripted. */
+
+/** As the real road does: a forwarding entry is served by OUR agent unless the launch has the warning, and then its socket is in the environment. */
+function spawnedWith(ownAgent: boolean, env: Readonly<Record<string, string>> | undefined): Extract<SpawnLaunch, { kind: 'spawn' }> {
+  const socket: Record<string, string> = ownAgent ? { SSH_AUTH_SOCK: OUR_SOCKET } : {};
+  return { kind: 'spawn', program: 'ssh', cwd: '/storage', env: { ...socket, ...(env ?? {}) }, ownAgent, withoutEnv: E3_INHERITED_DROP };
 }
 
 function answered(road: FakeRoad, ssh: EntityMetadata, n: number, answer: RoadAnswer, jump: string | undefined): PreparedSsh {
@@ -105,6 +149,7 @@ function answered(road: FakeRoad, ssh: EntityMetadata, n: number, answer: RoadAn
   }
   let done = false;
   const cleanup = (): void => {
+    road.cleanupCalls.push(`${ssh.id}#${n}`);
     if (!done) {
       done = true;
       road.cleaned.push(`${ssh.id}#${n}`);

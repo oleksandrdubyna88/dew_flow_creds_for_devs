@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { after, test } from 'node:test';
 import { commandFingerprint } from '../commandTrust';
-import { terminalRunAction } from '../agentUseActions';
+import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
 import { planDependencyRun, StepRefusal } from '../dependencyRun';
 import { FolderFacts, planFolderRun } from '../folderRun';
 import { osMismatch } from '../hostShell';
@@ -13,6 +13,7 @@ import { L, folderWorld, named, session } from './folderWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust, ownerChain, rootTitle, startVpn, terminalNamed, world } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /**
  * E1.S1 of `PLAN_terminal_command_over_ssh.md`: EVERY road that runs a Terminal entry refuses a linked one with the one
@@ -52,22 +53,23 @@ test('the_arrow_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_tru
   assert.deepEqual(aw.terminals, []);
 });
 
-test('run_with_secrets_refuses_a_linked_entry_and_reads_no_secret', async () => {
+// E3.S1: Run with Secrets has a road for a linked command; `s1` is not in this world, so the entry says `sshLinkOf`'s missing-entry sentence.
+test('run_with_secrets_refuses_a_linked_entry_whose_ssh_entry_is_missing_and_reads_no_secret', async () => {
   const vault = vaultOf(['alert']);
   const aw = arrowWorld({}, [['e1', 'echo linked creds://me/alert/password']], vault.source);
   const args: CommandArg[] = [{ value: 'creds://me/alert/password' }];
   await aw.runWithSecrets({ ...LINKED, commandArgs: args });
   assert.deepEqual(aw.masked, []);
   assert.deepEqual(vault.calls, []);
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')]);
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)]);
 });
 
-test('run_with_secrets_refuses_a_linked_entry_before_the_trust_question_and_reads_no_secret', async () => {
+test('run_with_secrets_refuses_a_linked_entry_whose_ssh_entry_is_missing_before_the_trust_question_and_reads_no_secret', async () => {
   const vault = vaultOf(['alert']);
   const aw = arrowWorld({}, [], vault.source);
   const args: CommandArg[] = [{ value: 'creds://me/alert/password' }];
   await aw.runWithSecrets({ ...LINKED, commandArgs: args });
-  assert.deepEqual(aw.warnings, [SENTENCE('deploy')], 'the sentence is the only thing shown');
+  assert.deepEqual(aw.warnings, [MISSING(LINKED)], 'the sentence is the only thing shown');
   assert.deepEqual(aw.warnings.filter((t) => RUN_THIS.test(t)), [], 'no trust modal');
   assert.deepEqual(aw.masked, []);
   assert.deepEqual(vault.calls, []);
@@ -160,11 +162,11 @@ test('a_linked_launcher_starts_nothing_and_asks_nothing', async () => {
 
 // ---- the agent --------------------------------------------------------------------------------------------------
 
-test('the_agent_run_refuses_a_linked_entry_before_the_trust_check_and_the_slot', async () => {
+test('the_agent_run_refuses_a_linked_entry_whose_ssh_entry_is_missing_with_the_one_sentence_before_the_trust_check_and_the_slot', async () => {
   let slotCalls = 0;
   const deps = {
-    storage: { getNode: () => ({ details: LINKED }), getDbConnection: async () => '' },
-    storageDir: '/tmp/does-not-matter',
+    storage: { getNode: () => ({ details: LINKED }), getAccounts: () => [{ accountId: 'acct-1' }], getDbConnection: async () => '' },
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => {
       slotCalls += 1;
@@ -174,12 +176,15 @@ test('the_agent_run_refuses_a_linked_entry_before_the_trust_check_and_the_slot',
     trustStore: { get: () => [commandFingerprint('e1', 'echo linked')], update: async () => undefined },
     applyEnv: async () => ({ written: [] as string[], withheld: [] }),
     onPath: () => false,
+    overSsh: async () => {
+      throw new Error('this world has no SSH road');
+    },
   } as never;
   const ctx = { accountId: 'acct-1', entityId: 'e1', entityName: 'deploy', signal: new AbortController().signal };
   const result = await terminalRunAction(deps).run(ctx, {});
   const error = (result.body as { error?: { code?: string; message?: string } }).error;
-  assert.equal(error?.code, 'not_supported');
-  assert.equal(error?.message, SENTENCE('deploy'));
+  assert.equal(error?.code, 'denied');
+  assert.equal(error?.message, linkedRunRefused('deploy'));
   assert.equal(slotCalls, 0);
 });
 

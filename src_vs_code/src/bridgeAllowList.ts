@@ -13,7 +13,7 @@ import type { Refusal } from './brokerRequests';
  *
  * <p>The table is a decision, not a convenience: what a server's agent may do through the person's laptop. It
  * serves the reads, and `exec` and `query` on the three prefixes (token, alias, MCP) behind the scope wall of
- * `bridgeScope.ts`. `run` waits for E3, which decides where a stored command runs; `terminal` opens a window an
+ * `bridgeScope.ts`. `run` stays refused: E3 decided that a stored command runs from the person's machine only; `terminal` opens a window an
  * agent on a server cannot type into; `up` and `down` act on the laptop's VPN; `rotate`, delete, create, the folder
  * verbs and the config read are the person's alone (parent plan §4.2).</p>
  */
@@ -45,6 +45,7 @@ const USE_ACTIONS = ['exec', 'terminal', 'query', 'run', 'exportEnv', 'up', 'dow
 /** What a bridge serves of them (exported so a test can hold the consent text to it: every served action needs a run site, `bridgeConsentText.ts`). */
 export const SERVED_ACTIONS: ReadonlySet<string> = new Set(['exec', 'query']);
 const EXPORT_ACTION = 'exportEnv';
+const RUN_ACTION = 'run';
 const FOLDER_VERBS = ['create', 'edit', 'delete'] as const;
 
 const served = (method: 'GET' | 'POST', path: string, walled: boolean, why: string): BridgeRoute =>
@@ -62,7 +63,10 @@ function useRoute(prefix: string, action: string): BridgeRoute {
   if (action === EXPORT_ACTION) {
     return refused(path, 'a value written to this window\'s terminals would land on the server', 'denied', EXPORT_REFUSED);
   }
-  return refused(path, 'not named by the parent plan; default deny decides (run waits for E3)');
+  if (action === RUN_ACTION) {
+    return refused(path, "a stored line runs from the person's machine only; E3 decided (PLAN_terminal_command_over_ssh_E3_S2_security.md §8)");
+  }
+  return refused(path, 'not named by the parent plan; default deny decides');
 }
 
 /** The routes that answer from the vault and so go through the wall, and the three that answer the same to anyone. */

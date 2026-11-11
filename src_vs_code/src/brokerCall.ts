@@ -8,7 +8,7 @@ import { grantLimits } from './grantLimits';
 import { OneUseLane, laneKeyFor } from './oneUseLane';
 import { NOT_LAUNCHED } from './requestLife';
 import { MaskTable } from './secretMasker';
-import { UseAction, UseActionResult } from './useActions';
+import { CallTarget, UseAction, UseActionResult, UsedEntry } from './useActions';
 
 /**
  * One call, from the moment consent is in hand to the moment its answer is on the wire.
@@ -36,11 +36,11 @@ export interface CallDeps {
     caller: CallerLabel | undefined;
   }): void;
   /** Answer a refusal that happened before the action ran. */
-  refuse(code: ErrorCode, message: string): void;
+  refuse(code: ErrorCode, message: string, why?: string): void;
   /** Answer a failure of the action itself, with a reason already masked for the journal. */
   failed(why: string, actionRan: boolean): void;
   refresh(): Promise<MaskTable | undefined>;
-  burn(status: number): Promise<void>;
+  burn(status: number, of?: UsedEntry): Promise<void>;
   /**
    * Record that this call was dropped because its client left — nothing reserved or run for it, and
    * nothing answered, because nobody is there. `stage` says where.
@@ -66,6 +66,8 @@ export interface CallSubject {
   /** Who the body says is calling — a label for the modal and the line, never a decision. */
   readonly caller: CallerLabel | undefined;
   readonly summary: string;
+  /** What `UseAction.uses` answered for this call: the entry it also uses (the SSH entry of a linked run), or `undefined`. The key is REQUIRED, as `caller` is. */
+  readonly uses: UsedEntry | undefined;
   readonly table: MaskTable;
   /** The request's life: fires when its client hung up (`requestLife.ts`). Handed to the action it starts. */
   readonly signal: AbortSignal;
@@ -87,7 +89,39 @@ export async function performCall(deps: CallDeps, call: CallSubject): Promise<vo
 }
 
 /**
- * Take this entity's turn, if it may only be used once.
+ * The entry this call ALSO uses, asked once per call in the same synchronous step as `summarize` (spec §2.2): the action's own answer, or nothing for an
+ * action that declares none. A function here, and not an optional call in the server's `perform`, which has no complexity left.
+ */
+export function usedByCall(action: UseAction, target: CallTarget): UsedEntry | undefined {
+  return action.uses?.(target);
+}
+
+/**
+ * One entry whose turn a call takes: the grant's, or the entry the call ALSO uses (`CallSubject.uses`, the SSH entry of a linked run).
+ * `used` says which, because a refusal for the grant's own entry and one for the used entry read differently (spec §2.5).
+ */
+interface Turn {
+  readonly key: string;
+  readonly accountId: string;
+  readonly entityId: string;
+  readonly entityName: string;
+  readonly used: boolean;
+}
+
+const turnOf = (entry: UsedEntry, used: boolean): Turn => ({ key: laneKeyFor(entry.accountId, entry.entityId), ...entry, used });
+
+/** The grant's entry first, then the used entry when its key differs: one key is never queued twice (a job of `KeyedQueue` must not wait for a run on its own key). */
+function turnsOf(call: CallSubject): Turn[] {
+  const own = turnOf(call.grant, false);
+  const used = call.uses === undefined ? undefined : turnOf(call.uses, true);
+  return used === undefined || used.key === own.key ? [own] : [own, used];
+}
+
+/** A plain compare, no locale: every call sorts the same two keys the same way, which is what keeps two calls from waiting for each other. */
+const byKey = (a: Turn, b: Turn): number => (a.key < b.key ? -1 : 1);
+
+/**
+ * Take the turns of every entry this call uses that may only be used once — and say which turn was already spent.
  *
  * <p>Everything else goes straight through, unqueued: serialising ordinary entries would trade a
  * real capability — two parallel queries against `prod-db` — for a guarantee only one kind of
@@ -101,29 +135,56 @@ export async function performCall(deps: CallDeps, call: CallSubject): Promise<vo
  * <p>And the SPENT check comes before the one-use question, not after. The one-use question reads
  * storage, a burned entry is not in storage, so a call that arrives after the first has finished
  * sees an entry that no longer looks one-use — skips the queue, and runs. The lane knows what this
- * window has spent; storage knows what the entry is; they diverge exactly at the burn.</p>
+ * window has spent; storage knows what the entry is; they diverge exactly at the burn. It holds for
+ * an entry whose delete FAILED too: the marker is set whether or not the delete worked.</p>
  *
- * <p>Keyed by ACCOUNT and entity, since storage addresses an entry by both — see `laneKeyFor`.</p>
+ * <p>A linked run uses TWO entries (the grant's Terminal entry and its SSH entry), and the SSH entry's one-use
+ * promise is the same promise (spec §2.5): its spent marker is asked first, its turn is taken in the same lane
+ * a `creds_exec` on it queues in, and it is burned after a 200 (`burnInTurn`). The turns are taken in ONE fixed
+ * order, ascending lane key, nested: every wait then goes from a smaller key to a greater one, so no circle of
+ * waits can form and two calls that use each other's entry both end. An action takes no turn itself. A queue
+ * moves on when its job settles, on failure as on success (`keyedQueue.ts`), so a held turn always ends.</p>
+ *
+ * <p>Keyed by ACCOUNT and entity, since storage addresses an entry by both — see `laneKeyFor`. The spent marker is a
+ * member of the lane's existing per-window set (at most 512 keys, the oldest dropped first), as for `creds_exec`.</p>
  */
 async function queuedIfOneUse(deps: CallDeps, call: CallSubject): Promise<void> {
-  const key = laneKeyFor(call.grant.accountId, call.grant.entityId);
-  // The lane first, because it and storage stop agreeing the moment an entry burns.
-  if (deps.lane.isSpent(key) || (await takesItsTurn(deps, call, key))) {
-    refuseSpent(deps, call);
+  const turns = turnsOf(call);
+  // The lane first, because it and storage stop agreeing the moment an entry burns; and the one-use question in the SAME step, with no await between.
+  const spent = turns.find((turn) => deps.lane.isSpent(turn.key));
+  if (spent !== undefined) {
+    refuseSpent(deps, call, spent);
+    return;
+  }
+  const lost = await inTurns(deps, call, turns.filter((turn) => deps.isOneUse?.(turn.accountId, turn.entityId) === true).sort(byKey));
+  if (lost !== undefined) {
+    refuseSpent(deps, call, lost);
   }
 }
 
-/** Run it — queued if this entry is one-use — and say whether it was already spent. */
-async function takesItsTurn(deps: CallDeps, call: CallSubject, key: string): Promise<boolean> {
-  if (deps.isOneUse?.(call.grant.accountId, call.grant.entityId) !== true) {
+/** Run the call inside each queued turn, nested in order; the turn that found its entry already spent, or nothing when the call ran (or ran unqueued). */
+async function inTurns(deps: CallDeps, call: CallSubject, queued: readonly Turn[]): Promise<Turn | undefined> {
+  if (queued.length === 0) {
     await answer(deps, call);
-    return false;
+    return undefined;
   }
-  return (await deps.lane.run(key, () => answer(deps, call))).spent;
+  const [first, ...rest] = queued;
+  const outcome = await deps.lane.run(first.key, () => inTurns(deps, call, rest));
+  return outcome.spent ? first : outcome.value;
 }
 
-function refuseSpent(deps: CallDeps, call: CallSubject): void {
-  deps.refuse('not_found', `"${call.grant.entityName}" was one-use and has already been used.`);
+/** What the agent reads when the entry its call also uses was one-use and is spent: ONE entry named, the grant's (spec §2.5). */
+export function usedEntrySpent(name: string): string {
+  return `"${name}" uses another entry that was one-use, and an agent has already used it, so nothing ran.`;
+}
+
+/** The grant's own entry: `not_found`, today's words. The used entry: `denied` (not a 404, which the CLI reads as "this window does not have the entry"), with the entry named in the journal only. */
+function refuseSpent(deps: CallDeps, call: CallSubject, turn: Turn): void {
+  if (!turn.used) {
+    deps.refuse('not_found', `"${call.grant.entityName}" was one-use and has already been used.`);
+    return;
+  }
+  deps.refuse('denied', usedEntrySpent(call.grant.entityName), `the entry it also uses, "${turn.entityName}", was one-use and has already been used`);
 }
 
 /**
@@ -200,7 +261,7 @@ function spentToken(deps: CallDeps, call: CallSubject, now: number, limits: Gran
 function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
   return new Promise<UseActionResult>((resolve) => {
-    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing }, body));
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing, summary: call.summary, uses: call.uses }, body));
   });
 }
 
@@ -211,13 +272,28 @@ function lateAnswerOf(deps: CallDeps, call: CallSubject): (what: string) => void
   return (what) => deps.log({ grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, outcome: 'ignored', detail: detail(what), caller });
 }
 
+/**
+ * After a call that answered, burn what it spent: the grant's entry as always, then the entry it also used. In a `finally`, because
+ * `burnAndMark` catches a delete that fails but its one-use question reads storage first and can throw, and a throw for the grant's entry must
+ * not leave a USED entry unburned and unmarked (spec §2.5; the reviewer's m7). Both burns end inside `answer`, so before either turn is released.
+ */
+async function burnInTurn(deps: CallDeps, call: CallSubject, status: number): Promise<void> {
+  try {
+    await deps.burn(status);
+  } finally {
+    if (call.uses !== undefined) {
+      await deps.burn(status, call.uses);
+    }
+  }
+}
+
 function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionResult>): Promise<void> {
   const { grant, useAction, action, via, summary, table, caller } = call;
   return runAndDeliver(
     {
       respond: deps.respond,
       log: deps.log,
-      burn: deps.burn,
+      burn: (status) => burnInTurn(deps, call, status),
       fail: (why, ran, ended) => failedOrAbandoned(deps, call, why, ran, ended),
       mutatesSecrets: useAction.mutatesSecrets,
       refresh: deps.refresh,

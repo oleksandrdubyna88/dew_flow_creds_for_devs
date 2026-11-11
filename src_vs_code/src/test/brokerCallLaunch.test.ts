@@ -77,6 +77,7 @@ function callFor(options: Options, events: string[], started: UseActionContext[]
     via: 'token',
     caller: undefined,
     summary: 'id',
+    uses: undefined,
     table: { entries: [] },
     signal: aborter.signal,
     ...(options.spend === undefined ? {} : { spend: options.spend }),

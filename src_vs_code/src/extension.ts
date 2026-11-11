@@ -66,7 +66,7 @@ import { DEFAULT_DISTRO, WslRelayManager, spawnWslRelay } from './wslRelayManage
 import { AliasMap, aliasEntry, aliasFor, listAliases } from './cliAliases';
 import { EphemeralSweeper } from './ephemeralSweeper';
 import { oneUseIn } from './entityExpiry';
-import { maskEntriesFor } from './maskEntries';
+import { maskEntriesFor, maskEntriesWithLink } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
@@ -85,7 +85,7 @@ import { entityFieldReading } from './entityFieldReading';
 import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
 import { RefSource } from './secretRef';
-import { MIN_MASKABLE_LENGTH } from './outputMask';
+export { maskingBanner } from './outputMask';
 import { wireSshAgent } from './sshAgentWiring';
 import { autoLockMinutesSetting } from './autoLockSetting';
 import { folderPath } from './quickOpen';
@@ -513,7 +513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     storageDir,
     // What makes masking live: the broker asks for the grant entity's own secret values and
     // redacts them out of whatever the agent is about to read.
-    maskEntriesFor: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    maskEntriesFor: (accountId, entityId) => maskEntriesWithLink(storage, accountId, entityId),
     releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId), // before the table: brokerHooks.ts
     // What makes "until an agent uses it once" real: a successful call destroys the entry through
     // the one deletion path, tombstone and revision history included.
@@ -954,28 +954,6 @@ export function deactivate(): void {
 // ---------- command bodies ----------
 
 /** Other entities of the account that can serve as an SSH key source. */
-
-/**
- * What the terminal says about masking, told truthfully.
- *
- * <p>A value shorter than `MIN_MASKABLE_LENGTH` is deliberately NOT masked — replacing a
- * six-digit string would turn every line number and byte count in the output into a placeholder,
- * which is worse than the leak it prevents. But a **one-time code is exactly six digits**, so a
- * banner promising that everything is masked would be false precisely where somebody is watching
- * for it. So the promise is scoped to the values it actually covers, and the short ones are named
- * as not covered.</p>
- */
-export function maskingBanner(secrets: readonly { value: string; label: string }[]): string {
-  const short = secrets.filter((s) => s.value.length < MIN_MASKABLE_LENGTH).map((s) => s.label);
-  const masked =
-    "Values are in this process's environment only, and are replaced with <CREDS_MASKED:NAME> in its output.";
-  const caveat =
-    short.length === 0
-      ? ''
-      : ` NOT masked, because they are too short to replace without mangling ordinary output: ` +
-        `${short.join(', ')} — a one-time code is six digits, so treat this window as showing it.`;
-  return `${masked}${caveat} No PTY: a program that needs a real terminal should use Run in Terminal instead.`;
-}
 
 /**
  * What the config read route needs: which entries carry a key hash, and how to read one.

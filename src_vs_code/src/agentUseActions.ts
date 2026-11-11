@@ -9,7 +9,12 @@ import {
   errorBody,
   statusForErrorCode,
 } from './brokerProtocol';
-import { UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
+import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards } from './useActions';
+import type { BridgeContext } from './bridgeContext';
+import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
+import { UsableEntry, UsableFound, accountOnly, findUsableEntry } from './mcpEntries';
+import { describeSshTarget } from './sshCommand';
+import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -17,8 +22,7 @@ import { runBounded } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
-import { resolveCommand } from './commandLine';
-import { sshLinkRefusal } from './remoteLaunch';
+import { LaunchPlan, SshLink, planLaunch, refusalSaid, sshLinkOf, trustLineFor } from './remoteLaunch';
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
@@ -71,6 +75,11 @@ export interface AgentUseDeps {
    * is a contract the CLI and the MCP read, and widening it is not part of #48.
    */
   applyEnv(details: EntityMetadata, accountId: string): Promise<EnvApplyResult>;
+  /**
+   * The agent's socket when one is running (the wiring spreads `sshDeps`, which carries it). Optional: a test world leaves it out, and the
+   * run of a linked entry then reads "this agent does not forward" (E3.S2 §6).
+   */
+  agentSocket?: () => string | undefined;
 }
 
 function fail(code: ErrorCode, message: string): UseActionResult {
@@ -78,7 +87,7 @@ function fail(code: ErrorCode, message: string): UseActionResult {
 }
 
 /** The live entity behind a grant, re-read on every call — never a snapshot. */
-function entityFor(deps: { storage: EntitySource }, ctx: UseActionContext): EntityMetadata | undefined {
+function entityFor(deps: { storage: EntitySource }, ctx: CallTarget): EntityMetadata | undefined {
   return deps.storage.getNode(ctx.accountId, ctx.entityId)?.details;
 }
 
@@ -177,6 +186,257 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
   };
 }
 
+// ---- the agent's run of a stored TERMINAL command (E3.S2) ---------------------------------------------------------------------------
+//
+// An entry with no SSH link runs HERE (`runHere`, the local shell). An entry linked to an SSH entry runs there (`runThere`, over `execOverSsh`),
+// and only when THE GATE lets it through: the SSH entry must itself be usable by agents (`findUsableEntry`, in the Terminal entry's own
+// account). Everything below is the decision of `research/PLAN_terminal_command_over_ssh_E3_S2_security.md`; each function is named there.
+
+/** Said whenever the gate refuses, for every reason: it names the Terminal entry only — the SSH entry is not the agent's to read (spec §4). */
+export function linkedRunRefused(name: string): string {
+  return `"${name}" is set to run over an SSH connection that is not open to agents, so nothing ran. A person can run "${name}" from the CredsForDevs tree to see why, and can open that SSH connection to agents in its Agent access section.`;
+}
+
+/** Said when a switch, a link or a target changed between the question and the run (spec §2.4). */
+export function changedWhileAsking(name: string): string {
+  return `"${name}" or its SSH connection changed while the question was open, so nothing ran. Ask again: the next question shows the new target.`;
+}
+
+/**
+ * The journal's line for a gate refusal: the real reason, which the agent is not told (spec §4). The ending says what the agent WAS told: on a bridge
+ * it read the bridge's own sentence, and the spec's literal ending (that the SSH connection is not open to it) would be false there.
+ */
+export function journalLine(name: string, why: string, bridged = false): string {
+  const told = bridged ? `the agent was told: ${BRIDGE_NOT_SERVED}` : 'the agent was told only that the SSH connection is not open to it';
+  return `creds_run — "${name}": ${why} (${told})`;
+}
+
+const LOCAL_SUMMARY = 'the stored command, as its Run button would type it';
+
+type LinkedLink = Extract<SshLink, { kind: 'linked' }>;
+
+/** What the gate answers: no link (run here), a link the agent may use (run there), or a refusal (`why` is for the journal, `message` for the agent). */
+export type LinkedCall =
+  | { kind: 'local' }
+  | { kind: 'linked'; link: LinkedLink; found: UsableFound }
+  | { kind: 'refused'; code: ErrorCode; message: string; why: string };
+
+const LOCAL: LinkedCall = { kind: 'local' };
+
+function refusedCall(code: ErrorCode, message: string, why: string): LinkedCall {
+  return { kind: 'refused', code, message, why };
+}
+
+function whyUnusable(found: UsableEntry): string {
+  return found === undefined ? 'the SSH entry is hidden from agents (PIN) or is not in this account' : `the SSH entry's "Usable by agents" switch is off`;
+}
+
+/** Step 5: the SSH entry's own `Usable by agents` switch, looked up in the Terminal entry's account only (`accountOnly`). */
+function usableGate(deps: AgentUseDeps, target: CallTarget, link: LinkedLink): LinkedCall {
+  const found = findUsableEntry(accountOnly(deps.storage, target.accountId), link.ssh.id, 'exec');
+  return found?.kind === 'usable' ? { kind: 'linked', link, found } : refusedCall('denied', linkedRunRefused(target.entityName), whyUnusable(found));
+}
+
+/** Step 4: the link, through `sshLinkOf` (the one reader), with a lookup bound to the Terminal entry's account. */
+function linkGate(deps: AgentUseDeps, target: CallTarget, entity: EntityMetadata): LinkedCall {
+  const link = sshLinkOf(entity, (id) => deps.storage.getNode(target.accountId, id));
+  if (link.kind === 'refused') {
+    return refusedCall('denied', linkedRunRefused(target.entityName), link.reason);
+  }
+  return link.kind === 'none' ? LOCAL : usableGate(deps, target, link);
+}
+
+/**
+ * THE GATE: may THIS agent run the Terminal entry's line over its SSH entry (spec §2.1). The one place that decides it; `validate`,
+ * `summarize`, `run` and `forwardsAgentNow` all ask it first, so nothing that reads the link's target, the SSH entry or `planLaunch` runs
+ * before it has answered. Reads no secret and writes nothing; the journal note is its caller's.
+ *
+ * <p>Until it answers `linked`, an agent reads exactly one of: `not_found` (the Terminal entry is gone, `run`'s own), the bridge's refusal (on a
+ * bridge, for every linked entry alike, before the link is resolved) or the one sentence.</p>
+ */
+export function linkedCall(deps: AgentUseDeps, target: CallTarget, bridge: BridgeContext | undefined): LinkedCall {
+  const entity = entityFor(deps, target);
+  if (entity === undefined || sshLinkOf(entity, () => undefined).kind === 'none') {
+    return LOCAL;
+  }
+  if (bridge !== undefined) {
+    return refusedCall('not_supported', BRIDGE_NOT_SERVED, 'a Remote Bridge does not serve run');
+  }
+  return linkGate(deps, target, entity);
+}
+
+/** The trust line the run would be vouched on, or nothing when the run will refuse before the trust question (the plan, or the chain). */
+function trustLineOf(deps: AgentUseDeps, accountId: string, entity: EntityMetadata, link: LinkedLink): string | undefined {
+  const plan = planLaunch(entity, link, { stayOpen: false });
+  if (plan.kind !== 'remote') {
+    return undefined;
+  }
+  const chain = resolveJumpChain(plan.ssh, (id) => deps.storage.getNode(accountId, id)?.details);
+  return chain.ok ? trustLineFor(plan.ssh, chain.value, plan.line) : undefined;
+}
+
+/**
+ * What the consent dialog says (spec §5): today's words for an entry with no link; for a linked one the SSH entry, its target and the trust line
+ * the person approved from the tree. The summary never holds a key path, a known_hosts path or an environment value: none is in the trust line.
+ */
+export function linkedSummary(deps: AgentUseDeps, call: LinkedCall, entity: EntityMetadata, accountId: string): string {
+  if (call.kind !== 'linked') {
+    return LOCAL_SUMMARY;
+  }
+  const head = `the stored command, on the SSH connection "${call.link.sshName}" (${describeSshTarget(call.link.ssh)})`;
+  const line = trustLineOf(deps, accountId, entity, call.link);
+  return line === undefined ? head : `${head}, as: ${line}`;
+}
+
+function summaryFor(deps: AgentUseDeps, target: CallTarget): string {
+  const entity = entityFor(deps, target);
+  return entity === undefined ? LOCAL_SUMMARY : linkedSummary(deps, linkedCall(deps, target, undefined), entity, target.accountId);
+}
+
+/**
+ * Whether a prompt can follow the Allow: the signing prompt of `ssh -A`, when the SSH entry forwards the agent and the extension's agent is up.
+ * Asks the GATE first (spec §6, G22): the door reads this flag BEFORE `validate`, so a flag read from the link alone would tell an agent whether
+ * a closed or PIN-hidden SSH entry forwards the agent. It writes no note.
+ */
+export function forwardsAgentNow(deps: AgentUseDeps, target: CallTarget): boolean {
+  const call = linkedCall(deps, target, undefined);
+  return call.kind === 'linked' && call.link.ssh.agentForward === true && deps.agentSocket?.() !== undefined;
+}
+
+/** `validate`: the gate, before any dialog (spec §2.2). The refusal and its note are written here, once. */
+function validateTarget(deps: AgentUseDeps, target: CallTarget): ReturnType<UseAction['validate']> {
+  const gate = linkedCall(deps, target, undefined);
+  if (gate.kind !== 'refused') {
+    return { ok: true };
+  }
+  deps.note(journalLine(target.entityName, gate.why));
+  return { ok: false, code: gate.code, message: gate.message };
+}
+
+/**
+ * The entry this call ALSO uses, for the broker (`UseAction.uses`, spec §2.5): the SSH entry, and only when the gate answers `linked`. Asks the gate first and
+ * writes no note, so before the gate passes it tells the broker, and through it nobody, anything about the SSH entry. Called in the step of `summarize`.
+ */
+function usedEntryOf(deps: AgentUseDeps, target: CallTarget): UsedEntry | undefined {
+  const gate = linkedCall(deps, target, undefined);
+  return gate.kind === 'linked' ? { accountId: target.accountId, entityId: gate.link.ssh.id, entityName: gate.link.sshName } : undefined;
+}
+
+/** A LINKED run needs BOTH what the person was shown and the entry the broker holds: an absent summary or an absent `ctx.uses` is not equal, so it refuses (spec §2.3 step 3, A4). */
+function linkedChanged(deps: AgentUseDeps, ctx: UseActionContext, gate: Extract<LinkedCall, { kind: 'linked' }>, entity: EntityMetadata): boolean {
+  return ctx.summary !== linkedSummary(deps, gate, entity, ctx.accountId) || ctx.uses?.entityId !== gate.link.ssh.id;
+}
+
+/** A LOCAL run uses no second entry: a `ctx.uses` means the broker holds the turn of an SSH entry this run does not use any more, and refuses. An absent summary is not compared (the trust check of `runHere` holds the line). */
+function localChanged(ctx: UseActionContext): boolean {
+  return (ctx.summary !== undefined && ctx.summary !== LOCAL_SUMMARY) || ctx.uses !== undefined;
+}
+
+/** Whether what the person was shown, or the entry the broker holds, differs from what would run now (spec §2.3 step 3, in two parts). */
+function changedSince(deps: AgentUseDeps, ctx: UseActionContext, gate: LinkedCall, entity: EntityMetadata): boolean {
+  return gate.kind === 'linked' ? linkedChanged(deps, ctx, gate, entity) : localChanged(ctx);
+}
+
+/** The refusals before anything runs: the gate's own (journalled with the real reason), then the compare. */
+function gateRefusal(deps: AgentUseDeps, ctx: UseActionContext, gate: LinkedCall, entity: EntityMetadata): UseActionResult | undefined {
+  if (gate.kind === 'refused') {
+    deps.note(journalLine(ctx.entityName, gate.why, ctx.bridge !== undefined));
+    return fail(gate.code, gate.message);
+  }
+  return changedSince(deps, ctx, gate, entity) ? fail('denied', changedWhileAsking(ctx.entityName)) : undefined;
+}
+
+/** A plan that is not the one the road wants: its own refusal (it names the Terminal entry only), or today's "no command". */
+function unrunnable(entity: EntityMetadata, ctx: UseActionContext, plan: LaunchPlan): UseActionResult {
+  return plan.kind === 'refused' ? fail('not_supported', refusalSaid(entity, plan.reason)) : fail('no_credential', `"${ctx.entityName}" has no command.`);
+}
+
+/** Issue #103: refused here exactly as on the human path; and a changed or new line is untrusted until a person has run it. */
+function localRefusal(deps: AgentUseDeps, ctx: UseActionContext, entity: EntityMetadata, line: string): UseActionResult | undefined {
+  const mismatch = osMismatch(ctx.entityName, entity.terminalOs, process.platform);
+  if (mismatch !== undefined) {
+    return fail('not_supported', mismatch);
+  }
+  return isCommandTrusted(deps.trustStore, ctx.entityId, line) ? undefined : untrusted(ctx.entityName, 'the line');
+}
+
+function pwshAvailable(deps: { onPath?: (exe: string) => boolean }): boolean {
+  return process.platform === 'win32' && deps.onPath?.('pwsh.exe') === true;
+}
+
+async function spawnLocal(deps: AgentUseDeps & { onPath?: (exe: string) => boolean }, ctx: UseActionContext, entity: EntityMetadata, line: string): Promise<UseActionResult> {
+  const release = deps.acquireExecSlot();
+  if (release === undefined) {
+    return fail('too_many_requests', 'Too many commands are already running.');
+  }
+  try {
+    // The same native shell the human path pins — pwsh 7 when this Windows has it.
+    const hasPwsh = pwshAvailable(deps);
+    const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));
+    const outcome = await runBounded(run.program, run.args, run.shell, {
+      env: process.env,
+      timeoutMs: clampExecTimeout(undefined),
+      ...launchGuards(deps.signal, ctx),
+    });
+    return { status: 200, body: outcome };
+  } finally {
+    release();
+  }
+}
+
+/** An entry with no link: the LOCAL road, unchanged — the one place a Terminal entry's line reaches a local shell of the agent's (`capturedRun`). */
+async function runHere(deps: AgentUseDeps & { onPath?: (exe: string) => boolean }, ctx: UseActionContext, entity: EntityMetadata): Promise<UseActionResult> {
+  const plan = planLaunch(entity, { kind: 'none' }, { stayOpen: false });
+  if (plan.kind !== 'local') {
+    return unrunnable(entity, ctx, plan);
+  }
+  const refused = localRefusal(deps, ctx, entity, plan.line);
+  return refused ?? spawnLocal(deps, ctx, entity, plan.line);
+}
+
+/** After the plan: the jump chain resolves (`ssh:exec`'s words), and the TRUST LINE — not the local line — has been vouched for on this machine. */
+function remoteRefusal(deps: AgentUseDeps, ctx: UseActionContext, plan: Extract<LaunchPlan, { kind: 'remote' }>, chain: JumpChain): UseActionResult | undefined {
+  if (!chain.ok) {
+    return fail('no_credential', chain.reason);
+  }
+  return isCommandTrusted(deps.trustStore, ctx.entityId, trustLineFor(plan.ssh, chain.value, plan.line)) ? undefined : untrusted(ctx.entityName, 'the line');
+}
+
+async function overSshWithSlot(deps: AgentUseDeps & { overSsh: OverSsh }, ctx: UseActionContext, plan: Extract<LaunchPlan, { kind: 'remote' }>, chain: JumpChain): Promise<UseActionResult> {
+  const release = deps.acquireExecSlot();
+  if (release === undefined) {
+    return fail('too_many_requests', 'Too many commands are already running.');
+  }
+  try {
+    return await deps.overSsh(ctx, { ssh: plan.ssh, jump: () => chain, remoteCommand: plan.remoteCommand, timeoutMs: clampExecTimeout(undefined), ownAgentOnly: true, noTty: true });
+  } finally {
+    release();
+  }
+}
+
+/**
+ * A linked entry whose SSH entry the gate let through: the BARE line, as ONE remote command, through `execOverSsh` (credential, jump and pin as the
+ * agent's `ssh:exec` has them). `plan.ssh` is the object the gate's `link` carried — one snapshot, no second `sshLinkOf`.
+ */
+async function runThere(deps: AgentUseDeps & { overSsh: OverSsh }, ctx: UseActionContext, entity: EntityMetadata, link: LinkedLink): Promise<UseActionResult> {
+  const plan = planLaunch(entity, link, { stayOpen: false });
+  if (plan.kind !== 'remote') {
+    return unrunnable(entity, ctx, plan);
+  }
+  const chain = resolveJumpChain(plan.ssh, (id) => deps.storage.getNode(ctx.accountId, id)?.details);
+  const refused = remoteRefusal(deps, ctx, plan, chain);
+  return refused ?? overSshWithSlot(deps, ctx, plan, chain);
+}
+
+async function runEntity(deps: AgentUseDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }, ctx: UseActionContext, entity: EntityMetadata): Promise<UseActionResult> {
+  const gate = linkedCall(deps, ctx, ctx.bridge);
+  const refused = gateRefusal(deps, ctx, gate, entity);
+  if (refused !== undefined) {
+    return refused;
+  }
+  return gate.kind === 'linked' ? runThere(deps, ctx, entity, gate.link) : runHere(deps, ctx, entity);
+}
+
 /**
  * Run a stored TERMINAL command.
  *
@@ -184,55 +444,30 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
  * reason rather than by luck: the stored line is human-authored shell syntax — pipes,
  * chained commands — with `{name}` filled from an allow-listed name by `resolveCommand`, and is
  * byte-for-byte what the human Run button hands to a shell. Nothing the agent sends contributes to it.</p>
+ *
+ * <p>A Terminal entry linked to an SSH entry runs on that host instead, and only when the SSH entry is itself open to
+ * this agent (the gate, `linkedCall`): see the block above and the E3.S2 security spec. A linked entry never reaches the
+ * local shell.</p>
+ *
+ * <p>A linked run is an agent's USE of the SSH entry: `uses` names it to the broker, which takes its one-use turn, releases a waiting
+ * rotated value of it before the mask table is read, and burns it after a 200, as for `creds_exec` on it. The run then needs the entry the broker
+ * holds (`ctx.uses`) as well as the summary the dialog showed (spec §2.5, §2.3 step 3).</p>
  */
-export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean }): UseAction {
+export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }): UseAction {
   return {
     kind: 'terminal',
     action: 'run',
     mutatesSecrets: false,
+    // The signing prompt of a forwarded agent arrives through the socket: only a linked entry whose SSH entry is usable, forwards and has the agent up.
+    asksAfterConsent: (target) => forwardsAgentNow(deps, target),
     verb: 'run the stored command of',
     describeOutcome: execOutcome,
-    validate: () => ({ ok: true }),
-    summarize: () => 'the stored command, as its Run button would type it',
-    // eslint-disable-next-line complexity
+    validate: (_body, target) => validateTarget(deps, target),
+    summarize: (_body, target) => summaryFor(deps, target),
+    uses: (target) => usedEntryOf(deps, target),
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
-      if (entity === undefined) {
-        return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
-      }
-      const resolved = resolveCommand(entity);
-      if (resolved.kind === 'empty') {
-        return fail('no_credential', `"${ctx.entityName}" has no command.`);
-      }
-      if (resolved.kind === 'refused') {
-        return fail('not_supported', `"${ctx.entityName}" will not run: ${resolved.reason}`);
-      }
-      const { line } = resolved;
-      // Issue #103 and the SSH link (E1.S1): refused here exactly as on the human path.
-      const mismatch = sshLinkRefusal(entity) ?? osMismatch(ctx.entityName, entity.terminalOs, process.platform);
-      if (mismatch !== undefined) {
-        return fail('not_supported', mismatch);
-      }
-      if (!isCommandTrusted(deps.trustStore, ctx.entityId, line)) {
-        return untrusted(ctx.entityName, 'the line');
-      }
-      const release = deps.acquireExecSlot();
-      if (release === undefined) {
-        return fail('too_many_requests', 'Too many commands are already running.');
-      }
-      try {
-        // The same native shell the human path pins — pwsh 7 when this Windows has it.
-        const hasPwsh = process.platform === 'win32' && deps.onPath?.('pwsh.exe') === true;
-        const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));
-        const outcome = await runBounded(run.program, run.args, run.shell, {
-          env: process.env,
-          timeoutMs: clampExecTimeout(undefined),
-          ...launchGuards(deps.signal, ctx),
-        });
-        return { status: 200, body: outcome };
-      } finally {
-        release();
-      }
+      return entity === undefined ? fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`) : runEntity(deps, ctx, entity);
     },
   };
 }

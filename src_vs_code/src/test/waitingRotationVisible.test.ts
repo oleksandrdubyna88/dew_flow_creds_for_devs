@@ -13,6 +13,7 @@ import type { UseAction } from '../useActions';
 import { loadEachWithVscode } from './vscodeStub';
 import { world as brokerWorld, call, share } from './brokerWorld';
 import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, memoryStorages, seedEntry, sinks } from './pinWorld';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /**
  * A rotated value that waits beside an UNPROTECTED entry is used, and said, at every door
@@ -292,7 +293,7 @@ async function agentWorld(live: string = OLD_CONN, waiting = true): Promise<Agen
   quarantine.announceReleasesWith(storage, words.sayReleasedValues);
   const action = dbQueryAction({
     storage,
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => () => undefined,
     note: () => undefined,

@@ -21,7 +21,7 @@
  * <p>Pure and `vscode`-free.</p>
  */
 
-import { MaskEntry, MaskTable, buildMaskTable, maskText, placeholderFor } from './secretMasker';
+import { MIN_MASKABLE_LENGTH, MaskEntry, MaskTable, buildMaskTable, maskText, placeholderFor } from './secretMasker';
 
 /**
  * What a secret looks like in output, and how short is too short, are decided ONCE — in
@@ -97,4 +97,35 @@ export class SecretMasker {
     const masker = new SecretMasker(secrets);
     return masker.push(text) + masker.flush();
   }
+}
+
+/**
+ * The words a value shorter than `MIN_MASKABLE_LENGTH` adds to a banner: `''` when every value is masked, else the sentence
+ * naming the labels that are NOT. Shared by the local banner (`maskingBanner`) and the one over SSH
+ * (`secretsOverSshBanner`, E3.S1), so the two say the same thing about the same values.
+ */
+export function shortValuesCaveat(secrets: readonly { value: string; label: string }[]): string {
+  const short = secrets.filter((s) => s.value.length < MIN_MASKABLE_LENGTH).map((s) => s.label);
+  return short.length === 0
+    ? ''
+    : ` NOT masked, because they are too short to replace without mangling ordinary output: ` +
+        `${short.join(', ')} — a one-time code is six digits, so treat this window as showing it.`;
+}
+
+/**
+ * What the terminal says about masking, told truthfully.
+ *
+ * <p>A value shorter than `MIN_MASKABLE_LENGTH` is deliberately NOT masked — replacing a
+ * six-digit string would turn every line number and byte count in the output into a placeholder,
+ * which is worse than the leak it prevents. But a **one-time code is exactly six digits**, so a
+ * banner promising that everything is masked would be false precisely where somebody is watching
+ * for it. So the promise is scoped to the values it actually covers, and the short ones are named
+ * as not covered.</p>
+ *
+ * <p>Moved here from `extension.ts` (E3.S1, the words unchanged) so a unit test can load it without the whole extension.</p>
+ */
+export function maskingBanner(secrets: readonly { value: string; label: string }[]): string {
+  const masked =
+    "Values are in this process's environment only, and are replaced with <CREDS_MASKED:NAME> in its output.";
+  return `${masked}${shortValuesCaveat(secrets)} No PTY: a program that needs a real terminal should use Run in Terminal instead.`;
 }

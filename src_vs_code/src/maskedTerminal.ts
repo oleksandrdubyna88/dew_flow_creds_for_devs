@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { SecretMasker } from './outputMask';
 import { killChild } from './childKill';
 import type { MaskEntry } from './secretMasker';
+import { type EnvDrop, NOTHING_DROPPED, envWithout } from './sshProgram';
 
 /**
  * A terminal whose output the extension owns, so a secret the child was given cannot appear in
@@ -21,22 +22,54 @@ import type { MaskEntry } from './secretMasker';
  * they do when piped. That is the price of seeing the output at all, and it is why *Run in
  * Terminal* stays exactly as it was — this is a second door, not a replacement.</p>
  *
- * <p>Input is forwarded to the child's stdin, so a prompt can still be answered by hand.</p>
+ * <p>Input is forwarded to the child's stdin, so a prompt can still be answered by hand — except in argv mode with a script on
+ * stdin (below).</p>
+ *
+ * <p><b>The argv mode of Run with Secrets over SSH (E3.S1).</b> The child is a program and its arguments, spawned with
+ * `shell: false`, in a folder the caller names (never the workspace). A script goes to its stdin once and stdin is then closed, so
+ * keystrokes are NOT forwarded. The run ends exactly once (`onEnded`: the child's end, a failed start, a close before the start, a
+ * throw from `show()`), and its end destroys stdin, so a part of the script not yet taken by the child (it holds the values) is
+ * dropped and never written later; `open()` after the end spawns nothing and writes nothing. The child's environment is the inherited
+ * one without `withoutEnv`, with `env` on top: the run ADDS only the askpass variables and, when the extension's agent serves it, its
+ * `SSH_AUTH_SOCK`; it REMOVES the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name; other ordinary variables (`PATH`, `HOME`, …) are
+ * inherited as by every spawned program (E3-D8, parent D17 (a)).</p>
  */
 
-export interface MaskedRunOptions {
+/** What every masked run has, shell or argv. */
+interface MaskedRunBase {
   /** Terminal name, as it appears in the panel. */
   name: string;
-  /** The command line, run through a shell — the same text *Run in Terminal* would send. */
-  commandLine: string;
-  /** Variables the child gets on top of the parent environment (the resolved secrets). */
+  /**
+   * Variables the child gets on top of the parent environment (the resolved secrets). In argv mode this carries NO resolved
+   * value: the askpass variables of a password SSH entry and, when the extension's agent serves the run, its `SSH_AUTH_SOCK` only
+   * (E3-D8) — the values go in `stdinText`.
+   */
   env: Record<string, string>;
   /**
    * Values to replace in everything the child prints. A `{ value, label }` pair makes the
    * placeholder name which secret stood there, which is worth doing when several are in play.
    */
   secrets: readonly (string | MaskEntry)[];
-  /** Working directory; the first workspace folder when omitted. */
+  /** One line written before the run, explaining what is masked. */
+  banner: string;
+  /**
+   * Written to the child's stdin ONCE, right after the spawn, and stdin is then closed (the script of Run with Secrets over
+   * SSH). Keystrokes are then NOT forwarded: stdin is the script, and it is closed.
+   */
+  stdinText?: string;
+  /**
+   * Called EXACTLY ONCE for a run whose terminal was made, when the run ends (E3-D7): the child's `close`, its `error`, a failed
+   * start, the terminal closed before the child started, or a throw from `show()` — whichever comes first. A throw from
+   * `createTerminal` is the caller's to clean: no terminal, no run.
+   */
+  onEnded?: () => void;
+}
+
+/** The shell variant: the command line runs through a shell (today's Run with Secrets on this machine). */
+interface MaskedShellRun extends MaskedRunBase {
+  /** The command line, run through a shell — the same text *Run in Terminal* would send. */
+  commandLine: string;
+  /** Working directory; the first workspace folder when omitted — the shell variant only. */
   cwd?: string;
   /**
    * The shell to run the line through — `vscode.env.shell`, so the shell that EXECUTES the
@@ -48,9 +81,30 @@ export interface MaskedRunOptions {
    * `runPlan.shellRead()` and this spawn talking about the same shell.</p>
    */
   shell?: string;
-  /** One line written before the run, explaining what is masked. */
-  banner: string;
+  argv?: undefined;
+  withoutEnv?: undefined;
 }
+
+/**
+ * The argv variant (Run with Secrets over SSH, E3.S1): the program and its arguments, spawned with `shell: false`. `cwd` is
+ * REQUIRED, so argv mode never falls back to the workspace folder (E3-D5, round 2 B1).
+ */
+interface MaskedArgvRun extends MaskedRunBase {
+  argv: readonly [string, ...string[]];
+  cwd: string;
+  /**
+   * Names and prefixes taken out of the inherited environment before `env` is laid on top (E3's two roads, parent D17 (a)): Run with
+   * Secrets over SSH removes the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name. The run ADDS only what `env` holds and REMOVES
+   * what this names; other ordinary variables (`PATH`, `HOME`, …) are inherited as by every spawned program. Absent: nothing is
+   * removed.
+   */
+  withoutEnv?: EnvDrop;
+  commandLine?: undefined;
+  shell?: undefined;
+}
+
+/** Exactly one of `commandLine` and `argv` is set, in the type. */
+export type MaskedRunOptions = MaskedShellRun | MaskedArgvRun;
 
 const CRLF = '\r\n';
 
@@ -59,65 +113,140 @@ function forTerminal(text: string): string {
   return text.replace(/(?<!\r)\n/g, CRLF);
 }
 
+/** What one run holds: its options, its two emitters and its state (`over` once it has ended). */
+interface Run {
+  readonly options: MaskedRunOptions;
+  readonly writer: vscode.EventEmitter<string>;
+  readonly closer: vscode.EventEmitter<number>;
+  child: childProcess.ChildProcessWithoutNullStreams | undefined;
+  over: boolean;
+  /** The run's ONE once-only end (E3-D7): the first call destroys stdin and calls `onEnded`; later calls do nothing. */
+  readonly ended: () => void;
+}
+
 /**
  * Open the terminal and run. Returns it so a caller can dispose it; the child is killed when
  * the terminal closes, and the terminal reports the exit code rather than vanishing.
+ *
+ * <p>A throw from `createTerminal` is the caller's to clean (no terminal, no run). A throw from `show()` comes AFTER it, so VS Code
+ * may still call `open()` later: the run is ended first (a later `open()` spawns nothing and writes nothing), the terminal is
+ * disposed, and the error is rethrown.</p>
  */
 export function runInMaskedTerminal(options: MaskedRunOptions): vscode.Terminal {
-  const writer = new vscode.EventEmitter<string>();
-  const closer = new vscode.EventEmitter<number>();
-  let child: childProcess.ChildProcessWithoutNullStreams | undefined;
-
-  const pty: vscode.Pseudoterminal = {
-    onDidWrite: writer.event,
-    onDidClose: closer.event,
-    open(): void {
-      writer.fire(forTerminal(`${options.banner}\n`));
-      const masker = new SecretMasker(options.secrets);
-      const started = spawnChild(options);
-      if (!started.ok) {
-        writer.fire(forTerminal(`\nCould not start: ${started.reason}\n`));
-        closer.fire(1);
-        return;
-      }
-      child = started.child;
-      const emit = (chunk: Buffer): void => writer.fire(forTerminal(masker.push(chunk.toString('utf8'))));
-      child.stdout.on('data', emit);
-      child.stderr.on('data', emit);
-      child.on('error', (error) => {
-        writer.fire(forTerminal(`\n${describeError(error)}\n`));
-        closer.fire(1);
-      });
-      child.on('close', (code) => {
-        // The held-back tail is released before the exit line, or the last characters of the
-        // output would arrive after it — or not at all.
-        writer.fire(forTerminal(masker.flush()));
-        writer.fire(forTerminal(`\n[exit ${code ?? 'killed'}]\n`));
-        closer.fire(code ?? 1);
-      });
-    },
-    close(): void {
-      if (child === undefined) {
-        return;
-      }
-      // `tree: true` because the spawn goes through a SHELL: on Windows the child is cmd.exe
-      // or PowerShell and the real program is a grandchild, so killing the child alone would
-      // leave it running — with the resolved secrets still in its environment and no terminal
-      // left to notice. Closing the panel has to mean the process is gone.
-      killChild(child, { tree: true });
-    },
-    handleInput(data: string): void {
-      // Echo, because a pipe does not: without it typing into a prompt shows nothing.
-      writer.fire(data === '\r' ? CRLF : data);
-      writeToChild(child, data === '\r' ? '\n' : data);
-    },
-  };
-
-  const terminal = vscode.window.createTerminal({ name: options.name, pty });
-  terminal.show();
+  const run = maskedRun(options);
+  const terminal = vscode.window.createTerminal({ name: options.name, pty: run.pty });
+  try {
+    terminal.show();
+  } catch (error) {
+    run.ended();
+    terminal.dispose();
+    throw error;
+  }
   return terminal;
 }
 
+function maskedRun(options: MaskedRunOptions): { pty: vscode.Pseudoterminal; ended: () => void } {
+  const writer = new vscode.EventEmitter<string>();
+  const closer = new vscode.EventEmitter<number>();
+  const run: Run = {
+    options,
+    writer,
+    closer,
+    child: undefined,
+    over: false,
+    ended: (): void => {
+      if (run.over) {
+        return;
+      }
+      run.over = true;
+      run.child?.stdin.destroy();
+      options.onEnded?.();
+    },
+  };
+  const pty: vscode.Pseudoterminal = {
+    onDidWrite: writer.event,
+    onDidClose: closer.event,
+    open: () => openRun(run),
+    close: () => closeRun(run),
+    handleInput: (data) => inputRun(run, data),
+  };
+  return { pty, ended: run.ended };
+}
+
+function openRun(run: Run): void {
+  if (run.over) {
+    return; // closed before it started, or a `show()` that threw: nothing is spawned, nothing is written
+  }
+  run.writer.fire(forTerminal(`${run.options.banner}\n`));
+  const started = spawnChild(run.options);
+  if (!started.ok) {
+    run.writer.fire(forTerminal(`\nCould not start: ${started.reason}\n`));
+    run.closer.fire(1);
+    run.ended();
+    return;
+  }
+  run.child = started.child;
+  listenToChild(run, started.child, new SecretMasker(run.options.secrets));
+  giveScriptOrDrop(run, started.child);
+}
+
+/**
+ * The script (`stdinText`, the values) goes to a child that somebody watches. A run that is already over is not watched: the terminal
+ * closed while the run was starting (a listener of the banner closed it), and the close found no child and only ended the run. That
+ * child goes with its tree and the script is never written to it.
+ */
+function giveScriptOrDrop(run: Run, child: childProcess.ChildProcessWithoutNullStreams): void {
+  if (run.over) {
+    child.stdin.destroy();
+    killChild(child, { tree: true });
+    return;
+  }
+  if (run.options.stdinText !== undefined) {
+    child.stdin.end(run.options.stdinText);
+  }
+}
+
+function listenToChild(run: Run, child: childProcess.ChildProcessWithoutNullStreams, masker: SecretMasker): void {
+  const emit = (chunk: Buffer): void => run.writer.fire(forTerminal(masker.push(chunk.toString('utf8'))));
+  child.stdout.on('data', emit);
+  child.stderr.on('data', emit);
+  child.on('error', (error) => {
+    run.writer.fire(forTerminal(`\n${describeError(error)}\n`));
+    run.closer.fire(1);
+    run.ended();
+  });
+  child.on('close', (code) => {
+    // The held-back tail is released before the exit line, or the last characters of the
+    // output would arrive after it — or not at all.
+    run.writer.fire(forTerminal(masker.flush()));
+    run.writer.fire(forTerminal(`\n[exit ${code ?? 'killed'}]\n`));
+    run.closer.fire(code ?? 1);
+    run.ended();
+  });
+}
+
+function closeRun(run: Run): void {
+  if (run.child === undefined) {
+    run.ended(); // the terminal closed before the child started
+    return;
+  }
+  // `tree: true` because the spawn may go through a SHELL: on Windows the child is cmd.exe
+  // or PowerShell and the real program is a grandchild, so killing the child alone would
+  // leave it running — with the resolved secrets still in its environment and no terminal
+  // left to notice. Closing the panel has to mean the process is gone. In argv mode there is no
+  // shell and the child IS the program (`ssh`); `tree: true` stays — on Windows it also ends a
+  // jump host's helper `ssh`, on POSIX that helper is OpenSSH's to end (E3-D11, hand check 3).
+  killChild(run.child, { tree: true });
+}
+
+function inputRun(run: Run, data: string): void {
+  if (run.options.stdinText !== undefined) {
+    return; // stdin is the script, and it is closed: no echo, no write
+  }
+  // Echo, because a pipe does not: without it typing into a prompt shows nothing.
+  run.writer.fire(data === '\r' ? CRLF : data);
+  writeToChild(run.child, data === '\r' ? '\n' : data);
+}
 
 /**
  * Forward a keystroke to the child, and never let a late one take the window down.
@@ -152,13 +281,34 @@ function workingDirectory(cwd: string | undefined): string | undefined {
   return cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
-/** Start the child through the shell the caller named — the same one the rewrite used. */
+/** What `spawnChild` starts: the program, its arguments, whether a shell parses it, and where. */
+export interface Launch {
+  readonly program: string;
+  readonly args: readonly string[];
+  readonly shell: string | boolean;
+  readonly cwd: string | undefined;
+}
+
+/**
+ * The one spawn of the masked run. Argv mode: the program and its arguments, `shell: false`, in the folder the caller named (never
+ * the workspace, E3-D5). Shell variant (today): the command line through the shell the caller named, in the workspace folder when
+ * no `cwd` was given.
+ */
+export function launchOf(options: MaskedRunOptions): Launch {
+  if (options.argv !== undefined) {
+    return { program: options.argv[0], args: options.argv.slice(1), shell: false, cwd: options.cwd };
+  }
+  return { program: options.commandLine, args: [], shell: shellOption(options.shell), cwd: workingDirectory(options.cwd) };
+}
+
+/** Start the child through the shell the caller named — the same one the rewrite used — or by argv. */
 function spawnChild(options: MaskedRunOptions): SpawnResult {
   try {
-    const child = childProcess.spawn(options.commandLine, [], {
-      shell: shellOption(options.shell),
-      cwd: workingDirectory(options.cwd),
-      env: { ...process.env, ...options.env },
+    const launch = launchOf(options);
+    const child = childProcess.spawn(launch.program, launch.args, {
+      shell: launch.shell,
+      cwd: launch.cwd,
+      env: { ...envWithout(process.env, options.withoutEnv ?? NOTHING_DROPPED, process.platform), ...options.env },
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     }) as childProcess.ChildProcessWithoutNullStreams;

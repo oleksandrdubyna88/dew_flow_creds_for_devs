@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { EntityMetadata } from './types';
 
 /**
  * Which OpenSSH binary this extension launches, and the environment that lets it reach the
@@ -258,6 +259,11 @@ export interface AgentForwardEnv {
   warning?: string;
 }
 
+/** Whether a socket answer names an agent: present and not empty. The one rule of the argv's `ownAgent` and of the child's `SSH_AUTH_SOCK`. */
+export function hasAgentSocket(socketPath: string | undefined): socketPath is string {
+  return socketPath !== undefined && socketPath.length > 0;
+}
+
 /**
  * The child's environment, with `SSH_AUTH_SOCK` added when — and only when — this connection
  * asked to forward the agent and there is one to forward.
@@ -272,7 +278,7 @@ export function agentForwardEnv(
   if (!agentForward) {
     return { env: base };
   }
-  if (socketPath === undefined || socketPath.length === 0) {
+  if (!hasAgentSocket(socketPath)) {
     return { env: base, warning: NO_AGENT_TO_FORWARD };
   }
   return { env: { ...base, SSH_AUTH_SOCK: socketPath } };
@@ -318,4 +324,100 @@ function pathHoldsSsh(
   const names = platform === 'win32' ? ['ssh.exe', 'ssh'] : ['ssh'];
   const join = platform === 'win32' ? path.win32.join : path.posix.join;
   return dirs.some((dir) => dir.length > 0 && names.some((n) => exists(join(dir, n))));
+}
+
+// ---- the spawn of Run with Secrets over SSH (E3.S1) ---------------------------------------------------------------------
+
+/**
+ * The program and environment of an `ssh` that the extension host SPAWNS for `entity` (not one typed into a terminal): the agent's
+ * `ssh:exec` (`agentAwareLaunch`) and Run with Secrets over SSH (`SshRoad.spawnLaunch`) both use it, so the composition lives once.
+ * `openSshBinary` chooses the program (the built-in Windows client only when agent forwarding needs a named pipe) and
+ * `agentForwardEnv` adds `SSH_AUTH_SOCK` when — and only when — the entry forwards the agent and there is one. `warning` is
+ * `NO_AGENT_TO_FORWARD`, present only when forwarding was asked for with no agent behind it.
+ */
+export function sshSpawnLaunch(
+  entity: EntityMetadata,
+  socket: string | undefined,
+  platform: NodeJS.Platform,
+): { program: string; env: NodeJS.ProcessEnv; warning?: string } {
+  const wanted = entity.agentForward === true;
+  const forwarding = agentForwardEnv({}, wanted, socket);
+  const launch = { program: openSshBinary('ssh', wanted, platform), env: forwarding.env };
+  return forwarding.warning === undefined ? launch : { ...launch, warning: forwarding.warning };
+}
+
+/** Said when no ssh client can be started for Run with Secrets over SSH (E3-D5): nothing was run, and nothing was asked. */
+export const NO_SSH_TO_SPAWN =
+  'No ssh client was found to start: no absolute folder of PATH holds ssh.exe, and C:\\Windows\\System32\\OpenSSH\\ssh.exe is not there. ' +
+  'Nothing was run: install the OpenSSH client, then run this again.';
+
+/** A Windows path that names its own drive or share: a drive letter, or a `\\` (two backslashes) prefix. `.`, `tools` and `\dir` are relative to something. */
+function isAbsoluteWindows(candidate: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(candidate) || candidate.startsWith('\\\\');
+}
+
+/**
+ * The program to SPAWN for Run with Secrets over SSH, from the one `openSshBinary` chose: never a bare name on Windows (CWE-426).
+ *
+ * <p>`openSshBinary` answers the bare word `ssh` without agent forwarding, and a bare name given to `spawn(…, { shell: false })` on
+ * Windows is resolved the way `CreateProcess` resolves one: the CURRENT folder is searched ahead of `PATH` (the hole named in
+ * `openSshBinary`'s doc). An `ssh.exe` in a repository would receive the askpass password and every value on stdin. So on Windows a
+ * program with a drive letter or a `\\` (two backslashes) prefix is kept (the built-in client `openSshBinary` named), and a bare name becomes the FIRST
+ * `ssh.exe` in an ABSOLUTE folder of `PATH` (a relative entry — `.`, `tools`, `\dir` — is skipped and never asked), else the
+ * built-in OpenSSH when it exists, else `undefined` (the caller says `NO_SSH_TO_SPAWN`). That keeps the client a bare spawn would
+ * find, minus the current folder, as `openSshBinary`'s doc wants. Off Windows the program is kept: `execvp` searches `PATH`, not
+ * the current folder. The caller also gives the child a folder of its own, which closes the same hole on POSIX with a `.` in `PATH`.</p>
+ */
+export function spawnableSshProgram(
+  program: string,
+  platform: NodeJS.Platform,
+  pathValue: string | undefined,
+  exists: (candidate: string) => boolean,
+): string | undefined {
+  if (platform !== 'win32' || isAbsoluteWindows(program)) {
+    return program;
+  }
+  const found = pathDirsOf(pathValue, ';')
+    .filter(isAbsoluteWindows)
+    .map((dir) => path.win32.join(dir, 'ssh.exe'))
+    .find(exists);
+  return found ?? builtInIfThere(exists);
+}
+
+function builtInIfThere(exists: (candidate: string) => boolean): string | undefined {
+  return exists(builtInOpenSsh('ssh')) ? builtInOpenSsh('ssh') : undefined;
+}
+
+// ---- what E3's two roads take out of the inherited environment (parent D17 (a)) --------------------------------------------
+
+/** The name of the variable through which an ssh finds an agent. */
+export const AGENT_SOCKET_ENV = 'SSH_AUTH_SOCK';
+
+/** What is taken out of an inherited environment: the names, and every name that starts with one of the prefixes. */
+export interface EnvDrop {
+  readonly names: readonly string[];
+  readonly prefixes: readonly string[];
+}
+
+/** Nothing is taken out: the environment of a masked run that names no `withoutEnv`. */
+export const NOTHING_DROPPED: EnvDrop = { names: [], prefixes: [] };
+
+/**
+ * What E3's two roads (Run with Secrets over SSH, the agent's linked run) remove from the ssh child's inherited environment: the
+ * extension host's own `SSH_AUTH_SOCK`, so the person's own agent is not offered through the inherited variable, and every
+ * `CREDS_REF_` name, so no reference variable of another run reaches the remote through a `SendEnv` pattern (parent D17 (a)).
+ */
+export const E3_INHERITED_DROP: EnvDrop = { names: [AGENT_SOCKET_ENV], prefixes: ['CREDS_REF_'] };
+
+/**
+ * A COPY of `base` without each key that equals one of `drop.names` or starts with one of `drop.prefixes`. On Windows both match in any
+ * letter case, because a Windows environment does not tell `SSH_AUTH_SOCK` from `Ssh_Auth_Sock`; on every other platform exactly.
+ * Pure, with no condition: the caller lays what it adds (askpass, its own socket) on top of the result.
+ */
+export function envWithout(base: NodeJS.ProcessEnv, drop: EnvDrop, platform: NodeJS.Platform): NodeJS.ProcessEnv {
+  const fold = platform === 'win32' ? (text: string): string => text.toUpperCase() : (text: string): string => text;
+  const names = new Set(drop.names.map(fold));
+  const prefixes = drop.prefixes.map(fold);
+  const dropped = (key: string): boolean => names.has(fold(key)) || prefixes.some((prefix) => fold(key).startsWith(prefix));
+  return Object.fromEntries(Object.entries(base).filter(([key]) => !dropped(key)));
 }
