@@ -21,6 +21,7 @@ const { spawn } = require('child_process');
 const Module = require('module');
 const { ownedDir, shortSocketRoot, writeStub } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
+const { twoWindowsLeg } = require('./lib/mcpTwoWindowsLeg.cjs');
 
 /** The folder a broker's sockets live in goes under the short socket root, with a short `what` (a macOS temp root is too long for a socket path). */
 const brokerDir = () => ownedDir(harnessScope.scope, 'mcp', { parent: shortSocketRoot() });
@@ -1401,6 +1402,30 @@ harnessScope.run(async (scope) => {
   );
   check('and nobody was asked about it', consent.asked === 0, String(consent.asked));
 
+  // H1 and H2 (rule A, `todo/PLAN_agent_refusal_names_unlisted_entry.md` section 5.7): a folder nobody opened is no folder to an agent, as a
+  // destination and as a target, and the text is the text of an id that does not exist. Real hooks, real tree, real binary.
+  const editOf = (id, folder, extra) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'creds_edit_folder', arguments: { folder, ...extra } } });
+  const gone = await speak(folderEnv, [
+    ...HANDSHAKE,
+    editOf(26, inTree?.id ?? 'x', { parent: 'f-nope' }),
+    editOf(27, 'f-shut', { name: 'x' }),
+    editOf(28, 'f-nope', { name: 'x' }),
+  ]);
+  check(
+    'H2: a move into a folder nobody opened reads as a move into one that does not exist',
+    movedText === replyText(gone, 26) && movedText.includes('there is no folder with that id') && !movedText.includes('Private'),
+    `${movedText.slice(0, 160)} | ${replyText(gone, 26).slice(0, 160)}`,
+  );
+  check(
+    'H1: an edit of a folder nobody opened reads as an edit of an id that does not exist, and does not name it',
+    replyText(gone, 27) === replyText(gone, 28) &&
+      parsed(replyText(gone, 27))?.error === 'No CredsForDevs window answered.' &&
+      parsed(replyText(gone, 27))?.hint === 'The folder id may be stale — call creds_folders again.' &&
+      !replyText(gone, 27).includes('Private'),
+    replyText(gone, 27).slice(0, 240),
+  );
+  check('and nobody was asked about any of the three', consent.asked === 0, String(consent.asked));
+
   // 5. THE CHECK WITH TEETH — self-granted permissions, at BOTH layers that stop them.
   //
   //    `research/PLAN_agent_folder_ops_itest.md` predicted one seam and named `readEdit`. Sabotage says
@@ -1504,6 +1529,8 @@ harnessScope.run(async (scope) => {
   check('and it is still in the tree', storage.getNode('a-1', 'f-open') !== undefined);
 
   await quietLeg();
+  // H3 to H6: two windows at once. The discovery folder is an owned broker folder, so the harness's scope removes it.
+  await twoWindowsLeg({ speak, check, checksRun: () => checksRun, HANDSHAKE, consent, brokerDir, memento, secretStore, SERVICE_NAME, CredsAgentServer, UseActionRegistry, StorageManager, mcpUseHooks }, brokerDir());
   await kindsLeg();
   await oldWindowLeg();
   await goneMidConsentLeg();
