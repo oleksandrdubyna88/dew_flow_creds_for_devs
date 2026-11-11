@@ -8,9 +8,6 @@ import type { HostShell } from '../hostShell';
 import {
   COPY_NOTE,
   SECRETS_NOT_WHOLE,
-  SECRETS_REMOTE_COMMAND,
-  SECRETS_SCRIPT_FIRST,
-  SECRETS_SCRIPT_LAST,
   type LaunchEntry,
   type LaunchPlan,
   type NodeLookup,
@@ -19,7 +16,11 @@ import {
   copiedLineOf,
   isLinkTarget,
   loginShellCommand,
+  newSecretsNonce,
   planLaunch,
+  secretsRemoteCommand,
+  secretsScriptFirst,
+  secretsScriptLast,
   secretsStdin,
   sshLinkOf,
   sshLinkRefusal,
@@ -29,6 +30,7 @@ import {
 } from '../remoteLaunch';
 import { sshOptionArgv } from '../sshOptions';
 import { CORPUS } from './remoteCorpus';
+import { NONCE } from './remoteShellHarness';
 import type { EntityMetadata, PortForward, TreeNode } from '../types';
 
 /**
@@ -382,9 +384,9 @@ test('R22b typedLine_names_the_ssh_entry_when_the_snapshot_has_no_target', () =>
 
 test('R23 secretsStdin_is_exact', () => {
   assert.equal(
-    secretsStdin({ CREDS_REF_1: 'a', CREDS_REF_2: "it's" }, 'echo x'),
+    secretsStdin({ CREDS_REF_1: 'a', CREDS_REF_2: "it's" }, 'echo x', NONCE),
     [
-      '#creds-secrets-1',
+      `#creds-secrets-${NONCE}`,
       "CREDS_REF_1='a'; export CREDS_REF_1",
       `CREDS_REF_2='it'"'"'s'; export CREDS_REF_2`,
       '{',
@@ -392,14 +394,17 @@ test('R23 secretsStdin_is_exact', () => {
       '',
       '} </dev/null',
       'exit $?',
-      '#creds-secrets-end',
+      `#creds-secrets-end-${NONCE}`,
       '',
     ].join('\n'),
   );
-  assert.equal(secretsStdin({}, 'echo x'), ['#creds-secrets-1', '{', 'echo x', '', '} </dev/null', 'exit $?', '#creds-secrets-end', ''].join('\n'));
+  assert.equal(
+    secretsStdin({}, 'echo x', NONCE),
+    [`#creds-secrets-${NONCE}`, '{', 'echo x', '', '} </dev/null', 'exit $?', `#creds-secrets-end-${NONCE}`, ''].join('\n'),
+  );
   for (const bad of ['X; id', '1A', '', 'A-B', 'A B']) {
     assert.throws(
-      () => secretsStdin({ [bad]: 'v' }, 'echo x'),
+      () => secretsStdin({ [bad]: 'v' }, 'echo x', NONCE),
       (error: Error) => /not a valid variable name/.test(error.message) && (bad === '' || !error.message.includes(bad)),
       `${JSON.stringify(bad)}: refused with a fixed message that does not echo the name`,
     );
@@ -437,17 +442,30 @@ test('U3 the_plan_is_the_login_form_of_the_bare_line_or_of_the_wrapper', () => {
 
 test('U4 the_secrets_remote_command_is_exact_and_its_texts_hold_no_character_that_ends_a_double_quote', () => {
   assert.equal(
-    SECRETS_REMOTE_COMMAND,
-    `exec \${SHELL:-sh} -l -c 'set +avx; unset creds_script && creds_script=$(command cat <&3) && case $creds_script in "#creds-secrets-1"*"#creds-secrets-end") (eval "$creds_script") 3<&- ;; *) echo "creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input." >&2; false ;; esac' 3<&0 </dev/null`,
+    secretsRemoteCommand(NONCE),
+    `exec \${SHELL:-sh} -l -c 'set +avx; command trap - DEBUG 2>/dev/null; unset creds_script && creds_script=$(command cat <&3) && case $creds_script in "#creds-secrets-${NONCE}"*"#creds-secrets-end-${NONCE}") (eval "$creds_script") 3<&- ;; *) echo "creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input." >&2; false ;; esac' 3<&0 </dev/null`,
   );
-  assert.equal(SECRETS_SCRIPT_FIRST, '#creds-secrets-1');
-  assert.equal(SECRETS_SCRIPT_LAST, '#creds-secrets-end');
+  assert.equal(secretsScriptFirst(NONCE), `#creds-secrets-${NONCE}`);
+  assert.equal(secretsScriptLast(NONCE), `#creds-secrets-end-${NONCE}`);
   assert.equal(
     SECRETS_NOT_WHOLE,
     'creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input.',
   );
-  for (const text of [SECRETS_NOT_WHOLE, SECRETS_SCRIPT_FIRST, SECRETS_SCRIPT_LAST]) {
+  for (const text of [SECRETS_NOT_WHOLE, secretsScriptFirst(NONCE), secretsScriptLast(NONCE)]) {
     assert.equal(/["$`\\']|\n/.test(text), false, text);
+  }
+});
+
+test('U4b the_nonce_is_128_bits_of_hex_made_for_each_run_and_nothing_else_is_accepted', () => {
+  const nonces = Array.from({ length: 50 }, () => newSecretsNonce());
+  for (const nonce of nonces) {
+    assert.match(nonce, /^[0-9a-f]{32}$/);
+  }
+  assert.equal(new Set(nonces).size, nonces.length, 'a nonce is made for each run');
+  // The nonce stands inside "…" in the command: a text that is not 32 lower-case hex digits is refused, naming nothing of it.
+  for (const bad of ['', 'x', NONCE.slice(1), NONCE + '0', NONCE.toUpperCase(), `${NONCE.slice(2)}"; `, `${NONCE.slice(2)}$(`]) {
+    assert.throws(() => secretsRemoteCommand(bad), /not 32 lower-case hex digits/, JSON.stringify(bad));
+    assert.throws(() => secretsStdin({}, 'echo x', bad), /not 32 lower-case hex digits/, JSON.stringify(bad));
   }
 });
 
@@ -486,10 +504,10 @@ test('U8 the_remote_command_of_every_plan_ends_with_a_single_quote_and_never_a_b
 });
 
 test('U9 the_secrets_script_starts_and_ends_with_its_marker_lines_and_keeps_its_middle', () => {
-  const script = secretsStdin({ CREDS_REF_1: 'a' }, 'echo x');
+  const script = secretsStdin({ CREDS_REF_1: 'a' }, 'echo x', NONCE);
   const lines = script.split('\n');
-  assert.equal(lines[0], SECRETS_SCRIPT_FIRST);
-  assert.equal(lines[lines.length - 2], SECRETS_SCRIPT_LAST);
+  assert.equal(lines[0], secretsScriptFirst(NONCE));
+  assert.equal(lines[lines.length - 2], secretsScriptLast(NONCE));
   assert.equal(lines[lines.length - 1], '', 'the script ends with a line break');
   assert.deepEqual(lines.slice(1, -2), ["CREDS_REF_1='a'; export CREDS_REF_1", '{', 'echo x', '', '} </dev/null', 'exit $?']);
 });

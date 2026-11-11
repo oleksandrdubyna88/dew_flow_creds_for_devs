@@ -156,6 +156,37 @@ export function loginStandIn(t: TestContext, shell: string): string {
   return file;
 }
 
+/**
+ * An executable that behaves as ssh does for an exec request: records its own PID, its argv (NUL-separated) and its environment
+ * (`env -0`), sets SHELL as sshd sets the login shell (the runner's own `$SHELL` can be fish, which does not read a POSIX
+ * script), skips its options to `--` and the destination, and runs the last argument with `/bin/sh -c`, stdin inherited.
+ * The remote command makes `/bin/sh -l` read a profile, so the fake gives it an OWNED `HOME` (`dir`, which holds no profile), no `ENV`,
+ * `BASH_ENV` or `SSH_*`, and `SHLVL`: the developer's own `~/.profile` never runs here (PLAN_ssh_line_runs_in_login_shell.md §5).
+ */
+export function writeFakeSsh(dir: string): string {
+  const file = path.join(dir, 'fake-ssh');
+  fs.writeFileSync(
+    file,
+    [
+      '#!/bin/sh',
+      `echo $$ >> '${dir}/pids'`,
+      `printf '%s\\0' "$@" > '${dir}/argv'`,
+      `env -0 > '${dir}/env'`,
+      'SHELL=/bin/sh',
+      `HOME='${dir}'; ZDOTDIR='${dir}'; SHLVL=1`,
+      'export SHELL HOME ZDOTDIR SHLVL',
+      'unset ENV BASH_ENV SSH_CLIENT SSH2_CLIENT SSH_CONNECTION',
+      'while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done',
+      'shift',
+      'shift',
+      '/bin/sh -c "$1"',
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return file;
+}
+
 // ---- plans -----------------------------------------------------------------------------------------------------------
 
 const LINKED = { kind: 'linked', ssh: E, sshName: 'prod' } as const;
@@ -168,3 +199,9 @@ export function remotePlanOf(line: string, stayOpen: boolean): RemotePlan {
 }
 
 export const POSIX_SHELL: HostShell = { shellPath: '/bin/bash', family: 'posix' };
+
+// ---- the marker nonce of Run with Secrets ---------------------------------------------------------------------------------------
+
+/** The run's nonce of a real-shell test, and another one: a value that holds the markers of ANOTHER run must not pass for this run's. */
+export const NONCE = '0123456789abcdef0123456789abcdef';
+export const OTHER_NONCE = 'fedcba9876543210fedcba9876543210';

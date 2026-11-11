@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { EntityMetadata, TreeNode } from './types';
 import { commandRefusal, resolveCommand } from './commandLine';
 import { resolveKind } from './entityKind';
@@ -313,9 +314,34 @@ export function typedLine(plan: RemotePlan, prepared: PreparedForTyping, localSh
 
 // ---- the secrets script ---------------------------------------------------------------------------------------------
 
+/** A nonce is 128 bits as 32 lower-case hex digits: it stands inside `"…"` in the remote command, so nothing else is accepted. */
+const NONCE = /^[0-9a-f]{32}$/;
+
+/**
+ * A new nonce for ONE run of Run with Secrets (128 bits from the system's random source). It is in both marker lines and in the remote
+ * command, which goes in `ssh`'s argv: it is not a secret. A value in the script is quoted, but a quoted value can hold a line break, so
+ * it can hold a line that looks like a marker; a startup file on the server that reads a part of standard input would then leave a script
+ * that starts at that line. A marker with a nonce that the value's owner could not know cannot be forged.
+ */
+export function newSecretsNonce(): string {
+  return randomBytes(16).toString('hex');
+}
+
+function checkedNonce(nonce: string): string {
+  if (!NONCE.test(nonce)) {
+    throw new Error('the secrets nonce is not 32 lower-case hex digits');
+  }
+  return nonce;
+}
+
 /** The first and the last line of the script of Run with Secrets: shell comments that do nothing when it runs, and that tell the remote command the script arrived whole. */
-export const SECRETS_SCRIPT_FIRST = '#creds-secrets-1';
-export const SECRETS_SCRIPT_LAST = '#creds-secrets-end';
+export function secretsScriptFirst(nonce: string): string {
+  return `#creds-secrets-${checkedNonce(nonce)}`;
+}
+
+export function secretsScriptLast(nonce: string): string {
+  return `#creds-secrets-end-${checkedNonce(nonce)}`;
+}
 
 /**
  * What the remote command says on standard error, with status 1, when the script did not arrive whole. It stands inside `"…"` in the
@@ -327,23 +353,31 @@ export const SECRETS_NOT_WHOLE =
 /**
  * What the login shell runs for Run with Secrets (L5; the measured reason of each word is in the plan, §3.3). sshd's shell moved the
  * script to file descriptor 3 and gave the login shell an empty input, so the profile reads nothing. `set +avx` turns off what a profile
- * could have turned on (every variable exported, a trace or an echo that prints the values); `unset` removes a variable of the same name;
- * `command cat` is the real `cat`, not an alias or a function; the script runs only when its first and its last line are there, in a
- * subshell (no `exit` reaches the login shell, so no logout file runs and the status is the line's) with fd 3 closed. A refusal ends with
- * `false`, not `exit 1`, so a logout file cannot hide it. It holds no `'`.
+ * could have turned on (every variable exported, a trace or an echo that prints the values); `command trap - DEBUG` clears a DEBUG trap
+ * that a profile set (bash runs it before every command, assignments of the values included; `command` keeps dash, where it is an
+ * error, from ending); `unset` removes a variable of the same name; `command cat` is the real `cat`, not an alias or a function; the script
+ * runs only when its first and its last line (each with the run's nonce) are there, in a subshell (no `exit` reaches the login shell, so
+ * no logout file runs and the status is the line's) with fd 3 closed. A refusal ends with `false`, not `exit 1`, so a logout file cannot
+ * hide it. It holds no `'`.
  */
-const SECRETS_INNER =
-  'set +avx; unset creds_script && creds_script=$(command cat <&3) && ' +
-  `case $creds_script in "${SECRETS_SCRIPT_FIRST}"*"${SECRETS_SCRIPT_LAST}") (eval "$creds_script") 3<&- ;; ` +
-  `*) echo "${SECRETS_NOT_WHOLE}" >&2; false ;; esac`;
+function secretsInner(nonce: string): string {
+  return (
+    'set +avx; command trap - DEBUG 2>/dev/null; unset creds_script && creds_script=$(command cat <&3) && ' +
+    `case $creds_script in "${secretsScriptFirst(nonce)}"*"${secretsScriptLast(nonce)}") (eval "$creds_script") 3<&- ;; ` +
+    `*) echo "${SECRETS_NOT_WHOLE}" >&2; false ;; esac`
+  );
+}
 
 /**
  * The ONE remote command of Run with Secrets: the remote LOGIN shell reads the script from file descriptor 3 (D12, epoch 2; L5 of
  * PLAN_ssh_line_runs_in_login_shell.md). It is the shell that parses the line on every other road, so a line written for the person's own
  * shell (bash `[[ ]]`, `$'…'`) parses here as it does there. The text holds `"`: a road that types it into Windows PowerShell 5.1 meets
- * that refusal, and the secrets road spawns ssh with no shell (D12).
+ * that refusal, and the secrets road spawns ssh with no shell (D12). It is a function of the run's nonce (`newSecretsNonce`), and
+ * `secretsStdin` takes the same one.
  */
-export const SECRETS_REMOTE_COMMAND = `${loginShellCommand(SECRETS_INNER)} 3<&0 </dev/null`;
+export function secretsRemoteCommand(nonce: string): string {
+  return `${loginShellCommand(secretsInner(nonce))} 3<&0 </dev/null`;
+}
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -355,14 +389,14 @@ function exportLine(name: string, value: string): string {
 }
 
 /**
- * The script `SECRETS_REMOTE_COMMAND` reads for Run with Secrets: `SECRETS_SCRIPT_FIRST`, each value assigned and exported in two steps (so
- * a value is never parsed as syntax), the line in a `{ … } </dev/null` group (a command that reads stdin reads end of input, not the rest of
- * this script), `exit $?`, and `SECRETS_SCRIPT_LAST`. The blank line after the line is deliberate: a line ending in `\` continues onto it,
- * not onto `}`. A name is never quoted, so one that is not `^[A-Za-z_][A-Za-z0-9_]*$` throws.
+ * The script `secretsRemoteCommand(nonce)` reads for Run with Secrets: `secretsScriptFirst(nonce)`, each value assigned and exported in two
+ * steps (so a value is never parsed as syntax), the line in a `{ … } </dev/null` group (a command that reads stdin reads end of input,
+ * not the rest of this script), `exit $?`, and `secretsScriptLast(nonce)`. The blank line after the line is deliberate: a line ending in
+ * `\` continues onto it, not onto `}`. A name is never quoted, so one that is not `^[A-Za-z_][A-Za-z0-9_]*$` throws.
  */
-export function secretsStdin(env: Readonly<Record<string, string>>, line: string): string {
+export function secretsStdin(env: Readonly<Record<string, string>>, line: string, nonce: string): string {
   const assigned = Object.entries(env).map(([name, value]) => exportLine(name, value));
-  return [SECRETS_SCRIPT_FIRST, ...assigned, '{', line, '', '} </dev/null', 'exit $?', SECRETS_SCRIPT_LAST, ''].join('\n');
+  return [secretsScriptFirst(nonce), ...assigned, '{', line, '', '} </dev/null', 'exit $?', secretsScriptLast(nonce), ''].join('\n');
 }
 
 // ---- the copies (E2.S1) -----------------------------------------------------------------------------------------------
@@ -454,7 +488,7 @@ export function secretsLocalOnly(name: string): string {
 
 /**
  * The argv of the `ssh` child of Run with Secrets (E3.S1, rows K1-K3), after its program word: `buildSshExecArgv` with the remote
- * login shell reading the script (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), `-T` as its first word (ssh asks for no pty,
+ * login shell reading the script (`secretsRemoteCommand(nonce)`, last, after `--` and the destination), `-T` as its first word (ssh asks for no pty,
  * also when the person's config says `RequestTTY force`: D16), no `-t`, and no value anywhere in it (D12). `ownAgent` is
  * `SpawnLaunch.ownAgent`: whether the extension's own agent serves the run; an entry that forwards with no agent of ours sends no `-A`
  * and `-o ForwardAgent=no` (D17 (b)), so the banner that says nothing is forwarded is true. The key branch says `-o BatchMode=yes`, the password branch `-o NumberOfPasswordPrompts=1` (askpass answers, nothing is
@@ -464,11 +498,11 @@ export function secretsLocalOnly(name: string): string {
  * it is refused as not local (K1), fail closed, though a local window never produces one. It reads the prepared snapshot only (one
  * snapshot): the trust line, this argv, the spawn program's folder and the banner's target all come from the same `ready`.</p>
  */
-export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean): SecretsLaunch {
+export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean, nonce: string): SecretsLaunch {
   if (composedForAnotherShell(prepared)) {
     return { kind: 'refused', reason: secretsLocalOnly(plan.entryName) };
   }
-  const argv = secretsArgv(prepared, ownAgent);
+  const argv = secretsArgv(prepared, ownAgent, nonce);
   return argv === undefined || prepared.target === undefined ? { kind: 'refused', reason: noHostSentence(plan.sshName) } : { kind: 'spawn', argv, target: prepared.target };
 }
 
@@ -477,9 +511,9 @@ function composedForAnotherShell(prepared: PreparedForSpawn): boolean {
   return prepared.prefix !== undefined || prepared.options.program !== undefined;
 }
 
-function secretsArgv(prepared: PreparedForSpawn, ownAgent: boolean): string[] | undefined {
+function secretsArgv(prepared: PreparedForSpawn, ownAgent: boolean, nonce: string): string[] | undefined {
   const auth = prepared.env === undefined ? 'key' : 'askpass';
-  return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, SECRETS_REMOTE_COMMAND, auth, {
+  return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, secretsRemoteCommand(nonce), auth, {
     jump: prepared.jump,
     knownHostsFile: prepared.options.knownHostsFile,
     ownAgent,

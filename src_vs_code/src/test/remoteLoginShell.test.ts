@@ -3,13 +3,15 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TestContext, test } from 'node:test';
-import { SECRETS_NOT_WHOLE, SECRETS_REMOTE_COMMAND, SECRETS_SCRIPT_LAST, secretsStdin, typedLine } from '../remoteLaunch';
+import { SECRETS_NOT_WHOLE, secretsRemoteCommand, secretsScriptFirst, secretsScriptLast, secretsStdin, typedLine } from '../remoteLaunch';
 import {
   ADD_BIN,
   POSIX_SHELL,
   Remote,
   SHELL_TIMEOUT_MS,
   E,
+  NONCE,
+  OTHER_NONCE,
   fakeSsh,
   loginDirect,
   loginStandIn,
@@ -55,7 +57,7 @@ const VALUE = `it's "q" $HOME \`id\` back\\slash\nsecond line\n\nlast\\`;
 const show = (value: string): string => `<${value}>`;
 
 function secretsRun(shell: string, env: NodeJS.ProcessEnv, line: string, values: Record<string, string> = { CREDS_REF_1: VALUE }): Remote {
-  return sshdRun(shell, SECRETS_REMOTE_COMMAND, env, secretsStdin(values, line));
+  return sshdRun(shell, secretsRemoteCommand(NONCE), env, secretsStdin(values, line, NONCE));
 }
 
 function bareRun(shell: string, env: NodeJS.ProcessEnv, line: string): Remote {
@@ -186,7 +188,7 @@ test('a_startup_file_that_reads_stdin_before_the_login_shell_gets_no_value', { s
   const asSshd = { SHLVL: undefined, SSH_CLIENT: '127.0.0.1 50000 22' };
   const reader = remoteHome(t, { ...profiles(ADD_BIN), '.bashrc': `read -r x; printf 'RC[%s]\\n' "$x"\n` });
   const one = secretsRun(bash, sshdEnv(reader, bash, asSshd), 'tool sec');
-  assert.equal(one.stdout.includes('RC[#creds-secrets-1]\n'), true, `the file was read, and took the marker: ${JSON.stringify(one)}`);
+  assert.equal(one.stdout.includes(`RC[${secretsScriptFirst(NONCE)}]\n`), true, `the file was read, and took the marker: ${JSON.stringify(one)}`);
   assert.equal(one.stderr.includes(SECRETS_NOT_WHOLE), true, JSON.stringify(one));
   assert.equal(one.status, 1, JSON.stringify(one));
   assert.equal(one.stdout.includes('tool ran'), false, 'the line did not run');
@@ -223,7 +225,7 @@ test('a_logout_file_runs_only_after_exit_and_never_for_run_with_secrets', { skip
   }
   const hiding = world('echo LOGOUT-RAN; exit 0\n');
   assert.equal(secretsRun(bash, hiding, 'exit 7').status, 7, 'the status of Run with Secrets is the line\'s, not the logout file\'s');
-  const refused = sshdRun(bash, SECRETS_REMOTE_COMMAND, hiding, 'tool x\n');
+  const refused = sshdRun(bash, secretsRemoteCommand(NONCE), hiding, 'tool x\n');
   assert.deepEqual([ranLogout(refused), refused.status], [false, 1], 'a script that is not whole: refused with status 1, no logout file');
   // RECORDED, the limit of L11 on the other roads: the logout file's own `exit 0` replaces the status of a line that calls `exit`.
   assert.equal(bareRun(bash, hiding, 'exit 7').status, 0);
@@ -267,16 +269,16 @@ function ranTool(run: Remote): boolean {
 
 eachShell(['bash', 'dash'], 'the_script_runs_whole_or_not_at_all', (shell, _name, t) => {
   const env = sshdEnv(remoteHome(t, profiles(ADD_BIN)), shell);
-  const script = secretsStdin({ CREDS_REF_1: 'v4lue' }, 'tool sec');
+  const script = secretsStdin({ CREDS_REF_1: 'v4lue' }, 'tool sec', NONCE);
   // The whole script, and the one without its final line break, run.
   for (const whole of [script, script.slice(0, -1)]) {
-    const run = sshdRun(shell, SECRETS_REMOTE_COMMAND, env, whole);
+    const run = sshdRun(shell, secretsRemoteCommand(NONCE), env, whole);
     assert.equal(ranTool(run), true, JSON.stringify(run));
     assert.equal(run.status, 0, run.stderr);
   }
   // Every other cut loses a part of the last marker line: nothing runs, and the status is not 0.
   for (let length = 0; length < script.length - 1; length += 1) {
-    const run = sshdRun(shell, SECRETS_REMOTE_COMMAND, env, script.slice(0, length));
+    const run = sshdRun(shell, secretsRemoteCommand(NONCE), env, script.slice(0, length));
     assert.equal(ranTool(run), false, `a cut at ${length} bytes ran the line: ${JSON.stringify(run)}`);
     assert.notEqual(run.status, 0, `a cut at ${length} bytes ended with status 0`);
   }
@@ -284,13 +286,13 @@ eachShell(['bash', 'dash'], 'the_script_runs_whole_or_not_at_all', (shell, _name
 
 eachShell(['bash', 'dash'], 'a_cut_right_after_a_line_that_ends_with_the_last_marker_runs_nothing', (shell, _name, t) => {
   const env = sshdEnv(remoteHome(t, profiles(ADD_BIN)), shell);
-  const script = secretsStdin({}, `tool sec ${SECRETS_SCRIPT_LAST}`);
-  const cut = script.slice(0, script.indexOf(SECRETS_SCRIPT_LAST, 20) + SECRETS_SCRIPT_LAST.length);
-  const run = sshdRun(shell, SECRETS_REMOTE_COMMAND, env, cut);
+  const script = secretsStdin({}, `tool sec ${secretsScriptLast(NONCE)}`, NONCE);
+  const cut = script.slice(0, script.indexOf(secretsScriptLast(NONCE), 20) + secretsScriptLast(NONCE).length);
+  const run = sshdRun(shell, secretsRemoteCommand(NONCE), env, cut);
   assert.equal(ranTool(run), false, JSON.stringify(run));
   assert.notEqual(run.status, 0, 'the group is not closed: a syntax error');
   // The control: the same line in the whole script runs (the marker text is a comment there).
-  assert.equal(ranTool(sshdRun(shell, SECRETS_REMOTE_COMMAND, env, script)), true, 'the whole script runs');
+  assert.equal(ranTool(sshdRun(shell, secretsRemoteCommand(NONCE), env, script)), true, 'the whole script runs');
 });
 
 eachShell(['bash', 'dash'], 'a_child_of_the_profile_that_reads_the_script_gets_it_refused', (shell, _name, t) => {
@@ -314,4 +316,47 @@ eachShell(['bash', 'dash', ...EXTRA], 'the_script_is_read_by_the_real_cat', (she
     assert.equal(run.stdout.endsWith(word), true, `${JSON.stringify(hide)}: ${JSON.stringify(run)}`);
     assert.equal(run.status, 0, run.stderr);
   }
+});
+
+// ---- Run with Secrets: a value cannot forge the marker ---------------------------------------------------------------------------
+
+/** What a startup file that reads two lines of standard input leaves: the script starts at its third line, where a value may hold the marker. */
+const TWO_LINES = 'read -r a; read -r b\n';
+const FORGED_RUN = 'echo INJECTED-FROM-VALUE >&2; touch PWNED\n';
+
+eachShell(['bash', 'zsh'], 'a_value_that_holds_a_marker_line_runs_nothing', (shell, name, t) => {
+  // bash reads `~/.bashrc` for a `-c` command when `SHLVL` is not set and `SSH_CLIENT` is; zsh reads `~/.zshenv` always.
+  const extra = name === 'bash' ? { SHLVL: undefined, SSH_CLIENT: '127.0.0.1 50000 22' } : {};
+  const forgeries = {
+    'the first marker of the old form': `a\n#creds-secrets-1\n${FORGED_RUN}`,
+    'the first marker of another run': `a\n${secretsScriptFirst(OTHER_NONCE)}\n${FORGED_RUN}`,
+    'both markers of another run': `a\n${secretsScriptFirst(OTHER_NONCE)}\n${FORGED_RUN}${secretsScriptLast(OTHER_NONCE)}\n`,
+  };
+  for (const [what, forged] of Object.entries(forgeries)) {
+    const home = remoteHome(t, { ...profiles(ADD_BIN), '.bashrc': TWO_LINES, '.zshenv': TWO_LINES });
+    const run = secretsRun(shell, sshdEnv(home, shell, extra), 'tool sec', { CREDS_REF_1: forged });
+    assert.equal(fs.existsSync(path.join(home, 'PWNED')), false, `${what}: the value ran as code: ${JSON.stringify(run)}`);
+    assert.equal(run.stderr.includes('INJECTED-FROM-VALUE'), false, `${what}: the value ran as code: ${JSON.stringify(run)}`);
+    assert.equal(run.stderr.includes(SECRETS_NOT_WHOLE), true, `${what}: ${JSON.stringify(run)}`);
+    assert.equal(run.status, 1, `${what}: ${JSON.stringify(run)}`);
+    assert.equal(ranTool(run), false, `${what}: the line did not run`);
+  }
+});
+
+test('a_profile_with_a_debug_trap_does_not_print_the_values', { skip: NOT_POSIX || skipUnless('bash') }, (t) => {
+  // bash runs a DEBUG trap before every command it runs, the assignments of the script included; `set -T` lets a function inherit it.
+  const bash = shellPath('bash') as string;
+  const home = remoteHome(t, profiles(`${ADD_BIN}set -T; trap 'echo DBG:$BASH_COMMAND >&2' DEBUG\n`));
+  const run = secretsRun(bash, sshdEnv(home, bash), 'printf %s "$CREDS_REF_1"', { CREDS_REF_1: 'TOPSECRET' });
+  assert.equal(run.stderr.includes('TOPSECRET'), false, `the DEBUG trap printed the value: ${JSON.stringify(run)}`);
+  assert.equal(run.stdout.endsWith('TOPSECRET'), true, JSON.stringify(run));
+  assert.equal(run.status, 0, run.stderr);
+});
+
+test('the_word_that_clears_the_debug_trap_does_not_end_dash', { skip: NOT_POSIX || skipUnless('dash') }, (t) => {
+  // In dash `trap - DEBUG` is an error, and an error of a special builtin ends a non-interactive shell: `command` keeps it going.
+  const dash = shellPath('dash') as string;
+  const run = secretsRun(dash, sshdEnv(remoteHome(t, profiles(ADD_BIN)), dash), 'printf %s "$CREDS_REF_1"', { CREDS_REF_1: 'TOPSECRET' });
+  assert.equal(run.stdout.endsWith('TOPSECRET'), true, JSON.stringify(run));
+  assert.equal(run.status, 0, run.stderr);
 });

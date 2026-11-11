@@ -3,9 +3,9 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TestContext, test } from 'node:test';
-import { SECRETS_REMOTE_COMMAND, loginShellCommand, secretsStdin, stayOpenWrapper } from '../remoteLaunch';
+import { loginShellCommand, secretsRemoteCommand, secretsStdin, stayOpenWrapper } from '../remoteLaunch';
 import { CORPUS } from './remoteCorpus';
-import { SHELL_TIMEOUT_MS, dirOf, fakeSsh, has, lineFor, remoteHome, shellPath, skipUnless, sshdEnv } from './remoteShellHarness';
+import { NONCE, SHELL_TIMEOUT_MS, dirOf, fakeSsh, has, lineFor, remoteHome, shellPath, skipUnless, sshdEnv } from './remoteShellHarness';
 
 /**
  * The remote command through REAL shells (E1.S2 spec §S2.8): no stub of the quoting. A fake `ssh` records its argv, so
@@ -155,17 +155,18 @@ for (const sh of ['dash', 'bash']) {
   test(`the_secrets_script_runs_through_the_secrets_remote_command_with_a_stdin_reading_command (${sh})`, { skip: skipUnless(sh) }, (t) => {
     const env = sshdEnv(remoteHome(t), shellPath(sh) as string);
     const run = (line: string, values: Record<string, string> = {}): { stdout: Buffer; status: number | null } => {
-      const r = spawnSync(sh, ['-c', SECRETS_REMOTE_COMMAND], { input: secretsStdin(values, line), env, timeout: SHELL_TIMEOUT_MS });
+      const r = spawnSync(sh, ['-c', secretsRemoteCommand(NONCE)], { input: secretsStdin(values, line, NONCE), env, timeout: SHELL_TIMEOUT_MS });
       assert.equal(r.error, undefined, String(r.error));
       return { stdout: r.stdout, status: r.status };
     };
+    // A real login shell may print from `/etc/profile` first: an assertion on the output reads its END.
+    const ends = (line: string, text: string, values: Record<string, string> = {}): boolean => run(line, values).stdout.toString('utf8').endsWith(text);
     // A value with every character that ends a quote or starts an expansion comes back byte for byte.
-    const round = run('printf %s "$CREDS_REF_1"', { CREDS_REF_1: VALUE });
-    assert.ok(round.stdout.equals(Buffer.from(VALUE, 'utf8')), round.stdout.toString('utf8'));
+    assert.equal(ends('printf %s "$CREDS_REF_1"', VALUE, { CREDS_REF_1: VALUE }), true);
     // A command that reads stdin reads the end of input at once; the rest of the group still runs.
-    assert.equal(run('cat; echo after-cat').stdout.toString('utf8'), 'after-cat\n');
-    assert.equal(run('echo x # comment').stdout.toString('utf8'), 'x\n');
-    assert.equal(run('echo tail \\').stdout.toString('utf8'), 'tail\n');
+    assert.equal(ends('cat; echo after-cat', 'after-cat\n'), true);
+    assert.equal(ends('echo x # comment', 'x\n'), true);
+    assert.equal(ends('echo tail \\', 'tail\n'), true);
     assert.equal(run('exit 7').status, 7);
     const failed = run('false');
     assert.equal(failed.status, 1);
@@ -175,8 +176,8 @@ for (const sh of ['dash', 'bash']) {
 
 /** The emulated remote of Run with Secrets: `<sshd's shell> -c <the one remote argument>`, stdin = the script, `SHELL` = that login shell, an owned `HOME`. */
 function viaRemoteLoginShell(t: TestContext, shell: string, line: string): { stdout: string; status: number | null } {
-  const r = spawnSync(shell, ['-c', SECRETS_REMOTE_COMMAND], {
-    input: secretsStdin({}, line),
+  const r = spawnSync(shell, ['-c', secretsRemoteCommand(NONCE)], {
+    input: secretsStdin({}, line, NONCE),
     env: sshdEnv(remoteHome(t), shell),
     timeout: SHELL_TIMEOUT_MS,
     encoding: 'utf8',
@@ -191,7 +192,7 @@ test('F3_a_bash_only_line_runs_when_the_remote_login_shell_is_bash', { skip: NO_
   const bash = shellPath('bash');
   assert.ok(bash !== undefined, 'bash was found by the skip check');
   const run = viaRemoteLoginShell(t, bash, BASH_ONLY);
-  assert.equal(run.stdout, 'ok');
+  assert.equal(run.stdout.endsWith('ok'), true, run.stdout);
   assert.equal(run.status, 0);
 });
 
@@ -201,11 +202,12 @@ test('F3_the_same_line_fails_when_the_remote_login_shell_is_dash_as_it_would_typ
   const dash = shellPath('dash');
   assert.ok(dash !== undefined, 'dash was found by the skip check');
   const run = viaRemoteLoginShell(t, dash, BASH_ONLY);
-  assert.equal(run.stdout, '');
+  assert.equal(run.stdout.includes('ok'), false, run.stdout);
   assert.equal(run.status, 127);
 });
 
 test('F3_the_secrets_remote_command_names_the_login_shell', () => {
-  assert.equal(SECRETS_REMOTE_COMMAND.startsWith('exec ${SHELL:-sh} -l -c '), true, SECRETS_REMOTE_COMMAND);
-  assert.equal(SECRETS_REMOTE_COMMAND.endsWith(' 3<&0 </dev/null'), true, SECRETS_REMOTE_COMMAND);
+  const command = secretsRemoteCommand(NONCE);
+  assert.equal(command.startsWith('exec ${SHELL:-sh} -l -c '), true, command);
+  assert.equal(command.endsWith(' 3<&0 </dev/null'), true, command);
 });
