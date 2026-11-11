@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an entry or a folder that the agent may not view
 
-> Status: **approved 2026-11-11 (epoch 1, by reviewers); nothing implemented yet.** The owner said yes on 2026-11-09
+> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is built on the branch and not merged; epic 2 is not started.** The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
@@ -219,7 +219,7 @@ there today, and the list check allows these four fields and nothing more.
 | A3 | `mcpFolders.ts:191-212` `moveRefusal`, `firstRefusal`; the type `:172-176`; the sentences `:257-265`; `isTrashy` `:218-220` | a folder destination → `into_the_trash`, `into_itself` or `destination_closed`; not a folder → `no_such_destination` | missing, not a folder, or not `isOpenFolder` → `no_such_destination`: one answer for the three. `into_the_trash` cannot be reached then: the variant, its sentence and `isTrashy` are removed. The order that stays: `into_itself`, then `destination_closed` |
 | A4 | `agentUseActions.ts:230-238` `whyUnusable`, `usableGate` | the JOURNAL reason is chosen by `found === undefined` (`the SSH entry is hidden from agents (PIN) or is not in this account`) or `closed` (the switch sentence) | after A1, `undefined` also means *not visible*. `usableGate` reads the SSH entry's node once more, in the Terminal entry's account only. Three causes, three sentences: node missing → `the SSH entry is not in this account`; `hiddenFromAgents(node)` → `the SSH entry is hidden from agents (PIN)`; else → `the SSH entry's "Usable by agents" switch is off` (unchanged). Nothing that the agent reads changes |
 | A5 | `mcpEntries.ts` (new export) | `shown` is private; the lookup and the list each resolve the tree | `export function agentMayView(source: Pick<McpVaultSource, 'getNode'>, accountId: string, entityId: string): boolean`. It reads the node in THAT account only, resolves the tree with a lookup bound to that account, and answers `shown`. A missing node answers `false`. `isOpenFolder` is used by A2 and A3 inside its own module and needs no export |
-| A6 | comments and one test name that become false | `brokerRequests.ts:85-96` (*present but closed … collapsing it into "not found"*); `brokerRequests.ts:204-208` (*an entry id is a uuid nobody enumerates*); `mcpEntries.ts:318-325` (*an entry that exists and is closed*); the test name at `mcpFolders.test.ts:193` (*told apart from one that is closed*) | each says the rule: `closed` is for an entry that the agent may view; a node that it may not view and an id that does not exist get one answer. The test name says that a missing destination and one that is not open get one answer, and a visible closed one another |
+| A6 | comments and one test name that become false | `brokerRequests.ts:85-96` (*present but closed … collapsing it into "not found"*); `brokerRequests.ts:204-208` (*an entry id is a uuid nobody enumerates*); `mcpEntries.ts:318-325` (*an entry that exists and is closed*); the test name at `mcpFolders.test.ts:194-198` (*told apart from one that is closed*) | each says the rule: `closed` is for an entry that the agent may view; a node that it may not view and an id that does not exist get one answer. The test name says that a missing destination and one that is not open get one answer, and a visible closed one another |
 | B1 | `sshCredential.ts:36-41` `SshCredentialStopped`; `:80`, `:102` | carries `reason` and `ownerName` | also carries `readonly ownerId: string` (the id of `keySource` at `:80`, of `owner` at `:102`) |
 | B2 | new module `agentNaming.ts` (imports no `vscode`) | — | `export interface SecondEntry { readonly id: string; readonly relation: 'linked key' \| 'jump host' }`; `export function SECOND_ENTRY_REFUSED(entityName: string): string`; `export function agentRefusal(said: { readonly message: string; readonly second?: SecondEntry }, entityName: string, mayView: (entityId: string) => boolean): { readonly message: string; readonly note?: string }`. `second` absent, or `mayView(second.id)` → the message as it is, no note. Else → `SECOND_ENTRY_REFUSED(entityName)` and the note of §2.5 for that relation |
 | B3 | `sshExecAuth.ts:40-45` (the failure of `ExecAuth`), `:125-128` `stoppedAuth`, its call at `:121` | the message names the owner of the value | the failure gains `readonly second?: SecondEntry`. `stoppedAuth(source, entity)` takes the entry that was asked for and sets `second: { id: source.ownerId, relation: 'linked key' }` when `source.ownerId !== entity.id` |
@@ -297,7 +297,7 @@ code round and pull request. Epic 2 starts after epic 1 is merged.
    row fail by its assertion, never by a compile error (`npm test` runs `tsc` first). Keep the messages.
 3. **Fix A1, A2, A3, A5, A6.** Change the existing tests of §5.5 in the same commit as the code that they follow.
 4. **A4.** After A1 the guard row G5 is red (§5.4). Watch it. Then change `whyUnusable`. G5, G6 and L6 are green.
-5. The mutation checks 1, 2, 3 and 6 to 8 of §5.6; the harness checks H1 to H5 (§5.7).
+5. The mutation checks 1, 2, 3 and 6 to 8 of §5.6; the harness checks H1 to H6 (§5.7).
 6. The documents of epic 1 (§6), and **the boundary row in each neighbour plan** (§7a).
 7. `npm run typecheck`, `npm test`, `npm run lint`, in `src_vs_code`, at lowered priority. `npm run contract` leaves
    no difference in `contract/`. `npm run itest:mcp` where `creds-mcp` is built.
@@ -470,7 +470,7 @@ would make the row pass for the wrong reason.
 |---|---|
 | `mcpFolders.test.ts:155-168` *a move needs the grant at BOTH ends* | its closed destination gets `mcp: { view: true }`: visible, no `folderEdit`, so the answer stays `destination_closed` and the test keeps its meaning. The case with no switch is L4 |
 | `mcpFolders.test.ts:170-178` *a move into the Trash is refused* | the answer is `'no_such_destination'`; the name of the test says that the Trash reads as no folder |
-| `mcpFolders.test.ts:193-198` *a destination that is not a folder is told apart from one that is closed* | the name changes (A6); the assertion stays |
+| `mcpFolders.test.ts:194-198` *a destination that is not a folder is told apart from one that is closed* | the name changes (A6); the assertion stays |
 | `mcpFolders.test.ts:200-206` *every refusal has a sentence* | its list loses `'into_the_trash'` (the compiler forces this when the type gets smaller) |
 
 ### 5.6 Mutation checks (each one must turn a test red)
@@ -489,7 +489,7 @@ would make the row pass for the wrong reason.
 
 ### 5.7 The harness (the real binary against the real window code; epic 1)
 
-`src_vs_code/scripts/creds-mcp-itest.cjs` (`npm run itest:mcp`; it needs `creds-mcp` built) gets five checks. It
+`src_vs_code/scripts/creds-mcp-itest.cjs` (`npm run itest:mcp`; it needs `creds-mcp` built) gets six checks, H1 to H6. It
 runs the real `creds-mcp` binary against real `CredsAgentServer` windows; its folder scenarios use the real
 `StorageManager` and the real `folderHooks` (`:1281-1311`).
 
@@ -525,7 +525,7 @@ runs the real `creds-mcp` binary against real `CredsAgentServer` windows; its fo
 - Sentences outside the sites of §3. The class test covers every route of the contract and every reference field
   that exist today; a new sentence on an existing route that names a node by another road is covered only when the
   fixture reaches it.
-- H3 to H5 run only where `creds-mcp` is built. The unit suite proves the window's half (part A) and the binary's
+- H1 to H6 run only where `creds-mcp` is built. The unit suite proves the window's half (part A) and the binary's
   decision (G8) apart; the harness is the one check of the two together.
 
 ## 6. Documents
@@ -539,7 +539,7 @@ runs the real `creds-mcp` binary against real `CredsAgentServer` windows; its fo
   `whyUnusable` chooses one of three sentences. Epic 2: rule B in the same paragraph, the chooser, the relation
   lines; the protected-entry paragraph (`:1328-1336`) says that the owner of a borrowed key is no longer named in a
   refusal. No diagram shows these lookups, so none is re-rendered.
-- `research/module_tests.md`: a section for the class test (part A with epic 1, part B with epic 2) and the five
+- `research/module_tests.md`: a section for the class test (part A with epic 1, part B with epic 2) and the six
   harness checks, with §5.8 as its *what it does not prove*.
 - `todo/README.md`: this plan's row, and a row for each stories document when it is written. On promotion:
   `research/README.md`.

@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an unlisted entry, E1: rule A, the addressed node
 
-> Status: **stories written 2026-11-11; nothing built yet.** Stories of epic E1 of
+> Status: **stories written 2026-11-11; E1.1 to E1.3 built on the branch and not merged; the code round and the pull request follow.** Stories of epic E1 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §2.2 to §2.6, §3.1 rows
 > A1 to A6, §3.2, §3.4, §4 steps 1 to 8, §5.1, §5.3 to §5.8, §6, §7a, §10 and `## Epics` E1).
 >
@@ -428,19 +428,19 @@ Commits:
 
 ### 10. Done when
 
-- [ ] Part A was written and run before any fix; its first failure list is saved and agrees with §9 step 1, or each
+- [x] Part A was written and run before any fix; its first failure list is saved and agrees with §9 step 1, or each
       difference went to the lead.
-- [ ] C-A, L1 to L7, X1 and X2 were watched failing by their assertions, then pass. No RED proof is a compile error.
-- [ ] G1 to G7 were watched passing before and after; G5 was watched red between A1 and A4.
-- [ ] For an entry, a folder, a move destination and a config id that the agent may not view, the six items of
+- [x] C-A, L1 to L7, X1 and X2 were watched failing by their assertions, then pass. No RED proof is a compile error.
+- [x] G1 to G7 were watched passing before and after; G5 was watched red between A1 and A4.
+- [x] For an entry, a folder, a move destination and a config id that the agent may not view, the six items of
       §3 are equal to those of an id that does not exist, on each route that reads that id; the bridge row is green.
-- [ ] The list check allows exactly the four pairs, asserts each value as it is today, and finds no other hidden
+- [x] The list check allows exactly the four pairs, asserts each value as it is today, and finds no other hidden
       name or hidden id.
-- [ ] Mutations 1, 2, 3, 6, 7, 8 and M-a each turned their tests red, and the code was restored.
-- [ ] The comments, the test name and the message of A6 are changed.
-- [ ] `git diff --stat bf39ea05 -- contract src_mcp src_cli src_broker_client` is empty; `mcpHooks.ts`,
+- [x] Mutations 1, 2, 3, 6, 7, 8 and M-a each turned their tests red, and the code was restored.
+- [x] The comments, the test name and the message of A6 are changed.
+- [x] `git diff --stat bf39ea05 -- contract src_mcp src_cli src_broker_client` is empty; `mcpHooks.ts`,
       `mcpFolderHooks.ts`, `brokerRequests.ts` (code), `bridgeScope.ts` and `credsAgentServer.ts` have no code change.
-- [ ] The budgets of the size table hold; `npm run lint` is clean with no new `eslint-disable`; `npm test` is green.
+- [x] The budgets of the size table hold; `npm run lint` is clean with no new `eslint-disable`; `npm test` is green.
 
 ## E1.2 — the harness: one window and two windows, through the real `creds-mcp`
 
@@ -516,13 +516,14 @@ two`. The body gives the count of checks before and after, and the three mutatio
 
 ### Done when
 
-- [ ] `npm run itest:mcp` printed no `SKIP` line (F12) and ended with `all checks passed`; the count of checks rose
+- [x] `npm run itest:mcp` printed no `SKIP` line (F12) and ended with `all checks passed`; the count of checks rose
       by the number of new checks; H1 to H6 are green.
-- [ ] The three mutation runs failed on the named checks, and the code was restored.
-- [ ] G8 ran green.
-- [ ] The leftovers guard is clean for the new file (command 13).
-- [ ] If the binary could not be built here: the story says so, with the error, and names who runs the harness
-      before the release. CI runs it on each push (F12).
+- [x] The three mutation runs failed on the named checks, and the code was restored.
+- [x] G8 ran green.
+- [x] The leftovers guard is clean for the new file (command 13).
+- [x] If the binary could not be built here: the story says so, with the error, and names who runs the harness
+      before the release. CI runs it on each push (F12). (Not applicable: `creds-mcp` was built here with dotnet 10, and
+      the harness ran with 137 checks and no `SKIP`.)
 
 ## E1.3 — the documents, the neighbour rows, the closing checks
 
@@ -581,14 +582,14 @@ the last section of this document.
 
 ### Done when
 
-- [ ] The CHANGELOG entry carries the cases 1, 2, 3 and 5, and agrees with the diff of c2.
-- [ ] The three places of `research/module_extension.md` and the section of `research/module_tests.md` are written;
+- [x] The CHANGELOG entry carries the cases 1, 2, 3 and 5, and agrees with the diff of c2.
+- [x] The three places of `research/module_extension.md` and the section of `research/module_tests.md` are written;
       no sentence there describes something that does not run.
-- [ ] Each of the six neighbours has its row; the two bridge files have no difference
+- [x] Each of the six neighbours has its row; the two bridge files have no difference
       (`git diff --stat bf39ea05 -- todo/PLAN_remote_bridge_scoped.md todo/PLAN_remote_bridge_scoped_E1_S3_spec.md`
       is empty).
-- [ ] `plan-lifecycle.mjs` is clean; `pin-check.mjs` passes; each link of the changed files resolves.
-- [ ] `npm run typecheck`, `npm test`, `npm run lint` are green; `npm run contract` leaves no difference;
+- [x] `plan-lifecycle.mjs` is clean; `pin-check.mjs` passes; each link of the changed files resolves.
+- [x] `npm run typecheck`, `npm test`, `npm run lint` are green; `npm run contract` leaves no difference;
       `npm run itest:mcp` is green with no `SKIP`, or the summary says why not and who runs it.
 
 ## The order of the commits, and what comes after E1.3

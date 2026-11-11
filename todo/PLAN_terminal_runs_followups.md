@@ -68,6 +68,8 @@ the allow-list refuses those characters.
 credential is missing when a terminal was busy, and the person has a config file and a chain they did not need. **Fix to consider:** ask
 the guard before the chain, and give the refusal its own failure code, with the same check repeated at the send.
 
+**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)** (F7): that plan changes disjoint lines of `agentUseActions.ts` (`whyUnusable`, `usableGate`, `remoteRefusal`) and not `vpnOutcome`. A new failure code or sentence there names the VPN entry only, or it goes through that plan's chooser.
+
 ### 7. Other modals still show a raw name or line
 
 **Symptom.** §3's escaper sentence of the parent covers the folder run's modal and report and the chain's modal. Outside it, the arrow's
