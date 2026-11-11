@@ -536,7 +536,7 @@ export function secretsRemoteLine(plan: RemotePlan, refs: RefPlan): string {
  */
 export function secretsOverSshBanner(target: string, secrets: readonly { value: string; label: string }[]): string {
   return (
-    `Over SSH to ${target}. The values go to the remote login shell on its standard input, never on a command line, and are replaced with ` +
+    `Over SSH to ${target}. The values go to the remote login shell on ssh's standard input, never on a command line, and are replaced with ` +
     `<CREDS_MASKED:NAME> in what it prints here.${shortValuesCaveat(secrets)} This run is not interactive: there is no terminal, and the command reads an empty ` +
     'input, so a command that asks a question usually stops. To answer questions, use Run in Terminal instead; the values are not injected there.'
   );

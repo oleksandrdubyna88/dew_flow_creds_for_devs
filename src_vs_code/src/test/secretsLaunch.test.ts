@@ -157,7 +157,7 @@ test('the_remote_line_reads_each_reference_from_the_posix_environment', () => {
 
 test('the_banner_is_exact_and_names_the_target', () => {
   const exact =
-    'Over SSH to deploy@prod.example:2222. The values go to the remote login shell on its standard input, never on a command line, and are replaced with ' +
+    'Over SSH to deploy@prod.example:2222. The values go to the remote login shell on ssh\'s standard input, never on a command line, and are replaced with ' +
     '<CREDS_MASKED:NAME> in what it prints here. This run is not interactive: there is no terminal, and the command reads an empty input, so a command that asks ' +
     'a question usually stops. To answer questions, use Run in Terminal instead; the values are not injected there.';
   assert.equal(secretsOverSshBanner('deploy@prod.example:2222', SECRETS), exact);

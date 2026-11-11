@@ -418,7 +418,7 @@ a terminal will behave as it does when piped — use *Run in Terminal* for those
 textual: a program that base64s a value before printing it defeats it, which is why a script that
 prints its own variables is still flagged when you save it.
 
-For an entry set to run over SSH, the values go to the server's login shell on its standard input as
+For an entry set to run over SSH, the values go to the server's login shell on ssh's standard input as
 `export` lines — never on a command line or in the shell history; on the server they are in the
 environment of the command, where the same user and root can read them (for example with `ps e` or
 `/proc/<pid>/environ`), as for a run on this machine. The output is masked the same way. That run is
