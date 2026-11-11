@@ -688,7 +688,7 @@ links back here and gets its own `todo/README.md` row. This file holds no story.
 (a security judgement); Opus writes each stories document; Sonnet codes; Opus reviews. Two epics give a cornerstone
 quota of 1.
 
-Cornerstones: 0 of 1 — the area is named in E1; its story is marked when E1's stories document is written
+Cornerstones: 1 of 1 — E1.1 ([PLAN_agent_refusal_names_unlisted_entry_E1.md](PLAN_agent_refusal_names_unlisted_entry_E1.md))
 
 ### E1 · Rule A: the addressed node
 
@@ -703,7 +703,10 @@ Cornerstones: 0 of 1 — the area is named in E1; its story is marked when E1's 
 - **Cornerstone area (the one of this plan).** The two lookups, the shared predicate and part A of the class test. A
   mistake there is a name that leaves the vault through a call that passes every other test, and nothing after it
   catches the mistake. Epic 2 stands on the same predicate.
-- **Stories.** In `todo/PLAN_agent_refusal_names_unlisted_entry_E1.md`, written when the epic starts.
+- **Stories.** [PLAN_agent_refusal_names_unlisted_entry_E1.md](PLAN_agent_refusal_names_unlisted_entry_E1.md),
+  written 2026-11-11: E1.1 **(cornerstone)** rule A at the two lookups, with part A of the class test, `agentMayView`
+  and the journal reason of a linked run; E1.2 the harness checks H1 to H6; E1.3 the documents, the neighbour rows
+  and the closing checks.
 
 ### E2 · Rule B: a second entry in a refusal
 
