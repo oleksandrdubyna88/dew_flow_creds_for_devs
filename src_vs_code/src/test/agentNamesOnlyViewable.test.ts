@@ -65,7 +65,7 @@ async function rigOf(): Promise<Rig> {
   const w = world({
     answers: ['Allow', 'Allow', 'Allow'],
     trash: true,
-    mcpEntries: [...(await visibleMcpEntries(SOURCE))] as unknown as Record<string, unknown>[],
+    mcpEntries: await visibleMcpEntries(SOURCE),
     mcpResolve: (id, action, server) => {
       counts.resolve += 1;
       return hookMod.mcpUseLookup(SOURCE, id, action, undefined, Date.now(), server);

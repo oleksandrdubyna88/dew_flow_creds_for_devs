@@ -127,7 +127,8 @@ function world(options: {
   aliasList?: { name: string; kind: string }[];
   /** What the vault would show an agent. Absent means this window shows agents nothing. */
   visibleConfig?: (entityId: string) => import('../types').EntityMetadata | undefined;
-  mcpEntries?: Record<string, unknown>[];
+  /** Any object list: a test gives literal stubs, or what `visibleMcpEntries` returns. Read as `McpEntry` only by the route that lists them. */
+  mcpEntries?: readonly object[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
   /** Whether the vault says this call's dialog has already been answered (issue #95). */
@@ -477,7 +478,7 @@ function burnerFor(
  * here would only assert that a literal matches itself.</p>
  */
 function mcpEntriesFor(
-  entries: Record<string, unknown>[] | undefined,
+  entries: readonly object[] | undefined,
 ): (() => Promise<never>) | undefined {
   return entries === undefined ? undefined : () => Promise.resolve(entries as never);
 }

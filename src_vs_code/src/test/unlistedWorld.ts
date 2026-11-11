@@ -31,7 +31,8 @@ function folder(id: string, parentId: string | null, mcp?: McpAccess, extra: Par
 }
 
 function entry(id: string, parentId: string | null, details: Partial<EntityMetadata> = {}): TreeNode {
-  return { id, name: markerOf(id), type: 'entity', parentId, details: { id, name: markerOf(id), kind: 'ssh', isSshEnabled: true, host: 'h.example.test', ...details } as EntityMetadata };
+  const base: EntityMetadata = { id, name: markerOf(id), kind: 'ssh', isSshEnabled: true, host: 'h.example.test' };
+  return { id, name: markerOf(id), type: 'entity', parentId, details: { ...base, ...details } };
 }
 
 /** The ids of the nodes the agent may NOT view, by role. */

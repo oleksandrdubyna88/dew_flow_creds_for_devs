@@ -388,7 +388,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     answers: Array.from({ length: o.allows }, () => 'Allow'),
     aliasMap: aliases,
     aliasList: aliasRows(aliases),
-    mcpEntries: [...(await visibleMcpEntries(vault))] as unknown as Record<string, unknown>[],
+    mcpEntries: await visibleMcpEntries(vault),
     mcpResolve: (id, action, server) => {
       lookups.push([id, action, server]);
       return mcpHooks.resolve(id, action, server);
