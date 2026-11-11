@@ -155,10 +155,10 @@ function assertMadeUp(id: string): void {
 
 /** Proof 1: the product's own two lists agree with the roles of the fixture. */
 async function assertListsAgree(): Promise<void> {
-  const entries = (await visibleMcpEntries(SOURCE)).map((e) => e.id).sort();
-  assert.deepEqual(entries, idsOf(VISIBLE).filter((id) => id.startsWith('ve-')).sort(), 'visibleMcpEntries gives exactly the visible entries');
-  const folders = visibleFolders(SOURCE.getAccounts(), (account) => SOURCE.getNodes(account), (account, id) => SOURCE.getNode(account, id)).map((f) => f.id).sort();
-  assert.deepEqual(folders, idsOf(VISIBLE).filter((id) => id.startsWith('vf-')).sort(), 'visibleFolders gives exactly the visible folders');
+  const entries = (await visibleMcpEntries(SOURCE)).map((e) => e.id).sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(entries, idsOf(VISIBLE).filter((id) => id.startsWith('ve-')).sort((a, b) => a.localeCompare(b)), 'visibleMcpEntries gives exactly the visible entries');
+  const folders = visibleFolders(SOURCE.getAccounts(), (account) => SOURCE.getNodes(account), (account, id) => SOURCE.getNode(account, id)).map((f) => f.id).sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(folders, idsOf(VISIBLE).filter((id) => id.startsWith('vf-')).sort((a, b) => a.localeCompare(b)), 'visibleFolders gives exactly the visible folders');
 }
 
 /** Proof 2: no hidden id (so no hidden marker, which holds it) is a part of the id or the name of ANOTHER node. */

@@ -340,7 +340,7 @@ test('completeness 1: every route of the contract has a row or a written reason,
 });
 
 test('completeness 3: the /v1/mcp/ routes of the contract are the /v1/mcp/ routes of the bridge table', () => {
-  const mcp = (paths: readonly string[]): string[] => [...new Set(paths.filter((p) => p.startsWith('/v1/mcp/')))].sort();
+  const mcp = (paths: readonly string[]): string[] => [...new Set(paths.filter((p) => p.startsWith('/v1/mcp/')))].sort((a, b) => a.localeCompare(b));
   assert.deepEqual(mcp(contractRoutes(CONTRACT)), mcp(BRIDGE_ROUTES.map((route) => route.path)));
   assert.equal(mcp(contractRoutes(CONTRACT)).length, 18);
 });
