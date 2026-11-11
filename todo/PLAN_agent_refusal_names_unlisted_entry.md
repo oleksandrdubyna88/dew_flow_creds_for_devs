@@ -577,7 +577,7 @@ Each neighbour gets ONE boundary row for this plan, written in epic 1's pull req
 `planning-docs.md`), except the bridge plan and its E1 S3 spec: their owner session asked that their files not be
 edited now (it would be that plan's change 8.2 and a stop), so their two rows below are OWED — written here, named
 with this plan's pull request number when it exists, and taken into that plan's ledger when it opens for E1.6
-(entry 1.1). N7 (the bridged refusal note at `sshUseActions.ts:132` names the key entry or jump host) goes with them. The row is the neighbour's part, said from its side. It goes into the section that the last
+(entry 1.1). This plan's pull requests are #347 (epic 1) and #353 (epic 2). N7 (the bridged refusal note at `sshUseActions.ts:132` names the key entry or jump host) goes with them. The row is the neighbour's part, said from its side. It goes into the section that the last
 column names. A row of this kind changes none of the neighbour's scope, goals, Definition of Done, merge conditions,
 epics, stories, build order, contract or approach, so it is not an entry of that plan's ledger. If a row makes a
 sentence of a neighbour false, the repair of that sentence is judged by that plan's own change rule.
