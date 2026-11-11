@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.0...extension-v1.21.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **agent:** F7 E1 — an entry or folder an agent may not view answers like an id that does not exist ([#347](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/347)) ([cb01747](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/cb017473a1696e888b0bbbea7c3ada5f3bb80392))
+
 ## [1.21.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.20.0...extension-v1.21.0) (2026-11-11)
 
 
