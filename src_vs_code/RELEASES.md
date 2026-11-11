@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.1...extension-v1.21.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **terminal:** a line over SSH runs in the server's login shell, so the tools of ~/.profile are found ([#351](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/351)) ([f3cec54](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/f3cec548ae75d4f73d933daf2a7dc0fe4988ece8))
+
 ## [1.21.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.0...extension-v1.21.1) (2026-11-11)
 
 
