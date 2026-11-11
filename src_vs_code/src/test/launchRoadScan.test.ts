@@ -17,7 +17,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 const RESOLVE_IMPORT = /import\s+(?:type\s+)?\{[^}]*\bresolveCommand\b[^}]*\}\s*from/g;
 const SSH_LINK_READS = [/\.\s*sshEntityId\b/g, /\{[^{}]*\bsshEntityId\b[^{}]*\}\s*=[^=>]/g, /\[\s*['"`]sshEntityId['"`]\s*\]/g];
-const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g];
+const SENDS = [/\.sendText\s*\(/g, /\.executeCommand\s*\(/g, /\bsendGuarded\s*\(/g, /\btypeIntoNew\s*\(/g, /\btypeAll\s*\(/g, /\brunMasked\s*\(/g, /\bcapturedRun\s*\(/g, /\bchildProcess\.spawn\s*\(/g, /\brunInMaskedTerminal\s*\(/g, /\brunSshExec\s*\(/g];
 const REFUSAL_CALL = /\bsshLinkRefusal\s*\(/g;
 
 /** The road files of spec §S2.7 scan 3: where a line is typed into a terminal or handed to a child. */
@@ -30,6 +30,7 @@ const ROAD_FILES = [
   'vpnLauncherRun.ts',
   'sshRoad.ts',
   'agentUseActions.ts',
+  'sshUseActions.ts',
   'terminalGuard.ts',
   'pinnedTerminal.ts',
   'maskedTerminal.ts',
@@ -97,14 +98,15 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
 // ---- scan 1: who imports resolveCommand -----------------------------------------------------------------------------
 
 /**
- * Sorted, compared whole, so a new importer and a vanished one both fail. The target state (parent §4.5 (1)) is
- * `commandLine.ts`' own users, `remoteLaunch.ts`, and the display-only readers; each of E2 and E3 removes road files.
+ * Sorted, compared whole, so a new importer and a vanished one both fail. After E3 the list is commands/runCommands.ts (its LOCAL roads only,
+ * E3-D13) and remoteLaunch.ts (parent §4.5 (1)). It proves who imports, not where a resolved line flows: that a linked entry reaches no
+ * local sink is linkedNeverLocal.test.ts (parent §4.5 (5)).
  */
-const RESOLVE_IMPORTERS = ['agentUseActions.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
+const RESOLVE_IMPORTERS = ['commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
-  assert.deepEqual(importers, RESOLVE_IMPORTERS, 'a road that resolves its own line skips the link: ask remoteLaunch.ts (and edit this list in the same commit)');
+  assert.deepEqual(importers, RESOLVE_IMPORTERS, 'a new file imports resolveCommand: a linked entry must take its launch from remoteLaunch.ts (planLaunch); add the file\'s no-local-sink tests to linkedNeverLocal.test.ts and edit this list in the same commit');
 });
 
 // ---- scan 2: who reads the SSH link ---------------------------------------------------------------------------------
@@ -136,8 +138,13 @@ const ALLOWED_SENDS: AllowList = {
   'commands/runCommands.ts': [
     { line: "const sent = await sendGuarded(entry.key, { kind: 'entry', terminalOs: entry.details.terminalOs }, () => line);", because: 'Run in Terminal, an entry with no link: the local road, unchanged' },
     { line: "opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);", because: 'Run Script in a terminal: a script, never linked (E1.S1 scrub)' },
-    { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: E3 switches it to the remote script on stdin' },
-    { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: E3' },
+    { line: 'runMasked(host, job, refs);', because: 'Run with Secrets, the call: the local road (an unlinked command or a script); a linked command goes through maskedOverSsh (E3.S1)' },
+    { line: 'function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {', because: 'Run with Secrets, the declaration: the local road (E3.S1)' },
+    {
+      line: 'runInMaskedTerminal({',
+      because: 'Run with Secrets: the local child through its shell (runMasked), and the linked child by argv with the script on stdin (E3.S1)',
+      count: 2,
+    },
   ],
   'commands/folderRunCommand.ts': [
     { line: 'say(reportNotice(folder.name, typeAll(plan, chosen, keyOfRow, prepared)));', because: 'Run Folder, the call (E2.S2): after every linked row is prepared and the run-level stop is read' },
@@ -161,7 +168,13 @@ const ALLOWED_SENDS: AllowList = {
       because: "the VPN launcher with no link, or an agent's start: the local road, unchanged",
     },
   ],
-  'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run: E3 spawns ssh with the remote word' }],
+  'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run of an entry with no link: the local road' }],
+  'sshUseActions.ts': [
+    {
+      line: 'const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });',
+      because: "ssh:exec and the agent's run over SSH (E3.S2): the argv comes from buildSshExecArgv, no shell",
+    },
+  ],
   'terminalGuard.ts': [
     { line: 'export async function sendGuarded(', because: 'the guarded send: the road under Run in Terminal and the VPN launcher' },
     { line: 'return typeIntoNew(key, target, lineFor);', because: 'sendGuarded opens a new terminal when none is reusable (always, for a password session)' },
@@ -175,7 +188,13 @@ const ALLOWED_SENDS: AllowList = {
       because: "the one linked send of the person's arrow and a VPN launcher (E2.S1, runOverSsh): the line typedLine built from the prepared snapshot, with a password session's own environment",
     },
   ],
-  'maskedTerminal.ts': [{ line: 'const child = childProcess.spawn(options.commandLine, [], {', because: 'the masked child of Run with Secrets: E3' }],
+  'maskedTerminal.ts': [
+    {
+      line: 'const child = childProcess.spawn(launch.program, launch.args, {',
+      because: 'the masked child of Run with Secrets: through a shell (local) or by argv with shell false (over SSH, E3.S1)',
+    },
+    { line: 'export function runInMaskedTerminal(options: MaskedRunOptions): vscode.Terminal {', because: 'the declaration' },
+  ],
 };
 
 test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
@@ -187,7 +206,6 @@ test('terminals_and_children_are_reached_only_from_the_listed_lines', () => {
 
 /** `file:function` pairs, one per match of the pattern: the declaration, then every call (a function that calls twice is listed twice). E2 and E3 shrink it. */
 const REFUSAL_SITES = [
-  'agentUseActions.ts:terminalRunAction',
   'commands/runCommands.ts:secretsRefusal',
   'dependencyRun.ts:stepRefusal',
   'remoteLaunch.ts:sshLinkRefusal',
@@ -223,4 +241,104 @@ test('the_scan_still_finds_what_it_is_about', () => {
   assert.equal(sitesIn('literal.ts', sendLiteral, SENDS).length, 1);
   assert.equal(sitesIn('literal.ts', 'x = sshLinkRefusal\n(\n  d)', [REFUSAL_CALL]).length, 1);
   assert.equal(sitesIn('literal.ts', 'x\n  .executeCommand(\n y)', SENDS).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x = runInMaskedTerminal\n(\n {})', SENDS).length, 1);
+  assert.equal(sitesIn('literal.ts', 'x = runSshExec\n(\n a)', SENDS).length, 1);
+});
+
+// ---- scan 5: the ssh words of E3's two roads (E3.4 F-S2; spec §18.4 T2 and F5) ------------------------------------------------------
+//
+// `-T` (no remote pty) and the extension's-own-agent rule are sent by exactly the roads that decided to, and a road that did not decide
+// cannot get them by accident. These scans say what is SENT, as the spec says (§18.4): they are not a proof that an option protects.
+
+/** The text with every comment turned into spaces, newlines kept: a word in a comment is not a site, and a line number stays the line. */
+function withoutComments(text: string): string {
+  const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
+  return text.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/(^|[^:'"`\\])\/\/[^\n]*/g, (match, lead: string) => lead + blank(match.slice(lead.length)));
+}
+
+/** Every production file, comments removed. */
+function productionFiles(): { rel: string; text: string }[] {
+  return sourceFiles(SRC).map((full) => ({ rel: path.relative(SRC, full).split(path.sep).join('/'), text: withoutComments(fs.readFileSync(full, 'utf8')) }));
+}
+
+/** A quoted string (any of the three quotes, escapes kept whole) or one parenthesis: what `argumentsOf` walks, so a parenthesis inside a string is not counted. */
+const PAREN_OR_STRING = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()]/g;
+
+const depthChange = (token: string): number => (token === '(' ? 1 : token === ')' ? -1 : 0);
+
+/** The text between the parenthesis at `open` and its match, skipping quoted strings; `undefined` when the text ends first. */
+function argumentsOf(text: string, open: number): string | undefined {
+  const tokens = new RegExp(PAREN_OR_STRING.source, 'g');
+  tokens.lastIndex = open;
+  let depth = 0;
+  for (let token = tokens.exec(text); token !== null; token = tokens.exec(text)) {
+    depth += depthChange(token[0]);
+    if (depth === 0) {
+      return text.slice(open + 1, token.index);
+    }
+  }
+  return undefined;
+}
+
+/** Each call of `buildSshExecArgv(` (not its declaration), with whether its arguments name `ownAgent` (the word, not `ownAgentOnly`). */
+function execArgvCalls(): { site: string; names: boolean }[] {
+  return productionFiles().flatMap(({ rel, text }) =>
+    [...text.matchAll(/\bbuildSshExecArgv\s*\(/g)]
+      .filter((match) => !/function\s+$/.test(text.slice(0, match.index)))
+      .map((match) => ({
+        site: `${rel}:${text.slice(0, match.index).split('\n').length}`,
+        names: /\bownAgent\b/.test(argumentsOf(text, match.index + match[0].length - 1) ?? ''),
+      })),
+  );
+}
+
+/** Where a pattern stands in production code, as `file:function` (and the line, for a failure message). */
+function wordSites(pattern: RegExp): { where: string; line: number; file: string }[] {
+  return productionFiles().flatMap(({ rel, text }) =>
+    [...text.matchAll(new RegExp(pattern.source, pattern.flags))].map((match) => ({
+      where: `${rel}:${enclosing(text.slice(0, (match.index ?? 0) + match[0].length))}`,
+      line: text.slice(0, match.index).split('\n').length,
+      file: rel,
+    })),
+  );
+}
+
+const AGENT_COMMANDS_CALLS = 3;
+
+test('only_ssh_exec_still_sends_dash_a_without_our_agent', () => {
+  const falses = wordSites(/\bownAgentOnly\s*:\s*false\b/g);
+  assert.deepEqual(falses.map((s) => s.where), ['sshUseActions.ts:sshExecAction'], `ownAgentOnly: false stands at: ${falses.map((s) => `${s.file}:${s.line}`).join(', ')}`);
+  const trues = wordSites(/\bownAgentOnly\s*:\s*true\b/g);
+  assert.ok(trues.length > 0 && trues.every((s) => s.file === 'agentUseActions.ts'), `ownAgentOnly: true stands at: ${trues.map((s) => `${s.file}:${s.line}`).join(', ')}`);
+  const unnamed = execArgvCalls().filter((call) => !call.names).map((call) => call.site);
+  assert.deepEqual(
+    unnamed.map((site) => site.split(':')[0]),
+    Array.from({ length: AGENT_COMMANDS_CALLS }, () => 'commands/agentCommands.ts'),
+    `a call of buildSshExecArgv names no ownAgent at: ${unnamed.join(', ')} — only the three clicks of commands/agentCommands.ts may (a list that may only get shorter)`,
+  );
+});
+
+test('the_ownAgent_scan_still_finds_its_sites', () => {
+  // A scan that matches nothing passes forever (testing.md): the one `false`, the three clicks, and the two calls that say it.
+  assert.equal(wordSites(/\bownAgentOnly\s*:\s*false\b/g).length, 1, 'the scan does not find the one ownAgentOnly: false');
+  const calls = execArgvCalls();
+  assert.equal(calls.filter((call) => call.site.startsWith('commands/agentCommands.ts:')).length, AGENT_COMMANDS_CALLS, 'the scan does not find the three clicks');
+  assert.ok(calls.some((call) => call.site.startsWith('sshUseActions.ts:') && call.names), 'the call of execOverSsh does not name ownAgent');
+  assert.ok(calls.some((call) => call.site.startsWith('remoteLaunch.ts:') && call.names), 'the call of secretsArgv does not name ownAgent');
+  const literal = "x = buildSshExecArgv(a, b, c('(', ')'), d, {\n  ownAgent,\n});";
+  assert.equal(/\bownAgent\b/.test(argumentsOf(literal, literal.indexOf('(')) ?? ''), true, 'a call over several lines, with parentheses in a string, is read whole');
+  assert.equal(withoutComments('a // ownAgent\n/* ownAgent\n */ b').includes('ownAgent'), false);
+});
+
+test('no_tty_is_sent_by_exactly_two_production_sites', () => {
+  const sent = wordSites(/\bnoTty\s*:\s*true\b/g);
+  assert.deepEqual(sent.map((s) => s.where).sort(), ['agentUseActions.ts:overSshWithSlot', 'remoteLaunch.ts:secretsArgv'], `noTty: true stands at: ${sent.map((s) => `${s.file}:${s.line}`).join(', ')}`);
+  const named = wordSites(/\bnoTty\b/g).filter((s) => s.file.startsWith('commands/') || s.where === 'sshUseActions.ts:sshExecAction');
+  assert.deepEqual(named, [], `a click of commands/ or ssh:exec names noTty at: ${named.map((s) => `${s.file}:${s.line}`).join(', ')}: those roads keep today's argv`);
+});
+
+test('the_noTty_scan_still_finds_its_sites', () => {
+  assert.equal(wordSites(/\bnoTty\s*:\s*true\b/g).length, 2, 'the scan does not find the two sites');
+  assert.ok(wordSites(/\bnoTty\b/g).some((s) => s.file === 'sshExecCommand.ts'), 'the scan does not find the builder that reads it');
+  assert.equal(wordSites(/\bnoTty\b/g).filter((s) => s.file === 'sshUseActions.ts').length > 0, true, 'the scan does not find execOverSsh handing noTty on');
 });

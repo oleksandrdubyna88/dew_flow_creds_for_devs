@@ -19,7 +19,7 @@ import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
 import { bridgedTokenCall, tokenStatusNow } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
-import { CallSubject, performCall } from './brokerCall';
+import { CallSubject, performCall, usedByCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
@@ -527,7 +527,8 @@ export class CredsAgentServer implements vscode.Disposable {
     if (useAction === undefined) {
       return;
     }
-    const summary = useAction.summarize(body);
+    const summary = useAction.summarize(body, grant);
+    const uses = usedByCall(useAction, grant);
     // Read BEFORE the await. A grant a policy settled at the door is already `allowed`, and a call
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
@@ -541,7 +542,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Only an `allowed` from a request still there gets here; `prepared` writes the answer down after the launch gate has
     // let the call through, so an Allow the gate then refuses (a scope narrowed meanwhile) stamps nothing; and only a dialog that
     // said it opened the window writes one (`opensWindow`).
-    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, opensWindow(question, asked), rungs));
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, uses, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, opensWindow(question, asked), rungs));
   }
 
   /** The capability check and the body's validation — both before anybody is asked anything. */
@@ -558,7 +559,7 @@ export class CredsAgentServer implements vscode.Disposable {
       this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
-    const validated = useAction.validate(body);
+    const validated = useAction.validate(body, grant);
     // A bridged call's stored command is checked once more before anybody is asked: a reference the scope does not serve.
     const refused = validated.ok ? referenceRefusal(grant, this.hooks.bridgeWall) : validationRefusal(validated);
     if (refused !== undefined) {
@@ -581,6 +582,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     await this.releaseWaiting(grant);
+    await this.releaseWaiting(call.uses);
     if (this.gone(call, 'before its values were read')) {
       return;
     }
@@ -617,9 +619,9 @@ export class CredsAgentServer implements vscode.Disposable {
     return left || refused !== undefined;
   }
 
-  /** A waiting rotated value goes in FIRST, so the mask table holds the value the action will use (`brokerHooks.ts`). */
-  private releaseWaiting(grant: Grant): Promise<void> {
-    return Promise.resolve(this.hooks.releaseWaiting?.(grant.accountId, grant.entityId)).then(
+  /** A waiting rotated value goes in FIRST, for the grant's entry and the entry the call also uses, so the mask table holds the value the action will use (`brokerHooks.ts`). */
+  private releaseWaiting(entry: { accountId: string; entityId: string } | undefined): Promise<void> {
+    return Promise.resolve(entry === undefined ? undefined : this.hooks.releaseWaiting?.(entry.accountId, entry.entityId)).then(
       () => undefined,
       () => undefined,
     );
@@ -680,11 +682,11 @@ export class CredsAgentServer implements vscode.Disposable {
         isOneUse: this.hooks.isOneUse,
         respond: (status, sent) => this.respond(res, status, sent),
         log: (line) => this.log(line),
-        refuse: (code, message) => this.respondError(res, code, message, grant, action, summary, via, caller),
+        refuse: (code, message, why) => this.respondError(res, code, message, grant, action, why === undefined ? summary : `${summary} · ${why}`, via, caller),
         failed: (why, ran) =>
           this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, caller, ran),
         refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
-        burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
+        burn: (status, of = grant) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, of, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
         atLaunch,
         standing: (prompt) => this.ceilings.followUpStands(res, grant, via, prompt),

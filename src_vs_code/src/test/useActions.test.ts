@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { UseAction, UseActionRegistry, asksAfter, launchGuards } from '../useActions';
+import { CallTarget, UseAction, UseActionRegistry, asksAfter, launchGuards } from '../useActions';
 
 /**
  * The registry is the seam for entity kinds beyond SSH. Its one rule worth a
@@ -8,6 +8,8 @@ import { UseAction, UseActionRegistry, asksAfter, launchGuards } from '../useAct
  * shadowing the action already there — a shadowed action is a capability that
  * quietly stops being the one you audited.
  */
+
+const TARGET: CallTarget = { accountId: 'a1', entityId: 'e1', entityName: 'x' };
 
 const stub = (kind: string, action: string): UseAction => ({
   kind,
@@ -26,10 +28,10 @@ test('an action is resolved by its (kind, action) pair', () => {
   registry.register(stub('ssh', 'terminal'));
   registry.register(stub('db', 'exec'));
 
-  assert.equal(registry.resolve('ssh', 'exec')?.summarize({}), 'ssh:exec');
-  assert.equal(registry.resolve('ssh', 'terminal')?.summarize({}), 'ssh:terminal');
+  assert.equal(registry.resolve('ssh', 'exec')?.summarize({}, TARGET), 'ssh:exec');
+  assert.equal(registry.resolve('ssh', 'terminal')?.summarize({}, TARGET), 'ssh:terminal');
   // Same action name, different kind: separate entries, no collision.
-  assert.equal(registry.resolve('db', 'exec')?.summarize({}), 'db:exec');
+  assert.equal(registry.resolve('db', 'exec')?.summarize({}, TARGET), 'db:exec');
 });
 
 test('an unregistered pair resolves to undefined, never to a near match', () => {

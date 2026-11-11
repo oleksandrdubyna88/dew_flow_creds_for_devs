@@ -13,6 +13,7 @@ import {
   vpnAction,
 } from '../agentUseActions';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { FAKE_STORAGE_DIR } from './fakePaths';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -40,14 +41,18 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     storage: {
       getNode: () => ({ details: { id: 'e1', name: 'prod-db' } }),
       getDbConnection: async () => 'postgresql://u:p@h:5432/db',
+      getAccounts: () => [{ accountId: 'acct-1' }],
     },
-    storageDir: '/tmp/does-not-matter',
+    storageDir: FAKE_STORAGE_DIR,
     signal: new AbortController().signal,
     acquireExecSlot: () => () => undefined,
     note: () => undefined,
     trustStore: { get: () => [] as string[], update: async () => undefined },
     applyEnv: async () => ({ written: [] as string[], withheld: [] }),
     onPath: () => false,
+    overSsh: async () => {
+      throw new Error('this world has no SSH road');
+    },
   };
   return { ...base, ...over } as never;
 }
@@ -131,10 +136,10 @@ test('dbQueryAction refuses when the entity has no db type or no connection stri
 });
 
 test('dbQueryAction rejects a malformed body before any side effect', () => {
-  const v = dbQueryAction(fakeDeps()).validate({});
+  const v = dbQueryAction(fakeDeps()).validate({}, ctx);
   assert.equal(v.ok, false);
-  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'x'.repeat(9000) }).ok, false);
-  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'select 1' }).ok, true);
+  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'x'.repeat(9000) }, ctx).ok, false);
+  assert.equal(dbQueryAction(fakeDeps()).validate({ query: 'select 1' }, ctx).ok, true);
 });
 
 test('scriptRunAction will not run a script no human has vouched for on this machine', async () => {
@@ -316,14 +321,14 @@ test('X1: exportEnv in an ssh-remote window is refused by validate, with a stabl
   const applied: string[] = [];
   const action = credentialExportEnvAction(exportDeps('ssh-remote', applied));
 
-  assert.deepEqual(action.validate({}), { ok: false, code: 'denied', message: EXPORT_REFUSED });
+  assert.deepEqual(action.validate({}, ctx), { ok: false, code: 'denied', message: EXPORT_REFUSED });
 });
 
 test('X1: in a local window the same entry is exported as before', async () => {
   const applied: string[] = [];
   const action = credentialExportEnvAction(exportDeps(undefined, applied));
 
-  assert.deepEqual(action.validate({}), { ok: true });
+  assert.deepEqual(action.validate({}, ctx), { ok: true });
   const result = await action.run(ctx, {});
 
   assert.equal(result.status, 200);
@@ -333,27 +338,29 @@ test('X1: in a local window the same entry is exported as before', async () => {
 
 test('X2: undefined, empty and wsl admit; every other window refuses with exactly EXPORT_REFUSED', () => {
   for (const admitted of [undefined, '', 'wsl']) {
-    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}), { ok: true }, `remoteName ${String(admitted)}`);
+    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}, ctx), { ok: true }, `remoteName ${String(admitted)}`);
   }
   for (const refused of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces', 'tunnel']) {
     assert.deepEqual(
-      credentialExportEnvAction(exportDeps(refused)).validate({}),
+      credentialExportEnvAction(exportDeps(refused)).validate({}, ctx),
       { ok: false, code: 'denied', message: EXPORT_REFUSED },
       `remoteName ${refused}`,
     );
   }
 });
 
-test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow) and on no other action of this module', () => {
+test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow), and `run` declares it per entry; no other action of this module declares it', () => {
   const flags = {
     'vpn up': vpnAction(fakeDeps(), 'up').asksAfterConsent,
     'vpn down': vpnAction(fakeDeps(), 'down').asksAfterConsent,
     scriptRun: scriptRunAction(fakeDeps()).asksAfterConsent,
-    terminalRun: terminalRunAction(fakeDeps()).asksAfterConsent,
+    terminalRun: typeof terminalRunAction(fakeDeps()).asksAfterConsent,
     exportEnv: credentialExportEnvAction(fakeDeps()).asksAfterConsent,
     dbQuery: dbQueryAction(fakeDeps()).asksAfterConsent,
   };
-  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: undefined, exportEnv: undefined, dbQuery: undefined });
+  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: 'function', exportEnv: undefined, dbQuery: undefined });
+  const perEntry = terminalRunAction(fakeDeps()).asksAfterConsent;
+  assert.equal(typeof perEntry === 'function' ? perEntry(ctx) : perEntry, false, 'an entry with no link keeps nothing once the dialog closes');
 });
 
 // `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): the agent runs the line the Run button would type.
@@ -399,8 +406,8 @@ test('a_refused_name_fails_not_supported_before_the_trust_check', async () => {
 });
 
 test('the_summary_and_the_snippet_stop_saying_exactly_as_saved', () => {
-  const summary = terminalRunAction(fakeDeps()).summarize({});
+  const summary = terminalRunAction(fakeDeps()).summarize({}, ctx);
   assert.doesNotMatch(summary, /exactly as saved/);
   // The script road is run exactly as saved, and still says so.
-  assert.match(scriptRunAction(fakeDeps()).summarize({}), /exactly as saved/);
+  assert.match(scriptRunAction(fakeDeps()).summarize({}, ctx), /exactly as saved/);
 });

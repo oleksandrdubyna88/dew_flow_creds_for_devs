@@ -1,6 +1,6 @@
 # PLAN — E1.S2 spec: the composer (`remoteLaunch.ts`), the `remote` option, the delivery test, the road scan
 
-> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e1 (local), promotes with the parent.** Spec text, written by Fable before the code. Written by Fable as the cornerstone spec of story
+> Status: **IMPLEMENTED, 2026-11-11.** Merged with E1 (#335) and released in extension 1.20.0 (#341), with the parent. Deviations: E1's §S4 (F1, F3 and F5 changed the files this spec names) and the parent's §12; later epochs added to `remoteLaunch.ts` (E3's secrets launch). Where this text and the code differ, the code and those tables win. Spec text, written by Fable before the code. Written by Fable as the cornerstone spec of story
 > E1.S2 of [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) (the parent; §4.2, §4.5, §4.6, §6,
 > `## Epics` › E1 › S2). The E1 stories document (`PLAN_terminal_command_over_ssh_E1.md`, Opus) is written in parallel
 > and marks the cornerstones; this spec does not wait for it. Where this spec differs from the parent, this spec says

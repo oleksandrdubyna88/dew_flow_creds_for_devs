@@ -8,6 +8,7 @@ import {
   validateRemoteCommand,
 } from '../sshExecCommand';
 import { EntityMetadata } from '../types';
+import { KEY_FILE } from './fakePaths';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -31,7 +32,7 @@ test('the remote command is the last element, verbatim and unquoted', () => {
 });
 
 test('key auth gets BatchMode, so an unattended call fails instead of hanging', () => {
-  const argv = buildSshExecArgv(entity(), '/tmp/k.key', 'true', 'key') ?? [];
+  const argv = buildSshExecArgv(entity(), KEY_FILE, 'true', 'key') ?? [];
 
   assert.equal(argv.includes('BatchMode=yes'), true);
   assert.equal(argv.includes('StrictHostKeyChecking=accept-new'), true);
@@ -60,8 +61,8 @@ test('-i appears only with a key path, -p only for a non-default port', () => {
   assert.equal(plain.includes('-i'), false);
   assert.equal(plain.includes('-p'), false);
 
-  const keyed = buildSshExecArgv(entity({ port: 2222 }), '/tmp/k.key', 'true') ?? [];
-  assert.equal(keyed[keyed.indexOf('-i') + 1], '/tmp/k.key');
+  const keyed = buildSshExecArgv(entity({ port: 2222 }), KEY_FILE, 'true') ?? [];
+  assert.equal(keyed[keyed.indexOf('-i') + 1], KEY_FILE);
   assert.equal(keyed[keyed.indexOf('-p') + 1], '2222');
 
   // An empty key path is "no key", not `-i ""`.
@@ -140,7 +141,7 @@ test('C.1: BRIDGED_SSH_OPTIONS is the six options, in this order, and nothing el
 });
 
 test('F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination', () => {
-  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', '/tmp/k.key');
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', KEY_FILE);
   const joined = argv.join(' ');
   for (const forbidden of ['-A', '-L', '-R', '-D']) {
     assert.ok(!argv.includes(forbidden), `${forbidden} is not sent on a bridge: ${joined}`);
@@ -174,4 +175,52 @@ test('F2: { bridged: false } and {} send none of the six, and an entry that forw
     assert.deepEqual(SIX.filter((arg) => arg !== '-o' && argv.includes(arg)), [], `nothing of the six: ${argv.join(' ')}`);
     assert.ok(argv.includes('-A'), 'control: the entry\'s own flag still gives -A');
   }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The re-review of epoch 4 (T1, F1; parent D16, D17 (b)) — what E3's two roads ask of the builder. These say what is SENT:
+ * whether `-T` or the missing `-A` does anything is a fact about the person's ssh, and hand check 3 observes it.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('no_tty_is_said_first_and_only_when_the_caller_asks', () => {
+  for (const auth of ['key', 'askpass'] as const) {
+    const asked = argvWith(everything, { noTty: true, jump: 'hop@jump.example.com' }, auth, KEY_FILE);
+    const plain = argvWith(everything, { jump: 'hop@jump.example.com' }, auth, KEY_FILE);
+    assert.equal(asked[0], '-T', `${auth}: -T is the first word: ${asked.join(' ')}`);
+    assert.equal(asked.filter((arg) => arg === '-T').length, 1, `${auth}: exactly one -T`);
+    for (const forbidden of ['-t', '-tt', 'EscapeChar=none']) {
+      assert.ok(!asked.includes(forbidden), `${auth}: ${forbidden} is not sent: ${asked.join(' ')}`);
+    }
+    assert.deepEqual(asked.slice(1), plain, `${auth}: the option adds one word and moves nothing`);
+    for (const options of [{}, { noTty: false }]) {
+      const quiet = argvWith(everything, options, auth, KEY_FILE);
+      assert.ok(!quiet.includes('-T'), `${auth}: no -T unless asked: ${quiet.join(' ')}`);
+      assert.equal(quiet[0], '-o', `${auth}: today's first word`);
+    }
+  }
+});
+
+test('a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_no', () => {
+  const pairs = (argv: readonly string[]): number => argv.filter((arg, i) => arg === '-o' && argv[i + 1] === 'ForwardAgent=no').length;
+  const forwardsOne = entity({ agentForward: true, portForwards: [{ kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432 }] });
+
+  const none = argvWith(forwardsOne, { ownAgent: false });
+  assert.ok(!none.includes('-A'), `no -A while our agent is not up: ${none.join(' ')}`);
+  assert.equal(pairs(none), 1, `the pair -o ForwardAgent=no stands once: ${none.join(' ')}`);
+  assert.deepEqual(none.slice(none.indexOf('-L'), none.indexOf('-L') + 2), ['-L', '8080:db:5432'], 'the forward is still there');
+
+  const ours = argvWith(forwardsOne, { ownAgent: true });
+  assert.ok(ours.includes('-A'), `our agent serves: -A: ${ours.join(' ')}`);
+  assert.equal(pairs(ours), 0, 'and no ForwardAgent=no');
+
+  const today = argvWith(forwardsOne, {});
+  assert.ok(today.includes('-A'), 'no ownAgent: today\'s argv');
+  assert.equal(pairs(today), 0);
+
+  const quiet = argvWith(entity(), { ownAgent: false });
+  assert.ok(!quiet.includes('-A') && pairs(quiet) === 0 && !quiet.includes('ForwardAgent=no'), `an entry that does not forward gets neither word: ${quiet.join(' ')}`);
+
+  const bridged = argvWith(everything, { bridged: true, ownAgent: false });
+  assert.equal(sixAt(bridged) !== -1 && pairs(bridged) === 1, true, `a bridged call keeps its six options, and no second pair: ${bridged.join(' ')}`);
+  assert.deepEqual(bridged, argvWith(everything, { bridged: true }), 'ownAgent changes nothing on a bridge');
 });

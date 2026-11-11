@@ -21,9 +21,10 @@ import { trackTerminalActivity } from '../terminalActivityTracker';
 import { confirmTrusted } from '../trustPrompt';
 import { DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
-import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
-import { SshLink, planLaunch, sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
-import { SshRoad, runOverSsh } from '../sshRoad';
+import { entryShell, hasOs, osMismatch, quoteFor, windowKind } from '../hostShell';
+import { RemotePlan, SecretsLaunch, SshLink, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsRemoteLine, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
+import { OwnedSessions, SpawnLaunch, SshRoad, ownedSessions, runOverSsh } from '../sshRoad';
+import type { ReadySsh } from '../sshSession';
 
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
@@ -295,10 +296,31 @@ function writeScriptFile(storageDir: string, fileName: string, body: string): st
  * extension host itself (`maskedTerminal.ts`), so its shell is THIS machine's: the native one for
  * a script and for an entry with an OS (issue #103), `vscode.env.shell` for an entry without one,
  * as before.</p>
+ *
+ * <p><b>A linked command runs over SSH</b> (E3.S1 of `PLAN_terminal_command_over_ssh.md`). The order is: the link and the plan, the
+ * checks that read nothing (a local window, a reference to resolve), prepare, the trust question on the trust line, the dependencies,
+ * the values, the spawn. The child is `ssh` by argv with no shell; the values go to its STDIN as `export` lines for the remote login
+ * shell, which is then closed; the output is masked; a banner says the run is not interactive and carries the launch's own warning.
+ * One owner holds the prepared session until the masked run exists, and that run's end cleans it. A script never reads a link: a
+ * script that a sync linked keeps the shared refusal.</p>
  */
 async function runWithSecrets(host: RunCommandsHost, target: unknown): Promise<void> {
   const job = await secretsJobAt(host, target);
-  if (job === undefined || !(await passGates(host, job.entry, job.body, secretsRefusal(job.entry)))) {
+  if (job === undefined) {
+    return;
+  }
+  const link = secretsLinkOf(host, job);
+  await (link.kind === 'none' ? runSecretsHere(host, job) : runSecretsOverSsh(host, job, link));
+}
+
+/** A script never reads a link (the form keeps the field on Terminal entries): it goes to the local road, whose refusal still says no to a synced link. */
+function secretsLinkOf(host: RunCommandsHost, job: SecretsJob): SshLink {
+  return job.script === undefined ? sshLinkOf(job.entry.details, (id) => host.storage.getNode(job.entry.accountId, id)) : { kind: 'none' };
+}
+
+/** The local road, unchanged: the gates with `secretsRefusal`, the references, the child through its shell. */
+async function runSecretsHere(host: RunCommandsHost, job: SecretsJob): Promise<void> {
+  if (!(await passGates(host, job.entry, job.body, secretsRefusal(job.entry)))) {
     return;
   }
   const refs = await resolvedRefs(host, job);
@@ -307,7 +329,10 @@ async function runWithSecrets(host: RunCommandsHost, target: unknown): Promise<v
   }
 }
 
-/** The SSH link first, then this machine's OS: neither gets as far as the trust modal or a secret read. */
+/**
+ * The script path and the local road: the SSH link first (a script that a sync linked; a linked COMMAND goes over SSH and never
+ * reaches this), then this machine's OS: neither gets as far as the trust modal or a secret read.
+ */
 function secretsRefusal(entry: Entry): string | undefined {
   return sshLinkRefusal(entry.details) ?? osMismatch(entry.name, entry.details.terminalOs, process.platform);
 }
@@ -365,11 +390,16 @@ interface ResolvedRefs {
 async function resolvedRefs(host: RunCommandsHost, job: SecretsJob): Promise<ResolvedRefs | undefined> {
   const scriptEnv = scriptEnvOf(job);
   const plan = planRefs(searchedTexts(job, scriptEnv));
-  if (plan.refs.length === 0) {
-    return void warn(
-      `"${job.entry.name}" holds no creds:// reference. Write one as a value — creds://<account email>/<entity>/<field> — then run this again. Nothing was run.`,
-    );
-  }
+  return plan.refs.length === 0 ? void warn(NO_REFERENCE(job.entry.name)) : resolvedValues(host, plan, scriptEnv);
+}
+
+/** What a run with no reference says, before anything is prepared or asked (said by both roads). */
+export function NO_REFERENCE(name: string): string {
+  return `"${name}" holds no creds:// reference. Write one as a value — creds://<account email>/<entity>/<field> — then run this again. Nothing was run.`;
+}
+
+/** Every reference read from the vault, or `undefined` having said why. */
+async function resolvedValues(host: RunCommandsHost, plan: RefPlan, scriptEnv: ScriptEnv): Promise<ResolvedRefs | undefined> {
   const resolution = await resolveSecretRefs(plan.refs, host.refSource);
   return resolution.ok ? withValues(plan, resolution.values, scriptEnv) : void vscode.window.showErrorMessage(`Nothing was run: ${resolution.error}`);
 }
@@ -410,10 +440,13 @@ function withValues(plan: RefPlan, values: Readonly<Record<string, string>>, scr
   return { plan, env, secrets, scriptBody: scriptEnv.body };
 }
 
+/** The banner's first line: which variable stands for which reference. */
+function describedRefs(plan: RefPlan): string {
+  return plan.refs.map((ref) => `${plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`).join('; ');
+}
+
 function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {
-  const described = refs.plan.refs
-    .map((ref) => `${refs.plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
-    .join('; ');
+  const described = describedRefs(refs.plan);
   runInMaskedTerminal({
     name: maskedRunTitle(job.entry.name),
     commandLine: maskedCommandLine(host, job, refs),
@@ -433,4 +466,125 @@ function maskedCommandLine(host: RunCommandsHost, job: SecretsJob, refs: Resolve
   const body = rewriteScriptRefs(refs.scriptBody, refs.plan, job.script.language);
   const scriptPath = writeScriptFile(host.storageDir, `run-${d.id}${job.script.plan.extension}`, body);
   return [job.script.plan.command, ...job.script.plan.args, quoteFor(pinnedShell().family, scriptPath)].join(' ');
+}
+
+// ---------- Run with Secrets over SSH (E3.S1) ----------
+
+/** What the steps of the road share: the host, the job, the plan (the trust line's line), the references planned from it, and the prepared session. */
+interface SecretsOverSsh {
+  readonly host: RunCommandsHost;
+  readonly job: SecretsJob;
+  readonly plan: RemotePlan;
+  readonly refs: RefPlan;
+  readonly ready: ReadySsh;
+}
+
+/** The ssh argv and the spawn's program, folder and environment: both are answered before anyone is asked. */
+interface SshLaunches {
+  readonly launch: Extract<SecretsLaunch, { kind: 'spawn' }>;
+  readonly spawn: Extract<SpawnLaunch, { kind: 'spawn' }>;
+}
+
+/**
+ * A linked command's road, up to the owner: a local window only, the plan's own refusals (the link's, a Windows remote's, a line
+ * break's), and a reference to resolve — all said BEFORE prepare, so nobody is asked a PIN or a host-key question for a run that
+ * cannot happen (E3-D3, E3-D6). The references come from the line that RUNS (`plan.line`, E3-D2), never from a disabled row.
+ */
+async function runSecretsOverSsh(host: RunCommandsHost, job: SecretsJob, link: SshLink): Promise<void> {
+  const plan = secretsPlan(job, link);
+  if (plan === undefined) {
+    return;
+  }
+  const refs = planRefs([plan.line]);
+  if (refs.refs.length === 0) {
+    warn(NO_REFERENCE(job.entry.name));
+    return;
+  }
+  await spawnOverSsh(host, job, plan, refs);
+}
+
+/** The window and the plan: the remote plan, or `undefined` having said why. */
+function secretsPlan(job: SecretsJob, link: SshLink): RemotePlan | undefined {
+  if (windowKind(vscode.env.remoteName) !== 'local') {
+    warn(secretsLocalOnly(job.entry.name));
+    return undefined;
+  }
+  const plan = planLaunch(job.entry.details, link, { stayOpen: false });
+  if (plan.kind === 'refused') {
+    warn(plan.reason);
+  }
+  return plan.kind === 'remote' ? plan : undefined;
+}
+
+/**
+ * The ONE OWNER of the prepared session: it prepares for a SPAWN (E3-D4), `own`s the session, and cleans every session still on its
+ * list in the `finally`. The hand-over to the masked run is inside this block (`maskedOverSsh`), so a throw from it or from the
+ * terminal's creation leaves the session here, to be cleaned once.
+ */
+async function spawnOverSsh(host: RunCommandsHost, job: SecretsJob, plan: RemotePlan, refs: RefPlan): Promise<void> {
+  const sessions = ownedSessions();
+  try {
+    const prepared = await host.sshRoad.prepare(job.entry.accountId, plan.ssh, 'spawn');
+    if (prepared.kind === 'refused') {
+      await host.sshRoad.sayRefused(prepared, plan.ssh);
+    }
+    if (prepared.kind !== 'ready') {
+      return;
+    }
+    sessions.own(prepared);
+    await trustedThenSpawned({ host, job, plan, refs, ready: prepared }, sessions);
+  } finally {
+    sessions.cleanAll();
+  }
+}
+
+/**
+ * From a prepared session to the masked run: the argv and the spawn (pure, before anyone is asked), the trust question on the
+ * TRUST LINE of the snapshot and the dependencies, the values, and the hand-over. No child exists and no byte is written before
+ * the trust is given. From `prepare` on, the run reads the prepared snapshot only (`ready`): never storage, never `plan.ssh`.
+ */
+async function trustedThenSpawned(run: SecretsOverSsh, sessions: OwnedSessions): Promise<void> {
+  const launches = launchesOf(run);
+  if (launches === undefined || !(await trustedOnItsLine(run))) {
+    return;
+  }
+  const resolved = await resolvedValues(run.host, run.refs, { env: {}, body: '' });
+  if (resolved !== undefined) {
+    maskedOverSsh(sessions, run, launches, resolved);
+  }
+}
+
+/** `spawnLaunch` first (its `ownAgent` goes into the argv) and `secretsLaunch`, or `undefined` having said why: nothing is read and nobody is asked yet. A warning of the launch is the banner's. */
+function launchesOf(run: SecretsOverSsh): SshLaunches | undefined {
+  const spawn = run.host.sshRoad.spawnLaunch(run.ready.snapshot, run.ready.env);
+  if (spawn.kind === 'refused') {
+    return void warn(spawn.reason);
+  }
+  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent);
+  return launch.kind === 'refused' ? void warn(launch.reason) : { launch, spawn };
+}
+
+/** The trust modal on the prepared snapshot's trust line (it names the host the values will reach), then the dependencies. */
+function trustedOnItsLine(run: SecretsOverSsh): Promise<boolean> {
+  return passGates(run.host, run.job.entry, trustLineFor(run.ready.entity, run.ready.jump, run.plan.line), undefined);
+}
+
+/**
+ * The ONLY place that hands a session to the masked run and makes it: one synchronous call, with no `await` and no `catch` of its own.
+ * The session stays on the owner's list until the run exists, and the run's end (`ended`) is the list's own once-only end.
+ */
+function maskedOverSsh(sessions: OwnedSessions, run: SecretsOverSsh, launches: SshLaunches, resolved: ResolvedRefs): void {
+  sessions.handOverToRun(run.ready, (ended) => {
+    runInMaskedTerminal({
+      name: maskedRunTitle(run.job.entry.name),
+      argv: [launches.spawn.program, ...launches.launch.argv],
+      cwd: launches.spawn.cwd,
+      env: launches.spawn.env,
+      withoutEnv: launches.spawn.withoutEnv,
+      stdinText: secretsStdin(resolved.env, secretsRemoteLine(run.plan, run.refs)),
+      secrets: resolved.secrets,
+      banner: maskedOverSshBanner(describedRefs(resolved.plan), launches.spawn.warning, launches.launch.target, resolved.secrets),
+      onEnded: ended,
+    });
+  });
 }

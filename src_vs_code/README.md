@@ -41,7 +41,7 @@ a folder to sync your own machines; add the optional self-hosted server when a t
 | **SSH agent, asking before it signs** | *Add to SSH Agent* serves a stored key from memory over a socket of this window's own, so **no key file exists on disk at all** — and a signature opens a dialog naming the key and what it is signing: an SSH login as *user*, or a Git commit. You answer *Allow once*, *Allow for 10 minutes*, *Allow longer…* (SSH logins only: 1, 4, 8 or 12 hours) or *Deny* — and locking the vault in this VS Code window ends every window. New terminals get `SSH_AUTH_SOCK`, so `ssh` and `git` just find it |
 | **Git commit signing** | *Copy Git Signing Config* gives you the `gpg.format ssh` lines with the public key inline, so Git signs commits with a key that lives only in the vault |
 | **One-time codes (TOTP)** | Paste the `otpauth://` URI or the base32 secret from any service's "can't scan the QR code?" screen. The viewer shows the live code with a countdown; the tree has *Copy One-Time Code*. Steam Guard too — so the second app can stay closed |
-| **Secret references + masked run** | Write `creds://you@corp.com/prod-db/password` where a value would go in a command or a script, then *Run with Secrets*: the value reaches only the child process's environment, and every appearance of it in what that process prints is replaced with a `<CREDS_MASKED:NAME>` marker naming which one it was |
+| **Secret references + masked run** | Write `creds://you@corp.com/prod-db/password` where a value would go in a command or a script, then *Run with Secrets*: the value reaches only the child process's environment (over SSH, the server's login shell on ssh's standard input, never on a command line), and every appearance of it in what that process prints is replaced with a `<CREDS_MASKED:NAME>` marker naming which one it was |
 | **Generate, don't invent** | Passwords, passphrases and Ed25519 key pairs, made in the form with the OS's own randomness and reported in **bits** rather than as a coloured bar. A generated key is saved straight to the keychain — `ssh-keygen` cannot do that, it writes a file by definition |
 | **Import what you already have** | `~/.ssh/config`, and CSV or JSON exports from Bitwarden, 1Password, KeePass, LastPass and Termius. Every skipped row is reported rather than quietly dropped |
 | **Health report** | Reused passwords, weak ones, unencrypted keys in `~/.ssh`, plaintext credentials in a workspace `.env` — all on this machine. An optional breach check sends five characters of a hash and nothing else |
@@ -256,8 +256,10 @@ removed and reordered, and a live preview shows exactly what will run.
 - **Runs over SSH** can name one of your SSH entries; it starts on *— Do not use —*. With one chosen,
   *Run in Terminal*, a VPN's *Started by*, *Run All in Folder* and a dependency chain connect with that
   entry — its key or password, its pinned host key, its jump host — and run the line there; *Runs on*
-  then names the server's system. *Run with Secrets* and an agent's run still refuse such an entry
-  and say why. Nothing runs on this machine instead. The choice is kept through sync and backup and left
+  then names the server's system. *Run with Secrets* runs it there too, from a local window, and so does an
+  agent's run — but only when the SSH entry itself is *Usable by agents*; otherwise the agent is refused with one sentence and
+  nothing runs. If that SSH entry is set to last until an agent uses it once, the agent's run is that use and the SSH entry is
+  deleted after it. Nothing runs on this machine instead. The choice is kept through sync and backup and left
   out of a share and an export.
 
 **Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
@@ -310,7 +312,9 @@ arrow asks before it types into that terminal again, because the login shell is 
 *Started by* runs over SSH the same way, but a launcher line with `{config}` is refused, because the
 config is a file on this machine, and an agent's VPN start with such a launcher is refused. *Copy
 Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent, `~/.ssh/config`), and
-the vault's key and password are not in it.
+the vault's key and password are not in it. An older version of CredsForDevs does not know *Runs over SSH*: it runs such an
+entry on its own machine, and a save there removes the choice for every machine. Update CredsForDevs on all your machines before
+you choose an SSH entry.
 
 ## Environment variables in the terminal
 
@@ -388,7 +392,7 @@ creds://you@corp.com/prod-db/password
 Write that reference as a script variable's value or a command argument, and *Run with Secrets*:
 
 - resolves it from your vault **at the moment of running**, into the child process's environment
-  and nowhere else — the argument on the command line becomes `"$CREDS_REF_1"`, so the value is not
+  and nowhere else (for an entry that runs over SSH, see below) — the argument on the command line becomes `"$CREDS_REF_1"`, so the value is not
   in the process list where every user on the machine can read it;
 - runs it in a terminal this extension owns, and **replaces every appearance of the value in what
   the process prints** with `<CREDS_MASKED:NAME>`, naming which secret stood there — including a value split across two writes.
@@ -403,6 +407,17 @@ PTY. A program that prompts interactively, draws a progress bar, or colours its 
 a terminal will behave as it does when piped — use *Run in Terminal* for those. And masking is
 textual: a program that base64s a value before printing it defeats it, which is why a script that
 prints its own variables is still flagged when you save it.
+
+For an entry set to run over SSH, the values go to the server's login shell on its standard input as
+`export` lines — never on a command line or in the shell history; on the server they are in the
+environment of the command, where the same user and root can read them (for example with `ps e` or
+`/proc/<pid>/environ`), as for a run on this machine. The output is masked the same way. That run is
+not interactive: the command's input is empty, so a command that asks a question usually stops; use
+*Run in Terminal* for such a command (the values are then not injected). ssh is asked for no terminal (`-T`), and with an SSH
+entry that forwards the agent it sends `-A` only while this extension's own agent is up; the extension host's own
+`SSH_AUTH_SOCK` and any `CREDS_REF_` variable are not passed to that ssh. Closing its terminal stops
+ssh on this machine; the command on the server has no terminal, so it can keep running there until
+it ends. It works only in a local VS Code window.
 
 ## Generating a secret instead of inventing one
 
@@ -705,6 +720,11 @@ Two of these deliberately **ignore whatever the agent sends**: `script` and `run
 what you saved, so no agent-authored text ever reaches an interpreter or a shell. They also require
 that you have run the entry yourself once on this machine — the broker's Allow covers a *token*, not
 a body, and a body can be replaced by a sync after you clicked it.
+
+For a terminal entry set to run over SSH, `run` runs the saved line on the server, over the SSH entry — and only when that SSH entry
+is itself *Usable by agents*. Otherwise the agent reads one sentence that names only the terminal entry, and nothing runs. The
+consent names the SSH entry and where it connects, and the agent's output is masked with the values of both entries. A Remote
+Bridge does not serve it. An agent's VPN start of a linked entry still refuses.
 
 **MongoDB is refused, on purpose.** `mongosh` has no password environment variable and its `--eval`
 runs in the same JavaScript interpreter that can read `process.env` — so a "query" could print the

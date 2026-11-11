@@ -1,6 +1,6 @@
 # PLAN — Terminal command over SSH, E1: the field, the refusal on every road, the composer, the seam
 
-> Status: **built 2026-11-10 on feat/terminal-command-over-ssh-e1 (local), promotes with the parent.** Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E1.
+> Status: **IMPLEMENTED, 2026-11-11.** Merged as #335 (f3b024b7) and released in extension 1.20.0 (#341), with the parent. Deviations: §S4 (F1-F7) and the parent's §12. Parent: [PLAN_terminal_command_over_ssh.md](PLAN_terminal_command_over_ssh.md) › E1.
 > Scope: `src_vs_code` only. S1 is specified in full here (scenarios and brief, by Opus). S2 and S3 are cornerstones:
 > their specs are Fable's, in their own files. Branch `feat/terminal-command-over-ssh-e1`; E1 was built as one commit and then the §S4 fixes.
 
@@ -336,7 +336,7 @@ The full `npm test` is run by the lead.
 E1 was built as one local commit, 782444a. Its coai code round answered `proceed` (8 of 8 reviewers). The lead's own
 three reviewers (Opus: simplicity, bugs, conventions) and the round's accepted findings leave these fixes. Each is
 RED-GREEN-RED. They are built on E1's branch AFTER it is rebased onto the security plan
-([PLAN_windows_shell_quoting_injection.md](../research/PLAN_windows_shell_quoting_injection.md)), which takes the security sweep
+([PLAN_windows_shell_quoting_injection.md](PLAN_windows_shell_quoting_injection.md)), which takes the security sweep
 out of 782444a.
 
 | # | Fix | Source | Proof |

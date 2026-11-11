@@ -64,7 +64,7 @@ single quotes (Microsoft, about_Quoting_Rules). This closes item 5 of
 2. **The push, the PR text and the release are the owner's decision**: this repository is public, and the PR names
    defects that every released extension since the askpass and the win32 line shipped carries. Disclosure wording and
    timing belong to the owner.
-3. The terminal-over-SSH work is rebased onto this commit (the plan is `todo/PLAN_terminal_command_over_ssh.md` on
+3. The terminal-over-SSH work is rebased onto this commit (the plan is `PLAN_terminal_command_over_ssh.md`, then in `todo/`, on
    branch `feat/terminal-command-over-ssh-e1`).
 
 ## 4. Tests

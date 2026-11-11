@@ -108,7 +108,7 @@ test('what the person is asked about still shows the placeholder', () => {
   // screenshot, and in this window's own audit line.
   const { action, generated } = world();
 
-  const summary = action.summarize({ statement: STATEMENT });
+  const summary = action.summarize({ statement: STATEMENT }, CTX);
 
   assert.ok(summary.includes(NEW_SECRET_PLACEHOLDER));
   assert.equal(summary.includes(generated), false);
@@ -153,7 +153,7 @@ test('a statement with no placeholder is refused before anything is generated', 
   // that works nowhere.
   const { action, log } = world();
 
-  const validated = action.validate({ statement: 'ALTER USER app IDENTIFIED BY "hunter2"' });
+  const validated = action.validate({ statement: 'ALTER USER app IDENTIFIED BY "hunter2"' }, CTX);
   const result = await action.run(CTX, { statement: 'ALTER USER app IDENTIFIED BY "hunter2"' });
 
   assert.equal(validated.ok, false);

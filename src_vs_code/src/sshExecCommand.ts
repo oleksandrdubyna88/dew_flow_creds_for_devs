@@ -8,6 +8,13 @@ export interface SshExecOptions {
   knownHostsFile?: string;
   /** A bridged call: ONE fresh connection that carries the command and nothing else, whatever the entry or a config file says (Amendment 3, C.1-C.2). */
   bridged?: boolean;
+  /** Ask ssh for no remote pty: `-T` is the FIRST word of the argv (E3's two roads, parent D16). Absent or `false`: today's argv. */
+  noTty?: boolean;
+  /**
+   * Whether the extension's OWN agent serves this call (E3's two roads, parent D17 (b)). `false` and an entry that forwards the agent: no `-A`,
+   * and `-o ForwardAgent=no`. `true` or absent: today's argv.
+   */
+  ownAgent?: boolean;
 }
 
 /**
@@ -68,6 +75,33 @@ export function validateRemoteCommand(command: unknown): { ok: true } | { ok: fa
  */
 export type SshExecAuth = 'askpass' | 'key';
 
+/** `-T` as the first word, only when the caller asks (E3's two roads, parent D16): ssh asks for no remote pty, also when a config says `RequestTTY force`. */
+function noTtyPrefix(options: SshExecOptions): string[] {
+  return options.noTty === true ? ['-T'] : [];
+}
+
+/** Whether this call must not forward the agent: the entry asks for it and the extension's own agent is not up (`ownAgent === false`). */
+function agentForwardTakenAway(entity: EntityMetadata, options: SshExecOptions): boolean {
+  return entity.agentForward === true && options.ownAgent === false;
+}
+
+/**
+ * The entry as the shared composer gets it. A bridged call is one fresh connection: its forwards and `-A` are off. A call whose
+ * extension agent is not up has `-A` off. `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is
+ * taken away, not out-voted.
+ */
+function composedEntity(entity: EntityMetadata, options: SshExecOptions): EntityMetadata {
+  if (options.bridged === true) {
+    return { ...entity, agentForward: false, portForwards: [] };
+  }
+  return agentForwardTakenAway(entity, options) ? { ...entity, agentForward: false } : entity;
+}
+
+/** `-o ForwardAgent=no` for a call whose `-A` was taken away, so a config's `ForwardAgent yes` does not forward the person's own agent (parent D17 (b)). A bridged call has it among its six. */
+function ownAgentWords(entity: EntityMetadata, options: SshExecOptions): string[] {
+  return options.bridged !== true && agentForwardTakenAway(entity, options) ? ['-o', 'ForwardAgent=no'] : [];
+}
+
 /**
  * `[(-o BatchMode=yes | -o NumberOfPasswordPrompts=1), -o
  *   StrictHostKeyChecking=accept-new, -o ConnectTimeout=10, (-i keyPath)?,
@@ -101,10 +135,10 @@ export function buildSshExecArgv(
   if (!isSafeSshTarget(entity)) {
     return undefined;
   }
-  const argv: string[] =
-    auth === 'askpass'
-      ? ['-o', 'NumberOfPasswordPrompts=1']
-      : ['-o', 'BatchMode=yes'];
+  const argv: string[] = [
+    ...noTtyPrefix(options),
+    ...(auth === 'askpass' ? ['-o', 'NumberOfPasswordPrompts=1'] : ['-o', 'BatchMode=yes']),
+  ];
   // A pinned key is enforced here exactly as on the human path (audit B10): with a pin, a
   // changed host key fails the call instead of being accepted silently. An agent's exec is
   // precisely where nobody is watching a warning scroll past.
@@ -118,7 +152,7 @@ export function buildSshExecArgv(
   // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
   // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.
   const bridged = options.bridged === true;
-  argv.push(...sshOptionArgv(bridged ? { ...entity, agentForward: false, portForwards: [] } : entity, options.jump));
+  argv.push(...sshOptionArgv(composedEntity(entity, options), options.jump), ...ownAgentWords(entity, options));
   if (bridged) {
     argv.push(...BRIDGED_SSH_OPTIONS);
   }

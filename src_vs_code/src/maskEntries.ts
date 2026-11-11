@@ -2,7 +2,8 @@ import { unsealedText } from './secretOpener';
 import { SecondKey, parseSecondValues } from './secondValues';
 import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
-import { EntityMetadata } from './types';
+import { EntityMetadata, TreeNode } from './types';
+import { SshLink, sshLinkOf } from './remoteLaunch';
 import type { StoredSecret } from './storedSecret';
 
 /**
@@ -147,4 +148,32 @@ function present(value: string | undefined): string[] {
 function passwordFromConnection(connection: string): string | undefined {
   const password = parseDbConnectionString(connection).password;
   return password !== undefined && password.length > 0 ? password : undefined;
+}
+
+/** What the linked table reads: a `SecretSource` whose node is a whole tree node, because `sshLinkOf` walks it. */
+export interface LinkedSecretSource extends SecretSource {
+  getNode(accountId: string, id: string): TreeNode | undefined;
+}
+
+/** The id of the SSH entry a Terminal entry runs over, when `sshLinkOf` accepts the link; `undefined` for no link, a missing entry or a refused one. */
+function linkedSshId(source: LinkedSecretSource, accountId: string, entityId: string): string | undefined {
+  const link = linkOf(source, accountId, source.getNode(accountId, entityId)?.details);
+  return link.kind === 'linked' ? link.ssh.id : undefined;
+}
+
+function linkOf(source: LinkedSecretSource, accountId: string, details: EntityMetadata | undefined): SshLink {
+  return details === undefined ? { kind: 'none' } : sshLinkOf(details, (id) => source.getNode(accountId, id));
+}
+
+/**
+ * The table of a call on `entityId`: its own values and, when it is a Terminal entry linked to an SSH entry, that entry's too (E3.S2
+ * security spec §7, D15). The run over SSH uses the SSH entry's credential, so what it can print is masked as a `creds_exec` on that entry
+ * would be; a password can reach the remote through the person's own `SendEnv`. Widened at this one place, never in an action. The Terminal
+ * entry still throws `MaskSourceUnavailable` when it is gone; a missing or refused SSH entry adds nothing and throws nothing — the run is
+ * refused by the gate anyway. `sshLinkOf` is the one reader of the link.
+ */
+export async function maskEntriesWithLink(source: LinkedSecretSource, accountId: string, entityId: string): Promise<readonly MaskEntry[]> {
+  const own = await maskEntriesFor(source, accountId, entityId);
+  const sshId = linkedSshId(source, accountId, entityId);
+  return sshId === undefined ? own : [...own, ...(await maskEntriesFor(source, accountId, sshId))];
 }

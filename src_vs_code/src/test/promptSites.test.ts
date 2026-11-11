@@ -6,7 +6,7 @@ import { AgentUseDeps, credentialExportEnvAction, dbQueryAction, scriptRunAction
 import { rotateAction } from '../rotateAction';
 import type { SshUseDeps } from '../sshUseActions';
 import { asksAfter } from '../useActions';
-import type { UseAction } from '../useActions';
+import type { OverSsh, UseAction } from '../useActions';
 import { LEDGER, LedgerRow } from './promptSiteLedger';
 import { PromptSite, WindowRead, scanSource } from './promptSiteScan';
 import { Walker, rootsOf, walkerOver } from './promptSiteWalk';
@@ -159,7 +159,7 @@ const reaches = (site: PromptSite): boolean => walk().reachesBroker(path.join(SR
 
 test('the broker\'s roots are derived from extension.ts: the action factories, the hooks, and what the deps variables are built from', () => {
   const { names, ranges } = rootsOf(fs.readFileSync(path.join(SRC, 'extension.ts'), 'utf8'));
-  for (const root of ['sshExecAction', 'sshTerminalAction', 'vpnAction', 'rotateAction', 'dbQueryAction', 'maskEntriesFor', 'mcpCreateHooks', 'sshDepsFor', 'agentVpnOpener', 'storeRotated']) {
+  for (const root of ['sshExecAction', 'sshTerminalAction', 'vpnAction', 'rotateAction', 'dbQueryAction', 'maskEntriesWithLink', 'mcpCreateHooks', 'sshDepsFor', 'agentVpnOpener', 'storeRotated']) {
     assert.ok(names.has(root), `${root} is a root`);
   }
   assert.ok(ranges.length > 10, 'the register calls and the broker construction are ranges of the wiring');
@@ -192,7 +192,7 @@ function realFactories(): Record<string, UseAction> {
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const ssh = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub);
   const sshDeps: SshUseDeps = { storage: memoryStorage(stub), storageDir: '/unused', signal: new AbortController().signal, acquireExecSlot: () => undefined, note: () => undefined, agentSocket: () => undefined };
-  const agent: AgentUseDeps & { onPath: (exe: string) => boolean } = {
+  const agent: AgentUseDeps & { onPath: (exe: string) => boolean; overSsh: OverSsh } = {
     storage: memoryStorage(stub),
     storageDir: '/unused',
     signal: new AbortController().signal,
@@ -201,6 +201,7 @@ function realFactories(): Record<string, UseAction> {
     trustStore: { get: () => [], update: () => Promise.resolve() },
     applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
     onPath: () => false,
+    overSsh: () => Promise.reject(new Error('this world has no SSH road')),
   };
   const vpn = { storage: { getNode: () => undefined }, open: () => Promise.resolve(false) };
   const exec = ssh.sshExecAction(sshDeps);
@@ -231,7 +232,7 @@ test('every action an `after-allow` row names carries the follow-up flag on its 
   }
   const carrying = Object.entries(factories).filter(([, action]) => flagged(action)).map(([name]) => name).sort();
   assert.deepEqual(carrying, [...named].filter((name) => name !== 'create').sort(), 'the factories that carry the flag are exactly the actions the ledger names (create is held below)');
-  assert.deepEqual(['query', 'run', 'script', 'exportEnv'].filter((name) => flagged(factories[name])), [], 'query, run and exportEnv keep nothing');
+  assert.deepEqual(['query', 'script', 'exportEnv'].filter((name) => flagged(factories[name])), [], 'query, script and exportEnv keep nothing');
 });
 
 test('`exec` declares it per entity — a function of the target, and true only for a forwarding entry with the agent socket up', () => {

@@ -159,8 +159,9 @@ test('a_disabled_literal_reference_is_scanned_as_today', async () => {
   await aw.runWithSecrets(E('alert', 'tool', rows));
   assert.equal(aw.masked.length, 1, aw.warnings.join('\n'));
   assert.deepEqual(Object.keys(aw.masked[0].env), ['CREDS_REF_1', 'CREDS_REF_2']);
-  assert.ok(aw.masked[0].commandLine.includes('CREDS_REF_2'));
-  assert.ok(!aw.masked[0].commandLine.includes('CREDS_REF_1'), aw.masked[0].commandLine);
+  const line = aw.masked[0].commandLine ?? ''; // optional in the record since E3.S1 (an argv run has none); a local run always has one
+  assert.ok(line.includes('CREDS_REF_2'));
+  assert.ok(!line.includes('CREDS_REF_1'), line);
 });
 
 test('the_token_alone_is_no_reference', async () => {
