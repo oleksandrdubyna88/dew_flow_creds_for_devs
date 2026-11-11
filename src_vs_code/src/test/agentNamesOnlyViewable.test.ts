@@ -103,13 +103,43 @@ async function ask(rig: Rig, method: 'GET' | 'POST', route: string, body?: Recor
   return { status: response.status, text: await response.text() };
 }
 
-/** One route of the contract that reads a node, and what to send on it. `ids` are the hidden values to compare against made-up ones. */
+/** Everything an agent can observe of one call, with the value that the request itself sent replaced by `<SENT>` (the plan's F6). */
+interface Observed {
+  readonly sent: string;
+  readonly status: number;
+  readonly raw: string;
+  readonly body: string;
+  readonly dialogs: number;
+  readonly audit: readonly string[];
+}
+
+/**
+ * One route of the contract that reads a node, and what to send on it. `ids` are the hidden values to compare against made-up ones.
+ * `reaches` says whether an answer is the route's OWN answer for a value that is not in the vault: a request whose value never gets to the
+ * lookup (a wrong field, `invalid_request`) is answered alike for a hidden value and a made-up one, so the pair alone would pass.
+ */
 interface Row {
   readonly path: string;
   readonly title: string;
   readonly ids: readonly string[];
   readonly send: (rig: Rig, sent: string) => Promise<Reply>;
+  readonly reaches: (missing: Observed) => boolean;
 }
+
+/** The `error` object of an answer, or an empty one when the body has none (a string `error`, or no `error`). */
+function errorOf(seen: Observed): { code?: string; message?: string } {
+  const error = (JSON.parse(seen.body) as { error?: unknown }).error;
+  return typeof error === 'object' && error !== null ? (error as { code?: string; message?: string }) : {};
+}
+
+/** The answer of the use, delete and folder routes for an id that is not there: 404 `not_found`. */
+const notFound = (seen: Observed): boolean => seen.status === 404 && errorOf(seen).code === 'not_found';
+/** The answer of a move to a destination that is not there. */
+const moveMissing = (seen: Observed): boolean => errorOf(seen).message?.endsWith('was not moved: there is no folder with that id.') === true;
+/** The answer of a create into a folder NAME that is not there. */
+const createMissing = (seen: Observed): boolean => errorOf(seen).message?.includes('is not open to agents for creating entries') === true;
+/** The answer of a config snippet for an id that is not there: a `200` that carries the sentence. */
+const snippetMissing = (seen: Observed): boolean => seen.status === 200 && (JSON.parse(seen.body) as { error?: string }).error === 'no such config is open to agents';
 
 const post = (route: string, body: (sent: string) => Record<string, unknown>) => (rig: Rig, sent: string): Promise<Reply> => ask(rig, 'POST', route, body(sent));
 
@@ -124,6 +154,7 @@ function useRows(): Row[] {
     title: `use ${verb}: a hidden entry reads as a missing one`,
     ids: HIDDEN_ENTRY_IDS,
     send: post(`${CONTRACT.mcpUsePrefix}${verb}`, (entry) => ({ entry, command: 'id' })),
+    reaches: notFound,
   }));
 }
 
@@ -131,17 +162,18 @@ function useRows(): Row[] {
 function writeRows(): Row[] {
   const folder = (verb: string): string => `${CONTRACT.mcpFolderPrefix}${verb}`;
   return [
-    { path: CONTRACT.mcpDeleteRoute, title: 'delete: a hidden entry reads as a missing one', ids: HIDDEN_ENTRY_IDS, send: post(CONTRACT.mcpDeleteRoute, (entry) => ({ entry })) },
-    { path: folder('create'), title: 'folder create: a hidden parent reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('create'), (parent) => ({ parent, name: 'x' })) },
-    { path: folder('edit'), title: 'folder edit: a hidden folder reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('edit'), (id) => ({ folder: id, name: 'x' })) },
-    { path: folder('edit'), title: 'folder edit, a move: a hidden destination reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('edit'), (parent) => ({ folder: VISIBLE.folderEditChild, parent })) },
-    { path: folder('delete'), title: 'folder delete: a hidden folder reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('delete'), (id) => ({ folder: id })) },
-    { path: CONTRACT.mcpCreateRoute, title: 'create: the NAME of a hidden folder reads as the name of a missing one', ids: HIDDEN_FOLDER_IDS.map(markerOf), send: post(CONTRACT.mcpCreateRoute, (name) => ({ name: 'x', kind: 'ssh', folder: name })) },
+    { path: CONTRACT.mcpDeleteRoute, title: 'delete: a hidden entry reads as a missing one', ids: HIDDEN_ENTRY_IDS, send: post(CONTRACT.mcpDeleteRoute, (entry) => ({ entry })), reaches: notFound },
+    { path: folder('create'), title: 'folder create: a hidden parent reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('create'), (parent) => ({ parent, name: 'x' })), reaches: notFound },
+    { path: folder('edit'), title: 'folder edit: a hidden folder reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('edit'), (id) => ({ folder: id, name: 'x' })), reaches: notFound },
+    { path: folder('edit'), title: 'folder edit, a move: a hidden destination reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('edit'), (parent) => ({ folder: VISIBLE.folderEditChild, parent })), reaches: moveMissing },
+    { path: folder('delete'), title: 'folder delete: a hidden folder reads as a missing one', ids: HIDDEN_FOLDER_IDS, send: post(folder('delete'), (id) => ({ folder: id })), reaches: notFound },
+    { path: CONTRACT.mcpCreateRoute, title: 'create: the NAME of a hidden folder reads as the name of a missing one', ids: HIDDEN_FOLDER_IDS.map(markerOf), send: post(CONTRACT.mcpCreateRoute, (name) => ({ name: 'x', kind: 'ssh', folder: name })), reaches: createMissing },
     {
       path: CONTRACT.reads.mcpConfigSnippet.path,
       title: 'config snippet: a hidden config reads as a missing one',
       ids: [HIDDEN.entries.config],
       send: (rig, id) => ask(rig, 'GET', `${CONTRACT.reads.mcpConfigSnippet.path}?id=${id}&language=shell`),
+      reaches: snippetMissing,
     },
   ];
 }
@@ -165,16 +197,6 @@ function takesNoNodeId(): { path: string; reason: string }[] {
 
 const ROWS: readonly Row[] = [...useRows(), ...writeRows()];
 const TABLE_PATHS: readonly string[] = [...ROWS.map((row) => row.path), ...LIST_PATHS, ...takesNoNodeId().map((row) => row.path)];
-
-/** Everything an agent can observe of one call, with the value that the request itself sent replaced by `<SENT>` (the plan's F6). */
-interface Observed {
-  readonly sent: string;
-  readonly status: number;
-  readonly raw: string;
-  readonly body: string;
-  readonly dialogs: number;
-  readonly audit: readonly string[];
-}
 
 async function observe(rig: Rig, row: Row, sent: string): Promise<Observed> {
   const dialogs = rig.w.dialogs.length;
@@ -216,7 +238,8 @@ function differences(label: string, hidden: Observed, missing: Observed): string
 async function pairFailures(rig: Rig, row: Row, id: string): Promise<string[]> {
   const hidden = await observe(rig, row, id);
   const missing = await observe(rig, row, madeUp(id));
-  return differences(`${row.title} [${id}]`, hidden, missing);
+  const label = `${row.title} [${id}]`;
+  return [...differences(label, hidden, missing), ...when(!row.reaches(missing), `${label}: the made-up value did not reach the route's lookup: ${missing.status} ${missing.body}`)];
 }
 
 let rig: Rig;
@@ -246,6 +269,7 @@ test('A: a move to a destination that is an entry reads as a move to an id that 
   const entry = await observe(rig, move, VISIBLE.entryView);
   const missing = await observe(rig, move, madeUp(HIDDEN.folders.none));
   assert.deepEqual(differences('a destination that is an entry', entry, missing), []);
+  assert.ok(move.reaches(missing), `the made-up destination did not reach the lookup: ${missing.body}`);
 });
 
 test('the exact answers: none is a new sentence, and each is the answer that the same route gives for an id that does not exist', async () => {
