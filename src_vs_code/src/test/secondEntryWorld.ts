@@ -93,7 +93,7 @@ type Storage = ReturnType<typeof memoryStorage>;
 const STATEMENT = 'echo {{creds:new}}';
 
 const entry = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMetadata =>
-  ({ id, name, kind: 'ssh', isSshEnabled: true, host: 'h.example.test', user: 'u', ...extra }) as EntityMetadata;
+  ({ id, name, kind: 'ssh', isSshEnabled: true, host: 'h.example.test', user: 'u', ...extra });
 
 const viewable: Partial<EntityMetadata> = { mcp: { view: true, use: true } };
 
@@ -134,12 +134,12 @@ async function seedHops(storage: Storage, o: Required<SecondOptions>): Promise<v
 /** `t1` runs a line over `e1`; `t2` is linked to an SSH entry the agent may not view; `v1` is a VPN with a hidden launcher and a hidden dependency. */
 async function seedLinked(storage: Storage): Promise<void> {
   const terminal = (id: string, name: string, sshEntityId: string): EntityMetadata =>
-    ({ id, name, kind: 'terminal', isSshEnabled: false, isTerminal: true, command: 'echo linked', sshEntityId, ...viewable }) as EntityMetadata;
+    ({ id, name, kind: 'terminal', isSshEnabled: false, isTerminal: true, command: 'echo linked', sshEntityId, ...viewable });
   await seedEntry(storage, terminal('t1', VISIBLE_NAME.t1, 'e1'), {});
   await seedEntry(storage, terminal('t2', VISIBLE_NAME.t2, HIDDEN_ID.ssh), {});
   await seedEntry(storage, entry(HIDDEN_ID.ssh, markerOf(HIDDEN_ID.ssh), {}), {});
-  const vpn = { id: 'v1', name: VISIBLE_NAME.v1, kind: 'vpn', isSshEnabled: false, vpnLauncherEntityId: HIDDEN_ID.launcher, dependsOn: [HIDDEN_ID.dependency], ...viewable };
-  await seedEntry(storage, vpn as unknown as EntityMetadata, {});
+  const vpn: EntityMetadata = { id: 'v1', name: VISIBLE_NAME.v1, kind: 'vpn', isSshEnabled: false, vpnLauncherEntityId: HIDDEN_ID.launcher, dependsOn: [HIDDEN_ID.dependency], ...viewable };
+  await seedEntry(storage, vpn, {});
   await seedEntry(storage, entry(HIDDEN_ID.launcher, markerOf(HIDDEN_ID.launcher), {}), {});
   await seedEntry(storage, entry(HIDDEN_ID.dependency, markerOf(HIDDEN_ID.dependency), {}), {});
 }
@@ -158,7 +158,7 @@ function rotateDeps(storage: Storage): RotateDeps {
     generate: () => ({ ok: true, value: 'NEW-secret-4b7e', kind: 'password' }),
     entity: () => storage.getNode(ACCOUNT, 'e1')?.details,
     current: () => Promise.resolve(stored('old-password-9f2c')),
-    snapshot: () => Promise.resolve({ at: 1, name: VISIBLE_NAME.e1, details: {} as EntityMetadata, secrets: {} }),
+    snapshot: () => Promise.resolve({ at: 1, name: VISIBLE_NAME.e1, details: entry('e1', VISIBLE_NAME.e1, {}), secrets: {} }),
     record: () => Promise.resolve(),
     store: () => Promise.resolve('stored' as const),
   };
