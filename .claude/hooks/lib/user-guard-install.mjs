@@ -26,6 +26,38 @@ export function guardVersion(text) {
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const BACKUP_TAG = 'settings.json.bak-subagent-model-';
 
+/**
+ * The released guard: the `GUARD_VERSION` and the digest (`guardDigest`) of `settings/hooks/subagent-model.mjs` of
+ * the SAME commit. Both files are vendored byte-identically from one release, so a consumer's pair always matches;
+ * a guard edited and committed in some repository does not, and is not copied into ~/.claude, where it would run for
+ * every repository on the machine (the owner's go, 2026-11-11). A conventions test fails when this pair does not
+ * match the file, so no release can ship a stale one. This stops an unreviewed guard from leaving its repository; it
+ * is no sandbox: a repository with hostile hooks already runs code in its own sessions.
+ */
+export const RELEASED_GUARD = Object.freeze({
+  version: 3,
+  sha256: '13e13d5f6df35f4a18e8b3098afd4a80dc9308f82f8d734f23ccb943538aef12',
+});
+
+/** The digest of a guard's text with CRLF folded to LF, so a checkout that converts line endings still matches. */
+export const guardDigest = text => sha256(String(text).replaceAll('\r\n', '\n'));
+
+/**
+ * Why a guard's TEXT must not be copied into ~/.claude as the released guard; '' when it may be. A digest difference
+ * names both digests; a version-only difference names both versions (the code round, 2026-11-11).
+ */
+export function releasedTextRefusal(text, released = RELEASED_GUARD) {
+  const digest = guardDigest(text);
+  const version = guardVersion(text);
+  if (digest !== released.sha256) {
+    return `the project copy is not the released guard (sha256 ${digest.slice(0, 12)}, released ${released.sha256.slice(0, 12)})`;
+  }
+  if (version !== released.version) {
+    return `the project copy is not the released guard (version ${version}, released version ${released.version})`;
+  }
+  return '';
+}
+
 /** Where the hook and the settings live for a home. */
 export function targets(home) {
   const dir = path.resolve(home, '.claude');
@@ -278,7 +310,7 @@ function changedRefusal(t, sourceBytes, force) {
     : `installed guard ${t.hook} was changed since it was installed (its sha256 differs from ${t.manifest}); nothing changed — pass --force to replace it`;
 }
 
-export function install({ home, source, beforeWrite = () => {}, clearOptout = false, force = false, by = 'cli' }) {
+export function install({ home, source, beforeWrite = () => {}, clearOptout = false, force = false, by = 'cli', released = null }) {
   const t = targets(home);
   if (!fs.existsSync(source)) return result(1, [`source hook not found: ${source} — pass --source <file>`]);
   const original = readOrNull(t.settings);
@@ -288,6 +320,10 @@ export function install({ home, source, beforeWrite = () => {}, clearOptout = fa
   if (target.refusal) return result(1, [target.refusal]);
   const merged = mergeEntry(parsed.settings, t.hook);
   const sourceBytes = fs.readFileSync(source);
+  // The release check runs on THESE bytes, the ones written below: one read, so nothing can swap the file between a
+  // check and the copy (the code round, 2026-11-11). `released` is null only for an explicit --unreleased.
+  const unreleased = released ? releasedTextRefusal(sourceBytes.toString('utf8'), released) : '';
+  if (unreleased) return result(1, [unreleased]);
   const refusal = downgradeRefusal(t, sourceBytes, force) || changedRefusal(t, sourceBytes, force);
   if (refusal) return result(1, [refusal]);
   const upToDate = original !== null && original.equals(Buffer.from(serialise(merged))) && sameBytes(readOrNull(t.hook), sourceBytes) && isRegistered(t);

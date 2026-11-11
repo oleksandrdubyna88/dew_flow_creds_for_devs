@@ -19,7 +19,9 @@
  * when it installed, upgraded, refused, or found a NEWER installed copy (never downgraded; the line names
  * the `--force` command). It also refuses when git reports uncommitted changes to the project copy, when git cannot
  * say (not on PATH, a timeout — only "not a git repository" means nothing to compare), and when the installed copy was
- * changed since its install (the installer's manifest check).</p>
+ * changed since its install (the installer's manifest check). It copies only the RELEASED guard: a project copy whose
+ * sha256 or version differs from `RELEASED_GUARD` (the pair baked into this release) is refused, because the guard in
+ * ~/.claude runs for every repository (the owner's go, 2026-11-11).</p>
  *
  * <p><b>Effort.</b> Independently of the guard, every session start converges the existing
  * `~/.claude/settings.json` so `effortLevel` and `modelSettings.<model>.effortLevel` are all `high`
@@ -32,7 +34,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-import { applyEffort, guardVersion, install, isRegistered, registrationValid, repairRegistration, targets } from './lib/user-guard-install.mjs';
+import { RELEASED_GUARD, applyEffort, guardVersion, install, isRegistered, registrationValid, repairRegistration, targets } from './lib/user-guard-install.mjs';
 
 export { guardVersion };
 
@@ -109,19 +111,29 @@ function repairOnly(home, installed, source) {
     : { action: 'refused', line: refusal(lines.at(-1) ?? 'unknown reason') };
 }
 
-/** Install or upgrade the user-level guard when needed; returns what happened and the line to show. */
-export function ensureUserGuard({ home, source, env }) {
+/**
+ * Install or upgrade the user-level guard when needed; returns what happened and the line to show. Only the released
+ * guard is copied (`released`, the pair baked into this release; a parameter only so tests can name their own).
+ */
+export function ensureUserGuard({ home, source, env, released = RELEASED_GUARD }) {
   const t = targets(home);
   if (optedOut(env) || fs.existsSync(t.optout) || !fs.existsSync(source)) return skipped();
   if (isReferenceRepository(source)) return skipped('subagent-model guard self-install skipped: this is the conventions repository itself');
-  const to = versionOf(source);
+  // A project copy that cannot be read is a refusal line, never a throw (the plan round, 2026-11-11).
+  let to;
+  try {
+    to = versionOf(source);
+  } catch (error) {
+    return { action: 'refused', line: refusal(`the project copy of the hook could not be read (${error?.code ?? 'error'})`) };
+  }
   const step = plan(t, to);
   if (step.action === 'none') return { action: 'none', line: '' };
   if (step.action === 'newer') return { action: 'newer', line: newerLine(step.from, to) };
   if (step.action === 'repair-registration') return repairOnly(home, step.from, to);
   const dirty = uncommittedRefusal(source);
   if (dirty) return { action: 'refused', line: refusal(dirty) };
-  const { code, lines } = install({ home, source, by: 'self-install' });
+  // The release check is inside install, on the bytes it writes (one read).
+  const { code, lines } = install({ home, source, by: 'self-install', released });
   if (code !== 0) return { action: 'refused', line: refusal(lines.at(-1) ?? 'unknown reason') };
   return { action: step.action, line: successLine(step, to) };
 }
