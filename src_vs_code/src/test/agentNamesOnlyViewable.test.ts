@@ -3,11 +3,18 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, before, test } from 'node:test';
 import { BRIDGE_ROUTES } from '../bridgeAllowList';
+import { ErrorCode, errorBody, statusForErrorCode } from '../brokerProtocol';
+import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
 import { visibleConfigDetails, visibleMcpEntries } from '../mcpEntries';
+import { pinRefusalFor } from '../pinGate';
+import { resolveJumpChain } from '../sshOptions';
+import { isSafeSshTarget } from '../sshCommand';
 import { loadEachWithVscode } from './vscodeStub';
 import { contractRoutes, strayRoutes, unnamedRoutes } from './contractRoutes';
 import { World, share, world } from './brokerWorld';
 import { normalised, send, viaBridge, wallWorld } from './bridgeWallWorld';
+import { HIDDEN_HOP_IDS, asBroker, gateWorld, usableSsh } from './agentSshWorld';
+import { ACCOUNT, HIDDEN_ID, SecondOptions, SecondWorld, VISIBLE_NAME, secondEntryWorld } from './secondEntryWorld';
 import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, N5_COMMAND, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
 
 /**
@@ -37,7 +44,12 @@ interface Contract {
 const CONTRACT = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'contract', 'broker-v1.json'), 'utf8')) as Contract;
 
 /** The modules that import `vscode` (through `storageManager.ts`), loaded once into one graph. */
-const [folderMod, hookMod] = loadEachWithVscode(['../mcpFolderHooks', '../mcpHooks'], { window: {} }) as [typeof import('../mcpFolderHooks'), typeof import('../mcpHooks')];
+const [folderMod, hookMod, credentialMod, authMod] = loadEachWithVscode(['../mcpFolderHooks', '../mcpHooks', '../sshCredential', '../sshExecAuth'], { window: {} }) as [
+  typeof import('../mcpFolderHooks'),
+  typeof import('../mcpHooks'),
+  typeof import('../sshCredential'),
+  typeof import('../sshExecAuth'),
+];
 
 /** How often each of the five lookups was reached: the completeness check reads it. */
 interface Counts {
@@ -380,5 +392,235 @@ test('A, on a Remote Bridge: an entry in scope that the agent may not view answe
     assert.deepEqual(ww.w.ran, []);
   } finally {
     ww.dispose();
+  }
+});
+
+/*
+ * ---- Part B: a SECOND entry in a refusal (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md` section 3; the parent's rule B) -------------------
+ *
+ * The rule: when an entry that an agent may view needs a second entry (a linked key, a jump host) and the second one stops the call, the
+ * answer names that second entry only when the agent may view it. The REAL actions run over `secondEntryWorld.ts`, a vault in which the
+ * second entries are hidden. One scenario for each field of `EntityMetadata` that holds the id of another entry; a row collects each case
+ * that fails and fails one time, with the list. The assertion of a refused call here is: the status and the code are as today and the answer
+ * holds no hidden name and no hidden id. The exact new body is pinned by rows B1 to B3 of `sshUseActions.test.ts` and `agentSshGate.test.ts`.
+ */
+
+interface Case {
+  readonly label: string;
+  readonly options: SecondOptions;
+  readonly door: 'exec' | 'terminal' | 'run' | 'runHidden' | 'rotate' | 'vpnUp';
+  readonly code: ErrorCode;
+  readonly message?: string;
+}
+
+const REFUSED = 'no_credential';
+const hopCase = (door: Case['door'], unsafeAt: number): Case => ({ label: `${door}, hop ${unsafeAt} of 3`, options: { hops: 3, unsafeAt }, door, code: REFUSED });
+const VPN_SAID = `"${VISIBLE_NAME.v1}" could not be started — see the notification.`;
+
+/** One row for each reference field, and one for `ssh:terminal` (the two SSH fields again). The keys are what the scan compares with. */
+const SCENARIOS: Readonly<Record<string, readonly Case[]>> = {
+  sshKeyEntityId: [
+    { label: 'exec, a sealed key entry', options: { key: 'sealed' }, door: 'exec', code: REFUSED },
+    { label: 'exec, a damaged key entry', options: { key: 'damaged' }, door: 'exec', code: REFUSED },
+    { label: 'rotate, a sealed key entry', options: { key: 'sealed' }, door: 'rotate', code: REFUSED },
+    { label: 'run of t1, a sealed key entry', options: { key: 'sealed' }, door: 'run', code: REFUSED },
+  ],
+  jumpHostEntityId: [
+    ...[1, 2, 3].map((at) => hopCase('exec', at)),
+    ...[1, 2, 3].map((at) => hopCase('run', at)),
+    hopCase('rotate', 1),
+  ],
+  sshEntityId: [{ label: 'run of t2, linked to a hidden SSH entry', options: {}, door: 'runHidden', code: 'denied', message: linkedRunRefused(VISIBLE_NAME.t2) }],
+  vpnLauncherEntityId: [{ label: 'vpn up, the start fails', options: {}, door: 'vpnUp', code: REFUSED, message: VPN_SAID }],
+  dependsOn: [{ label: 'vpn up, the start fails (the dependency)', options: {}, door: 'vpnUp', code: REFUSED, message: VPN_SAID }],
+  'ssh:terminal': [{
+    label: 'terminal, a sealed key and a hidden unsafe hop',
+    options: { key: 'sealed', hops: 1, unsafeAt: 1 },
+    door: 'terminal',
+    code: 'internal',
+    message: `Could not open an SSH terminal for "${VISIBLE_NAME.e1}" — the window said why.`,
+  }],
+};
+
+/** The fields of `EntityMetadata` that are `string` or `string[]` and hold no id of another entry. The scan fails on a field that is on neither list. */
+const NO_REFERENCE = [
+  'id', 'name', 'host', 'user', 'sshKeyPath', 'publicKey', 'hostKey', 'tags', 'vpnConfigFileName', 'scriptLanguage', 'script', 'configFileName',
+  'configKeyHash', 'command', 'commandNote', 'terminalOs', 'attachmentFileName', 'imageFileName', 'depColor', 'notes',
+  // The e-mail of the person who changed the file (`attachmentMeta.ts`); each shares a line with other fields in `types.ts`.
+  'attachmentChangedBy', 'imageChangedBy',
+] as const;
+
+const ranRows = new Set<string>();
+
+const messageOf = (result: { body: unknown }): string | undefined => (result.body as { error?: { message?: string } }).error?.message;
+const codeOf = (result: { body: unknown }): string | undefined => (result.body as { error?: { code?: string } }).error?.code;
+
+/** What is wrong with the answer of one case: the status, the code, the sentence when the case has one, a spawn, a hidden name or id. */
+async function failuresOf(c: Case): Promise<string[]> {
+  const w = await secondEntryWorld(c.options);
+  try {
+    const result = await w.call[c.door]();
+    return [
+      ...when(result.status !== statusForErrorCode(c.code), `${c.label}: status ${result.status}`),
+      ...when(codeOf(result) !== c.code, `${c.label}: code ${String(codeOf(result))}`),
+      ...when(c.message !== undefined && messageOf(result) !== c.message, `${c.label}: message ${String(messageOf(result))}`),
+      ...when(w.spawned.length > 0, `${c.label}: ssh was started`),
+      ...when(w.leaks(JSON.stringify(result.body)).length > 0, `${c.label}: the answer holds ${w.leaks(JSON.stringify(result.body)).join(' and ')}: ${String(messageOf(result))}`),
+    ];
+  } finally {
+    w.cleanup();
+  }
+}
+
+test('B: the fixture holds what it says (proofs 1 to 5): the hidden entries are hidden, the others are viewable, no name is a part of another text, e1 passes the credential step by its own key', async () => {
+  const w = await secondEntryWorld({ key: 'sealed', hops: 5, unsafeAt: 3 });
+  const shown = await secondEntryWorld({ key: 'damaged', keyVisible: true, hops: 2, visibleHops: [1] });
+  try {
+    assert.deepEqual(w.hiddenIds.filter((id) => w.mayView(id)), [], 'an id that the product says an agent may view');
+    assert.equal(w.hiddenIds.length, 3 + 1 + 5, 'the key entry, the five hops and the three others');
+    assert.deepEqual(['e1', 't1', 't2', 'v1'].filter((id) => !w.mayView(id)), [], 'a visible entry that the product hides');
+    assert.deepEqual([HIDDEN_ID.key, HIDDEN_HOP_IDS[0]].filter((id) => !shown.mayView(id)), [], 'a made-visible key entry or hop that the product hides');
+    const texts = [...Object.values(VISIBLE_NAME), 'e1', 't1', 't2', 'v1', w.storageDir, linkedRunRefused(VISIBLE_NAME.t2), VPN_SAID, ...w.hiddenNames];
+    const parts = w.hiddenIds.flatMap((id) => texts.filter((text) => text.includes(id) && text !== `MARK-${id}`));
+    assert.deepEqual(parts, [], 'a hidden id is a part of another text');
+    const hops = [1, 2, 3, 4, 5].map((n) => isSafeSshTarget(w.storage.getNode(ACCOUNT, HIDDEN_HOP_IDS[n - 1])?.details as never));
+    assert.deepEqual(hops, [true, true, false, true, true], 'only hop 3 has an unsafe address');
+    const e1 = w.storage.getNode(ACCOUNT, 'e1')?.details as never;
+    const sealed = await credentialMod.resolveSshCredential(w.storage, ACCOUNT, e1);
+    assert.deepEqual(sealed, { kind: 'stopped', reason: pinRefusalFor(w.names.key), ownerName: w.names.key, ownerId: HIDDEN_ID.key, warning: undefined }, 'a sealed key entry stops the real resolver');
+    const damaged = await credentialMod.resolveSshCredential(shown.storage, ACCOUNT, shown.storage.getNode(ACCOUNT, 'e1')?.details as never);
+    assert.ok(damaged.kind === 'stopped' && damaged.reason.startsWith(`"${shown.names.key}" holds a protected value that cannot be read:`), JSON.stringify(damaged));
+  } finally {
+    w.cleanup();
+    shown.cleanup();
+  }
+  const plain = await secondEntryWorld();
+  try {
+    assert.equal((await plain.call.exec()).status, 200, 'proof 5: with no second entry the call reaches ssh by e1\'s own key');
+    assert.equal(plain.spawned.length, 1);
+  } finally {
+    plain.cleanup();
+  }
+});
+
+for (const [field, cases] of Object.entries(SCENARIOS)) {
+  test(`B, ${field}: the answer holds no hidden name and no hidden id`, async () => {
+    const failed: string[] = [];
+    for (const c of cases) {
+      failed.push(...(await failuresOf(c)));
+    }
+    ranRows.add(field);
+    assert.deepEqual(failed, [], `${failed.length} of ${cases.length} case(s) fail`);
+  });
+}
+
+test('B, the scan: each string field of EntityMetadata is a scenario of the table or on the written list of fields that hold no reference', async () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'types.ts'), 'utf8');
+  const body = source.slice(source.indexOf('export interface EntityMetadata {') + 'export interface EntityMetadata {'.length).split(/\n\}/)[0];
+  const pieces = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').split(';').map((piece) => piece.trim()).filter((piece) => piece !== '');
+  const shape = /^(?:readonly\s+)?(\w+)\??\s*:\s*([\s\S]+)$/;
+  const notFields = pieces.filter((piece) => !shape.test(piece));
+  assert.deepEqual(notFields, [], 'a piece of the interface that is not "name: type"');
+  const strings = pieces.map((piece) => shape.exec(piece) as RegExpExecArray).filter((m) => /^(?:readonly\s+)?string(?:\[\])?$/.test(m[2].trim())).map((m) => m[1]);
+  const known = [...Object.keys(SCENARIOS), ...NO_REFERENCE];
+  assert.deepEqual(strings.filter((name) => !known.includes(name)), [], 'a string field that is on neither list');
+  assert.deepEqual(NO_REFERENCE.filter((name) => !strings.includes(name)), [], 'a name of the written list that the scan does not find (a list that went stale)');
+  for (const field of ['sshKeyEntityId', 'jumpHostEntityId', 'vpnLauncherEntityId', 'sshEntityId', 'dependsOn', 'name']) {
+    assert.ok(strings.includes(field), `the scan still finds ${field}`);
+  }
+  const w = await secondEntryWorld();
+  try {
+    const details = w.storage.getNode(ACCOUNT, 'v1')?.details as { vpnLauncherEntityId?: string; dependsOn?: string[] };
+    assert.deepEqual([details.vpnLauncherEntityId, details.dependsOn], [HIDDEN_ID.launcher, [HIDDEN_ID.dependency]], 'v1 holds the two fields that rows R4 and R5 read');
+  } finally {
+    w.cleanup();
+  }
+});
+
+test('B, each row ran: each of the six rows of the table made at least one call', () => {
+  assert.deepEqual(Object.keys(SCENARIOS).filter((field) => !ranRows.has(field)), []);
+});
+
+test('B, row R: no agent action resolves a creds:// reference off a bridge', async () => {
+  const dir = path.resolve(__dirname, '..', '..', 'src');
+  const imports = (file: string): string[] => (fs.readFileSync(path.join(dir, file), 'utf8').match(/['"]\.\/(?:secretRef|entityFieldReading|runPlan)['"]/g) ?? []);
+  assert.deepEqual(['sshUseActions.ts', 'agentUseActions.ts', 'rotateAction.ts'].flatMap(imports), [], 'an agent action imports a reference resolver');
+  assert.deepEqual(imports('remoteLaunch.ts'), ["'./runPlan'"], 'the scan still finds the import it looks for');
+  const command = `echo creds://${ACCOUNT}/MARK-${HIDDEN.entries.none}/password`;
+  const w = gateWorld({ terminal: { command }, acct1: [usableSsh('s1')] });
+  w.trust(w.nodes.get('s1')?.details as never, command);
+  const action = terminalRunAction(w.deps);
+  const result = await action.run(asBroker(action, w.ctx), {});
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.ok(w.overSsh.calls[0].call.remoteCommand.includes(`creds://${ACCOUNT}/MARK-${HIDDEN.entries.none}/password`), 'the reference travels as text');
+  assert.ok(!JSON.stringify(result.body).includes(`MARK-${HIDDEN.entries.none}`));
+});
+
+/** The message of a refusal that a real resolver gives on the same world: the `m` of a positive control, never typed again. */
+async function resolverSays(w: SecondWorld): Promise<string> {
+  const e1 = w.storage.getNode(ACCOUNT, 'e1')?.details as never;
+  const auth = await authMod.resolveExecAuth(w.storage, ACCOUNT, e1, w.storageDir);
+  const chain = resolveJumpChain(e1, (id) => w.storage.getNode(ACCOUNT, id)?.details);
+  return !auth.ok ? auth.message : chain.ok ? 'no refusal' : chain.reason;
+}
+
+test('B, control: a visible jump host with an unsafe address is named as today, the whole body is the resolver\'s, and no note is written', async () => {
+  const w = await secondEntryWorld({ hops: 1, unsafeAt: 1, visibleHops: [1] });
+  try {
+    const said = await resolverSays(w);
+    assert.equal(said, `The jump host "${w.names.hop(1)}" cannot be used: its address is not a valid host.`);
+    assert.deepEqual(await w.call.exec(), { status: 409, body: errorBody(REFUSED, said) });
+    assert.deepEqual(w.notes, []);
+  } finally {
+    w.cleanup();
+  }
+});
+
+test('B, control: a visible key entry with a damaged value is named as today, the whole body is the resolver\'s, and no note is written', async () => {
+  const w = await secondEntryWorld({ key: 'damaged', keyVisible: true });
+  try {
+    const said = await resolverSays(w);
+    assert.ok(said.startsWith(`"${w.names.key}" holds a protected value that cannot be read:`), said);
+    assert.deepEqual(await w.call.exec(), { status: 409, body: errorBody(REFUSED, said) });
+    assert.deepEqual(w.notes, []);
+  } finally {
+    w.cleanup();
+  }
+});
+
+test('B, control: a visible unsafe hop behind a hidden good hop names hop 2 and not hop 1', async () => {
+  const w = await secondEntryWorld({ hops: 2, unsafeAt: 2, visibleHops: [2] });
+  try {
+    const result = await w.call.exec();
+    assert.equal(messageOf(result), `The jump host "${w.names.hop(2)}" cannot be used: its address is not a valid host.`);
+    assert.ok(!JSON.stringify(result.body).includes(w.names.hop(1)), 'hop 1 is hidden and is not named');
+  } finally {
+    w.cleanup();
+  }
+});
+
+test('G11: a hidden jump host with a safe address stops no call', async () => {
+  const w = await secondEntryWorld({ hops: 1 });
+  try {
+    const result = await w.call.exec();
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(w.spawned.length, 1);
+    assert.equal(w.spawned[0][w.spawned[0].indexOf('-J') + 1], 'hop@hop1.example', `the hop is in the argv: ${w.spawned[0].join(' ')}`);
+    assert.deepEqual(w.notes, []);
+  } finally {
+    w.cleanup();
+  }
+});
+
+test('G11: a hidden key entry with no PIN stops no call, and its file is gone after', async () => {
+  const w = await secondEntryWorld({ key: 'plain' });
+  try {
+    const result = await w.call.exec();
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(w.spawned.length, 1);
+    assert.deepEqual(w.materialised.map((file) => fs.existsSync(file)), [false], 'the key file was written, and removed');
+    assert.deepEqual(w.notes, []);
+  } finally {
+    w.cleanup();
   }
 });

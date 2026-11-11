@@ -9,6 +9,7 @@ import type { OverSsh, OverSshCall, UseAction, UseActionContext } from '../useAc
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
 import { FAKE_STORAGE_DIR } from './fakePaths';
+import { markerOf } from './unlistedWorld';
 
 /**
  * The world of the agent's run over SSH (E3.S2 security spec §12): the SSH entry the gate reads, a storage that answers per account and
@@ -245,4 +246,23 @@ export function detailsOf(world: GateWorld, id: string): EntityMetadata {
   const details = world.nodes.get(id)?.details;
   assert.ok(details !== undefined, `the world holds no entity ${id}`);
   return details;
+}
+
+/** The ids of the hidden hops of `hiddenHops`: 13 characters each, and none is a part of another or of a word of a sentence. */
+export const HIDDEN_HOP_IDS = ['hid-hop-1-x7q', 'hid-hop-2-m4k', 'hid-hop-3-r2w', 'hid-hop-4-c9z', 'hid-hop-5-t6j'] as const;
+
+/**
+ * A chain of up to five SSH entries the agent may NOT view (no switch), linked in a row: hop 1 jumps through hop 2, and so on. Each one is
+ * named `MARK-<id>`, so a name or an id that reaches an answer is found by a text search. `unsafeAt` (1 to 4) gives that hop an address
+ * that `isSafeSshTarget` refuses; hop 5 is only read by the depth-cap row, which refuses before the address of the 5th hop is read.
+ */
+export function hiddenHops(count: number, unsafeAt?: number): TreeNode[] {
+  return HIDDEN_HOP_IDS.slice(0, count).map((id, at) =>
+    sshNode(id, {
+      name: markerOf(id),
+      host: unsafeAt === at + 1 ? 'bad host!' : `hop${at + 1}.example`,
+      user: 'hop',
+      ...(at + 1 < count ? { jumpHostEntityId: HIDDEN_HOP_IDS[at + 1] } : {}),
+    }),
+  );
 }

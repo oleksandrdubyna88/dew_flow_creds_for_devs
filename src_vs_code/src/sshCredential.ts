@@ -31,12 +31,14 @@ export type SshCredentialSource =
 
 /**
  * The opener stopped the value: a click has said why already (or the person declined) and `reason`
- * is `''`; an automatic refusal carries its sentence. `ownerName` is the entry whose value it was.
+ * is `''`; an automatic refusal carries its sentence. `ownerName` and `ownerId` are the entry whose value it was: the entry that was asked for, or
+ * the key entry it borrows from (rule B reads the id to tell the two apart).
  */
 export interface SshCredentialStopped {
   readonly kind: 'stopped';
   readonly reason: string;
   readonly ownerName: string;
+  readonly ownerId: string;
   readonly warning?: string;
 }
 
@@ -77,7 +79,7 @@ function keySourceOf(
 
 function keyFrom(opened: OpenedSecret, keySource: EntityMetadata, warning: string | undefined): SshCredentialSource | SshCredentialStopped {
   if (opened.kind === 'stopped') {
-    return { kind: 'stopped', reason: opened.reason, ownerName: keySource.name, warning };
+    return { kind: 'stopped', reason: opened.reason, ownerName: keySource.name, ownerId: keySource.id, warning };
   }
   return opened.value === undefined
     ? { kind: 'none', warning }
@@ -99,7 +101,7 @@ async function passwordOf(
   }
   const opened = await open(owner, stored, 'password');
   if (opened.kind === 'stopped') {
-    return { kind: 'stopped', reason: opened.reason, ownerName: owner.name, warning };
+    return { kind: 'stopped', reason: opened.reason, ownerName: owner.name, ownerId: owner.id, warning };
   }
   return opened.value === undefined ? { kind: 'none', warning } : { kind: 'password', password: opened.value, warning };
 }

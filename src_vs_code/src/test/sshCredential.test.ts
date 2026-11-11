@@ -197,3 +197,24 @@ test('the AUTOMATIC resolver (no opener) refuses the protected key with the sent
   assert.match((source as { reason?: string }).reason ?? '', /"deploy key" is protected with its own PIN, so it cannot be used automatically/);
   assert.equal(w.s.boxes, 0);
 });
+
+test('X3: ownerId is the id of the entry that OWNS the stopped value — the key entry for its key and its password, the connection for its own', async () => {
+  const stop: SecretOpener = () => Promise.resolve({ kind: 'stopped', reason: '' });
+  const owner = async (fake: Fake, over: Partial<EntityMetadata>): Promise<string | undefined> => {
+    const source = await resolveSshCredential(fakeStorage(fake), 'a', entity(over), stop);
+    return source.kind === 'stopped' ? source.ownerId : undefined;
+  };
+  const keyEntry = { keyent: entity({ id: 'keyent', name: 'shared' }) };
+  assert.deepEqual(
+    [
+      await owner({ nodes: keyEntry, keys: { keyent: 'K' } }, { sshKeyEntityId: 'keyent' }),
+      await owner({ nodes: keyEntry, passwords: { keyent: 'p' } }, { sshKeyEntityId: 'keyent' }),
+      await owner({ keys: { own: 'K' } }, {}),
+      await owner({ passwords: { own: 'p' } }, {}),
+    ],
+    ['keyent', 'keyent', 'own', 'own'],
+  );
+  const w = await borrowedKeyWorld([]);
+  const real = await resolveSshCredential(w.storage, ACCOUNT, w.connection);
+  assert.equal(real.kind === 'stopped' ? real.ownerId : undefined, 'key1', 'over the real vault, the sealed key of the key entry');
+});

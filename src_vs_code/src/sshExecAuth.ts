@@ -9,6 +9,7 @@ import { EntityMetadata } from './types';
 import { pinRefusalFor } from './pinGate';
 import { isSealedText } from './secretEnvelope';
 import type { SecretOpener } from './secretOpener';
+import type { SecondEntry } from './agentNaming';
 
 /**
  * Turning a saved credential into what a NON-INTERACTIVE `ssh` needs: a key path, an
@@ -41,6 +42,8 @@ export type ExecAuth =
       readonly ok: false;
       readonly reason: 'no_credential' | 'internal';
       readonly message: string;
+      /** The OTHER entry this refusal is about (rule B): set when the stopped value belongs to an entry that was not asked for. */
+      readonly second?: SecondEntry;
       readonly warning?: string;
     };
 
@@ -118,13 +121,18 @@ export async function resolveExecAuth(
   open?: SecretOpener,
 ): Promise<ExecAuth> {
   const source = await resolveSshCredential(storage, accountId, entity, open);
-  return source.kind === 'stopped' ? stoppedAuth(source) : authFor(source, entity, storageDir);
+  return source.kind === 'stopped' ? stoppedAuth(source, entity) : authFor(source, entity, storageDir);
 }
 
-/** A value its opener would not hand over. A click has said why already; the sentence still names the entry. */
-function stoppedAuth(source: SshCredentialStopped): ExecAuth {
+/**
+ * A value its opener would not hand over. A click has said why already; the sentence still names the OWNER of the value, which is the entry
+ * that was asked for or another one (the key it borrows). `second` says the latter, whatever the sentence is, so that the one chooser of
+ * `agentNaming.ts` can decide whether an agent may read it. The message does not change.
+ */
+function stoppedAuth(source: SshCredentialStopped, entity: EntityMetadata): ExecAuth {
   const message = source.reason !== '' ? source.reason : `"${source.ownerName}" is protected with its own PIN, and it was not opened.`;
-  return { ok: false, reason: 'no_credential', message, warning: source.warning };
+  const second = source.ownerId === entity.id ? {} : { second: { id: source.ownerId, relation: 'linked key' as const } };
+  return { ok: false, reason: 'no_credential', message, ...second, warning: source.warning };
 }
 
 function authFor(source: SshCredentialSource, entity: EntityMetadata, storageDir: string): ExecAuth {
