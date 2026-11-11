@@ -64,8 +64,9 @@ change no code and no test, so they are a story of their own.
   whole plan. So: build what the parent says and what this document says, and nothing more. If a step cannot be done
   as written, if a reviewer asks for a thing that the parent does not hold, or if you find a new site: stop and tell
   the lead. The lead counts. Do not repair the parent.
-- **Not built in E2:** the parent's N7, N8 and N9 (§11), and note 10 of the last section of this document (a stored
-  key that cannot be written). Each one is a question for the owner.
+- **Not built in E2:** the parent's N7, N8 and N9 (§11), and note 10 of the last section of this document (the path
+  of a borrowed key: a disk-write failure, a run error, and the text of `ssh`; the parent's N10). Each one is a
+  question for the owner. Note 10 is its own small item, with a priority above N8.
 - **The order of work is the parent's §4, steps 9 to 13.** A story does not change that order.
 - **A RED proof is a failed assertion, never a compile error.** `npm test` runs `tsc` first. A test that names a
   symbol that does not exist does not compile. So part B (step 9) uses no new symbol, and the new symbols are added
@@ -136,9 +137,9 @@ change no code and no test, so they are a story of their own.
 | F11 | In a linked run the addressed entry is the Terminal entry: `ctx.entityName` is its name. The SSH entry is `call.ssh` (`agentUseActions.ts:418`; `sshUseActions.ts:258`). The gate let the SSH entry through, so the agent may view it. The owner of a stopped value is compared with `call.ssh`, not with the Terminal entry | the two files |
 | F12 | `deps.note` writes one line to the agent journal (`credsAgentServer.ts:146-148`). The broker writes its own line for a call that has a grant; for an answer that is not 200 that line holds the status only (`brokerCall.ts:304`). It does not change | the two files |
 | F13 | The sentences that name the OWNER of a stopped value: `pinRefusalFor(owner.name)` (`pinGate.ts:186-191`, through `secretOpener.ts:59-62`); `corruptReason(owner.name, why)` (`pinGate.ts:160-165`, through `secretOpener.ts:65-68`); and, for a value that a click stopped with no reason, `"<owner>" is protected with its own PIN, and it was not opened.` (`sshExecAuth.ts:126`) | — |
-| F14 | An entry is hidden from agents when it has the mark `pinProtected` (`mcpEntries.ts:111-113`) or when `view` is not on (`:278-280`). A key entry whose value is sealed while its mark is lost is NOT hidden: its refusal names it, and the agent may view it | `mcpEntries.ts` |
+| F14 | An entry is hidden from agents when it has the mark `pinProtected` (`mcpEntries.ts:111-113`) or when `view` is not on (`:278-280`). A key entry whose value is sealed while its mark is lost is NOT hidden, but only when `view` is on (`:278-280`): then its refusal names it, and the agent may view it. With `view` off it is hidden, mark or no mark | `mcpEntries.ts` |
 | F15 | The text of the two resolvers reaches an agent at three places only: `sshUseActions.ts:181`, `:265` and `agentUseActions.ts:407`. The other callers are the person's roads: `remoteLaunch.ts:411`, `connectionOptions.ts:54`, `sshSession.ts:280`, `commands/agentCommands.ts:217`, `:287`, `:437`; `agentUseActions.ts:281` builds the text of the consent dialog and drops a refused chain | `grep -rn "resolveExecAuth\|resolveJumpChain\|resolveSshCredential"` |
-| F16 | A chain can have four hops (`MAX_JUMP_DEPTH`, `:22`), so a chain of three is inside the cap | `sshOptions.ts` |
+| F16 | A chain can have four hops (`MAX_JUMP_DEPTH`, `:22`), so a chain of three is inside the cap. The walk refuses at `hops.length >= 4` (`:134`): a 5th hop gets `"<starting entry>" chains more than 4 jump hosts, …` (`:137`), and the address of that hop is not read. `entity` is never re-bound in `resolveJumpChain`, so the sentence always names the starting entry (rows X5 and X6) | `sshOptions.ts` |
 | F17 | An unsafe hop is one whose `host` is empty or not a safe host, or whose `user` is not a safe user (`isSafeSshTarget`, `:97-102`) | `sshCommand.ts` |
 | F18 | The automatic opener is the default of `resolveSshCredential` (`:47`), and `prepareAuth` passes no opener (`sshUseActions.ts:171`) | `sshCredential.ts` |
 | F19 | `SshUseDeps` has 9 members (`sshUseActions.ts:42-80`); `AgentUseDeps` has 8 (`agentUseActions.ts:59-83`) | the two files |
@@ -212,7 +213,7 @@ Nodes that the agent MAY view (plain names, each with `mcp: { view: true, use: t
 
 | Id | Node |
 |---|---|
-| `e1` | the SSH entry `prod`: `host`, `user`, and the links that the options ask for |
+| `e1` | the SSH entry `prod`: `host`, `user`, a plain private key of its own (`seedEntry(storage, e1, { 'private key': KEY_BODY })`, the helper of `test/pinWorld.ts:230`, as `test/bridgeLinksWorld.ts:191` calls it), and the links that the options ask for |
 | `t1` | the Terminal entry `deploy`: `command: 'echo linked'`, `sshEntityId: 'e1'` |
 | `t2` | a Terminal entry linked to the hidden SSH entry (the `sshEntityId` row) |
 | `v1` | a VPN entry with `vpnLauncherEntityId` and `dependsOn`, each one the id of a hidden entry |
@@ -223,18 +224,25 @@ id has at least 10 characters and is no word of a sentence:
 | Role | Node | Hidden because |
 |---|---|---|
 | the key entry | kind `sshkey`; its private key is plain, sealed with a PIN (`locked`, and the mark `pinProtected`), or damaged | no switch; with a PIN also the mark |
-| hop 1, hop 2, hop 3 | SSH entries; `e1` → hop 1 → hop 2 → hop 3; one of them can have the unsafe address `bad host!` | no switch |
+| hop 1 to hop 5 | SSH entries; `e1` → hop 1 → … → hop 5; one of hops 1 to 4 can have the unsafe address `bad host!`. A chain of 4 hops is inside the cap; the walk refuses at the 5th (`MAX_JUMP_DEPTH` is 4, `sshOptions.ts:22`; `refuseWalk` refuses at `hops.length >= 4`, `:134`). The 5th hop is read only for the depth-cap rows (X6) | no switch |
 | the hidden SSH entry | the link target of `t2` | no switch |
 | the launcher, the dependency | the two targets of `v1` | no switch |
+
+**`e1` always has a credential of its own.** `execOverSsh` resolves the credential BEFORE it reads the jump chain
+(`sshUseActions.ts:258-266`). A source of kind `none` is refused with `"prod" has no stored password or key any more.`
+(`sshExecAuth.ts:132-133`). So an `e1` with no stored key would be refused before the chain is read, and each hop row
+would pass for a wrong reason. Because of this, `e1` holds a plain private key of its own in each world. When `key` is
+not `'none'`, `e1` also gets `sshKeyEntityId`, and the key entry's value wins over the key of `e1`
+(`sshCredential.ts:69-75`: `keySourceOf` returns the referenced entry, and the stored key is read from it).
 
 Options of the world (each default is the case with no second entry):
 
 | Option | Values |
 |---|---|
-| `key` | `'none'` (default), `'plain'`, `'sealed'`, `'damaged'` |
+| `key` | `'none'` (default: no link; `e1` uses its own plain key), `'plain'`, `'sealed'`, `'damaged'` (each one: a key entry that `e1` links to with `sshKeyEntityId`) |
 | `keyVisible` | the key entry gets `mcp: { view: true }` and no mark (for the positive control) |
-| `hops` | `0` (default) to `3` |
-| `unsafeAt` | `1`, `2` or `3`: the hop that has the unsafe address |
+| `hops` | `0` (default) to `5` |
+| `unsafeAt` | `1`, `2`, `3` or `4`: the hop that has the unsafe address. Hop 5 cannot be the unsafe one: the depth cap refuses before the address of the 5th hop is read |
 | `visibleHops` | the hops that get `mcp: { view: true }` |
 | `noteThrows` | `deps.note` throws (X4) |
 
@@ -250,9 +258,9 @@ rotate call is `{ command: <a line that holds NEW_SECRET_PLACEHOLDER one time> }
 `run` holds the fingerprint of the trust line; the world computes it with the REAL `resolveJumpChain` and
 `trustLineFor` and does not guess the chain value.
 
-**The chain of three hidden hops** is one new export of `test/agentSshWorld.ts`, used by this world and by row B3:
-three `sshNode`s (`test/sshRoadWorld.ts:20`) with marker names and no switch, linked in a row, with the unsafe
-address on the hop that the caller names.
+**The chain of hidden hops** is one new export of `test/agentSshWorld.ts`, used by this world and by row B3: up to
+five `sshNode`s (`test/sshRoadWorld.ts:20`) with marker names and no switch, linked in a row, with the unsafe address
+on the hop that the caller names (hops 1 to 4). Row B3 uses three hops; rows X5 and X6 use four and five.
 
 **Proofs** (in one test at the top of part B; a fixture that the code declines for another reason proves nothing):
 
@@ -263,7 +271,13 @@ address on the hop that the caller names.
 3. `isSafeSshTarget` is `false` for the unsafe hop and `true` for each other hop.
 4. The real `resolveSshCredential` on `e1` answers `stopped` for `key: 'sealed'`, with `pinRefusalFor(<the key
    entry's name>)`; and `stopped` for `key: 'damaged'`, with a sentence that starts with `"<the key entry's name>"
-   holds a protected value that cannot be read:`.
+   holds a protected value that cannot be read:`. These two messages are the `m` of the positive controls (§3): a
+   control compares the whole body with `errorBody('no_credential', m)`, and `m` is the message that the real
+   `resolveExecAuth` gives on the same world. That message does not change.
+5. With the default options (`key: 'none'`, `hops: 0`), `exec` on `e1` answers 200 and the spawn is reached one time.
+   So `e1` passes the credential step by its own key. Without this proof a hop row could be refused at the credential
+   step (`"prod" has no stored password or key any more.`, `sshExecAuth.ts:132-133`), before the chain is read, and
+   the row would show no marker for a wrong reason.
 
 ### 3. Part B of the class test, in `test/agentNamesOnlyViewable.test.ts`
 
@@ -277,11 +291,11 @@ its keys are the five field names and one row more for `ssh:terminal`.
 | Row | Field (`types.ts`) | The action that reads it | Cases | Must be true | On the unchanged code |
 |---|---|---|---|---|---|
 | R1 | `sshKeyEntityId` `:76` | `ssh:exec`; `creds_rotate` over it (F9); the linked `creds_run` through the real `execOverSsh` → `prepareAuth` → `resolveExecAuth` → `resolveSshCredential` (`sshCredential.ts:43-61`) | (a) `exec`, `key: 'sealed'`; (b) `exec`, `key: 'damaged'`; (c) `rotate`, `key: 'sealed'`; (d) `run` of `t1`, `key: 'sealed'` | 409, `no_credential`; no hidden name and no hidden id in the answer; nothing was spawned | RED: the body holds the marker of the key entry |
-| R2 | `jumpHostEntityId` `:84` | `ssh:exec` (the thunk at `sshUseActions.ts:326`, read at `:263-266`); `creds_rotate`; the linked `creds_run` (`agentUseActions.ts:433`, `:405-410`); each hop of the chain (`sshOptions.ts:168-186`) | `hops: 3`, the hops hidden, `unsafeAt` 1, 2 and 3, on `exec` (3 cases) and on `run` of `t1` (3 cases); `rotate` with `unsafeAt: 1` (1 case) | the same | RED: the body holds the marker of the unsafe hop |
+| R2 | `jumpHostEntityId` `:84` | `ssh:exec` (the thunk at `sshUseActions.ts:326`, read at `:263-266`); `creds_rotate`; the linked `creds_run` (`agentUseActions.ts:433`, `:405-410`); each hop of the chain (`sshOptions.ts:168-186`) | `hops: 3`, the hops hidden, `unsafeAt` 1, 2 and 3, on `exec` (3 cases) and on `run` of `t1` (3 cases); `rotate` with `unsafeAt: 1` (1 case). In all 7 the credential is `e1`'s own plain key (`key: 'none'`), so the call reaches the chain (proof 5) | the same | RED: the body holds the marker of the unsafe hop |
 | R3 | `sshEntityId` `:172` | the linked `creds_run`: `linkedCall` (`agentUseActions.ts:264-273`) | `run` of `t2` | 403, `denied`, `linkedRunRefused(<name of t2>)` (`:196-198`); no marker | green before and after |
 | R4 | `vpnLauncherEntityId` `:115` | `creds_vpn_up`: `vpnAction` → `deps.open` (`agentUseActions.ts:642-665`) | `vpnUp` on `v1`; the start fails | `"<name of v1>" could not be started — see the notification.` (`:678`); no marker | green before and after |
 | R5 | `dependsOn` `:282` | `creds_vpn_up` only (the chain runs in the window's start, behind `deps.open`) | the same call; the test asserts that `v1` holds the two fields | no marker | green before and after |
-| R6 | the two SSH fields again | `ssh:terminal` (`sshUseActions.ts:340-380`) | `terminal` on `e1` with `key: 'sealed'`, `hops: 1`, `unsafeAt: 1`; the open fails | `Could not open an SSH terminal for "prod" — the window said why.` (`:391`); no marker | green before and after |
+| R6 | the two SSH fields again | `ssh:terminal` (`sshUseActions.ts:340-380`) | `terminal` on `e1` with `key: 'sealed'`, `hops: 1`, `unsafeAt: 1`; the open fails | `Could not open an SSH terminal for "prod" — the window said why.` (`:391`); no marker. The world replaces `./sshConnect`, so on `ssh:terminal` the key and the chain are never read. R6 proves only the fixed sentence of `notOpened` (`:387-392`). That is safe: the sentence holds only `ctx.entityName`, so the code cannot leak a second entry there | green before and after |
 
 A row collects each case that fails and fails one time, with the list. So the first run prints the list of leaks.
 
@@ -290,8 +304,8 @@ A row collects each case that fails and fails one time, with the list. So the fi
 
 - **It must find a field that shares its line with other fields** (F7). Take the text between `export interface
   EntityMetadata {` and the first `}` at the start of a line. Remove the comments. Split at `;`. Each piece that is
-  not empty must be one field of the form `name?: type`; a piece that is not such a field fails the test, with the
-  piece. So a new shape cannot be passed over in silence.
+  not empty must be one field of the form "`name` or `name?`, then `: type`" (required fields exist: `id: string;`
+  and `name: string;`, `types.ts:57-58`); a piece that is not such a field fails the test, with the piece. So a new shape cannot be passed over in silence.
 - Each collected field must be in the scenario table (five: `sshKeyEntityId`, `jumpHostEntityId`,
   `vpnLauncherEntityId`, `sshEntityId`, `dependsOn`) or on the written list of fields that hold no reference to
   another entry. On `b15a5410` that list has 22 names: the twenty of the parent's §5.2 (`id`, `name`, `host`, `user`,
@@ -320,15 +334,18 @@ A row collects each case that fails and fails one time, with the list. So the fi
 
 | Control | World | Must be true |
 |---|---|---|
-| a visible jump host | `hops: 1`, `unsafeAt: 1`, `visibleHops: [1]` | 409, `no_credential`, `The jump host "<its name>" cannot be used: its address is not a valid host.`; 0 notes |
-| a visible key entry with a damaged value | `key: 'damaged'`, `keyVisible: true` | 409, `no_credential`, the message starts with `"<its name>" holds a protected value that cannot be read:`; 0 notes |
+| a visible jump host | `hops: 1`, `unsafeAt: 1`, `visibleHops: [1]` | 409; the WHOLE body is deep-equal to `errorBody('no_credential', m)`, where `m` is `The jump host "<its name>" cannot be used: its address is not a valid host.`, taken from the real `resolveJumpChain` on the same world, not typed again; 0 notes |
+| a visible key entry with a damaged value | `key: 'damaged'`, `keyVisible: true` | 409; the WHOLE body is deep-equal to `errorBody('no_credential', m)`, where `m` is the message that the real `resolveExecAuth` gives on the same world (it starts with `"<its name>" holds a protected value that cannot be read:`; it does not change); 0 notes |
 | a visible unsafe hop behind a hidden good hop | `hops: 2`, `unsafeAt: 2`, `visibleHops: [2]` | the sentence names hop 2; the answer does not hold the marker of hop 1 |
+
+The first two controls are the two cases of pass criterion 4. They compare the whole body, not a part of it, so a
+changed key, a changed field or an added field of the body is red too. The parent's criterion 4 says *byte-equal*.
 
 **G11: a hidden second entry that works stops nothing** (watched green before and after):
 
 | Case | World | Must be true |
 |---|---|---|
-| a hidden jump host with a safe address | `hops: 1` | 200; the spawn was reached one time; the argv holds `-J` with the hop's address; 0 notes |
+| a hidden jump host with a safe address | `hops: 1` (`e1` passes the credential step by its own key, proof 5) | 200; the spawn was reached one time; the argv holds `-J` with the hop's address; 0 notes |
 | a hidden key entry with no PIN | `key: 'plain'` | 200; the spawn was reached one time; the key file is gone after the call; 0 notes |
 
 ### 4. The no-op types (the parent's step 10)
@@ -367,12 +384,14 @@ as a literal (§6), and that the source of `agentNaming.ts` holds no `import` an
 past the refused step (the spawn is reached). For B2, the same world with no unsafe hop gets past it. These are the
 two cases of G11, or calls of the same shape.
 
-**Rows of this document** (guards; green with the no-op types and after the fix):
+**Rows of this document** (X3 and X6 are green with the no-op types and after the fix; X4 and X5 are red before the fix by their marker assertion, and green after it):
 
 | Row | File | What it pins |
 |---|---|---|
 | X3 | `test/sshCredential.test.ts`, over `borrowedKeyWorld` (`:155-170`) and `fakeStorage` (`:30-41`) | `ownerId` is the id of the entry that OWNS the stopped value: the key entry's id for its stored key (`:80`); the key entry's id for its password, and the connection's own id for its own password (`:102`). Without this row a wrong id shows only in a positive control |
-| X4 | `test/sshUseActions.test.ts`, the world of §2 with `noteThrows` | B1's call when the journal does not take the line: the call fails or answers, and what the caller gets (the answer, or the text of the error) holds no hidden name and no hidden id. The message is chosen before the line is written, so a journal that throws cannot bring the old sentence back. (Red before the fix by its marker assertion; green after) |
+| X4 | `test/sshUseActions.test.ts`, the world of §2 with `noteThrows` | What happens when `deps.note` throws, at each of the three sites. The message is chosen before the line is written, so a journal that throws cannot bring the old sentence back. The row asserts these outcomes, and that no hidden name and no hidden id is in the answer or in the error. (a) `sshUseActions.ts:181` (a hidden key entry; B1's call): the refusal is called outside the `try` (`:258`), so the call REJECTS with the error of the journal, and the broker answers `INTERNAL_FAILURE` (`credsAgentServer.ts:686-687`; the broker is not part of the row). (b) `sshUseActions.ts:265` (a hidden unsafe hop; B2's call): the refusal is inside the `try`; the throw goes to the `catch` at `:273-274`, which calls `refuse` again with no `second`, so no second note is tried; the answer is 500, `internal`, with `Could not run ssh: <the error of the journal>`. (c) `agentUseActions.ts:407` (a hidden unsafe hop in a linked run; B3's call): the call REJECTS with the error of the journal. No leak in any of the three. (Red before the fix by its marker assertion; green after) |
+| X5 | `test/sshUseActions.test.ts`, the world of §2 (`exec` and `run`) | The chain at depth 4. **Own row: it tests a site of §3.1 (`sshOptions.ts:153`) and adds no site.** `hops: 4`, `unsafeAt: 4`, the hops hidden; `e1` passes the credential step by its own key (proof 5). A chain of 4 hops is inside the cap, so the walk reaches the hop at depth 4 and refuses its address. On `exec` and on the linked `run` of `t1`: 409, and the body is deep-equal to `errorBody('no_credential', SECOND_ENTRY_REFUSED(<entry>))` (`prod` on `exec`, `deploy` on `run`); exactly 1 note, the line of the relation `jump host`; no hidden name and no hidden id in the body or in the note. (Red before the fix by its marker assertion: the body holds the marker of hop 4; green after) |
+| X6 | `test/sshUseActions.test.ts`, the world of §2 (`exec` and `run`) | The depth cap. **Own row: it tests a site of §3.1 (`sshOptions.ts:137`) and adds no site.** `hops: 5`, all hops hidden and all with a safe address. The 5th hop is refused by `refuseWalk` (`sshOptions.ts:134`) before its address is read. On `exec` and on the linked `run` of `t1`: 409, `no_credential`, and the body is deep-equal to `errorBody('no_credential', '"prod" chains more than 4 jump hosts, which is a mistake rather than a network.')`. The sentence names the STARTING entry only: `entity` is never re-bound in `resolveJumpChain`, so on a linked run it names the SSH entry `prod`, not the Terminal entry. The answer holds no hidden marker and no hidden id. The refusal has no `second`, so there is 0 notes. (Green before and after)
 
 ### 6. The fix (the parent's step 12)
 
@@ -435,6 +454,7 @@ a jump host that is gone (`sshOptions.ts:148`); a call whose hidden second entry
 |---|---|---|
 | G9 | `test/bridgeLinks.test.ts:74-84` (a sealed key), `:91-97` (a key that cannot be written), `:115-124` (an unsafe jump host), `:131-137` (an `ssh` that cannot start): the bridged half of each test, not changed. **Two assertions more**, in the first and the third: the journal holds the exact line `prod: <the real sentence> (a Remote Bridge was told only that it could not be used)` (today the two tests ask only that a note holds the sentence). Watch the two green on the unchanged code first; if one is red there, tell the lead | on a Remote Bridge the body is `BRIDGE_USE_REFUSED('prod')` and the note is today's, byte for byte |
 | G9, the linked run | `test/agentSshGate.test.ts:470`, `:740` (not changed) | a linked run on a bridge is refused with `BRIDGE_NOT_SERVED` before the link is read (F10) |
+| G9, the reference test | `test/bridgeReferences.test.ts` (not changed; the parent's G9 names it). Watched green before and after | it tests `REFERENCE_REFUSED` (`:71`, `:371`) and the written-out sentences of the bridge wall (`:360-371`), not the function `bridgedRefusal`: it pins the bridge's fixed text, and it does not pin the branch that rule B changes |
 | G10 | `test/sshUseActions.test.ts:225-233` (no credential), `test/sshExecAuth.test.ts:185-197` (a woven password), `test/sshExecOver.test.ts:181-190` (the SSH entry's own sealed password), `:192-202` (a circle) — not changed | a refusal that names the entry that was asked for does not change |
 | G11 | part B, §3 | a hidden second entry that works stops no call |
 | — | the positive controls of part B, §3 | a visible second entry is named as today, and no note is written |
@@ -457,25 +477,25 @@ not change (note 10).
 | # | Mutation | Must go red |
 |---|---|---|
 | 4 | make `agentMayView` answer `true` | L7 (epic 1's), B1, B2, B3, C-B |
-| 5 | do not set `second` in `refuseHop` | B2, B5 |
+| 5 | do not set `second` in `refuseHop` | B2, B5, X5 |
 | 5 | do not set `second` in `stoppedAuth` | B1, B6 |
 | 9 | take one name off the written list of fields that hold no reference | the scan, with that field |
 | 9 | put the text of `said.message` into the note of the chooser; then, apart, put `said.second.id` into it | B4, B7 |
 | M-b | `agentRefusal` gives the message back (the no-op of step 10) | B7, B1, B2, B3, C-B |
 | M-c | fill `ownerId` with `''` at `sshCredential.ts:80` | X3; the positive control of the visible damaged key |
-| M-d | pass no `second` at `sshUseActions.ts:181`; then at `:265`; then at `agentUseActions.ts:407` | B1; B2; B3 |
+| M-d | pass no `second` at `sshUseActions.ts:181`; then at `:265`; then at `agentUseActions.ts:407` | B1; B2 and X5 (`exec`); B3 and X5 (`run`) |
 
 ### 10. Order of work, and the commits
 
 1. **Step 9.** `test/secondEntryWorld.ts`, the chain in `test/agentSshWorld.ts`, part B. Run part B on the unchanged
    `src` code: it is RED. Save the list. It must be this list and no more: R1 (a), (b), (c), (d); R2 with its 7
-   cases. R3 to R6, the scan, row R, the positive controls, G11 and the proofs are green. Compare each failure with
+   cases. R3 to R6, the scan, row R, the positive controls, G11 and the proofs (proof 5 too: `e1` answers 200 with its own key) are green. Without the own key of `e1` the 7 cases of R2 would be refused at the credential step and would be green by mistake; this list holds only because of proof 5. Compare each failure with
    the parent's §3.1: R1 is B3 with B5 (`sshExecAuth.ts:124-128` → `sshUseActions.ts:181`); R2 on `exec` and on
    `rotate` is B4 with B5 (`sshOptions.ts:153` → `sshUseActions.ts:265`); R2 on `run` is B4 with B6
    (`agentUseActions.ts:407`). A failure that is not on this list goes to the lead before any fix.
 2. **Step 10.** The no-op types of §4. `npm run typecheck` is clean; `npm test` shows the failures of step 1 and no
    other.
-3. **Step 11.** Rows B1 to B7, X3 and X4. Watch each RED row fail by its assertion. Save each text.
+3. **Step 11.** Rows B1 to B7 and X3 to X6. Watch each RED row fail by its assertion (B1 to B7, X4, X5; X3 and X6 are green with the no-op types). Save each text. The first run of the world also shows proof 5 green: `exec` on `e1` with the default options answers 200. If it does not, the hop rows are not valid, and the world is wrong, not the code.
 4. **Step 12.** The fix of §6, the two changed tests of §8, the two assertions of G9, the comments that become
    false.
 5. **Step 13, first part.** The mutation checks of §9.
@@ -503,7 +523,9 @@ the number that the run shows.
 - [ ] **3.** In the same 7 cases the action wrote exactly 1 note (F12); it is the relation line of §6; a search of
       the note for the second entry's name and for its id finds 0 (B4).
 - [ ] **4.** The 2 cases with a visible second entry (a jump host; a key entry with a damaged value): the body is
-      today's, and 0 notes (the positive controls, green before the fix and after it).
+      byte-equal to today's — the whole body is deep-equal to `errorBody('no_credential', m)`, where `m` is the
+      message that the real resolver gives on the same world — and 0 notes (the positive controls, green before the
+      fix and after it).
 - [ ] **5.** On a Remote Bridge the bodies and the notes of the cases that a bridge serves are today's (G9, with
       its two assertions more).
 - [ ] **6.** A hidden second entry that works stops 0 calls (G11: 2 cases).
@@ -535,7 +557,7 @@ And for this story:
 |---|---|
 | `src_vs_code/CHANGELOG.md`, under `## [Unreleased]` (`:7`) | one `### Changed — security` entry: rule B, and case 4 of the parent's §3.4 with the old answer and the new one. It names the tools (`creds_exec`, `creds_rotate` on an SSH entry, a linked `creds_run`) and says that `creds exec` in a terminal reads the same sentence (the alias door and the token door). It says what stays: the code `no_credential` and the status 409; the sentence for a second entry that the agent may view; the answers on a Remote Bridge; a hidden key entry or jump host that works is used; a jump host that is gone keeps its own sentence. It says what the journal line holds. It is derived from the diff of c2. The entry of 1.21.1 (`:66-108`) is released text: it is not edited |
 | `research/module_extension.md` | (a) in the paragraph *A lookup and a refusal name only what the agent may view* (`:6403-6421`): rule B after rule A — the field `second` on the two failures and who sets it (`stoppedAuth`, `refuseHop`), the chooser `agentRefusal` in `agentNaming.ts`, the two places that ask it (the branch off a bridge in `sshUseActions.ts`, `remoteRefusal` in `agentUseActions.ts`), the fixed sentence, the two relation lines and why the line names a relation and not a name, and what rule B does not hide (the parent's §7). The sentence there that says that such a refusal *is to ask* `agentMayView` gets the present tense. (b) in the paragraph *Agents do not see a protected entry* (`:1328-1336`): the owner of a borrowed key is not named in a refusal to an agent that may not view it. No diagram shows these sentences, so none is drawn again |
-| `research/module_tests.md`, the section *A refusal names only what the agent may view* (`:2327`) | part B beside part A: where it is, the command, the six rows, the scan with its two lists (and that it reads a line that holds more than one field), row R, the positive controls, G11, the mutation results. The heading names E2 and rule B too; its first words stay, because `module_extension.md` cites them. The list *What none of this proves* (`:2371-2380`) is the parent's §5.8: the line about a real `ssh` (`:2374`) says that B1 to B3 refuse before anything is started; one line more for note 10 (a stored key that cannot be written; the text that `ssh` prints on a call that answers 200); the scan does not see `PortForward[]`, `CommandArg[]` and `Record<string, string>` |
+| `research/module_tests.md`, the section *A refusal names only what the agent may view* (`:2327`) | part B beside part A: where it is, the command, the six rows, the scan with its two lists (and that it reads a line that holds more than one field), row R, the positive controls, G11, the mutation results. The heading names E2 and rule B too; its first words stay, because `module_extension.md` cites them. The list *What none of this proves* (`:2371-2380`) is the parent's §5.8: the line about a real `ssh` (`:2374`) says that B1 to B3 refuse before anything is started; one line more for note 10 (the path of a borrowed key: a disk-write failure, a run error, and the text that `ssh` prints on a call that answers 200); the scan does not see `PortForward[]`, `CommandArg[]` and `Record<string, string>` |
 | `todo/README.md` | the status cells of the parent's row, of the E1 row and of this document's row |
 
 `README.md`, the help files and `POST_DEPLOY.md` get no change (the parent's §6). Checked on `b15a5410`: `grep -c -F`
@@ -604,7 +626,7 @@ step 13). Its body has case 4 of the parent's §3.4, the verdicts and the number
 writes the two pull request numbers (#347 and this one) into the parent's §7a for the two owed rows. Then the
 parent, the E1 document and this document are promoted together, with their deviations, in the task that finishes
 epic 2 (the parent's §10). No release is part of this epic; the lead and the owner hear that a release of the
-extension must follow the merge, and they get the questions of the parent's §2.6 and §11 and note 10 below.
+extension must follow the merge, and they get the questions of the parent's §2.6 and §11 (N10 included) and note 10 below.
 
 ## Notes on the parent, as read on `b15a5410`
 
@@ -642,19 +664,32 @@ changed for them. Each note says how this document judges it; the lead decides, 
    `deploy` runs over. The person opens the Terminal entry, then its SSH entry. This document builds the line as the
    parent's §2.5 writes it. *Judged: not a change.* Another line for a linked run would be a change of §2.5, and it
    would count.
-10. **A site that the parent does not list: a stored key that cannot be written.** When the key file cannot be
-    written, the refusal is `Could not write the stored key to disk: <the error of the operating system>`
-    (`sshExecAuth.ts:157`), with the code `internal`. The error holds the path of the file, and the file's name
-    starts with the id of the entry that owns the key (`sshExecAuth.ts:154`; `keyInstaller.ts:158-162`). Off a
-    bridge the sentence reaches the agent as it is (`sshUseActions.ts:180-181`); `test/bridgeLinks.test.ts:99-101`
-    pins that the main port says it, with the path. So when the key is borrowed from an entry that the agent may
-    not view, the agent can read the ID of that entry (not its name) and a path of the person's computer. On a
-    bridge this is closed already. The same file name is in the argv of `ssh`, so the text that `ssh` prints on a
-    call that answers 200 can hold it too (NOT checked with a real `ssh`). **Not built here.** *Judged: nothing
-    changes while it is not built. To build it in E2 is a counted change*: a new site, and the journal line of §2.5
-    has no true relation line for a disk failure. It is a question for the owner, as N8 is: build it as its own
-    small item, or stop the plan and take it in. After epic 1 the id answers `not_found` to each call, and the
-    parent's §7 says that rule B does not hide that a second entry exists.
+10. **Sites that the parent does not list: the path of a borrowed key reaches the agent in three ways.** The file of a
+    key that a call writes to disk is named `<storageDir>/keys/<keyEntityId>-<uuid>.key`
+    (`sshExecAuth.ts:154`; `keyInstaller.ts:158-160`). `keyEntityId` is the id of the entry that owns the key. So,
+    when the key is borrowed from an entry that the agent may not view, each path that shows the file name gives
+    the agent the ID of that entry and a path of the person's computer.
+    - **(a) A key that cannot be written.** The refusal is `Could not write the stored key to disk: <the error of
+      the operating system>` (`sshExecAuth.ts:157`), with the code `internal`. The error holds the path. Off a
+      bridge the sentence reaches the agent as it is (`sshUseActions.ts:180-181`); `test/bridgeLinks.test.ts:99-101`
+      pins that the main port says it, with the path.
+    - **(b) A run error.** `sshUseActions.ts:274` gives `Could not run ssh: ${describeError(error)}`. The argv of
+      `ssh` holds `-i <storageDir>/keys/<keyEntityId>-<uuid>.key` (`sshExecCommand.ts:160`), and an error of the
+      start can carry the argv and the path. The test at `test/bridgeLinks.test.ts:131` says so in its name. Off a
+      bridge the sentence reaches the agent as it is (`:139` pins the start of it).
+    - **(c) The text of `ssh` on a 200 answer.** The standard error of `ssh` comes back in the answer. It can show
+      the path, for example `Load key "<path>": invalid format`. NOT checked with a real `ssh`.
+    - **The id is not always an opaque id.** An imported vault can carry ids of its own shape. `SAFE_ID`
+      (`idQuarantine.ts:41`) accepts, for example, `deploy-key`, and `safeFileComponent` keeps it. So a name-like id
+      of a hidden key entry can reach the agent, and then it tells almost as much as a name.
+
+    On a bridge (a) and (b) are closed already (`BRIDGE_USE_REFUSED`); (c) is not: a bridge gets the text of `ssh`
+    as it is, by the decision that `test/bridgeLinks.test.ts:171` pins. **Not built here.** *Judged: nothing changes
+    while it is not built. To build it in E2 is a counted change*: each one is a new site, and the journal line of
+    §2.5 has no true relation line for a disk failure or a run error. It goes to the owner as its own small item,
+    with a priority above N8 (the parent's N10): build it as its own item, or stop the plan and take it in. After
+    epic 1 the id answers `not_found` to each call, and the parent's §7 says that rule B does not hide that a second
+    entry exists.
 11. **The branch.** The parent's status block says that the two epics are on
     `fix/agent-refusal-names-unlisted-entry`. That branch was merged with #347. Epic 2 is on
     `fix/agent-refusal-names-second-entry`, from `main` at `b15a5410`. *Judged: not a change* — the plan gives each
@@ -668,6 +703,14 @@ changed for them. Each note says how this document judges it; the lead decides, 
 14. **The pull request number of the owed rows.** The parent's §7a says that the two owed bridge rows are *named
     with this plan's pull request number when it exists*. #347 exists, and §7a does not hold it. The lead writes
     it, with E2's number. *Judged: not a change* — a progress fact.
-15. **Rows and checks of this document that the parent does not have:** X3, X4, M-b, M-c, M-d, the third positive
-    control, the two assertions more of G9, and the cases (b), (c), (d) of R1 and the `rotate` case of R2. Each one
-    tests a site of the parent's §3.1 and adds no site. *Judged: not a change*.
+15. **Rows and checks of this document that the parent does not have:** X3, X4, X5, X6, M-b, M-c, M-d, the third
+    positive control, the two assertions more of G9, and the cases (b), (c), (d) of R1 and the `rotate` case of R2.
+    X5 (a hidden unsafe hop at depth 4) and X6 (a chain of 5 hops, the depth cap) are own rows: they test a site of
+    the parent's §3.1 and add no site. Each of the others also tests a site of §3.1 and adds none. *Judged: not a
+    change*.
+16. **Reviews of these stories.** The lead's own Opus review and the `coai` plan round (session `dbe7d8d4`, verdict
+    `proceed`, 2 of 2 reviewers, 5 findings rejected with reasons) and the cadence consultation (closed, solved) ran
+    on `d4cee7e8`. The changes of this version of the document came from them: the own key of `e1` in the world, the
+    whole-body positive controls, the depth 4 and 5 rows (X5, X6), the complete note 10, the wording of the scan, the
+    line of G9 for `bridgeReferences.test.ts`, the words on R6 and on F14, and the exact outcomes of X4. *Judged: not
+    a change* — each one is the wording or the wiring of a test; none adds a site.

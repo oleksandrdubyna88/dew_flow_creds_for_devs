@@ -694,6 +694,18 @@ Both:
   the owner — build it in epic 2, or as its own small item.
 - **N9. `whyUnusable` says "switch is off" for an SSH node in the Trash and for a link to a folder.** The cause is another one.
   This reaches the agent journal only; the agent sees nothing of it. Known, not built.
+- **N10. The path of a borrowed key reaches the agent in three ways, and an id can be name-like.** The file of a key
+  that a call writes is `<storageDir>/keys/<keyEntityId>-<uuid>.key` (`keyInstaller.ts:158-160`; `sshExecAuth.ts:154`).
+  (a) A key that cannot be written: `Could not write the stored key to disk: <the error of the operating system>`
+  (`sshExecAuth.ts:157`). (b) A run error: `Could not run ssh: <the error>` (`sshUseActions.ts:274`); the argv holds
+  `-i <that path>`, and `test/bridgeLinks.test.ts:131` says the error may carry the argv and a path. (c) The text
+  that `ssh` prints on a 200 answer can show the path, for example `Load key "<path>": invalid format` (not checked
+  with a real `ssh`). The id in the file name is not always opaque: an imported vault can carry ids of its own shape,
+  `SAFE_ID` accepts `deploy-key` (`idQuarantine.ts:41`) and `safeFileComponent` keeps it. So a name-like id of a
+  hidden key entry can reach the agent. On a Remote Bridge (a) and (b) are closed already. Found by the E2 stories
+  (2026-11-11) and confirmed by the `coai` plan round and its consultant. Not built here: to build it in this plan is
+  a counted change (a new site and a new row), so it is a question for the owner — its own small item, with a priority
+  above N8.
 
 ## Epics
 
