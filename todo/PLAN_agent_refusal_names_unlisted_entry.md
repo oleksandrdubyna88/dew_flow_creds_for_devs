@@ -19,7 +19,7 @@
   split into two epics is the operator's command of that round, made after the two question consultants were asked
   (coai afd0c0dd; they advised rule A as epic 1 with the shared predicate, rule B as epic 2). All of this is folded
   into the text below as the approved baseline. Nothing was built before it, so the epoch opens with no entry.)
-- 1.1 · 2026-11-11 · owner · dod — the bridge plan's owner session (dew-flow-conventions-a0) refused the boundary rows in PLAN_remote_bridge_scoped.md and its E1 S3 spec: for that plan they would be its change 8.2 and a full stop; the two rows are written on this plan's side only, as owed, and that plan takes them (and N7) into its ledger when it opens for E1.6
+- 1.1 · 2026-11-11 · agent · dod — the bridge plan's owner session (dew-flow-conventions-a0) refused the boundary rows in PLAN_remote_bridge_scoped.md and its E1 S3 spec: for that plan they would be its change 8.2 and a full stop; the two rows are written on this plan's side only, as owed, and that plan takes them (and N7) into its ledger when it opens for E1.6
   (Counted in doubt: the Definition of Done said every neighbour of §7a gets its row in epic 1's pull request. The H6 harness case of the same night is not a change: §2.4 and H3 already say a hidden id falls through the window walk like a missing one; H6 only tests it with the older window holding the entry.)
 
 ## 1. The defect
@@ -616,6 +616,11 @@ documents of the bridge plan (its E1 stories and the S2, S4 and S5 specs) are co
 5. **With two windows open**, a call on a hidden entry now goes on to the next window, as a call on an unknown id
    does: one more loopback request per window, and no dialog (H3). H6 tests it with the older window holding the entry with `use` on (cadence consultation fbd8b366): the
    older window decides under its own switches and consent, as for an id the newer window does not hold.
+   The same fall-through happens between two accounts of one window (rows X1, X2): a hidden node in the first account lets the
+   search go on to the second account. A quiet-run case follows from it: when the person turns off view, or trashes the entry, in the
+   newer window, and an older window still holds the entry with use on and ask = never or a valid 12-hour stamp, the older window
+   runs it with no dialog. This is a residue of rule A, for the owner (fix idea: a fresh tree per lookup, or consent only in the
+   window that wrote it).
 6. **A4 adds one storage read** in the gate of a linked run, in the Terminal entry's own account. The tests that
    compare the reads (`agentSshGate.test.ts:275`, `:284`, `:462`, `:676`) must stay green; `:462` shows that a bridge
    still reads nothing.
@@ -686,6 +691,8 @@ Both:
   named and no value is given; only the answer differs. Found by the lead's Opus review of the E1 stories
   (2026-11-11). Not built here: to build it is a counted change (a new site and a new row), so it is a question for
   the owner — build it in epic 2, or as its own small item.
+- **N9. `whyUnusable` says "switch is off" for an SSH node in the Trash and for a link to a folder.** The cause is another one.
+  This reaches the agent journal only; the agent sees nothing of it. Known, not built.
 
 ## Epics
 
