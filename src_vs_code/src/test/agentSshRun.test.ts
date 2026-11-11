@@ -31,7 +31,7 @@ test('a_usable_trusted_linked_entry_runs_the_bare_line_over_ssh', async () => {
   assert.equal(w.overSsh.calls.length, 1);
   const { call } = w.overSsh.calls[0];
   assert.equal(call.ssh, detailsOf(w, 's1'), 'the SAME object the storage returned for s1');
-  assert.equal(call.remoteCommand, 'echo linked', 'the bare line: no eval, no exec, no wrapper');
+  assert.equal(call.remoteCommand, "exec ${SHELL:-sh} -l -c 'echo linked'", 'the line in the login form: no eval, no stay-open wrapper');
   assert.deepEqual(call.jump(), resolveJumpChain(detailsOf(w, 's1'), () => undefined));
   assert.equal(call.timeoutMs, clampExecTimeout(undefined));
   assert.equal(call.ownAgentOnly, true, 'the linked run may use only the extension\'s own agent (D17)');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
-import { RemotePlan, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsOverSshBanner, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
+import { RemotePlan, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsOverSshBanner, secretsScriptFirst, secretsScriptLast, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
 import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD, NO_SSH_TO_SPAWN } from '../sshProgram';
 import type { ReadySsh } from '../sshSession';
 import type { CommandArg, EntityMetadata, TreeNode } from '../types';
@@ -109,6 +109,13 @@ function theRun(aw: ArrowWorld): MaskedRecord & { argv: readonly string[]; stdin
   return run as MaskedRecord & { argv: readonly string[]; stdinText: string; cwd: string };
 }
 
+/** The nonce of a run, read from the remote command (the last word of its argv): the one that `secretsStdin` was given must be the same. */
+function nonceOf(run: { readonly argv: readonly string[] }): string {
+  const found = /"#creds-secrets-([0-9a-f]{32})"\*"#creds-secrets-end-([0-9a-f]{32})"/.exec(run.argv[run.argv.length - 1]);
+  assert.ok(found !== null && found[1] === found[2], `no pair of markers in the remote command: ${run.argv[run.argv.length - 1]}`);
+  return found[1];
+}
+
 const secretsOf = (r: ReadySsh): { value: string; label: string }[] => {
   assert.ok(r.kind === 'ready');
   return [{ value: VALUE, label: 'CREDS_REF_1' }];
@@ -145,7 +152,7 @@ test('the_child_is_ssh_by_argv_with_no_value_in_argv_or_env', async () => {
   const r1 = only(road.readies);
   const run = theRun(aw);
   const spawn = only(road.launches);
-  const launch = secretsLaunch(PLAN, r1, spawn.kind === 'spawn' && spawn.ownAgent);
+  const launch = secretsLaunch(PLAN, r1, spawn.kind === 'spawn' && spawn.ownAgent, nonceOf(run));
   assert.equal(launch.kind, 'spawn');
   assert.deepEqual(run.argv, ['ssh', ...(launch.kind === 'spawn' ? launch.argv : [])]);
   assert.equal(run.commandLine, undefined);
@@ -160,9 +167,22 @@ test('stdin_carries_the_exports_and_the_line_in_a_group_then_exit', async () => 
   const { aw } = setup();
   await aw.runWithSecrets(LINKED);
   const run = theRun(aw);
-  assert.equal(run.stdinText, secretsStdin({ CREDS_REF_1: VALUE }, 'printenv "$CREDS_REF_1"'));
+  const nonce = nonceOf(run);
+  assert.equal(run.stdinText, secretsStdin({ CREDS_REF_1: VALUE }, 'printenv "$CREDS_REF_1"', nonce));
   assert.ok(run.stdinText.includes('} </dev/null'));
-  assert.ok(run.stdinText.endsWith('exit $?\n'));
+  assert.ok(run.stdinText.endsWith(`exit $?\n${secretsScriptLast(nonce)}\n`), 'the exit, then the last marker line');
+  assert.ok(run.stdinText.startsWith(`${secretsScriptFirst(nonce)}\n`), 'the first marker line');
+});
+
+test('each_run_has_a_nonce_of_its_own_in_its_command_and_in_its_script', async () => {
+  const { aw } = setup();
+  await aw.runWithSecrets(LINKED);
+  await aw.runWithSecrets(LINKED);
+  assert.equal(aw.masked.length, 2);
+  const runs = aw.masked.map((run) => run as MaskedRecord & { argv: readonly string[]; stdinText: string });
+  const [first, second] = runs.map(nonceOf);
+  assert.notEqual(first, second, 'one nonce for two runs');
+  runs.forEach((run, i) => assert.equal(run.stdinText.split('\n')[0], secretsScriptFirst(i === 0 ? first : second), `run ${i + 1}: its script has its own command's nonce`));
 });
 
 test('the_output_is_masked_and_the_banner_says_not_interactive', async () => {

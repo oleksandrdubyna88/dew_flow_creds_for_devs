@@ -1,87 +1,29 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { TestContext, test } from 'node:test';
-import { SECRETS_REMOTE_COMMAND, secretsStdin, stayOpenWrapper } from '../remoteLaunch';
-import { buildSshCommand } from '../sshCommand';
-import { EntityMetadata } from '../types';
-import { ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { loginShellCommand, secretsRemoteCommand, secretsStdin, stayOpenWrapper } from '../remoteLaunch';
+import { CORPUS } from './remoteCorpus';
+import { NONCE, SHELL_TIMEOUT_MS, dirOf, fakeSsh, has, lineFor, remoteHome, shellPath, skipUnless, sshdEnv } from './remoteShellHarness';
 
 /**
  * The remote command through REAL shells (E1.S2 spec §S2.8): no stub of the quoting. A fake `ssh` records its argv, so
  * what the typed line delivers is observed byte for byte; a second real shell stands in for the remote side
  * (`<shell> -c <element>`, the parse `sshd` gives the one argument); the stay-open wrapper and the secrets script run
  * for real. A real sshd round trip and Windows' own native re-quoting are hand checks (spec §S2.12).
+ *
+ * <p>Since PLAN_ssh_line_runs_in_login_shell.md every element is delivered in THREE forms: the line itself, the login form
+ * `loginShellCommand(line)` (the chain step and the agent's run) and `loginShellCommand(stayOpenWrapper(line))` (the arrow, the folder run,
+ * the VPN launcher). Every real-shell run of the remote side uses an owned `HOME` (`remoteShellHarness.ts`).</p>
  */
-
-const SHELL_TIMEOUT_MS = 20_000;
-
-function has(program: string, args: string[]): boolean {
-  try {
-    execFileSync(program, args, { stdio: 'ignore', timeout: SHELL_TIMEOUT_MS });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** A Linux or macOS machine without bash FAILS; only a Windows machine without it skips. */
 const NO_BASH = process.platform === 'win32' && !has('bash', ['-c', 'true']) ? 'no bash on this Windows machine' : false;
-const skipUnless = (shell: string): string | false => (has(shell, ['-c', 'true']) ? false : `no ${shell} on this machine`);
 const NO_PWSH = has('pwsh', ['-NoProfile', '-Command', '1']) ? false : 'no pwsh on this machine';
 
-const dirOf = (t: TestContext, what: string): string => ownedDir(t, what);
-
-/** What a person might store: shell syntax, quotes of every kind, a leading `--`, an option look-alike, unicode, a tab. */
-const CORPUS: readonly string[] = [
-  'echo hi; echo there',
-  'a && b | c',
-  `printf '%s|' a\\ b "c;d" '$(x)' && echo; echo "$HOME"`,
-  '`id`',
-  'back\\slash\\',
-  '100% !bang *glob',
-  'tab\there',
-  'ünïcode €',
-  `it's 'quoted' "and" $(sub)`,
-  '--',
-  '-oProxyCommand=id',
-  'trail # comment',
-  'echo a &',
-  "x'",
-  `'"'"'`,
-  // PowerShell reads U+2018, U+2019, U+201A and U+201B as single quotes: unescaped, one of them ends the literal.
-  'it\u2019s \u2018x\u2019 \u201Ay\u201B',
-];
-
-const E: EntityMetadata = { id: 's', name: 'srv', host: 'host', user: 'deploy', port: 2222, isSshEnabled: true };
-
-function lineFor(command: string, platform: NodeJS.Platform): string {
-  const line = buildSshCommand(E, platform, { program: 'ssh', remote: { command, tty: true } });
-  assert.ok(line !== undefined, 'the builder refused the entity');
-  return line;
-}
-
-/** A `ssh` that records its argv NUL-separated and calls nothing named `ssh` (so it can never resolve to itself). */
-function fakeSsh(t: TestContext): { env: NodeJS.ProcessEnv; read: () => Buffer[] } {
-  const dir = dirOf(t, 'ssh');
-  const out = path.join(dir, 'argv.bin');
-  fs.writeFileSync(path.join(dir, 'ssh'), '#!/bin/sh\nprintf \'%s\\0\' "$@" > "$FAKE_SSH_OUT"\n', { mode: 0o755 });
-  const env = { ...process.env, PATH: dir + path.delimiter + (process.env.PATH ?? ''), FAKE_SSH_OUT: out };
-  const read = (): Buffer[] => {
-    const bytes = fs.readFileSync(out);
-    const parts: Buffer[] = [];
-    let from = 0;
-    for (let i = 0; i < bytes.length; i += 1) {
-      if (bytes[i] === 0) {
-        parts.push(bytes.subarray(from, i));
-        from = i + 1;
-      }
-    }
-    return parts;
-  };
-  return { env, read };
-}
+/** The three remote commands the composer makes of one element. */
+const FORMS = (command: string): readonly string[] => [command, loginShellCommand(command), loginShellCommand(stayOpenWrapper(command))];
 
 function assertDelivered(argv: Buffer[], command: string, via: string): void {
   const text = (b: Buffer): string => b.toString('utf8');
@@ -105,22 +47,26 @@ function deliveredByBash(t: TestContext, command: string): Buffer {
 }
 
 test('bash_delivers_one_remote_element_byte_equal', { skip: NO_BASH }, (t) => {
-  for (const command of CORPUS) {
-    const fake = fakeSsh(t);
-    const run = spawnSync('bash', ['-c', lineFor(command, 'linux')], { env: fake.env, timeout: SHELL_TIMEOUT_MS });
-    assert.equal(run.error, undefined, String(run.error));
-    assert.equal(run.status, 0, `${JSON.stringify(command)}: ${run.stderr.toString('utf8')}`);
-    assertDelivered(fake.read(), command, 'bash');
+  for (const element of CORPUS) {
+    for (const command of FORMS(element)) {
+      const fake = fakeSsh(t);
+      const run = spawnSync('bash', ['-c', lineFor(command, 'linux')], { env: fake.env, timeout: SHELL_TIMEOUT_MS });
+      assert.equal(run.error, undefined, String(run.error));
+      assert.equal(run.status, 0, `${JSON.stringify(command)}: ${run.stderr.toString('utf8')}`);
+      assertDelivered(fake.read(), command, 'bash');
+    }
   }
 });
 
 test('pwsh_delivers_one_remote_element_byte_equal', { skip: NO_PWSH }, (t) => {
-  for (const command of CORPUS) {
-    const fake = fakeSsh(t);
-    const run = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', lineFor(command, 'win32')], { env: fake.env, timeout: SHELL_TIMEOUT_MS });
-    assert.equal(run.error, undefined, String(run.error));
-    assert.equal(run.status, 0, `${JSON.stringify(command)}: ${run.stderr.toString('utf8')}`);
-    assertDelivered(fake.read(), command, 'pwsh');
+  for (const element of CORPUS) {
+    for (const command of FORMS(element)) {
+      const fake = fakeSsh(t);
+      const run = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', lineFor(command, 'win32')], { env: fake.env, timeout: SHELL_TIMEOUT_MS });
+      assert.equal(run.error, undefined, String(run.error));
+      assert.equal(run.status, 0, `${JSON.stringify(command)}: ${run.stderr.toString('utf8')}`);
+      assertDelivered(fake.read(), command, 'pwsh');
+    }
   }
 });
 
@@ -206,19 +152,21 @@ for (const sh of ['dash', 'bash', 'zsh']) {
 const VALUE = `' " $HOME \`id\` \\\nsecond line`;
 
 for (const sh of ['dash', 'bash']) {
-  test(`the_secrets_script_runs_under_sh_s_with_a_stdin_reading_command (${sh})`, { skip: skipUnless(sh) }, () => {
-    const run = (line: string, env: Record<string, string> = {}): { stdout: Buffer; status: number | null } => {
-      const r = spawnSync(sh, ['-s'], { input: secretsStdin(env, line), timeout: SHELL_TIMEOUT_MS });
+  test(`the_secrets_script_runs_through_the_secrets_remote_command_with_a_stdin_reading_command (${sh})`, { skip: skipUnless(sh) }, (t) => {
+    const env = sshdEnv(remoteHome(t), shellPath(sh) as string);
+    const run = (line: string, values: Record<string, string> = {}): { stdout: Buffer; status: number | null } => {
+      const r = spawnSync(sh, ['-c', secretsRemoteCommand(NONCE)], { input: secretsStdin(values, line, NONCE), env, timeout: SHELL_TIMEOUT_MS });
       assert.equal(r.error, undefined, String(r.error));
       return { stdout: r.stdout, status: r.status };
     };
+    // A real login shell may print from `/etc/profile` first: an assertion on the output reads its END.
+    const ends = (line: string, text: string, values: Record<string, string> = {}): boolean => run(line, values).stdout.toString('utf8').endsWith(text);
     // A value with every character that ends a quote or starts an expansion comes back byte for byte.
-    const round = run('printf %s "$CREDS_REF_1"', { CREDS_REF_1: VALUE });
-    assert.ok(round.stdout.equals(Buffer.from(VALUE, 'utf8')), round.stdout.toString('utf8'));
+    assert.equal(ends('printf %s "$CREDS_REF_1"', VALUE, { CREDS_REF_1: VALUE }), true);
     // A command that reads stdin reads the end of input at once; the rest of the group still runs.
-    assert.equal(run('cat; echo after-cat').stdout.toString('utf8'), 'after-cat\n');
-    assert.equal(run('echo x # comment').stdout.toString('utf8'), 'x\n');
-    assert.equal(run('echo tail \\').stdout.toString('utf8'), 'tail\n');
+    assert.equal(ends('cat; echo after-cat', 'after-cat\n'), true);
+    assert.equal(ends('echo x # comment', 'x\n'), true);
+    assert.equal(ends('echo tail \\', 'tail\n'), true);
     assert.equal(run('exit 7').status, 7);
     const failed = run('false');
     assert.equal(failed.status, 1);
@@ -226,20 +174,11 @@ for (const sh of ['dash', 'bash']) {
   });
 }
 
-/** Where a shell lives on THIS machine: the remote's `$SHELL` is a path, and the test must name a real one. */
-function shellPath(name: string): string | undefined {
-  try {
-    return execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS }).trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The emulated remote of Run with Secrets: `<sshd's shell> -c <the one remote argument>`, stdin = the script, `SHELL` = that login shell. */
-function viaRemoteLoginShell(shell: string, line: string): { stdout: string; status: number | null } {
-  const r = spawnSync(shell, ['-c', SECRETS_REMOTE_COMMAND], {
-    input: secretsStdin({}, line),
-    env: { ...process.env, SHELL: shell },
+/** The emulated remote of Run with Secrets: `<sshd's shell> -c <the one remote argument>`, stdin = the script, `SHELL` = that login shell, an owned `HOME`. */
+function viaRemoteLoginShell(t: TestContext, shell: string, line: string): { stdout: string; status: number | null } {
+  const r = spawnSync(shell, ['-c', secretsRemoteCommand(NONCE)], {
+    input: secretsStdin({}, line, NONCE),
+    env: sshdEnv(remoteHome(t), shell),
     timeout: SHELL_TIMEOUT_MS,
     encoding: 'utf8',
   });
@@ -249,24 +188,26 @@ function viaRemoteLoginShell(shell: string, line: string): { stdout: string; sta
 
 const BASH_ONLY = '[[ x = x ]] && printf ok';
 
-test('F3_a_bash_only_line_runs_when_the_remote_login_shell_is_bash', { skip: NO_BASH || skipUnless('bash') }, () => {
+test('F3_a_bash_only_line_runs_when_the_remote_login_shell_is_bash', { skip: NO_BASH || skipUnless('bash') }, (t) => {
   const bash = shellPath('bash');
   assert.ok(bash !== undefined, 'bash was found by the skip check');
-  const run = viaRemoteLoginShell(bash, BASH_ONLY);
-  assert.equal(run.stdout, 'ok');
+  const run = viaRemoteLoginShell(t, bash, BASH_ONLY);
+  assert.equal(run.stdout.endsWith('ok'), true, run.stdout);
   assert.equal(run.status, 0);
 });
 
 // RECORDED 2026-11-10: the same script read by dash (a login shell that is dash) fails, as it would typed there: `[[` is not
 // a command in dash, so the line does not run (status 127, nothing printed). The remote's login shell decides, as on every road.
-test('F3_the_same_line_fails_when_the_remote_login_shell_is_dash_as_it_would_typed_there', { skip: skipUnless('dash') }, () => {
+test('F3_the_same_line_fails_when_the_remote_login_shell_is_dash_as_it_would_typed_there', { skip: skipUnless('dash') }, (t) => {
   const dash = shellPath('dash');
   assert.ok(dash !== undefined, 'dash was found by the skip check');
-  const run = viaRemoteLoginShell(dash, BASH_ONLY);
-  assert.equal(run.stdout, '');
+  const run = viaRemoteLoginShell(t, dash, BASH_ONLY);
+  assert.equal(run.stdout.includes('ok'), false, run.stdout);
   assert.equal(run.status, 127);
 });
 
 test('F3_the_secrets_remote_command_names_the_login_shell', () => {
-  assert.equal(SECRETS_REMOTE_COMMAND, '"${SHELL:-sh}" -s');
+  const command = secretsRemoteCommand(NONCE);
+  assert.equal(command.startsWith('exec ${SHELL:-sh} -l -c '), true, command);
+  assert.equal(command.endsWith(' 3<&0 </dev/null'), true, command);
 });

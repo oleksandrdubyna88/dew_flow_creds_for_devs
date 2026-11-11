@@ -101,7 +101,7 @@ test('a_linked_step_is_planned_with_the_bare_line_and_no_os_refusal', () => {
   assert.equal(plan.ok, true, JSON.stringify(plan));
   const steps = (plan as { steps: { remote?: RemotePlan }[] }).steps;
   const remote = only(steps).remote;
-  assert.equal(remote?.remoteCommand, 'migrate');
+  assert.equal(remote?.remoteCommand, "exec ${SHELL:-sh} -l -c 'migrate'");
   assert.ok(!remote?.remoteCommand.includes('eval'), 'no stay-open wrapper (D11)');
 });
 
@@ -155,7 +155,7 @@ test('a_linked_step_runs_its_typed_line_and_the_chain_waits_for_its_exit', async
   const r1 = only(s.road.readies);
   const plan = s.planOf(STEP);
   assert.deepEqual(terminalNamed(s.aw, CHAIN_TITLE).executed, [TYPED(r1, plan)]);
-  assert.ok(!TYPED(r1, plan).includes('eval'), 'the bare line: the step ends and its exit code reaches the chain');
+  assert.ok(!TYPED(r1, plan).includes('eval'), 'the line in the login form: the step ends and its exit code reaches the chain');
   assert.deepEqual(terminalNamed(s.aw, ROOT_TITLE).sent, ['echo root'], 'the root is typed after the step');
   const modal = s.aw.warnings.find((t) => BEFORE.test(t));
   assert.ok(modal?.includes(`migrate: ${TRUST(r1, plan)}`), modal);

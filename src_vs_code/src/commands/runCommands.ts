@@ -22,7 +22,7 @@ import { confirmTrusted } from '../trustPrompt';
 import { DependencyRunRequest, dependencyRequest, runDependenciesFirst, withSshSteps } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
 import { entryShell, hasOs, osMismatch, quoteFor, windowKind } from '../hostShell';
-import { RemotePlan, SecretsLaunch, SshLink, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsRemoteLine, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
+import { RemotePlan, SecretsLaunch, SshLink, maskedOverSshBanner, newSecretsNonce, planLaunch, secretsLaunch, secretsLocalOnly, secretsRemoteLine, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
 import { OwnedSessions, SpawnLaunch, SshRoad, ownedSessions, runOverSsh } from '../sshRoad';
 import type { ReadySsh } from '../sshSession';
 
@@ -483,6 +483,8 @@ interface SecretsOverSsh {
 interface SshLaunches {
   readonly launch: Extract<SecretsLaunch, { kind: 'spawn' }>;
   readonly spawn: Extract<SpawnLaunch, { kind: 'spawn' }>;
+  /** The run's one nonce (`newSecretsNonce`): in the remote command that `launch` carries and in the script (`secretsStdin`). */
+  readonly nonce: string;
 }
 
 /**
@@ -560,8 +562,9 @@ function launchesOf(run: SecretsOverSsh): SshLaunches | undefined {
   if (spawn.kind === 'refused') {
     return void warn(spawn.reason);
   }
-  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent);
-  return launch.kind === 'refused' ? void warn(launch.reason) : { launch, spawn };
+  const nonce = newSecretsNonce();
+  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent, nonce);
+  return launch.kind === 'refused' ? void warn(launch.reason) : { launch, spawn, nonce };
 }
 
 /** The trust modal on the prepared snapshot's trust line (it names the host the values will reach), then the dependencies. */
@@ -581,7 +584,7 @@ function maskedOverSsh(sessions: OwnedSessions, run: SecretsOverSsh, launches: S
       cwd: launches.spawn.cwd,
       env: launches.spawn.env,
       withoutEnv: launches.spawn.withoutEnv,
-      stdinText: secretsStdin(resolved.env, secretsRemoteLine(run.plan, run.refs)),
+      stdinText: secretsStdin(resolved.env, secretsRemoteLine(run.plan, run.refs), launches.nonce),
       secrets: resolved.secrets,
       banner: maskedOverSshBanner(describedRefs(resolved.plan), launches.spawn.warning, launches.launch.target, resolved.secrets),
       onEnded: ended,

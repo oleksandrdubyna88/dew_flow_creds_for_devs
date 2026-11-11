@@ -40,7 +40,7 @@ export interface RunStep {
   readonly terminalOs?: string;
   /**
    * Set for a step linked to an SSH entry (E2.S3). `line` stays the person's line until the host replaces it by the
-   * trust line (shown and trusted); `remote.line` is always the person's line, `remote.remoteCommand` the BARE line (D11).
+   * trust line (shown and trusted); `remote.line` is always the person's line, `remote.remoteCommand` the login form of the bare line, `exec ${SHELL:-sh} -l -c '<line>'` (D11).
    */
   readonly remote?: RemotePlan;
 }
@@ -162,7 +162,7 @@ function addLocalStep(walk: Walk, node: EntityMetadata, line: string): void {
 }
 
 /**
- * A step linked to an SSH entry (E2.S3, lead amendment A3). It runs as the BARE line (`stayOpen: false`, D11), so the step
+ * A step linked to an SSH entry (E2.S3, lead amendment A3). It runs as the bare line in its login form, `exec ${SHELL:-sh} -l -c '<line>'` (`stayOpen: false`, D11), so the step
  * ends and its exit code reaches the chain. Which local checks apply to it, and why:
  *
  * | Check | Linked step | Why |

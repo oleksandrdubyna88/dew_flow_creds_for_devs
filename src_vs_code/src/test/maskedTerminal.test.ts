@@ -8,6 +8,7 @@ import { KILL_GRACE_MS } from '../childKill';
 import { RemotePlan, planLaunch, secretsLaunch, secretsStdin, sshLinkOf } from '../remoteLaunch';
 import { E3_INHERITED_DROP, type EnvDrop } from '../sshProgram';
 import { EntityMetadata } from '../types';
+import { NONCE, writeFakeSsh } from './remoteShellHarness';
 import { fakeRoad, sshNode } from './sshRoadWorld';
 import { StubEventEmitter, loadWithVscode } from './vscodeStub';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
@@ -522,36 +523,9 @@ async function launchArgv(password: boolean): Promise<readonly string[]> {
   await road.prepare('a1', S1.details as EntityMetadata);
   const plan = planLaunch(LINKED, sshLinkOf(LINKED, (id) => (id === 's1' ? S1 : undefined)), { stayOpen: false });
   assert.equal(plan.kind, 'remote');
-  const launch = secretsLaunch(plan as RemotePlan, road.readies[0], false);
+  const launch = secretsLaunch(plan as RemotePlan, road.readies[0], false, NONCE);
   assert.equal(launch.kind, 'spawn');
   return launch.kind === 'spawn' ? launch.argv : [];
-}
-
-/**
- * An executable that behaves as ssh does for an exec request: records its own PID, its argv (NUL-separated) and its environment
- * (`env -0`), sets SHELL as sshd sets the login shell (the runner's own `$SHELL` can be fish, which does not read a POSIX
- * script), skips its options to `--` and the destination, and runs the last argument with `/bin/sh -c`, stdin inherited.
- */
-function writeFakeSsh(dir: string): string {
-  const file = path.join(dir, 'fake-ssh');
-  fs.writeFileSync(
-    file,
-    [
-      '#!/bin/sh',
-      `echo $$ >> '${dir}/pids'`,
-      `printf '%s\\0' "$@" > '${dir}/argv'`,
-      `env -0 > '${dir}/env'`,
-      'SHELL=/bin/sh',
-      'export SHELL',
-      'while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done',
-      'shift',
-      'shift',
-      '/bin/sh -c "$1"',
-      '',
-    ].join('\n'),
-    { mode: 0o755 },
-  );
-  return file;
 }
 
 function nulSplit(file: string): string[] {
@@ -584,6 +558,7 @@ test('end_to_end_values_echoed_to_stdout_and_stderr_are_masked', REAL_CHILD, asy
   const script = secretsStdin(
     { CREDS_REF_1: first, CREDS_REF_2: SECOND },
     `echo $$ >> '${dir}/pids'; printf "%s\\n" "$CREDS_REF_1"; printf "%s\\n" "$CREDS_REF_2" >&2`,
+    NONCE,
   );
   const w = world();
   try {
@@ -622,7 +597,7 @@ test('the_ssh_childs_environment_holds_no_secret_value', REAL_CHILD, async (t) =
     runArgv(t, w, {
       argv: [fake, ...(await launchArgv(true))],
       env: askpass,
-      stdinText: secretsStdin(values, `echo $$ >> '${dir}/pids'; true`),
+      stdinText: secretsStdin(values, `echo $$ >> '${dir}/pids'; true`, NONCE),
       secrets: [
         { value: values.CREDS_REF_1, label: 'CREDS_REF_1' },
         { value: values.CREDS_REF_2, label: 'CREDS_REF_2' },
@@ -659,7 +634,7 @@ async function recordedEnv(t: TestContext, password: boolean, env: Record<string
       argv: [fake, ...(await launchArgv(password))],
       env,
       withoutEnv: E3_INHERITED_DROP,
-      stdinText: secretsStdin({ CREDS_REF_1: RESOLVED }, `echo $$ >> '${dir}/pids'; true`),
+      stdinText: secretsStdin({ CREDS_REF_1: RESOLVED }, `echo $$ >> '${dir}/pids'; true`, NONCE),
       secrets: [{ value: RESOLVED, label: 'CREDS_REF_1' }],
     });
     await closedWithin(w, 5_000);
