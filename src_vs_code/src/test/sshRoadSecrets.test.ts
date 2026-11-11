@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
-import { RemotePlan, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsOverSshBanner, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
+import { RemotePlan, SECRETS_SCRIPT_FIRST, SECRETS_SCRIPT_LAST, maskedOverSshBanner, planLaunch, secretsLaunch, secretsLocalOnly, secretsOverSshBanner, secretsStdin, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
 import { E3_INHERITED_DROP, NO_AGENT_TO_FORWARD, NO_SSH_TO_SPAWN } from '../sshProgram';
 import type { ReadySsh } from '../sshSession';
 import type { CommandArg, EntityMetadata, TreeNode } from '../types';
@@ -162,7 +162,8 @@ test('stdin_carries_the_exports_and_the_line_in_a_group_then_exit', async () => 
   const run = theRun(aw);
   assert.equal(run.stdinText, secretsStdin({ CREDS_REF_1: VALUE }, 'printenv "$CREDS_REF_1"'));
   assert.ok(run.stdinText.includes('} </dev/null'));
-  assert.ok(run.stdinText.endsWith('exit $?\n'));
+  assert.ok(run.stdinText.endsWith(`exit $?\n${SECRETS_SCRIPT_LAST}\n`), 'the exit, then the last marker line');
+  assert.ok(run.stdinText.startsWith(`${SECRETS_SCRIPT_FIRST}\n`), 'the first marker line');
 });
 
 test('the_output_is_masked_and_the_banner_says_not_interactive', async () => {

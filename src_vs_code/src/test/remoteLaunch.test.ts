@@ -6,12 +6,19 @@ import { collectSshCandidates } from '../commandTargets';
 import { resolveCommand } from '../commandLine';
 import type { HostShell } from '../hostShell';
 import {
+  COPY_NOTE,
+  SECRETS_NOT_WHOLE,
+  SECRETS_REMOTE_COMMAND,
+  SECRETS_SCRIPT_FIRST,
+  SECRETS_SCRIPT_LAST,
   type LaunchEntry,
   type LaunchPlan,
   type NodeLookup,
   type PreparedForTyping,
   type SshLink,
+  copiedLineOf,
   isLinkTarget,
+  loginShellCommand,
   planLaunch,
   secretsStdin,
   sshLinkOf,
@@ -21,6 +28,7 @@ import {
   typedLine,
 } from '../remoteLaunch';
 import { sshOptionArgv } from '../sshOptions';
+import { CORPUS } from './remoteCorpus';
 import type { EntityMetadata, PortForward, TreeNode } from '../types';
 
 /**
@@ -242,9 +250,9 @@ test('R14 a_line_break_is_refused', () => {
 
 test('R15 stay_open_wraps_and_the_others_do_not', () => {
   const open = remotePlan(entry(), true);
-  assert.equal(open.remoteCommand, stayOpenWrapper('echo hi'));
+  assert.equal(open.remoteCommand, loginShellCommand(stayOpenWrapper('echo hi')));
   assert.equal(open.line, 'echo hi');
-  assert.equal(remotePlan(entry(), false).remoteCommand, 'echo hi');
+  assert.equal(remotePlan(entry(), false).remoteCommand, loginShellCommand('echo hi'));
   assert.equal(open.entryName, 'deploy');
   assert.equal(open.sshName, 'prod');
   assert.equal(open.ssh, (LINKED as Extract<SshLink, { kind: 'linked' }>).ssh);
@@ -327,16 +335,16 @@ function prepared(over: Partial<PreparedForTyping> = {}): PreparedForTyping {
   return { entity: SSH, options: { program: 'ssh' }, platform: 'linux', prefix: undefined, acceptNew: false, ...over };
 }
 
-test('R20 typedLine_refuses_powershell_5_1_for_a_double_quote_or_a_trailing_backslash', () => {
-  const sentence = 'This terminal is Windows PowerShell 5.1, which cannot pass a double quote or a trailing backslash to ssh correctly. Install PowerShell 7 (pwsh) and run "deploy" again.';
+test('R20 typedLine_refuses_powershell_5_1_for_a_double_quote_and_types_a_trailing_backslash', () => {
+  const sentence = 'This terminal is Windows PowerShell 5.1, which cannot pass a double quote to ssh correctly. Install PowerShell 7 (pwsh) and run "deploy" again.';
   const quoted = remotePlan(entry({ command: 'echo "x"' }));
   const slashed = remotePlan(entry({ command: 'echo a\\' }));
   for (const shellPath of ['powershell.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\POWERSHELL.EXE', 'powershell']) {
     const shell: HostShell = { shellPath, family: 'powershell' };
-    for (const plan of [quoted, slashed]) {
-      assert.deepEqual(typedLine(plan, prepared({ platform: 'win32' }), shell), { kind: 'refused', reason: sentence }, shellPath);
-    }
+    assert.deepEqual(typedLine(quoted, prepared({ platform: 'win32' }), shell), { kind: 'refused', reason: sentence }, shellPath);
     assert.equal(typedLine(remotePlan(), prepared({ platform: 'win32' }), shell).kind, 'typed', 'a plain line is typed under 5.1');
+    // The login form ends with `'` (U8), so a line that ends in `\` is typed: only a `"` before the closing quote is a defect of 5.1.
+    assert.equal(typedLine(slashed, prepared({ platform: 'win32' }), shell).kind, 'typed', `a line that ends in a backslash: ${shellPath}`);
   }
   for (const shell of [{ shellPath: 'pwsh.exe', family: 'powershell' } as HostShell, POSIX]) {
     assert.equal(typedLine(quoted, prepared(), shell).kind, 'typed', shell.shellPath);
@@ -349,22 +357,22 @@ test('R21 typedLine_is_prefix_then_the_builder_with_t_and_the_remote_word', () =
   const prefix = "env SSH_AUTH_SOCK='/s' ";
   assert.deepEqual(typedLine(plan, prepared({ prefix }), POSIX), {
     kind: 'typed',
-    line: "env SSH_AUTH_SOCK='/s' ssh -t -p 2222 -- deploy@host 'echo hi'",
+    line: `env SSH_AUTH_SOCK='/s' ssh -t -p 2222 -- deploy@host 'exec \${SHELL:-sh} -l -c '"'"'echo hi'"'"''`,
   });
   assert.deepEqual(typedLine(plan, prepared({ acceptNew: true }), POSIX), {
     kind: 'typed',
-    line: "ssh -o StrictHostKeyChecking=accept-new -t -p 2222 -- deploy@host 'echo hi'",
+    line: `ssh -o StrictHostKeyChecking=accept-new -t -p 2222 -- deploy@host 'exec \${SHELL:-sh} -l -c '"'"'echo hi'"'"''`,
   });
   assert.deepEqual(typedLine(plan, prepared({ platform: 'win32' }), { shellPath: 'pwsh.exe', family: 'powershell' }), {
     kind: 'typed',
-    line: "ssh -t -p 2222 -- deploy@host 'echo hi'",
+    line: "ssh -t -p 2222 -- deploy@host 'exec ${SHELL:-sh} -l -c ''echo hi'''",
   });
 });
 
 test('R22 typedLine_reads_the_snapshot_not_the_plan', () => {
   const plan = { ...remotePlan(), ssh: { ...SSH, host: 'a' } };
   const line = typedLine(plan, prepared({ entity: { ...SSH, host: 'b' } }), POSIX);
-  assert.deepEqual(line, { kind: 'typed', line: "ssh -t -p 2222 -- deploy@b 'echo hi'" });
+  assert.deepEqual(line, { kind: 'typed', line: `ssh -t -p 2222 -- deploy@b 'exec \${SHELL:-sh} -l -c '"'"'echo hi'"'"''` });
 });
 
 test('R22b typedLine_names_the_ssh_entry_when_the_snapshot_has_no_target', () => {
@@ -375,9 +383,20 @@ test('R22b typedLine_names_the_ssh_entry_when_the_snapshot_has_no_target', () =>
 test('R23 secretsStdin_is_exact', () => {
   assert.equal(
     secretsStdin({ CREDS_REF_1: 'a', CREDS_REF_2: "it's" }, 'echo x'),
-    ["CREDS_REF_1='a'; export CREDS_REF_1", `CREDS_REF_2='it'"'"'s'; export CREDS_REF_2`, '{', 'echo x', '', '} </dev/null', 'exit $?', ''].join('\n'),
+    [
+      '#creds-secrets-1',
+      "CREDS_REF_1='a'; export CREDS_REF_1",
+      `CREDS_REF_2='it'"'"'s'; export CREDS_REF_2`,
+      '{',
+      'echo x',
+      '',
+      '} </dev/null',
+      'exit $?',
+      '#creds-secrets-end',
+      '',
+    ].join('\n'),
   );
-  assert.equal(secretsStdin({}, 'echo x'), ['{', 'echo x', '', '} </dev/null', 'exit $?', ''].join('\n'));
+  assert.equal(secretsStdin({}, 'echo x'), ['#creds-secrets-1', '{', 'echo x', '', '} </dev/null', 'exit $?', '#creds-secrets-end', ''].join('\n'));
   for (const bad of ['X; id', '1A', '', 'A-B', 'A B']) {
     assert.throws(
       () => secretsStdin({ [bad]: 'v' }, 'echo x'),
@@ -385,6 +404,94 @@ test('R23 secretsStdin_is_exact', () => {
       `${JSON.stringify(bad)}: refused with a fixed message that does not echo the name`,
     );
   }
+});
+
+// ---- the login form (PLAN_ssh_line_runs_in_login_shell.md §5, U1-U9) ------------------------------------------------
+
+/** The wrapper as it was before it called `singleQuotedBody` (U5): the escape inline. */
+const wrapperOfToday = (line: string): string =>
+  `eval '${line.replace(/'/g, `'\\''`)}'; s=$?; test $s -eq 0 || printf 'creds: the command ended with exit code %s\\n' $s >&2; exec \${SHELL:-sh} -l`;
+
+test('U1 loginShellCommand_is_exact', () => {
+  assert.equal(loginShellCommand('x'), "exec ${SHELL:-sh} -l -c 'x'");
+  assert.equal(loginShellCommand("it's"), "exec ${SHELL:-sh} -l -c 'it'\\''s'");
+});
+
+test('U2 loginShellCommand_adds_no_double_quote', () => {
+  const count = (text: string): number => text.split('"').length - 1;
+  for (const element of [...CORPUS, 'echo a\\']) {
+    assert.equal(count(loginShellCommand(element)), count(element), JSON.stringify(element));
+    assert.equal(count(loginShellCommand(stayOpenWrapper(element))), count(element), JSON.stringify(element));
+  }
+});
+
+test('U3 the_plan_is_the_login_form_of_the_bare_line_or_of_the_wrapper', () => {
+  const open = remotePlan(entry({ command: "echo it's" }), true).remoteCommand;
+  const bare = remotePlan(entry({ command: "echo it's" }), false).remoteCommand;
+  assert.equal(open, loginShellCommand(stayOpenWrapper("echo it's")));
+  assert.equal(bare, loginShellCommand("echo it's"));
+  for (const command of [open, bare]) {
+    assert.equal(command.startsWith("exec ${SHELL:-sh} -l -c '"), true, command);
+  }
+});
+
+test('U4 the_secrets_remote_command_is_exact_and_its_texts_hold_no_character_that_ends_a_double_quote', () => {
+  assert.equal(
+    SECRETS_REMOTE_COMMAND,
+    `exec \${SHELL:-sh} -l -c 'set +avx; unset creds_script && creds_script=$(command cat <&3) && case $creds_script in "#creds-secrets-1"*"#creds-secrets-end") (eval "$creds_script") 3<&- ;; *) echo "creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input." >&2; false ;; esac' 3<&0 </dev/null`,
+  );
+  assert.equal(SECRETS_SCRIPT_FIRST, '#creds-secrets-1');
+  assert.equal(SECRETS_SCRIPT_LAST, '#creds-secrets-end');
+  assert.equal(
+    SECRETS_NOT_WHOLE,
+    'creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input.',
+  );
+  for (const text of [SECRETS_NOT_WHOLE, SECRETS_SCRIPT_FIRST, SECRETS_SCRIPT_LAST]) {
+    assert.equal(/["$`\\']|\n/.test(text), false, text);
+  }
+});
+
+test('U5 the_wrapper_is_byte_identical_to_today_for_every_element_of_the_corpus', () => {
+  for (const element of [...CORPUS, `echo 'a' "b" 'c'`]) {
+    assert.equal(stayOpenWrapper(element), wrapperOfToday(element), JSON.stringify(element));
+  }
+});
+
+test('U6 the_trust_line_is_the_persons_line_and_not_the_remote_command', () => {
+  const plan = remotePlan(entry({ command: "echo it's" }), true);
+  assert.equal(plan.line, "echo it's");
+  const trust = trustLineFor(SSH, undefined, plan.line);
+  assert.equal(trust, `ssh -p 2222 -- deploy@host 'echo it'"'"'s'`);
+  assert.equal(trust.includes('exec'), false, 'the login form is not in what the person approves');
+  assert.equal(trustLineFor(SSH, undefined, remotePlan(entry({ command: "echo it's" }), false).line), trust, 'the same text on every road');
+});
+
+test('U7 the_copy_says_it_starts_no_login_shell_and_is_still_the_trust_line', () => {
+  assert.equal(
+    COPY_NOTE,
+    "This line uses your own ssh setup (agent, ~/.ssh/config); the vault's key and password are not in it, and on the server it does not start your login shell — use Run to connect with them.",
+  );
+  const copied = copiedLineOf(entry({ sshEntityId: 's1' }), lookupOf([sshNode('s1')]));
+  assert.deepEqual(copied, { kind: 'linked', line: "ssh -- prod.corp.com 'echo hi'", note: COPY_NOTE }, 'the copy is the trust line, byte for byte: not the login form');
+});
+
+test('U8 the_remote_command_of_every_plan_ends_with_a_single_quote_and_never_a_backslash', () => {
+  for (const command of [...CORPUS, 'echo a\\', '\\']) {
+    for (const stayOpen of [true, false]) {
+      const remote = remotePlan(entry({ command }), stayOpen).remoteCommand;
+      assert.equal(remote.endsWith("'"), true, `${JSON.stringify(command)} ${stayOpen}: ${remote}`);
+      assert.equal(remote.endsWith('\\'), false);
+    }
+  }
+});
+
+test('U9 the_secrets_script_starts_and_ends_with_its_marker_lines_and_keeps_its_middle', () => {
+  const script = secretsStdin({ CREDS_REF_1: 'a' }, 'echo x');
+  const lines = script.split('\n');
+  assert.equal(lines[0], SECRETS_SCRIPT_FIRST);
+  assert.equal(lines[lines.length - 2], SECRETS_SCRIPT_LAST);
+  assert.equal(lines[lines.length - 1], '', 'the script ends with a line break');
+  assert.deepEqual(lines.slice(1, -2), ["CREDS_REF_1='a'; export CREDS_REF_1", '{', 'echo x', '', '} </dev/null', 'exit $?']);
 });
 
 // ---- the S1 refusal, moved here (§S2.6) -------------------------------------------------------------------------

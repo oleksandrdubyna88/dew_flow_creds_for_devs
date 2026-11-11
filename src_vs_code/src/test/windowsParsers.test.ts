@@ -7,7 +7,9 @@ import { killChild } from '../childKill';
 import { quoteFor } from '../hostShell';
 import { resolveJumpChain } from '../sshOptions';
 import { askpassScript } from '../sshAskpass';
+import { loginShellCommand, stayOpenWrapper } from '../remoteLaunch';
 import { SshCommandOptions, buildSshCommand } from '../sshCommand';
+import { CORPUS } from './remoteCorpus';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
@@ -368,5 +370,21 @@ for (const shell of POWERSHELLS) {
       );
     }
     assertNoMarker(dir, shell, 'the destination, jump and known_hosts cases');
+  }));
+
+  // The remote word of a terminal road (PLAN_ssh_line_runs_in_login_shell.md): the login form of every element of the corpus, bare and
+  // stay-open, reaches the program as the ONE raw word. Windows' own re-quoting of an argument under 5.1 is a hand check.
+  test(`${shell.name}: the remote word of the login form reaches the program as the raw command`, shellCase(shell, async () => {
+    const base = { id: 'e1', name: 'prod', host: 'example.com', user: 'deploy', isSshEnabled: true };
+    for (const element of CORPUS) {
+      for (const command of [element, loginShellCommand(element), loginShellCommand(stayOpenWrapper(element))]) {
+        const line = buildSshCommand(base, 'win32', { program: 'credsShow', remote: { command, tty: true } });
+        assert.notEqual(line, undefined, JSON.stringify(command));
+        const ran = await runPowerShell(shell, `${SHOW_FUNCTION}\n${line as string}`);
+        assert.equal(ran.status, 0, `${JSON.stringify(command)}: ${ran.stderr}`);
+        const read = argumentsRead(ran.stdout);
+        assert.equal(read[read.length - 1], command, `${JSON.stringify(command)} was read as ${JSON.stringify(read)}`);
+      }
+    }
   }));
 }

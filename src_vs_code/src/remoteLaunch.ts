@@ -166,7 +166,7 @@ export type LaunchPlan =
       readonly entryName: string;
       /** The person's line, `{name}` filled — what the trust line quotes. */
       readonly line: string;
-      /** The ONE remote argument: the bare line, or the stay-open wrapper. */
+      /** The ONE remote argument: the bare line or the stay-open wrapper, run by the server's login shell (`loginShellCommand`). */
       readonly remoteCommand: string;
     };
 
@@ -192,7 +192,7 @@ function planRemote(entry: LaunchEntry, link: Extract<SshLink, { kind: 'linked' 
   if (reason !== undefined) {
     return { kind: 'refused', reason };
   }
-  return { kind: 'remote', ssh: link.ssh, sshName: link.sshName, entryName: entry.name, line, remoteCommand: options.stayOpen ? stayOpenWrapper(line) : line };
+  return { kind: 'remote', ssh: link.ssh, sshName: link.sshName, entryName: entry.name, line, remoteCommand: loginShellCommand(options.stayOpen ? stayOpenWrapper(line) : line) };
 }
 
 function planReady(entry: LaunchEntry, link: SshLink, line: string, options: PlanOptions): LaunchPlan {
@@ -218,14 +218,31 @@ export function planLaunch(entry: LaunchEntry, link: SshLink, options: PlanOptio
   }
 }
 
+/** `'` → `'\''`: the body of ONE POSIX single-quoted word. Shared by the stay-open wrapper and the login builder (L4). */
+function singleQuotedBody(text: string): string {
+  return text.replace(/'/g, `'\\''`);
+}
+
 /**
- * `line` run as ONE script by the remote login shell's `-c`, then the failure said and that shell started: `eval 'L'`
- * with every `'` of the line written `'\''`. The text holds NO `"` of its own (a double quote would meet the Windows
- * PowerShell 5.1 refusal on every launch), and a trailing `# comment` or `&` in the line ends with the eval, not the
- * wrapper. `exit` in the line ends the session (accepted, as in the parent plan).
+ * `exec ${SHELL:-sh} -l -c '<inner>'` (L2 of PLAN_ssh_line_runs_in_login_shell.md): sshd runs the remote command as its own non-login
+ * `$SHELL -c`, which reads no profile, so that shell replaces itself (`exec`: one process, the line's exit code kept, the folder and
+ * the variables kept for the stay-open shell) by a LOGIN shell that runs `inner`. The login shell is not interactive (no `-i`).
+ * `${SHELL:-sh}` stays unquoted, and the single quotes of `inner` are written `'\''` (`singleQuotedBody`), so the text adds no `"`:
+ * a double quote would meet the Windows PowerShell 5.1 refusal on every launch. The text ends with `'`, whatever `inner` is.
+ */
+export function loginShellCommand(inner: string): string {
+  return `exec \${SHELL:-sh} -l -c '${singleQuotedBody(inner)}'`;
+}
+
+/**
+ * `line` run as ONE script by the remote shell's `-c`, then the failure said and a login shell started: `eval 'L'` with every `'` of the
+ * line written `'\''`. The text holds NO `"` of its own (a double quote would meet the Windows PowerShell 5.1 refusal on every
+ * launch), and a trailing `# comment` or `&` in the line ends with the eval, not the wrapper. `exit` in the line ends the session
+ * (accepted, as in the parent plan). It is the `inner` of `loginShellCommand` on the interactive roads, so the profile is read twice there:
+ * once for the line, once for the shell that stays open (L6).
  */
 export function stayOpenWrapper(line: string): string {
-  const quoted = line.replace(/'/g, `'\\''`);
+  const quoted = singleQuotedBody(line);
   return `eval '${quoted}'; s=$?; test $s -eq 0 || printf 'creds: the command ended with exit code %s\\n' $s >&2; exec \${SHELL:-sh} -l`;
 }
 
@@ -268,11 +285,14 @@ export type TypedLine =
 
 export type RemotePlan = Extract<LaunchPlan, { kind: 'remote' }>;
 
-/** Windows PowerShell 5.1 wraps a native argument with a space in `"…"` and escapes no inner `"`: a known-wrong parse is refused. */
+/**
+ * Windows PowerShell 5.1 wraps a native argument with a space in `"…"` and escapes no inner `"`: a known-wrong parse is refused. Only a
+ * double quote is refused (L12): the Windows argument rules read `\` as special only before a `"`, and the remote command of every plan
+ * ends with `'` (`loginShellCommand`), so a line that ends in `\` is safe to type, and a check for it could never fire.
+ */
 function powerShell51Refusal(plan: RemotePlan, localShell: HostShell): string | undefined {
-  const bad = plan.remoteCommand.includes('"') || plan.remoteCommand.endsWith('\\');
-  return bad && isWindowsPowerShell51(localShell.shellPath)
-    ? `This terminal is Windows PowerShell 5.1, which cannot pass a double quote or a trailing backslash to ssh correctly. Install PowerShell 7 (pwsh) and run "${plan.entryName}" again.`
+  return plan.remoteCommand.includes('"') && isWindowsPowerShell51(localShell.shellPath)
+    ? `This terminal is Windows PowerShell 5.1, which cannot pass a double quote to ssh correctly. Install PowerShell 7 (pwsh) and run "${plan.entryName}" again.`
     : undefined;
 }
 
@@ -293,13 +313,37 @@ export function typedLine(plan: RemotePlan, prepared: PreparedForTyping, localSh
 
 // ---- the secrets script ---------------------------------------------------------------------------------------------
 
+/** The first and the last line of the script of Run with Secrets: shell comments that do nothing when it runs, and that tell the remote command the script arrived whole. */
+export const SECRETS_SCRIPT_FIRST = '#creds-secrets-1';
+export const SECRETS_SCRIPT_LAST = '#creds-secrets-end';
+
 /**
- * The ONE remote command of Run with Secrets: the remote LOGIN shell reads the script from stdin (D12, epoch 2). It is the
- * shell that parses the line on every other road, so a line written for the person's own shell (bash `[[ ]]`, `$'…'`)
- * parses here as it does there; a plain `sh -s` is dash on Debian and Ubuntu and failed such a line with 127 (measured).
- * The text holds `"`: a road that types it into Windows PowerShell 5.1 meets that refusal, and the secrets road spawns ssh with no shell (D12).
+ * What the remote command says on standard error, with status 1, when the script did not arrive whole. It stands inside `"…"` in the
+ * command, so it holds none of `"`, `$`, a backtick, `\` and `'` (a unit test pins that).
  */
-export const SECRETS_REMOTE_COMMAND = '"${SHELL:-sh}" -s';
+export const SECRETS_NOT_WHOLE =
+  'creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input.';
+
+/**
+ * What the login shell runs for Run with Secrets (L5; the measured reason of each word is in the plan, §3.3). sshd's shell moved the
+ * script to file descriptor 3 and gave the login shell an empty input, so the profile reads nothing. `set +avx` turns off what a profile
+ * could have turned on (every variable exported, a trace or an echo that prints the values); `unset` removes a variable of the same name;
+ * `command cat` is the real `cat`, not an alias or a function; the script runs only when its first and its last line are there, in a
+ * subshell (no `exit` reaches the login shell, so no logout file runs and the status is the line's) with fd 3 closed. A refusal ends with
+ * `false`, not `exit 1`, so a logout file cannot hide it. It holds no `'`.
+ */
+const SECRETS_INNER =
+  'set +avx; unset creds_script && creds_script=$(command cat <&3) && ' +
+  `case $creds_script in "${SECRETS_SCRIPT_FIRST}"*"${SECRETS_SCRIPT_LAST}") (eval "$creds_script") 3<&- ;; ` +
+  `*) echo "${SECRETS_NOT_WHOLE}" >&2; false ;; esac`;
+
+/**
+ * The ONE remote command of Run with Secrets: the remote LOGIN shell reads the script from file descriptor 3 (D12, epoch 2; L5 of
+ * PLAN_ssh_line_runs_in_login_shell.md). It is the shell that parses the line on every other road, so a line written for the person's own
+ * shell (bash `[[ ]]`, `$'…'`) parses here as it does there. The text holds `"`: a road that types it into Windows PowerShell 5.1 meets
+ * that refusal, and the secrets road spawns ssh with no shell (D12).
+ */
+export const SECRETS_REMOTE_COMMAND = `${loginShellCommand(SECRETS_INNER)} 3<&0 </dev/null`;
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -311,14 +355,14 @@ function exportLine(name: string, value: string): string {
 }
 
 /**
- * The script `SECRETS_REMOTE_COMMAND` (the remote login shell's `-s`) reads on stdin for Run with Secrets: each value assigned and exported in two steps (so a
- * value is never parsed as syntax), then the line in a `{ … } </dev/null` group (a command that reads stdin reads end of
- * input, not the rest of this script), then `exit $?`. The blank line after the line is deliberate: a line ending in `\`
- * continues onto it, not onto `}`. A name is never quoted, so one that is not `^[A-Za-z_][A-Za-z0-9_]*$` throws.
+ * The script `SECRETS_REMOTE_COMMAND` reads for Run with Secrets: `SECRETS_SCRIPT_FIRST`, each value assigned and exported in two steps (so
+ * a value is never parsed as syntax), the line in a `{ … } </dev/null` group (a command that reads stdin reads end of input, not the rest of
+ * this script), `exit $?`, and `SECRETS_SCRIPT_LAST`. The blank line after the line is deliberate: a line ending in `\` continues onto it,
+ * not onto `}`. A name is never quoted, so one that is not `^[A-Za-z_][A-Za-z0-9_]*$` throws.
  */
 export function secretsStdin(env: Readonly<Record<string, string>>, line: string): string {
-  const exports = Object.entries(env).map(([name, value]) => exportLine(name, value));
-  return [...exports, '{', line, '', '} </dev/null', 'exit $?', ''].join('\n');
+  const assigned = Object.entries(env).map(([name, value]) => exportLine(name, value));
+  return [SECRETS_SCRIPT_FIRST, ...assigned, '{', line, '', '} </dev/null', 'exit $?', SECRETS_SCRIPT_LAST, ''].join('\n');
 }
 
 // ---- the copies (E2.S1) -----------------------------------------------------------------------------------------------
@@ -335,7 +379,8 @@ export function shownTrustLine(plan: RemotePlan, lookup: NodeLookup): { kind: 's
 }
 
 /** What every copy of a linked line says beside it (parent §4.4 "Copy Command / viewer"). */
-export const COPY_NOTE = "This line uses your own ssh setup (agent, ~/.ssh/config); the vault's key and password are not in it — use Run to connect with them.";
+export const COPY_NOTE =
+  "This line uses your own ssh setup (agent, ~/.ssh/config); the vault's key and password are not in it, and on the server it does not start your login shell — use Run to connect with them.";
 
 /**
  * What a copy shows for a Terminal entry: `local` (no link, or no command: the caller's own words), `linked` (the trust
@@ -409,7 +454,7 @@ export function secretsLocalOnly(name: string): string {
 
 /**
  * The argv of the `ssh` child of Run with Secrets (E3.S1, rows K1-K3), after its program word: `buildSshExecArgv` with the remote
- * login shell reading stdin (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), `-T` as its first word (ssh asks for no pty,
+ * login shell reading the script (`SECRETS_REMOTE_COMMAND`, last, after `--` and the destination), `-T` as its first word (ssh asks for no pty,
  * also when the person's config says `RequestTTY force`: D16), no `-t`, and no value anywhere in it (D12). `ownAgent` is
  * `SpawnLaunch.ownAgent`: whether the extension's own agent serves the run; an entry that forwards with no agent of ours sends no `-A`
  * and `-o ForwardAgent=no` (D17 (b)), so the banner that says nothing is forwarded is true. The key branch says `-o BatchMode=yes`, the password branch `-o NumberOfPasswordPrompts=1` (askpass answers, nothing is
