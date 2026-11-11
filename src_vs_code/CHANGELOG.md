@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security — Run with Secrets over SSH: a crafted value can no longer run as code on the server
+
+A secret value can hold a line break, so it could hold a whole line that looked like the first line of the script that Run with Secrets
+sends to the server. If a startup file on the server read a part of standard input (bash reads `~/.bashrc` for a command that sshd
+starts; zsh reads `~/.zshenv`), the rest of the script could start at that line, and the server would run the rest of the value as
+code. This was possible in 1.21.x too. Now each run's script carries a random marker on its first and last line, made for that run
+and not known when a value is stored, so a value cannot forge it: such a script is refused, with exit code 1, and nothing runs. In the
+same change, a `DEBUG` trap that your profile sets (`trap '…' DEBUG` in bash) is cleared before the values are assigned, so it cannot
+print them.
+
 ### Fixed — a line that runs over SSH now runs in your login shell on the server
 
 A Terminal entry with *Runs over SSH* that ran a tool which only your login profile puts on `PATH` (`aws`, in the report that led
@@ -27,8 +37,7 @@ What is different for you:
   `~/.zprofile` and `~/.zlogin`), but the part of `~/.bashrc` that runs only in an interactive shell does not run for the line. A
   tool that only that part sets up (nvm, conda, many installers) is not found: set its `PATH` in `~/.profile` instead.
 - **What your profile prints is now part of the output** of the line, and a profile that ends or replaces the shell (`exit 0`,
-  `exec zsh`, `set -n`) makes the line not run, on every road. A follow-up plan is open for this
-  (`todo/PLAN_profile_ends_the_shell.md`).
+  `exec zsh`, `set -n`) makes the line not run, on every road. A follow-up is open for this.
 - **On the arrow, *Run All in Folder* and a VPN's *Started by*, your profile is read twice:** once for the line, and once for the
   shell that stays open after it. A profile that starts a daemon (`ssh-agent`, `keychain`) or prints a greeting does it twice. Put
   what must run once per login inside `case $- in *i*) … ;; esac`.

@@ -1,6 +1,6 @@
 # PLAN — a line that runs over SSH runs in the server's login shell
 
-> Status: **built on `fix/ssh-line-runs-in-login-shell`, 2026-11-11 (S1-S3 as written; the code round, the pull request and the owner's hand checks are pending).** Approved 2026-11-11 (the ledger is below). Scope: the
+> Status: **built on `fix/ssh-line-runs-in-login-shell`, 2026-11-11 (S1-S3 built; the differences are in Deviations below; the code round, the pull request and the owner's hand checks are pending).** Approved 2026-11-11 (the ledger is below). Scope: the
 > extension (`src_vs_code`) only — the composer `remoteLaunch.ts` (two remote command texts, one new builder, two marker
 > lines in the script of Run with Secrets, the PowerShell 5.1 check and its sentence), one sentence of `COPY_NOTE`,
 > their tests, the scan `shellQuotingRoadScan.test.ts`, help ×5, `src_vs_code/README.md`, `src_vs_code/CHANGELOG.md`,
@@ -8,6 +8,42 @@
 > plans (§9). No road file changes. No server change, no HTTP contract change, no MCP tool shape change, no trust record
 > change. One epic, one pull request, on `fix/ssh-line-runs-in-login-shell` from `main` at `3abb01a3` (extension 1.21.1).
 > The owner's decision (2026-11-11, final): the line runs in the server's LOGIN shell; not an interactive shell.
+
+### Deviations
+
+Recorded as built, 2026-11-11. None is a counted plan change: each is a detail of the tests or the documents, or it makes a sentence of
+this plan true as written (S1 and S2 make L5 true).
+
+- **Two helper files** hold what the real-shell tests share: `src_vs_code/src/test/remoteShellHarness.ts` (the owned `HOME`, sshd's
+  environment, the fake `ssh`, the stand-in login shell, the plans of a line) and `src_vs_code/src/test/remoteCorpus.ts` (the corpus of
+  hostile lines). This plan named neither file.
+- **`exports` is `assigned`.** The local of `secretsStdin` was renamed, because a local named `exports` shadows the CommonJS `exports` in
+  the compiled output.
+- **The Windows skip.** The real-shell tests of `remoteLoginShell.test.ts` do not run on Windows: the remote side is emulated with POSIX
+  shells. The Windows parsers are tested by `windowsParsers.test.ts` and `remoteLaunchDelivery.test.ts`, as §5 says.
+- **The help has one clarification sentence more than §7 lists, and one more test per language** (`sshRoadHelp.test.ts`) that pins it.
+- **U7 is in `remoteLaunch.test.ts`**, not in `sshRoadCopies.test.ts`.
+- **T6 and T13 are split** into more than one test each. T6: `a_profile_that_reads_stdin_gets_no_value` and
+  `a_startup_file_that_reads_stdin_before_the_login_shell_gets_no_value`. T13: `the_script_runs_whole_or_not_at_all`,
+  `a_cut_right_after_a_line_that_ends_with_the_last_marker_runs_nothing` and
+  `a_child_of_the_profile_that_reads_the_script_gets_it_refused`.
+- **The banner of Run with Secrets over SSH** (`secretsOverSshBanner`), the help of Run with Secrets in five languages and the README
+  say "on ssh's standard input", not "on its standard input": the login shell itself reads an empty input, and the script reaches it on
+  file descriptor 3.
+- **S1: the markers carry a nonce of each run** (review finding, major). A value is in single quotes but can hold a line break, so it can
+  hold the whole line `#creds-secrets-1`. A startup file that reads a part of standard input (bash `~/.bashrc` when sshd sets
+  `SSH_CLIENT` and `SHLVL` is not set; zsh `~/.zshenv`) left a script that started at that line, and `eval` ran the rest of the value.
+  Measured by the reviewer on bash 5.3 with a `.bashrc` of `read -r a; read -r b` and a value of `a\n#creds-secrets-1\necho
+  INJECTED-FROM-VALUE >&2; touch PWNED\n`: the text was printed and `PWNED` was made. Now both marker lines hold a random 128-bit nonce
+  (32 hex digits, `node:crypto` `randomBytes`), made once for each run and given to both the command and the script. The nonce is not a
+  secret (it is in ssh's argv); it is unknown when a value is stored. `SECRETS_SCRIPT_FIRST`, `SECRETS_SCRIPT_LAST` and
+  `SECRETS_REMOTE_COMMAND` of §3.3 became `secretsScriptFirst(nonce)`, `secretsScriptLast(nonce)` and `secretsRemoteCommand(nonce)`;
+  `secretsStdin` and `secretsLaunch` take the nonce as their last parameter, and `runCommands.ts` makes it once. Tests: the forged value
+  runs nothing (the old marker, the first marker of another nonce, both markers of another nonce), U4 and U9 and R23 with a fixed test
+  nonce, and U4b for the nonce.
+- **S2: a DEBUG trap.** A `~/.profile` of `set -T; trap 'echo DBG:$BASH_COMMAND >&2' DEBUG` printed `DBG:CREDS_REF_1='TOPSECRET'`. The
+  inner command says `command trap - DEBUG 2>/dev/null;` after `set +avx;`. The word `command` keeps dash, where `trap - DEBUG` is an
+  error of a special builtin, from ending. The final text of the command is in §3.0.
 
 ## Plan changes
 
@@ -77,7 +113,7 @@ a pty with zsh, mksh, ksh93 or ash, and Windows. The hand checks (§8) cover the
 | L8 | *Copy Command*, the viewer row and *Copy All* keep copying the trust line, byte-identical (parent §4.4: "the composed launch line is never copied"). Copying the login form instead would put `'\''` into every copied line, and a copied line pasted into PowerShell would then break for every line, not only for a line with a `'`. `COPY_NOTE` (`remoteLaunch.ts:338`) gains one clause that says the difference (§3.4). | lead; the owner may override (§10) |
 | L9 | `creds_exec` (`ssh:exec`, the agent's own command on an SSH entry, `sshUseActions.ts:327`) is NOT changed: the agent writes that command, it is a shipped tool contract, and an agent can write `bash -lc '…'` itself. SSH Connect is not changed: it sends no remote command, so sshd already starts a login shell. | lead; a question for the owner (§10) |
 | L10 | fish, csh and tcsh stay unsupported (parent §4.2). Note: today the chain step, the agent's run and Run with Secrets ran a fish-syntax line on a fish login shell by accident (the bare line under `fish -c`). After this plan every road starts with the POSIX word `${SHELL:-sh}`, which fish does not parse. The help already says fish is not supported; the CHANGELOG says that the three roads now need a POSIX login shell too. | lead |
-| L11 | **Logout files.** bash runs `~/.bash_logout` when a login shell ends through the `exit` builtin, also a non-interactive one. Measured: a line with no `exit` does not run it; a line that calls `exit` runs it; a logout file that itself calls `exit N` then REPLACES the status (`exit 9` made a line's `exit 0` a 9, and `exit 0` made a line's `exit 7` a 0); a logout file that ends with `false` keeps the status. **Run with Secrets is protected:** its script runs in a subshell, so no `exit` reaches the login shell, no logout file runs, and the status is always the line's (measured, §3.3). **The other roads are a recorded limit:** the inner text stays the person's line (L3), so a line that calls `exit` runs `~/.bash_logout`, and a logout file with its own `exit N` replaces the status of that line. zsh, ksh93, mksh, dash and busybox ash ran no logout file for the line (zsh 5.9 did not run `~/.zlogout` for a non-interactive login shell, with or without `exit`). | Fable for Run with Secrets, measured; the limit: a question for the owner (§10) |
+| L11 | **Logout files.** bash runs `~/.bash_logout` when a login shell ends through the `exit` builtin, also a non-interactive one. Measured: a line with no `exit` does not run it; a line that calls `exit` runs it; a logout file that itself calls `exit N` then REPLACES the status (`exit 9` made a line's `exit 0` a 9, and `exit 0` made a line's `exit 7` a 0); a logout file that ends with `false` keeps the status. **Run with Secrets is protected:** its script runs in a subshell, so no `exit` reaches the login shell, no logout file runs, and the status is always the line's (measured, §3.3). **The other roads are a recorded limit:** the inner text stays the person's line (L3), so a line that calls `exit` runs `~/.bash_logout`, and a logout file with its own `exit N` replaces the status of that line. zsh, ksh93, mksh, dash and busybox ash ran no logout file for the line (zsh 5.9 did not run `~/.zlogout` for a non-interactive login shell, with or without `exit`). **The lead accepted this limit on 2026-11-11** for the roads other than Run with Secrets; it stays listed for the owner's review (§10, question 5). | Fable for Run with Secrets, measured; the limit: accepted by the lead 2026-11-11, listed for the owner (§10) |
 | L12 | **The Windows PowerShell 5.1 refusal names only the double quote.** With the login form the remote command of every plan ends with `'`, so the final-backslash half can never fire (§3.5). The check keeps the `"` half; the sentence, the help ×5 and the README name only the double quote. | lead's review, measured there; the code shape in §3.5 |
 
 ## 3. Design — the exact texts
@@ -102,10 +138,11 @@ Chain step, agent's linked run (`stayOpen: false`):
 exec ${SHELL:-sh} -l -c 'aws sso login'
 ```
 
-Run with Secrets (a fixed text; the line and the values are in the script on standard input, §3.3):
+Run with Secrets (one text for each run, because it holds the run's nonce: 32 lower-case hex digits, here `<nonce>`, the same in the
+first and the last line of the script; the line and the values are in the script on standard input, §3.3 and Deviations):
 
 ```text
-exec ${SHELL:-sh} -l -c 'set +avx; unset creds_script && creds_script=$(command cat <&3) && case $creds_script in "#creds-secrets-1"*"#creds-secrets-end") (eval "$creds_script") 3<&- ;; *) echo "creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input." >&2; false ;; esac' 3<&0 </dev/null
+exec ${SHELL:-sh} -l -c 'set +avx; command trap - DEBUG 2>/dev/null; unset creds_script && creds_script=$(command cat <&3) && case $creds_script in "#creds-secrets-<nonce>"*"#creds-secrets-end-<nonce>") (eval "$creds_script") 3<&- ;; *) echo "creds: the script with the values did not arrive whole, and nothing was run. A startup file on the server, such as ~/.bashrc, possibly read the standard input." >&2; false ;; esac' 3<&0 </dev/null
 ```
 
 ### 3.1 The builder and the plan
@@ -168,6 +205,9 @@ Run with Secrets never ran the logout file. The bold cells are the recorded limi
 shell of the stay-open roads runs its logout file when the person leaves it, as after SSH Connect.
 
 ### 3.3 Run with Secrets
+
+> As built, the markers hold a nonce of each run and the command clears a DEBUG trap: see Deviations (S1, S2); §3.0 has the final text. The code and
+> the table below are the approved design; where a constant is named here, read it as the function of the nonce.
 
 ```ts
 export const SECRETS_SCRIPT_FIRST = '#creds-secrets-1';
@@ -403,12 +443,12 @@ these four do is then the dated measurement of §3 (risk 7).
 | U1 | `loginShellCommand('x')` is exactly `exec ${SHELL:-sh} -l -c 'x'`; `loginShellCommand("it's")` is `exec ${SHELL:-sh} -l -c 'it'\''s'` |
 | U2 | `loginShellCommand` adds no `"`: for the corpus of the delivery test, the count of `"` in the output equals the count in the input |
 | U3 | `planLaunch(…, { stayOpen: true })` → `remoteCommand === loginShellCommand(stayOpenWrapper(line))`; `stayOpen: false` → `loginShellCommand(line)`; both start with `exec ${SHELL:-sh} -l -c '` |
-| U4 | `SECRETS_REMOTE_COMMAND` is exactly the third text of §3.0, as one literal; `SECRETS_SCRIPT_FIRST`, `SECRETS_SCRIPT_LAST` and `SECRETS_NOT_WHOLE` are the texts of §3.3; `SECRETS_NOT_WHOLE` and the two markers hold none of `"`, `$`, `` ` ``, `\`, `'` and no line break |
+| U4 | `secretsRemoteCommand(nonce)`, with a fixed test nonce, is exactly the third text of §3.0, as one literal; `secretsScriptFirst(nonce)`, `secretsScriptLast(nonce)` and `SECRETS_NOT_WHOLE` are the texts of §3.3; `SECRETS_NOT_WHOLE` and the two markers hold none of `"`, `$`, `` ` ``, `\`, `'` and no line break. U4b: a nonce is 32 lower-case hex digits and new for each run, and any other text is refused |
 | U5 | `stayOpenWrapper` is byte-identical to today for the existing cases (it now calls `singleQuotedBody`) |
 | U6 | the trust line of a linked entry is the same before and after (L7): `trustLineFor(ssh, jump, plan.line)` of a plan, and the plan's `line` is the person's line, not the remote command |
 | U7 | `COPY_NOTE` is the text of §3.4; `copiedLineOf` of a linked entry is still the trust line (`sshRoadCopies.test.ts`) |
 | U8 | for every element of the delivery corpus and for `echo a\`, with `stayOpen` true and false: the plan's remote command ends with `'` and never with `\` (the reason of §3.5) |
-| U9 | `secretsStdin` is exact (R23 rewritten): the first line is `SECRETS_SCRIPT_FIRST`, the line before the final line break is `SECRETS_SCRIPT_LAST`, and the lines between are today's, in today's order |
+| U9 | `secretsStdin` is exact (R23 rewritten, with the same test nonce as U4): the first line is `secretsScriptFirst(nonce)`, the line before the final line break is `secretsScriptLast(nonce)`, and the lines between are today's, in today's order |
 
 **Windows delivery** (the login form through the local shells and the Windows parsers). The corpus `CORPUS`
 (`remoteLaunchDelivery.test.ts:37`) moves to a small helper module with no test in it, so two files share it and
@@ -427,7 +467,7 @@ PowerShell's reading of the word; Windows' native re-quoting of an argument unde
 - `remoteLaunch.test.ts:347` (R21) and `:364` (R22): they pin `… deploy@host 'echo hi'`; the last word becomes the
   login form in the posix quoting (`'exec ${SHELL:-sh} -l -c '"'"'echo hi'"'"''`) and in the PowerShell quoting
   (`'exec ${SHELL:-sh} -l -c ''echo hi'''`);
-- `remoteLaunch.test.ts:375` (R23): the script's first and last line (U9);
+- `remoteLaunch.test.ts:375` (R23): the script's first and last line, with a nonce (U9);
 - `agentSshRun.test.ts:34`: `'echo linked'` → `loginShellCommand('echo linked')`, and the message "the bare line: no
   eval, no exec, no wrapper" becomes false; it becomes "the line in the login form: no eval, no stay-open wrapper";
 - `sshRoadChain.test.ts:104-105` (`'migrate'` → `loginShellCommand('migrate')`, still no `eval`);
@@ -466,7 +506,8 @@ of the delivery file, and SSH Connect's suites. The help tests do NOT stay uncha
    six shells with Run with Secrets: a profile that says `exit 0`, one that replaces the shell (`exec` of another
    shell) and one that says `set -n` each ended with status 0 and NOTHING run. No value is read in these cases. The
    command cannot detect them: the profile ends or disables the shell before the command starts. Recorded; the help
-   says that the profile is read and that it must not end or replace the shell.
+   says that the profile is read and that it must not end or replace the shell. A follow-up is open:
+   [PLAN_profile_ends_the_shell.md](PLAN_profile_ends_the_shell.md) (a stub, not started).
 4. **Slower start:** `/etc/profile.d/*` runs before every line. Not measured on a real server; hand check 1 notes it.
 5. **`~/.bashrc` and the line** (L1). The limit of the owner's decision is that the shell of the line is not
    interactive: nvm, conda and other setups in the interactive part of `~/.bashrc` are not found, and the help says to
@@ -609,7 +650,8 @@ Asked of nobody yet; the coai question consultants come first (`coai-question-co
 4. **L8:** the copy stays the trust line and the note says it starts no login shell. Accept?
 5. **L11:** on the roads other than Run with Secrets, a `~/.bash_logout` with its own `exit N` replaces the status of a
    line that calls `exit`. Accept as a limit? (The other shape runs every line in a subshell, `(eval '<line>')`: one
-   more layer of quoting on the chain step and the agent's run, against L3.)
+   more layer of quoting on the chain step and the agent's run, against L3.) **The lead accepted this limit on 2026-11-11**; it stays here
+   for the owner's review.
 
 ## 11. Definition of Done
 

@@ -44,6 +44,33 @@ control: the person learns it after a run that looked fine.
   why the person may never have met it.
 - The same defect on the agent's `creds_exec` is out of scope: it keeps sshd's non-login shell (L9 of the parent plan).
 
+## Build order
+
+Not started. A plan with stories replaces this stub before any build, and goes through the plan round of the review gate. The order it
+would follow:
+
+1. Wait for [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md) to ship: it changes the same remote commands.
+2. Measure each fix idea on the six shells and on a real sshd, with the three profiles of the Symptom (`exit 0`, `exec` of another shell,
+   `set -n`). Choose one, and write the measurements in the plan.
+3. RED first: one test per profile, on every road (the bare line, the stay-open wrapper, Run with Secrets), that fails today with status 0
+   and nothing run.
+4. Change the two remote command texts and nothing else; keep the exit code of the line, the folder and the single process, or say what
+   was given up.
+5. Update the help, the README and the CHANGELOG: the sentence "the profile must not end the shell" becomes what the road now does.
+
+## Test plan
+
+- Real shells, sshd's way, an owned `HOME` (`remoteShellHarness.ts`): each of the three profiles on each road gives a sentence on
+  standard error and a status that is not 0, and the line did not run.
+- A profile that does nothing wrong gives the same output and the same status as today (the existing tests of the parent plan stay green).
+- Run with Secrets: no value is read or printed in any of the three cases, and the refusal sentence is the one the road says.
+- The text of each changed remote command is pinned as one literal; the Windows PowerShell 5.1 check is run again (no `"` that the parent
+  plan's refusal does not know).
+
 ## Definition of Done
 
-Not written: this is a stub. A plan with stories replaces it before any build, and goes through the plan round of the review gate.
+- [ ] The fix idea is chosen and measured on six shells and a real sshd; the measurements are in the plan.
+- [ ] Each profile of the Symptom has a test that was RED first and is green now, on every road.
+- [ ] The help, the README and the CHANGELOG say what is true; the parent plan's limit is lifted with a dated line.
+- [ ] The plan round of the review gate reached `proceed`, and the code round ran on the finished branch.
+- [ ] `node .agents/conventions/tools/plan-lifecycle.mjs` passes.
