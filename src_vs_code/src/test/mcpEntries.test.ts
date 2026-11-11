@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   McpVaultSource,
+  agentMayView,
   capabilitiesOf,
   entryAccessFor,
   findUsableEntry,
@@ -17,6 +18,7 @@ import { nodeHaystack } from '../treeSearch';
 import type { TreeNode } from '../types';
 import { lockSecret, readSecret } from '../secretEnvelope';
 import { StoredSecret, stored } from '../storedSecret';
+import { HIDDEN, HIDDEN_ENTRIES_NO_PIN, SOURCE, VISIBLE } from './unlistedWorld';
 
 /**
  * Level 1 of the ladder: what an agent may SEE.
@@ -358,6 +360,77 @@ test('a closed verdict says WHICH switch was wanted, so the refusal can name it'
 
   assert.equal(found?.kind, 'closed');
   assert.equal(found?.kind === 'closed' && found.needed, 'edit');
+});
+
+/** Two accounts, each with its own nodes: the same id can be a different node in each (X1). */
+function twoAccounts(first: readonly TreeNode[], second: readonly TreeNode[]): McpVaultSource {
+  const byAccount: Record<string, readonly TreeNode[]> = { a1: first, a2: second };
+  return {
+    ...vault([]),
+    getAccounts: () => [{ accountId: 'a1' }, { accountId: 'a2' }],
+    getNodes: (account) => byAccount[account] ?? [],
+    getNode: (account, id) => (byAccount[account] ?? []).find((n) => n.id === id),
+  };
+}
+
+/** The four verbs of L1 and G7: three that exist, and one that is not in the table (it asks for the top rung). */
+const LOOKUP_ACTIONS: readonly string[] = ['exec', 'rotate', 'delete', 'frobnicate'];
+
+test('L1: an entry that the agent may not view answers as an id that does not exist, for every action', () => {
+  // The rule of the plan (todo/PLAN_agent_refusal_names_unlisted_entry.md, rule A): the lookup names an entry, or says
+  // that it exists, only when the agent may view it. No switch, an explicit empty answer, the Trash, a config: one answer.
+  for (const id of HIDDEN_ENTRIES_NO_PIN) {
+    for (const action of LOOKUP_ACTIONS) {
+      assert.equal(findUsableEntry(SOURCE, id, action), undefined, `${id} for ${action}`);
+    }
+  }
+});
+
+test('G7: an entry with a PIN of its own answers undefined to a direct lookup, as before', () => {
+  for (const action of LOOKUP_ACTIONS) {
+    assert.equal(findUsableEntry(SOURCE, HIDDEN.entries.pin, action), undefined, action);
+  }
+});
+
+test('G1: an entry that the agent may view and may not use keeps the closed verdict and the switch it needs', () => {
+  const closed = findUsableEntry(SOURCE, VISIBLE.entryView, 'exec');
+  assert.equal(closed?.kind, 'closed');
+  assert.equal(closed?.kind === 'closed' && closed.needed, 'use');
+});
+
+test('G3: no usable verdict is lost — each rung set alone still makes the verdict of its own action usable', () => {
+  const alone = (mcp: object, extra: object = {}): McpVaultSource => vault([folder('f1', 'F'), entity('e1', 'prod', { kind: 'ssh', mcp, ...extra })]);
+  const kinds = (source: McpVaultSource, actions: readonly string[]): (string | undefined)[] => actions.map((action) => findUsableEntry(source, 'e1', action)?.kind);
+
+  assert.deepEqual(kinds(alone({ use: true }), ['exec']), ['usable']);
+  assert.deepEqual(kinds(alone({ edit: true }), ['rotate']), ['usable']);
+  assert.deepEqual(kinds(alone({ create: true }), ['exec', 'rotate']), ['usable', 'usable']);
+  assert.deepEqual(kinds(alone({ delete: 'any' }), ['delete']), ['usable']);
+  assert.deepEqual(kinds(alone({ delete: 'own' }, { mcpCreatedByAgent: true }), ['delete']), ['usable']);
+});
+
+test('X1: a node that one account hides does not stop the search in the next account, as an id that the first does not hold does not', () => {
+  // The twin, inside one window, of the harness check H6 (todo/PLAN_agent_refusal_names_unlisted_entry_E1.md).
+  const first = [folder('f1', 'Closed'), entity('e1', 'hidden here', { kind: 'ssh' })];
+  const second = [folder('f1', 'Open'), entity('e1', 'usable there', { kind: 'ssh', mcp: { use: true } })];
+
+  const found = findUsableEntry(twoAccounts(first, second), 'e1', 'exec');
+
+  assert.equal(found?.kind, 'usable');
+  assert.equal(found?.kind === 'usable' && found.accountId, 'a2');
+});
+
+test('L7: agentMayView is the list\'s own question, asked of one id in one account', () => {
+  const noSwitchOfItsOwn = [folder('f1', 'Open', { mcp: { view: true } }), entity('e1', 'in an open folder', { kind: 'ssh' })];
+  assert.equal(agentMayView(vault(noSwitchOfItsOwn), 'a1', 'e1'), true, 'a folder with view on');
+  assert.equal(agentMayView(SOURCE, 'a1', VISIBLE.entryView), true, 'the fixture\'s entry that takes view from its folder');
+  assert.equal(agentMayView(SOURCE, 'a1', HIDDEN.entries.none), false, 'a folder with no switch');
+  assert.equal(agentMayView(SOURCE, 'a1', HIDDEN.entries.pin), false, 'a PIN of its own');
+  assert.equal(agentMayView(SOURCE, 'a1', HIDDEN.entries.trash), false, 'the Trash');
+  assert.equal(agentMayView(SOURCE, 'a1', 'gone'), false, 'no such node');
+  const other = twoAccounts([folder('f1', 'F')], [folder('f1', 'Open', { mcp: { view: true } }), entity('only-a2', 'there', { kind: 'ssh' })]);
+  assert.equal(agentMayView(other, 'a2', 'only-a2'), true, 'in the account that holds it');
+  assert.equal(agentMayView(other, 'a1', 'only-a2'), false, 'an id that only another account holds');
 });
 
 test('a payment instrument opened to an agent carries no payment field, and there is no method to read one', () => {

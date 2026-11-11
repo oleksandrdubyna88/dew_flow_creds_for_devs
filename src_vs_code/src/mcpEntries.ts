@@ -279,6 +279,19 @@ function shown(node: TreeNode, resolved: ResolvedMcpAccess): boolean {
   return node.type === 'entity' && isVisibleToAgents(resolved.access) && !hiddenFromAgents(node);
 }
 
+/**
+ * May the agent view this entry? The list's own question (`shown`), asked of one id in ONE account.
+ *
+ * <p>It reads the node in that account only and resolves the tree with a lookup bound to that account, so a folder walk
+ * never leaves it. A missing node answers `false`. It has no reader in the lookups of rule A (they ask `shown` through
+ * `verdictFor`); a refusal that is about a SECOND entry asks it (rule B of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
+ */
+export function agentMayView(source: Pick<McpVaultSource, 'getNode'>, accountId: string, entityId: string): boolean {
+  const byId = (id: string): TreeNode | undefined => source.getNode(accountId, id);
+  const node = byId(entityId);
+  return node !== undefined && shown(node, resolveMcpInTree(node, byId));
+}
+
 /** An entry at the root has no folder, and an empty name is the honest answer for it. */
 function folderNameOf(resolved: ResolvedMcpAccess & { folder?: TreeNode }): string {
   return resolved.folder?.name ?? '';
@@ -316,9 +329,11 @@ async function storedSecrets(
 /**
  * What an entry id means to an agent asking to USE it.
  *
- * <p>Three answers, because the middle one is the one worth having: an entry that exists and is
- * closed is a sentence a person can act on ("turn on Usable by agents"), while collapsing it
- * into "no such entry" would make the product look broken exactly when it is working.</p>
+ * <p>Three answers, because the middle one is the one worth having: an entry that the agent may
+ * VIEW and may not use is a sentence a person can act on ("turn on Usable by agents"), while
+ * collapsing it into "no such entry" would make the product look broken exactly when it is
+ * working. An entry that the agent may not view is not in that class: it answers `undefined`, as
+ * an id that does not exist does, so a refusal never names an entry that is not in the agent's list.</p>
  *
  * <p>Searched across every account, because an id is unique to a vault and an agent has no
  * account to name — it got the id from a list that had already merged them.</p>
@@ -373,9 +388,9 @@ export function accountOnly(
 /**
  * One account's answer.
  *
- * <p>A protected entry answers `undefined` — the same answer a made-up id gets — rather than
- * `closed`. "Closed" would tell an agent the entry exists and which switch to ask for, and a PIN is
- * not a switch anybody can throw.</p>
+ * <p>Each entry that is not shown (`shown`: no `view`, in the Trash, a PIN of its own, not an entry) answers
+ * `undefined` — the same answer a made-up id gets — rather than `closed`. "Closed" would tell an agent the
+ * entry exists, name it, and say which switch to ask for. The test is `shown`, in `verdictFor`.</p>
  */
 function lookedUp(
   source: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
@@ -384,10 +399,7 @@ function lookedUp(
   action: string,
 ): UsableEntry {
   const node = source.getNode(accountId, entryId);
-  if (node?.type !== 'entity' || hiddenFromAgents(node)) {
-    return undefined;
-  }
-  return verdictFor(accountId, node, (id) => source.getNode(accountId, id), action);
+  return node === undefined ? undefined : verdictFor(accountId, node, (id) => source.getNode(accountId, id), action);
 }
 
 /**
@@ -425,13 +437,17 @@ function verdictFor(
   byId: (id: string) => TreeNode | undefined,
   action: string,
 ): UsableEntry {
-  const access = resolveMcpInTree(node, byId).access;
+  const resolved = resolveMcpInTree(node, byId);
+  // Rule A: a node that the list would not show is not here either (the rung is asked only of a node that is shown).
+  if (!shown(node, resolved)) {
+    return undefined;
+  }
   const needed = switchForAction(action);
   // The access is carried out rather than recomputed by whoever needs it next: the consent policy
   // and the ladder fingerprint both come from this same resolve, and a second walk is a second
   // chance to resolve it differently.
-  return granted(access, needed, node)
-    ? { kind: 'usable', accountId, node, access, action }
+  return granted(resolved.access, needed, node)
+    ? { kind: 'usable', accountId, node, access: resolved.access, action }
     : { kind: 'closed', node, needed };
 }
 

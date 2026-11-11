@@ -17,7 +17,7 @@ import type { StoredSecret } from '../storedSecret';
 import type { SshUseDeps } from '../sshUseActions';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
-import { ACCOUNT_1, ACCOUNT_2, GateOptions, GateWorld, OK_BODY, asBroker, detailsOf, gateWorld, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
+import { ACCOUNT_1, ACCOUNT_2, AgentStorage, GateOptions, GateWorld, OK_BODY, agentStorage, asBroker, detailsOf, gateWorld, terminalNode as defaultTerminalNode, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
 import { call, share, world } from './brokerWorld';
 import { ownerChain, startVpn, world as vpnWorldOf } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
@@ -263,6 +263,27 @@ test('a_pin_protected_ssh_entry_is_refused_with_the_same_sentence_as_a_closed_on
   assert.equal(second.message, first.message, 'byte-equal to the closed one: the agent cannot tell PIN from closed');
   assert.ok(hidden.notes.some((note) => note.includes('hidden from agents (PIN)')), hidden.notes.join(' | '));
   assert.equal(hidden.overSsh.calls.length, 0);
+});
+
+test('L6: the journal of a linked run says the SSH entry is not in this account, and not PIN, when the node is there for the link and gone for the gate', () => {
+  // The link reads the SSH node ONE time and the gate's lookup reads it again (F8 of todo/PLAN_agent_refusal_names_unlisted_entry_E1.md): this storage
+  // answers the first read and nothing at each later read of s1, so the gate's lookup finds no entry and the reason must come from a read of the node.
+  const base = agentStorage({ [ACCOUNT_1]: [defaultTerminalNode(), usableSsh('s1')] });
+  let readsOfS1 = 0;
+  const storage: AgentStorage = {
+    ...base,
+    getNode: (account, id) => {
+      readsOfS1 += id === 's1' ? 1 : 0;
+      return id === 's1' && readsOfS1 > 1 ? undefined : base.getNode(account, id);
+    },
+  };
+  const w = gateWorld({ storage });
+
+  const result = terminalRunAction(w.deps).validate({}, w.ctx);
+
+  assert.deepEqual(result, { ok: false, code: 'denied', message: linkedRunRefused('deploy') });
+  assert.deepEqual(w.notes, [journalLine('deploy', 'the SSH entry is not in this account')]);
+  assert.ok(!w.notes.join('|').includes('PIN'), w.notes.join('|'));
 });
 
 test('an_ssh_entry_in_another_account_is_refused_with_the_same_sentence_and_is_never_read_there', async () => {
@@ -673,7 +694,7 @@ test('uses_names_the_ssh_entry_only_after_the_gate', async () => {
   usesOf(viaUses);
   const viaValidate = gateWorld({ acct1: [closedSsh()] });
   terminalRunAction(viaValidate.deps).validate({}, viaValidate.ctx);
-  assert.deepEqual(viaUses.storage.calls, viaValidate.storage.calls, 'no read of S beyond the gate\'s two');
+  assert.deepEqual(viaUses.storage.calls, viaValidate.storage.calls, 'the two paths read the same nodes in the same order');
 
   // The gate's own answer, not the link alone: the stub that read the link alone would answer S for the three states below.
   for (const options of [{ acct1: [closedSsh()] }, { acct1: [usableSsh('s1', { pinProtected: true })] }, { acct1: [] as TreeNode[], acct2: [usableSsh('s1')] }]) {
