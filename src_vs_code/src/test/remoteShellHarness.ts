@@ -97,7 +97,7 @@ export function remoteHome(t: TestContext, files: Readonly<Record<string, string
  */
 export function sshdEnv(home: string, shell: string, extra: Readonly<Record<string, string | undefined>> = {}): NodeJS.ProcessEnv {
   const dirs = ['/usr/bin', '/bin', path.dirname(shell)];
-  const env: NodeJS.ProcessEnv = {
+  const base: Readonly<Record<string, string | undefined>> = {
     HOME: home,
     ZDOTDIR: home,
     TMPDIR: home,
@@ -107,14 +107,8 @@ export function sshdEnv(home: string, shell: string, extra: Readonly<Record<stri
     PATH: dirs.filter((d, i) => dirs.indexOf(d) === i).join(path.delimiter),
     SHLVL: '1',
   };
-  for (const [name, value] of Object.entries(extra)) {
-    if (value === undefined) {
-      delete env[name];
-    } else {
-      env[name] = value;
-    }
-  }
-  return env;
+  // `extra` is laid over the base, and a name it gives as `undefined` is dropped.
+  return Object.fromEntries(Object.entries({ ...base, ...extra }).filter(([, value]) => value !== undefined));
 }
 
 export interface Remote {

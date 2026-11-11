@@ -373,8 +373,8 @@ for (const shell of POWERSHELLS) {
   }));
 
   // The remote word of a terminal road (PLAN_ssh_line_runs_in_login_shell.md): the login form of every element of the corpus, bare and
-  // stay-open, reaches the program as the ONE raw word. Windows' own re-quoting of an argument under 5.1 is a hand check.
-  test(`${shell.name}: the remote word of the login form reaches the program as the raw command`, shellCase(shell, async () => {
+  // stay-open, reaches `credsShow` (a PowerShell function that stands for the ssh program) as the ONE raw word. Windows' own re-quoting of an argument under 5.1 is a hand check.
+  test(`${shell.name}: the remote word of the login form reaches the PowerShell function that stands for ssh as the raw command`, shellCase(shell, async () => {
     const base = { id: 'e1', name: 'prod', host: 'example.com', user: 'deploy', isSshEnabled: true };
     for (const element of CORPUS) {
       for (const command of [element, loginShellCommand(element), loginShellCommand(stayOpenWrapper(element))]) {

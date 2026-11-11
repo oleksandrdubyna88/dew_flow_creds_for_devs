@@ -360,3 +360,22 @@ test('the_word_that_clears_the_debug_trap_does_not_end_dash', { skip: NOT_POSIX 
   assert.equal(run.stdout.endsWith('TOPSECRET'), true, JSON.stringify(run));
   assert.equal(run.status, 0, run.stderr);
 });
+
+// ---- the stand-in of the harness ---------------------------------------------------------------------------------------------------
+
+eachShell(['bash', 'dash'], 'the_login_shell_stand_in_says_so_for_l_and_runs_the_real_shell_for_anything_else', (shell, _name, t) => {
+  const standIn = loginStandIn(t, shell);
+  const env = sshdEnv(remoteHome(t), shell);
+  const named = (args: string[]): Remote => {
+    const run = spawnSync(standIn, args, { env, cwd: env.HOME, timeout: SHELL_TIMEOUT_MS, encoding: 'utf8' });
+    assert.equal(run.error, undefined, String(run.error));
+    return { stdout: run.stdout, stderr: run.stderr, status: run.status };
+  };
+  const login = named(['-l']);
+  assert.equal(login.stdout.startsWith('LOGIN-SHELL in='), true, JSON.stringify(login));
+  assert.equal(login.status, 0);
+  const real = named(['-l', '-c', 'echo real-shell-ran; exit 5']);
+  assert.equal(real.stdout.includes('real-shell-ran\n'), true, JSON.stringify(real));
+  assert.equal(real.stdout.includes('LOGIN-SHELL'), false, 'a call with other arguments does not say it is the login shell');
+  assert.equal(real.status, 5);
+});
