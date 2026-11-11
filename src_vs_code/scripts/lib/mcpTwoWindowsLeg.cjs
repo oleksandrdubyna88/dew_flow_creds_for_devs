@@ -70,8 +70,8 @@ const olderNodes = () => [
   dbEntry('e-both', 'older-reports-db', 'f-use'),
 ];
 
-/** A window over one vault. Its `query` action says which window ran it, and `calls` records each id its lookup was asked about. */
-function windowOver(h, storage, label, calls) {
+/** A window over one vault. Its `query` action says which window ran it, and `log` gets a line for each id its lookup is asked about (shared, append-only). */
+function windowOver(h, storage, label, log) {
   const actions = new h.UseActionRegistry();
   actions.register({
     kind: 'db',
@@ -88,7 +88,7 @@ function windowOver(h, storage, label, calls) {
     storageDir: h.brokerDir(),
     listMcpEntries: () => Promise.resolve([]),
     resolveMcpUse: (entryId, action, server) => {
-      calls.push(entryId);
+      log.push({ window: label, entry: entryId });
       return hooks.resolveMcpUse(entryId, action, server);
     },
     rememberMcpConsent: hooks.rememberMcpConsent,
@@ -140,85 +140,128 @@ async function discovered(dir) {
   return { ports, services };
 }
 
+/** What a call returns: its text, the consent record of THAT call, and how often each window's lookup saw its id; these three read it for a check message. */
+const countsOf = (call) => `newer ${call.newer}, older ${call.older}`;
+const dialogsOf = (call) => JSON.stringify(call.consent.messages).slice(0, 200);
+const oneEach = (call) => call.newer === 1 && call.older === 1;
+
+/** The text of the first content part of a tool result, or an empty text. */
+const firstText = (content) => content?.[0]?.text ?? '';
+const replyText = (said, rpcId) => firstText(said.byId.get(rpcId)?.result?.content);
+
+/** A new record of one call's dialogs: the answers it will be given, how often it was asked, and what each dialog said. Never reused by a second call. */
+const freshConsent = (answers) => ({ answers: [...answers], asked: 0, messages: [] });
+
+/**
+ * Run `work` with `state` as the record that the fake window's dialog reads (`global.__CREDS_MCP_CONSENT__`), and put the harness's own record
+ * back on every way out. The harness's record is never written here, so no call sees what another call left.
+ */
+async function withConsent(state, work) {
+  const harnessOwn = global.__CREDS_MCP_CONSENT__;
+  global.__CREDS_MCP_CONSENT__ = state;
+  try {
+    return await work();
+  } finally {
+    global.__CREDS_MCP_CONSENT__ = harnessOwn;
+  }
+}
+
+/**
+ * One `creds_query` through the real binary, with a consent record of its own. `log` only ever grows, and every id of this leg is asked ONCE,
+ * so a call's lookups are the lines of its own entry.
+ */
+async function ask(h, env, log, { rpcId, entry, answers = [] }) {
+  const consent = freshConsent(answers);
+  const request = { jsonrpc: '2.0', id: rpcId, method: 'tools/call', params: { name: 'creds_query', arguments: { entry, query: 'select 1' } } };
+  const said = await withConsent(consent, () => h.speak(env, [...h.HANDSHAKE, request]));
+  const lookups = (window) => log.filter((line) => line.window === window && line.entry === entry).length;
+  return { text: replyText(said, rpcId), consent, newer: lookups('newer'), older: lookups('older') };
+}
+
+/** Without these the checks of the walk could pass with ONE window discovered, and say nothing about a walk. */
+async function discoveryChecks(h, discoveryDir) {
+  const found = await discovered(discoveryDir);
+  h.check('two windows are discovered, on two different ports', found.ports.length === 2 && new Set(found.ports).size === 2, JSON.stringify(found.ports));
+  h.check(
+    'and each port answers the health probe with the service name',
+    found.services.length === 2 && found.services.every((s) => s === h.SERVICE_NAME),
+    JSON.stringify(found.services),
+  );
+}
+
+/** H3: the newer window hides `e-x` and the older one does not hold it. Nothing names it. */
+function checkHidden(h, call) {
+  h.check('H3: an entry that the newest window hides reads as a missing one', isMissingAnswer(call.text), call.text.slice(0, 240));
+  h.check('H3: and the answer does not hold its name', !call.text.includes(NEWER), call.text.slice(0, 240));
+  h.check('H3: each window\'s lookup was called one time', oneEach(call), countsOf(call));
+  h.check('H3: and nobody was asked', call.consent.asked === 0, String(call.consent.asked));
+}
+
+/**
+ * H4: an id that no window holds. The same sentence and the same counts as H3. It asserts the sentence itself and not H3's text, so it stays
+ * green when a mutation turns H3 red (a guard): H3 and H4 both equal the one sentence, so they equal each other.
+ */
+function checkMissing(h, call) {
+  h.check('H4: an id that no window holds gives the same sentence as H3', isMissingAnswer(call.text), call.text.slice(0, 240));
+  h.check('H4: with the same two counts', oneEach(call), countsOf(call));
+}
+
+/** H5: an entry that the agent MAY view and may not use. The sentence names it, and the walk stops at the window that holds it. */
+function checkVisible(h, call) {
+  h.check(
+    'H5: an entry that the agent may view and not use is named, with the switch to turn on',
+    call.text.includes(`${NEWER}-view`) && call.text.includes('Usable by agents'),
+    call.text.slice(0, 240),
+  );
+  h.check('H5: the newer window\'s lookup was called one time', call.newer === 1, countsOf(call));
+  h.check('H5: the older window\'s lookup was NOT called, because a denial stops the walk', call.older === 0, countsOf(call));
+}
+
+/** H6: the newer window hides `e-both`; the older window holds it with `use` on. The OLDER window decides, under its own consent policy. */
+function checkBoth(h, call) {
+  const { asked, messages } = call.consent;
+  h.check('H6: the walk goes on to the older window, and it answers', call.text.includes('ran in the older window'), call.text.slice(0, 240));
+  h.check('H6: each window\'s lookup was called one time', oneEach(call), countsOf(call));
+  h.check(
+    'H6: one dialog was raised, and it names the older window\'s entry',
+    asked === 1 && messages.some((m) => m.includes('older-reports-db')),
+    `asked ${asked}: ${dialogsOf(call)}`,
+  );
+  h.check(
+    'H6: the answer and the dialog hold nothing of the newer window',
+    !call.text.includes(NEWER) && !messages.some((m) => m.includes(NEWER)),
+    `${call.text.slice(0, 120)} | ${dialogsOf(call)}`,
+  );
+}
+
+/** The four walks, each with its own consent record and its own rpc id. */
+async function walkChecks(h, env, log) {
+  const askFor = (rpcId, entry, answers) => ask(h, env, log, { rpcId, entry, answers });
+  checkHidden(h, await askFor(101, 'e-x'));
+  checkMissing(h, await askFor(102, 'e-nope'));
+  checkVisible(h, await askFor(103, 'e-view'));
+  checkBoth(h, await askFor(104, 'e-both', ['Allow']));
+}
+
 /**
  * Level 9 — a hidden entry is a missing one, with two windows (H3 to H6).
  *
- * @param {object} h what the harness owns: `speak`, `check`, `checksRun` (a getter), `HANDSHAKE`, `consent`, `brokerDir`, `memento`, `secretStore`,
- *   `SERVICE_NAME`, and the loaded `CredsAgentServer`, `UseActionRegistry`, `StorageManager`, `mcpUseHooks`.
+ * @param {object} h what the harness owns: `speak`, `check`, `checksRun` (a getter), `HANDSHAKE`, `brokerDir`, `memento`, `secretStore`,
+ *   `SERVICE_NAME`, and the loaded `CredsAgentServer`, `UseActionRegistry`, `StorageManager`, `mcpUseHooks`. The consent record is NOT given:
+ *   each call makes its own.
  * @param {string} discoveryDir the folder that `creds-mcp` is told to read (`CREDS_ENDPOINT_DIR`); the caller made it, so its sweep owns it.
  */
 async function twoWindowsLeg(h, discoveryDir) {
   const before = h.checksRun();
-  const newerCalls = [];
-  const olderCalls = [];
-  const newer = windowOver(h, await vaultOf(h, newerNodes()), 'newer', newerCalls);
-  const older = windowOver(h, await vaultOf(h, olderNodes()), 'older', olderCalls);
+  const log = [];
+  const newer = windowOver(h, await vaultOf(h, newerNodes()), 'newer', log);
+  const older = windowOver(h, await vaultOf(h, olderNodes()), 'older', log);
   try {
     await newer.ensureStarted();
     await older.ensureStarted();
     announce(discoveryDir, newer, older);
-    const env = { CREDS_ENDPOINT_DIR: discoveryDir };
-
-    // Without this the checks below could pass with ONE window discovered, and say nothing about a walk.
-    const found = await discovered(discoveryDir);
-    h.check('two windows are discovered, on two different ports', found.ports.length === 2 && new Set(found.ports).size === 2, JSON.stringify(found.ports));
-    h.check(
-      'and each port answers the health probe with the service name',
-      found.services.length === 2 && found.services.every((s) => s === h.SERVICE_NAME),
-      JSON.stringify(found.services),
-    );
-
-    let id = 100;
-    /** One `creds_query` through the real binary, with the counters and the dialog record cleared first. */
-    const ask = async (entry, answers = []) => {
-      newerCalls.length = 0;
-      olderCalls.length = 0;
-      h.consent.answers = [...answers];
-      h.consent.asked = 0;
-      h.consent.messages.length = 0;
-      id += 1;
-      const said = await h.speak(env, [
-        ...h.HANDSHAKE,
-        { jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'creds_query', arguments: { entry, query: 'select 1' } } },
-      ]);
-      return said.byId.get(id)?.result?.content?.[0]?.text ?? '';
-    };
-    const counts = () => `newer ${newerCalls.length}, older ${olderCalls.length}`;
-    const dialogs = () => JSON.stringify(h.consent.messages).slice(0, 200);
-
-    // H3: the newer window hides `e-x` and the older one does not hold it. Nothing names it.
-    const hidden = await ask('e-x');
-    h.check('H3: an entry that the newest window hides reads as a missing one', isMissingAnswer(hidden), hidden.slice(0, 240));
-    h.check('H3: and the answer does not hold its name', !hidden.includes(NEWER), hidden.slice(0, 240));
-    h.check('H3: each window\'s lookup was called one time', newerCalls.length === 1 && olderCalls.length === 1, counts());
-    h.check('H3: and nobody was asked', h.consent.asked === 0, String(h.consent.asked));
-
-    // H4: an id that no window holds. The same sentence and the same counts as H3. It asserts the sentence itself and not H3's text, so it stays
-    // green when a mutation turns H3 red (a guard): H3 and H4 both equal the one sentence, so they equal each other.
-    const missing = await ask('e-nope');
-    h.check('H4: an id that no window holds gives the same sentence as H3', isMissingAnswer(missing), missing.slice(0, 240));
-    h.check('H4: with the same two counts', newerCalls.length === 1 && olderCalls.length === 1, counts());
-
-    // H5: an entry that the agent MAY view and may not use. The sentence names it, and the walk stops at the window that holds it.
-    const visible = await ask('e-view');
-    h.check(
-      'H5: an entry that the agent may view and not use is named, with the switch to turn on',
-      visible.includes(`${NEWER}-view`) && visible.includes('Usable by agents'),
-      visible.slice(0, 240),
-    );
-    h.check('H5: the newer window\'s lookup was called one time', newerCalls.length === 1, counts());
-    h.check('H5: the older window\'s lookup was NOT called, because a denial stops the walk', olderCalls.length === 0, counts());
-
-    // H6: the newer window hides `e-both`; the older window holds it with `use` on. The OLDER window decides, under its own consent policy.
-    const both = await ask('e-both', ['Allow']);
-    h.check('H6: the walk goes on to the older window, and it answers', both.includes('ran in the older window'), both.slice(0, 240));
-    h.check('H6: each window\'s lookup was called one time', newerCalls.length === 1 && olderCalls.length === 1, counts());
-    h.check(
-      'H6: one dialog was raised, and it names the older window\'s entry',
-      h.consent.asked === 1 && h.consent.messages.some((m) => m.includes('older-reports-db')),
-      `asked ${h.consent.asked}: ${dialogs()}`,
-    );
-    h.check('H6: the answer and the dialog hold nothing of the newer window', !both.includes(NEWER) && !h.consent.messages.some((m) => m.includes(NEWER)), `${both.slice(0, 120)} | ${dialogs()}`);
+    await discoveryChecks(h, discoveryDir);
+    await walkChecks(h, { CREDS_ENDPOINT_DIR: discoveryDir }, log);
   } finally {
     newer.dispose();
     older.dispose();

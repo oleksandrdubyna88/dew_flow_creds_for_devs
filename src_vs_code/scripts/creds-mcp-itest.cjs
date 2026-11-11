@@ -1530,7 +1530,7 @@ harnessScope.run(async (scope) => {
 
   await quietLeg();
   // H3 to H6: two windows at once. The discovery folder is an owned broker folder, so the harness's scope removes it.
-  await twoWindowsLeg({ speak, check, checksRun: () => checksRun, HANDSHAKE, consent, brokerDir, memento, secretStore, SERVICE_NAME, CredsAgentServer, UseActionRegistry, StorageManager, mcpUseHooks }, brokerDir());
+  await twoWindowsLeg({ speak, check, checksRun: () => checksRun, HANDSHAKE, brokerDir, memento, secretStore, SERVICE_NAME, CredsAgentServer, UseActionRegistry, StorageManager, mcpUseHooks }, brokerDir());
   await kindsLeg();
   await oldWindowLeg();
   await goneMidConsentLeg();
