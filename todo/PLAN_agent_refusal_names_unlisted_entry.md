@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an entry or a folder that the agent may not view
 
-> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is merged (#347) and released in the extension 1.21.1; the stories of epic 2 are written (2026-11-11) and its build is not started.** The owner said yes on 2026-11-09
+> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is merged (#347) and released in the extension 1.21.1; the stories of epic 2 are written and built on `fix/agent-refusal-names-second-entry` (2026-11-11); its code round and pull request follow.** The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour

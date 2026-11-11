@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an unlisted entry, E2: rule B, a second entry in a refusal
 
-> Status: **stories written 2026-11-11; the build is not started.** Stories of epic E2 of
+> Status: **stories written 2026-11-11; E2.1 and E2.2 built on the branch 2026-11-11; the code round and the pull request follow.** Stories of epic E2 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §1 D4 and D5, §2.2
 > rule B, §2.3 row B, §2.5, §3.1 rows B1 to B6, §3.4 case 4, §4 steps 9 to 13, §5.2, §5.3 rows C-B and B1 to B7, §5.4
 > rows G9 to G11, §5.6 mutations 4, 5 and 9, §5.8, §6, §10 and `## Epics` E2).
