@@ -393,7 +393,7 @@ said only `closed` for an entry in scope. Since the F7 security fix (creds #347,
 its rule A), `verdictFor` (`mcpEntries.ts:434-452`) answers `undefined` for a node the agent may not view and `closed` only for a
 visible node whose needed switch is off; `scopedLookup` and `closedIn` (`bridgeScope.ts:167-177`) keep that answer in scope. So an
 in-scope entry the agent may not view answers 404 `not_found` `No such entry, or this window does not serve it.`, identical to OUT and
-ABSENT (`agentNamesOnlyViewable.test.ts:381`), and an in-scope entry it may view with its switch off still answers 403 `denied` with the
+ABSENT (`agentNamesOnlyViewable.test.ts:382`), and an in-scope entry it may view with its switch off still answers 403 `denied` with the
 switch sentence. The remedy a person can act on stays; the diagnostic for a hidden entry is gone on purpose. The parent's §4.2 and §8
 carry the same split.
 
