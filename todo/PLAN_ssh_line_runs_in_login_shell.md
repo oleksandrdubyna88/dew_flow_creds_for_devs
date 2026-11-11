@@ -1,6 +1,6 @@
 # PLAN — a line that runs over SSH runs in the server's login shell
 
-> Status: **plan only, nothing implemented yet, 2026-11-11.** Approved 2026-11-11 (the ledger is below). Scope: the
+> Status: **built on `fix/ssh-line-runs-in-login-shell`, 2026-11-11 (S1-S3 as written; the code round, the pull request and the owner's hand checks are pending).** Approved 2026-11-11 (the ledger is below). Scope: the
 > extension (`src_vs_code`) only — the composer `remoteLaunch.ts` (two remote command texts, one new builder, two marker
 > lines in the script of Run with Secrets, the PowerShell 5.1 check and its sentence), one sentence of `COPY_NOTE`,
 > their tests, the scan `shellQuotingRoadScan.test.ts`, help ×5, `src_vs_code/README.md`, `src_vs_code/CHANGELOG.md`,
