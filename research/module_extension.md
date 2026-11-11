@@ -1335,7 +1335,8 @@ fails CLOSED: missing when it should be set leaves the entry listed, where every
 refuses its values with a reason. The mark is written AFTER the values it describes, so an
 interruption never hides an entry whose values are still readable. The same holds for an entry that an agent
 may view and that BORROWS from a protected one: a refusal of `creds_exec`, `creds_rotate` or a linked `creds_run` does not name the owner of a
-borrowed key (or a hidden jump host); it reads the fixed sentence of rule B, which names the addressed entry only (see *A lookup and a refusal
+borrowed key (or a hidden jump host) that the agent may not view (a protected one whose mark is set, or one with no *View*); it reads the
+fixed sentence of rule B, which names the addressed entry only (see *A lookup and a refusal
 name only what the agent may view*, below).
 
 **A folder may hold entries under two PINs, and the interface says which one you typed.** Four
@@ -6429,7 +6430,7 @@ that works stops no call. When one of them STOPS the call, the sentence of the r
 it may view that entry. Two resolvers set a field `second: { id, relation }` on their failure, whatever the sentence says: `stoppedAuth`
 (`sshExecAuth.ts`; relation `linked key`, set when the owner of the stopped value, `SshCredentialStopped.ownerId`, is not the entry that was
 asked for) and `refuseHop` (`sshOptions.ts`; relation `jump host`, set for a hop whose address is not one `ssh` may be given, at any depth of
-the chain). A hop that is gone and a chain that is too long keep their sentences, because those name the entry that was asked for. The ONE
+the chain). A hop that is gone and a chain that is too long keep their sentences, because those name the entry whose chain is walked: the SSH entry that was asked for, or, for a linked `creds_run`, its linked SSH entry, which the agent may view. The ONE
 chooser is `agentRefusal(said, entityName, mayView)` in `agentNaming.ts`, a module with no import: with no `second`, or with one that the
 agent may view, the answer is the message as it was; otherwise it is `SECOND_ENTRY_REFUSED(entityName)`, which names the addressed entry only,
 and the relation line for the journal. The code (`no_credential`) and the status (409) are the code and the status of the refusal that it

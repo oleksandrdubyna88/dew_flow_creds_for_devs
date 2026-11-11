@@ -24,7 +24,7 @@ What an agent or a script reads now:
   address is not a valid host.` A jump host at any depth of the chain was named, not only the first.
 - **Now.** `"<the entry that was asked for>" could not be used: another entry that it needs (a linked key or a jump host) stopped the
   call, and that entry is not visible to agents. The reason is in the agent journal on this computer.` This holds when the second
-  entry is hidden from the agent (no *View*, a PIN of its own, or in the Trash).
+  entry is hidden from the agent (no *View*, a PIN of its own (its PIN mark set), or in the Trash).
 - **The agent journal.** The refused call writes one line. It says which relation stopped the call, and it never holds the name or
   the id of the second entry: `<entry>: its linked key entry did not open for an automatic use (a PIN of its own, or a damaged
   value)` or `<entry>: a jump host in its chain has an address that is not a valid host`, each followed by `(the agent was told only
@@ -34,11 +34,12 @@ What an agent or a script reads now:
 What stays as it was:
 
 - The error code `no_credential` and the HTTP status 409. Only the sentence changes.
-- The sentence for a second entry that the agent **may** view. A key entry or a jump host with *View* on is still named, and no journal
+- The sentence for a second entry that the agent **may** view. A key entry or a jump host with *View* on is still named (also one whose PIN mark is lost: it is listed), and no journal
   line is written.
 - A hidden key entry or a hidden jump host that works is still used. The call is not refused, and nothing is named.
-- A jump host that no longer exists keeps its own sentence (`The jump host referenced by "<the entry that was asked for>" no longer
-  exists in this vault.`), and so does a chain of more than 4 jump hosts. Both name the entry that was asked for, not a second entry.
+- A jump host that no longer exists keeps its own sentence (`The jump host referenced by "<the SSH entry>" no longer
+  exists in this vault.`), and so does a chain of more than 4 jump hosts. Both name the entry whose chain is walked, not a second entry:
+  the SSH entry that was asked for, or, for a linked `creds_run`, its linked SSH entry (the agent may view it).
 - On a Remote Bridge: the generic sentence, and the line in the journal with the real reason, are as before.
 
 **Not in this change.** Rule B does not hide that a second entry exists, and it does not hide an address. A call that works can print
