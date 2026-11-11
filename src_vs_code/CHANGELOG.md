@@ -20,7 +20,7 @@ What an agent or a script reads now, case by case:
   `creds_vpn_up`, `creds_vpn_down`, `creds_open_terminal`, `creds_export_env`). Before: `denied` (403) with
   `"<entry name>" is not open to agents for that. Turn on "…" in its Agent access section.` Now: `not_found` (404) with
   `No such entry, or this window does not serve it.`, which `creds-mcp` shows as `No CredsForDevs window answered for that entry.`
-  This is true for an entry with no switch, one that was closed again, one in the Trash and one with a PIN of its own.
+  This is true for an entry with no switch, one that was closed again and one in the Trash.
 - **`creds_delete` on an entry that the agent may not view.** The same change: `denied` with the name → `not_found`.
 - **A folder verb on a folder that the agent may not view** (`creds_create_folder` with that `parent`, `creds_edit_folder`,
   `creds_delete_folder`; also the Trash and a folder in the Trash). Before: `denied` (403) with
@@ -35,6 +35,8 @@ What an agent or a script reads now, case by case:
 - **The walk over several windows.** `creds-mcp` asks the next window when a window answers `not_found`, and stops at `denied`. A
   window that hides an entry now answers `not_found`, so the call goes on to an older window that holds the entry. An older window
   that still holds the entry with its own switches answers under them, also after you turned the switches off in the newer window.
+- **Two accounts in one window.** A hidden node in the first account of a window no longer stops the search: a second account of the same
+  window that holds the same id answers under its own switches, as a second window does.
 - **The agent journal.** A lookup refusal writes no line, as before, so the journal does not name the entry either. The reason of a
   refused linked `creds_run` in the journal now says which of three causes stopped it: the SSH entry is not in this account, it is
   hidden from agents (PIN), or its *Usable by agents* switch is off. The agent reads the same sentence as before.
