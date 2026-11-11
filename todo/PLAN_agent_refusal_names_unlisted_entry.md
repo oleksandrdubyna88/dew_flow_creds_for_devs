@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an entry or a folder that the agent may not view
 
-> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is built on the branch and not merged; epic 2 is not started.** The owner said yes on 2026-11-09
+> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is merged (#347) and released in the extension 1.21.1; the stories of epic 2 are written (2026-11-11) and its build is not started.** The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
@@ -748,4 +748,6 @@ Cornerstones: 1 of 1 — E1.1 ([PLAN_agent_refusal_names_unlisted_entry_E1.md](P
   9. Each of the mutations 4, 5 and 9 turns at least 1 test red.
   10. The *Both* items of §10 are ticked.
 - **Cornerstone area.** None: the plan's one area is in E1.
-- **Stories.** In `todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`, written when the epic starts.
+- **Stories.** [PLAN_agent_refusal_names_unlisted_entry_E2.md](PLAN_agent_refusal_names_unlisted_entry_E2.md),
+  written 2026-11-11: E2.1 rule B at the chooser `agentRefusal`, with part B of the class test, the no-op types, rows
+  C-B and B1 to B7 and the guards G9 to G11; E2.2 the documents and the closing checks. No story is a cornerstone.

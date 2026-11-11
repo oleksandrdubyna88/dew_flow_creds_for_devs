@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an unlisted entry, E1: rule A, the addressed node
 
-> Status: **stories written 2026-11-11; E1.1 to E1.3 built on the branch and not merged; the code round and the pull request follow.** Stories of epic E1 of
+> Status: **stories written 2026-11-11; E1.1 to E1.3 are merged (#347, `cb017473`) and released in the extension 1.21.1; this document is promoted later, together with the parent, in the task that finishes epic 2.** Stories of epic E1 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §2.2 to §2.6, §3.1 rows
 > A1 to A6, §3.2, §3.4, §4 steps 1 to 8, §5.1, §5.3 to §5.8, §6, §7a, §10 and `## Epics` E1).
 >
