@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: an agent's refusal no longer names a linked key entry or a jump host that it may not view
+
+An SSH entry can use a second entry: a key entry that holds its key (*SSH key source*), or a jump host. When that second entry
+stopped a call, the refusal named it, although the person never opened it to agents. So an agent could learn the name of a key entry
+or of a jump host that it may not view. Now the refusal names the entry that the agent asked for, and nothing else. This is the
+second part of the change of 1.21.1: that change closed the lookup of an id, and this one closes the refusal that names a second entry.
+
+What an agent or a script reads now:
+
+- **Which calls.** `creds_exec`, `creds_rotate` on an SSH entry, and `creds_run` on a Terminal entry that runs over a linked SSH
+  entry. `creds exec` in a terminal reads the same sentence. The alias door and the token door both get it, because an action does
+  not know which door asked.
+- **Before.** A key entry that did not open for an automatic use (it has a PIN of its own, or its value is damaged) was named:
+  `"<key entry>" is protected with its own PIN, and it was not opened.` or `"<key entry>" holds a protected value that cannot be
+  read: …`. A jump host with an address that is not a valid host was named too: `The jump host "<jump host>" cannot be used: its
+  address is not a valid host.` A jump host at any depth of the chain was named, not only the first.
+- **Now.** `"<the entry that was asked for>" could not be used: another entry that it needs (a linked key or a jump host) stopped the
+  call, and that entry is not visible to agents. The reason is in the agent journal on this computer.` This holds when the second
+  entry is hidden from the agent (no *View*, a PIN of its own, or in the Trash).
+- **The agent journal.** The refused call writes one line. It says which relation stopped the call, and it never holds the name or
+  the id of the second entry: `<entry>: its linked key entry did not open for an automatic use (a PIN of its own, or a damaged
+  value)` or `<entry>: a jump host in its chain has an address that is not a valid host`, each followed by `(the agent was told only
+  that another entry stopped the call)`. For a linked `creds_run`, `<entry>` is the Terminal entry. Open it, then its SSH entry, to
+  find the key or the chain.
+
+What stays as it was:
+
+- The error code `no_credential` and the HTTP status 409. Only the sentence changes.
+- The sentence for a second entry that the agent **may** view. A key entry or a jump host with *View* on is still named, and no journal
+  line is written.
+- A hidden key entry or a hidden jump host that works is still used. The call is not refused, and nothing is named.
+- A jump host that no longer exists keeps its own sentence (`The jump host referenced by "<the entry that was asked for>" no longer
+  exists in this vault.`), and so does a chain of more than 4 jump hosts. Both name the entry that was asked for, not a second entry.
+- On a Remote Bridge: the generic sentence, and the line in the journal with the real reason, are as before.
+
+**Not in this change.** Rule B does not hide that a second entry exists, and it does not hide an address. A call that works can print
+the address of a jump host in the output of `ssh`, because the output mask covers stored secret values, not addresses. A key that is
+written to disk for a call has a file name with the id of the key entry that owns it. When that write fails, or `ssh` fails to start,
+the refusal can hold that path, and so can the text of `ssh` on a call that works. That path is not closed here. It is a question for
+the owner. Four fields of the list answers are also not covered, as in 1.21.1.
+
 ## [1.21.2] — 2026-11-11 — A Terminal entry run over SSH now finds the tools of the server's login shell
 
 ### Security — Run with Secrets over SSH: a crafted value can no longer run as code on the server
