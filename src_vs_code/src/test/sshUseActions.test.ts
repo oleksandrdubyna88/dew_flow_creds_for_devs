@@ -5,7 +5,8 @@ import { after, mock, test } from 'node:test';
 import { errorBody } from '../brokerProtocol';
 import { SECOND_ENTRY_REFUSED } from '../agentNaming';
 import { loadWithVscode } from './vscodeStub';
-import { JOURNAL_BROKEN, SecondOptions, SecondWorld, secondEntryWorld } from './secondEntryWorld';
+import { ACCOUNT, JOURNAL_BROKEN, SecondOptions, SecondWorld, secondEntryWorld } from './secondEntryWorld';
+import { resolveJumpChain } from '../sshOptions';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { UseActionContext } from '../useActions';
@@ -545,6 +546,17 @@ test('B2 and B4: a hidden jump host with an unsafe address at depth 1, 2 or 3 re
 test('X5: a chain of four hidden hops is inside the cap, and an unsafe hop at depth 4 reads the fixed sentence on exec and on the linked run', async () => {
   await inWorld({ hops: 4, unsafeAt: 4 }, (w) => assertFixedRefusal(w, 'exec', 'prod', hopNote('prod')));
   await inWorld({ hops: 4, unsafeAt: 4 }, (w) => assertFixedRefusal(w, 'run', 'deploy', hopNote('deploy')));
+});
+
+test('X5 control: a VISIBLE unsafe hop on the linked run keeps the resolver\'s sentence, with no note (pins the mayView binding of the linked road)', async () => {
+  await inWorld({ hops: 1, unsafeAt: 1, visibleHops: [1] }, async (w) => {
+    const chain = resolveJumpChain(w.storage.getNode(ACCOUNT, 'e1')?.details as never, (id) => w.storage.getNode(ACCOUNT, id)?.details);
+    assert.ok(!chain.ok, 'the fixture: the real resolver refuses this chain');
+    const said = chain.ok ? '' : chain.reason;
+    assert.equal(said, `The jump host "${w.names.hop(1)}" cannot be used: its address is not a valid host.`);
+    assert.deepEqual(await w.call.run(), { status: 409, body: errorBody('no_credential', said) });
+    assert.deepEqual(w.notes, [], '0 new notes');
+  });
 });
 
 test('X6: a chain of five hops is refused by the depth cap with the sentence that names the STARTING entry, and no second entry', async () => {

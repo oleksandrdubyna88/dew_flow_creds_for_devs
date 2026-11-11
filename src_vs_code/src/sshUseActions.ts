@@ -125,10 +125,12 @@ type Refuse = (code: ErrorCode, message: string, second?: SecondEntry) => UseAct
  * it is about a SECOND entry (a linked key, a jump host) that the agent may not view; then the fixed one, with the relation in the journal
  * (`agentRefusal`, rule B). The code is kept.
  *
- * <p>The sentences that go through here name the entry a linked key or a jump host is (`sshExecAuth.ts`, `sshOptions.ts`), or carry a
- * path or an argv (`Could not write the stored key`, `Could not run ssh`). The key and the chain are part of USING the entry, so an
- * agent is served through them — but it is not told what they are unless it may view them. Those two files do not know which door asked, so
- * the door is handled here, where every such sentence passes.</p>
+ * <p>Rule B covers the sentences that NAME a second entry: the linked key and the jump host (`sshExecAuth.ts`, `sshOptions.ts`). The key and the
+ * chain are part of USING the entry, so an agent is served through them, but it is not told which entry stopped the call unless it may view
+ * it. The two sentences that carry a path or an argv (`Could not write the stored key`, `Could not run ssh`) are not covered: off a bridge
+ * they pass unchanged, and the key file path holds the id of the key entry (an open owner question, N10 of
+ * `todo/PLAN_agent_refusal_names_unlisted_entry.md` §11). Those two files do not know which door asked, so the door is handled here, where every
+ * such sentence passes.</p>
  */
 function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): Refuse {
   return (code, message, second) => {
@@ -141,7 +143,7 @@ function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): Refuse {
 }
 
 /** The message is chosen first, then the line is written, then the answer is built: a journal that throws cannot bring the old sentence back. */
-function agentSaid(deps: SshUseDeps, ctx: UseActionContext, code: ErrorCode, said: { message: string; second?: SecondEntry }): UseActionResult {
+function agentSaid(deps: SshUseDeps, ctx: UseActionContext, code: ErrorCode, said: Readonly<{ message: string; second?: SecondEntry }>): UseActionResult {
   const chosen = agentRefusal(said, ctx.entityName, (id) => agentMayView(deps.storage, ctx.accountId, id));
   if (chosen.note !== undefined) {
     deps.note(chosen.note);
