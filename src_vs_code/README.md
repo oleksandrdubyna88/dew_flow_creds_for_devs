@@ -302,29 +302,33 @@ rewrites them (`a.b:c` becomes `a_b_c`). Checked on tmux 3.6.
 To run a line on a server, choose its **ssh** entry under *Runs over SSH* instead of writing `ssh`
 into the line. The arrow then connects with that entry — its key or password, its pinned host key,
 its jump host — and the line runs in your login shell there, which stays open after the line ends; a
-line that fails says its exit code first. Your login shell reads `/etc/profile` and your
-`~/.profile` (bash: `~/.bash_profile` first; zsh: `~/.zprofile` and `~/.zlogin`) before the line, as
-at a login, so the `PATH` you get when you connect is the `PATH` of the line. The shell of the line
-is not interactive: a tool that only the interactive part of `~/.bashrc` sets up, such as nvm or
-conda, is not found — set its `PATH` in `~/.profile` instead. What your profile prints is part of
-the output. Your profile must not end or replace the shell, or the line does not run. On the arrow,
-a folder run and a VPN's *Started by*, your profile is read twice: for the line, and for the shell
-that stays open. Put what must run once per login, such as `ssh-agent` or `keychain`, inside `case
-$- in *i*) … ;; esac`. On bash, a line that calls `exit` also runs your `~/.bash_logout`, and an
-`exit` in that file replaces the exit code of the line. Write the line for the server, such as `tmux
-new -A -s {name}` with *Runs on* set to Linux or macOS; a Windows server is refused. The login shell
-must be sh, bash, zsh, ksh or dash; fish and csh are not supported. The approval names the host, so
-a changed host, user, port, jump host, agent forwarding or port forward asks again. If the SSH entry
-signs in with a password, every run opens a new terminal beside any open one. Windows PowerShell 5.1
-cannot pass a double quote to ssh, so such a line is refused there; install PowerShell 7 (`pwsh`).
-After a run, the arrow asks before it types into that terminal again, because the login shell is
-still open. A VPN's *Started by* runs over SSH the same way, but a launcher line with `{config}` is
-refused, because the config is a file on this machine, and an agent's VPN start with such a launcher
-is refused. *Copy Command* copies `ssh … -- user@host '<line>'`: it uses your own ssh setup (agent,
-`~/.ssh/config`), the vault's key and password are not in it, and on the server it does not start
-your login shell. An older version of CredsForDevs does not know *Runs over SSH*: it runs such an
-entry on its own machine, and a save there removes the choice for every machine. Update CredsForDevs
-on all your machines before you choose an SSH entry.
+line that fails says its exit code first. Your login shell reads its login startup files before the
+line, as at a login, so the `PATH` you get when you connect is the `PATH` of the line: sh, dash and
+ksh read `/etc/profile` and `~/.profile`; bash reads `/etc/profile` and then only the first of
+`~/.bash_profile`, `~/.bash_login` and `~/.profile` that it finds; zsh reads `~/.zprofile` and
+`~/.zlogin` (in `$ZDOTDIR` when it is set), not `~/.profile`. The shell of the line is not
+interactive: a tool that only the interactive part of `~/.bashrc` sets up, such as nvm or conda, is
+not found — set its `PATH` in the login file your shell reads instead. What your profile prints is
+part of the output. Your profile must not end or replace the shell, or the line does not run. On the
+arrow, a folder run and a VPN's *Started by*, your profile is read twice: for the line, and for the
+shell that stays open. Put what only an interactive session needs, such as a greeting or a prompt,
+inside `case $- in *i*) … ;; esac`. What the line needs, such as an `ssh-agent` it uses, must stay
+outside that check; start it so that a second login reuses the running agent (`keychain` does this)
+rather than starting another. On bash, a line that calls `exit` also runs your `~/.bash_logout`, and
+an `exit` in that file replaces the exit code of the line. Write the line for the server, such as
+`tmux new -A -s {name}` with *Runs on* set to Linux or macOS; a Windows server is refused. The login
+shell must be sh, bash, zsh, ksh or dash; fish and csh are not supported. The approval names the
+host, so a changed host, user, port, jump host, agent forwarding or port forward asks again. If the
+SSH entry signs in with a password, every run opens a new terminal beside any open one. Windows
+PowerShell 5.1 cannot pass a double quote to ssh, so such a line is refused there; install
+PowerShell 7 (`pwsh`). After a run, the arrow asks before it types into that terminal again, because
+the login shell is still open. A VPN's *Started by* runs over SSH the same way, but a launcher line
+with `{config}` is refused, because the config is a file on this machine, and an agent's VPN start
+with such a launcher is refused. *Copy Command* copies `ssh … -- user@host '<line>'`: it uses your
+own ssh setup (agent, `~/.ssh/config`), the vault's key and password are not in it, and on the
+server it does not start your login shell. An older version of CredsForDevs does not know *Runs over
+SSH*: it runs such an entry on its own machine, and a save there removes the choice for every
+machine. Update CredsForDevs on all your machines before you choose an SSH entry.
 
 ## Environment variables in the terminal
 

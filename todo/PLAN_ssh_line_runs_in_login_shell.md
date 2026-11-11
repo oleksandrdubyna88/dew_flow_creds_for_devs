@@ -601,7 +601,8 @@ variable live as long as the remote run. (A daemon that the person's own profile
    each prints what a local bash prints, then the login shell. 5.1 refuses the lines that hold `"`, as before, and it
    now TYPES the line that ends in `\` (§3.5).
 4. **A startup file that reads the input** (it records what the owner's server does; both outcomes are safe). Put
-   `read -r x` as the FIRST line of `~/.bashrc` on the server, run Run with Secrets of `true`, then remove the line.
+   `read -r x` as the FIRST line of `~/.bashrc` on the server, run Run with Secrets of a line that holds one existing
+   reference, such as `true creds://<your account email>/<an entry>/password`, then remove the line.
    Expected on a Debian or Ubuntu server: the sentence of §3.3 and exit code 1. If the run ends with exit code 0, that
    sshd's bash does not read `~/.bashrc` first; note which of the two happened.
 

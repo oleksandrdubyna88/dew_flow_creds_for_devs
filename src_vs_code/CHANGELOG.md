@@ -27,22 +27,28 @@ it. The cause: sshd runs the command of an SSH request as `$SHELL -c`, and that 
 opposite ("the line runs in your login shell there"). Now the remote command is `exec ${SHELL:-sh} -l -c '<the text>'`: the shell that
 sshd starts replaces itself by your login shell, which reads your profile and then runs the line. This holds for **every** road:
 *Run in Terminal* (the arrow), *Run All in Folder*, a VPN's *Started by*, a step of a dependency chain, an agent's `creds_run` on a
-linked entry, and *Run with Secrets* over SSH. The exit code of the line is still the status that ends the run. The trust line does
-not change, so **no entry asks for approval again**: the approval is keyed on the line and the connection, and neither changed.
-*Copy Command*, the viewer row and *Copy All* still copy the same `ssh … -- user@host '<line>'`; the note beside the copy now says
-that on the server it does not start your login shell. `creds_exec` (an agent's own command on an SSH entry) and SSH Connect are not
-changed.
+linked entry, and *Run with Secrets* over SSH. On a step of a dependency chain and an agent's `creds_run`, the exit code of the
+line is still the status that ends the run; on the roads that keep the shell open (the arrow, *Run All in Folder*, a VPN's
+*Started by*), a line that fails says its exit code first, and the run ends with the code of the shell that stays open. The trust
+line does not change, so **no entry asks for approval again**: the approval is keyed on the line and the connection, and neither
+changed. *Copy Command*, the viewer row and *Copy All* still copy the same `ssh … -- user@host '<line>'`; the note beside the copy
+now says that on the server it does not start your login shell. `creds_exec` (an agent's own command on an SSH entry) and SSH
+Connect are not changed.
 
 What is different for you:
 
-- **The login shell is not interactive.** It reads `/etc/profile` and `~/.profile` (bash: `~/.bash_profile` first; zsh:
-  `~/.zprofile` and `~/.zlogin`), but the part of `~/.bashrc` that runs only in an interactive shell does not run for the line. A
-  tool that only that part sets up (nvm, conda, many installers) is not found: set its `PATH` in `~/.profile` instead.
+- **The login shell is not interactive.** It reads its login startup files — sh, dash and ksh: `/etc/profile` and `~/.profile`;
+  bash: `/etc/profile`, then only the first of `~/.bash_profile`, `~/.bash_login` and `~/.profile` that it finds; zsh:
+  `~/.zprofile` and `~/.zlogin` (in `$ZDOTDIR` when it is set), not `~/.profile` — but the part of `~/.bashrc` that runs only in
+  an interactive shell does not run for the line. A tool that only that part sets up (nvm, conda, many installers) is not found:
+  set its `PATH` in the login file your shell reads instead.
 - **What your profile prints is now part of the output** of the line, and a profile that ends or replaces the shell (`exit 0`,
   `exec zsh`, `set -n`) makes the line not run, on every road. A follow-up is open for this.
 - **On the arrow, *Run All in Folder* and a VPN's *Started by*, your profile is read twice:** once for the line, and once for the
   shell that stays open after it. A profile that starts a daemon (`ssh-agent`, `keychain`) or prints a greeting does it twice. Put
-  what must run once per login inside `case $- in *i*) … ;; esac`.
+  what only an interactive session needs, such as a greeting, inside `case $- in *i*) … ;; esac`. What the line needs, such as an
+  `ssh-agent` it uses, must stay outside that check; start it so that a second login reuses the running agent (`keychain` does
+  this) rather than starting another.
 - **On bash, a line that calls `exit` also runs your `~/.bash_logout`,** and an `exit N` in that file replaces the exit code of
   the line. This is a known limit on every road except *Run with Secrets*, which never runs the logout file.
 - **Run with Secrets over SSH:** the login profile reads an empty input, so it cannot take a value by accident. The script with the
