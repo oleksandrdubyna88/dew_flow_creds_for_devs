@@ -19,6 +19,8 @@
   split into two epics is the operator's command of that round, made after the two question consultants were asked
   (coai afd0c0dd; they advised rule A as epic 1 with the shared predicate, rule B as epic 2). All of this is folded
   into the text below as the approved baseline. Nothing was built before it, so the epoch opens with no entry.)
+- 1.1 · 2026-11-11 · owner · dod — the bridge plan's owner session (dew-flow-conventions-a0) refused the boundary rows in PLAN_remote_bridge_scoped.md and its E1 S3 spec: for that plan they would be its change 8.2 and a full stop; the two rows are written on this plan's side only, as owed, and that plan takes them (and N7) into its ledger when it opens for E1.6
+  (Counted in doubt: the Definition of Done said every neighbour of §7a gets its row in epic 1's pull request. The H6 harness case of the same night is not a change: §2.4 and H3 already say a hidden id falls through the window walk like a missing one; H6 only tests it with the older window holding the entry.)
 
 ## 1. The defect
 
@@ -501,6 +503,13 @@ runs the real `creds-mcp` binary against real `CredsAgentServer` windows; its fo
 - H4, the same two windows, missing in both: the same text as H3, and the same two counts.
 - H5, the same two windows, a visible denial: the newer window holds the entry with `view` on and `use` off. The
   agent reads the sentence with the entry's name and `Usable by agents`; the older window's lookup was NOT called.
+- H6, the same two windows, the walk goes on: the newer window HIDES the entry (no switch) and the older window holds
+  the same id with `use` on. Before this plan the newer window's `denied` stopped the walk; after it the call falls
+  through, and the OLDER window answers under its own switches and consent policy (its dialog or its 12-hour allow).
+  The test asserts that the older window decides, and that the answer carries nothing of the newer window (risk 5).
+  (The cadence consultation fbd8b366 named it. The harness needs two discovery files: separate broker folders whose
+  announcements are copied under distinct `window-*.json` names with distinct `startedAt`, and an assertion that two
+  ports are discovered before H3.)
 
 ### 5.8 What the tests do not prove
 
@@ -565,7 +574,10 @@ runs the real `creds-mcp` binary against real `CredsAgentServer` windows; its fo
 ## 7a. Neighbour plans
 
 Each neighbour gets ONE boundary row for this plan, written in epic 1's pull request (the both-sides rule of
-`planning-docs.md`). The row is the neighbour's part, said from its side. It goes into the section that the last
+`planning-docs.md`), except the bridge plan and its E1 S3 spec: their owner session asked that their files not be
+edited now (it would be that plan's change 8.2 and a stop), so their two rows below are OWED — written here, named
+with this plan's pull request number when it exists, and taken into that plan's ledger when it opens for E1.6
+(entry 1.1). N7 (the bridged refusal note at `sshUseActions.ts:132` names the key entry or jump host) goes with them. The row is the neighbour's part, said from its side. It goes into the section that the last
 column names. A row of this kind changes none of the neighbour's scope, goals, Definition of Done, merge conditions,
 epics, stories, build order, contract or approach, so it is not an entry of that plan's ledger. If a row makes a
 sentence of a neighbour false, the repair of that sentence is judged by that plan's own change rule.
@@ -602,7 +614,8 @@ documents of the bridge plan (its E1 stories and the S2, S4 and S5 specs) are co
 4. **The Trash sentence is gone** (case 5 of §3.4). An agent that tries to delete by a move gets *no folder with
    that id*.
 5. **With two windows open**, a call on a hidden entry now goes on to the next window, as a call on an unknown id
-   does: one more loopback request per window, and no dialog (H3).
+   does: one more loopback request per window, and no dialog (H3). H6 tests it with the older window holding the entry with `use` on (cadence consultation fbd8b366): the
+   older window decides under its own switches and consent, as for an id the newer window does not hold.
 6. **A4 adds one storage read** in the gate of a linked run, in the Terminal entry's own account. The tests that
    compare the reads (`agentSshGate.test.ts:275`, `:284`, `:462`, `:676`) must stay green; `:462` shows that a bridge
    still reads nothing.
@@ -632,9 +645,11 @@ Epic 1:
 - [ ] The list check allows exactly the four fields of §2.6, asserts each one as it is today, and finds no other
       hidden name or hidden id in the two list answers.
 - [ ] Mutations 1, 2, 3, 6, 7 and 8 of §5.6 each turned a test red.
-- [ ] `npm run itest:mcp` ran with H1-H5 green, or the summary says that `creds-mcp` was not built here and who runs
+- [ ] `npm run itest:mcp` ran with H1-H6 green, or the summary says that `creds-mcp` was not built here and who runs
       it before the release.
-- [ ] Each neighbour plan of §7a has its boundary row, and `plan-lifecycle.mjs` is clean with them.
+- [ ] Each neighbour plan of §7a has its boundary row, except PLAN_remote_bridge_scoped.md and its E1 S3 spec: their
+      rows are OWED (entry 1.1) and written on this plan's side in §7a, naming this plan's pull request, for that
+      plan's owner to take into its ledger at E1.6; `plan-lifecycle.mjs` is clean.
 - [ ] The stale comments and the test name of A6 are changed.
 
 Epic 2: the pass criteria of §Epics, E2, each one ticked with its observed number.
