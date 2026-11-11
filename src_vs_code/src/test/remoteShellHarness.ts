@@ -67,12 +67,17 @@ export function fakeSsh(t: TestContext): { env: NodeJS.ProcessEnv; read: () => B
  * (SonarCloud typescript:S4036). Only a bare name is looked up.
  */
 export function shellPath(name: string, pathValue: string | undefined = process.env.PATH): string | undefined {
-  if (name.length === 0 || name.includes('/') || name.includes('\\')) return undefined;
-  const names = process.platform === 'win32' ? [name, `${name}.exe`] : [name];
+  if (!isBareName(name)) return undefined;
   return pathDirsOf(pathValue, path.delimiter)
-    .flatMap((dir) => names.map((candidate) => path.join(dir, candidate)))
+    .flatMap((dir) => fileNamesOf(name).map((candidate) => path.join(dir, candidate)))
     .find(isExecutableFile);
 }
+
+/** A name with no path separator in it, and not empty: the only kind `command -v` looks up on PATH. */
+const isBareName = (name: string): boolean => /^[^/\\]+$/.test(name);
+
+/** The file names a program can have in one PATH directory: on Windows also `<name>.exe`. */
+const fileNamesOf = (name: string): string[] => (process.platform === 'win32' ? [name, `${name}.exe`] : [name]);
 
 function isExecutableFile(file: string): boolean {
   try {
