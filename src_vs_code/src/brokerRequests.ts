@@ -83,12 +83,14 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
 }
 
 /**
- * What an entry id resolves to for an agent: usable, present but closed, or nothing.
+ * What an entry id resolves to for an agent: usable, closed, or nothing.
  *
  * <p>Three outcomes rather than an optional target, because the middle one is the interesting
- * one. "That entry exists and you may not use it" is what lets an agent tell a person which
- * switch to turn on; collapsing it into "not found" would make the product look broken at
- * exactly the moment it is working as designed.</p>
+ * one. `closed` is for an entry that the agent may VIEW (it is in the list the agent got) and may not
+ * use: "that entry is in your list and you may not use it" is what lets an agent tell a person which
+ * switch to turn on, and collapsing it into "not found" would make the product look broken at
+ * exactly the moment it is working as designed. A node that the agent may NOT view and an id that does
+ * not exist get ONE answer, `undefined` (rule A of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
  */
 export type McpUseLookup =
   | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean; quiet?: boolean }
@@ -185,9 +187,8 @@ function usableRead(
  *
  * <p>A window with no alias registry and a name that is not enabled get the <b>same</b> answer,
  * deliberately: whether a given name exists is not something an unauthenticated caller should be
- * able to enumerate one guess at a time. That is exactly the distinction `refusalFor` makes the
- * other way for an entry id, and the difference is guessability — a person chooses an alias, and
- * nobody chooses a uuid.</p>
+ * able to enumerate one guess at a time. `refusalFor` now gives the same one answer for an entry id
+ * that the agent may not view; it names the entry and its switch only for an entry in the agent's list.</p>
  */
 export function aliasTarget(
   resolve: ((name: string) => McpUseTarget | undefined) | undefined,
@@ -202,9 +203,10 @@ export function aliasTarget(
 /**
  * The refusal one lookup deserves — the code, and the sentence that names what to do about it.
  *
- * <p>Naming the switch is safe here and would not be on the alias route: an alias is a name a
- * person chose, guessable one try at a time, while an entry id is a uuid nobody enumerates. So
- * the alias route answers "no such entry" to both questions on purpose, and this one does not.</p>
+ * <p>The switch is named only for an entry that is in the agent's list (`closed` comes from the lookup for an
+ * entry that the agent may view and may not use). An entry that the agent may not view, and an id that does not
+ * exist, reach this function as the same `undefined`. The alias route answers "no such entry" to both questions
+ * on purpose, and so does this one for those two.</p>
  */
 export function refusalFor(found: McpUseLookup): Refusal {
   if (found?.kind === 'closed') {

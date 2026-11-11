@@ -128,6 +128,9 @@ export function switchForFolderAction(action: string): NeededSwitch {
  *
  * <p>Across every account, because the listing an agent read had already merged them and the id
  * it hands back carries no account with it — the same reasoning as `findUsableEntry`.</p>
+ *
+ * <p>`closed` is for a folder that the agent may VIEW (`isOpenFolder`) and may not do this to. The Trash, a folder
+ * in the Trash and a folder with no `view` answer `undefined`, as an id that does not exist does.</p>
  */
 export function findFolder(
   accounts: readonly { accountId: string }[],
@@ -137,8 +140,10 @@ export function findFolder(
 ): FolderVerdict {
   for (const { accountId } of accounts) {
     const node = byId(accountId, folderId);
-    if (node !== undefined && node.type === 'folder') {
-      return verdictFor(accountId, node, (id) => byId(accountId, id), action);
+    const local = (id: string): TreeNode | undefined => byId(accountId, id);
+    // Rule A: a folder that the list would not show is not here either, so the search goes on, as for an id this account does not hold.
+    if (node !== undefined && isOpenFolder(node, local)) {
+      return verdictFor(accountId, node, local, action);
     }
   }
   return undefined;
@@ -169,11 +174,7 @@ function grantedFor(
 }
 
 /** Why a move is refused, or `undefined` when it may proceed. */
-export type MoveRefusal =
-  | 'no_such_destination'
-  | 'destination_closed'
-  | 'into_the_trash'
-  | 'into_itself';
+export type MoveRefusal = 'no_such_destination' | 'destination_closed' | 'into_itself';
 
 /**
  * May this folder move there?
@@ -185,6 +186,10 @@ export type MoveRefusal =
  * move is a permission change for everything inside it. That is the whole reason this is not
  * simply a rename with an extra field.</p>
  *
+ * <p><b>A destination that the agent may not view is no folder.</b> Missing, not a folder, the Trash, in the Trash and
+ * a folder with no `view` get one answer, `no_such_destination`; `destination_closed` is for a folder that the agent may
+ * view and may not move into (rule A of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
+ *
  * <p>Into itself is refused here rather than left to storage. Storage does refuse it, by leaving
  * the tree alone — which reaches an agent as a call that succeeded and changed nothing.</p>
  */
@@ -194,7 +199,8 @@ export function moveRefusal(
   byId: (id: string) => TreeNode | undefined,
 ): MoveRefusal | undefined {
   const destination = byId(destinationId);
-  return isFolder(destination) ? firstRefusal(folder, destination, byId) : 'no_such_destination';
+  // One answer for a destination that is missing, is not a folder, or is not open to view (the Trash, a folder in the Trash, no `view`).
+  return destination !== undefined && isOpenFolder(destination, byId) ? firstRefusal(folder, destination, byId) : 'no_such_destination';
 }
 
 /** The refusals in the order a person would notice them. */
@@ -204,19 +210,10 @@ function firstRefusal(
   byId: (id: string) => TreeNode | undefined,
 ): MoveRefusal | undefined {
   const checks: readonly [boolean, MoveRefusal][] = [
-    [isTrashy(destination, byId), 'into_the_trash'],
     [wouldSwallowItself(folder, destination, byId), 'into_itself'],
     [!openToFolderEdit(destination, byId), 'destination_closed'],
   ];
   return checks.find(([refused]) => refused)?.[1];
-}
-
-function isFolder(node: TreeNode | undefined): node is TreeNode {
-  return node !== undefined && node.type === 'folder';
-}
-
-function isTrashy(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
-  return isTrashFolder(node) || isInTrash(node, byId);
 }
 
 function wouldSwallowItself(
@@ -258,7 +255,6 @@ export function describeMoveRefusal(refusal: MoveRefusal, folderName: string): s
   const said: Record<MoveRefusal, string> = {
     no_such_destination: 'there is no folder with that id',
     destination_closed: 'that destination is not open to agents — a folder can only move somewhere the same grant already reaches',
-    into_the_trash: 'the Trash is not a destination; deleting is its own call',
     into_itself: 'a folder cannot be moved inside itself',
   };
   return `"${folderName}" was not moved: ${said[refusal]}.`;

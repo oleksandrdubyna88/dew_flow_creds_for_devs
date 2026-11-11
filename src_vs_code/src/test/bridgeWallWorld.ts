@@ -41,6 +41,9 @@ export const LEAKS = ['e-out', 'leak-target', 'leaky'] as const;
 /** What `storedTexts` answers until a scenario changes it. */
 export const NO_TEXTS: readonly string[] = [];
 
+/** Where the entry `x` stands in a world: see `X_FOLDER`. */
+export type XState = 'usable' | 'closed' | 'absent' | 'unseen';
+
 export type Target = { accountId: string; entityId: string; entityName: string; kind: string };
 const target = (accountId: string, entityId: string, entityName: string): Target => ({ accountId, entityId, entityName, kind: 'ssh' });
 
@@ -117,7 +120,7 @@ interface Flavour {
   readonly ask?: McpAskPolicy;
 }
 
-function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<string, TreeNode[]> {
+function nodesOf(x: XState, flavour: Flavour): Record<string, TreeNode[]> {
   if (flavour.emptyVault) {
     return {};
   }
@@ -149,9 +152,18 @@ function e1Extras(flavour: Flavour): Partial<EntityMetadata> {
   return { ...(flavour.a1Config ? config('prod') : {}), ...(flavour.agentForward ? { agentForward: true } : {}) };
 }
 
-/** The entry called `x`: open to agents, or in a folder whose use is off, or not there. */
-function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
-  return x === 'absent' ? [] : [entity('x', 'hidden-x', x === 'usable' ? 'f1' : 'f-closed', config('hidden-x'))];
+/** The folder of the `unseen` entry `x`: no switch of its own, and none above it. */
+const UNSEEN_FOLDER: TreeNode = { id: 'f-unseen', name: 'Unseen', type: 'folder', parentId: null };
+
+/** Where the entry `x` lives: open to agents (`usable`), in a folder with `view` only (`closed`), or in a folder with no switch at all (`unseen`, a node the agent may not view). */
+const X_FOLDER: Readonly<Record<Exclude<XState, 'absent'>, string>> = { usable: 'f1', closed: 'f-closed', unseen: 'f-unseen' };
+
+/** The entry called `x`: open to agents, or in a folder whose use is off, or in a folder nobody opened, or not there. */
+function xNodes(x: XState): TreeNode[] {
+  if (x === 'absent') {
+    return [];
+  }
+  return [...(x === 'unseen' ? [UNSEEN_FOLDER] : []), entity('x', 'hidden-x', X_FOLDER[x], config('hidden-x'))];
 }
 
 /**
@@ -168,7 +180,7 @@ function heldBy(flavour: Flavour, slot: (typeof SECRET_SLOTS)[string], value: st
 }
 
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
-function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: string[]): McpVaultSource {
+function vaultOf(x: XState, flavour: Flavour, asked: string[]): McpVaultSource {
   const nodes = nodesOf(x, flavour);
   return {
     getAccounts: () => [{ accountId: 'a2' }, { accountId: ACCOUNT }],
@@ -233,8 +245,8 @@ export interface WallOptions {
   /** The entries in the scope of `server1`. Default: `e1`. */
   scope?: string[];
   quiet?: boolean;
-  /** An entry called `x` in the vault: open to agents, or with its use switched off, or not there. */
-  x?: 'usable' | 'closed' | 'absent';
+  /** An entry called `x` in the vault: open to agents, or with its use switched off, or in a folder with no switch (`unseen`: the agent may not view it), or not there. */
+  x?: XState;
   /**
    * Account a2, searched first, holds an entry with the id `e1` of its own (named `foreign`, a config of its own). The
    * listing, the snippet and every use path must keep to a1 (S20, S22, S23).
@@ -314,7 +326,7 @@ function aliasRows(aliases: Record<string, Target>): Array<{ name: string; kind:
 }
 
 /** The alias names the world knows, each to its target. `xalias` is there only when `x` is. */
-function aliasesFor(x: 'usable' | 'closed' | 'absent'): Record<string, Target> {
+function aliasesFor(x: XState): Record<string, Target> {
   const known: Record<string, Target> = { one: E1, leaky: E_OUT, second: E2, foreign: FOREIGN };
   return x === 'absent' ? known : { ...known, xalias: X };
 }
@@ -376,7 +388,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     answers: Array.from({ length: o.allows }, () => 'Allow'),
     aliasMap: aliases,
     aliasList: aliasRows(aliases),
-    mcpEntries: [...(await visibleMcpEntries(vault))] as unknown as Record<string, unknown>[],
+    mcpEntries: await visibleMcpEntries(vault),
     mcpResolve: (id, action, server) => {
       lookups.push([id, action, server]);
       return mcpHooks.resolve(id, action, server);

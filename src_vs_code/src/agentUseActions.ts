@@ -12,12 +12,12 @@ import {
 import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards } from './useActions';
 import type { BridgeContext } from './bridgeContext';
 import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
-import { UsableEntry, UsableFound, accountOnly, findUsableEntry } from './mcpEntries';
+import { UsableFound, accountOnly, findUsableEntry, hiddenFromAgents } from './mcpEntries';
 import { describeSshTarget } from './sshCommand';
 import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
-import { EntityMetadata } from './types';
+import { EntityMetadata, TreeNode } from './types';
 import { runBounded } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
@@ -227,14 +227,21 @@ function refusedCall(code: ErrorCode, message: string, why: string): LinkedCall 
   return { kind: 'refused', code, message, why };
 }
 
-function whyUnusable(found: UsableEntry): string {
-  return found === undefined ? 'the SSH entry is hidden from agents (PIN) or is not in this account' : `the SSH entry's "Usable by agents" switch is off`;
+/** The journal reason (never the agent's message), from the SSH entry's NODE: the lookup answers `undefined` for a missing node and for one the agent may not view. */
+function whyUnusable(node: TreeNode | undefined): string {
+  if (node === undefined) {
+    return 'the SSH entry is not in this account';
+  }
+  return hiddenFromAgents(node) ? 'the SSH entry is hidden from agents (PIN)' : `the SSH entry's "Usable by agents" switch is off`;
 }
 
-/** Step 5: the SSH entry's own `Usable by agents` switch, looked up in the Terminal entry's account only (`accountOnly`). */
+/** Step 5: the SSH entry's own `Usable by agents` switch, looked up in the Terminal entry's account only (`accountOnly`); a refusal reads the node once more there, for the journal. */
 function usableGate(deps: AgentUseDeps, target: CallTarget, link: LinkedLink): LinkedCall {
   const found = findUsableEntry(accountOnly(deps.storage, target.accountId), link.ssh.id, 'exec');
-  return found?.kind === 'usable' ? { kind: 'linked', link, found } : refusedCall('denied', linkedRunRefused(target.entityName), whyUnusable(found));
+  if (found?.kind === 'usable') {
+    return { kind: 'linked', link, found };
+  }
+  return refusedCall('denied', linkedRunRefused(target.entityName), whyUnusable(deps.storage.getNode(target.accountId, link.ssh.id)));
 }
 
 /** Step 4: the link, through `sshLinkOf` (the one reader), with a lookup bound to the Terminal entry's account. */

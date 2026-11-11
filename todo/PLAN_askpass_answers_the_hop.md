@@ -6,6 +6,8 @@
 > ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9, story E1.6); the two paths below are outside that plan's scope (its §8 row)
 > and wait for a plan of their own.
 
+**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan adds a field `second` to the failure of `ExecAuth` and to the failure of `JumpChain`, and reads no password path. A new refusal on this plan's paths that names a hop or a second entry sets `second`, so that the refusal passes the one chooser of that plan.
+
 ## The defect
 
 An entry that authenticates by password rides `SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force` and the password in `CREDS_SSH_PASSWORD`

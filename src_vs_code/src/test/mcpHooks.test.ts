@@ -8,6 +8,7 @@ import type { McpUseLookup } from '../brokerRequests';
 import type { McpVaultSource } from '../mcpEntries';
 import type { McpAskPolicy } from '../mcpAccess';
 import type { TreeNode } from '../types';
+import { HIDDEN_ENTRIES_NO_PIN, SOURCE } from './unlistedWorld';
 
 /**
  * Where issue #95 becomes true in a real window (S2.4).
@@ -318,4 +319,16 @@ test('C16: a server stamp ages out on the same clock as a local one', async () =
   const past = factory().mcpUseHooks(vault('every12h'), state, () => NOW + ASK_WINDOW_MS + 1);
   assert.equal(usable(inside.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, true);
   assert.equal(usable(past.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, false);
+});
+
+test('L2: the broker\'s lookup answers an entry that the agent may not view as an id that does not exist, and names none', () => {
+  // Rule A of todo/PLAN_agent_refusal_names_unlisted_entry.md at the join the broker reads: a `closed` answer would carry
+  // the entry's NAME into the refusal (`refusalFor`), so the answer for such an entry must be the one for a made-up id.
+  const { mcpUseLookup } = loadWithVscode<{ mcpUseLookup: typeof import('../mcpHooks').mcpUseLookup }>('../mcpHooks', { window: {} });
+
+  for (const id of HIDDEN_ENTRIES_NO_PIN) {
+    for (const action of ['exec', 'rotate', 'delete', 'frobnicate']) {
+      assert.equal(mcpUseLookup(SOURCE, id, action), undefined, `${id} for ${action}`);
+    }
+  }
 });

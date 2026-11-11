@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: an agent's refusal no longer names an entry or a folder that it may not view
+
+Before this change an agent could send an id and learn from the refusal that the entry or the folder exists, and learn its name,
+although the person never opened it to agents. Now a lookup of an id that the agent may not view gives the answer of an id that
+does not exist. The rule is applied in the two lookups and in the test of a move's destination, so each tool and each door gets it.
+No new error code, status or answer shape is added: a request gets one of two answers that already existed. **But the answer for a
+hidden entry or a hidden folder does change: the HTTP status goes from 403 `denied` to 404 `not_found`** (the cases below say which
+tools). A move to a destination that the agent may not view keeps 403 `denied`, with a new sentence. Nothing changes for a node that
+the agent may view (an entry with *View* on and *Usable by agents* off still gets the sentence that names it and the switch to turn on).
+
+What an agent or a script reads now, case by case:
+
+- **A use call on an entry that the agent may not view** (`creds_exec`, `creds_query`, `creds_run`, `creds_rotate`,
+  `creds_vpn_up`, `creds_vpn_down`, `creds_open_terminal`, `creds_export_env`). Before: `denied` (403) with
+  `"<entry name>" is not open to agents for that. Turn on "…" in its Agent access section.` Now: `not_found` (404) with
+  `No such entry, or this window does not serve it.`, which `creds-mcp` shows as `No CredsForDevs window answered for that entry.`
+  This is true for an entry with no switch, one that was closed again and one in the Trash.
+- **`creds_delete` on an entry that the agent may not view.** The same change: `denied` with the name → `not_found`.
+- **A folder verb on a folder that the agent may not view** (`creds_create_folder` with that `parent`, `creds_edit_folder`,
+  `creds_delete_folder`; also the Trash and a folder in the Trash). Before: `denied` (403) with
+  `"<folder name>" is not open to agents for that. …` Now: `not_found` (404) with `No folder with id "<the id you sent>" is open to
+  you. Call creds_folders again.`, which `creds-mcp` shows as `No CredsForDevs window answered.`
+- **A move to a destination that the agent may not view** (`creds_edit_folder` with `parent`). Before: a destination that nobody
+  opened answered `that destination is not open to agents — …`, so a missing id and an existing one were told apart. Now a
+  destination that is missing, is not a folder, or is not open to view gets one answer: `"<the folder>" was not moved: there is no
+  folder with that id.` The code stays `denied`. A destination that the agent may view and may not move into keeps its sentence.
+- **The sentence `the Trash is not a destination; deleting is its own call` is gone.** The Trash and a folder in it answer as a
+  folder that does not exist. An agent can name the Trash only by an id that was never in its list.
+- **The walk over several windows.** `creds-mcp` asks the next window when a window answers `not_found`, and stops at `denied`. A
+  window that hides an entry now answers `not_found`, so the call goes on to an older window that holds the entry. An older window
+  that still holds the entry with its own switches answers under them, also after you turned the switches off in the newer window.
+- **Two accounts in one window.** A hidden node in the first account of a window no longer stops the search: a second account of the same
+  window that holds the same id answers under its own switches, as a second window does.
+- **The agent journal.** A lookup refusal writes no line, as before, so the journal does not name the entry either. The reason of a
+  refused linked `creds_run` in the journal now says which of three causes stopped it: the SSH entry is not in this account, it is
+  hidden from agents (PIN), or its *Usable by agents* switch is off. The agent reads the same sentence as before.
+
+**Not in this change:** a refusal that names a second entry, such as a linked key or a jump host that the agent may not view
+(`creds_exec`, `creds_rotate` on an SSH entry, a linked `creds_run`). It still names that entry. Four fields of the list answers
+(`dependsOn`, `folder` and `command` of `creds_list`, `parent` of `creds_folders`) can still hold the name or the id of a node that
+the agent may not view; each one is a question for the owner, and a test pins each one as it is today.
+
 ## [1.21.0] — 2026-11-10 — Run with Secrets and an agent's run now work on a Terminal entry that runs over SSH
 
 ### Added — Run with Secrets over SSH

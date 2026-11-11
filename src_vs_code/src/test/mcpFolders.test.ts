@@ -10,6 +10,7 @@ import {
   visibleFolders,
 } from '../mcpFolders';
 import type { TreeNode } from '../types';
+import { ACCOUNT, HIDDEN, SOURCE, VISIBLE } from './unlistedWorld';
 
 /**
  * Folders on the agent surface: what is offered, what is refused, and the one thing that must be
@@ -158,7 +159,7 @@ test('a move needs the grant at BOTH ends', () => {
   // closed part of the tree — or the reverse.
   const v = vault([
     folder('open', 'project', { mcp: { folderEdit: true } }),
-    folder('closed', 'private'),
+    folder('closed', 'private', { mcp: { view: true } }),
     folder('moving', 'db', { parentId: 'open' }),
   ]);
   const moving = v.local('moving') as TreeNode;
@@ -167,14 +168,14 @@ test('a move needs the grant at BOTH ends', () => {
   assert.equal(moveRefusal(moving, 'closed', v.local), 'destination_closed');
 });
 
-test('a move into the Trash is refused — deleting is its own call', () => {
+test('a move into the Trash reads as a move to no folder at all — the Trash is not a node that an agent may view', () => {
   const v = vault([
     folder('t', 'Trash', { isTrash: true }),
     folder('open', 'project', { mcp: { folderEdit: true } }),
     folder('moving', 'db', { parentId: 'open' }),
   ]);
 
-  assert.equal(moveRefusal(v.local('moving') as TreeNode, 't', v.local), 'into_the_trash');
+  assert.equal(moveRefusal(v.local('moving') as TreeNode, 't', v.local), 'no_such_destination');
 });
 
 test('a folder cannot swallow itself, and the refusal says so instead of succeeding quietly', () => {
@@ -191,14 +192,70 @@ test('a folder cannot swallow itself, and the refusal says so instead of succeed
   assert.equal(moveRefusal(mid, 'leaf', v.local), 'into_itself', 'a descendant is still itself');
 });
 
-test('a destination that is not a folder is told apart from one that is closed', () => {
-  const v = vault([folder('open', 'project', { mcp: { folderEdit: true } })]);
+test('a missing destination and one that is not open get one answer; a visible closed one gets another', () => {
+  const v = vault([
+    folder('open', 'project', { mcp: { folderEdit: true } }),
+    folder('unlisted', 'private'),
+    folder('closed', 'shut', { mcp: { view: true } }),
+  ]);
+  const moving = v.local('open') as TreeNode;
 
-  assert.equal(moveRefusal(v.local('open') as TreeNode, 'ghost', v.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, 'ghost', v.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, 'unlisted', v.local), 'no_such_destination', 'a folder that is not open to view is one answer with a missing id');
+  assert.equal(moveRefusal(moving, 'closed', v.local), 'destination_closed', 'a folder that is visible and closed to editing keeps its own answer (G4)');
+});
+
+/** The fixture's folders, read the way `folderHooks` reads them: by account and id, and by id inside one account. */
+const FIXTURE = {
+  accounts: SOURCE.getAccounts(),
+  byId: (account: string, id: string): TreeNode | undefined => SOURCE.getNode(account, id),
+  local: (id: string): TreeNode | undefined => SOURCE.getNode(ACCOUNT, id),
+};
+
+test('L3: a folder that the agent may not view answers as an id that does not exist, for every verb', () => {
+  // Rule A of todo/PLAN_agent_refusal_names_unlisted_entry.md: no switch, an explicit empty answer, in the Trash, the Trash.
+  for (const id of Object.values(HIDDEN.folders)) {
+    for (const action of ['create', 'edit', 'delete', 'rename']) {
+      assert.equal(findFolder(FIXTURE.accounts, FIXTURE.byId, id, action), undefined, `${id} for ${action}`);
+    }
+  }
+});
+
+test('L4: a destination that the agent may not view is no folder: no switch, and an explicit empty answer', () => {
+  const moving = FIXTURE.local(VISIBLE.folderEditChild) as TreeNode;
+
+  assert.equal(moveRefusal(moving, HIDDEN.folders.none, FIXTURE.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, HIDDEN.folders.empty, FIXTURE.local), 'no_such_destination');
+});
+
+test('L5: the Trash, and a folder in the Trash, read as no folder at all', () => {
+  const moving = FIXTURE.local(VISIBLE.folderEditChild) as TreeNode;
+
+  assert.equal(moveRefusal(moving, HIDDEN.folders.theTrash, FIXTURE.local), 'no_such_destination');
+  assert.equal(moveRefusal(moving, HIDDEN.folders.trash, FIXTURE.local), 'no_such_destination');
+});
+
+test('G4: a destination that the agent may view and may not edit keeps destination_closed', () => {
+  const moving = FIXTURE.local(VISIBLE.folderEditChild) as TreeNode;
+
+  assert.equal(moveRefusal(moving, VISIBLE.folderView, FIXTURE.local), 'destination_closed');
+});
+
+test('X2: a folder that one account hides does not stop the search in the next account', () => {
+  const nodes: Record<string, readonly TreeNode[]> = {
+    a1: [folder('f1', 'hidden here')],
+    a2: [folder('f1', 'usable there', { mcp: { folderEdit: true } })],
+  };
+  const byId = (account: string, id: string): TreeNode | undefined => nodes[account].find((n) => n.id === id);
+
+  const found = findFolder([{ accountId: 'a1' }, { accountId: 'a2' }], byId, 'f1', 'edit');
+
+  assert.equal(found?.kind, 'usable');
+  assert.equal(found?.kind === 'usable' && found.accountId, 'a2');
 });
 
 test('every refusal has a sentence naming the folder and the reason', () => {
-  for (const refusal of ['no_such_destination', 'destination_closed', 'into_the_trash', 'into_itself'] as const) {
+  for (const refusal of ['no_such_destination', 'destination_closed', 'into_itself'] as const) {
     const said = describeMoveRefusal(refusal, 'db');
     assert.ok(said.includes('db'), `${refusal} did not name the folder`);
     assert.ok(said.length > 30, `${refusal} says too little to act on`);

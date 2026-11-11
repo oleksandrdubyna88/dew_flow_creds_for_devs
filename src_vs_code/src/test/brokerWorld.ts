@@ -127,7 +127,8 @@ function world(options: {
   aliasList?: { name: string; kind: string }[];
   /** What the vault would show an agent. Absent means this window shows agents nothing. */
   visibleConfig?: (entityId: string) => import('../types').EntityMetadata | undefined;
-  mcpEntries?: Record<string, unknown>[];
+  /** Any object list: a test gives literal stubs, or what `visibleMcpEntries` returns. Read as `McpEntry` only by the route that lists them. */
+  mcpEntries?: readonly object[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
   /** Whether the vault says this call's dialog has already been answered (issue #95). */
@@ -181,6 +182,13 @@ function world(options: {
   trash?: boolean;
   /** How a create request is answered: accepted into a folder, refused, or not served at all. */
   create?: 'open' | 'closed';
+  /**
+   * The REAL create hooks (`mcpCreateHooks` over a vault), for a test about what the production `choose` answers.
+   *
+   * <p>Its own option because `hooks` is spread FIRST and `mcpCreate` is written after it from `create`, so a real create hook
+   * passed there is silently replaced (the same reason as `mcpResolve`). Read before `create`.</p>
+   */
+  mcpCreateReal?: McpCreateHooks;
   /** What an accepted create's `settle` answers — a folder's PIN not given, say. Absent: go ahead. */
   settle?: CreateSettled;
   /**
@@ -345,7 +353,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     visibleConfig: options.visibleConfig,
     resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind, options.mcpRemembers),
     moveToTrash: trashFor(w, options.trash),
-    mcpCreate: createFor(w, options.create, options.settle),
+    mcpCreate: createHooksOf(w, options),
     rememberMcpConsent: (accountId: string, entityId: string, rungs: string, serverEntityId?: string): Promise<void> => {
       w.consents = [...w.consents, { entityId, rungs, ...(serverEntityId === undefined ? {} : { serverEntityId }) }];
       return options.mcpRemember?.(accountId, entityId, rungs, serverEntityId) ?? Promise.resolve();
@@ -470,7 +478,7 @@ function burnerFor(
  * here would only assert that a literal matches itself.</p>
  */
 function mcpEntriesFor(
-  entries: Record<string, unknown>[] | undefined,
+  entries: readonly object[] | undefined,
 ): (() => Promise<never>) | undefined {
   return entries === undefined ? undefined : () => Promise.resolve(entries as never);
 }
@@ -527,6 +535,11 @@ function trashFor(
     w.trashed.push(entityId);
     return Promise.resolve(true);
   };
+}
+
+/** The create hooks: the REAL ones when a test gives `mcpCreateReal`, else the scripted answer of `create`. Its own helper to keep `hooksFor` under the complexity limit. */
+function createHooksOf(w: World, options: Parameters<typeof world>[0]): McpCreateHooks | undefined {
+  return options.mcpCreateReal ?? createFor(w, options.create, options.settle);
 }
 
 /**
