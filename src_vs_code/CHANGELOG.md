@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.1] — 2026-11-11 — Security — an agent's refusal no longer names an entry or a folder that it may not view
+
 ### Changed — security: an agent's refusal no longer names an entry or a folder that it may not view
 
 Before this change an agent could send an id and learn from the refusal that the entry or the folder exists, and learn its name,
