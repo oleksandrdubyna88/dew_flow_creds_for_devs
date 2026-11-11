@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  JumpChain,
   MAX_JUMP_DEPTH,
   isSafeTag,
   normalizeForwards,
@@ -198,4 +199,30 @@ test('a tag is a label, not a place to put anything else', () => {
   assert.equal(isSafeTag('x'.repeat(25)), false);
   assert.equal(isSafeTag('drop; table'), false);
   assert.equal(isSafeTag('<script>'), false);
+});
+
+// ---- rule B: which entry a refusal is about --------------------------------------------------------------
+
+/** The entry a refusal is about, or `undefined` for a chain that was not refused (and for a refusal that names the starting entry). */
+const secondOf = (chain: JumpChain): unknown => (chain.ok ? undefined : chain.second);
+
+test('B5: an unsafe hop at depth 1 and at depth 3 says which entry it is, as a jump host', () => {
+  const unsafe = (id: string, next?: string): EntityMetadata => host(id, { host: 'bad host!', ...(next === undefined ? {} : { jumpHostEntityId: next }) });
+  const depth1 = resolveJumpChain(host('target', { jumpHostEntityId: 'h1' }), (id) => (id === 'h1' ? unsafe('h1') : undefined));
+  assert.deepEqual(secondOf(depth1), { id: 'h1', relation: 'jump host' });
+  const nodes: Record<string, EntityMetadata> = { h1: host('h1', { jumpHostEntityId: 'h2' }), h2: host('h2', { jumpHostEntityId: 'h3' }), h3: unsafe('h3') };
+  const depth3 = resolveJumpChain(host('target', { jumpHostEntityId: 'h1' }), (id) => nodes[id]);
+  assert.deepEqual(secondOf(depth3), { id: 'h3', relation: 'jump host' });
+});
+
+test('B5: a circle, a missing hop and the depth cap name the starting entry, so they say no second entry', () => {
+  const a = host('a', { jumpHostEntityId: 'b' });
+  const b = host('b', { jumpHostEntityId: 'a' });
+  const circle = resolveJumpChain(a, (id) => ({ a, b })[id as 'a' | 'b']);
+  const missing = resolveJumpChain(host('target', { jumpHostEntityId: 'gone' }), () => undefined);
+  const deep = resolveJumpChain(host('target', { jumpHostEntityId: 'h0' }), (id) => host(id, { jumpHostEntityId: `h${Number(id.slice(1)) + 1}` }));
+  for (const chain of [circle, missing, deep]) {
+    assert.equal(chain.ok, false);
+    assert.equal(secondOf(chain), undefined);
+  }
 });

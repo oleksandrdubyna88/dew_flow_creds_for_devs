@@ -5,9 +5,12 @@ import { BUSY_PLACE, LOCAL_DOOR, TokenlessCeilings } from '../aliasThrottle';
 import { changedWhileAsking, journalLine, linkedCall, linkedRunRefused, terminalRunAction } from '../agentUseActions';
 import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal } from '../bridgeAllowList';
 import type { BridgeContext } from '../bridgeContext';
+import { SECOND_ENTRY_REFUSED } from '../agentNaming';
+import { errorBody } from '../brokerProtocol';
 import { commandFingerprint } from '../commandTrust';
 import { switchForAction } from '../mcpEntries';
-import { planLaunch, refusalSaid, sshLinkOf, sshLinkRefusal } from '../remoteLaunch';
+import { planLaunch, refusalSaid, sshLinkOf, sshLinkRefusal, trustLineFor } from '../remoteLaunch';
+import { resolveJumpChain } from '../sshOptions';
 import { asksAfter } from '../useActions';
 import type { UseActionContext, UseActionResult, UsedEntry } from '../useActions';
 import { MaskSourceUnavailable, maskEntriesWithLink } from '../maskEntries';
@@ -17,7 +20,8 @@ import type { StoredSecret } from '../storedSecret';
 import type { SshUseDeps } from '../sshUseActions';
 import type { EntityMetadata, TreeNode } from '../types';
 import { sshNode } from './sshRoadWorld';
-import { ACCOUNT_1, ACCOUNT_2, AgentStorage, GateOptions, GateWorld, OK_BODY, agentStorage, asBroker, detailsOf, gateWorld, terminalNode as defaultTerminalNode, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
+import { ACCOUNT_1, ACCOUNT_2, AgentStorage, GateOptions, GateWorld, HIDDEN_HOP_IDS, OK_BODY, agentStorage, asBroker, detailsOf, gateWorld, hiddenHops, terminalNode as defaultTerminalNode, trashFolder, trustLineOf, usableSsh } from './agentSshWorld';
+import { markerOf } from './unlistedWorld';
 import { call, share, world } from './brokerWorld';
 import { ownerChain, startVpn, world as vpnWorldOf } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
@@ -752,4 +756,29 @@ test('a_bridged_gate_refusal_writes_a_journal_line_that_says_what_the_bridge_was
   assert.equal(bridged.notes.length, 1);
   assert.ok(bridged.notes[0].endsWith(`(the agent was told: ${BRIDGE_NOT_SERVED})`), bridged.notes[0]);
   assert.ok(!bridged.notes[0].includes('the SSH connection is not open to it'), 'and not that the SSH connection is closed to it');
+});
+
+/** The line the journal gets when a hidden jump host stops a linked run: the Terminal entry is the addressed one (note 9 of the E2 stories). */
+const HOP_NOTE = 'deploy: a jump host in its chain has an address that is not a valid host (the agent was told only that another entry stopped the call)';
+
+test('B3 and B4: a linked run whose jump host at depth 1, 2 or 3 is hidden and unsafe reads the fixed sentence, writes one note and takes no slot', async () => {
+  for (const unsafeAt of [1, 2, 3]) {
+    const w = gateWorld({ acct1: [usableSsh('s1', { jumpHostEntityId: HIDDEN_HOP_IDS[0] }), ...hiddenHops(3, unsafeAt)] });
+    const hidden = HIDDEN_HOP_IDS.slice(0, 3).flatMap((id) => [id, markerOf(id)]);
+    assert.deepEqual(await runOf(w)(), { status: 409, body: errorBody('no_credential', SECOND_ENTRY_REFUSED('deploy')) }, `depth ${unsafeAt}`);
+    assert.deepEqual(w.overSsh.calls, [], 'nothing was run');
+    assert.equal(w.slots.taken, 0, 'no slot was taken');
+    assert.deepEqual(w.notes, [HOP_NOTE], `depth ${unsafeAt}`);
+    assert.deepEqual(hidden.filter((text) => w.notes.join('\n').includes(text)), [], 'the note names no hidden hop');
+  }
+});
+
+test('B3, the fixture: the same chain with no unsafe hop gets past the refused step to the run', async () => {
+  const w = gateWorld({ acct1: [usableSsh('s1', { jumpHostEntityId: HIDDEN_HOP_IDS[0] }), ...hiddenHops(3)] });
+  const ssh = detailsOf(w, 's1');
+  const chain = resolveJumpChain(ssh, (id) => w.nodes.get(id)?.details);
+  w.trusted.push(commandFingerprint('e1', trustLineFor(ssh, chain.ok ? chain.value : undefined, 'echo linked')));
+  assert.deepEqual(await runOf(w)(), { status: 200, body: OK_BODY });
+  assert.equal(w.overSsh.calls.length, 1);
+  assert.deepEqual(w.notes, []);
 });

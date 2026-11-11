@@ -1,4 +1,5 @@
 import { DEFAULT_SSH_PORT, isSafeSshHost, isSafeSshTarget } from './sshCommand';
+import type { SecondEntry } from './agentNaming';
 import { EntityMetadata, PortForward } from './types';
 
 /**
@@ -101,7 +102,7 @@ export function normalizeForwards(forwards: readonly PortForward[] | undefined):
   return (forwards ?? []).filter((f) => f.disabled !== true && isValidForward(f)).map((f) => ({ ...f }));
 }
 
-export type JumpChain = { ok: true; value: string | undefined } | { ok: false; reason: string };
+export type JumpChain = { ok: true; value: string | undefined } | { ok: false; reason: string; second?: SecondEntry };
 
 /** `user@host` or `user@host:port` — one hop of a `-J` value. */
 function hopOf(entity: EntityMetadata): string {
@@ -109,7 +110,7 @@ function hopOf(entity: EntityMetadata): string {
   return entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT ? `${base}:${entity.port}` : base;
 }
 
-type Refusal = { ok: false; reason: string } | undefined;
+type Refusal = { ok: false; reason: string; second?: SecondEntry } | undefined;
 
 /**
  * The `-J` value from the hops as walked.
@@ -140,7 +141,10 @@ function refuseWalk(entity: EntityMetadata, current: string, seen: ReadonlySet<s
   return undefined;
 }
 
-/** Why this HOP cannot be used: it is gone, or its address is not one ssh may be given. */
+/**
+ * Why this HOP cannot be used: it is gone (the sentence names the entry that was asked for), or its address is not one ssh may be given (the sentence
+ * names the hop, and `second` says which entry that is, at any depth — rule B).
+ */
 function refuseHop(entity: EntityMetadata, hop: EntityMetadata | undefined): Refusal {
   if (hop === undefined) {
     return {
@@ -150,7 +154,7 @@ function refuseHop(entity: EntityMetadata, hop: EntityMetadata | undefined): Ref
   }
   return isSafeSshTarget(hop)
     ? undefined
-    : { ok: false, reason: `The jump host "${hop.name}" cannot be used: its address is not a valid host.` };
+    : { ok: false, reason: `The jump host "${hop.name}" cannot be used: its address is not a valid host.`, second: { id: hop.id, relation: 'jump host' } };
 }
 
 /**

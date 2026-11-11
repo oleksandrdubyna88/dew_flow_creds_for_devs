@@ -1333,7 +1333,11 @@ switch anybody can throw. `pinProtected` on the entry is a MIRROR of the wrap, n
 it — the truth is inside each value — and exists because these surfaces answer synchronously. It
 fails CLOSED: missing when it should be set leaves the entry listed, where every automatic path still
 refuses its values with a reason. The mark is written AFTER the values it describes, so an
-interruption never hides an entry whose values are still readable.
+interruption never hides an entry whose values are still readable. The same holds for an entry that an agent
+may view and that BORROWS from a protected one: a refusal of `creds_exec`, `creds_rotate` or a linked `creds_run` does not name the owner of a
+borrowed key (or a hidden jump host) that the agent may not view (a protected one whose mark is set, or one with no *View*); it reads the
+fixed sentence of rule B, which names the addressed entry only (see *A lookup and a refusal
+name only what the agent may view*, below).
 
 **A folder may hold entries under two PINs, and the interface says which one you typed.** Four
 reviewers converged on the plan's "accepted when it opens AT LEAST ONE protected sibling": with
@@ -6400,7 +6404,7 @@ action the table does not know asks for the top rung, so a verb added to the bro
 there fails closed. Deleting is the one rung that is not a boolean: the narrow scope depends on
 the ENTRY as well as the switch, which is what `mayDelete` is for.
 
-**A lookup and a refusal name only what the agent may view** ([PLAN_agent_refusal_names_unlisted_entry.md](../todo/PLAN_agent_refusal_names_unlisted_entry.md), rule A).
+**A lookup and a refusal name only what the agent may view** ([PLAN_agent_refusal_names_unlisted_entry.md](../todo/PLAN_agent_refusal_names_unlisted_entry.md), rules A and B).
 When the agent may not view the node whose id a request carries, the answer is the answer of an id that does not exist: the same status, code,
 message and body, no throttle slot, no grant, no dialog and no journal line. The rule is applied in three places and nowhere else, so every door
 and every tool gets it: `verdictFor` (`mcpEntries.ts`, behind `findUsableEntry`) asks `shown` before it reads the rung of the action, and a node
@@ -6409,7 +6413,7 @@ goes on to the next account, as for an id that this account does not hold; `move
 is not open to view the one answer `no_such_destination`. `closed` is left for a node that the agent MAY view and may not use or change, and
 its sentence keeps the name and the switch, because that sentence is what a person can act on. A usable node always has `view` (`climb` turns it on
 for each rung), so no usable verdict is lost. `agentMayView(source, accountId, entityId)` is the same question for one id in ONE account; the
-lookups do not call it, and a refusal that would name a SECOND entry (a linked key, a jump host) is to ask it. Through `creds-mcp` the
+lookups do not call it, and a refusal that would name a SECOND entry (a linked key, a jump host) asks it (rule B, below). Through `creds-mcp` the
 answer to a hidden entry is `not_found`, which the binary reads as *this window does not have it* and goes on to the next window, so an
 older window that still holds the entry answers under its own switches and consent policy; a `denied` for a node that the agent may view still
 stops the walk. **A lookup refusal writes no journal line**, for a node that exists and for one that does not: the lookup is before the throttle, so
@@ -6419,6 +6423,33 @@ each one a question for the owner and each one pinned by a test as it is today (
 dependency), `folder` (the name of the folder, also when nobody opened it) and `command` (the stored text, which can hold a `creds://` reference),
 and `creds_folders` → `parent` (the id of a parent that is not open). Pinned by part A of the class test, `agentNamesOnlyViewable.test.ts`
 (see `module_tests.md`, *A refusal names only what the agent may view*).
+
+*Rule B: a second entry in a refusal.* An SSH entry that the agent may view can need a second entry: the key entry that `sshKeyEntityId`
+names, and every hop of the chain of `jumpHostEntityId`. Using the first entry uses those too, so a hidden key entry or a hidden jump host
+that works stops no call. When one of them STOPS the call, the sentence of the resolver names it, and the agent must not read that name unless
+it may view that entry. Two resolvers set a field `second: { id, relation }` on their failure, whatever the sentence says: `stoppedAuth`
+(`sshExecAuth.ts`; relation `linked key`, set when the owner of the stopped value, `SshCredentialStopped.ownerId`, is not the entry that was
+asked for) and `refuseHop` (`sshOptions.ts`; relation `jump host`, set for a hop whose address is not one `ssh` may be given, at any depth of
+the chain). A hop that is gone and a chain that is too long keep their sentences, because those name the entry whose chain is walked: the SSH entry that was asked for, or, for a linked `creds_run`, its linked SSH entry, which the agent may view. The ONE
+chooser is `agentRefusal(said, entityName, mayView)` in `agentNaming.ts`, a module with no import: with no `second`, or with one that the
+agent may view, the answer is the message as it was; otherwise it is `SECOND_ENTRY_REFUSED(entityName)`, which names the addressed entry only,
+and the relation line for the journal. The code (`no_credential`) and the status (409) are the code and the status of the refusal that it
+replaces. Two places ask the chooser, and the question `agentMayView` is bound to the account of the call: the branch off a bridge in
+`bridgedRefusal` of `sshUseActions.ts` (`agentSaid`; every call that goes through `execOverSsh`: `creds_exec`, `creds_rotate` on an SSH entry, and the
+run of a linked `creds_run`; `creds_open_terminal` does not, and its refusal names the entry that was asked for only) and `remoteRefusal` of `agentUseActions.ts` (`chainRefusal`; the chain of a linked `creds_run`). Each chooses the message first,
+then writes the journal line, then builds the answer, so a journal that throws cannot bring the old sentence back. A call through the alias door
+and one through the token door (`creds exec` in a terminal) read the same sentence, because an action does not know its door. On a Remote Bridge
+the branch above the chooser is unchanged: the generic `BRIDGE_USE_REFUSED` sentence and its own line.
+The journal gets ONE line, built from a table keyed by the relation: `<entry>: its linked key entry did not open for an automatic use (a PIN of
+its own, or a damaged value)` or `<entry>: a jump host in its chain has an address that is not a valid host`, each followed by `(the agent was told
+only that another entry stopped the call)`. A line names the RELATION and never the entry: the journal is a plain file, and a name written there is
+readable by a local process. The addressed entry is the one that the agent asked for; for a linked `creds_run` that is the Terminal entry, and the
+person opens it, then the SSH entry that it runs over. **What rule B does not hide:** that a second entry exists (a missing hop and a refused hop
+read differently, and an id that is hidden answers `not_found`); its address (the `ssh` output of a call that answers 200 can show the address of a
+hop, because the mask covers stored secret values); and the path of a borrowed key, whose file name is `<storageDir>/keys/<keyEntityId>-<uuid>.key`
+(a failed write, `Could not run ssh`, and the text of `ssh` on a call that answers 200 can carry it, and a vault that was imported can hold an
+id that reads like a name; a bridge closes the first two). That last one is not built: it is a question for the owner. Pinned by part B of the same
+class test and by `agentNaming.test.ts` (see `module_tests.md`).
 
 **Rotation, and why the agent never sees a value.** The agent writes `{{creds:new}}`; the window
 generates, substitutes, runs, snapshots the old value into history and stores the new one. Three

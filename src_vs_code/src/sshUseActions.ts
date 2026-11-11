@@ -24,6 +24,8 @@ import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
 import { WslRelayManager } from './wslRelayManager';
 import { EntityMetadata } from './types';
 import { AGENT_FORWARD_REFUSED, BRIDGE_USE_REFUSED } from './bridgeScope';
+import { SecondEntry, agentRefusal } from './agentNaming';
+import { agentMayView } from './mcpEntries';
 
 /**
  * The two things an agent may do with an SSH grant: run a command, or open the
@@ -115,23 +117,38 @@ function fail(code: ErrorCode, message: string): UseActionResult {
   return { status: statusForErrorCode(code), body: errorBody(code, message) };
 }
 
+/** A refusal of this road: the code, the sentence, and the second entry it is about when it is about one (`sshExecAuth.ts`, `sshOptions.ts`). */
+type Refuse = (code: ErrorCode, message: string, second?: SecondEntry) => UseActionResult;
+
 /**
- * A refusal as the agent reads it: the sentence as it always was off a bridge; on a bridge the generic sentence, the real one in the
- * journal. The code is kept.
+ * A refusal as the agent reads it. On a bridge: the generic sentence, the real one in the journal. Off a bridge: the sentence as it was, unless
+ * it is about a SECOND entry (a linked key, a jump host) that the agent may not view; then the fixed one, with the relation in the journal
+ * (`agentRefusal`, rule B). The code is kept.
  *
- * <p>The sentences that go through here name the entry a linked key or a jump host is (`sshExecAuth.ts`, `sshOptions.ts`), or carry a
- * path or an argv (`Could not write the stored key`, `Could not run ssh`). The key and the chain are part of USING the entry, so an
- * agent on a bridge is served through them — but it is not told what they are. Those two files do not know which door asked, so the
- * door is handled here, where every such sentence passes.</p>
+ * <p>Rule B covers the sentences that NAME a second entry: the linked key and the jump host (`sshExecAuth.ts`, `sshOptions.ts`). The key and the
+ * chain are part of USING the entry, so an agent is served through them, but it is not told which entry stopped the call unless it may view
+ * it. The two sentences that carry a path or an argv (`Could not write the stored key`, `Could not run ssh`) are not covered: off a bridge
+ * they pass unchanged, and the key file path holds the id of the key entry (an open owner question, N10 of
+ * `todo/PLAN_agent_refusal_names_unlisted_entry.md` §11). Those two files do not know which door asked, so the door is handled here, where every
+ * such sentence passes.</p>
  */
-function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): (code: ErrorCode, message: string) => UseActionResult {
-  return (code, message) => {
+function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): Refuse {
+  return (code, message, second) => {
     if (ctx.bridge === undefined) {
-      return fail(code, message);
+      return agentSaid(deps, ctx, code, { message, second });
     }
     deps.note(`${ctx.entityName}: ${message} (a Remote Bridge was told only that it could not be used)`);
     return fail(code, BRIDGE_USE_REFUSED(ctx.entityName));
   };
+}
+
+/** The message is chosen first, then the line is written, then the answer is built: a journal that throws cannot bring the old sentence back. */
+function agentSaid(deps: SshUseDeps, ctx: UseActionContext, code: ErrorCode, said: Readonly<{ message: string; second?: SecondEntry }>): UseActionResult {
+  const chosen = agentRefusal(said, ctx.entityName, (id) => agentMayView(deps.storage, ctx.accountId, id));
+  if (chosen.note !== undefined) {
+    deps.note(chosen.note);
+  }
+  return fail(code, chosen.message);
 }
 
 /**
@@ -163,7 +180,7 @@ async function prepareAuth(
   deps: SshUseDeps,
   ctx: UseActionContext,
   entity: EntityMetadata,
-  refuse: (code: ErrorCode, message: string) => UseActionResult,
+  refuse: Refuse,
 ): Promise<
   | { ok: true; keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth; materialized?: string }
   | { ok: false; result: UseActionResult }
@@ -178,7 +195,7 @@ async function prepareAuth(
   }
   if (!resolved.ok) {
     const code: ErrorCode = resolved.reason === 'no_credential' ? 'no_credential' : 'internal';
-    return { ok: false, result: refuse(code, resolved.message) };
+    return { ok: false, result: refuse(code, resolved.message, resolved.second) };
   }
   const { keyPath, env, auth, materialized } = resolved;
   return { ok: true, keyPath, env, auth, materialized };
@@ -262,7 +279,7 @@ export function execOverSsh(deps: SshUseDeps): OverSsh {
     try {
       const chain = call.jump();
       if (!chain.ok) {
-        return refuse('no_credential', chain.reason);
+        return refuse('no_credential', chain.reason, chain.second);
       }
       const socket = deps.agentSocket(); // read ONCE: the argv and the environment below are decided from this one answer
       const argv = execArgv(deps, ctx, call, prepared, chain.value, socket);

@@ -1,6 +1,6 @@
 # PLAN — An agent's refusal never names an entry or a folder that the agent may not view
 
-> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is built on the branch and not merged; epic 2 is not started.** The owner said yes on 2026-11-09
+> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is merged (#347) and released in the extension 1.21.1; the stories of epic 2 are written and built on `fix/agent-refusal-names-second-entry` (2026-11-11); its code round and pull request follow.** The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
@@ -577,7 +577,7 @@ Each neighbour gets ONE boundary row for this plan, written in epic 1's pull req
 `planning-docs.md`), except the bridge plan and its E1 S3 spec: their owner session asked that their files not be
 edited now (it would be that plan's change 8.2 and a stop), so their two rows below are OWED — written here, named
 with this plan's pull request number when it exists, and taken into that plan's ledger when it opens for E1.6
-(entry 1.1). N7 (the bridged refusal note at `sshUseActions.ts:132` names the key entry or jump host) goes with them. The row is the neighbour's part, said from its side. It goes into the section that the last
+(entry 1.1). This plan's pull requests are #347 (epic 1) and #353 (epic 2). N7 (the bridged refusal note at `sshUseActions.ts:132` names the key entry or jump host) goes with them. The row is the neighbour's part, said from its side. It goes into the section that the last
 column names. A row of this kind changes none of the neighbour's scope, goals, Definition of Done, merge conditions,
 epics, stories, build order, contract or approach, so it is not an entry of that plan's ledger. If a row makes a
 sentence of a neighbour false, the repair of that sentence is judged by that plan's own change rule.
@@ -694,6 +694,18 @@ Both:
   the owner — build it in epic 2, or as its own small item.
 - **N9. `whyUnusable` says "switch is off" for an SSH node in the Trash and for a link to a folder.** The cause is another one.
   This reaches the agent journal only; the agent sees nothing of it. Known, not built.
+- **N10. The path of a borrowed key reaches the agent in three ways, and an id can be name-like.** The file of a key
+  that a call writes is `<storageDir>/keys/<keyEntityId>-<uuid>.key` (`keyInstaller.ts:158-160`; `sshExecAuth.ts:154`).
+  (a) A key that cannot be written: `Could not write the stored key to disk: <the error of the operating system>`
+  (`sshExecAuth.ts:157`). (b) A run error: `Could not run ssh: <the error>` (`sshUseActions.ts:274`); the argv holds
+  `-i <that path>`, and `test/bridgeLinks.test.ts:131` says the error may carry the argv and a path. (c) The text
+  that `ssh` prints on a 200 answer can show the path, for example `Load key "<path>": invalid format` (not checked
+  with a real `ssh`). The id in the file name is not always opaque: an imported vault can carry ids of its own shape,
+  `SAFE_ID` accepts `deploy-key` (`idQuarantine.ts:41`) and `safeFileComponent` keeps it. So a name-like id of a
+  hidden key entry can reach the agent. On a Remote Bridge (a) and (b) are closed already. Found by the E2 stories
+  (2026-11-11) and confirmed by the `coai` plan round and its consultant. Not built here: to build it in this plan is
+  a counted change (a new site and a new row), so it is a question for the owner — its own small item, with a priority
+  above N8.
 
 ## Epics
 
@@ -748,4 +760,6 @@ Cornerstones: 1 of 1 — E1.1 ([PLAN_agent_refusal_names_unlisted_entry_E1.md](P
   9. Each of the mutations 4, 5 and 9 turns at least 1 test red.
   10. The *Both* items of §10 are ticked.
 - **Cornerstone area.** None: the plan's one area is in E1.
-- **Stories.** In `todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`, written when the epic starts.
+- **Stories.** [PLAN_agent_refusal_names_unlisted_entry_E2.md](PLAN_agent_refusal_names_unlisted_entry_E2.md),
+  written 2026-11-11: E2.1 rule B at the chooser `agentRefusal`, with part B of the class test, the no-op types, rows
+  C-B and B1 to B7 and the guards G9 to G11; E2.2 the documents and the closing checks. No story is a cornerstone.

@@ -12,7 +12,8 @@ import {
 import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards } from './useActions';
 import type { BridgeContext } from './bridgeContext';
 import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
-import { UsableFound, accountOnly, findUsableEntry, hiddenFromAgents } from './mcpEntries';
+import { UsableFound, accountOnly, agentMayView, findUsableEntry, hiddenFromAgents } from './mcpEntries';
+import { agentRefusal } from './agentNaming';
 import { describeSshTarget } from './sshCommand';
 import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
@@ -401,10 +402,22 @@ async function runHere(deps: AgentUseDeps & { onPath?: (exe: string) => boolean 
   return refused ?? spawnLocal(deps, ctx, entity, plan.line);
 }
 
+/**
+ * The chain's refusal as the agent reads it (rule B): its sentence, unless it names a hop that the agent may not view; then the fixed one, with the
+ * relation in the journal. The message is chosen first, then the line is written, then the answer is built.
+ */
+function chainRefusal(deps: AgentUseDeps, ctx: UseActionContext, chain: Extract<JumpChain, { ok: false }>): UseActionResult {
+  const said = agentRefusal({ message: chain.reason, second: chain.second }, ctx.entityName, (id) => agentMayView(deps.storage, ctx.accountId, id));
+  if (said.note !== undefined) {
+    deps.note(said.note);
+  }
+  return fail('no_credential', said.message);
+}
+
 /** After the plan: the jump chain resolves (`ssh:exec`'s words), and the TRUST LINE — not the local line — has been vouched for on this machine. */
 function remoteRefusal(deps: AgentUseDeps, ctx: UseActionContext, plan: Extract<LaunchPlan, { kind: 'remote' }>, chain: JumpChain): UseActionResult | undefined {
   if (!chain.ok) {
-    return fail('no_credential', chain.reason);
+    return chainRefusal(deps, ctx, chain);
   }
   return isCommandTrusted(deps.trustStore, ctx.entityId, trustLineFor(plan.ssh, chain.value, plan.line)) ? undefined : untrusted(ctx.entityName, 'the line');
 }

@@ -2,7 +2,11 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, mock, test } from 'node:test';
+import { errorBody } from '../brokerProtocol';
+import { SECOND_ENTRY_REFUSED } from '../agentNaming';
 import { loadWithVscode } from './vscodeStub';
+import { ACCOUNT, JOURNAL_BROKEN, SecondOptions, SecondWorld, secondEntryWorld } from './secondEntryWorld';
+import { resolveJumpChain } from '../sshOptions';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { UseActionContext } from '../useActions';
@@ -498,4 +502,90 @@ test('the terminal action refused because its client left is that request’s ab
   const action = w.mod.sshTerminalAction(deps(w, parts));
 
   await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
+});
+
+// ---- rule B (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`): over the world of `secondEntryWorld.ts`, whose resolver is the product's --------
+
+/** The journal lines of the two relations, written out. The line names the relation and the addressed entry, never the second entry. */
+const TOLD = '(the agent was told only that another entry stopped the call)';
+const KEY_NOTE = `prod: its linked key entry did not open for an automatic use (a PIN of its own, or a damaged value) ${TOLD}`;
+const hopNote = (entry: string): string => `${entry}: a jump host in its chain has an address that is not a valid host ${TOLD}`;
+
+async function inWorld(options: SecondOptions, scenario: (w: SecondWorld) => Promise<void>): Promise<void> {
+  const w = await secondEntryWorld(options);
+  try {
+    await scenario(w);
+  } finally {
+    w.cleanup();
+  }
+}
+
+/** The refusal an agent reads when a hidden second entry stopped the call: the whole answer, nothing hidden in it, nothing in the journal that names it. */
+async function assertFixedRefusal(w: SecondWorld, door: 'exec' | 'run', entry: string, note: string): Promise<void> {
+  const result = await w.call[door]();
+  assert.deepEqual(result, { status: 409, body: errorBody('no_credential', SECOND_ENTRY_REFUSED(entry)) });
+  assert.deepEqual(w.spawned, [], 'nothing was spawned');
+  assert.deepEqual(w.notes, [note], 'exactly one line in the journal');
+  assert.deepEqual(w.leaks(`${JSON.stringify(result.body)}\n${w.notes.join('\n')}`), [], 'no hidden name and no hidden id in the answer or in the journal');
+}
+
+test('B1 and B4: a hidden key entry that stops the call reads as the fixed sentence, with one journal line that names the relation', async () => {
+  await inWorld({ key: 'plain' }, async (w) => assert.equal((await w.call.exec()).status, 200, 'the fixture: the same world with a key that works reaches ssh'));
+  await inWorld({ key: 'sealed' }, (w) => assertFixedRefusal(w, 'exec', 'prod', KEY_NOTE));
+});
+
+test('B2 and B4: a hidden jump host with an unsafe address at depth 1, 2 or 3 reads the same sentence, with the line of the relation jump host', async () => {
+  for (const unsafeAt of [1, 2, 3]) {
+    await inWorld({ hops: 3, unsafeAt }, async (w) => {
+      await assertFixedRefusal(w, 'exec', 'prod', hopNote('prod'));
+      assert.deepEqual(w.materialised.map((file) => fs.existsSync(file)), [false], 'the key of e1 had been written, and is gone');
+    });
+  }
+});
+
+test('X5: a chain of four hidden hops is inside the cap, and an unsafe hop at depth 4 reads the fixed sentence on exec and on the linked run', async () => {
+  await inWorld({ hops: 4, unsafeAt: 4 }, (w) => assertFixedRefusal(w, 'exec', 'prod', hopNote('prod')));
+  await inWorld({ hops: 4, unsafeAt: 4 }, (w) => assertFixedRefusal(w, 'run', 'deploy', hopNote('deploy')));
+});
+
+test('X5 control: a VISIBLE unsafe hop on the linked run keeps the resolver\'s sentence, with no note (pins the mayView binding of the linked road)', async () => {
+  await inWorld({ hops: 1, unsafeAt: 1, visibleHops: [1] }, async (w) => {
+    const chain = resolveJumpChain(w.storage.getNode(ACCOUNT, 'e1')?.details as never, (id) => w.storage.getNode(ACCOUNT, id)?.details);
+    assert.ok(!chain.ok, 'the fixture: the real resolver refuses this chain');
+    const said = chain.ok ? '' : chain.reason;
+    assert.equal(said, `The jump host "${w.names.hop(1)}" cannot be used: its address is not a valid host.`);
+    assert.deepEqual(await w.call.run(), { status: 409, body: errorBody('no_credential', said) });
+    assert.deepEqual(w.notes, [], '0 new notes');
+  });
+});
+
+test('X6: a chain of five hops is refused by the depth cap with the sentence that names the STARTING entry, and no second entry', async () => {
+  const cap = errorBody('no_credential', '"prod" chains more than 4 jump hosts, which is a mistake rather than a network.');
+  for (const door of ['exec', 'run'] as const) {
+    await inWorld({ hops: 5 }, async (w) => {
+      const result = await w.call[door]();
+      assert.deepEqual(result, { status: 409, body: cap }, door);
+      assert.deepEqual(w.notes, [], 'a refusal that names the addressed entry writes no line');
+      assert.deepEqual(w.leaks(JSON.stringify(result.body)), []);
+    });
+  }
+});
+
+/** The error that a call rejects with, when it does not answer. */
+const rejectedWith = (w: SecondWorld, door: 'exec' | 'run'): Promise<string | undefined> => w.call[door]().then(() => undefined, (error: Error) => error.message);
+
+test('X4 (a): a hidden key entry and a journal that throws — the refusal is outside the try, so the call rejects with the error of the journal', async () => {
+  await inWorld({ key: 'sealed', noteThrows: true }, async (w) => assert.equal(await rejectedWith(w, 'exec'), JOURNAL_BROKEN));
+});
+
+test('X4 (b): a hidden unsafe hop on exec and a journal that throws — the catch answers 500, with no second line and no hidden name', async () => {
+  await inWorld({ hops: 3, unsafeAt: 1, noteThrows: true }, async (w) => {
+    const result = await w.call.exec();
+    assert.deepEqual(result, { status: 500, body: errorBody('internal', `Could not run ssh: ${JOURNAL_BROKEN}`) });
+    assert.deepEqual(w.leaks(JSON.stringify(result.body)), []);
+  });
+});
+
+test('X4 (c): a hidden unsafe hop in a linked run and a journal that throws — the call rejects with the error of the journal', async () => {
+  await inWorld({ hops: 3, unsafeAt: 1, noteThrows: true }, async (w) => assert.equal(await rejectedWith(w, 'run'), JOURNAL_BROKEN));
 });

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import type { ExecAuth } from '../sshExecAuth';
+import { pinRefusalFor } from '../pinGate';
 
 /**
  * Turning a saved credential into what a non-interactive `ssh` needs.
@@ -203,4 +204,25 @@ test('an ordinary password on the SAME entity is still handed over', async () =>
   const result = await withCredential({ kind: 'password', password: 'w0v3n-pair' }, [], plain)('/store');
 
   assert.equal(ok(result).auth, 'askpass');
+});
+
+/**
+ * Rule B (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`, B6): a value that another entry owns stopped the call, and the failure says which
+ * entry, so that the one chooser of `agentNaming.ts` can decide whether an agent may read its name. The sentence itself does not change.
+ */
+const BORROWED = { kind: 'stopped', reason: pinRefusalFor('deploy key'), ownerName: 'deploy key', ownerId: 'k7' };
+
+test('B6: a stopped value of ANOTHER entry says which entry, whatever the sentence says; the sentence is as it was', async () => {
+  const sealed = refused(await withCredential(BORROWED)('/store'));
+  assert.deepEqual(sealed.second, { id: 'k7', relation: 'linked key' });
+  assert.equal(sealed.message, pinRefusalFor('deploy key'));
+  const clicked = refused(await withCredential({ ...BORROWED, reason: '' })('/store'));
+  assert.deepEqual(clicked.second, { id: 'k7', relation: 'linked key' }, 'a click that said nothing is still about the other entry');
+  assert.equal(clicked.message, '"deploy key" is protected with its own PIN, and it was not opened.');
+});
+
+test('B6: a stopped value of the entry that was asked for says no second entry', async () => {
+  const own = refused(await withCredential({ ...BORROWED, ownerName: ENTITY.name, ownerId: ENTITY.id })('/store'));
+  assert.equal(own.second, undefined);
+  assert.equal(own.message, pinRefusalFor('deploy key'), 'the message does not change');
 });

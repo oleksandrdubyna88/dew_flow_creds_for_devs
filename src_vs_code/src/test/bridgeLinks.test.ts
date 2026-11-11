@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { mock, test } from 'node:test';
+import { SECOND_ENTRY_REFUSED } from '../agentNaming';
 import { INTERNAL_FAILURE, MAX_EXEC_TIMEOUT_MS, statusForErrorCode } from '../brokerProtocol';
 import { pinRefusalFor } from '../pinGate';
 import { code, message } from './bridgeDoorHarness';
@@ -71,7 +72,7 @@ test('L1: positive control — the main port runs the same entry with the same k
   });
 });
 
-test('L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has the real sentence, the main port is as it was', async () => {
+test('L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has the real sentence; the main port reads the fixed sentence of rule B', async () => {
   const sentence = pinRefusalFor(KEY_NAME);
   await both({ key: 'sealed' }, {}, async ({ lw, ww }) => {
     const reply = await body(viaBridge(ww.bridge), ww);
@@ -80,11 +81,15 @@ test('L2: a key sealed with its own PIN refuses generically on a bridge — the 
       assert.ok(!reply.body.includes(named), `"${named}" is not in the body`);
     }
     assert.ok(lw.notes.some((note) => note.includes(sentence)), `the journal got the real sentence: ${JSON.stringify(lw.notes)}`);
+    assert.ok(lw.notes.includes(`prod: ${sentence} (a Remote Bridge was told only that it could not be used)`), 'and it is the exact line of today');
     assert.deepEqual(lw.runs, [], 'and nothing was run');
   });
   await both({ key: 'sealed' }, {}, async ({ ww }) => {
     const control = await body(viaMain(ww), ww);
-    assert.deepEqual([code(control), message(control)], ['no_credential', sentence], 'control: today\'s sentence, naming the key entity, on the main port');
+    assert.deepEqual([code(control), message(control)], ['no_credential', SECOND_ENTRY_REFUSED('prod')], 'control: the fixed sentence of rule B on the main port, the key entry is not visible to agents');
+    for (const named of ['k1', KEY_NAME]) {
+      assert.ok(!control.body.includes(named), `"${named}" is not in the body`);
+    }
   });
 });
 
@@ -112,19 +117,23 @@ test('L3: a jump host out of scope works through the bridge and its name is not 
   });
 });
 
-test('L3: a jump host whose address is not valid refuses generically on a bridge, and by name on the main port', async () => {
+test('L3: a jump host whose address is not valid refuses generically on a bridge, and with the fixed sentence of rule B on the main port', async () => {
   await both({ jump: 'invalid' }, {}, async ({ lw, ww }) => {
     const reply = await body(viaBridge(ww.bridge), ww);
     assert.deepEqual([reply.status, code(reply), message(reply)], [statusForErrorCode('no_credential'), 'no_credential', BRIDGE_USE_REFUSED('prod')]);
     assert.ok(!reply.body.includes(JUMP_NAME), 'the jump host\'s entry is not named');
     assert.ok(lw.notes.some((note) => note.includes(`The jump host "${JUMP_NAME}" cannot be used`)), 'the journal says which');
+    assert.ok(lw.notes.includes(`prod: The jump host "${JUMP_NAME}" cannot be used: its address is not a valid host. (a Remote Bridge was told only that it could not be used)`), 'and it is the exact line of today');
     assert.deepEqual(lw.runs, []);
     assert.equal(lw.materialised.length, 1, 'the key had been written by then ...');
     assert.ok(!fs.existsSync(lw.materialised[0]), '... and is gone');
   });
   await both({ jump: 'invalid' }, {}, async ({ ww }) => {
     const control = await body(viaMain(ww), ww);
-    assert.deepEqual([code(control), message(control)], ['no_credential', `The jump host "${JUMP_NAME}" cannot be used: its address is not a valid host.`], 'control');
+    assert.deepEqual([code(control), message(control)], ['no_credential', SECOND_ENTRY_REFUSED('prod')], 'control: the fixed sentence of rule B');
+    for (const named of ['j1', `The jump host "${JUMP_NAME}"`]) {
+      assert.ok(!control.body.includes(named), `"${named}" is not in the body`);
+    }
   });
 });
 
