@@ -248,7 +248,7 @@ from a folder is judged by that folder, as in the list.
 |---|---|
 | `bridgeScope.ts:242-251` `outOfScopeAnswer` (`:244`, `:248`) | it calls `refusalFor(undefined)`; no name can arrive |
 | `brokerRequests.ts:192-200` `aliasTarget` | one sentence for a name that is not enabled and for no registry; it repeats only the alias that the caller sent |
-| `mcpEntries.ts:241-257` `visibleConfigDetails`; `mcpSnippetRoute.ts:85` | one `undefined` and one sentence for not found, not visible and not a config |
+| `mcpEntries.ts:241-257` `visibleConfigDetails`; `mcpSnippetRoute.ts:85` | one `undefined` and one sentence for not found, not visible and not a config — in ONE account; across two accounts see N8 in §11 |
 | `mcpCreate.ts:94-118` `creatableFolders`, `:134-204` `chooseTarget`, `describeChoice` | lists only folders that are open for creating (so `view` is on, and none is in the Trash); repeats only the folder name that the caller sent |
 | `agentUseActions.ts:196-198` `linkedRunRefused`; `:235-247` | one sentence for every reason; it names the Terminal entry only |
 | `brokerCall.ts:178-187` | the agent reads the granted entry's name; the second entry's name is in the journal detail only, and that entry is usable (so the agent may view it) |
@@ -679,6 +679,13 @@ Both:
   host (`sshUseActions.ts:132`). The journal is on the computer that holds the vault, and the agent of a bridge is on
   another computer. Rule B's own note names a relation only (§2.5). The two notes are then not alike; to make the
   bridge's note name a relation too is a change of the bridge plan's text, and is not made here.
+- **N8. The config-snippet lookup stops at the first account that holds the id** (`visibleConfigDetails`,
+  `mcpEntries.ts:241-252`: `if (node !== undefined) return …`). After epic 1 the entry and folder lookups go on to the
+  next account for a hidden node (rows X1, X2); this one does not. A config hidden in the first account and an id
+  missing there then answer differently when a second account holds a visible config with the same id. Nothing is
+  named and no value is given; only the answer differs. Found by the lead's Opus review of the E1 stories
+  (2026-11-11). Not built here: to build it is a counted change (a new site and a new row), so it is a question for
+  the owner — build it in epic 2, or as its own small item.
 
 ## Epics
 
