@@ -129,7 +129,7 @@ type Refuse = (code: ErrorCode, message: string, second?: SecondEntry) => UseAct
  * chain are part of USING the entry, so an agent is served through them, but it is not told which entry stopped the call unless it may view
  * it. The two sentences that carry a path or an argv (`Could not write the stored key`, `Could not run ssh`) are not covered: off a bridge
  * they pass unchanged, and the key file path holds the id of the key entry (an open owner question, N10 of
- * `todo/PLAN_agent_refusal_names_unlisted_entry.md` §11). Those two files do not know which door asked, so the door is handled here, where every
+ * `research/PLAN_agent_refusal_names_unlisted_entry.md` §11). Those two files do not know which door asked, so the door is handled here, where every
  * such sentence passes.</p>
  */
 function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): Refuse {

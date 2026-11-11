@@ -6404,7 +6404,7 @@ action the table does not know asks for the top rung, so a verb added to the bro
 there fails closed. Deleting is the one rung that is not a boolean: the narrow scope depends on
 the ENTRY as well as the switch, which is what `mayDelete` is for.
 
-**A lookup and a refusal name only what the agent may view** ([PLAN_agent_refusal_names_unlisted_entry.md](../todo/PLAN_agent_refusal_names_unlisted_entry.md), rules A and B).
+**A lookup and a refusal name only what the agent may view** ([PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md), rules A and B).
 When the agent may not view the node whose id a request carries, the answer is the answer of an id that does not exist: the same status, code,
 message and body, no throttle slot, no grant, no dialog and no journal line. The rule is applied in three places and nowhere else, so every door
 and every tool gets it: `verdictFor` (`mcpEntries.ts`, behind `findUsableEntry`) asks `shown` before it reads the rung of the action, and a node

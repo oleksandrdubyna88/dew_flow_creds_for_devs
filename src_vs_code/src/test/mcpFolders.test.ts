@@ -213,7 +213,7 @@ const FIXTURE = {
 };
 
 test('L3: a folder that the agent may not view answers as an id that does not exist, for every verb', () => {
-  // Rule A of todo/PLAN_agent_refusal_names_unlisted_entry.md: no switch, an explicit empty answer, in the Trash, the Trash.
+  // Rule A of research/PLAN_agent_refusal_names_unlisted_entry.md: no switch, an explicit empty answer, in the Trash, the Trash.
   for (const id of Object.values(HIDDEN.folders)) {
     for (const action of ['create', 'edit', 'delete', 'rename']) {
       assert.equal(findFolder(FIXTURE.accounts, FIXTURE.byId, id, action), undefined, `${id} for ${action}`);

@@ -390,7 +390,7 @@ a startup pairing check is a follow-up (§5.1), not built here.
 - **A pairing check for the two MCP hooks.** `checkedHooks` could refuse a `resolveMcpUse` without a
   `rememberMcpConsent` (or the reverse). A startup throw is a behaviour change; the production host is covered by the
   scan of §4.3 today.
-- **An entry that the agent may not view (F7, [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)).** The 403 that this plan cites for an own-only delete (`mayDelete`) stays for an entry that the agent may view. An entry that it may not view answers `not_found` before any stamp is read, as an id that does not exist. That plan edits no line of `credsAgentServer.ts`.
+- **An entry that the agent may not view (F7, [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md)).** The 403 that this plan cites for an own-only delete (`mayDelete`) stays for an entry that the agent may view. An entry that it may not view answers `not_found` before any stamp is read, as an id that does not exist. That plan edits no line of `credsAgentServer.ts`.
 
 ## 6. Definition of Done
 

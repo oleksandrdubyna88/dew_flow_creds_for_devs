@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { SECOND_ENTRY_REFUSED, SecondEntry, agentRefusal } from '../agentNaming';
 
 /**
- * The one chooser of rule B (`todo/PLAN_agent_refusal_names_unlisted_entry.md` section 2.5): a refusal about a second entry reads as the
+ * The one chooser of rule B (`research/PLAN_agent_refusal_names_unlisted_entry.md` section 2.5): a refusal about a second entry reads as the
  * fixed sentence unless the agent may view that entry, and the journal line names the RELATION and never the entry. A plain import: the
  * module takes the question "may the agent view this id" as a function and imports nothing.
  */

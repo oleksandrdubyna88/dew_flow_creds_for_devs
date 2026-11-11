@@ -270,7 +270,7 @@ test('a_pin_protected_ssh_entry_is_refused_with_the_same_sentence_as_a_closed_on
 });
 
 test('L6: the journal of a linked run says the SSH entry is not in this account, and not PIN, when the node is there for the link and gone for the gate', () => {
-  // The link reads the SSH node ONE time and the gate's lookup reads it again (F8 of todo/PLAN_agent_refusal_names_unlisted_entry_E1.md): this storage
+  // The link reads the SSH node ONE time and the gate's lookup reads it again (F8 of research/PLAN_agent_refusal_names_unlisted_entry_E1.md): this storage
   // answers the first read and nothing at each later read of s1, so the gate's lookup finds no entry and the reason must come from a read of the node.
   const base = agentStorage({ [ACCOUNT_1]: [defaultTerminalNode(), usableSsh('s1')] });
   let readsOfS1 = 0;

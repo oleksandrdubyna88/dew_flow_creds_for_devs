@@ -377,7 +377,7 @@ function twoAccounts(first: readonly TreeNode[], second: readonly TreeNode[]): M
 const LOOKUP_ACTIONS: readonly string[] = ['exec', 'rotate', 'delete', 'frobnicate'];
 
 test('L1: an entry that the agent may not view answers as an id that does not exist, for every action', () => {
-  // The rule of the plan (todo/PLAN_agent_refusal_names_unlisted_entry.md, rule A): the lookup names an entry, or says
+  // The rule of the plan (research/PLAN_agent_refusal_names_unlisted_entry.md, rule A): the lookup names an entry, or says
   // that it exists, only when the agent may view it. No switch, an explicit empty answer, the Trash, a config: one answer.
   for (const id of HIDDEN_ENTRIES_NO_PIN) {
     for (const action of LOOKUP_ACTIONS) {
@@ -410,7 +410,7 @@ test('G3: no usable verdict is lost — each rung set alone still makes the verd
 });
 
 test('X1: a node that one account hides does not stop the search in the next account, as an id that the first does not hold does not', () => {
-  // The twin, inside one window, of the harness check H6 (todo/PLAN_agent_refusal_names_unlisted_entry_E1.md).
+  // The twin, inside one window, of the harness check H6 (research/PLAN_agent_refusal_names_unlisted_entry_E1.md).
   const first = [folder('f1', 'Closed'), entity('e1', 'hidden here', { kind: 'ssh' })];
   const second = [folder('f1', 'Open'), entity('e1', 'usable there', { kind: 'ssh', mcp: { use: true } })];
 

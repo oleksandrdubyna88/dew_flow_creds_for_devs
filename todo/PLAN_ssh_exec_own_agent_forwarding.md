@@ -7,7 +7,7 @@
 > and 11, §18.2), in the re-review of epoch 4 of [PLAN_terminal_command_over_ssh.md](../research/PLAN_terminal_command_over_ssh.md)
 > (D17, risk 9, §7a, §9). Read in the code on 5b221602, **not observed on a host**.
 
-**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan changes the third argument of the refusal function in `sshUseActions.ts` (what `execOverSsh` SAYS when it refuses a hidden second entry). It changes no argv and no environment, so its lines are disjoint from this plan's.
+**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan changes the third argument of the refusal function in `sshUseActions.ts` (what `execOverSsh` SAYS when it refuses a hidden second entry). It changes no argv and no environment, so its lines are disjoint from this plan's.
 
 **Boundary with [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md)** (2026-11-11): that plan changes only the REMOTE COMMAND (the last argv word) of the linked `creds_run` and of Run with Secrets, to `exec ${SHELL:-sh} -l -c '…'`. It keeps `ssh:exec`'s command as the agent wrote it, and it changes no `-A`, `-T`, option or environment of any road. Disjoint from this plan; either may go first.
 

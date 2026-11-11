@@ -322,7 +322,7 @@ test('C16: a server stamp ages out on the same clock as a local one', async () =
 });
 
 test('L2: the broker\'s lookup answers an entry that the agent may not view as an id that does not exist, and names none', () => {
-  // Rule A of todo/PLAN_agent_refusal_names_unlisted_entry.md at the join the broker reads: a `closed` answer would carry
+  // Rule A of research/PLAN_agent_refusal_names_unlisted_entry.md at the join the broker reads: a `closed` answer would carry
   // the entry's NAME into the refusal (`refusalFor`), so the answer for such an entry must be the one for a made-up id.
   const { mcpUseLookup } = loadWithVscode<{ mcpUseLookup: typeof import('../mcpHooks').mcpUseLookup }>('../mcpHooks', { window: {} });
 

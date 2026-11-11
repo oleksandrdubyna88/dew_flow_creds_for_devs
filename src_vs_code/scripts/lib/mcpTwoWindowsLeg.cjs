@@ -1,5 +1,5 @@
 'use strict';
-// Checks H3 to H6 of `todo/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.7): TWO windows at the same time, the REAL `creds-mcp`.
+// Checks H3 to H6 of `research/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.7): TWO windows at the same time, the REAL `creds-mcp`.
 //
 // What only this can show. `creds-mcp` walks the windows it finds, newest first, and a `denied` stops the walk while a `not_found` goes on
 // (`src_mcp/tests/WindowsTests.cs` pins that half). Rule A makes a window answer `not_found` for an entry that the agent may not view. So

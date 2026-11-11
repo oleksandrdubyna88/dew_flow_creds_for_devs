@@ -207,7 +207,7 @@ test('an ordinary password on the SAME entity is still handed over', async () =>
 });
 
 /**
- * Rule B (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`, B6): a value that another entry owns stopped the call, and the failure says which
+ * Rule B (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md`, B6): a value that another entry owns stopped the call, and the failure says which
  * entry, so that the one chooser of `agentNaming.ts` can decide whether an agent may read its name. The sentence itself does not change.
  */
 const BORROWED = { kind: 'stopped', reason: pinRefusalFor('deploy key'), ownerName: 'deploy key', ownerId: 'k7' };

@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.3] — 2026-11-11 — Security — an agent's refusal no longer names a linked key entry or a jump host that it may not view
+
 ### Changed — security: an agent's refusal no longer names a linked key entry or a jump host that it may not view
 
 An SSH entry can use a second entry: a key entry that holds its key (*SSH key source*), or a jump host. When that second entry

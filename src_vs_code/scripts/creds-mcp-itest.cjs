@@ -1402,7 +1402,7 @@ harnessScope.run(async (scope) => {
   );
   check('and nobody was asked about it', consent.asked === 0, String(consent.asked));
 
-  // H1 and H2 (rule A, `todo/PLAN_agent_refusal_names_unlisted_entry.md` section 5.7): a folder nobody opened is no folder to an agent, as a
+  // H1 and H2 (rule A, `research/PLAN_agent_refusal_names_unlisted_entry.md` section 5.7): a folder nobody opened is no folder to an agent, as a
   // destination and as a target, and the text is the text of an id that does not exist. Real hooks, real tree, real binary.
   const editOf = (id, folder, extra) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'creds_edit_folder', arguments: { folder, ...extra } } });
   const gone = await speak(folderEnv, [
