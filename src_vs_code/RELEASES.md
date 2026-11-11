@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.20.0...extension-v1.21.0) (2026-11-11)
+
+
+### Features
+
+* **leftovers:** E2.5 — the two repository guards run in CI, the exemptions are marked, and module_tests.md gets its Test leftovers section ([#330](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/330)) ([b6cc6b3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/b6cc6b359fa68b3257a91c60c1ca34e7d7b83d80))
+* **terminal:** E3 — Run with Secrets and an agent's run go over a linked SSH entry; a one-use SSH entry is spent once ([#344](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/344)) ([4796d26](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/4796d269295845e70c4956194afdf8d321dc62aa))
+
 ## [1.20.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.19.0...extension-v1.20.0) (2026-11-10)
 
 
