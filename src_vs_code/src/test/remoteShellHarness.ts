@@ -6,6 +6,7 @@ import { TestContext } from 'node:test';
 import { HostShell } from '../hostShell';
 import { LaunchPlan, RemotePlan, planLaunch } from '../remoteLaunch';
 import { buildSshCommand } from '../sshCommand';
+import { pathDirsOf } from '../sshProgram';
 import { EntityMetadata } from '../types';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 
@@ -60,12 +61,26 @@ export function fakeSsh(t: TestContext): { env: NodeJS.ProcessEnv; read: () => B
   return { env, read };
 }
 
-/** Where a shell lives on THIS machine: the remote's `$SHELL` is a path, and the test must name a real one. */
-export function shellPath(name: string): string | undefined {
+/**
+ * Where a shell lives on THIS machine: the remote's `$SHELL` is a path, and the test must name a real one. The lookup walks
+ * `PATH` in-process, as `command -v` does, with no child process, so no program is ever started from a `PATH` directory
+ * (SonarCloud typescript:S4036). Only a bare name is looked up.
+ */
+export function shellPath(name: string, pathValue: string | undefined = process.env.PATH): string | undefined {
+  if (name.length === 0 || name.includes('/') || name.includes('\\')) return undefined;
+  const names = process.platform === 'win32' ? [name, `${name}.exe`] : [name];
+  return pathDirsOf(pathValue, path.delimiter)
+    .flatMap((dir) => names.map((candidate) => path.join(dir, candidate)))
+    .find(isExecutableFile);
+}
+
+function isExecutableFile(file: string): boolean {
   try {
-    return execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS }).trim() || undefined;
+    if (!fs.statSync(file).isFile()) return false;
+    fs.accessSync(file, fs.constants.X_OK);
+    return true;
   } catch {
-    return undefined;
+    return false;
   }
 }
 

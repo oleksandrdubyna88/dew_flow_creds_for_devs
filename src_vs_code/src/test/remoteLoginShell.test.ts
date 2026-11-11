@@ -12,6 +12,7 @@ import {
   E,
   NONCE,
   OTHER_NONCE,
+  dirOf,
   fakeSsh,
   loginDirect,
   loginStandIn,
@@ -379,3 +380,46 @@ eachShell(['bash', 'dash'], 'the_login_shell_stand_in_says_so_for_l_and_runs_the
   assert.equal(real.stdout.includes('LOGIN-SHELL'), false, 'a call with other arguments does not say it is the login shell');
   assert.equal(real.status, 5);
 });
+
+// ---- where a shell lives: found in-process, no program started from PATH (SonarCloud typescript:S4036) ----------------------------
+
+test(
+  'shellPath_starts_no_program_found_through_PATH',
+  { skip: NOT_POSIX },
+  (t: TestContext) => {
+    const dir = dirOf(t, 'fake-sh');
+    const marker = path.join(dir, 'ran');
+    const fakeSh = '#!/bin/sh\n: > "$FAKE_SH_MARK"\nprintf "/fake/%s\\n" bash\n';
+    fs.writeFileSync(path.join(dir, 'sh'), fakeSh, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    const savedMark = process.env.FAKE_SH_MARK;
+    try {
+      process.env.PATH = dir + path.delimiter + (savedPath ?? '');
+      process.env.FAKE_SH_MARK = marker;
+      const found = shellPath('bash');
+      assert.equal(fs.existsSync(marker), false, 'a `sh` found through PATH was started');
+      assert.notEqual(found, '/fake/bash');
+    } finally {
+      if (savedPath === undefined) delete process.env.PATH;
+      else process.env.PATH = savedPath;
+      if (savedMark === undefined) delete process.env.FAKE_SH_MARK;
+      else process.env.FAKE_SH_MARK = savedMark;
+    }
+  },
+);
+
+test(
+  'shellPath_returns_the_first_executable_of_that_name_on_the_PATH_it_is_given',
+  { skip: NOT_POSIX },
+  (t: TestContext) => {
+    const [a, b, c] = [dirOf(t, 'path-a'), dirOf(t, 'path-b'), dirOf(t, 'path-c')];
+    fs.writeFileSync(path.join(a, 'tool'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+    fs.writeFileSync(path.join(b, 'tool'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(c, 'tool'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const value = [a, b, c].join(path.delimiter);
+    assert.equal(shellPath('tool', value), path.join(b, 'tool'));
+    assert.equal(shellPath('no-such-tool-xyz', value), undefined);
+    assert.equal(shellPath('', value), undefined);
+    assert.equal(shellPath('b/tool', value), undefined);
+  },
+);
