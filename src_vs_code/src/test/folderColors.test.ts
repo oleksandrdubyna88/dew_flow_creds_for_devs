@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEP_COLOR_KEYS, DepColorKey } from '../depColors';
-import { folderColorKeyOf, folderColorUsage, pickFolderColor } from '../folderColors';
+import { folderColorChange, folderColorKeyOf, folderColorUsage, folderFormColour, pickFolderColor } from '../folderColors';
 import { TreeNode, isTreeNode } from '../types';
 
 /**
@@ -89,4 +89,32 @@ test('dependency_colours_do_not_move_the_folder_pick', () => {
     entity('e3', DEP_COLOR_KEYS[1]),
   ];
   assert.equal(pickFolderColor(nodes), DEP_COLOR_KEYS[1]);
+});
+
+test('the_form_marks_a_known_key_and_suggests_only_for_a_folder_holding_no_string', () => {
+  const nodes = [folder('f-none'), folder('f-k', DEP_COLOR_KEYS[0]), folder('f-99', 'depColor99')];
+  const of = (id: string): TreeNode => nodes.find((one) => one.id === id) as TreeNode;
+
+  const none = folderFormColour(of('f-none'), nodes);
+  assert.deepEqual(none, { suggestedColor: pickFolderColor(nodes) });
+  assert.ok(!Object.hasOwn(none, 'folderColor'));
+
+  const known = folderFormColour(of('f-k'), nodes);
+  assert.deepEqual(known, { folderColor: DEP_COLOR_KEYS[0] });
+  assert.ok(!Object.hasOwn(known, 'suggestedColor'));
+
+  const unknown = folderFormColour(of('f-99'), nodes);
+  assert.deepEqual(Object.keys(unknown), [], 'a key this build does not know got a mark or a suggestion');
+});
+
+test('a_save_changes_the_colour_only_for_a_click_that_differs_on_a_folder_that_can_wear_one', () => {
+  const [stored, other] = DEP_COLOR_KEYS;
+  const none = folderColorChange(folder('f', stored), undefined);
+  assert.deepEqual(Object.keys(none), [], 'a save with no click carried a colour');
+  assert.deepEqual(Object.keys(folderColorChange(folder('f', stored), stored)), [], 'an equal key was written');
+  assert.deepEqual(folderColorChange(folder('f', stored), other), { folderColor: other });
+  assert.deepEqual(folderColorChange(folder('f'), other), { folderColor: other }, 'a folder with no colour takes the click');
+  assert.deepEqual(folderColorChange(folder('f', 'depColor99'), other), { folderColor: other }, 'a click replaces an unknown key');
+  assert.deepEqual(Object.keys(folderColorChange(folder('trash', undefined, { isTrash: true }), other)), [], 'the trash was painted');
+  assert.deepEqual(Object.keys(folderColorChange(entity('e'), other)), [], 'an entry was painted');
 });

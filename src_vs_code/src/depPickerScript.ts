@@ -38,7 +38,7 @@ interface PickerData {
  * constants. Safe by CONTENT is not safe by construction, and the site is what a later edit
  * changes — see that function's own note.</p>
  */
-function paletteJson(): string {
+export function paletteJson(): string {
   return jsonForScript(
     DEP_COLOR_KEYS.map((key) => ({
       key,

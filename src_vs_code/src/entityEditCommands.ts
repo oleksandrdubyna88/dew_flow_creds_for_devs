@@ -21,7 +21,8 @@ import { addsSecret, applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
 import { heldEnvValues } from './envBinding';
-import { showFolderForm } from './folderFormPanel';
+import { FolderFormOptions, showFolderForm } from './folderFormPanel';
+import { folderColorChange, folderFormColour } from './folderColors';
 import { isInTrash } from './trash';
 import { KeyCandidate } from './entityFormPanel';
 import { EntityMetadata } from './types';
@@ -358,41 +359,57 @@ async function afterSave(ctx: EditContext, result: EntityFormValues, written: En
  * <p>An empty name leaves the folder alone rather than blanking it: the box comes back empty when
  * somebody clears it and saves, and a nameless folder is not a thing anyone asked for.</p>
  */
-// eslint-disable-next-line complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28); it meets the ceiling when it is next touched for a reason of its own
 export async function editFolder(
   accountId: string,
   node: TreeNode,
   storage: StorageManager,
   onMutated: () => void,
 ): Promise<void> {
+  const result = await showFolderForm(folderFormOptions(accountId, node, storage));
+  if (result === undefined) {
+    return;
+  }
+  // ONE write, decided from the folder as it is when the lease is held (D2). The colour is not read from `node`, the
+  // copy taken when the form opened: a colour written meanwhile (another window, the first terminal's auto-pick) must
+  // survive a Save that chose none, and a choice must win over one written meanwhile.
+  await storage.updateNodeFields(accountId, node.id, (now) => ({
+    name: result.name.length > 0 ? result.name : node.name,
+    mcp: result.mcp,
+    ...folderColorChange(now, result.folderColor),
+  }));
+  onMutated();
+}
+
+/** What the folder form is opened with: the folder's own fields, what it inherits, and its colour. */
+function folderFormOptions(accountId: string, node: TreeNode, storage: StorageManager): FolderFormOptions {
   const nodes = storage.getNodes(accountId);
   const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
-  // What this folder is subject to from above, so the form can say so instead of claiming
-  // nothing here is reachable while an open parent says otherwise.
-  const resolved = resolveMcpInTree(node, byId);
-  const result = await showFolderForm({
+  return {
     name: node.name,
     mcp: node.mcp,
     entryCount: entriesUnder(node.id, nodes),
-    // `answersLadder`, not "has an mcp object": a record of just `{ ask: 'never' }` answers the
-    // cadence and leaves the ladder inherited, and the form has to show what is actually in force.
-    inherited:
-      !answersLadder(node.mcp) && resolved.source === 'folder' && resolved.folder !== undefined
-        ? { access: resolved.access, from: resolved.folder.name }
-        : undefined,
+    inherited: inheritedAccess(node, byId),
     // Resolved from the PARENT rather than from this node, so the Inherit option tells the truth
     // whatever this folder says itself — see `inheritedAskFor`.
     inheritedAsk: named(inheritedAskFor(node, byId)),
     inTrash: isInTrash(node, byId),
-  });
-  if (result === undefined) {
-    return;
-  }
-  await storage.updateNodeFields(accountId, node.id, {
-    name: result.name.length > 0 ? result.name : node.name,
-    mcp: result.mcp,
-  });
-  onMutated();
+    ...folderFormColour(node, nodes),
+  };
+}
+
+/**
+ * What this folder is subject to from above, so the form can say so instead of claiming nothing here is reachable
+ * while an open parent says otherwise. `answersLadder`, not "has an mcp object": a record of just `{ ask: 'never' }`
+ * answers the cadence and leaves the ladder inherited, and the form has to show what is actually in force.
+ */
+function inheritedAccess(
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): FolderFormOptions['inherited'] {
+  const resolved = resolveMcpInTree(node, byId);
+  return !answersLadder(node.mcp) && resolved.source === 'folder' && resolved.folder !== undefined
+    ? { access: resolved.access, from: resolved.folder.name }
+    : undefined;
 }
 
 /** The resolver answers with the NODE; a form wants its name. The one line between the two. */

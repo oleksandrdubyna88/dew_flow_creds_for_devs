@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { configStub, loadWithVscode, settingsVscode } from './vscodeStub';
 import { runFragment } from './miniDom';
 import { HOST_CHK, chooseAsk, mcpPage } from './mcpFormFixture';
+import { DEP_COLOR_KEYS } from '../depColors';
 import { mcpSwitchScript } from '../mcpSwitchScript';
 import type { McpAccess } from '../mcpAccess';
 import { scalePx, zoomStyle } from '../zoomControl';
@@ -197,4 +198,23 @@ test('a folder with a ladder keeps it when its cadence is taken back', () => {
 
   assert.equal((stored as { view?: unknown } | undefined)?.view, true, 'the ladder went with the cadence');
   assert.equal((stored as { ask?: unknown } | undefined)?.ask, undefined, 'and the cadence stayed');
+});
+
+test('read_values_keeps_a_palette_key_and_drops_everything_else', () => {
+  const { readValues } = loadWithVscode<Panel>('../folderFormPanel', { window: {} });
+  // The wire is JSON, so every value goes through it first, as a webview message does.
+  const through = (folderColor: unknown): unknown =>
+    readValues(JSON.parse(JSON.stringify({ name: ' Databases ', mcp: { view: true }, folderColor }))).folderColor;
+
+  for (const key of DEP_COLOR_KEYS) {
+    assert.equal(through(key), key, `${key} was dropped`);
+  }
+  const hostile: unknown[] = ['depColor99', 'DEPCOLOR1', ' depColor1', '__proto__', 'constructor', 3, null, true, {}, ['depColor1']];
+  for (const value of hostile) {
+    assert.equal(through(value), undefined, `${JSON.stringify(value)} was kept`);
+  }
+  assert.equal(readValues(JSON.parse(JSON.stringify({ name: 'x' }))).folderColor, undefined, 'an absent field became a colour');
+  const plain = readValues(JSON.parse(JSON.stringify({ name: ' Databases ', mcp: { view: true }, folderColor: DEP_COLOR_KEYS[0] })));
+  assert.equal(plain.name, 'Databases');
+  assert.equal(plain.mcp?.view, true);
 });

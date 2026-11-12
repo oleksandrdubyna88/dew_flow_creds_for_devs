@@ -15,9 +15,14 @@ import { TreeNode } from './types';
  * gets. No `vscode` import: the choice is unit-tested, and the write is `ensureFolderColor`'s.</p>
  */
 
-/** What a coloured folder stores: nothing for a non-folder or the trash, which are never painted or counted. */
+/** A folder that can wear a colour: not an entry, and not the trash, which is never painted or counted. */
+function isPaintableFolder(node: TreeNode | undefined): node is TreeNode {
+  return node?.type === 'folder' && !isTrashFolder(node);
+}
+
+/** What a coloured folder stores: nothing for a non-folder or the trash. */
 function storedFolderColor(node: TreeNode | undefined): string | undefined {
-  return node?.type === 'folder' && !isTrashFolder(node) ? node.folderColor : undefined;
+  return isPaintableFolder(node) ? node.folderColor : undefined;
 }
 
 /**
@@ -133,5 +138,36 @@ export function noteColourFailure(log: DiagnosticWriter): (error: unknown) => un
   return (error) => {
     log.warn('folderColors', `a folder's colour could not be saved; its terminal opens without it: ${describeError(error)}`);
     return undefined;
+  };
+}
+
+/**
+ * The change a folder form's Save makes to the colour, decided from the folder AS IT IS when the write runs.
+ *
+ * <p>`now` is the node inside the lease (`updateNodeFields` runs a function patch there), never the one read
+ * when the form opened: a colour another window or the first terminal's auto-pick wrote meanwhile is not
+ * overwritten by a Save that chose nothing. `chosen` is what the person CLICKED, or `undefined` for a Save with
+ * no click. The change holds a `folderColor` only for a click that differs from what `now` holds, on a folder that
+ * is not the trash; every other case is `{}` with no `folderColor` property, so a Save adds no field for it.</p>
+ */
+export function folderColorChange(now: TreeNode, chosen: DepColorKey | undefined): Partial<TreeNode> {
+  return chosen !== undefined && isPaintableFolder(now) && now.folderColor !== chosen ? { folderColor: chosen } : {};
+}
+
+/**
+ * What the folder form shows for the colour: the key the folder wears, and the key a first terminal would give it.
+ *
+ * <p>The suggestion appears only for a folder holding NO string, because the auto-pick never writes over a string
+ * (an unknown key of a newer build included), so a folder with `depColor99` gets neither a mark nor a line. Each
+ * property is left out when it has no value.</p>
+ */
+export function folderFormColour(
+  folder: TreeNode,
+  nodes: readonly TreeNode[],
+): { folderColor?: DepColorKey; suggestedColor?: DepColorKey } {
+  const folderColor = folderColorKeyOf(folder);
+  return {
+    ...(folderColor === undefined ? {} : { folderColor }),
+    ...(typeof folder.folderColor === 'string' ? {} : { suggestedColor: pickFolderColor(nodes) }),
   };
 }

@@ -4,6 +4,11 @@ import { FolderFormOptions, renderFolderHtml } from '../folderFormPage';
 import { MCP_ASK_CHOICES, MCP_ASK_HINT, MCP_SWITCHES } from '../mcpSwitches';
 import { PAGE_MAX_WIDTH_PX } from '../webviewHtml';
 import { zoomApplyScript, zoomButtonsScript, zoomStyle } from '../zoomControl';
+import { DEP_COLOR_FALLBACK, DEP_COLOR_KEYS, DEP_COLOR_LABELS, DepColorKey } from '../depColors';
+import { paletteJson } from '../depPickerScript';
+import { DEP_SWATCH_STYLES, formStyleSheet } from '../entityFormStyles';
+import { folderSwatchScript } from '../folderSwatchScript';
+import { MiniDocument, MiniElement, runFragment } from './miniDom';
 import { accessMask, normalizeMcpAccess, readMcpAccess, resolveMcpInTree } from '../mcpAccess';
 import type { TreeNode } from '../types';
 
@@ -271,4 +276,91 @@ test('a stored cadence that is not one of the three words shows the one actually
 
   const nulled = renderFolderHtml(options({ mcp: JSON.parse('{"use":true,"ask":null}') }));
   assert.deepEqual(checkedAsk(nulled), ['mcpAskInherit'], 'a null is no answer, which is what Inherit means');
+});
+
+/**
+ * The Colour row (E2.S1). The swatch script is a page FRAGMENT, so these run it over a mini document
+ * holding the one element it paints into, and read what it made — the markup around it is W4, W6, W7.
+ */
+function swatchPage(marked?: DepColorKey): { row: MiniElement; collect: () => unknown } {
+  const document = new MiniDocument();
+  const row = document.place('folderSwatches', 'span');
+  const lifted = runFragment(folderSwatchScript(marked), document, ['collectFolderColor']);
+  return { row, collect: () => lifted.collectFolderColor() };
+}
+
+const classesOf = (el: MiniElement): string[] => el.className.split(' ');
+const titleOf = (el: MiniElement): unknown => (el as unknown as { title?: unknown }).title;
+const marked = (row: MiniElement): string[] =>
+  row.children.filter((one) => classesOf(one).includes('depSwatchOn')).map((one) => one.getAttribute('data-key') ?? '');
+
+test('the_colour_row_offers_every_palette_key_once_and_nothing_else', () => {
+  const { row } = swatchPage();
+
+  assert.equal(row.children.length, DEP_COLOR_KEYS.length, 'one swatch per palette key, no extra choice');
+  DEP_COLOR_KEYS.forEach((key, i) => {
+    const swatch = row.children[i];
+    assert.equal(swatch.getAttribute('data-key'), key, `swatch ${i} is not ${key}`);
+    assert.ok(classesOf(swatch).includes('depSwatch'), `${key} lacks the depSwatch class`);
+    assert.equal(titleOf(swatch), DEP_COLOR_LABELS[key]);
+    assert.ok(swatch.style.background.includes(`--vscode-credSshManager-${key}`), `${key} is not painted with its theme colour`);
+    assert.ok(swatch.style.background.includes(DEP_COLOR_FALLBACK[key]), `${key} has no fallback hex`);
+  });
+  assert.match(folderSwatchScript(undefined), /setAttribute\('aria-label'/, 'a swatch carries its label for a screen reader');
+});
+
+test('the_stored_colour_is_marked_and_is_not_a_choice', () => {
+  const { row, collect } = swatchPage(DEP_COLOR_KEYS[3]);
+
+  assert.deepEqual(marked(row), [DEP_COLOR_KEYS[3]]);
+  assert.equal(collect(), undefined, 'the first marking of the stored colour was taken for a choice');
+});
+
+test('a_click_is_the_choice_and_moves_the_mark', () => {
+  const { row, collect } = swatchPage(DEP_COLOR_KEYS[3]);
+
+  row.children[7].fire('click');
+  assert.equal(collect(), DEP_COLOR_KEYS[7]);
+  assert.deepEqual(marked(row), [DEP_COLOR_KEYS[7]]);
+
+  row.children[3].fire('click');
+  assert.equal(collect(), DEP_COLOR_KEYS[3], 'a click on the stored key is a choice too');
+  assert.deepEqual(marked(row), [DEP_COLOR_KEYS[3]]);
+});
+
+test('a_hostile_marked_value_cannot_close_the_script_element', () => {
+  const fragment = folderSwatchScript('</script><img src=x onerror=alert(1)>' as DepColorKey);
+
+  assert.ok(!fragment.includes('</script>'), 'a marked value reached the page script through JSON.stringify');
+});
+
+const HINT = /<p class="hint" id="folderColorHint">([\s\S]*?)<\/p>/;
+
+test('the_suggestion_line_shows_only_without_a_colour_and_says_it_can_change', () => {
+  const suggested = HINT.exec(renderFolderHtml(options({ suggestedColor: DEP_COLOR_KEYS[2] })));
+
+  assert.notEqual(suggested, null, 'no suggestion line for an uncoloured folder');
+  assert.ok((suggested as RegExpExecArray)[1].includes(DEP_COLOR_LABELS[DEP_COLOR_KEYS[2]]), 'the line does not name the colour');
+  assert.match((suggested as RegExpExecArray)[1], /can change/);
+  assert.ok(!renderFolderHtml(options({ folderColor: DEP_COLOR_KEYS[1] })).includes('folderColorHint'), 'a coloured folder got the line');
+  assert.ok(!renderFolderHtml(options()).includes('folderColorHint'), 'a folder with neither field got the line');
+});
+
+test('the_trash_has_no_colour_row', () => {
+  const trashed = renderFolderHtml(options({ inTrash: true, folderColor: DEP_COLOR_KEYS[1] }));
+
+  assert.ok(!trashed.includes('folderSwatches'), 'the trash got swatches');
+  assert.ok(!trashed.includes('<legend>Colour</legend>'), 'the trash got the Colour fieldset');
+  assert.ok(trashed.includes('function collectFolderColor() { return undefined; }'), 'the trash script has no collector');
+  // The positive tail: the same folder outside the trash does get the row.
+  const live = renderFolderHtml(options({ folderColor: DEP_COLOR_KEYS[1] }));
+  assert.ok(live.includes('id="folderSwatches"') && live.includes('<legend>Colour</legend>'), 'the live folder has no Colour row');
+});
+
+test('the_folder_form_and_the_entity_form_share_one_swatch_style_and_palette', () => {
+  const page = renderFolderHtml(options());
+
+  assert.ok(page.includes(DEP_SWATCH_STYLES), 'the folder page does not carry the swatch rules');
+  assert.ok(page.includes(paletteJson()), 'the folder page does not carry the dependency palette');
+  assert.ok(formStyleSheet(0).includes(DEP_SWATCH_STYLES), 'the entity form lost the swatch rules');
 });

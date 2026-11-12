@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
+import { DEP_COLOR_KEYS } from '../depColors';
 import { ENTITY_KINDS } from '../types';
 import { FORM_SECTIONS } from '../formSections';
 import { escapeHtml, escapeHtmlForHighlighting, jsonForScript } from '../webviewHtml';
@@ -596,4 +597,19 @@ test('structures, not just strings, are escaped throughout', () => {
 
   assert.ok(!json.includes('</script>'));
   assert.deepEqual(JSON.parse(json), { rows: [{ name: '</script>', value: 'ok' }] });
+});
+
+test('the_folder_form_page_script_parses_with_and_without_a_colour', () => {
+  const forms: Record<string, unknown>[] = [
+    { name: 'scripts', entryCount: 3, inTrash: false, suggestedColor: DEP_COLOR_KEYS[2] },
+    { name: 'scripts', entryCount: 3, inTrash: false, folderColor: DEP_COLOR_KEYS[1] },
+    { name: 'Trash', entryCount: 0, inTrash: true, folderColor: DEP_COLOR_KEYS[1] },
+  ];
+  for (const form of forms) {
+    currentPanel = newPanel();
+    void folderForm.showFolderForm(form);
+    const script = pageScript(currentPanel.webview.html);
+    assert.doesNotThrow(() => new Function('acquireVsCodeApi', script), `the folder script does not parse for ${JSON.stringify(form)}`);
+    assert.ok(script.includes('folderColor: collectFolderColor()'), 'save() does not post the folder colour');
+  }
 });
