@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { mock, test } from 'node:test';
 import { SECOND_ENTRY_REFUSED } from '../agentNaming';
 import { INTERNAL_FAILURE, MAX_EXEC_TIMEOUT_MS, statusForErrorCode } from '../brokerProtocol';
@@ -183,6 +184,26 @@ test('L5: ssh\'s own stderr stays as returned, on a bridge too — it may carry 
       const reply = await body(door, ww);
       assert.equal(reply.status, 200);
       assert.equal((JSON.parse(reply.body) as { stderr: string }).stderr, STDERR_WITH_A_HOST, `through ${door === viaMain(ww) ? 'the main port' : 'the bridge'}`);
+    }
+  });
+});
+
+test('K6: the key path that ssh prints is a call name, on a bridge too — the last part starts with nothing of the id of the key entry', async () => {
+  await both({ printsKeyPath: true }, {}, async ({ lw, ww }) => {
+    const printed: { label: string; last: string }[] = [];
+    const doors: [string, Door][] = [['the bridge', viaBridge(ww.bridge)], ['the main port', viaMain(ww)]];
+    for (const [at, [label, door]] of doors.entries()) {
+      const reply = await body(door, ww);
+      assert.equal(reply.status, 200, reply.body);
+      const argv = lw.runs[at].argv;
+      const keyPath = argv[argv.indexOf('-i') + 1];
+      assert.equal((JSON.parse(reply.body) as { stderr: string }).stderr, `Load key "${keyPath}": invalid format`, `through ${label}`);
+      printed.push({ label, last: path.basename(keyPath) });
+    }
+    const offenders = printed.filter((p) => p.last.startsWith('k1-')).map((p) => `${p.label}: the last part of the printed path starts with the id of the key entry: ${p.last}`);
+    assert.deepEqual(offenders, []);
+    for (const p of printed) {
+      assert.match(p.last, /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.key$/, p.label);
     }
   });
 });

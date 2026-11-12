@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: the path of a key file that an agent's SSH call writes holds no id of an entry
+
+An SSH entry can use the key of a second entry (*SSH key source*). For each SSH call of an agent the extension writes that key to a
+file, and the name of the file started with the id of the key entry: `<storage folder>/keys/<pid>/<id of the key entry>-<uuid>.key`.
+Three texts that an agent reads can show that path: the refusal when the key cannot be written (`Could not write the stored key to
+disk: …`), the refusal when `ssh` cannot run (`Could not run ssh: …`), and what `ssh` itself prints about its key file (for example
+`Load key "<path>": invalid format`). So an agent could read the id of a key entry that it may not view, and an id that came with an
+import can look like a name (`deploy-key`). Now the key file of a call has a random name, `call-<uuid>.key`. The rule: the name of the
+key file that the extension writes for one call holds nothing of the vault, no id and no name of an entry. (Two other files of a
+call keep an id in their names, the host-key pin and the script of a Script entry; it is the id of an entry that the agent may
+view.)
+
+- **Which calls.** `creds_exec`, `creds_rotate` on an SSH entry, and `creds_run` on a Terminal entry that runs over a linked SSH
+  entry. The same on the alias door and on the token door (`creds exec` in a terminal), because an action does not know its door,
+  and on a Remote Bridge.
+- **What changes for an agent or a script.** One thing: in a text that shows the path of the key file of a call, the last part is
+  `call-<uuid>.key`, and it was `<id of the key entry>-<uuid>.key`. No route, error code, status, body shape, sentence or tool
+  description changes. `contract/broker-v1.json` and `contract/mcp-tools-v1.json` do not change, and `creds` and `creds-mcp` do not
+  change.
+- **Three of the person's own commands get the new name too**, because they use the same writer: the check of the bridge socket,
+  *Install creds on host*, and the person's `ssh -R` bridge. Their output goes to the person, not to an agent.
+- **What stays.** The local path: off a Remote Bridge the two refusals keep the text of the operating system, with the storage
+  folder, and `ssh`'s own output shows the folder, also on a bridge. The names of the person's other key files (Connect, the git
+  sync) keep the id. A key FILE that a key entry points to (not a stored key) is the person's own path, and `ssh` can still print
+  it. A file that a closed window left is removed by the purge of the keys folder, as before; its name no longer tells which key
+  entry it belongs to.
+
 ## [1.21.3] — 2026-11-11 — Security — an agent's refusal no longer names a linked key entry or a jump host that it may not view
 
 ### Changed — security: an agent's refusal no longer names a linked key entry or a jump host that it may not view

@@ -1,14 +1,24 @@
 # PLAN — The path of a key file that an agent's call writes holds no id of an entry
 
-> Status: **plan only, nothing implemented yet, 2026-11-11.** Scope: the extension only (`src_vs_code/src`: the name of
+> Status: **built on `fix/agent-refusal-key-file-path`, unmerged, 2026-11-12 (pull request #359); written 2026-11-11.** Scope: the extension only (`src_vs_code/src`: the name of
 > the key file that an agent's SSH call writes, in `materializedKeys.ts`, `keyInstaller.ts` and `sshExecAuth.ts`; the
 > comments of C4; their tests), `src_vs_code/CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,
 > `todo/README.md`, and the boundary rows that are owed to the neighbour plans of §9. The owner said on 2026-11-11:
 > build N10 as its own small plan after F7 epic 2 is released. N10 is item N10 of §11 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7), and note 10
 > of [its E2 stories](../research/PLAN_agent_refusal_names_unlisted_entry_E2.md). One epic. A security fix for a defect
-> that is live on `main`. All `file:line` references were read on `b95282f1` (F7 epic 2 merged, #353). No ledger yet:
-> it opens at the first approval.
+> that is live on `main`. All `file:line` references were read on `b95282f1` (F7 epic 2 merged, #353). The ledger
+> opened at the first approval (below). The owner answered Q1 to Q3 of §14 on 2026-11-12 (yes to each; no section changes).
+> Approved by the `coai` plan round on 2026-11-12 (`proceed`, 2 of 2 reviewers, session `9f624efc`).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-12 · by reviewers · state: open
+
+- 1.1 · 2026-11-12 · reviewer · scope — `resolveExecAuth` has three more callers, the person's roads in
+  `commands/agentCommands.ts` (`:217`, `:287`, `:437`); C3 renames their key files too (§1.1, §4.3, §8); their left
+  keys are N16
+  (Found by the lead's Opus review of the approval round. The §1.3 search read only the top folder of `src`.)
 
 ## 1. The defect
 
@@ -30,8 +40,10 @@ key from that second entry, and it says whose key it is: `keyEntityId: keySource
 (N10 wrote the path with no `<pid>`. The folder has it.)
 
 Three calls of an agent write this file. All three go through `execOverSsh` (`sshUseActions.ts:272-296`), then
-`prepareAuth` (`:179-202`), then `resolveExecAuth` (`sshExecAuth.ts:116-125`), which has one caller in the product
-(`sshUseActions.ts:188`):
+`prepareAuth` (`:179-202`), then `resolveExecAuth` (`sshExecAuth.ts:116-125`). `resolveExecAuth` has four callers
+in the product: `sshUseActions.ts:188` (the agent's road) and three roads of the person in `commands/agentCommands.ts`
+(`:217` the check of the bridge socket, `:287` *Install creds on host*, `:437` the person's `ssh -R` bridge). Their
+output goes to the person, not to an agent (§4.3). The agent's road has three calls:
 
 - `creds_exec` (`sshExecAction`, `sshUseActions.ts:303-355`);
 - `creds_rotate` on an SSH entry (`rotateAction(sshExecAction(sshDeps), 'command', …)`, `extension.ts:660`);
@@ -101,7 +113,8 @@ tool gives `stdout`, `stderr` and the exit code back (`UseTools.cs:59`).
 
 ### 1.3 How the sites were found (the method)
 
-(1) `grep -n` over `src_vs_code/src/*.ts` (tests apart) for each writer into the keys folder: `materializePrivateKey`,
+(1) `grep -rn` over `src_vs_code/src`, each folder (tests apart), for each writer into the keys folder (the first
+search read the top folder only and missed `commands/`; change 1.1): `materializePrivateKey`,
 `materializedKeyPath`, `materializedKeysDir`, `materializeVpnConfig`, `writeAskpassScriptFile` and `writeFileSync`;
 each hit read (§4.3). (2) The same for each reader and each remover of a file there: `forgetMaterializedKey`,
 `removeKeyFile`, `purgeMaterializedKeys`, `readdirSync`, and the text `.key` (§4.2). (3) Each line inside the `try` of
@@ -116,7 +129,9 @@ failed `mkdir`, a failed start, a NUL argument) and `ssh` to a closed port of th
 The words of F7 §2.1 stay: *the agent may view* an entry (`agentMayView`, `mcpEntries.ts`), *the addressed entry*, *a
 second entry*. One new word:
 
-- **A call file** is a file that the extension writes for one call of an agent and removes when the call ends.
+- **A call file** is a key file that the extension writes for one call of an agent and removes when the call ends. (The
+  host-key pin and the script of a Script entry are also written for a call; their names keep the id of an entry that the
+  agent may view, §4.3. Rule C is not about them.)
 
 ### 2.2 The rule
 
@@ -155,7 +170,8 @@ Two lines of the journal can hold the path: the note of a refusal on a Remote Br
 `ssh:exec — the key file could not be removed: …` (`:234`). After this plan the path in them has no id. So the person
 cannot read from the path which key entry a left file belongs to. The purge takes the whole folder of the window when
 the window starts and when it ends (`extension.ts:222-223`; `keyInstaller.ts:269-292`), so no person has to find the
-file by hand.
+file by hand. The three roads of the person in `commands/agentCommands.ts` share `resolveExecAuth`, so their key
+files get the random name too; they do not remove the file after use (N16), and the purge takes it.
 
 ## 3. The options, and the decision
 
@@ -203,11 +219,11 @@ of an entry is found only when a row reaches it.
 
 | # | Site | Today | New behaviour |
 |---|---|---|---|
-| C1 | `materializedKeys.ts` (new export; the module imports no `vscode`) | — | `export function callKeyName(): string`: `call-` and a random uuid (`crypto.randomUUID()`). It takes no argument, so no data of the vault can arrive in it |
+| C1 | `materializedKeys.ts` (new export; the module imports no `vscode`) | — | `export function callKeyName(): string`: `call-` and a random uuid (`crypto.randomUUID()`; the module gets an import of `node:crypto`, it has none today). It takes no argument, so no data of the vault can arrive in it |
 | C2 | `keyInstaller.ts` (new export beside `materializePrivateKey`, `:149-166`) | — | `export function materializeCallKey(storageDir: string, content: string): string`: it calls `materializePrivateKey(storageDir, callKeyName(), content)`. The same folder, the same modes, the same `lockToOwner`. It has no parameter for an id |
 | C3 | `sshExecAuth.ts:162`, and the imports at `:1` and `:7` | the name is `` `${source.keyEntityId}-${crypto.randomUUID()}` `` | `materializeCallKey(storageDir, source.content)`. The import of `node:crypto` goes: nothing more uses it there |
-| C4 | comments that are false, or become false | `sshUseActions.ts:130-132` (*the key file path holds the id of the key entry (an open owner question, N10 …)*); `materializedKeys.ts:67-68` (*the file name is also how the purge and the wipe find it again*: no code does this today, §4.2); `keyInstaller.ts:146-147`, `:157` (they say that the name is the id) | each says what is true: a call file has a random name; the id stays in the names of the person's roads only |
-| C5 | the four test worlds that replace `./keyInstaller`: `test/sshUseActions.test.ts:125-130`, `test/sshExecAuth.test.ts:43`, `:166`, `test/bridgeLinksWorld.ts:89-99`, `test/secondEntryWorld.ts:177-182` | each gives `materializePrivateKey(dir, id, content)` | each also gives `materializeCallKey(dir, content)`, and takes the name from the REAL `callKeyName()` (never a name that the test made up) |
+| C4 | comments that are false, or become false | `sshUseActions.ts:130-132` (*the key file path holds the id of the key entry (an open owner question, N10 …)*); `materializedKeys.ts:67-68` (*the file name is also how the purge and the wipe find it again*: no code does this today, §4.2); `keyInstaller.ts:146-147`, `:157` (they say that the name is the id) | each says what is true: a file that `resolveExecAuth` writes has a random name; the id stays in the names of the files that `sshSession.ts` and `transportFactory.ts` write |
+| C5 | each test world that replaces `./keyInstaller` and loads `sshExecAuth.ts` (directly, or through `sshUseActions.ts`): `test/sshUseActions.test.ts:125-130`, `test/sshExecAuth.test.ts:43`, `:166`, `test/bridgeLinksWorld.ts:89-99`, `test/secondEntryWorld.ts:177-182`, `test/sshExecOver.test.ts:84`, `test/brokerAbandoned.test.ts:557`, `test/pinClickPaths.test.ts:256-258`, `test/pinReaders.test.ts:134-139` and `:400-408`: 10 sites in 8 files. Method: `grep -ln "'./keyInstaller'"` over `src_vs_code/src/test`, then the module that each loads. Not in the list: `test/sshConnectWorld.ts` (it loads `sshSession.ts`) and `test/transportFactory.test.ts` (it loads `transportFactory.ts`): their writer does not change | each gives `materializePrivateKey(dir, id, content)` (some give only a part of the module) | each also gives `materializeCallKey(dir, content)`, and takes the name from the REAL `callKeyName()` (never a name that the test made up) where its sibling builds a name; where the sibling gives a fixed text or throws (`brokerAbandoned.test.ts:557`, `pinReaders.test.ts:139`, `sshExecAuth.test.ts:166-168`), the new member does the same. **The copy rule:** the new member does what its sibling `materializePrivateKey` does in that world, the same records (`materialized`, `writes`, `log.materialised`), the same real file, the same throw and the same `writeFails`; only the name differs. Without it a guard passes and tests nothing: `pinReaders.test.ts:400-414` and the *key FILE* test of `sshExecAuth.test.ts` assert that nothing is written, and they never reach the writer. The no-op step (§5, 2) adds them; a world that the list misses fails in step 4 with a `TypeError`, and the coder adds it and says so |
 
 `SshUseDeps` and `AgentUseDeps` get no new member. `sshUseActions.ts` changes in one comment only.
 
@@ -236,6 +252,7 @@ of an entry is found only when a row reaches it.
 | the askpass script | `askpass.sh`, `askpass.bat` (`sshAskpass.ts:29`, `:33`; `keyInstaller.ts:200-207`) | none | `ssh` can name the script when it cannot start it | no id |
 | a password file | none: the password is in the environment of `ssh` (`sshAskpass.ts:37-46`) | — | — | no file |
 | the script of `creds_run` on a Script entry | `agent-script-<id><ext>` (`agentUseActions.ts:163-166`) | the addressed entry | yes: the script's own errors name the file | no hidden id. A failed write there is not told to the agent: it becomes the fixed failure of the broker (`brokerResponse.ts:212-222`) |
+| the key of three roads of the person that share `resolveExecAuth`: the check of the bridge socket, *Install creds on host*, the person's `ssh -R` bridge (`commands/agentCommands.ts:217`, `:287`, `:437`) | `<keyEntityId>-<uuid>.key` today, `call-<uuid>.key` after C3 | the key entry | no: the bridge's `stderr` and the dialog of the install go to the person | **renamed too** (change 1.1); no agent reach. They leave the file until the purge (N16) |
 | the key of the person's Connect and of the person's roads | `<keyEntityId>.key`, `<keyEntityId>-<uuid>.key` (`sshSession.ts:472`, `:342`) | the key entry | no: the line is typed into the person's terminal, and a failure is a dialog (`sshSession.ts:475`). `sshRoad.ts:20-21`: only the person's roads prepare a session. `creds_open_terminal` answers `opened` or one fixed sentence (`sshUseActions.ts:404-409`) | not changed (§8) |
 | the deploy key of the vault's git sync | `git-<keyEntityId>.key` (`transportFactory.ts:286`) | a key entry | no: none of the three action modules imports `transportFactory.ts` | not changed |
 | a VPN configuration | from the NAME of the VPN entry (`vpnRun.ts:203`; `vpnLauncherRun.ts:216`, `:233-234`) | the addressed entry | no: `creds_vpn_up` answers one fixed sentence (F7 §3.3) | not changed |
@@ -247,8 +264,9 @@ No route, no error code, no status, no body shape, no sentence and no tool descr
 `contract/broker-v1.json` and `contract/mcp-tools-v1.json` do not change, and the product code of `src_mcp` and
 `src_cli` does not change. One thing changes: in a text that shows the path of the key file of an agent's call, the
 last part is `call-<uuid>.key`, and it was `<keyEntityId>-<uuid>.key`. This is true on the alias door and on the token
-door too, because an action does not know its door, and it is true on a Remote Bridge. The CHANGELOG entry and the
-pull request body say it.
+door too, because an action does not know its door, and it is true on a Remote Bridge. The same new name is used by
+three roads of the person that share the writer (the check of the bridge socket, *Install creds on host*, the
+person's `ssh -R` bridge; §4.3). The CHANGELOG entry and the pull request body say it.
 
 ## 5. Build order
 
@@ -257,14 +275,15 @@ opens the ledger. Then Opus writes the stories document, and Fable writes the sp
 The work is in a worktree and a branch of its own, from `main` after the pull request that closes F7 is merged.
 
 1. **The scan first** (S1 and S2 of §6.3), before any fix. Its first run gives the list of the callers of
-   `materializePrivateKey`, and it fails on `sshExecAuth.ts:162`. Compare the list with §4.3. A caller that is not
+   `materializePrivateKey`, and it fails on `sshExecAuth.ts` (the import at `:7` and the call at `:162`). Compare the list with §4.3. A caller that is not
    there stops the work: it is a plan change.
-2. **The no-op step.** Add C1 and C2 with no caller, and C5 (the new member of the four test worlds).
+2. **The no-op step.** Add C1 and C2 with no caller, and C5 (the new member of the test worlds, 10 sites in 8
+   files, by the copy rule).
    `npm run typecheck` is clean, and `npm test` shows the failure of step 1 and no other. The step exists so that no
    RED proof is a compile error (`npm test` runs `tsc` first).
-3. **Part C of the class test and the RED rows** (§6.1, §6.2: K1 to K6). Watch each one fail on the unchanged call
-   site, by its assertion. Keep the messages.
-4. **The fix: C3.** K1 to K6 pass, S1 passes. Change the existing test of §6.4 in the same commit.
+3. **Part C of the class test and the RED rows** (§6.1, §6.2: K1 to K6). The existing test of §6.4 becomes K5 in this
+   step. Watch each one fail on the unchanged call site, by its assertion. Keep the messages.
+4. **The fix: C3.** K1 to K6 pass, S1 passes.
 5. The unit rows of the new name (U1 to U3) and the guard rows (G1 to G9), each watched passing.
 6. The mutation checks of §6.5.
 7. C4 (the comments) and the documents of §7. The boundary rows of §9 are OWED; the lead gives them to the sessions
@@ -316,7 +335,8 @@ id; the id is a part of no other text of the world.
 
 ### 6.2 RED rows
 
-Each row is watched FAILING on the code of `b95282f1` with the no-op step applied, by its assertion, then passing.
+Each row is watched FAILING on the base of the branch with the no-op step applied (before C3), by its assertion, then
+passing.
 The coder records what the runner printed.
 
 | # | File | Input | Today, so the row is RED | After |
@@ -328,7 +348,8 @@ The coder records what the runner printed.
 | K5 | `test/sshExecAuth.test.ts` (the test at `:70-82` changes) | `resolveExecAuth` with a stored key of a key entry whose id is `deploy-key` | the last part of `keyPath` is `deploy-key-<uuid>`: it holds `deploy-key` | the last part has the shape of a call name and holds nothing of the id |
 | K6 | `test/bridgeLinks.test.ts`, beside L5 (`:180-188`) | the pretended `ssh` prints the word after `-i`; through the bridge and through the main port | the last part of the printed path starts with `k1-` (the id of the key entry of that world) | on the two doors the last part does not come from the id; `stderr` is passed on as it was returned (L5 stays) |
 
-K6 asserts on the last part of the path only. The folder is the test world's own, and a short id (`k1`) can be a part
+K6 needs a new option of `test/bridgeLinksWorld.ts`: its `stderr` is a fixed text today (`:110`); the option builds
+it from the word after `-i` of the argv that the world got. K6 asserts on the last part of the path only. The folder is the test world's own, and a short id (`k1`) can be a part
 of a random folder name by chance.
 
 ### 6.3 New rows that are not RED, and the scan
@@ -341,10 +362,10 @@ The two functions are new, so their rows cannot fail on the code of today. Each 
 | U1 | `test/materializedKeys.test.ts` | `callKeyName()` is `call-` and a uuid; two calls give two names; `safeFileComponent` gives the name back with no change |
 | U2 | `test/keyInstaller.test.ts`, on the real file system | `materializeCallKey` writes the body with one end-of-line into `keys/<pid>/`, the file is `<a call name>.key`, its mode is 0600 where the system has modes, and `lockToOwner` leaves it readable by us |
 | U3 | `test/keyInstaller.test.ts` | a purge takes the file with the folder of the window (the row beside `:202`) |
-| S1 | `test/keysDirPaths.test.ts` (the structural guard of the keys folder) | each call of `materializePrivateKey(` in `src_vs_code/src`, tests apart, is in a file of the written list: `keyInstaller.ts` (the writer itself and `materializeCallKey`), `sshSession.ts` (the person's Connect and roads), `transportFactory.ts` (the vault's git sync). Each has its reason in the test. A call in another file fails the test, with the file and the line. The pattern is matched across lines |
+| S1 | `test/keysDirPaths.test.ts` (the structural guard of the keys folder) | each occurrence of the identifier `materializePrivateKey` in `src_vs_code/src` and each folder under it (as `sourceFiles()` of that test reads, `:30-37`), tests and comments apart, is in a file of the written list: `keyInstaller.ts` (the writer itself and `materializeCallKey`), `sshSession.ts` (the person's Connect and roads), `transportFactory.ts` (the vault's git sync). Each has its reason in the test. An occurrence is a call, an import, an import with `as` (a new name), or a member of a namespace import; so a new name for the writer is found at its import. An occurrence in another file fails the test, with the file and the line. **What S1 does not find:** a name that is built at run time (`mod['materialize' + …]`); a new call inside a file of the list; and the other writers that name a file from an id through `materializedKeyPath` (`known_hosts-<id>`, `hostKeyTrust.ts:67`; `agent-script-<id>`, `agentUseActions.ts:163-166`), which are safe today because their entry is one that the agent may view (§4.3), but a pin or a file for a hop in E1.6 would not be found (§9, row 2). It is a narrow guard against a regression, not a proof; part C is the proof for the three doors |
 | S2 | the same | the companion: the scan finds a call in each of the three files of the list, so a change of formatting cannot make it match nothing; and the list of the test is compared with these three names, so a fourth name fails |
 
-S1 is written before the fix. On the code of today it fails with `sshExecAuth.ts:162`: this is the RED proof of the
+S1 is written before the fix. On the code of today it fails with `sshExecAuth.ts:7` and `:162` (an import is an occurrence): this is the RED proof of the
 scan.
 
 ### 6.4 Guard rows (watched passing before and after), and the test that changes
@@ -373,6 +394,8 @@ It pins the defect. It becomes row K5.
    live).
 5. Take the id of the key entry off the world's list of hidden ids → the proof of the fixture (§6.1). With no such
    proof the rows K1 to K4 would pass and prove nothing.
+6. Add a product file that has `import { materializePrivateKey as writeKey } from './keyInstaller'` and calls
+   `writeKey(…)` → S1, at the line of the import.
 
 ### 6.6 What the tests do not prove
 
@@ -412,7 +435,11 @@ It pins the defect. It becomes row K5.
 - It does not hide that a second entry exists, or the address of a hop (F7 §7).
 - It does not change a sentence, a code, a status, a route or a tool description.
 - It does not change the names of the files of the person's roads (Connect, the arrow, a VPN's launcher, the git
-  sync). An agent does not read their output.
+  sync). An agent does not read their output. The exception: three roads of the person share `resolveExecAuth`
+  (§4.3), so their key files get the random name too (change 1.1).
+- **Rule C is about texts, not about the folder.** A local agent that runs as the same user of the operating system
+  can list `keys/<pid>/` and read the person's files there (`<keyEntityId>.key`, `sshSession.ts:472`), and the keys
+  themselves. This plan does not say *no id on disk*.
 - It does not change the name of the pin file or of the script file (§4.3).
 - It does not make (b) safe by construction (the residue of §3).
 - It does not release. A release of the extension must follow the merge; the lead and the owner decide when.
@@ -444,7 +471,8 @@ plans matched and share no line, and get no row: `PLAN_remote_bridge_scoped_E1.m
 
 ## 10. Risks
 
-1. **A person can no longer read the key entry from the name of a left file** (§2.4). The purge takes the file with
+1. **A person can no longer read the key entry from the name of a left file** (§2.4); with N16 such files exist after
+   each use of the three roads of §4.3. The purge takes the file with
    its folder. The entry of the call is in the journal line of the call.
 2. **A later writer puts an id back into a name** (E1.6's hop keys, a new road). S1 fails with the file and the line.
 3. **(b) is safe by its content only** (§3). It is the same class as the bridge plan's open row on `describeError`
@@ -463,21 +491,23 @@ plans matched and share no line, and get no row: `PLAN_remote_bridge_scoped_E1.m
 
 None is created: no table, folder, cache or process. The call file exists today; only its name changes. Its bound
 stays: one file for each running call, at most `MAX_CONCURRENT_EXECS` = 8 at a time (`brokerProtocol.ts:23`), removed
-in the `finally` of the call (`sshUseActions.ts:293`). A file that a killed window left is taken by the purge of the
+in the `finally` of the call (`sshUseActions.ts:293`). The three roads of the person in `commands/agentCommands.ts`
+do not remove theirs (N16); the purge takes it. A file that a killed window left is taken by the purge of the
 keys folder: the folder of the window when it starts and ends, and the folder of each dead window
 (`keyInstaller.ts:269-292`).
 
 ## 12. Definition of Done
 
-- [ ] The scan S1 was written before the fix; its first failure named `sshExecAuth.ts:162` and no other caller
+- [ ] The scan S1 was written before the fix; its first failure named `sshExecAuth.ts` (`:7`, `:162`) and no other file
       outside the written list; the summary has that list, compared with §4.3.
-- [ ] Rows K1 to K6 were watched failing by their assertions on the code of `b95282f1` with the no-op step, then
+- [ ] Rows K1 to K6 were watched failing by their assertions on the base of the branch with the no-op step, then
       pass; the summary quotes one failure message and the pass. No RED proof is a compile error.
 - [ ] In the nine cells of part C the answer holds 0 hidden ids and 0 hidden names, and in each cell the path of the
       call file was found in the answer first.
-- [ ] Rows U1 to U3 and S2 pass; guard rows G1 to G9 were watched passing before and after; the bodies of G1 to G4
-      are byte-equal to those of `b95282f1`.
-- [ ] Mutations 1 to 5 of §6.5 each turned a test red.
+- [ ] Rows U1 to U3 and S2 pass; guard rows G1 to G9 were watched passing before and after; the assertions of G1 to G4
+      are the same lines as on `b95282f1` (a body holds a random path, so two runs are never byte-equal; the assertion
+      is what does not change).
+- [ ] Mutations 1 to 6 of §6.5 each turned a test red.
 - [ ] `materializePrivateKey` has callers in exactly three files (`keyInstaller.ts`, `sshSession.ts`,
       `transportFactory.ts`); `sshExecAuth.ts` has no parameter or text that puts an id into a file name.
 - [ ] The comments of C4 are changed.
@@ -513,10 +543,31 @@ keys folder: the folder of the window when it starts and ends, and the folder of
 - **N14. The mask table of a call does not hold the value of a borrowed key.** It is read for the entry of the grant
   (`maskEntries.ts:68-111`), and the key is the second entry's. No output of `ssh` is known to print a key, so no
   leak is shown here. Read only; recorded so that it is not lost.
+- **N15. At a debug log level `ssh` can print the comment and the fingerprint of the key that it offers.** Off a
+  bridge the person's `~/.ssh/config` applies (§1.2, (c)), and `LogLevel DEBUG` makes `ssh` print a line for each
+  key that it tries. The comment is inside the stored key (the person's data), so it can name something. Rule C
+  cannot close it, for the reason of N11; the owner's answer to Q2 covers the class. Raised by a question
+  consultant on 2026-11-12; read in no run.
+- **N16. Three roads of the person leave a decrypted key on disk until the purge.** The check of the bridge socket,
+  *Install creds on host* and the person's `ssh -R` bridge call `resolveExecAuth` (`commands/agentCommands.ts:217`,
+  `:287`, `:437`) and never remove the file (`agentCommands.ts` has no `forgetMaterializedKey` and does not read
+  `materialized`). Each start of a bridge or click of the install leaves one key in `keys/<pid>/` until the window
+  ends. An old defect, not caused by this plan; no agent reads these paths. It needs its own small plan. Found by the
+  lead's Opus review on 2026-11-12, by reading.
+- **N17. `creds_open_terminal` types a key path with the id of the key entry into a terminal.** The agent's terminal
+  action calls `connectEntity` (`sshUseActions.ts:377`), which writes `<keyEntityId>.key` (`sshSession.ts:472`) and
+  types `ssh -i "<path>"` into a VS Code terminal (`sshCommand.ts:232-233`). The answer to the agent is `opened` or one
+  fixed sentence (§4.3), but an agent in the same window with a tool that reads the terminal could read the id of a
+  linked key entry that it may not view. Not built here (§8: the person's roads keep their names); a question for the
+  owner. Found by the lead's Opus code review on 2026-11-12, by reading; not run.
 
 ## 14. Questions for the owner
 
 The work does not wait for an answer. Each question has the answer that this plan is built on.
+
+**Answered by the owner on 2026-11-12: yes to Q1, Q2 and Q3.** Each answer is the one that this plan is built on: (a)
+and (b) off a bridge keep the text of the operating system (O3 is not built); N11 stays, as the address of a hop
+stays; on a bridge `ssh`'s `stderr` keeps the laptop's path, and the bridge plan owns it. No section below changes.
 
 - **Q1. Off a Remote Bridge, do the two refusals (a) and (b) keep the text of the operating system?** It holds the
   storage folder with the user name. *Built on: yes, they keep it.* The caller off a bridge is a program on the
@@ -530,13 +581,16 @@ The work does not wait for an answer. Each question has the answer that this pla
 
 ## Epics
 
-One epic. The stories are one document, `todo/PLAN_agent_refusal_key_file_path_E1.md`, written when the epic starts;
+One epic. The stories are one document, [`todo/PLAN_agent_refusal_key_file_path_E1.md`](PLAN_agent_refusal_key_file_path_E1.md), written when the epic starts;
 it links back here and gets its own `todo/README.md` row. This file holds no story. Fable wrote this plan and the
-split (a security judgement). The question consultant was NOT asked yet what is important: the lead asks before the
-plan round, and the split is final after that. Opus writes the stories document; Fable writes the specification of the
+split (a security judgement). The question consultants were asked on 2026-11-12, before the plan round (consult
+`1b5b224b`; 2 of 2 rows answered, codex gpt-6-astra and gemini-4-argon-low). Both said: one epic with two stories,
+E1.1 is the cornerstone, and the scan and part C stay in E1.1. The split is final. Taken from their answers, after a
+check in the code: S1 finds an import with a new name (§6.3, mutation 6), the G1-G4 criterion says *the same
+assertions*, not *the same bytes*, and N15 (§13). Opus writes the stories document; Fable writes the specification of the
 cornerstone story; Sonnet codes; Opus reviews. One epic gives a cornerstone quota of 1.
 
-Cornerstones: 0 of 1 — none marked yet (the stories document of E1 marks the story and updates this line)
+Cornerstones: 1 of 1 — E1.1 (spec: [PLAN_agent_refusal_key_file_path_E1_S1_spec.md](PLAN_agent_refusal_key_file_path_E1_S1_spec.md), by Fable, 2026-11-12)
 
 ### E1 · Rule C: the name of a call file
 
@@ -551,8 +605,8 @@ Cornerstones: 0 of 1 — none marked yet (the stories document of E1 marks the s
   2. On the 3 doors the argv holds 0 hidden ids and 0 hidden names (K1).
   3. On the 2 doors of K6 (the bridge, the main port) the last part of the printed path does not come from the id.
   4. `materializePrivateKey` is called in exactly 3 files, and 0 others (S1, S2).
-  5. The 4 bodies of G1 to G4 are byte-equal to those of `b95282f1`; G5 to G9 are green before and after.
-  6. Each of the 5 mutations of §6.5 turns at least 1 test red.
+  5. The assertions of G1 to G4 are the same lines as on `b95282f1`, and pass; G5 to G9 are green before and after.
+  6. Each of the 6 mutations of §6.5 turns at least 1 test red.
   7. `contract/`, `src_mcp` and `src_cli` have 0 differences. `SshUseDeps` and `AgentUseDeps` have 0 new members.
   8. The items of §12 are ticked.
 - **Cornerstone area (the one of this plan).** The name of the call file: the one function that makes it, the one

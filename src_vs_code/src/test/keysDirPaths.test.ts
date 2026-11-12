@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { withoutComments } from './importWalk';
 
 /**
  * A structural guard: nothing joins a name into the key directory by hand.
@@ -86,4 +87,64 @@ test('the guard would notice — it finds the sanctioned join in the owning modu
   const inOwner = joinSites().filter((site) => site.file === OWNER);
 
   assert.ok(inOwner.length > 0, 'the pattern matched nothing at all — the scan is broken');
+});
+
+/**
+ * The files that may name `materializePrivateKey` (the writer of a key file whose name is built from an id), and why. A key file of
+ * an agent's call is written by `materializeCallKey`, whose name is random (rule C). A new caller of the writer needs a decision in
+ * the plan, not a new name on this list.
+ *
+ * <p>What the scan does NOT find: a name that is built at run time (`mod['materialize' + …]`); a new call inside a file of this
+ * list; and the other writers that name a file from an id through `materializedKeyPath` (`known_hosts-<id>`, `agent-script-<id>`).</p>
+ */
+const WRITER_LIST: Readonly<Record<string, string>> = {
+  'keyInstaller.ts': 'the writer itself, and `materializeCallKey`, which gives it a random name',
+  'sshSession.ts': "the person's Connect and the person's roads: the path goes into the person's terminal or a dialog, no agent reads it",
+  'transportFactory.ts': "the deploy key of the vault's git sync: no action of an agent imports this module",
+};
+
+interface WriterSite extends Site {
+  call: boolean;
+}
+
+/** Every identifier `materializePrivateKey` in the source of the product, comments apart, with the line of the source. */
+function writerSites(): WriterSite[] {
+  return sourceFiles(SRC).flatMap((full) => {
+    const source = fs.readFileSync(full, 'utf8');
+    const code = withoutComments(source);
+    const file = path.relative(SRC, full).split(path.sep).join('/');
+    return [...code.matchAll(/\bmaterializePrivateKey\b/g)].map((match) => {
+      const at = match.index ?? 0;
+      const line = code.slice(0, at).split('\n').length;
+      return {
+        file,
+        line,
+        text: (source.split('\n')[line - 1] ?? '').trim(),
+        call: /^\s*\(/.test(code.slice(at + match[0].length)),
+      };
+    });
+  });
+}
+
+test('only the written files name materializePrivateKey: a key file of a call is written by materializeCallKey', () => {
+  const offenders = writerSites().filter((site) => !Object.hasOwn(WRITER_LIST, site.file));
+
+  assert.deepEqual(
+    offenders.map((s) => `${s.file}:${s.line}  ${s.text}`),
+    [],
+    'A key file of a call is written with materializeCallKey() of keyInstaller.ts: its name holds no id of an entry (rule C). ' +
+      'A new caller of materializePrivateKey needs a decision in the plan, not a new name on this list.',
+  );
+});
+
+test('the scan of the writer would notice: the list is exactly three files, and the scan finds a call in each', () => {
+  assert.deepEqual(Object.keys(WRITER_LIST).sort(), ['keyInstaller.ts', 'sshSession.ts', 'transportFactory.ts']);
+
+  const sites = writerSites();
+  for (const file of Object.keys(WRITER_LIST)) {
+    assert.ok(
+      sites.some((site) => site.file === file && site.call),
+      `${file}: the scan found no call of materializePrivateKey — the scan is broken`,
+    );
+  }
 });
