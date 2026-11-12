@@ -221,7 +221,7 @@ of an entry is found only when a row reaches it.
 | C2 | `keyInstaller.ts` (new export beside `materializePrivateKey`, `:149-166`) | — | `export function materializeCallKey(storageDir: string, content: string): string`: it calls `materializePrivateKey(storageDir, callKeyName(), content)`. The same folder, the same modes, the same `lockToOwner`. It has no parameter for an id |
 | C3 | `sshExecAuth.ts:162`, and the imports at `:1` and `:7` | the name is `` `${source.keyEntityId}-${crypto.randomUUID()}` `` | `materializeCallKey(storageDir, source.content)`. The import of `node:crypto` goes: nothing more uses it there |
 | C4 | comments that are false, or become false | `sshUseActions.ts:130-132` (*the key file path holds the id of the key entry (an open owner question, N10 …)*); `materializedKeys.ts:67-68` (*the file name is also how the purge and the wipe find it again*: no code does this today, §4.2); `keyInstaller.ts:146-147`, `:157` (they say that the name is the id) | each says what is true: a file that `resolveExecAuth` writes has a random name; the id stays in the names of the files that `sshSession.ts` and `transportFactory.ts` write |
-| C5 | each test world that replaces `./keyInstaller` and loads `sshExecAuth.ts` (directly, or through `sshUseActions.ts`): `test/sshUseActions.test.ts:125-130`, `test/sshExecAuth.test.ts:43`, `:166`, `test/bridgeLinksWorld.ts:89-99`, `test/secondEntryWorld.ts:177-182`, `test/sshExecOver.test.ts:84`, `test/brokerAbandoned.test.ts:557`, `test/pinClickPaths.test.ts:256-258`, `test/pinReaders.test.ts:134-139` and `:400-406`: 11 sites in 9 files. Method: `grep -ln "'./keyInstaller'"` over `src_vs_code/src/test`, then the module that each loads. Not in the list: `test/sshConnectWorld.ts` (it loads `sshSession.ts`) and `test/transportFactory.test.ts` (it loads `transportFactory.ts`): their writer does not change | each gives `materializePrivateKey(dir, id, content)` (some give only a part of the module) | each also gives `materializeCallKey(dir, content)`, and takes the name from the REAL `callKeyName()` (never a name that the test made up). **The copy rule:** the new member does what its sibling `materializePrivateKey` does in that world, the same records (`materialized`, `writes`, `log.materialised`), the same real file, the same throw and the same `writeFails`; only the name differs. Without it a guard passes and tests nothing: `pinReaders.test.ts:400-414` and the *key FILE* test of `sshExecAuth.test.ts` assert that nothing is written, and they never reach the writer. The no-op step (§5, 2) adds them; a world that the list misses fails in step 4 with a `TypeError`, and the coder adds it and says so |
+| C5 | each test world that replaces `./keyInstaller` and loads `sshExecAuth.ts` (directly, or through `sshUseActions.ts`): `test/sshUseActions.test.ts:125-130`, `test/sshExecAuth.test.ts:43`, `:166`, `test/bridgeLinksWorld.ts:89-99`, `test/secondEntryWorld.ts:177-182`, `test/sshExecOver.test.ts:84`, `test/brokerAbandoned.test.ts:557`, `test/pinClickPaths.test.ts:256-258`, `test/pinReaders.test.ts:134-139` and `:400-408`: 10 sites in 8 files. Method: `grep -ln "'./keyInstaller'"` over `src_vs_code/src/test`, then the module that each loads. Not in the list: `test/sshConnectWorld.ts` (it loads `sshSession.ts`) and `test/transportFactory.test.ts` (it loads `transportFactory.ts`): their writer does not change | each gives `materializePrivateKey(dir, id, content)` (some give only a part of the module) | each also gives `materializeCallKey(dir, content)`, and takes the name from the REAL `callKeyName()` (never a name that the test made up) where its sibling builds a name; where the sibling gives a fixed text or throws (`brokerAbandoned.test.ts:557`, `pinReaders.test.ts:139`, `sshExecAuth.test.ts:166-168`), the new member does the same. **The copy rule:** the new member does what its sibling `materializePrivateKey` does in that world, the same records (`materialized`, `writes`, `log.materialised`), the same real file, the same throw and the same `writeFails`; only the name differs. Without it a guard passes and tests nothing: `pinReaders.test.ts:400-414` and the *key FILE* test of `sshExecAuth.test.ts` assert that nothing is written, and they never reach the writer. The no-op step (§5, 2) adds them; a world that the list misses fails in step 4 with a `TypeError`, and the coder adds it and says so |
 
 `SshUseDeps` and `AgentUseDeps` get no new member. `sshUseActions.ts` changes in one comment only.
 
@@ -273,9 +273,9 @@ opens the ledger. Then Opus writes the stories document, and Fable writes the sp
 The work is in a worktree and a branch of its own, from `main` after the pull request that closes F7 is merged.
 
 1. **The scan first** (S1 and S2 of §6.3), before any fix. Its first run gives the list of the callers of
-   `materializePrivateKey`, and it fails on `sshExecAuth.ts:162`. Compare the list with §4.3. A caller that is not
+   `materializePrivateKey`, and it fails on `sshExecAuth.ts` (the import at `:7` and the call at `:162`). Compare the list with §4.3. A caller that is not
    there stops the work: it is a plan change.
-2. **The no-op step.** Add C1 and C2 with no caller, and C5 (the new member of the test worlds, 11 sites in 9
+2. **The no-op step.** Add C1 and C2 with no caller, and C5 (the new member of the test worlds, 10 sites in 8
    files, by the copy rule).
    `npm run typecheck` is clean, and `npm test` shows the failure of step 1 and no other. The step exists so that no
    RED proof is a compile error (`npm test` runs `tsc` first).
@@ -363,7 +363,7 @@ The two functions are new, so their rows cannot fail on the code of today. Each 
 | S1 | `test/keysDirPaths.test.ts` (the structural guard of the keys folder) | each occurrence of the identifier `materializePrivateKey` in `src_vs_code/src` and each folder under it (as `sourceFiles()` of that test reads, `:30-37`), tests and comments apart, is in a file of the written list: `keyInstaller.ts` (the writer itself and `materializeCallKey`), `sshSession.ts` (the person's Connect and roads), `transportFactory.ts` (the vault's git sync). Each has its reason in the test. An occurrence is a call, an import, an import with `as` (a new name), or a member of a namespace import; so a new name for the writer is found at its import. An occurrence in another file fails the test, with the file and the line. **What S1 does not find:** a name that is built at run time (`mod['materialize' + …]`); a new call inside a file of the list; and the other writers that name a file from an id through `materializedKeyPath` (`known_hosts-<id>`, `hostKeyTrust.ts:67`; `agent-script-<id>`, `agentUseActions.ts:163-166`), which are safe today because their entry is one that the agent may view (§4.3), but a pin or a file for a hop in E1.6 would not be found (§9, row 2). It is a narrow guard against a regression, not a proof; part C is the proof for the three doors |
 | S2 | the same | the companion: the scan finds a call in each of the three files of the list, so a change of formatting cannot make it match nothing; and the list of the test is compared with these three names, so a fourth name fails |
 
-S1 is written before the fix. On the code of today it fails with `sshExecAuth.ts:162`: this is the RED proof of the
+S1 is written before the fix. On the code of today it fails with `sshExecAuth.ts:7` and `:162` (an import is an occurrence): this is the RED proof of the
 scan.
 
 ### 6.4 Guard rows (watched passing before and after), and the test that changes
@@ -496,7 +496,7 @@ keys folder: the folder of the window when it starts and ends, and the folder of
 
 ## 12. Definition of Done
 
-- [ ] The scan S1 was written before the fix; its first failure named `sshExecAuth.ts:162` and no other caller
+- [ ] The scan S1 was written before the fix; its first failure named `sshExecAuth.ts` (`:7`, `:162`) and no other file
       outside the written list; the summary has that list, compared with §4.3.
 - [ ] Rows K1 to K6 were watched failing by their assertions on the base of the branch with the no-op step, then
       pass; the summary quotes one failure message and the pass. No RED proof is a compile error.
@@ -582,7 +582,7 @@ check in the code: S1 finds an import with a new name (§6.3, mutation 6), the G
 assertions*, not *the same bytes*, and N15 (§13). Opus writes the stories document; Fable writes the specification of the
 cornerstone story; Sonnet codes; Opus reviews. One epic gives a cornerstone quota of 1.
 
-Cornerstones: 0 of 1 — none marked yet (the stories document of E1 marks the story and updates this line)
+Cornerstones: 1 of 1 — E1.1 (spec: [PLAN_agent_refusal_key_file_path_E1_S1_spec.md](PLAN_agent_refusal_key_file_path_E1_S1_spec.md), by Fable, 2026-11-12)
 
 ### E1 · Rule C: the name of a call file
 
