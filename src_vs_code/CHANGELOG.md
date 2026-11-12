@@ -13,8 +13,10 @@ file, and the name of the file started with the id of the key entry: `<storage f
 Three texts that an agent reads can show that path: the refusal when the key cannot be written (`Could not write the stored key to
 disk: …`), the refusal when `ssh` cannot run (`Could not run ssh: …`), and what `ssh` itself prints about its key file (for example
 `Load key "<path>": invalid format`). So an agent could read the id of a key entry that it may not view, and an id that came with an
-import can look like a name (`deploy-key`). Now the key file of a call has a random name, `call-<uuid>.key`. The rule: the name of a
-file that the extension writes for one call holds nothing of the vault, no id and no name of an entry.
+import can look like a name (`deploy-key`). Now the key file of a call has a random name, `call-<uuid>.key`. The rule: the name of the
+key file that the extension writes for one call holds nothing of the vault, no id and no name of an entry. (Two other files of a
+call keep an id in their names, the host-key pin and the script of a Script entry; it is the id of an entry that the agent may
+view.)
 
 - **Which calls.** `creds_exec`, `creds_rotate` on an SSH entry, and `creds_run` on a Terminal entry that runs over a linked SSH
   entry. The same on the alias door and on the token door (`creds exec` in a terminal), because an action does not know its door,

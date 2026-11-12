@@ -99,7 +99,7 @@ test('U2: a call key lands in keys/<pid>/ as <a call name>.key, with one end-of-
   const keyPath = w.mod.materializeCallKey(w.storage, 'PRIVATE KEY BODY');
 
   assert.equal(path.dirname(keyPath), w.mod.materializedKeysDir(w.storage));
-  assert.match(path.basename(keyPath), /^call-[0-9a-f-]{36}\.key$/);
+  assert.match(path.basename(keyPath), /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.key$/);
   assert.equal(fs.readFileSync(keyPath, 'utf8'), 'PRIVATE KEY BODY\n');
   assert.equal(fs.readFileSync(w.mod.materializeCallKey(w.storage, 'BODY\n'), 'utf8'), 'BODY\n');
   if (process.platform !== 'win32') {

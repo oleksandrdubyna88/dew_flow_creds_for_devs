@@ -203,7 +203,7 @@ test('K6: the key path that ssh prints is a call name, on a bridge too — the l
     const offenders = printed.filter((p) => p.last.startsWith('k1-')).map((p) => `${p.label}: the last part of the printed path starts with the id of the key entry: ${p.last}`);
     assert.deepEqual(offenders, []);
     for (const p of printed) {
-      assert.match(p.last, /^call-[0-9a-f-]{36}\.key$/, p.label);
+      assert.match(p.last, /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.key$/, p.label);
     }
   });
 });

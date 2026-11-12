@@ -6450,7 +6450,8 @@ hop, because the mask covers stored secret values); and the local path of the fi
 class test and by `agentNaming.test.ts` (see `module_tests.md`).
 
 *Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md)). The name
-of a file that the extension writes for one call of an agent holds nothing of the vault: `materializeCallKey` (`keyInstaller.ts`)
+of the key file that the extension writes for one call of an agent holds nothing of the vault (the host-key pin `known_hosts-<id>`
+and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view): `materializeCallKey` (`keyInstaller.ts`)
 names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
 caller of `resolveExecAuth` uses it (the agent's calls and three commands of the person). So no text that shows the path of a call
 file can tell the id of an entry, on any door and on a Remote Bridge, also for an imported id that reads like a name. Pinned by

@@ -84,7 +84,7 @@ test('K5: a stored key is written out under a call name that holds nothing of th
   assert.equal(auth.auth, 'key');
   const last = (auth.keyPath ?? '').split('/').at(-1) ?? '';
   assert.ok(!last.includes('deploy-key'), `the last part of the key path holds the id of the key entry: ${last}`);
-  assert.match(last, /^call-[0-9a-f-]{36}$/);
+  assert.match(last, /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.ok(auth.keyPath?.startsWith('/store/'));
   assert.notEqual(auth.materialized, undefined, 'the caller must know to delete it');
   assert.equal(writes.length, 1);

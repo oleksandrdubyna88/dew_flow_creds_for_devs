@@ -129,7 +129,9 @@ failed `mkdir`, a failed start, a NUL argument) and `ssh` to a closed port of th
 The words of F7 §2.1 stay: *the agent may view* an entry (`agentMayView`, `mcpEntries.ts`), *the addressed entry*, *a
 second entry*. One new word:
 
-- **A call file** is a file that the extension writes for one call of an agent and removes when the call ends.
+- **A call file** is a key file that the extension writes for one call of an agent and removes when the call ends. (The
+  host-key pin and the script of a Script entry are also written for a call; their names keep the id of an entry that the
+  agent may view, §4.3. Rule C is not about them.)
 
 ### 2.2 The rule
 
@@ -552,6 +554,12 @@ keys folder: the folder of the window when it starts and ends, and the folder of
   `materialized`). Each start of a bridge or click of the install leaves one key in `keys/<pid>/` until the window
   ends. An old defect, not caused by this plan; no agent reads these paths. It needs its own small plan. Found by the
   lead's Opus review on 2026-11-12, by reading.
+- **N17. `creds_open_terminal` types a key path with the id of the key entry into a terminal.** The agent's terminal
+  action calls `connectEntity` (`sshUseActions.ts:377`), which writes `<keyEntityId>.key` (`sshSession.ts:472`) and
+  types `ssh -i "<path>"` into a VS Code terminal (`sshCommand.ts:232-233`). The answer to the agent is `opened` or one
+  fixed sentence (§4.3), but an agent in the same window with a tool that reads the terminal could read the id of a
+  linked key entry that it may not view. Not built here (§8: the person's roads keep their names); a question for the
+  owner. Found by the lead's Opus code review on 2026-11-12, by reading; not run.
 
 ## 14. Questions for the owner
 
