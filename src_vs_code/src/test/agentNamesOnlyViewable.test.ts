@@ -18,7 +18,7 @@ import { ACCOUNT, HIDDEN_ID, SecondOptions, SecondWorld, VISIBLE_NAME, secondEnt
 import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, N5_COMMAND, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
 
 /**
- * Part A of the class test of `todo/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.1): the ADDRESSED node, at the door.
+ * Part A of the class test of `research/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.1): the ADDRESSED node, at the door.
  *
  * <p>The rule: when the agent may not view the node whose id a request carries, the answer is the answer of an id that does
  * not exist. The real broker runs over `unlistedWorld.ts`, a vault with one node for each reason an agent may not view a node.
@@ -396,7 +396,7 @@ test('A, on a Remote Bridge: an entry in scope that the agent may not view answe
 });
 
 /*
- * ---- Part B: a SECOND entry in a refusal (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md` section 3; the parent's rule B) -------------------
+ * ---- Part B: a SECOND entry in a refusal (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md` section 3; the parent's rule B) -------------------
  *
  * The rule: when an entry that an agent may view needs a second entry (a linked key, a jump host) and the second one stops the call, the
  * answer names that second entry only when the agent may view it. The REAL actions run over `secondEntryWorld.ts`, a vault in which the

@@ -4,7 +4,7 @@
 > its tests. Found while writing B1 of [PLAN_terminal_command_over_ssh_E3.md](../research/PLAN_terminal_command_over_ssh_E3.md)
 > (flag 8); waits for E3, which adds `spawnableSshProgram`.
 
-**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan changes the third argument of the refusal function in `sshUseActions.ts` (what `execOverSsh` SAYS when it refuses a hidden second entry). It changes no program and no spawn, so its lines are disjoint from this plan's.
+**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan changes the third argument of the refusal function in `sshUseActions.ts` (what `execOverSsh` SAYS when it refuses a hidden second entry). It changes no program and no spawn, so its lines are disjoint from this plan's.
 
 ## Symptom
 

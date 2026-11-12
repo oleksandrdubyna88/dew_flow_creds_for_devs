@@ -2324,7 +2324,7 @@ Break-its, each run once and restored:
 
 **The scenario, shown by revert (section 7, E3.4).** The fix landed in E3.3, so the teeth are shown by reverting it: with `coveringAt`'s scopes forced to `['all']` the live scenario prints `FAIL Ed25519: login 2 raised no dialog — 2 dialogs` and 9 checks fail; dropping `PubkeyAcceptedAlgorithms +ssh-rsa` from the RSA leg's sshd config makes the SHA-1 leg fail (the server then refuses the algorithm the client was told to ask for). Section 7 took 1667–2452 ms in the Alpine container (six `sshd -d` runs; 1667 ms on the final run, 67 checks ok).
 
-## A refusal names only what the agent may view (2026-11-11, E1 and E2 of [PLAN_agent_refusal_names_unlisted_entry.md](../todo/PLAN_agent_refusal_names_unlisted_entry.md), rules A and B)
+## A refusal names only what the agent may view (2026-11-11, E1 and E2 of [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md), rules A and B)
 
 Rule A: when the agent may not view the node whose id a request carries, the answer is the answer of an id that does not exist. Two places
 prove it, and neither one proves the other's half. Rule B (a refusal that would name a SECOND entry, such as a linked key or a jump host, names

@@ -6,7 +6,7 @@
 > ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9, story E1.6); the two paths below are outside that plan's scope (its §8 row)
 > and wait for a plan of their own.
 
-**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan adds a field `second` to the failure of `ExecAuth` and to the failure of `JumpChain`, and reads no password path. A new refusal on this plan's paths that names a hop or a second entry sets `second`, so that the refusal passes the one chooser of that plan.
+**Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan adds a field `second` to the failure of `ExecAuth` and to the failure of `JumpChain`, and reads no password path. A new refusal on this plan's paths that names a hop or a second entry sets `second`, so that the refusal passes the one chooser of that plan.
 
 **Boundary with [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md)** (2026-11-11): that plan changes only the REMOTE COMMAND (the last argv word, or the last word of the typed line) on the roads of this plan's table, to `exec ${SHELL:-sh} -l -c '…'`. It changes no ssh option, no environment and no askpass variable. Disjoint from this plan; either may go first.
 

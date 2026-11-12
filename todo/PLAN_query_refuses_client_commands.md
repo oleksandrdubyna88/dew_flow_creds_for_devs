@@ -319,7 +319,7 @@ against a fake server (its §4.11, *MariaDB, decided*), and this plan does not d
 - What Windows best-fit does to Cyrillic today: under ACP 1252 a Cyrillic query reaches a narrow-`argv` client as `?`
   characters, wrong data rather than a leak; under ACP 1251 it survives. Filed in §7, not fixed here.
 - `mongosh`, refused outright already.
-- **[PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7).** It changes disjoint lines of `agentUseActions.ts` (`whyUnusable`, `usableGate`, `remoteRefusal`) and nothing of the `query` action or of `dbCliLauncher.ts`.
+- **[PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7).** It changes disjoint lines of `agentUseActions.ts` (`whyUnusable`, `usableGate`, `remoteRefusal`) and nothing of the `query` action or of `dbCliLauncher.ts`.
 
 ## 6. Definition of Done
 

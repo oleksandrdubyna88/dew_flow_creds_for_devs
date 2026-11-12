@@ -188,7 +188,7 @@ export type MoveRefusal = 'no_such_destination' | 'destination_closed' | 'into_i
  *
  * <p><b>A destination that the agent may not view is no folder.</b> Missing, not a folder, the Trash, in the Trash and
  * a folder with no `view` get one answer, `no_such_destination`; `destination_closed` is for a folder that the agent may
- * view and may not move into (rule A of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
+ * view and may not move into (rule A of `research/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
  *
  * <p>Into itself is refused here rather than left to storage. Storage does refuse it, by leaving
  * the tree alone — which reaches an agent as a call that succeeded and changed nothing.</p>

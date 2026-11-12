@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.2...extension-v1.21.3) (2026-11-11)
+
+
+### Bug Fixes
+
+* **agent:** F7 E2 — a refusal names a linked key or a jump host only when the agent may view it ([#353](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/353)) ([b95282f](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/b95282f162d30a738d7e8e722a99c62efac99ab6))
+
 ## [1.21.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.1...extension-v1.21.2) (2026-11-11)
 
 

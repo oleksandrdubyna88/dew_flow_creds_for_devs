@@ -8,7 +8,7 @@ import type { EntityMetadata, TreeNode } from '../types';
 
 /**
  * A vault in which an agent may NOT view some nodes, each for a different reason, and may view the rest (rule A of
- * `todo/PLAN_agent_refusal_names_unlisted_entry.md`, its section 5).
+ * `research/PLAN_agent_refusal_names_unlisted_entry.md`, its section 5).
  *
  * <p>One account, `a1`. Each node has an id of its own and the name `MARK-<id>`, so a name or an id that reaches an
  * answer can be found by a plain text search. The file gives the source, the lists of hidden names and hidden ids,

@@ -90,7 +90,7 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  * use: "that entry is in your list and you may not use it" is what lets an agent tell a person which
  * switch to turn on, and collapsing it into "not found" would make the product look broken at
  * exactly the moment it is working as designed. A node that the agent may NOT view and an id that does
- * not exist get ONE answer, `undefined` (rule A of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
+ * not exist get ONE answer, `undefined` (rule A of `research/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
  */
 export type McpUseLookup =
   | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; remembers?: boolean; quiet?: boolean }

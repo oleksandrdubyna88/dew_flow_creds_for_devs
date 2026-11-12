@@ -1,6 +1,12 @@
 # PLAN — An agent's refusal never names an unlisted entry, E2: rule B, a second entry in a refusal
 
-> Status: **stories written 2026-11-11; E2.1 and E2.2 built on the branch 2026-11-11; the code round and the pull request follow.** Stories of epic E2 of
+> Status: **IMPLEMENTED, 2026-11-11.** Written 2026-11-11 by Fable (a security judgement; no cornerstone). E2.1 and E2.2 were built on
+> `fix/agent-refusal-names-second-entry`, merged as #353 (`b95282f1`) and released in extension 1.21.3 (release PR #355); promoted
+> together with the parent and the E1 document. Deviations: the sixteen "Notes on the parent" at the end of this document, and the
+> parent's §12. First: 27 string fields (5 + 22), not 25 (5 + 20); two existing tests of `bridgeLinks.test.ts` changed; part B
+> runs over the real `StorageManager` in the new world `test/secondEntryWorld.ts`, not over `agentSshWorld.ts`; own rows X3 to X6
+> and mutations M-b to M-d. Note 10 (the path of a borrowed key, N10) was NOT built here; it is now
+> [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). Stories of epic E2 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §1 D4 and D5, §2.2
 > rule B, §2.3 row B, §2.5, §3.1 rows B1 to B6, §3.4 case 4, §4 steps 9 to 13, §5.2, §5.3 rows C-B and B1 to B7, §5.4
 > rows G9 to G11, §5.6 mutations 4, 5 and 9, §5.8, §6, §10 and `## Epics` E2).
