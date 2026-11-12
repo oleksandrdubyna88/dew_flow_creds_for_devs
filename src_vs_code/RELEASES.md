@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.3...extension-v1.21.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **agent:** the key file of an agent's call has a random name, with no id of an entry (rule C, N10) ([#359](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/359)) ([c4c10cb](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/c4c10cb310aff26b6edfc06a3bcf1a572a9b93c6))
+
 ## [1.21.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.2...extension-v1.21.3) (2026-11-11)
 
 
