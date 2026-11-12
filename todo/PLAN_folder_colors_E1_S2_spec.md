@@ -292,6 +292,12 @@ and once through two real managers that share one fake `globalState` (R4).
   `ensureFolderColor(b, A, 'e2')` are started together. **Then** two different keys, the set `{K[0], K[1]}` (either
   window may win). **When** next `a` for `e1` and `b` for `e1b` on a fresh world. **Then** both return the same key.
   *Revert:* as R2.
+- **R4b** `a_stale_window_copy_may_repeat_a_colour_and_loses_nothing` (E1 plan round 1, the P1 outcome specified).
+  **Given** two windows whose `globalState` copies are NOT shared (window `b` keeps the snapshot from before `a`'s
+  write; model the late broadcast as the fake not copying `a`'s write into `b`'s copy). **When** `a` colours `f1`,
+  then `b` colours `f2`. **Then** `b` returns a palette key (it may equal `f1`'s); `f1` keeps its key in `a`'s copy;
+  `b` wrote only `f2`; no call rejects. The test states in its name and comment that a repeat is the accepted outcome,
+  so nobody later reads it as a guarantee of two keys. *Teeth:* make `b`'s patch also write `f1`; the test goes red.
 - **R5** `the_folder_is_checked_again_inside_the_lease` — four tests on the fake, each with a `beforePatch` hook that
   changes the world between the outside check and the patch:
 

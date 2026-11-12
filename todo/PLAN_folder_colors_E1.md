@@ -120,7 +120,10 @@ code by Sonnet; review by Opus.
   the call when the folder already holds a string. A call that loses a two-window race stamps the folder once with no
   change: accepted.
 - Two calls at once for two entries of ONE folder write once and return the same key. Two calls for TWO folders get
-  two different keys. This holds in one window and in two.
+  two different keys in one window, and in two windows when the second window's `globalState` copy already holds the
+  first write. It is NOT guaranteed across windows when that copy is stale (P1, E1 plan round 1): the second window
+  can then pick the same key. That outcome is a repeated colour, never a lost or overwritten one — the same as palette
+  reuse after twelve folders — and the spec's R4b tests it.
 - A failed write rejects that call only. The next call takes the lease as usual. Nothing is kept in memory.
 - A call for one account never reads or writes the nodes of another account.
 
@@ -142,7 +145,7 @@ of §3.6.
 | # | Decision | Why |
 |---|---|---|
 | D1 | The helper is a new module `terminalColor.ts`, not a function in `pinnedTerminal.ts`. | `terminalManager.test.ts:61` replaces `./pinnedTerminal` with `composedShellPath` alone; a helper there would be missing in that world. |
-| D2 | A failed colour write never stops a terminal: each caller writes `await ensureFolderColor(…).catch(() => undefined);`. | The colour is cosmetic. The terminal opens uncoloured, and the next open tries again (no string is stored). |
+| D2 | A failed colour write never stops a terminal, and it is never silent (E1 plan round 1): each caller catches the rejection, writes one line to the extension's diagnostic log (`DiagnosticWriter`, `diagnosticLog.ts`; source `folderColors`, the message from `describeError`, no folder or entry name), and goes on. No toast. One new scenario per caller road is not needed: one test (C10) drives a rejecting storage through the arrow and asks that the terminal opened uncoloured AND the log got the line. | The colour is cosmetic: the terminal opens uncoloured, and the next open tries again (no string is stored). A toast would interrupt for a cosmetic failure; the log is what a bug report carries. |
 | D3 | SSH Connect calls it first in `connectEntity`, BEFORE `prepareSshSession`. | The open half after prepare is synchronous by design (`sshConnect.ts:99`); an await there would let a gone agent request get a terminal. `placeOf` still reads storage after prepare, so it sees the colour. |
 | D4 | The VPN launcher calls it in `runWithLauncher`, after the `stop` return (`vpnLauncherRun.ts:74-81`). | One place for both roads (local `:202`, linked `:112`). It is before every gate, so the rule "no await between `configFor` and the send" (`:198-201`) does not change. |
 | D5 | The folder run calls it in `prepareAndType` (`folderRunCommand.ts:202`), before `prepareLinked`, once per row to type, in row order. | After the modal (a cancelled modal opens nothing) and before the first preparation, so "nothing is awaited from the last preparation to the last send" (`:44-45`) still holds. The first call writes; the others only read. A row moved meanwhile colours its new folder, where its terminal opens. |
@@ -222,7 +225,9 @@ of §3.6.
   the launcher's terminal wears the launcher's folder colour. *Revert:* remove the call in `runWithLauncher`.
 - **C9** — same file, `the_script_terminal_wears_its_folder_colour`. *Revert:* remove `color:` at `runCommands.ts:267`.
 - **C10** — same file, `a_failed_colour_write_still_opens_the_terminal`. `updateNodeFields` rejects → the line is typed
-  into a new terminal with no `color` property, and no warning is shown. *Revert:* remove the `.catch` in `entryAt`.
+  into a new terminal with no `color` property, no toast is shown, and the diagnostic log got exactly one line with
+  source `folderColors` that names no folder or entry (D2). *Revert:* remove the `.catch` in `entryAt` (the run
+  rejects); or remove the log line (the log assertion fails).
 - **R1** — `test/treeIcons.test.ts`, `a_folder_icon_wears_the_folder_colour`. For every key, `folderIcon(type, key)`
   has `color.id === depColorThemeId(key)` and the same glyph as `folderIcon(type)`; without a key,
   `credSshManager.folderIcon`. *Revert:* ignore `colorKey`.
