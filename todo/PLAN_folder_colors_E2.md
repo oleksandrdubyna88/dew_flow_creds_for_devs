@@ -45,7 +45,7 @@ No cornerstone is marked, so the ledger stays `Cornerstones: 1 of 1 — E1.S2`. 
 | # | Decision | Source |
 |---|---|---|
 | D1 | **Edit intent.** An untouched swatch row sends NO `folderColor`. Only a click on a swatch is a choice. The form's first marking of the stored colour is not a choice. | A consultant, 2026-11-12, verified by the lead |
-| D2 | **Precedence.** A choice wins over the auto-pick. `editFolder` does not write from the node it read when the form opened. The save is ONE `updateNodeFields` call with a FUNCTION patch (`storageManager.ts:521-531`, run inside the lease). The patch sets `folderColor` only when the person chose a key and that key differs from the node AS IT IS THEN. A save with no choice (a rename only) leaves `folderColor` alone, even when another window or the auto-pick wrote one while the form was open. | The same consultant and lead |
+| D2 | **Precedence.** A choice wins over the auto-pick. `editFolder` does not write from the node it read when the form opened. The save is ONE `updateNodeFields` call with a FUNCTION patch (`storageManager.ts:521-531`, run inside the lease). The patch sets `folderColor` only when the person chose a key and that key differs from the node AS IT IS THEN. A save with no choice (a rename only) leaves `folderColor` alone, even when another window or the auto-pick wrote one while the form was open — **as far as that write is visible in the saving window** (E2 plan round 1): the patch sees this window's copy of the node list, and a write from another window that has not arrived by broadcast is not seen; the whole-list save can then drop it. That is E1's named residual (P1), not fixed here; the stub `PLAN_node_writes_refuse_stale_base.md` (S2) is its plan. | The same consultant and lead |
 | D3 | The swatches are the dependency swatches: the same palette JSON (`paletteJson`, `depPickerScript.ts:41-50`, now exported), the same classes `depSwatches` / `depSwatch` / `depSwatchOn`, the same `jsonForScript` rule (`webviewHtml.ts:162`). There is no "no colour" choice. | Parent §3.5 |
 | D4 | The suggestion line shows only when the folder holds NO string. A key this build does not know (`depColor99`) gets no mark and no line, because the auto-pick never writes over a string (E1). A click replaces it. | This document (finding F3) |
 | D5 | A folder in the trash (`inTrash`) gets no Colour row, like the access switches (`folderFormPage.ts:107`). The trash itself is never painted, and the auto-pick never colours inside it. | This document (finding F2) |
@@ -208,8 +208,13 @@ weakness that E1 named gets a stub plan of its own. Parent §3.6, §8.
 
 - **H1** — new `test/folderColorHelp.test.ts` (the shape of `folderRunHelp.test.ts`),
   `every_language_tells_the_folder_colour_with_its_labels_in_english`. For each of `HELP_LANGUAGES`, the `basics` body
-  is not a fallback and holds `**Colour**`, `Creds:` and `Creds SSH:`. RED before item 3. *Revert:* delete the paragraph
-  from `helpUk.ts` (the test names `uk`).
+  is not a fallback and holds `**Colour**`, `Creds:` and `Creds SSH:`, AND (E2 plan round 1, two reviewers) for each
+  non-English language one distinctive phrase of its own translation of the paragraph — the word for "terminal icon" or
+  the sentence that an open terminal keeps its colour, written in that language — so a paragraph left in English or
+  left out fails. RED before item 3. *Revert:* delete the paragraph from `helpUk.ts` (the test names `uk`); or put the
+  English paragraph into `helpDe.ts` (the test names `de`). The Opus review of S2 also reads each translation against
+  the English source and says it carries the same claims (when the colour is given, how to choose one, the open-terminal
+  limit).
 - **H2** — same file, `the_english_help_says_an_open_terminal_keeps_its_colour`. The English body holds the exact
   sentence S2 writes for the limit. *Revert:* delete that sentence.
 - **No test, checked by hand and said in the summary:** the CHANGELOG entry, the module document, the stub and its
