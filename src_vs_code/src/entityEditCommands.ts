@@ -350,14 +350,19 @@ async function afterSave(ctx: EditContext, result: EntityFormValues, written: En
 }
 
 /**
- * A folder's own form — its name, and the agent access its contents inherit.
+ * A folder's own form — its name, the agent access its contents inherit, and its colour.
  *
  * <p>This used to be `promptFolderName`, an input box with one field in it, because a folder had
  * nothing else to say. Agent access is inherited from the folder, so there is now a second thing,
  * and five permissions do not fit in a text prompt.</p>
  *
  * <p>An empty name leaves the folder alone rather than blanking it: the box comes back empty when
- * somebody clears it and saves, and a nameless folder is not a thing anyone asked for.</p>
+ * somebody clears it and saves, and a nameless folder is not a thing anyone asked for. That fallback is "no name in the
+ * change", never the name read when the form opened, so a rename another window made meanwhile survives an empty box.</p>
+ *
+ * <p>The colour is a click or nothing (D1): a Save that clicked no swatch sends none. The whole Save is ONE function
+ * patch of `updateNodeFields` (D2), so the colour is decided from the folder as it is when the lease is held, by
+ * `folderColorChange`, which also refuses the trash and everything inside it (D5) however the message was crafted.</p>
  */
 export async function editFolder(
   accountId: string,
@@ -372,10 +377,11 @@ export async function editFolder(
   // ONE write, decided from the folder as it is when the lease is held (D2). The colour is not read from `node`, the
   // copy taken when the form opened: a colour written meanwhile (another window, the first terminal's auto-pick) must
   // survive a Save that chose none, and a choice must win over one written meanwhile.
+  const byId = (id: string): TreeNode | undefined => storage.getNode(accountId, id);
   await storage.updateNodeFields(accountId, node.id, (now) => ({
-    name: result.name.length > 0 ? result.name : node.name,
+    ...(result.name.length > 0 ? { name: result.name } : {}),
     mcp: result.mcp,
-    ...folderColorChange(now, result.folderColor),
+    ...folderColorChange(now, result.folderColor, byId),
   }));
   onMutated();
 }
@@ -393,7 +399,7 @@ function folderFormOptions(accountId: string, node: TreeNode, storage: StorageMa
     // whatever this folder says itself — see `inheritedAskFor`.
     inheritedAsk: named(inheritedAskFor(node, byId)),
     inTrash: isInTrash(node, byId),
-    ...folderFormColour(node, nodes),
+    ...folderFormColour(node, nodes, byId),
   };
 }
 

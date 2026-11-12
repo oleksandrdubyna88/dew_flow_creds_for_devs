@@ -148,26 +148,40 @@ export function noteColourFailure(log: DiagnosticWriter): (error: unknown) => un
  * when the form opened: a colour another window or the first terminal's auto-pick wrote meanwhile is not
  * overwritten by a Save that chose nothing. `chosen` is what the person CLICKED, or `undefined` for a Save with
  * no click. The change holds a `folderColor` only for a click that differs from what `now` holds, on a folder that
- * is not the trash; every other case is `{}` with no `folderColor` property, so a Save adds no field for it.</p>
+ * can wear a colour: not the trash and not a folder inside it at any depth (D5), which `byId` answers from the vault
+ * as it is then. The form of such a folder shows no Colour row, but a message is untrusted, so the refusal is here
+ * and not in the page. Every other case is `{}` with no `folderColor` property, so a Save adds no field for it.</p>
  */
-export function folderColorChange(now: TreeNode, chosen: DepColorKey | undefined): Partial<TreeNode> {
-  return chosen !== undefined && isPaintableFolder(now) && now.folderColor !== chosen ? { folderColor: chosen } : {};
+export function folderColorChange(
+  now: TreeNode,
+  chosen: DepColorKey | undefined,
+  byId: (id: string) => TreeNode | undefined,
+): Partial<TreeNode> {
+  return chosen !== undefined && canWearColour(now, byId) && now.folderColor !== chosen ? { folderColor: chosen } : {};
+}
+
+/** A folder outside the trash at any depth: the trash itself and everything under it is never painted. */
+function canWearColour(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
+  return isPaintableFolder(node) && !isInTrash(node, byId);
 }
 
 /**
  * What the folder form shows for the colour: the key the folder wears, and the key a first terminal would give it.
  *
  * <p>The suggestion appears only for a folder holding NO string, because the auto-pick never writes over a string
- * (an unknown key of a newer build included), so a folder with `depColor99` gets neither a mark nor a line. Each
- * property is left out when it has no value.</p>
+ * (an unknown key of a newer build included), so a folder with `depColor99` gets neither a mark nor a line. It also
+ * appears only for a folder that can be painted: never for the trash or a folder inside it at any depth, which are
+ * never given a colour. Each property is left out when it has no value.</p>
  */
 export function folderFormColour(
   folder: TreeNode,
   nodes: readonly TreeNode[],
+  byId: (id: string) => TreeNode | undefined,
 ): { folderColor?: DepColorKey; suggestedColor?: DepColorKey } {
   const folderColor = folderColorKeyOf(folder);
+  const paintable = !isInTrash(folder, byId);
   return {
     ...(folderColor === undefined ? {} : { folderColor }),
-    ...(typeof folder.folderColor === 'string' ? {} : { suggestedColor: pickFolderColor(nodes) }),
+    ...(paintable && typeof folder.folderColor !== 'string' ? { suggestedColor: pickFolderColor(nodes) } : {}),
   };
 }

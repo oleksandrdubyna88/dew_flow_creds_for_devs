@@ -25,26 +25,39 @@ export function folderSwatchScript(marked: DepColorKey | undefined): string {
   var folderMarked = ${jsonForScript(marked ?? null)};
   var folderChosen = undefined;
 
+  var folderButtons = [];
+
+  // Built once. A click only moves the mark (below), so the button the person clicked is still the one in focus.
   function paintFolderSwatches() {
     var wrap = document.getElementById('folderSwatches');
     wrap.textContent = '';
-    var shown = folderChosen ?? folderMarked;
     for (var i = 0; i < FOLDER_PALETTE.length; i++) {
-      wrap.appendChild(folderSwatch(FOLDER_PALETTE[i], shown));
+      var button = folderSwatch(FOLDER_PALETTE[i]);
+      folderButtons.push(button);
+      wrap.appendChild(button);
+    }
+    markFolderSwatches();
+  }
+
+  function markFolderSwatches() {
+    var shown = folderChosen ?? folderMarked;
+    for (var i = 0; i < folderButtons.length; i++) {
+      var on = folderButtons[i].getAttribute('data-key') === shown;
+      folderButtons[i].className = 'depSwatch' + (on ? ' depSwatchOn' : '');
+      folderButtons[i].setAttribute('aria-pressed', on ? 'true' : 'false');
     }
   }
 
-  function folderSwatch(entry, shown) {
+  function folderSwatch(entry) {
     var button = document.createElement('button');
     button.type = 'button';
-    button.className = 'depSwatch' + (shown === entry.key ? ' depSwatchOn' : '');
     button.style.background = entry.css;
     button.title = entry.label;
     button.setAttribute('aria-label', entry.label);
     button.setAttribute('data-key', entry.key);
     button.addEventListener('click', function () {
       folderChosen = entry.key;
-      paintFolderSwatches();
+      markFolderSwatches();
     });
     return button;
   }

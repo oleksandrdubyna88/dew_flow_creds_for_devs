@@ -328,6 +328,20 @@ test('a_click_is_the_choice_and_moves_the_mark', () => {
   assert.deepEqual(marked(row), [DEP_COLOR_KEYS[3]]);
 });
 
+test('a_click_moves_the_mark_in_place_so_keyboard_focus_stays_on_the_swatch', () => {
+  const { row } = swatchPage(DEP_COLOR_KEYS[3]);
+  const before = [...row.children];
+
+  row.children[7].fire('click');
+
+  assert.equal(row.children.length, before.length, 'a click changed the number of swatches');
+  assert.ok(row.children.every((one, i) => one === before[i]), 'a click rebuilt the swatches, so the focused one is gone');
+  // MiniElement keeps only data-* attributes, so aria-pressed cannot be read back here; it is asserted from the source,
+  // as the aria-label is in the first test of this group.
+  const source = folderSwatchScript(undefined);
+  assert.match(source, /setAttribute\('aria-pressed', on \? 'true' : 'false'\)/, 'the marked swatch does not say it is pressed');
+});
+
 test('a_hostile_marked_value_cannot_close_the_script_element', () => {
   const fragment = folderSwatchScript('</script><img src=x onerror=alert(1)>' as DepColorKey);
 

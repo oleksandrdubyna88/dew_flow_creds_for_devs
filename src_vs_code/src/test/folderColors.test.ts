@@ -95,26 +95,40 @@ test('the_form_marks_a_known_key_and_suggests_only_for_a_folder_holding_no_strin
   const nodes = [folder('f-none'), folder('f-k', DEP_COLOR_KEYS[0]), folder('f-99', 'depColor99')];
   const of = (id: string): TreeNode => nodes.find((one) => one.id === id) as TreeNode;
 
-  const none = folderFormColour(of('f-none'), nodes);
+  const none = folderFormColour(of('f-none'), nodes, of);
   assert.deepEqual(none, { suggestedColor: pickFolderColor(nodes) });
   assert.ok(!Object.hasOwn(none, 'folderColor'));
 
-  const known = folderFormColour(of('f-k'), nodes);
+  const known = folderFormColour(of('f-k'), nodes, of);
   assert.deepEqual(known, { folderColor: DEP_COLOR_KEYS[0] });
   assert.ok(!Object.hasOwn(known, 'suggestedColor'));
 
-  const unknown = folderFormColour(of('f-99'), nodes);
+  const unknown = folderFormColour(of('f-99'), nodes, of);
   assert.deepEqual(Object.keys(unknown), [], 'a key this build does not know got a mark or a suggestion');
 });
 
 test('a_save_changes_the_colour_only_for_a_click_that_differs_on_a_folder_that_can_wear_one', () => {
   const [stored, other] = DEP_COLOR_KEYS;
-  const none = folderColorChange(folder('f', stored), undefined);
+  const vault = [folder('trash', undefined, { isTrash: true }), folder('in', undefined, { parentId: 'trash' }), folder('deep', undefined, { parentId: 'in' })];
+  const byId = (id: string): TreeNode | undefined => vault.find((one) => one.id === id);
+  const none = folderColorChange(folder('f', stored), undefined, byId);
   assert.deepEqual(Object.keys(none), [], 'a save with no click carried a colour');
-  assert.deepEqual(Object.keys(folderColorChange(folder('f', stored), stored)), [], 'an equal key was written');
-  assert.deepEqual(folderColorChange(folder('f', stored), other), { folderColor: other });
-  assert.deepEqual(folderColorChange(folder('f'), other), { folderColor: other }, 'a folder with no colour takes the click');
-  assert.deepEqual(folderColorChange(folder('f', 'depColor99'), other), { folderColor: other }, 'a click replaces an unknown key');
-  assert.deepEqual(Object.keys(folderColorChange(folder('trash', undefined, { isTrash: true }), other)), [], 'the trash was painted');
-  assert.deepEqual(Object.keys(folderColorChange(entity('e'), other)), [], 'an entry was painted');
+  assert.deepEqual(Object.keys(folderColorChange(folder('f', stored), stored, byId)), [], 'an equal key was written');
+  assert.deepEqual(folderColorChange(folder('f', stored), other, byId), { folderColor: other });
+  assert.deepEqual(folderColorChange(folder('f'), other, byId), { folderColor: other }, 'a folder with no colour takes the click');
+  assert.deepEqual(folderColorChange(folder('f', 'depColor99'), other, byId), { folderColor: other }, 'a click replaces an unknown key');
+  assert.deepEqual(Object.keys(folderColorChange(folder('trash', undefined, { isTrash: true }), other, byId)), [], 'the trash was painted');
+  assert.deepEqual(Object.keys(folderColorChange(entity('e'), other, byId)), [], 'an entry was painted');
+  for (const id of ['in', 'deep']) {
+    assert.deepEqual(Object.keys(folderColorChange(byId(id) as TreeNode, other, byId)), [], `${id}: a folder inside the trash was painted`);
+  }
+});
+
+test('the_form_offers_a_suggestion_only_to_a_folder_outside_the_trash', () => {
+  const nodes = [folder('trash', undefined, { isTrash: true }), folder('in', undefined, { parentId: 'trash' }), folder('deep', undefined, { parentId: 'in' }), folder('live')];
+  const byId = (id: string): TreeNode | undefined => nodes.find((one) => one.id === id);
+  for (const id of ['trash', 'in', 'deep']) {
+    assert.ok(!Object.hasOwn(folderFormColour(byId(id) as TreeNode, nodes, byId), 'suggestedColor'), `${id}: offered a suggestion inside the trash`);
+  }
+  assert.deepEqual(folderFormColour(byId('live') as TreeNode, nodes, byId), { suggestedColor: pickFolderColor(nodes) });
 });

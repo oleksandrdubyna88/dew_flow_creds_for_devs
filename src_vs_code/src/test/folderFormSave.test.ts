@@ -56,7 +56,7 @@ interface World {
   /** The options the fake form was opened with. */
   readonly opened: FolderFormOptions[];
   /** Opens the form on folder `f` of the current list; `answer` closes it with a save. */
-  open(): Promise<void>;
+  open(id?: string): Promise<void>;
   answer(values: FolderFormValues): void;
 }
 
@@ -76,9 +76,9 @@ function world(...seed: TreeNode[]): World {
   return {
     fake,
     opened,
-    open: () => {
-      const now = fake.getNode(A, 'f');
-      assert.ok(now !== undefined, 'the folder is not in the list');
+    open: (id = 'f') => {
+      const now = fake.getNode(A, id);
+      assert.ok(now !== undefined, `the folder is not in the list: ${id}`);
       return mod.editNode(A, now, fake as never, NO_OP);
     },
     answer: (values) => answers[answers.length - 1](values),
@@ -187,4 +187,42 @@ test('the_form_is_given_the_marked_key_and_the_suggestion', async () => {
   assert.equal(plain.opened[0].folderColor, undefined);
   assert.equal(plain.opened[0].suggestedColor, pickFolderColor(plain.fake.getNodes(A)));
   assert.ok(plain.opened[0].suggestedColor !== undefined, 'the suggestion is missing');
+});
+
+test('a_crafted_colour_from_the_form_of_a_folder_inside_the_trash_writes_nothing_at_any_depth', async () => {
+  const trash = node({ id: 'trash', type: 'folder', isTrash: true });
+  const inTrash = node({ id: 'f', type: 'folder', parentId: 'trash' });
+  const deeper = node({ id: 'g', type: 'folder', parentId: 'f' });
+  for (const target of [inTrash, deeper]) {
+    const w = world(trash, inTrash, deeper);
+    const editing = w.open(target.id);
+    w.answer({ name: 'Renamed', folderColor: K[1] });
+    await editing;
+
+    assert.equal(w.fake.getNode(A, target.id)?.name, 'Renamed', `${target.id}: positive tail: the rename landed`);
+    assert.equal(wears(w, target.id), undefined, `${target.id}: a colour was stored inside the trash`);
+    assert.equal(hasColour(lastChange(w).change), false, `${target.id}: the change carried a folderColor`);
+  }
+});
+
+test('the_form_of_a_folder_inside_the_trash_is_offered_no_colour_and_no_suggestion', () => {
+  const trash = node({ id: 'trash', type: 'folder', isTrash: true });
+  const inTrash = node({ id: 'f', type: 'folder', parentId: 'trash' });
+  const deeper = node({ id: 'g', type: 'folder', parentId: 'f' });
+  for (const target of [trash, inTrash, deeper]) {
+    const w = world(trash, inTrash, deeper);
+    void w.open(target.id);
+    assert.equal(w.opened[0].suggestedColor, undefined, `${target.id}: the trash side was offered a suggestion`);
+  }
+});
+
+test('a_cleared_name_box_keeps_the_name_another_window_gave_the_folder_meanwhile', async () => {
+  const w = world(folder(K[0]));
+  const editing = w.open();
+  w.fake.put(A, node({ id: 'f', type: 'folder', name: 'Other window', folderColor: K[0] }));
+
+  w.answer({ name: '' });
+  await editing;
+
+  assert.equal(w.fake.getNode(A, 'f')?.name, 'Other window', 'the empty name box reverted the other window\'s rename');
 });
