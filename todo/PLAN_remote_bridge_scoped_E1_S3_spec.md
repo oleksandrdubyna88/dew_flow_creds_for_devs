@@ -380,13 +380,22 @@ column because they must be one answer. `<r>` is the request's own refusal as to
 | 4 | `GET /v1/mcp/entries` | served, walled | the row, `can` narrowed to `{ use, false, false, false }`, `dependsOn` trimmed to kept names | the row is absent, and no kept row names it |
 | 5 | `GET /v1/mcp/config-snippet?id=` | served, walled | the snippet body | 200, `{ error: 'no such config is open to agents', envVar, languages: [] }` |
 | 6 | `GET /v1/mcp/folders` | served, empty | `{ folders: [] }` | `{ folders: [] }` |
-| 7 | `POST /v1/mcp/use/exec`, `…/query` | served, walled | `<r>` → `closed` (403 `denied`, the switch sentence) or usable → throttle (429 `too_many_requests`) → mint with `grantFor()` → step 3 → modal every call → step 4 | `<r>` → 404 `not_found` `No such entry, or this window does not serve it.` No slot taken, no dialog, no journal line |
+| 7 | `POST /v1/mcp/use/exec`, `…/query` | served, walled | `<r>` → for an entry the agent may view with its switch off, `closed` (403 `denied`, the switch sentence); for an entry the agent may not view, the OUT answer of this row, byte-equal (since the F7 fix, creds #347: see the note under this table); or usable → throttle (429 `too_many_requests`) → mint with `grantFor()` → step 3 → modal every call → step 4 | `<r>` → 404 `not_found` `No such entry, or this window does not serve it.` No slot taken, no dialog, no journal line |
 | 8 | `POST /v1/alias/exec`, `…/query` | served, walled | `<r>` → throttle → mint → step 3 → modal → step 4 | `<r>` → 404 `not_found` `No entry is enabled for the CLI under "<name>".` No slot, no dialog, no line |
 | 9 | `POST /v1/use/exec`, `…/query` (token) | served, walled | `grantForToken` (401 unknown or expired as today) → `<r>` → §S3.2.10: denied token 403 `GRANT_NOT_ALLOWED`, no dialog; throttle; mint; step 3; modal every call; step 4, the token reserved first | 401 `unauthorized` `Unknown or missing grant token.` — before the body is read, for a live and for an expired token alike |
 | 10 | `…/exportEnv` on `/v1/use/`, `/v1/alias/`, `/v1/mcp/use/` | refused | 403 `denied`, `EXPORT_REFUSED` | the same |
 | 11 | `…/run`, `…/terminal`, `…/up`, `…/down` on the three prefixes; `…/rotate` on `/v1/mcp/use/` (and on the other two, which never served it) | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED` | the same |
 | 12 | `POST /v1/config/read`, `POST /v1/mcp/create`, `POST /v1/mcp/delete`, `POST /v1/mcp/folder/create`, `…/edit`, `…/delete` | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED`; the hook is never called | the same |
 | 13 | any other method or path (`GET /v1/use/exec`, `POST /v1/health`, `/v1/nope`, `/v1/mcp/future`) | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED` | the same |
+
+**Row 7, IN, split in two (the parent's revision for epoch 9, from its change 8.2; read on `main` at `b95282f1`, 2026-11-12).** The row
+said only `closed` for an entry in scope. Since the F7 security fix (creds #347, `todo/PLAN_agent_refusal_names_unlisted_entry.md` §7a,
+its rule A), `verdictFor` (`mcpEntries.ts:434-452`) answers `undefined` for a node the agent may not view and `closed` only for a
+visible node whose needed switch is off; `scopedLookup` and `closedIn` (`bridgeScope.ts:167-177`) keep that answer in scope. So an
+in-scope entry the agent may not view answers 404 `not_found` `No such entry, or this window does not serve it.`, identical to OUT and
+ABSENT (`agentNamesOnlyViewable.test.ts:382`), and an in-scope entry it may view with its switch off still answers 403 `denied` with the
+switch sentence. The remedy a person can act on stays; the diagnostic for a hidden entry is gone on purpose. The parent's §4.2 and §8
+carry the same split.
 
 **Step 4 for rows 7-9 when the scope changed while the modal was open**: `atLaunch` answers the route's own OUT sentence of the row
 (7: `not_found` entry; 8: `not_found` alias; 9: 401 `UNKNOWN_TOKEN`), through `respondError` with the grant, so one journal line is
