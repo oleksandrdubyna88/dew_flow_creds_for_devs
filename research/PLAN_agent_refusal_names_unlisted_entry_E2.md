@@ -6,7 +6,7 @@
 > parent's §12. First: 27 string fields (5 + 22), not 25 (5 + 20); two existing tests of `bridgeLinks.test.ts` changed; part B
 > runs over the real `StorageManager` in the new world `test/secondEntryWorld.ts`, not over `agentSshWorld.ts`; own rows X3 to X6
 > and mutations M-b to M-d. Note 10 (the path of a borrowed key, N10) was NOT built here; it is now
-> [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). Stories of epic E2 of
+> [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md). Stories of epic E2 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §1 D4 and D5, §2.2
 > rule B, §2.3 row B, §2.5, §3.1 rows B1 to B6, §3.4 case 4, §4 steps 9 to 13, §5.2, §5.3 rows C-B and B1 to B7, §5.4
 > rows G9 to G11, §5.6 mutations 4, 5 and 9, §5.8, §6, §10 and `## Epics` E2).

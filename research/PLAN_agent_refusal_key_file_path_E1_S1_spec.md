@@ -1,8 +1,9 @@
 # PLAN — E1.1 spec: rule C, the name of a call file (CORNERSTONE)
 
-> Status: **built on the branch, unmerged, 2026-11-12** (`8517c1ff`, `bd8285d6`; pull request #359). Cornerstone spec, written 2026-11-12 by Fable, before its code. Story E1.1 of
+> Status: **IMPLEMENTED, 2026-11-12** (`8517c1ff`, `bd8285d6`; merged as #359, released in extension 1.21.4). Deviations in
+> the parent's §15. Cornerstone spec, written 2026-11-12 by Fable, before its code. Story E1.1 of
 > [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md) (its §4.1 rows C1, C2, C3 and C5, §5 steps 1 to 6, §6.1 to
-> §6.5, `## Epics` E1). The stories document of the epic is `todo/PLAN_agent_refusal_key_file_path_E1.md`; Opus writes it, and it marks
+> §6.5, `## Epics` E1). The stories document of the epic is `research/PLAN_agent_refusal_key_file_path_E1.md`; Opus writes it, and it marks
 > this story in the cornerstone ledger of the parent. This file is promoted together with the parent and that document.
 >
 > Scope: `src_vs_code/src` — `materializedKeys.ts` (one new export), `keyInstaller.ts` (one new export), `sshExecAuth.ts` (one call

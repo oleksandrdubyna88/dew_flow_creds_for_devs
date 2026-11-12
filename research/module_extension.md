@@ -6449,7 +6449,7 @@ read differently, and an id that is hidden answers `not_found`); its address (th
 hop, because the mask covers stored secret values); and the local path of the file of a borrowed key (a failed write, `Could not run ssh`, and the text of `ssh` on a call that answers 200 can carry it; a bridge closes the first two), whose name holds no id since rule C, below. Pinned by part B of the same
 class test and by `agentNaming.test.ts` (see `module_tests.md`).
 
-*Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md)). The name
+*Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)). The name
 of the key file that the extension writes for one call of an agent holds nothing of the vault (the host-key pin `known_hosts-<id>`
 and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view): `materializeCallKey` (`keyInstaller.ts`)
 names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
