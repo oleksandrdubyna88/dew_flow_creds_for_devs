@@ -44,7 +44,8 @@ function patch as §3.2 describes. Not checked: two real VS Code windows.
   compare-and-swap). The window is narrow: a contended B waits at least 250 ms before it takes the lock. The cost
   here is cosmetic, and E2's form repairs it. **Asked of the lead:** accept it as a named residual. This spec puts it
   in the doc comment of `ensureFolderColor` (§3.4) and asks S3 to say it in the module document. The two-window test
-  (R4) proves the lease, not the broadcast (§7).
+  (R4, as corrected after the Opus review: with a paused shared memento and a no-lock control) proves the lease, not
+  the broadcast (§7).
 - **P2 — the empty stamp costs more, and happens more often, than §3.2 says.** §3.2: "a call that loses that race
   (two windows, same folder, same moment) stamps the folder once with no change". Measured (M1, M5): the loser also
   exists in ONE window, when two calls for one uncoloured folder start together. Each loss is three memento writes
@@ -202,8 +203,9 @@ interface the test names. The four existing tests staying green is the proof of 
 - `beforePatch(run)`, `failNextWrite(error)`, and `put(accountId, node)` (a direct fixture edit, not recorded).
 - **It does not stamp.** So on the fake, "nothing was written" is `written.length`, never node equality alone.
 
-Both waits matter. Without the first, a tally taken outside the lease would look correct. Without the queue, a
-correct allocator could not pass.
+The queue matters: without it a correct allocator could not pass. (Corrected after the Opus review of 62222309: the
+earlier claim that the FIRST wait also matters was false — removing it left all 30 tests green, because the queue
+serializes whole turns and an outside tally is taken before the queue. The fix pass removes that wait or labels it.)
 
 ### 4.3 The real storage, one window and two
 
@@ -340,7 +342,8 @@ and once through two real managers that share one fake `globalState` (R4).
 - **V2** `the_fake_and_the_real_storage_agree_on_a_function_patch`. The same three steps on the fake and on one real
   `StorageManager`: (i) a function patch sees a field written just before it; (ii) a patch returning `{}` changes no
   field other than `updatedAt` and `v`; (iii) a patch for a missing id is not called and no node appears. Green at
-  once. *Teeth:* make the fake evaluate the patch before its first wait; (i) goes red.
+  once. *Teeth* (corrected after the Opus review — the earlier tooth did not bite): make the fake evaluate the patch at
+  CALL time, outside its queue; V2 [fake] goes red (and R1, R2, R5a-d, R6 on the fake).
 
 ## 6. Break-it mutations for the reviewer
 
@@ -367,7 +370,9 @@ written, on a sketch of the algorithm over a sketch of the fake: exactly the tes
 ## 7. What these tests do not prove
 
 - **Two real VS Code windows.** R4's two managers read ONE memento object, so a write is visible to the other at
-  once. A real window gets it by broadcast (P1). R4 proves the lease's serialization only.
+  once. A real window gets it by broadcast (P1). R4 proves the lease's serialization only — and only since the Opus
+  review's fix: R4 now pauses the shared memento between the two calls and has a no-lock control, because before
+  that it passed with no lock at all (one shared memento object made the calls serial by themselves).
 - **The lock's own residual:** a host frozen longer than the TTL can be broken while it works
   (`windowLock.ts:29-38`). Not this story's.
 - **The sealed store.** The real-storage worlds do not call `init()`, so the list is stored unsealed
