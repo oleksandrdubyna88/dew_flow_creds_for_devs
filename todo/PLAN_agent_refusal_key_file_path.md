@@ -8,7 +8,7 @@
 > [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7), and note 10
 > of [its E2 stories](../research/PLAN_agent_refusal_names_unlisted_entry_E2.md). One epic. A security fix for a defect
 > that is live on `main`. All `file:line` references were read on `b95282f1` (F7 epic 2 merged, #353). No ledger yet:
-> it opens at the first approval.
+> it opens at the first approval. The owner answered Q1 to Q3 of §14 on 2026-11-12 (yes to each; no section changes).
 
 ## 1. The defect
 
@@ -517,6 +517,10 @@ keys folder: the folder of the window when it starts and ends, and the folder of
 ## 14. Questions for the owner
 
 The work does not wait for an answer. Each question has the answer that this plan is built on.
+
+**Answered by the owner on 2026-11-12: yes to Q1, Q2 and Q3.** Each answer is the one that this plan is built on: (a)
+and (b) off a bridge keep the text of the operating system (O3 is not built); N11 stays, as the address of a hop
+stays; on a bridge `ssh`'s `stderr` keeps the laptop's path, and the bridge plan owns it. No section below changes.
 
 - **Q1. Off a Remote Bridge, do the two refusals (a) and (b) keep the text of the operating system?** It holds the
   storage folder with the user name. *Built on: yes, they keep it.* The caller off a bridge is a program on the
