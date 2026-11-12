@@ -10,6 +10,7 @@ import {
   teamOthers,
 } from '../types';
 import { isBackupBundle } from '../backupBundleType';
+import { DEP_COLOR_KEYS } from '../depColors';
 
 const entity = {
   id: 'e1',
@@ -215,6 +216,6 @@ test('a_folder_colour_from_a_newer_build_is_kept', () => {
   // The field is a string, not a DepColorKey, on purpose: a palette key minted by a newer build
   // must not make this build reject the whole folder (and with it, on sync, the vault's tree).
   const folder = { id: 'f1', name: 'Production', type: 'folder', parentId: null };
-  assert.ok(isTreeNode({ ...folder, folderColor: 'depColor3' }), 'a key of this build is admitted');
+  assert.ok(isTreeNode({ ...folder, folderColor: DEP_COLOR_KEYS[2] }), 'a key of this build is admitted');
   assert.ok(isTreeNode({ ...folder, folderColor: 'depColor99' }), 'a key of a newer build is admitted');
 });

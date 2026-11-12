@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
+import { DepColorKey } from './depColors';
+import { folderColorOption } from './terminalColor';
 import { SshCommandOptions, buildSshCommand, describeSshTarget, noHostSentence } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
 import { claimSshTerminal, isSshTerminalOf } from './sshTerminalOwners';
@@ -12,6 +14,8 @@ export { buildSshCommand, describeSshTarget };
 export interface SshTerminalPlace {
   readonly title: string;
   readonly accountId: string;
+  /** The folder's colour, when it has one: the new terminal wears it (VS Code fixes it at creation). */
+  readonly color?: DepColorKey;
 }
 
 /**
@@ -54,7 +58,7 @@ export function openSshTerminal(
 
   // The line is composed for `platform`; in a local window that is this machine, so its shell is
   // pinned — a Windows ssh line typed into a WSL-bash default profile is issue #103 again.
-  const terminal = vscode.window.createTerminal({ name: place.title, shellPath: composedShellPath() });
+  const terminal = vscode.window.createTerminal({ name: place.title, shellPath: composedShellPath(), ...folderColorOption(place.color) });
   claimSshTerminal(terminal, place.accountId, entity.id);
   terminal.show();
   terminal.sendText(`${prefix}${command}`, true);

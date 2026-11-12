@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { test } from 'node:test';
+import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
 import { RevisionHead } from '../revisionHistory';
 import { entityKey } from '../entityFlags';
 import { TreeElement, TreeNode } from '../types';
@@ -231,4 +232,24 @@ test('the walk a reveal needs resolves from a sub-tree folder back to its target
     accountId: 'a1',
     node: VPN,
   });
+});
+
+/** The icon the row of `node` wears: its theme colour id, and its glyph. */
+function iconOf(tree: Provider, node: TreeNode): { colour: string | undefined; glyph: string | undefined } {
+  const icon = tree.getTreeItem({ kind: 'node', accountId: 'a1', node }).iconPath;
+  return { colour: icon?.color?.id, glyph: icon?.id };
+}
+
+test('the_folder_row_wears_its_colour_and_the_trash_does_not', () => {
+  const FOLDER_ID = 'credSshManager.folderIcon';
+  const coloured: TreeNode = { ...folder('c1', 'coloured'), folderColor: DEP_COLOR_KEYS[2] };
+  const plain = folder('c2', 'plain');
+  const newer: TreeNode = { ...folder('c3', 'newer'), folderColor: 'depColor99' };
+  const trash: TreeNode = { ...folder('c4', 'Trash'), isTrash: true, folderColor: DEP_COLOR_KEYS[2] };
+  const tree = build([coloured, plain, newer, trash]);
+
+  assert.equal(iconOf(tree, coloured).colour, depColorThemeId(DEP_COLOR_KEYS[2]), 'a coloured folder');
+  assert.equal(iconOf(tree, plain).colour, FOLDER_ID, 'an uncoloured folder');
+  assert.equal(iconOf(tree, newer).colour, FOLDER_ID, 'a key of a newer build');
+  assert.deepEqual(iconOf(tree, trash), { colour: FOLDER_ID, glyph: 'trash' }, 'the trash keeps its glyph and its colour, whatever it stores');
 });

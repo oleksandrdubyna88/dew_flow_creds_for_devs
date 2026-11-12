@@ -3177,6 +3177,69 @@ there to give its own file, because it reads nothing off the provider that canno
 The alternative each time was to shorten a comment until the file fit, which buys a green lint by
 deleting the reason the code is the way it is.
 
+### Folder colours — a folder's terminals and its row (Unreleased)
+
+> Design record: `todo/PLAN_folder_colors.md` and its epic file `todo/PLAN_folder_colors_E1.md`. Epic E1 only: the colour is picked for the person. E2 adds the folder form's colour
+> choice.
+
+**The field.** `TreeNode.folderColor` (`types.ts`) is a key of the dependency palette (`depColors.ts`), on a folder
+only. It is typed `string`, not `DepColorKey`, and the node guard checks only that it is a string, so a key minted by
+a newer build survives a sync or an import byte for byte. It is PAINTED only when this build knows it:
+`folderColorKeyOf` (`folderColors.ts`, no `vscode`) answers a key for a folder that is not the trash and whose value
+passes `isDepColorKey`, else `undefined`, and every painter goes through it. Entries' `details.depColor` is another
+meaning of the same palette and is never read for a folder.
+
+**The auto-pick.** `ensureFolderColor(storage, accountId, entryId)` gives the entry's DIRECT parent folder a colour,
+once. It runs BEFORE a folder-named terminal is found or created, on the road of each of the five creation sites
+(next paragraph): the arrow and Run Script in `entryAt` (`commands/runCommands.ts`), the folder run in `colourRows`
+(`commands/folderRunCommand.ts`, once per row to type, in row order, before the first preparation), the VPN
+launcher in `runWithLauncher` (`vpnLauncherRun.ts`, the launcher's own folder, after the `stop` return), and SSH
+Connect first in `connectEntity` (`sshConnect.ts`, before `prepareSshSession`). None of these runs adds an `await` where
+a document forbids one: SSH Connect's open half after prepare, the launcher's `configFor` to its send, and the folder
+run's last preparation to its last send stay synchronous. At the root, in the trash (any depth), for a dangling parent
+or a missing entry it writes nothing. A folder that holds ANY string, an unknown key included, is left byte-identical.
+Otherwise one `updateNodeFields` call with a FUNCTION patch does the fresh read, the tally (`pickFolderColor`: the
+first key no folder wears, then the least worn in palette order), the choice and the write, inside the write queue and
+the cross-window lease. The check that skips the call for a folder already holding a string sits OUTSIDE the lease,
+because every `updateNodeFields` stamps the version vector. A call that loses a race (two calls for one folder in
+one window, or two windows) changes no field and still stamps the folder once: three memento writes and one sync
+upload, accepted. A failed write rejects that call only; each caller catches it, writes ONE line to the diagnostic log
+(source `folderColors`, `describeError`'s text, no folder or entry name; `noteColourFailure`) and goes on. No toast: the
+colour is cosmetic, the terminal opens without it, and the next open tries again because no string was stored.
+
+**Where it shows.** (1) The terminal's icon, at the five creation sites: SSH Connect (the key session through
+`SshTerminalPlace.color`, the password terminal in `sshConnect.ts`), the arrow and a history row (`openEntryTerminal`), a
+linked line and the folder run's linked rows (`openSshEntryTerminal`), the VPN launcher (the same guard), and Run
+Script (`pinnedTerminal`, `PinnedOptions.color`). The colour travels in `EntryTerminalKey.folderColor`, which
+`entryTerminalKey` sets from the folder and leaves out when there is none, so it never changes a title; the one spread
+is `folderColorOption` (`terminalColor.ts`, its own module so the tests that replace `pinnedTerminal` still find it).
+(2) The folder row: `folderIcon(type, key)` (`treeIcons.ts`) wears the folder's colour in place of `FOLDER_COLOR`,
+`treeDataProvider.ts` passing `folderColorKeyOf(node)`; the trash row keeps its own colour. The glyph never changes.
+`folderColorScan.test.ts` holds both: a module that builds a terminal key must call `ensureFolderColor(`, and every
+`createTerminal(` for a folder title spreads `folderColorOption(` (X1 checks a module, not the order inside a function:
+a new road in a module that already colours passes it uncoloured).
+
+**The limit.** VS Code fixes a terminal's colour when the terminal is CREATED. A terminal that is found (a second arrow,
+Connect twice) keeps the colour it was made with, and the folder's colour changing later (E2's form) never repaints
+a terminal that is already open.
+
+**No colour.** `Creds: before …` (the dependency chain), `Creds run: …` (the masked run), `Creds VPN: …` (the built-in
+VPN) and `env check: …` name no folder, so they get none. The trash and a folder inside it are never coloured. An entry
+at the root has no folder. A key this build does not know paints nothing and counts for nothing.
+
+**Residuals, named on purpose.** (P1) The lease serializes the windows; it does not make a window's `globalState` copy
+fresh. A window that takes the lease before another's write has arrived by broadcast can pick the same key for a
+second folder (cosmetic; E2's form repairs it), and `saveNodes` writes the WHOLE node list from that stale copy, so it
+can drop the other window's write made within the broadcast delay: the first folder's colour, or any other node edit.
+That is true of every leased write in this extension (`windowLock.ts`; `PLAN_cross_window_write_coordination.md`
+§2026-09-03), not new here; this feature adds one more such write per folder, once, and a lost colour is picked again
+at the next terminal. (P2) The empty stamp above. (P3) The first open from an uncoloured folder waits for the lease with
+no bound and no timer of its own: a dead holder is broken after 15 s, a live one is waited for. (F4) `entryAt` also
+serves Run with Secrets, whose terminal gets no colour, and it runs before the trust question; so such a run, or a
+cancelled trust question, still gives the folder its colour. One write per folder, ever. (F5) Export and Import do not
+carry the colour: an imported folder is rebuilt from name, type and the PIN preference, and gets its colour again at its
+first terminal; sync and backup move whole nodes and keep it.
+
 ### The form is three modules, not one file (audit A1's tail)
 
 `entityFormPanel.ts` was 1,433 lines and carried an `eslint-disable max-lines` header saying

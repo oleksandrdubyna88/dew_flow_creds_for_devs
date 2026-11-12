@@ -1,5 +1,7 @@
 import { DepColorKey, isDepColorKey } from './depColors';
 import { pickDepColor } from './depGraph';
+import { describeError } from './describeError';
+import { DiagnosticWriter } from './diagnosticWriter';
 import { parentFolderOf } from './moveGate';
 import { isInTrash, isTrashFolder } from './trash';
 import { TreeNode } from './types';
@@ -13,7 +15,7 @@ import { TreeNode } from './types';
  * gets. No `vscode` import: the choice is unit-tested, and the write is `ensureFolderColor`'s.</p>
  */
 
-/** What a coloured folder stores: nothing for a non-folder or the trash, which are never coloured. */
+/** What a coloured folder stores: nothing for a non-folder or the trash, which are never painted or counted. */
 function storedFolderColor(node: TreeNode | undefined): string | undefined {
   return node?.type === 'folder' && !isTrashFolder(node) ? node.folderColor : undefined;
 }
@@ -23,8 +25,9 @@ function storedFolderColor(node: TreeNode | undefined): string | undefined {
  *
  * <p>Takes `undefined` so a caller holding "the folder, if any" passes it as it is. A
  * `folderColor` that is not a key of this build's palette (a newer build's key, a hand-edited
- * file) counts as no colour rather than painting a theme id nobody contributed — which would not
- * be an error, only an uncoloured terminal.</p>
+ * file) is checked here, once, for three reasons: the row stays on its default colour, the key does
+ * not count in the tally (`folderColorUsage`), and `depColorThemeId` takes a `DepColorKey`, so an
+ * unchecked string could not be turned into a theme id at all.</p>
  */
 export function folderColorKeyOf(node: TreeNode | undefined): DepColorKey | undefined {
   const stored = storedFolderColor(node);
@@ -115,4 +118,18 @@ export async function ensureFolderColor(
     return { folderColor: written };
   });
   return written ?? folderColorKeyOf(storage.getNode(accountId, folder.id));
+}
+
+/**
+ * What every caller of `ensureFolderColor` does with a rejection: it never stops the terminal, and it is never
+ * silent. The colour is cosmetic (the terminal opens without it and the next open tries again, because no string
+ * was stored), so there is no toast; the one line goes to the extension's diagnostic log, which is what a bug report
+ * carries. The message is `describeError`'s and names no folder and no entry. Without a log (a caller no window
+ * wired one into) it is dropped. Used as `ensureFolderColor(…).catch(noteColourFailure(log))`.
+ */
+export function noteColourFailure(log: DiagnosticWriter | undefined): (error: unknown) => undefined {
+  return (error) => {
+    log?.warn('folderColors', `a folder's colour could not be saved; its terminal opens without it: ${describeError(error)}`);
+    return undefined;
+  };
 }

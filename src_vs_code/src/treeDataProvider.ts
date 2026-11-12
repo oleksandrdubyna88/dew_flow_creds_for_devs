@@ -38,6 +38,7 @@ import { underlined } from './treeDescriptions';
 import { buildJudge, searchRowFor } from './providerSearch';
 import { revisionRowItem } from './revisionRowItem';
 import { depUri } from './depDecorations';
+import { folderColorKeyOf } from './folderColors';
 
 export const VIEW_ID = 'credSshManagerView';
 const DND_MIME = `application/vnd.code.tree.${VIEW_ID.toLowerCase()}`;
@@ -592,7 +593,7 @@ export class CredTreeDataProvider
       item.contextValue = trash ? 'trashFolder' : folderContextValue(inTrash, node.folderAsksForPin === true, managed, node.folderType);
       item.iconPath = trash
         ? new vscode.ThemeIcon('trash', FOLDER_COLOR)
-        : folderIcon(node.folderType);
+        : folderIcon(node.folderType, folderColorKeyOf(node));
       // The same synthetic address the entity rows carry, so a restored or newly created folder
       // gets the arrival tint too — the decoration provider answers by id, and a folder id has
       // no dependency colour, so nothing else changes.

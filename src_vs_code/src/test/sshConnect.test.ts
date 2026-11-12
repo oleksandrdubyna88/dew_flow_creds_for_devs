@@ -1,6 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { E1_AT_ROOT, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, entity, storage, storageWith, world } from './sshConnectWorld';
+import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
+import { StorageManager } from '../storageManager';
+import { recordingLog } from './liveColourStorage';
+import { E1_AT_ROOT, E1_IN_FOLDER, FOLDER, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, entity, storage, storageWith, world } from './sshConnectWorld';
 
 /**
  * The human Connect path (audit A3): WHICH credential reaches ssh, and what each way leaves behind.
@@ -463,4 +466,60 @@ test('the password road never closes the same entry id\'s terminal of another ac
 
   assert.equal(w.created[0].disposed, false);
   assert.equal(w.created.length, 2);
+});
+
+/** The theme id the password terminal of a connect against `storage` wears, or `absent` when it was created with no `color` property at all. */
+async function passwordColour(storage: StorageManager): Promise<string> {
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+  return 'color' in w.created[0] ? (w.created[0].color?.id ?? 'undefined') : 'absent';
+}
+
+/** The colour on the place a key session of a connect against `storage` hands to the terminal it opens. */
+async function keyColour(storage: StorageManager): Promise<string | undefined> {
+  const w = world({ source: { kind: 'none' }, options: OPTIONS, sshTerminal: {} });
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+  return w.sshTerminals[0].place?.color;
+}
+
+test('the_password_and_key_terminals_wear_the_folder_colour', async () => {
+  const wearing = storageWith(E1_IN_FOLDER, { ...FOLDER, folderColor: DEP_COLOR_KEYS[2] });
+
+  assert.equal(await passwordColour(wearing), depColorThemeId(DEP_COLOR_KEYS[2]), 'the password terminal');
+  assert.equal(await keyColour(wearing), DEP_COLOR_KEYS[2], 'the key session\'s place');
+  assert.equal(await passwordColour(storageWith(E1_AT_ROOT)), 'absent', 'an entry at the root has no folder, so no colour (the property is absent)');
+  assert.equal(await keyColour(storageWith(E1_AT_ROOT)), undefined, 'and its key session\'s place carries none');
+});
+
+test('the_first_connect_colours_an_uncoloured_folder_once', async () => {
+  const fresh = storageWith(E1_IN_FOLDER, FOLDER);
+  const first = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  await first.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage' });
+
+  assert.equal(fresh.written.length, 1, 'one write');
+  assert.deepEqual(fresh.written[0].change, { folderColor: DEP_COLOR_KEYS[0] }, 'the first key of the empty palette use, on the folder');
+  assert.equal(fresh.written[0].id, FOLDER.id);
+  assert.equal(first.created[0].color?.id, depColorThemeId(DEP_COLOR_KEYS[0]), 'and its terminal wears it');
+
+  const second = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+  await second.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage' });
+  assert.equal(fresh.written.length, 1, 'a second connect writes nothing');
+  assert.equal(second.created[0].color?.id, depColorThemeId(DEP_COLOR_KEYS[0]));
+});
+
+test('a_failed_colour_write_still_connects_and_says_so_in_the_log', async () => {
+  const failing = storageWith(E1_IN_FOLDER, FOLDER);
+  failing.failNextWrite(new Error('the store is down'));
+  const { log, lines } = recordingLog();
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage: failing, storageDir: '/storage', log });
+
+  assert.equal(opened, true, 'the terminal opened');
+  assert.equal('color' in w.created[0], false, 'without a colour');
+  assert.deepEqual(lines.map((line) => line.source), ['folderColors'], 'and one line in the log');
+  assert.match(lines[0].message, /the store is down/);
+  assert.doesNotMatch(lines[0].message, /prod|ssh connections/, 'which names no folder or entry');
+  assert.deepEqual(w.warnings.concat(w.errors), [], 'no toast');
 });

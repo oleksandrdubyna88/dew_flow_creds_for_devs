@@ -6,6 +6,9 @@ import { entryTerminalKeyOf, sshTerminalTitle } from './terminalTitles';
 import { requestGone } from './requestLife';
 import { withAcceptNew } from './sshCommand';
 import { composedShellPath } from './pinnedTerminal';
+import { DiagnosticWriter } from './diagnosticWriter';
+import { ensureFolderColor, noteColourFailure } from './folderColors';
+import { folderColorOption } from './terminalColor';
 import { forgetMaterializedKey } from './keyInstaller';
 import { RefusalReason } from './remoteRoute';
 import {
@@ -54,6 +57,8 @@ export interface ConnectOptions extends PrepareOptions {
    * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
    */
   readonly allowRetry?: boolean;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). Absent: nothing is logged. */
+  readonly log?: DiagnosticWriter;
 }
 
 /** @returns whether a terminal was actually opened — a remote window can refuse. */
@@ -62,6 +67,9 @@ export async function connectEntity(
   entity: EntityMetadata,
   connect: ConnectOptions,
 ): Promise<boolean> {
+  // First, and before `prepareSshSession`: everything after prepare is the synchronous open half (an await there would let
+  // a gone agent request get a terminal). `placeOf` reads storage after prepare, so it sees the colour written here.
+  await ensureFolderColor(connect.storage, accountId, entity.id).catch(noteColourFailure(connect.log));
   const prepared = await prepareSshSession(accountId, entity, connect);
   if (prepared.kind === 'stopped') {
     return false;
@@ -78,7 +86,8 @@ export async function connectEntity(
  * (`sshTerminalOwners`), never by its tab.
  */
 function placeOf(accountId: string, entity: EntityMetadata, connect: ConnectOptions): SshTerminalPlace {
-  return { title: sshTerminalTitle(entryTerminalKeyOf(connect.storage, accountId, entity.id, entity.name)), accountId };
+  const key = entryTerminalKeyOf(connect.storage, accountId, entity.id, entity.name);
+  return { title: sshTerminalTitle(key), accountId, color: key.folderColor };
 }
 
 /** The window refused: the modal is OURS (a road shows its own sentence), and so is the one retry. */
@@ -145,6 +154,7 @@ function openPasswordTerminal(ready: ReadySsh, place: SshTerminalPlace): boolean
     // Composed for `platform` — pinned in a local window, as `openSshTerminal` is (issue #103).
     shellPath: composedShellPath(),
     env: ready.env,
+    ...folderColorOption(place.color),
   });
   claimSshTerminal(passTerminal, place.accountId, ready.entity.id);
   passTerminal.show();

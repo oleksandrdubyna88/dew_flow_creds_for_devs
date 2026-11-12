@@ -20,14 +20,14 @@ function node(fields: Partial<TreeNode> & Pick<TreeNode, 'id' | 'type'>): TreeNo
 }
 
 function folder(id: string, folderColor?: string, extra: Partial<TreeNode> = {}): TreeNode {
-  return node({ id, type: 'folder', folderColor, ...extra });
+  return node({ id, type: 'folder', ...(folderColor === undefined ? {} : { folderColor }), ...extra });
 }
 
 function entity(id: string, depColor?: string, folderColor?: string): TreeNode {
   return node({
     id,
     type: 'entity',
-    folderColor,
+    ...(folderColor === undefined ? {} : { folderColor }),
     details: { id, name: id, isSshEnabled: false, depColor },
   });
 }
