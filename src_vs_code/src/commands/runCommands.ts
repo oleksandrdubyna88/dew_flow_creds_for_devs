@@ -37,6 +37,8 @@ export interface RunCommandsHost {
   readonly vaultKeys: VaultKeys;
   /** The diagnostic log: where a failed folder-colour write leaves its one line (`noteColourFailure`). */
   readonly log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed: called once when a run wrote a folder's FIRST colour, because that save fires no event (`ensureFolderColor`'s `onWrote`). */
+  readonly onMutated: () => void;
   /**
    * The person's road host (E2.S1 of `PLAN_terminal_command_over_ssh.md`): how a linked entry's SSH session is prepared and
    * refused. Only the person's roads hold it; the agent's calls keep E1's refusal (E2-D2).
@@ -77,7 +79,7 @@ async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | 
   }
   const { accountId, node } = element;
   // The folder gets its colour BEFORE the key is read, so the terminal this run opens wears it. A failed write never stops the run.
-  await ensureFolderColor(host.storage, accountId, node.id).catch(noteColourFailure(host.log));
+  await ensureFolderColor(host.storage, accountId, node.id, host.onMutated).catch(noteColourFailure(host.log));
   const key = entryTerminalKeyOf(host.storage, accountId, node.id, element.node.details.name);
   return { accountId, id: node.id, name: node.name, details: element.node.details, key };
 }

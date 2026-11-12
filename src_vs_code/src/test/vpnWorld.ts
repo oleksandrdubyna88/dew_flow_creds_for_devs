@@ -385,6 +385,7 @@ export type RunVpn = (
   k: unknown,
   trust: unknown,
   log: DiagnosticWriter,
+  onMutated: () => void,
   seams?: { startGate?: AbortSignal; lateAnswer?: (what: string) => void; standingPrompt?: (prompt: PromiseLike<unknown>) => void; sshRoad?: unknown },
 ) => Promise<boolean>;
 
@@ -396,6 +397,8 @@ export interface StartOptions {
   sshRoad?: unknown;
   /** The diagnostic log, handed to `runVpn` as its seventh argument; a recording one when absent. */
   log?: DiagnosticWriter;
+  /** The tree repaint, handed to `runVpn` as its eighth argument; one that does nothing when absent. */
+  onMutated?: () => void;
   storage?: ReturnType<typeof storageOf>;
   /** The trust store the start reads and writes; a fresh one when absent. */
   trust?: ReturnType<typeof memoryTrust>;
@@ -405,6 +408,11 @@ export interface StartOptions {
    * an extension that was active before the click (`registerRunCommands` subscribes it at activation).
    */
   shellEvents?: () => void;
+}
+
+/** The tree repaint a start is handed: the test's own, else one that does nothing. */
+function repaintOf(o: StartOptions): () => void {
+  return o.onMutated ?? ((): void => undefined);
 }
 
 /** The log a start is handed: the test's own, else one that records. */
@@ -430,7 +438,7 @@ export async function startVpn(scope: Scope, w: World, nodes: Record<string, Ent
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   const storage = o.storage ?? storageOf(nodes);
   try {
-    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), logOf(o), { startGate: o.startGate, sshRoad: o.sshRoad }), dir };
+    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), logOf(o), repaintOf(o), { startGate: o.startGate, sshRoad: o.sshRoad }), dir };
   } catch (error) {
     return { started: false, dir, ended: requestsEnd(error) };
   }

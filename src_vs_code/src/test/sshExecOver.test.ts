@@ -113,7 +113,7 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
   const deps: SshUseDeps = {
     storage,
     storageDir,
-    log: recordingLog().log,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) => {
       slots.taken += 1;

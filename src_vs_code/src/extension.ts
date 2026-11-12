@@ -620,7 +620,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
-  const sshDeps = sshDepsFor({ storage, storageDir, agentServer, sshAgent, relays: wslRelay, log });
+  const sshDeps = sshDepsFor({ storage, storageDir, agentServer, sshAgent, relays: wslRelay, log, onMutated: mutated });
   useActions.register(sshExecAction(sshDeps));
   useActions.register(sshTerminalAction(sshDeps));
 
@@ -633,7 +633,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
     // The human Start button's own function, plus the request's start gate (E4.S3).
-    open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState, log),
+    open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState, log, mutated),
   };
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
@@ -837,7 +837,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
   };
 
-  registerRunCommands({ context, log, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
+  registerRunCommands({ context, log, onMutated: mutated, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
 
   registerPinCommands({ register, storage, refresh: () => mutated() });
 

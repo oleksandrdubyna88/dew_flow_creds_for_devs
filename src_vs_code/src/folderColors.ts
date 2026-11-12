@@ -94,6 +94,12 @@ function folderOfEntry(storage: FolderColorStorage, accountId: string, entryId: 
  * INSIDE the patch, never before the call: two calls started together would otherwise count the same usage
  * and give two folders one colour. Inside it the folder is checked again, so a colour saved meanwhile wins.</p>
  *
+ * <p><b>`onWrote`</b> is the road's tree refresh, and is called once, after the save, only by the call whose patch CHOSE a
+ * colour: not for a folder that already wore one, not for a call that lost a race, not when the write rejected. The save
+ * itself fires no event (`StorageManager.touch` only counts), so without it the folder row keeps its old colour until
+ * something else repaints the tree. It is a parameter and not a module-level hook (this file keeps no state and imports no
+ * `vscode`); a throw from it rejects the call like a failed write, so the caller's `noteColourFailure` logs it.</p>
+ *
  * <p><b>Residuals, accepted by the plan.</b> (P1) The lease serializes the windows; it does not make a
  * window's `globalState` copy fresh. A window that takes the lease before another's write has arrived by
  * broadcast tallies an old list, so two folders can wear one colour (the folder form lets a person change it),
@@ -108,6 +114,7 @@ export async function ensureFolderColor(
   storage: FolderColorStorage,
   accountId: string,
   entryId: string,
+  onWrote?: () => void,
 ): Promise<DepColorKey | undefined> {
   const folder = folderOfEntry(storage, accountId, entryId);
   if (folder === undefined) {
@@ -116,6 +123,11 @@ export async function ensureFolderColor(
   if (!needsColour(storage, accountId, folder)) {
     return folderColorKeyOf(folder);
   }
+  return writeColour(storage, accountId, folder, onWrote);
+}
+
+/** The write half of `ensureFolderColor`: one function patch under the lease, then `onWrote` if THIS call's patch chose the colour. */
+async function writeColour(storage: FolderColorStorage, accountId: string, folder: TreeNode, onWrote: (() => void) | undefined): Promise<DepColorKey | undefined> {
   let written: DepColorKey | undefined;
   await storage.updateNodeFields(accountId, folder.id, (now) => {
     if (!needsColour(storage, accountId, now)) {
@@ -124,7 +136,11 @@ export async function ensureFolderColor(
     written = pickFolderColor(storage.getNodes(accountId));
     return { folderColor: written };
   });
-  return written ?? folderColorKeyOf(storage.getNode(accountId, folder.id));
+  if (written === undefined) {
+    return folderColorKeyOf(storage.getNode(accountId, folder.id));
+  }
+  onWrote?.();
+  return written;
 }
 
 /**

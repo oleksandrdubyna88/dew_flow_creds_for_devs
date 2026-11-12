@@ -567,7 +567,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         // `target` rides along so *Add Key to Agent* acts on the row that was clicked.
         remote: remoteWindowDeps(wslRelay, remedyRunner(target)),
         // The one line a failed folder-colour write leaves; without it the failure would be silent (S3-D2).
-        log,
+        log, onMutated: mutated,
       });
     }
   });

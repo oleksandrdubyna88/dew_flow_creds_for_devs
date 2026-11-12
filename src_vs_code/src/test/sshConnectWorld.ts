@@ -336,7 +336,7 @@ export const ACCOUNT_ID = 'a1';
 /** A storage of its own for one test (`e1` in an uncoloured `f1`): the first connect writes a colour into it, so it is never shared. */
 export const storage = (): ReturnType<typeof storageWith> => storageWith(E1_IN_FOLDER, FOLDER);
 /** The two options every connect needs besides `storageDir`: a fresh `storage()` and a recording log (a failed colour write leaves its one line there). */
-export const connectBase = (): { storage: ReturnType<typeof storageWith>; log: DiagnosticWriter } => ({ storage: storage(), log: recordingLog().log });
+export const connectBase = (): { storage: ReturnType<typeof storageWith>; log: DiagnosticWriter; onMutated: () => void } => ({ storage: storage(), log: recordingLog().log, onMutated: () => undefined });
 /** The title every connect of `entity()` gives its terminal. */
 export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };

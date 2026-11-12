@@ -214,6 +214,48 @@ test('the_first_arrow_colours_its_folder_once', async () => {
   assert.equal(aw.colourWrites.length, 1, 'a second arrow writes nothing');
 });
 
+test('the_first_arrow_repaints_the_tree_once_and_a_folder_with_a_colour_never', async () => {
+  const aw = arrowWorld({ parent: OPS }, [['alert', LINE]]);
+
+  await aw.run(alert());
+  assert.equal(aw.colourWrites.length, 1, 'the first arrow wrote the colour');
+  assert.equal(aw.refreshed.count, 1, 'and the tree repaints once, so the folder row shows it');
+  await aw.run(alert());
+  assert.equal(aw.refreshed.count, 1, 'a second arrow found a colour and wrote nothing: no repaint');
+
+  const wearing = arrowWorld({ parent: COLOURED_OPS }, [['alert', LINE]]);
+  await wearing.run(alert());
+  assert.equal(wearing.refreshed.count, 0, 'a folder that already wore a colour is not repainted');
+});
+
+test('a_failed_colour_write_repaints_nothing', async () => {
+  const aw = arrowWorld({ parent: OPS, colourWriteFails: new Error('the store is down') }, [['alert', LINE]]);
+
+  await aw.run(alert());
+
+  assert.equal(aw.refreshed.count, 0, 'nothing was saved, so there is nothing to repaint');
+});
+
+test('a_folder_run_repaints_the_tree_once_for_two_rows_of_one_uncoloured_folder', async () => {
+  const w = folderWorld([session('a'), session('b')]);
+
+  await w.click();
+
+  assert.equal(w.colourWrites.length, 1);
+  assert.equal(w.refreshed.count, 1);
+});
+
+test('the_launchers_start_repaints_the_tree_once_for_its_folder_colour', async () => {
+  const w = world({});
+  const nodes = ownerChain();
+  let repaints = 0;
+
+  const { started } = await startVpn(scope, w, nodes, { storage: storageOf(nodes, undefined, { start: folder('x', 'X') }), onMutated: () => void (repaints += 1) });
+
+  assert.equal(started, true, w.warnings.join('\n'));
+  assert.equal(repaints, 1);
+});
+
 test('a_folder_run_colours_the_folder_once_and_every_row_wears_it', async () => {
   const w = folderWorld([session('a'), session('b')]);
 

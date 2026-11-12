@@ -37,10 +37,10 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  * function the human Start button calls, plus the request's start gate. `runVpn`'s own answer goes back, so a
  * refusal the person saw never reaches the agent as "opened".
  */
-export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore, log: DiagnosticWriter): VpnUseDeps['open'] {
+export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore, log: DiagnosticWriter, onMutated: () => void): VpnUseDeps['open'] {
   return async (accountId, entityId, action, startGate, lateAnswer, standingPrompt) => {
     const node = storage.getNode(accountId, entityId);
-    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, log, { startGate, lateAnswer, standingPrompt });
+    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, log, onMutated, { startGate, lateAnswer, standingPrompt });
   };
 }
 
@@ -96,6 +96,7 @@ export async function runVpn(
   vaultKeys: Pick<VaultKeys, 'noteUserActivity'>,
   trust: TrustStore,
   log: DiagnosticWriter,
+  onMutated: () => void,
   seams: VpnStartSeams = {},
 ): Promise<boolean> {
   notePersonsAct(vaultKeys, seams.startGate);
@@ -103,7 +104,7 @@ export async function runVpn(
   if (entry === undefined || requestGone(seams.startGate)) {
     return false;
   }
-  return runUnlessRefused({ ...entry, storage, storageDir, trust, log, ...seams }, action);
+  return runUnlessRefused({ ...entry, storage, storageDir, trust, log, onMutated, ...seams }, action);
 }
 
 /** Refused BEFORE the config is written: in a Remote-SSH window the terminal is another computer's, and a tunnel there is not the one the person asked for. */

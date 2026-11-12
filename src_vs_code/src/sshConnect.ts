@@ -59,6 +59,8 @@ export interface ConnectOptions extends PrepareOptions {
   readonly allowRetry?: boolean;
   /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). */
   readonly log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed: called once when this connect wrote the folder's FIRST colour, because that save fires no event (`ensureFolderColor`'s `onWrote`). */
+  readonly onMutated: () => void;
 }
 
 /** @returns whether a terminal was actually opened — a remote window can refuse. */
@@ -69,7 +71,7 @@ export async function connectEntity(
 ): Promise<boolean> {
   // First, and before `prepareSshSession`: everything after prepare is the synchronous open half (an await there would let
   // a gone agent request get a terminal). `placeOf` reads storage after prepare, so it sees the colour written here.
-  await ensureFolderColor(connect.storage, accountId, entity.id).catch(noteColourFailure(connect.log));
+  await ensureFolderColor(connect.storage, accountId, entity.id, connect.onMutated).catch(noteColourFailure(connect.log));
   const prepared = await prepareSshSession(accountId, entity, connect);
   if (prepared.kind === 'stopped') {
     return false;

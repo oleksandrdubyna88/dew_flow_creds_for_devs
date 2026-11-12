@@ -129,7 +129,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const deps: SshUseDeps = {
     storage,
     storageDir,
-    log: recordingLog().log,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: () => {
       slotsHeld += 1;

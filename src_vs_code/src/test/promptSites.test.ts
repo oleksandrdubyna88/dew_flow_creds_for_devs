@@ -192,7 +192,7 @@ const TARGET = { accountId: 'a1', entityId: 'e1', entityName: 'prod' };
 function realFactories(): Record<string, UseAction> {
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const ssh = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub);
-  const sshDeps: SshUseDeps = { storage: memoryStorage(stub), storageDir: '/unused', log: recordingLog().log, signal: new AbortController().signal, acquireExecSlot: () => undefined, note: () => undefined, agentSocket: () => undefined };
+  const sshDeps: SshUseDeps = { storage: memoryStorage(stub), storageDir: '/unused', log: recordingLog().log, onMutated: () => undefined, signal: new AbortController().signal, acquireExecSlot: () => undefined, note: () => undefined, agentSocket: () => undefined };
   const agent: AgentUseDeps & { onPath: (exe: string) => boolean; overSsh: OverSsh } = {
     storage: memoryStorage(stub),
     storageDir: '/unused',

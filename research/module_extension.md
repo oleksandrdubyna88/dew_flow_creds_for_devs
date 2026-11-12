@@ -3189,7 +3189,7 @@ a newer build survives a sync or an import byte for byte. It is PAINTED only whe
 passes `isDepColorKey`, else `undefined`, and every painter goes through it. Entries' `details.depColor` is another
 meaning of the same palette and is never read for a folder.
 
-**The auto-pick.** `ensureFolderColor(storage, accountId, entryId)` gives the entry's DIRECT parent folder a colour,
+**The auto-pick.** `ensureFolderColor(storage, accountId, entryId, onWrote?)` gives the entry's DIRECT parent folder a colour,
 once. It runs BEFORE a folder-named terminal is found or created, on each of five roads (they reach the five
 `createTerminal` sites of the next paragraph): the arrow and Run Script in `entryAt` (`commands/runCommands.ts`), the folder run in `colourRows`
 (`commands/folderRunCommand.ts`, once per row to type, in row order, before the first preparation), the VPN
@@ -3206,6 +3206,14 @@ one window, or two windows) changes no field and still stamps the folder once: t
 upload, accepted. A failed write rejects that call only; each caller catches it, writes ONE line to the diagnostic log
 (source `folderColors`, `describeError`'s text, no folder or entry name; `noteColourFailure`) and goes on. No toast: the
 colour is cosmetic, the terminal opens without it, and the next open tries again because no string was stored.
+The save fires no event (`StorageManager.touch` only counts), so the folder row would keep its old colour until something else
+repainted the tree: the call that actually WROTE a colour (its patch chose one; not a folder that already wore one, not a
+call that lost a race, not a rejected write) calls `onWrote` once, after the save. Each road passes its host's tree repaint,
+required in its dependency object like `log`: `RunCommandsHost.onMutated` (the arrow, Run Script and the folder run),
+`ConnectOptions.onMutated` (SSH Connect; `SshUseDeps.onMutated` for the agent's terminal), and `VpnRunContext.onMutated`
+(`runVpn`'s eighth argument); `extension.ts` wires all of them to `mutated`. `folderColors.ts` keeps no state and imports no `vscode`.
+The launcher also reads `requestGone(ctx.startGate)` after its colour await, before any trust question, chain or line; SSH
+Connect needs no read of its own because `prepareSshSession` opens with one.
 
 **Where it shows.** (1) The terminal's icon, at the five `createTerminal` sites that spread `folderColorOption`:
 `terminalManager.ts` (`openSshTerminal`, :61, the key session; the colour rides in `SshTerminalPlace.color`),

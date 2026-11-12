@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { EntityMetadata } from '../types';
+import { EntityMetadata, TreeNode } from '../types';
 import { endedStage } from '../requestLife';
 import { loadWithVscode } from './vscodeStub';
 import { STORED_CONFIG, World, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, until, world } from './vpnWorld';
@@ -13,7 +13,7 @@ import { recordingLog } from './liveColourStorage';
 const scope = cleanupScope();
 after(() => scope.close());
 
-type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown, trust: unknown, log: unknown) => (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
+type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown, trust: unknown, log: unknown, onMutated: unknown) => (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
 
 /**
  * A gone request starts no VPN (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, story E4.S3).
@@ -381,13 +381,46 @@ test('the custom launcher: a client gone while its {config} is read AFTER a type
   endedAfterATypedStep(ended);
 });
 
+/** A folder colour write the test releases by hand: the storage of `base` with `updateNodeFields` held until `release`. */
+function heldColourWrite(base: ReturnType<typeof storageOf>): { storage: ReturnType<typeof storageOf>; release(): void; started: () => boolean } {
+  let release = (): void => undefined;
+  let started = false;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const updateNodeFields: typeof base.updateNodeFields = async (...args) => {
+    started = true;
+    await waiting;
+    return base.updateNodeFields(...args);
+  };
+  return { storage: { ...base, updateNodeFields }, release: () => release(), started: () => started };
+}
+
+test('the custom launcher: a client gone while its folder\'s colour is being saved gets no trust question, no installer and no line', async () => {
+  // The colour save is the first await of the launcher's start, ahead of every gate; the client leaves during it.
+  const request = new AbortController();
+  const nodes = ownerChain();
+  const folder: TreeNode = { id: 'x', name: 'X', type: 'folder', folderType: 'terminal', parentId: null };
+  const held = heldColourWrite(storageOf(nodes, undefined, { start: folder }));
+  const w = world({});
+  const run = startVpn(scope, w, nodes, { startGate: request.signal, storage: held.storage });
+  await until(held.started, 'the colour write to begin');
+
+  request.abort();
+  held.release();
+  const { started, dir, ended } = await run;
+  nothingStarted(w, dir, started);
+  assert.deepEqual(w.warnings, [], 'the trust question was put to a person for a request whose client had gone');
+  assert.equal(ended, undefined, 'nothing was typed, so there is no step to journal');
+});
+
 test('the agent VPN opener hands its gate to the start: a request already gone starts nothing (checkpoint round, finding 3)', async () => {
   const request = new AbortController();
   request.abort();
   const w = world({});
   const dir = ownedDir(scope, 'opener');
   const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', w.vscode, CLI);
-  const open = agentVpnOpener(storageOf(wireguard()), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log);
+  const open = agentVpnOpener(storageOf(wireguard()), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log, () => undefined);
 
   const gone = await open('a1', 'vpn', 'start', request.signal);
   assert.deepEqual(w.terminals.map((t) => t.name), [], 'the agent opener started a VPN for a request whose client had gone');
@@ -421,7 +454,7 @@ test('V1 through a local door: an agent\'s up and down, posted to the broker, ru
   for (const action of ['up', 'down'] as const) {
     const vw = world({});
     const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', vw.vscode, CLI);
-    const open = agentVpnOpener(storageOf(wireguard()), ownedDir(scope, 'agentvpn'), { noteUserActivity: () => void (vw.userActivity += 1) }, memoryTrust(), recordingLog().log);
+    const open = agentVpnOpener(storageOf(wireguard()), ownedDir(scope, 'agentvpn'), { noteUserActivity: () => void (vw.userActivity += 1) }, memoryTrust(), recordingLog().log, () => undefined);
     const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, verb, gate) => open(accountId, 'vpn', verb, gate) };
     const bw = brokerWorld({ realAction: vpnAction(deps, action) });
     try {

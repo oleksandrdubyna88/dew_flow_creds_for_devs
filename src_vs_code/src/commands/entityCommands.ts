@@ -184,7 +184,7 @@ async function copyTotpCode(host: EntityCommandsHost, target: unknown): Promise<
  * tunnel. Each file written from a protected value says it is outside the PIN (`outsidePinNote`).
  */
 function registerFiles(host: EntityCommandsHost): void {
-  const { register, storage, storageDir, vaultKeys, trust, sshRoad, log } = host;
+  const { register, storage, storageDir, vaultKeys, trust, sshRoad, log, mutated } = host;
   register('credSshManager.installSshKey', (target) => installSshKey(host, target));
   register('credSshManager.removeInstalledKey', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -205,8 +205,8 @@ function registerFiles(host: EntityCommandsHost): void {
   // a launcher's command and a dependency chain are confirmed against (issue #103). No start gate: the
   // person clicked, and no client's departure can cancel what they asked for (E4.S3). `sshRoad` is the person's road host: a launcher
   // linked to an SSH entry runs only from here (E2.S1).
-  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, log, { sshRoad }));
-  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, log));
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, log, mutated, { sshRoad }));
+  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, log, mutated));
 }
 
 /**

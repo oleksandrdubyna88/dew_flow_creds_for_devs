@@ -167,7 +167,7 @@ function deps(w: World, parts: Parts): SshUseDeps {
   return {
     storage: w.storage,
     storageDir: w.storageDir,
-    log: recordingLog().log,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) | undefined => {
       if (parts.noSlot === true) {

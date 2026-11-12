@@ -56,7 +56,7 @@ async function rig(nodes: Record<string, EntityMetadata>, exitCodes: Record<stri
   const vw = vpnWorld(exitCodes, options);
   const dir = ownedDir(scope, 'consent');
   const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
-  const open = agentVpnOpener(storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log);
+  const open = agentVpnOpener(storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log, () => undefined);
   const gates: AbortSignal[] = [];
   const entity = { id: 'e1', name: 'prod', type: 'entity' as const, details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' as const } };
   const deps: VpnUseDeps = {
@@ -420,7 +420,7 @@ test('C8 (b) and C12: a local down whose install offer stands for 400 ms with th
   };
   const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
   const nodes = { vpn: vpn() };
-  const open = agentVpnOpener(storageOf(nodes), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log);
+  const open = agentVpnOpener(storageOf(nodes), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log, () => undefined);
   const entity = { id: 'e1', name: 'prod', type: 'entity' as const, details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' as const } };
   const deps: VpnUseDeps = { storage: { getNode: () => entity }, open: (accountId, _entityId, action, gate, late) => open(accountId, 'vpn', action, gate, late) };
   const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, consentTimeoutMs: 100, supports: ['down', 'exec'], realActions: { down: vpnAction(deps, 'down') }, aliasMap: { one: TARGET }, mcpUse: 'usable' });

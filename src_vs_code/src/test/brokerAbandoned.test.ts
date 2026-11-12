@@ -573,7 +573,7 @@ function sshTerminalWorld(): SshTerminalWorld {
     return {
       storage,
       storageDir: ownedDir(scope, 'abandoned'),
-      log: recordingLog().log,
+      log: recordingLog().log, onMutated: () => undefined,
       signal: new AbortController().signal,
       acquireExecSlot: () => (): void => undefined,
       note: (): void => undefined,

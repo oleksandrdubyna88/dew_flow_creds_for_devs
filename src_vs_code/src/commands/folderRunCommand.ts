@@ -225,7 +225,7 @@ async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: Folde
  */
 async function colourRows(host: RunCommandsHost, folder: Folder, rows: readonly LineRow[]): Promise<void> {
   for (const row of rows) {
-    await ensureFolderColor(host.storage, folder.accountId, row.id).catch(noteColourFailure(host.log));
+    await ensureFolderColor(host.storage, folder.accountId, row.id, host.onMutated).catch(noteColourFailure(host.log));
   }
 }
 

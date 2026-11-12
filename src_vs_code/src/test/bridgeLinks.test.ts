@@ -282,7 +282,7 @@ test('G2: production hands the actions no writer of the per-call ssh_config (E1.
   const parts: Parameters<typeof SshDepsFor>[0] = {
     storage: memoryStorage({ window: {} }),
     storageDir: '/unused',
-    log: recordingLog().log,
+    log: recordingLog().log, onMutated: () => undefined,
     agentServer: { signal, acquireExecSlot: () => undefined, note: () => undefined },
     sshAgent: { socketPath: undefined, servesKeyForEntity: () => false },
     relays: new WslRelayManager(() => { throw new Error('no relay is spawned here'); }, () => undefined),

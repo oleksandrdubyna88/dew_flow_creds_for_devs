@@ -228,7 +228,7 @@ async function realServedActions(): Promise<ServedWorld> {
   await seedEntry(storage, FORWARDING_ENTITY, {});
   const signal = new AbortController().signal;
   let socket: string | undefined;
-  const sshDeps: SshUseDeps = { storage, storageDir: '/unused', log: recordingLog().log, signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => socket };
+  const sshDeps: SshUseDeps = { storage, storageDir: '/unused', log: recordingLog().log, onMutated: () => undefined, signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => socket };
   const agentDeps: AgentUseDeps & { onPath: (exe: string) => boolean } = {
     storage,
     storageDir: '/unused',

@@ -51,6 +51,8 @@ export interface ArrowWorld extends World {
   colourWrites: WrittenChange[];
   /** What the diagnostic log was given, in order (E1.S3). */
   logged: LogLine[];
+  /** How many times the host's tree repaint (`onMutated`) was called. */
+  refreshed: { count: number };
 }
 
 export type Handler = (target: unknown) => Promise<void>;
@@ -74,6 +76,8 @@ export interface RunWorldHost {
   sshRoad?: unknown;
   /** The diagnostic log `registerRunCommands` is given. Default: one that keeps nothing. */
   log?: DiagnosticWriter;
+  /** The tree repaint `registerRunCommands` is given. Default: one that does nothing. */
+  onMutated?: () => void;
 }
 
 /** The road host of a world that has none: reaching it is the test's failure, not a silent pass. */
@@ -83,6 +87,9 @@ const NO_ROAD = {
 };
 
 const roadOf = (host: RunWorldHost): unknown => host.sshRoad ?? NO_ROAD;
+
+/** The tree repaint of a world that was given none does nothing. */
+const repaintOf = (host: RunWorldHost): (() => void) => host.onMutated ?? ((): void => undefined);
 
 /** The diagnostic log of a world that was given none keeps nothing. */
 const logOf = (host: RunWorldHost): DiagnosticWriter => host.log ?? recordingLog().log;
@@ -113,6 +120,7 @@ export function registerRunWorld(w: World, host: RunWorldHost): Record<string, H
     vaultKeys: { noteUserActivity: () => host.onActivity?.() },
     sshRoad: roadOf(host),
     log: logOf(host),
+    onMutated: repaintOf(host),
   });
   return handlers;
 }
@@ -175,8 +183,12 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
   const subscriptions: unknown[] = [];
   const colouring = colouringOver(nodes, opts.colourWriteFails);
   const { log, lines: logged } = recordingLog();
+  const refreshed = { count: 0 };
   const handlers = registerRunWorld(w, {
     log,
+    onMutated: () => {
+      refreshed.count += 1;
+    },
     store,
     storage: {
       getNode: (_account: string, id: string) => {
@@ -218,7 +230,7 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
     history[index] = revision;
     return handlers['credSshManager.runCommand']({ kind: 'revision', accountId: 'a1', index, node: { id: entry.id, name: entry.name, details: entry } });
   };
-  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision, nodes, reads: (id) => readsOf[id] ?? 0, colourWrites: colouring.written, logged };
+  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision, nodes, reads: (id) => readsOf[id] ?? 0, colourWrites: colouring.written, logged, refreshed };
 }
 
 /** A vault of one account `me` holding the entities named, each with the one password: the `refSource` of `arrowWorld`, and the ids it was asked to read. */

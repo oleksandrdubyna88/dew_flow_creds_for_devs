@@ -335,7 +335,7 @@ test('Start VPN writes the OPENED config where the tunnel reads it, after one PI
     await seedEntry(storage, details, { 'VPN configuration': await locked(VPN) });
     const { writeVpnConfig } = loadWithVscode<typeof import('../vpnLauncherRun')>('../vpnLauncherRun', stub);
 
-    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: memoryTrust(), log: recordingLog().log }, 'prod.conf');
+    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: memoryTrust(), log: recordingLog().log, onMutated: () => undefined }, 'prod.conf');
 
     assert.equal(written === undefined ? undefined : fs.readFileSync(written, 'utf8'), expected);
     assert.equal(s.boxes, 1);

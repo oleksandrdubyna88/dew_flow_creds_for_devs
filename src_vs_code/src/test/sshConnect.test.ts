@@ -451,7 +451,7 @@ test('after the entry moved, the password road still closes ITS earlier terminal
 
   await w.mod.connectEntity('a1', entity(), { ...connectBase(), storageDir: '/storage' });
   w.existing.push(w.created[0]);
-  await w.mod.connectEntity('a1', entity(), { storage: atRoot, storageDir: '/storage', log: recordingLog().log });
+  await w.mod.connectEntity('a1', entity(), { storage: atRoot, storageDir: '/storage', log: recordingLog().log, onMutated: () => undefined });
 
   assert.equal(w.created[0].disposed, true, 'the old tab, holding the password, was left open');
   assert.equal(w.created[1].name, 'Creds SSH: prod');
@@ -471,14 +471,14 @@ test('the password road never closes the same entry id\'s terminal of another ac
 /** The theme id the password terminal of a connect against `storage` wears, or `absent` when it was created with no `color` property at all. */
 async function passwordColour(storage: StorageManager): Promise<string> {
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
-  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', log: recordingLog().log });
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', log: recordingLog().log, onMutated: () => undefined });
   return 'color' in w.created[0] ? (w.created[0].color?.id ?? 'undefined') : 'absent';
 }
 
 /** The colour on the place a key session of a connect against `storage` hands to the terminal it opens. */
 async function keyColour(storage: StorageManager): Promise<string | undefined> {
   const w = world({ source: { kind: 'none' }, options: OPTIONS, sshTerminal: {} });
-  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', log: recordingLog().log });
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', log: recordingLog().log, onMutated: () => undefined });
   return w.sshTerminals[0].place?.color;
 }
 
@@ -495,7 +495,7 @@ test('the_first_connect_colours_an_uncoloured_folder_once', async () => {
   const fresh = storageWith(E1_IN_FOLDER, FOLDER);
   const first = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
-  await first.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage', log: recordingLog().log });
+  await first.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage', log: recordingLog().log, onMutated: () => undefined });
 
   assert.equal(fresh.written.length, 1, 'one write');
   assert.deepEqual(fresh.written[0].change, { folderColor: DEP_COLOR_KEYS[0] }, 'the first key of the empty palette use, on the folder');
@@ -503,9 +503,36 @@ test('the_first_connect_colours_an_uncoloured_folder_once', async () => {
   assert.equal(first.created[0].color?.id, depColorThemeId(DEP_COLOR_KEYS[0]), 'and its terminal wears it');
 
   const second = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
-  await second.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage', log: recordingLog().log });
+  await second.mod.connectEntity('a1', entity(), { storage: fresh, storageDir: '/storage', log: recordingLog().log, onMutated: () => undefined });
   assert.equal(fresh.written.length, 1, 'a second connect writes nothing');
   assert.equal(second.created[0].color?.id, depColorThemeId(DEP_COLOR_KEYS[0]));
+});
+
+test('the_first_connect_repaints_the_tree_once_and_a_folder_with_a_colour_never', async () => {
+  const fresh = storageWith(E1_IN_FOLDER, FOLDER);
+  let repaints = 0;
+  const options = { storage: fresh, storageDir: '/storage', log: recordingLog().log, onMutated: (): void => void (repaints += 1) };
+
+  await world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS }).mod.connectEntity('a1', entity(), options);
+  assert.equal(fresh.written.length, 1, 'the first connect wrote the colour');
+  assert.equal(repaints, 1, 'and the tree repaints once, so the folder row shows it');
+
+  await world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS }).mod.connectEntity('a1', entity(), options);
+  assert.equal(repaints, 1, 'a second connect found a colour and wrote nothing: no repaint');
+
+  const wearing = storageWith(E1_IN_FOLDER, { ...FOLDER, folderColor: DEP_COLOR_KEYS[2] });
+  await world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS }).mod.connectEntity('a1', entity(), { ...options, storage: wearing });
+  assert.equal(repaints, 1, 'a folder that already wore a colour is not repainted');
+});
+
+test('a_failed_colour_write_repaints_nothing', async () => {
+  const failing = storageWith(E1_IN_FOLDER, FOLDER);
+  failing.failNextWrite(new Error('the store is down'));
+  let repaints = 0;
+
+  await world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS }).mod.connectEntity('a1', entity(), { storage: failing, storageDir: '/storage', log: recordingLog().log, onMutated: (): void => void (repaints += 1) });
+
+  assert.equal(repaints, 0, 'nothing was saved, so there is nothing to repaint');
 });
 
 test('a_failed_colour_write_still_connects_and_says_so_in_the_log', async () => {
@@ -514,7 +541,7 @@ test('a_failed_colour_write_still_connects_and_says_so_in_the_log', async () => 
   const { log, lines } = recordingLog();
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
-  const opened = await w.mod.connectEntity('a1', entity(), { storage: failing, storageDir: '/storage', log });
+  const opened = await w.mod.connectEntity('a1', entity(), { storage: failing, storageDir: '/storage', log, onMutated: () => undefined });
 
   assert.equal(opened, true, 'the terminal opened');
   assert.equal('color' in w.created[0], false, 'without a colour');

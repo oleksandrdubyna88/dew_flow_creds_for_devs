@@ -274,7 +274,7 @@ export async function secondEntryWorld(options: SecondOptions = {}): Promise<Sec
   const sshDeps: SshUseDeps = {
     storage,
     storageDir,
-    log: recordingLog().log,
+    log: recordingLog().log, onMutated: () => undefined,
     signal,
     acquireExecSlot: () => (): void => undefined,
     note: (message) => {

@@ -71,6 +71,8 @@ export interface FolderWorld extends World {
   colourWrites: WrittenChange[];
   /** What the diagnostic log was given, in order (E1.S3). */
   logged: LogLine[];
+  /** How many times the host's tree repaint (`onMutated`) was called. */
+  refreshed: { count: number };
 }
 
 function trustStore(o: FolderWorldOptions): ReturnType<typeof memoryTrust> {
@@ -121,8 +123,12 @@ export function folderWorld(entries: readonly EntityMetadata[], o: FolderWorldOp
     colouring.failNextWrite(o.colourWriteFails);
   }
   const { log, lines: logged } = recordingLog();
+  const refreshed = { count: 0 };
   const handlers = registerRunWorld(w, {
     log,
+    onMutated: () => {
+      refreshed.count += 1;
+    },
     store,
     storage: {
       getNode: (_account: string, id: string) => nodes.find((n) => n.id === id),
@@ -148,6 +154,7 @@ export function folderWorld(entries: readonly EntityMetadata[], o: FolderWorldOp
     nodes,
     colourWrites: colouring.written,
     logged,
+    refreshed,
   };
 }
 
