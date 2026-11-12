@@ -10,6 +10,8 @@
 
 **Boundary with [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md)** (2026-11-11): that plan changes only the REMOTE COMMAND (the last argv word, or the last word of the typed line) on the roads of this plan's table, to `exec ${SHELL:-sh} -l -c '…'`. It changes no ssh option, no environment and no askpass variable. Disjoint from this plan; either may go first.
 
+**Boundary with [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)** (N10, rule C, 2026-11-12): that plan changes `byStoredKey` (`sshExecAuth.ts:156-167`) and one import of the same file; this plan changes `byPassword` (`:78-101`) and `sshAskpass.ts`: disjoint lines, and the askpass script keeps its fixed name. If this plan writes a file for a hop on the agent's road (a key of the hop, a per-call configuration), its name comes from `callKeyName()`: no id of an entry. Whichever merges second reads `sshExecAuth.ts` again.
+
 ## The defect
 
 An entry that authenticates by password rides `SSH_ASKPASS` with `SSH_ASKPASS_REQUIRE=force` and the password in `CREDS_SSH_PASSWORD`

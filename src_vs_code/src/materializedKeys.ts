@@ -65,8 +65,9 @@ export function materializedKeysDir(storageDir: string): string {
  * <p><b>It must not collapse two different ids onto one name.</b> That would be the worse bug:
  * two entities sharing a key file means a connection authenticating with the wrong credential,
  * and it would look like a working feature. So anything that had to be rewritten carries a short
- * digest of the ORIGINAL, and a name that needed no rewriting — the ordinary uuid — is passed
- * through untouched, because the file name is also how the purge and the wipe find it again.</p>
+ * digest of the ORIGINAL, and a name that needed no rewriting — the ordinary uuid, or a call name of
+ * `callKeyName()` — is passed through untouched. No code finds a file again by its name: a remover is handed the whole
+ * path, and the purge takes the whole folder of a window.</p>
  *
  * <p>`vpnCommand.ts` already sanitised its own name for this reason. Doing it here instead of at
  * each caller is the difference between a site that is safe and a site that is safe today.</p>

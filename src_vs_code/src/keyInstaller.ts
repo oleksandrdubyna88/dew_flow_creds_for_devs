@@ -144,8 +144,10 @@ function processAlive(pid: number): boolean {
  * Write a stored private key into the extension's private storage
  * (dir 0700, file 0600) and return its path for `ssh -i`.
  *
- * <p>`suffix` makes the file THIS call's alone: `<id>-<suffix>.key`, so two sessions of one entry never
- * share a path (E1.S3 `isolate`). A per-session uuid, never vault data. Omitted, the name is `<id>.key`.</p>
+ * <p>`entityId` is the first part of the name: the id of a key entry on the person's roads (`sshSession.ts`; `git-<id>` for the git
+ * sync, `transportFactory.ts`), or a random call name from `materializeCallKey` (rule C: no id of an entry). `suffix` makes the
+ * file THIS call's alone: `<id>-<suffix>.key`, so two sessions of one entry never share a path (E1.S3 `isolate`). A per-session
+ * uuid, never vault data. Omitted, the name is `<id>.key`.</p>
  */
 export function materializePrivateKey(
   storageDir: string,
@@ -155,7 +157,7 @@ export function materializePrivateKey(
 ): string {
   const keysDir = materializedKeysDir(storageDir);
   fs.mkdirSync(keysDir, { recursive: true, mode: 0o700 });
-  // The id comes from the vault, and import/restore write an envelope's ids verbatim.
+  // A name built from an id comes from the vault, and import/restore write an envelope's ids verbatim; a call name is random (rule C).
   const keyPath = path.join(
     keysDir,
     `${safeFileComponent(entityId)}${suffix === undefined ? '' : `-${safeFileComponent(suffix)}`}.key`,

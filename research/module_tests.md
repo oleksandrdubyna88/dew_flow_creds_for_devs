@@ -2407,8 +2407,9 @@ not a valid host.`, and after the fix the file passed (40 of 40 on that run).
 **What none of this proves** (the plan's section 5.8):
 
 - Time. No test measures it: the two cases run the same synchronous code, but a node that exists also walks the folders above it.
-- A real `ssh` and a real server: B1 to B3 refuse before anything is started, so no `ssh` runs in part B (`sshExecRunner` only records the argv). So the text that `ssh` prints on a call that answers 200 is NOT checked: it can show the address of a jump host and, for a key that is written to disk, the path `<storageDir>/keys/<keyEntityId>-<uuid>.key` (for example `Load key "<path>": invalid format`).
-- The path of a borrowed key in the other refusals. A key that cannot be written (`Could not write the stored key to disk: …`, code `internal`) and a run error (`Could not run ssh: …`) can carry the path, and so the id of the key entry. Off a bridge those sentences reach the agent as they are (`bridgeLinks.test.ts` pins them); on a bridge they are closed. Not built, and not tested as closed: the plan holds it as an item for the owner.
+- A real `ssh` and a real server: B1 to B3 refuse before anything is started, so no `ssh` runs in part B (`sshExecRunner` only records the argv). So the text that `ssh` prints on a call that answers 200 is NOT checked: it can show the address of a jump host and, for a key that is written to disk, the path of the key file (since rule C `<storageDir>/keys/<pid>/call-<uuid>.key`, with no id: part C, below) (for example `Load key "<path>": invalid format`).
+- The path of a borrowed key in the other refusals. A key that cannot be written (`Could not write the stored key to disk: …`, code `internal`) and a run error (`Could not run ssh: …`) can carry the path. Off a bridge those sentences reach the agent as they are (`bridgeLinks.test.ts` pins them); on a bridge they
+  are closed. Since rule C the name of the file holds no id: part C, below, proves it on the three doors.
 - A reference in a field that is not a `string` or a `string[]`. The scan of part B does not see an object or an array of objects: today `EntityMetadata` has two `CommandArg[]` fields and one `Record<string, string>` field that hold text, and they hold no id of an entry (read on the plan's `360d45b7`); `PortForward[]` is not seen either.
 - Sentences outside the sites of the plan's section 3. The class test covers every route of the contract and every reference field that
   exist today; a new sentence on an existing route that names a node by another road is covered only when the fixture reaches it.
@@ -2416,6 +2417,64 @@ not a valid host.`, and after the fix the file passed (40 of 40 on that run).
   (`CredsMcp.Tests`, `WindowsTests`: `not_found` goes on, `denied` stops) apart; the harness is the one check of the two together.
 - The config-snippet lookup stops at the first account that holds the id (N8 of the plan): with two accounts it can answer differently
   for a hidden config and a missing one. Nothing is named and no value is given.
+
+## The path of a call file holds no id (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md), rule C)
+
+Rules A and B above prove what an answer says about an ENTRY. Rule C proves what an answer says about a FILE: the key file that an agent's
+SSH call writes for a borrowed key (an SSH entry that uses the stored key of a second entry) is named `call-<uuid>.key` by
+`materializeCallKey` (`keyInstaller.ts`), with `callKeyName()` (`materializedKeys.ts`), so no path that reaches the agent holds the id of a
+key entry. The path reaches the agent in three ways: (a) the write fails, (b) the run fails, (c) `ssh` prints it.
+
+**Part C of the class test.** `src_vs_code/src/test/agentKeyPath.test.ts`, over `src_vs_code/src/test/secondEntryWorld.ts` (the world of part
+B: the SSH entry `prod` borrows the key of a hidden entry whose id reads like a name, `hid-key-8f3k2`). The world has four options for what the
+edge of the world does: `writeFails` (the writer throws what Node throws, with the path it was asked to write), `startFails` (the runner
+rejects with a text that holds the whole argv, a stand-in for the worst case), `sshPrints` (the pretended `ssh` answers 255 and prints the
+word after `-i` in the two shapes of a real `ssh`), and `pinned` (the real `materializeKnownHosts` writes the pin file). One suite:
+`node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/agentKeyPath.test.js"`, after `npm run compile`. No row guesses a
+name: a path comes from the lists of the world (`attempted`, `materialised`, `spawned`).
+
+| Row | File | What it proves |
+|---|---|---|
+| P1 to P7, the fixture | `agentKeyPath.test.ts`, three tests (one for each door) | With no option the call reaches `ssh` one time and answers 200; the key file written is the word after `-i`; the key entry is one that the agent may not view; the SSH entry is one that it may view; the world's list of hidden ids holds the id; the id is a part of no other text of the world |
+| K1 | the same, three tests | No word of the argv holds a hidden id or a hidden name, and the word after `-i` is the file that was written |
+| K2, K3, K4 | the same, nine cells (three ways, three doors: `creds_exec`, `creds_rotate` on an SSH entry, a linked `creds_run`) | Assertion 1 is the one positive: the answer holds the path of the file of this call, or for (a) the path that the writer was asked to write. Then the status and the sentence of today (`internal`, 500, `Could not write the stored key to disk: ` and `Could not run ssh: `; 200 with exit code 255 for (c)). Then no hidden id and no hidden name |
+| G5 | the same, two tests (`exec`, `run`) | The pin file of the call carries the id of the SSH entry of the call, which the agent may view. Green before the fix and after it |
+| K5 | `sshExecAuth.test.ts` | `resolveExecAuth` with a stored key of a key entry whose id is `deploy-key`: the last part of `keyPath` is a call name and holds nothing of the id |
+| K6 | `bridgeLinks.test.ts`, beside L5 | The key path that `ssh` prints, through the bridge and through the main port: the last part is `call-<uuid>.key` and does not start with the id of the key entry; `stderr` is passed on as it was returned. The option `printsKeyPath` of `bridgeLinksWorld.ts` builds the pretended `stderr` from the word after `-i` |
+| U1 | `materializedKeys.test.ts` | `callKeyName()` is `call-` and a uuid; two calls give two names; `safeFileComponent` gives the name back with no change; the function has no parameter |
+| U2 | `keyInstaller.test.ts`, on the real file system | `materializeCallKey` writes the body with one end-of-line into `keys/<pid>/` as `<a call name>.key`; mode 0600 where the system has modes; two calls, two paths; no parameter for an id |
+| U3 | the same | A purge takes a call key with the folder of the window |
+
+**The scan, S1 and S2** (`keysDirPaths.test.ts`, below the older guard of the same file: nothing joins a name into `keys/<pid>/` by hand).
+S1: each occurrence of the identifier `materializePrivateKey` in `src_vs_code/src` (comments apart; a call, an import, an import with `as`, a
+member of a namespace import) is in a file of a written list: `keyInstaller.ts` (the writer itself and `materializeCallKey`),
+`sshSession.ts` (the person's Connect and roads) and `transportFactory.ts` (the git sync of the vault). Each has its reason in the test. A file
+outside the list fails the test with the file and the line. S2 is the companion: the scan finds a call in each of the three files, so a
+change of formatting cannot make it match nothing, and the list is compared with these three names, so a fourth name fails.
+
+*What S1 does not find.* A name built at run time (`mod['materialize' + …]`); a new call inside a file of the list; and the other writers that
+name a file from an id through `materializedKeyPath` (`known_hosts-<id>`, `agent-script-<id>`), which are safe today because their entry is
+one that the agent may view, but a pin or a file for a hop on the agent's road would not be found. It is a narrow guard against a regression,
+not a proof; part C is the proof for the three doors.
+
+*Watched red.* On the unchanged call site the first S1 failure named `sshExecAuth.ts:7` (the import) and `sshExecAuth.ts:162` (the call).
+With the options, part C, K5 and K6 written and the call site unchanged, 15 tests failed and no other (S1, K1 on three doors, the nine cells
+K2 to K4, K5, K6; the fixture proof and G5 passed); for example K1: `exec: the argv holds hid-key-8f3k2: <folder>/hid-key-8f3k2-<uuid>.key`.
+Six mutations each turned a test red: (1) the old line at `sshExecAuth.ts:162` back: 15 red (K1 to K6, S1); (2) `callKeyName()` gives one
+fixed name: U1, U2 and the two tests of G7; (3) `sshExecAuth.ts` added to the list of S1: S2 at its first assertion; (4) the `stderr` of
+`sshPrints` made a fixed text: the three (c) cells at assertion 1 (the channel is not live), and G5; (5) the id of the key entry taken off the
+world's list of hidden ids: the fixture proof and part B's own fixture test; (6) a product file with `import { materializePrivateKey as
+writeKey }` and a call: S1, at the line of the import. The full suite after the fix: 7770 tests, 7733 pass, 0 fail, 37 skipped.
+
+**What it does not prove.**
+
+- A real `ssh`. In K4 and K6 `ssh` is pretended: it prints the word that it was given. The fix does not depend on it: no word of the argv holds the
+  id (K1).
+- Windows. The extension suite runs on Ubuntu only. The ACL step and `ssh.exe` take each file name, by reading. The first real `creds_exec` with a
+  stored key on a Windows computer after the release shows it.
+- A new thing that throws inside the `try` of `execOverSsh`.
+- The sentences of (a) and (b) off a bridge still hold the local path (G2, G3 of the plan). This is a decision, not a gap.
+- The person's roads. Their file names still hold the id of the key entry. No test of this plan reads the person's terminal.
 
 ## What none of them covers
 
