@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
 import { currentOwner, restrictToOwnerArgv } from './fileAcl';
@@ -94,6 +95,16 @@ function nameDigest(name: string): string {
     hash = BigInt.asUintN(64, (hash ^ BigInt(name.charCodeAt(i))) * 0x100000001b3n);
   }
   return hash.toString(16).padStart(16, '0');
+}
+
+/**
+ * The name of the key file of ONE call of an agent: `call-` and a random uuid (rule C).
+ *
+ * <p>The name of a call file holds no id and no name of an entry; it is random. The function takes no argument, so no data of
+ * the vault can arrive in it.</p>
+ */
+export function callKeyName(): string {
+  return `call-${crypto.randomUUID()}`;
 }
 
 /**

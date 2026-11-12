@@ -7,6 +7,7 @@ import { EntityMetadata } from './types';
 import { askpassScript } from './sshAskpass';
 import { deadPidSubdirs } from './keysPurge';
 import {
+  callKeyName,
   lockToOwner,
   materializedKeyPath,
   materializedKeysDir,
@@ -163,6 +164,14 @@ export function materializePrivateKey(
   fs.chmodSync(keyPath, 0o600);
   lockToOwner(keyPath);
   return keyPath;
+}
+
+/**
+ * The writer of the key file of one call of an agent, or of a road that shares `resolveExecAuth`: the same folder, modes and
+ * `lockToOwner` as `materializePrivateKey`, under a random name from `callKeyName()` (rule C). It has no parameter for an id.
+ */
+export function materializeCallKey(storageDir: string, content: string): string {
+  return materializePrivateKey(storageDir, callKeyName(), content);
 }
 
 /**

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, mock, test } from 'node:test';
 import { errorBody } from '../brokerProtocol';
+import { callKeyName } from '../materializedKeys';
 import { SECOND_ENTRY_REFUSED } from '../agentNaming';
 import { loadWithVscode } from './vscodeStub';
 import { ACCOUNT, JOURNAL_BROKEN, SecondOptions, SecondWorld, secondEntryWorld } from './secondEntryWorld';
@@ -114,20 +115,21 @@ async function world(parts: Parts): Promise<World> {
 
 /** The I/O boundaries, substituted — each one records into `log` what it was asked to do. */
 function mocks(parts: Parts, storageDir: string, log: Log): Record<string, unknown> {
+  // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather than by counting calls to a stub.
+  const write = (dir: string, name: string, content: string): string => {
+    const keyPath = path.join(dir, `${name}.key`);
+    fs.writeFileSync(keyPath, content, { mode: 0o600 });
+    log.materialised.push(keyPath);
+    return keyPath;
+  };
   return {
     './sshCredential': {
       resolveSshCredential: (): Promise<unknown> =>
         parts.credentialThrows === true ? Promise.reject(new Error('the keychain would not answer')) : Promise.resolve(parts.source),
     },
     './keyInstaller': {
-      // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
-      // than by counting calls to a stub.
-      materializePrivateKey: (dir: string, id: string, content: string): string => {
-        const keyPath = path.join(dir, `${id}.key`);
-        fs.writeFileSync(keyPath, content, { mode: 0o600 });
-        log.materialised.push(keyPath);
-        return keyPath;
-      },
+      materializePrivateKey: write,
+      materializeCallKey: (dir: string, content: string): string => write(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
