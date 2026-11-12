@@ -3179,8 +3179,8 @@ deleting the reason the code is the way it is.
 
 ### Folder colours — a folder's terminals and its row (Unreleased)
 
-> Design record: `todo/PLAN_folder_colors.md` and its epic file `todo/PLAN_folder_colors_E1.md`. Epic E1 only: the colour is picked for the person. E2 adds the folder form's colour
-> choice.
+> Design record: `todo/PLAN_folder_colors.md` and its two epic files, `todo/PLAN_folder_colors_E1.md` (the colour is picked for the person) and
+> `todo/PLAN_folder_colors_E2.md` (the person chooses it in the folder form, and the documents). Both epics are built.
 
 **The field.** `TreeNode.folderColor` (`types.ts`) is a key of the dependency palette (`depColors.ts`), on a folder
 only. It is typed `string`, not `DepColorKey`, and the node guard checks only that it is a string, so a key minted by
@@ -3223,8 +3223,31 @@ is `folderColorOption` (`terminalColor.ts`, its own module so the tests that rep
 `createTerminal(` for a folder title spreads `folderColorOption(` (X1 checks a module, not the order inside a function:
 a new road in a module that already colours passes it uncoloured).
 
+**The choice in the form.** *Edit* on a folder shows a **Colour** row (`folderFormPage.ts`, `colourFieldset`) with the twelve
+swatches of the dependency picker, not a copy of them: `folderSwatchScript.ts` paints the same palette JSON (`paletteJson`,
+exported from `depPickerScript.ts`) with the same classes `depSwatches` / `depSwatch` / `depSwatchOn`, and `DEP_SWATCH_STYLES`
+(`entityFormStyles.ts`) is the one set of rules both forms load. There is no "no colour" swatch: the way back does not exist.
+Only a CLICK is a choice (the edit intent). The stored colour is marked when the row first paints, but `folderChosen` stays
+undefined until a click, and the page posts only `folderChosen`; so a Save in which no swatch was clicked sends no `folderColor`.
+A click on the marked swatch is a choice too, and the host then writes nothing for it. `readValues` (`folderFormPanel.ts`) keeps
+the field only when `isDepColorKey` accepts it, because the webview is untrusted input; anything else becomes `undefined`.
+The save is ONE `updateNodeFields` call with a FUNCTION patch (`editFolder`, `entityEditCommands.ts`), run inside the
+cross-window lease: `{ name, mcp, ...folderColorChange(now, chosen) }`. `folderColorChange` (`folderColors.ts`) sets
+`folderColor` only for a chosen key that differs from the node AS IT IS THEN (`now`), never from the copy read when the form
+opened. So a rename keeps a colour that the auto-pick or another window wrote while the form was open, and an explicit choice wins
+over the auto-pick in either order. That holds as far as the write is visible in the saving window: the patch sees this window's
+copy of the node list, and a write from another window that has not arrived by broadcast is not seen (the residual named below).
+A folder holding no string shows the suggestion line (`folderFormColour`, `suggestedColor = pickFolderColor(nodes)`): *No colour
+yet. The first terminal opened from this folder gets the least-used colour at that moment (now: <label>; this can change before
+then). Choose one to set it now.* It is a preview, not a promise, because the auto-pick runs at the first terminal and another folder
+can take the colour before then. A folder holding a string this build does not know (`depColor99`) gets neither a mark nor the line,
+because the auto-pick never writes over a string. A folder in the trash gets no Colour row, like the access switches: the trash is
+never painted and nothing inside it is coloured. A Save still stamps the folder once, as before this feature: `editFolder` writes
+`name` and `mcp` on every Save and `updateNodeFields` stamps on every call, so the colour adds no field and no second write for an
+equal key, and a Save that changes nothing and so writes nothing stays out of scope.
+
 **The limit.** VS Code fixes a terminal's colour when the terminal is CREATED. A terminal that is found (a second arrow,
-Connect twice) keeps the colour it was made with, and the folder's colour changing later (E2's form) never repaints
+Connect twice) keeps the colour it was made with, and the folder's colour changing later (the form above) never repaints
 a terminal that is already open.
 
 **No colour.** `Creds: before …` (the dependency chain), `Creds run: …` (the masked run), `Creds VPN: …` (the built-in
@@ -3234,7 +3257,7 @@ at the root has no folder. A key this build does not know paints nothing and cou
 
 **Residuals, named on purpose.** (P1) The lease serializes the windows; it does not make a window's `globalState` copy
 fresh. A window that takes the lease before another's write has arrived by broadcast can pick the same key for a
-second folder (cosmetic; E2's form repairs it), and `saveNodes` writes the WHOLE node list from that stale copy, so it
+second folder (cosmetic; the folder form repairs it), and `saveNodes` writes the WHOLE node list from that stale copy, so it
 can drop the other window's write made within the broadcast delay: the first folder's colour, or any other node edit.
 That is true of every leased write in this extension (`windowLock.ts`; `PLAN_cross_window_write_coordination.md`
 §2026-09-03), not new here; this feature adds one more such write per folder, once, and a lost colour is picked again
@@ -3243,7 +3266,8 @@ no bound and no timer of its own: a dead holder is broken after 15 s, a live one
 serves Run with Secrets, whose terminal gets no colour, and it runs before the trust question; so such a run, or a
 cancelled trust question, still gives the folder its colour. One write per folder, ever. (F5) Export and Import do not
 carry the colour: an imported folder is rebuilt from name, type and the PIN preference, and gets its colour again at its
-first terminal; sync and backup move whole nodes and keep it.
+first terminal; sync and backup move whole nodes and keep it. The stale-copy write has a plan of its own, a stub:
+[PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md).
 
 ### The form is three modules, not one file (audit A1's tail)
 
