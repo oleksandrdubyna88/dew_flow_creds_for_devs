@@ -6,10 +6,13 @@ import { TreeNode } from '../types';
  * A fake of the three storage methods the folder-colour allocator uses, and the controls a race test needs.
  *
  * <p>A SECOND implementation of the storage contract: the allocator tests run over it and over the real
- * `StorageManager`. One `updateNodeFields` call is one TURN: wait a macrotask, run the one-shot hook, read the
- * list as it is NOW, evaluate the patch on that node (a missing id does not call it), record the change, wait a
- * macrotask, fail if told to, then store. Both waits matter: without the first a tally taken outside the lease
- * would look correct. Turns run one at a time through the real `SerialQueue`; `serial: false` lets them overlap.
+ * `StorageManager`. One `updateNodeFields` call is one TURN: run the one-shot hook, read the list as it is NOW,
+ * evaluate the patch on that node (a missing id does not call it), record the change, wait a macrotask, fail if told
+ * to, then store. The wait between the patch and the store is the window in which a second turn, if the queue let it
+ * start, would read the list before this one stored (`serial: false`, R3). The real `SerialQueue` always starts a turn
+ * later than the call, so a patch is never evaluated at CALL time; a fake that did so would go red in V2 (i) and in
+ * every scenario that starts two calls together.
+ * Turns run one at a time through the real `SerialQueue`; `serial: false` lets them overlap.
  * It does NOT stamp `v` or `updatedAt`, so "nothing was written" is `written.length`, never node equality.</p>
  */
 export interface WrittenChange {
@@ -68,7 +71,6 @@ export function folderColorStorage(
   }
 
   async function turn(accountId: string, id: string, patch: Patch): Promise<void> {
-    await nextMacrotask();
     const run = hook;
     hook = undefined;
     run?.();

@@ -16,8 +16,10 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
  *
  * <p>Run over a fake storage (`folderColorStorage.ts`, a second implementation of the contract) and, for the
  * scenarios marked [fake] and [real], over one real `StorageManager` too. Two windows are two real managers
- * over ONE memento object and one real lock directory (R4): that proves the lease's serialization and NOT the
- * broadcast of a real window, whose late arrival is the residual R4b pins. Every scenario that expects
+ * over ONE memento object and one real lock directory (R4): that proves the lease's serialization, and only because
+ * window a is held at its memento write while b starts; without that hold the calls never overlap at a write and the
+ * lock proves nothing. It does NOT prove the broadcast of a real window, whose late arrival R4b and the R4 control
+ * show. Every scenario that expects
  * "nothing was written" ends with a positive tail in the same world, so a fake that records nothing cannot pass.</p>
  */
 const scope = cleanupScope();
@@ -147,13 +149,20 @@ both('an_unknown_stored_value_is_kept_as_it_is_and_gives_no_key', async (build) 
   assert.deepEqual([await ensure(w, 'e1'), await ensure(w, 'e2')], [undefined, undefined]);
   assertQuiet(w);
   assert.deepEqual([textOf(w, 'f1'), textOf(w, 'f2')], text, 'byte-identical, v and updatedAt included');
-  assert.deepEqual([w.storage.getNode(A, 'f1'), w.storage.getNode(A, 'f2')], [one, two]);
+  if (w.fake !== undefined) {
+    assert.equal(w.storage.getNode(A, 'f1'), one, 'the fake: the same node object');
+    assert.equal(w.storage.getNode(A, 'f2'), two);
+  } else {
+    assert.deepEqual([w.storage.getNode(A, 'f1'), w.storage.getNode(A, 'f2')], [one, two]);
+  }
   await positiveTail(w);
 });
 
 test('nothing_is_written_at_the_root_for_a_dangling_parent_or_a_missing_entry', async () => {
   const w = await buildFake({ [A]: [entry('e-null', null), entry('e-undef', undefined), entry('e-gone', 'gone'), ...LIVE] });
   assert.equal(w.storage.getNode(A, 'gone'), undefined, 'Given: the parent is not there');
+  assert.deepEqual(['e-null', 'e-undef'].map((id) => w.storage.getNode(A, id)?.parentId ?? null), [null, null], 'Given: no parent');
+  assert.equal(w.storage.getNode(A, 'e-gone')?.parentId, 'gone', 'Given: a dangling parent');
   const list = w.storage.getNodes(A);
 
   for (const id of ['e-null', 'e-undef', 'e-gone', 'no-such-entry']) {
@@ -175,6 +184,8 @@ test('nothing_is_written_in_the_trash_at_any_depth', async () => {
     ],
   });
   assert.equal(colorOf(w, 'f-kept'), K[3], 'Given: the kept folder wears a key');
+  assert.deepEqual(['f-del', 'f-kept'].map((id) => w.storage.getNode(A, id)?.parentId), ['trash', 'trash'], 'Given: under the trash');
+  assert.equal(w.storage.getNode(A, 'f-deep')?.parentId, 'f-del', 'Given: f-deep sits in f-del, two levels down');
 
   assert.deepEqual([await ensure(w, 'e1'), await ensure(w, 'e2'), await ensure(w, 'e3')], [undefined, undefined, undefined]);
   assert.equal(await ensure(w, 'e4'), K[3]);
@@ -254,28 +265,56 @@ test('without_a_lease_two_folders_would_get_one_key_and_that_is_the_point', asyn
   assert.deepEqual(keys, [K[0], K[0]], 'the control: the fake CAN interleave, so R2 passes by serialization');
 });
 
-/** Two real managers over ONE memento and one real lock directory, seeded through window `a`. */
-async function windows(seed: readonly TreeNode[]): Promise<{ a: RealStorage; b: RealStorage }> {
-  const world = twoWindows<RealStorage>(ownedDir(scope, 'window-lock'));
+/** Two real managers over ONE memento, seeded through window `a`; with `locked` they share a real lock directory. */
+async function windows(seed: readonly TreeNode[], locked = true) {
+  const world = twoWindows<RealStorage>(locked ? ownedDir(scope, 'window-lock') : undefined);
   await seeded(world.a, { [A]: seed });
   return world;
 }
 
+/**
+ * Window a is held at its memento write of the list, window b starts meanwhile, a few macrotasks pass, then a goes on.
+ * Without the hold the real manager reads, patches and sets the shared map in one synchronous run and the lock has
+ * nothing to serialize.
+ */
+async function startedWhileAIsHeld(world: Awaited<ReturnType<typeof windows>>, entries: readonly [string, string]) {
+  const gate = world.memento.pauseOn(nodesKey(A));
+  const fromA = ensureFolderColor(world.a, A, entries[0]);
+  await gate.reached;
+  const fromB = ensureFolderColor(world.b, A, entries[1]);
+  for (let i = 0; i < 5; i++) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  gate.release();
+  return Promise.all([fromA, fromB]);
+}
+
 test('two_windows_with_the_lock_give_two_folders_two_keys_and_one_folder_one_key', async () => {
   const seed = [folder('f1'), entry('e1', 'f1'), entry('e1b', 'f1'), folder('f2'), entry('e2', 'f2')];
-  const first = await windows(seed);
-  const two = await Promise.all([ensureFolderColor(first.a, A, 'e1'), ensureFolderColor(first.b, A, 'e2')]);
-  assert.deepEqual([...two].sort(), [K[0], K[1]].sort(), 'either window may win; two keys');
+  const two = await startedWhileAIsHeld(await windows(seed), ['e1', 'e2']);
+  assert.deepEqual([...two].sort(), [K[0], K[1]].sort(), 'a is held at its write: b waited for the lease; two keys');
 
-  const second = await windows(seed);
-  const one = await Promise.all([ensureFolderColor(second.a, A, 'e1'), ensureFolderColor(second.b, A, 'e1b')]);
+  const one = await startedWhileAIsHeld(await windows(seed), ['e1', 'e1b']);
   assert.equal(one[0], one[1], 'one folder, one key');
   assert.ok(isDepColorKey(one[0]));
+});
+
+// A DEMONSTRATION of the residual (P1), not a guarantee: without the lock directory the same hold shows what the lease
+// is for. b tallies the list a has not written yet, both folders get K[0], and a's later whole-list write drops the
+// colour b stored on f2 (b's write landed first in the shared memento).
+test('without_the_lock_the_held_window_gives_both_folders_one_key_and_loses_a_stored_colour_the_residual', async () => {
+  const world = await windows([folder('f1'), entry('e1', 'f1'), folder('f2'), entry('e2', 'f2')], false);
+
+  assert.deepEqual(await startedWhileAIsHeld(world, ['e1', 'e2']), [K[0], K[0]], 'the real-manager version of R3');
+  assert.equal(world.a.getNode(A, 'f1')?.folderColor, K[0]);
+  assert.equal(world.a.getNode(A, 'f2')?.folderColor, undefined, 'f2\'s colour was dropped by a\'s whole-list write');
 });
 
 // ACCEPTED OUTCOME, not a guarantee (E1 plan round 1, residual P1): a window whose copy of `globalState` has not yet
 // received the other's write tallies an old list, so two folders can wear one colour. The late broadcast is modelled
 // by two managers over two mementos, so b never sees a's write. Nobody should read a repeat here as a promise of two keys.
+// "Loses nothing" means only that b's patch writes f2 alone in b's own copy. When the copies meet, b's whole-list write
+// can drop a's f1 colour; this model does not test that, and the no-lock control above shows it.
 test('a_stale_window_copy_may_repeat_a_colour_and_loses_nothing', async () => {
   const seed = [folder('f1'), entry('e1', 'f1'), folder('f2'), entry('e2', 'f2')];
   const [a, b] = [storageManagerOver<RealStorage>(sharedMemento().api, sharedSecrets().api),
