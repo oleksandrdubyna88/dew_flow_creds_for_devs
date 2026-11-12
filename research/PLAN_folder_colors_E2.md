@@ -1,8 +1,8 @@
 # PLAN — folder colours, epic E2: the person chooses the colour; the documents are complete
 
-> Status: **stories, not built, 2026-11-12.** Stories of epic E2 of [PLAN_folder_colors.md](PLAN_folder_colors.md).
-> Scope: `src_vs_code` only. S1 and S2 are specified here (scenarios and brief, by Opus). E2 has no cornerstone.
-> Worktree branch `feat/folder-colors-e2`, which starts at the end of E1 (`6c9149bd`).
+> Status: **IMPLEMENTED, 2026-11-12.** Stories of epic E2 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the person
+> chooses the colour in the folder form, and the documents are complete. Scope: `src_vs_code` only. No cornerstone.
+> Deviations: below, and § 9 of the parent. Built on `feat/folder-colors-e2`, which starts at the end of E1 (`6c9149bd`).
 
 Paths are relative to `src_vs_code/src/` unless they say otherwise. Every `file:line` was opened on commit `6c9149bd`.
 
@@ -262,3 +262,26 @@ one would be the SECOND change of epoch 1, which stops the plan. My reading of e
 - **F2 — accepted; not a change.** §3.5 is silent about the trash; the form in the trash already hides the access
   switches, and the auto-pick never colours inside the trash, so D5 fills a silence the existing form already answers.
 - **F3-F7 — accepted as written.** F7: the stub is a separate plan; it adds no scope to this one.
+
+## Deviations
+
+The deviations of the whole plan are § 9 of [PLAN_folder_colors.md](PLAN_folder_colors.md). What belongs to E2:
+
+1. **D2 was narrowed in plan round 1** (`e0e24e5b`): "a rename keeps a colour another window wrote" holds as far as the
+   write is visible in the saving window. The stale-copy residual is not fixed here. S2 wrote only its stub,
+   [PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md), which stays in `todo/`.
+2. **The E2.S1 review** (`74528ee8`): `folderColorChange` and `folderFormColour` check the trash at any depth, from the
+   node as it is then (a crafted save cannot colour a folder inside the trash, and the form inside the trash gets no
+   suggestion); an empty name box adds no name to the change, so a cleared name keeps another window's rename; the
+   swatches move their mark in place (focus stays, `aria-pressed`); the doc comment of `editFolder` says the rules.
+3. **The E2.S2 review** (`026c0d12`): *Import / Restore* keeps the colour, while *Export / Share Externally…* and *Import from
+   External…* drop it (E1's F5 had said "Export and Import"); the help says Save and where the suggestion shows; the module
+   document says the trash at any depth; the German grammar and the Russian and Ukrainian wording were fixed; the stub's
+   cross-repository citations were made paths; the help test builds the terminal titles with `terminalTitles.ts`, so the
+   title scan stays green.
+4. **H1 checks each translation** for a phrase of its own (E2 plan round 1, two reviewers), so a paragraph left in English
+   or left out fails for the named language.
+5. **Not built, as the E2 text said:** the shared "allocate, then key" helper (X1's limit), a Save that changes nothing and
+   so writes nothing (F1), the fix of the stale-copy write.
+6. **coai.** E2 plan round: 2 of 2 reviewers. E2 code round: 8 of 8. Not checked: the colours in the owner's real VS Code
+   window.

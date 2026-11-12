@@ -3179,8 +3179,8 @@ deleting the reason the code is the way it is.
 
 ### Folder colours — a folder's terminals and its row (Unreleased)
 
-> Design record: `todo/PLAN_folder_colors.md` and its two epic files, `todo/PLAN_folder_colors_E1.md` (the colour is picked for the person) and
-> `todo/PLAN_folder_colors_E2.md` (the person chooses it in the folder form, and the documents). Both epics are built.
+> Design record: [PLAN_folder_colors.md](PLAN_folder_colors.md) and its two epic files, [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md) (the colour is picked for the person) and
+> [PLAN_folder_colors_E2.md](PLAN_folder_colors_E2.md) (the person chooses it in the folder form, and the documents). Both epics are built; the deviations are § 9 of the first.
 
 **The field.** `TreeNode.folderColor` (`types.ts`) is a key of the dependency palette (`depColors.ts`), on a folder
 only. It is typed `string`, not `DepColorKey`, and the node guard checks only that it is a string, so a key minted by

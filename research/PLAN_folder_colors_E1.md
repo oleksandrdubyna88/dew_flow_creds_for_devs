@@ -1,8 +1,8 @@
 # PLAN — folder colours, epic E1: a folder gets a colour; its terminals and its row show it
 
-> Status: **stories, not built, 2026-11-12.** Stories of epic E1 of [PLAN_folder_colors.md](PLAN_folder_colors.md).
-> Scope: `src_vs_code` only. S1 and S3 are specified here (scenarios and brief, by Opus). S2 is the cornerstone; its
-> spec is Fable's, in its own file. Worktree branch `feat/folder-colors-e1`.
+> Status: **IMPLEMENTED, 2026-11-12.** Stories of epic E1 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the colour is
+> picked, and the terminal icon and the folder row wear it. Scope: `src_vs_code` only. Deviations: below, and § 9 of the
+> parent. Built on `feat/folder-colors-e1`.
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on commit
 `1db4c344` of this branch.
@@ -337,3 +337,25 @@ The parent is not edited here. The lead decides each finding.
   lookup-only builders exempted). (3) The form's precedence against the auto-pick goes into the E2 stories document.
 - **F6 — noted.** One branch per epic is the gate's order; the one PR of D4 is opened from the last epic's branch,
   which holds both epics.
+
+## Deviations
+
+The deviations of the whole plan are § 9 of [PLAN_folder_colors.md](PLAN_folder_colors.md). What belongs to E1:
+
+1. **The fifth site (F1)** was built: Run Script is coloured (C9, X2). The lead's decision above stands as shipped.
+2. **F2** (X1's one allowed line, `terminalManager.ts:38`), **F3** (no extra re-read in the folder run) and **F4** (the
+   arrow's two side effects) were built as decided. **F5** was corrected later: *Export / Share Externally…* and *Import
+   from External…* drop the colour, but *Import / Restore*, sync and backup keep it (E2.S2 review).
+3. **D2 shipped with one more road.** A failed colour write is logged by `noteColourFailure(log)` on every road. The E1.S3
+   review found that the Connect SSH command passed no `log`; `log` became a required field of every dependency type
+   and a test goes through the real command (`6c9149bd`). The VPN launcher's `runVpn` optional tail was folded into one
+   seams object in the same commit.
+4. **The module document** says the trash at any depth, and the five `createTerminal` sites by name (E1.S3 review).
+5. **X1's known limit** (a module, not the order inside a function) was not changed, and its follow-up is not built.
+   Checked: the cadence consultation built a counterexample. Not checked: any other way a new road could slip past.
+6. **The S2 spec's findings P1-P7** went as the lead decided above. P5 (the empty stamp avoided with `storage.writes.run`)
+   was not used, because it would have been the plan's second change. P1 (the stale copy) has the stub plan
+   [PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md), which stays in `todo/`.
+7. **Six review nits of E1.S1** were fixed in the E1.S3 commit (`d053e2b1`).
+8. **coai.** E1 plan round 1: 1 of 2 reviewers (the antigravity provider failed with a 403, a ToS account block). E1 code
+   round: 5 of 8 reviewers. Not checked: the colours in the owner's real VS Code window.

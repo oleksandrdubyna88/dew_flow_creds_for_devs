@@ -2,7 +2,7 @@
 
 > Status: **not started, a stub, 2026-11-12.**
 > Scope: the extension's node writes (`src_vs_code/src/storageManager.ts`: `saveNodes`, `updateNodeFields` and the other leased writes of the node list). Found by the
-> folder colours ([PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md), residual P1); the module document links it. Nothing here is built.
+> folder colours ([PLAN_folder_colors_E1.md](../research/PLAN_folder_colors_E1.md), residual P1); the module document links it. Nothing here is built.
 
 ## Goal
 

@@ -1,6 +1,7 @@
 # PLAN — folder colours, E1.S2 spec: the allocator (cornerstone)
 
-> Status: **spec, not built, 2026-11-12, by Fable.** Scenarios and brief of the cornerstone story E1.S2.
+> Status: **IMPLEMENTED, 2026-11-12.** The cornerstone spec of story E1.S2, by Fable: `ensureFolderColor` as a function
+> patch inside the cross-window lease. Deviations: the end of this file, and § 9 of the parent.
 > Parent: [PLAN_folder_colors.md](PLAN_folder_colors.md) (§3.2 as rewritten by ledger entry 1.1, §6.1, `## Epics`).
 > Stories document: [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md) (section *E1.S2*, decision D2 of S3).
 > Code and tests: Sonnet. Review: Opus. Scope: `src_vs_code/src/folderColors.ts` (one function and its helpers) and
@@ -419,3 +420,20 @@ written, on a sketch of the algorithm over a sketch of the fake: exactly the tes
 - `npm run typecheck`, `npm run lint` and the whole `npm test` are green, at lowered priority.
 - What S3 relies on holds: the name and signature of §2; a rejection on a failed write; and after the call resolves,
   a fresh read of the folder carries the colour.
+
+## Deviations
+
+The deviations of the whole plan are § 9 of [PLAN_folder_colors.md](PLAN_folder_colors.md). What belongs to this spec:
+
+1. **R4 was rewritten after the Opus review** (`86c24f7d` the spec, `91f2a7d9` the tests). R4 now holds window a at its
+   write, so it proves the lease, and a no-lock control shows the residual of P1. R4b's comment and the P1 paragraph of
+   the doc comment say what is and is not shown. The fake's first wait went. A3 asserts identity on the fake. A4 and A5
+   read their Givens back. V2 got a tooth that bites. Four claims of this file were corrected in `86c24f7d`.
+2. **`folderColorAllocator.test.ts` has 464 lines**, against the 450 of the file table in § 4. Under the 800 ceiling.
+3. **Checked, and not.** The probe M1-M6 ran on the real `StorageManager` of the main checkout, built 2026-11-09, with one
+   shared memento and a real lock directory. M7 was a MODEL of two windows with a late broadcast. NOT checked: two real
+   VS Code windows. So R4 proves the lease and does not prove the broadcast.
+4. **P1-P3** were accepted by the lead as named limits, and are in the doc comment of `ensureFolderColor` and in the
+   module document. P5 was not used. P6 (a)-(c) were read as readings of §3.2 and §6.1, not changes. P7 was applied.
+5. **The stale-copy write** has the stub plan [PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md),
+   in `todo/`.

@@ -1,11 +1,12 @@
 # PLAN — a folder has a colour, and its terminals wear it
-> Status: **approved by the coai plan gate 2026-11-12 (round 1: proceed, 2 of 2 reviewers, 6 findings accepted), split
-> into 2 epics, nothing implemented yet.** Scope: the extension only (`src_vs_code`): one node field, the folder row's
-> icon, the `Creds:` and `Creds SSH:` terminals' icon, and a colour picker in the folder form.
+> Status: **IMPLEMENTED, 2026-11-12.** Scope: the extension only (`src_vs_code`): one node field, the folder row's icon,
+> the `Creds:` and `Creds SSH:` terminals' icon, and a colour picker in the folder form. Built in 2 epics on
+> `feat/folder-colors-e1` and `feat/folder-colors-e2`. Deviations: § 9. Ledger at promotion: epoch 1, one entry (1.1), no
+> stop. Approved by the coai plan gate 2026-11-12 (proceed, 2 of 2 reviewers, 6 findings accepted).
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-12 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-12 · by reviewers · state: closed
 
 - 1.1 · 2026-11-12 · agent · approach — the allocator runs inside the storage lease (cross-window), not on an in-memory chain (one window only); §3.2 rewritten
 
@@ -211,6 +212,105 @@ flight to sweep.
 - [ ] coai: a plan round and a code round reached `proceed`, every finding resolved.
 - [ ] Not checkable here, said in the PR: how the colours look in the owner's real VS Code window.
 
+## 9. Deviations — what shipped differently from this plan (promoted 2026-11-12)
+
+This section covers the four documents of the plan: this file, [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md),
+[PLAN_folder_colors_E1_S2_spec.md](PLAN_folder_colors_E1_S2_spec.md) and [PLAN_folder_colors_E2.md](PLAN_folder_colors_E2.md).
+Each of the three says what is its own and points here. Ledger at promotion: epoch 1, one entry (1.1), no stop.
+Built on `feat/folder-colors-e1` and `feat/folder-colors-e2` (one branch per epic, the gate's order; the plan's text
+named `feat/folder-terminal-colors`). The one pull request of D4 comes from the last branch, which holds both epics.
+
+1. **A fifth `createTerminal` site.** §2 and §3.3 list four. Run Script opens `Creds: <folder> / <entry>` through
+   `pinnedTerminal(entryTerminalTitle(…), …)`, so it is a fifth site, and it is coloured. The sites that shipped:
+   `terminalManager.ts` (the SSH key session), `sshConnect.ts` (the password terminal), `pinnedTerminal.ts` in three
+   places (`pinnedTerminal`, `openEntryTerminal`, `openSshEntryTerminal`). The lead's decision F1 (E1 stories): not a
+   plan change. D3 names the class (every terminal titled `Creds: <folder> / <entry>` or `Creds SSH: <folder> / <entry>`),
+   and §6.5 check 2 already demands the colour for every such `createTerminal`; §2's list of four was an incomplete
+   inventory. The callers are five roads: SSH Connect, the arrow (and a history row), the folder run, the VPN launcher,
+   Run Script.
+2. **The allocator runs inside the cross-window lease (entry 1.1, the only counted change).** The first text had an
+   in-memory per-account promise chain, which covers one window. It was rewritten after plan round 1 (two reviewers) to
+   one `updateNodeFields` call with a function patch, run inside the write queue and the lease. The check that skips the
+   call for a folder holding a string stands OUTSIDE the lease, because every `updateNodeFields` stamps the version
+   vector; the same check is repeated inside. A call that loses the race stamps the folder once with no change: three
+   memento writes and one sync upload. It happens in one window too, when two calls for one uncoloured folder start
+   together (the E1.S2 spec's P2, measured as M1 and M5), not only in two windows as §3.2 says.
+3. **The stale-copy residual is named, not fixed.** The lease makes two windows take turns; it does not make a
+   window's `globalState` copy fresh. So (a) a second window can tally an old list and give two folders one colour, and
+   (b) worse, `saveNodes` (`storageManager.ts:1005`) writes the WHOLE node list from that copy, so a stale window's write
+   can drop another window's write made within the broadcast delay: the colour, a rename, any node edit. This holds for
+   every leased node write in the extension, not for the colour alone. It has its own stub plan,
+   [PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md), which stays in `todo/` because
+   nothing of it is built. Checked: a probe over the real `StorageManager` with one shared memento and a real lock
+   directory (M1-M6 of the E1.S2 spec); a MODEL of two windows with a 400 ms late broadcast (M7: both windows picked
+   `depColor1`, and each whole-list write dropped the other's); `storageManager.ts:1005` and `windowLock.ts:17-21` read.
+   NOT checked: two real VS Code windows. The two-window test R4 proves the lease's serialization only (item 6).
+4. **The scan test checks a module, not the order inside a function.** §6.5 check 1 says every module that builds a
+   key also calls `ensureFolderColor(`. X1 does exactly that, so a new road inside a module that already colours passes
+   it uncoloured. Checked: the cadence consultation of 2026-11-12 built the counterexample and it passed X1. Not
+   changed, because rewriting a planned test after approval would have been the plan's second change and a stop. The
+   follow-up (a shared async "allocate, then key" helper, with the synchronous lookup-only builders exempted) is NOT
+   built. X1 has one allowed exception that §6.5 does not name: `terminalManager.ts:38` builds the key of the default
+   place, which has no folder (E1 finding F2). The module document says the limit.
+5. **A failed colour write is logged, and `log` is required on every road.** §3.2 says only that a failed write rejects
+   that call. Shipped (E1 plan round 1, D2; scenario C10): each caller catches the rejection with
+   `noteColourFailure(log)`, which writes ONE line to the diagnostic log (source `folderColors`, `describeError`'s text,
+   no folder or entry name), opens the terminal without a colour, and shows no toast. The E1.S3 review found that
+   `credSshManager.connectSsh` passed no `log`, so a failed write there was dropped in silence. Since then `log` is a
+   required field of every dependency type, so the compiler finds a missing one, and a test goes through the real command.
+6. **R4 was rewritten, and a no-lock control was added.** After
+   the Opus review of E1.S2 (`91f2a7d9`) R4 holds window a at its write, so window b has to wait for the lease, and a
+   control with no lock shows the residual of item 3 (window b picks the same key). The fake's first wait went (it did
+   nothing), A3 asserts identity on the fake, A4 and A5 read their Givens back, and V2 got a tooth that bites. R4 proves the
+   lease over one memento object and one lock directory. It does NOT prove the broadcast of a real window.
+7. **`folderColorAllocator.test.ts` is 464 lines against the 450 the E1.S2 spec planned.** Both are under the 800-line
+   ceiling. The two-window helpers moved out of `crossWindowWrites.test.ts` into `test/twoWindowsWorld.ts`, and the shared
+   fake storage into `test/folderColorStorage.ts` (the spec's P7).
+8. **The folder run did not need the re-read §3.3 asks for (E1 finding F3).** §3.3 says the run re-reads the node it
+   builds keys from at `folderRunCommand.ts:93` and `:203`. `keyOf` (`:93`) builds keys only to FIND terminals by title,
+   and a colour does not change a title. The keys that CREATE terminals come from `keyOfRow` (`:203`), which already reads
+   storage fresh after the ensure calls. The call is `colourRows`, once per row to type, in row order, before the first
+   preparation.
+9. **New modules and one export that §3 does not list.** `terminalColor.ts` (`folderColorOption`; a module of its own
+   because `terminalManager.test.ts:61` replaces `./pinnedTerminal`), `folderSwatchScript.ts`, `paletteJson` exported from
+   `depPickerScript.ts`, and `DEP_SWATCH_STYLES` moved out of `formStyleSheet` in `entityFormStyles.ts` so both forms load
+   one set of rules. `editFolder` lost its `eslint-disable complexity`. `treeDataProvider.ts` has 798 lines, as planned.
+10. **The trash rule became "any depth".** §3.2 says "the trash". Shipped: the allocator writes nothing for a folder
+    inside the trash at any depth (E1.S2 spec P6a), and since the E2.S1 review (`74528ee8`) the form's save
+    (`folderColorChange`) and its suggestion (`folderFormColour`) check it at any depth too, from the node as it is
+    then. A crafted save cannot colour a folder inside the trash. The form in the trash has no Colour row (E2 D5). A
+    colour a folder wore before it went in keeps showing.
+11. **The form saves differently from §3.5.** §3.5 says `editFolder` writes `folderColor` only when a swatch was chosen
+    and it differs from the stored one. Shipped (E2 D1, D2): only a CLICK is a choice (the marked stored colour is not),
+    and the save is one `updateNodeFields` call with a function patch that compares with the node AS IT IS THEN. So a
+    rename keeps a colour that the auto-pick or another window wrote while the form was open, and an explicit choice wins
+    over the auto-pick in either order. That holds as far as the write is visible in the saving window (item 3). A cleared
+    name box adds no name to the change, so it keeps another window's rename (E2.S1 review). A Save still stamps the
+    folder once, as before the feature (E2 finding F1). A folder holding a string this build does not know gets no mark
+    and no suggestion line (E2 D4). The line's words changed: *this can change before then* and *Choose one to set it now*
+    (D6; §3.5 had *Choose one to fix it*).
+12. **Export and Import are not alike (E1 finding F5, corrected by the E2.S2 review).** *Export / Share Externally…*
+    and *Import from External…* do not carry the colour: an imported folder is rebuilt from name, type and the PIN
+    preference, and gets its colour again at its first terminal. *Import / Restore*, sync and backup move whole nodes
+    and keep it. §3.1 said only "folders are not shared".
+13. **Two more side effects, accepted (E1 finding F4).** `entryAt` also serves Run with Secrets, whose terminal is
+    `Creds run: …` and gets no colour, and it runs before the trust question. So such a run, or a cancelled trust
+    question, still gives the folder its colour. One write per folder, ever. The first open from an uncoloured folder
+    waits for the lease with no bound of its own (the spec's P3): a dead holder is broken after 15 s, a live one is waited for.
+14. **The stub plan** `PLAN_node_writes_refuse_stale_base.md` is one document more than §3.6 lists (E2 finding F7).
+    It adds no scope to this plan.
+15. **The documents.** The CHANGELOG entry, the module document's section *Folder colours* (written in E1, extended in E2),
+    and the help paragraph in five languages (German, Spanish, Russian, Ukrainian after English; `folderColorHelp.test.ts`
+    checks each translation for a phrase of its own). *Colour*, *Edit*, `Creds:` and `Creds SSH:` stay English.
+
+**The gates.** Parent plan round: `proceed`, 2 of 2 reviewers (6 findings accepted). E1 plan round 1: 1 of 2 reviewers,
+because the antigravity provider failed with a 403 (a ToS account block). E1 code round: 5 of 8 reviewers. E2 plan
+round: 2 of 2. E2 code round: 8 of 8. Cadence consultation 2026-11-12 (epics 1-2): items 1-3 of the lead's decisions in
+the E1 stories. Opus reviews of E1.S1, E1.S2, E1.S3, E2.S1 and E2.S2.
+
+**Not checked.** How the colours look in the owner's real VS Code window (the PR says so). Two real VS Code windows.
+The Definition of Done boxes of §8 are not ticked here: the checks they name belong to the pull request.
+
 ## Epics
 
 Two epics, both on branch `feat/folder-terminal-colors`, in the one pull request of D4. E1 is a whole vertical slice:
@@ -231,7 +331,7 @@ gets its own `todo/README.md` row. Two epics give a cornerstone quota of 1.
   auto-pick, the two places that show the colour, and the terminal colour limit.
 - **Cornerstone areas.** The contract that ASSIGNS and stores a folder's colour (§3.2, `ensureFolderColor`). Not the
   palette arithmetic: `pickDepColor` is proven already.
-- **Stories** (`todo/PLAN_folder_colors_E1.md`, written when the epic starts):
+- **Stories** (`research/PLAN_folder_colors_E1.md`, written when the epic starts):
   - **E1.S1 — the stored field and the pure policy.** `TreeNode.folderColor` and the guard (§3.1). `folderColorKeyOf`,
     `folderColorUsage`, `pickFolderColor` (§3.2). No storage write.
   - **E1.S2 — the allocator `ensureFolderColor` (cornerstone).** The contract: the fresh read, the tally, the choice
@@ -255,7 +355,7 @@ gets its own `todo/README.md` row. Two epics give a cornerstone quota of 1.
   pull request says that the colours were not checked in the owner's real VS Code window.
 - **Cornerstone areas.** None. Watched at review: `readValues` treats the webview message as untrusted input;
   `editFolder` writes only on a change; the suggestion line says that it is provisional.
-- **Stories** (`todo/PLAN_folder_colors_E2.md`, written when the epic starts):
+- **Stories** (`research/PLAN_folder_colors_E2.md`, written when the epic starts):
   - **E2.S1 — the folder form.** The swatches, the provisional suggestion line, the validated message
     (`isDepColorKey`), and the write only on a change in `editFolder` (§3.5).
   - **E2.S2 — the documents.** The CHANGELOG entry, the rest of the module document (the form), and the help
