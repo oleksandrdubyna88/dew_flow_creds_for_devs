@@ -12,9 +12,9 @@
 
 ## 1. The goal, before any solution
 
-The owner keeps many entry terminals open at once, and their tabs read `Creds: ai1-root / small-tasks`,
-`Creds: ai1-dev3 / project-tools-claude-sync`, `Creds SSH: ssh connections / project-tools`. The folder part
-(`ai1-root`, `ai1-dev3`) is what tells them apart, and in a long list it does not stand out. The owner asked for the
+The owner keeps many entry terminals open at once, and their tabs read `Creds: server-a / tasks`,
+`Creds: server-b / tools-sync`, `Creds SSH: ssh connections / tools`. The folder part
+(`server-a`, `server-b`) is what tells them apart, and in a long list it does not stand out. The owner asked for the
 folder name in a colour (2026-11-12).
 
 **VS Code cannot colour part of a terminal name.** `TerminalOptions.name` is plain text, and the one colour the API
