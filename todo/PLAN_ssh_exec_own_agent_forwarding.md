@@ -11,6 +11,8 @@
 
 **Boundary with [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md)** (2026-11-11): that plan changes only the REMOTE COMMAND (the last argv word) of the linked `creds_run` and of Run with Secrets, to `exec ${SHELL:-sh} -l -c '…'`. It keeps `ssh:exec`'s command as the agent wrote it, and it changes no `-A`, `-T`, option or environment of any road. Disjoint from this plan; either may go first.
 
+**Boundary with [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md)** (N10, rule C, 2026-11-12): that plan changes the VALUE of the word after `-i` of `ssh:exec` (the key file of a call is named `call-<uuid>.key` by `materializeCallKey`), and so of the three clicks of `commands/agentCommands.ts`, which share `resolveExecAuth`. It changes no flag, no option and no environment, so its lines are disjoint from this plan's; either may go first.
+
 ## Symptom
 
 An SSH entry with agent forwarding on, opened to agents, on a machine where the extension's own agent has no key (no

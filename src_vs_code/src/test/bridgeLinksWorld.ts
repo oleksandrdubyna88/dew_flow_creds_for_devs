@@ -7,6 +7,7 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import { recordingLog } from './liveColourStorage';
+import { callKeyName } from '../materializedKeys';
 
 /**
  * The REAL `sshExecAction` over a vault that links its entry to a key and a jump host (E1.3 epoch 3, L1-L5).
@@ -30,6 +31,8 @@ export interface LinksOptions {
   readonly forwards?: boolean;
   /** What the pretended `ssh` writes on stderr. */
   readonly stderr?: string;
+  /** The `stderr` of the pretended `ssh` is `Load key "<the word after -i>": invalid format`, built from the argv that it got (K6). */
+  readonly printsKeyPath?: boolean;
   /** The pretended `ssh` cannot be started. */
   readonly runFails?: boolean;
   /** Writing the key file fails, with a message that carries a path. */
@@ -77,8 +80,12 @@ export const STDERR_WITH_A_HOST = 'kex_exchange_identification: jump.example.com
 const ssh = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMetadata =>
   ({ id, name, kind: 'ssh', isSshEnabled: true, ...extra }) as EntityMetadata;
 
+/** What the pretended `ssh` writes on stderr: the fixed text of the option, or the key path that it was given. */
+const stderrOf = (o: { readonly stderr: string; readonly printsKeyPath: boolean }, argv: string[]): string =>
+  o.printsKeyPath ? `Load key "${argv[argv.indexOf('-i') + 1]}": invalid format` : o.stderr;
+
 export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld> {
-  const o = { key: 'plain', jump: 'none', agentForward: false, forwards: false, stderr: '', runFails: false, writeFails: false, ...options } as const;
+  const o = { key: 'plain', jump: 'none', agentForward: false, forwards: false, stderr: '', printsKeyPath: false, runFails: false, writeFails: false, ...options } as const;
   const owned = cleanupScope();
   const storageDir = ownedDir(owned, 'links');
   const runs: Run[] = [];
@@ -87,17 +94,19 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   let configWrites = 0;
   let slotsHeld = 0;
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
+  const writeKey = (dir: string, id: string, content: string): string => {
+    if (o.writeFails) {
+      throw new Error(`EACCES: permission denied, open '${path.join(dir, id)}.key'`);
+    }
+    const keyPath = path.join(dir, `${id}.key`);
+    fs.writeFileSync(keyPath, content, { mode: 0o600 });
+    materialised.push(keyPath);
+    return keyPath;
+  };
   const mocks = {
     './keyInstaller': {
-      materializePrivateKey: (dir: string, id: string, content: string): string => {
-        if (o.writeFails) {
-          throw new Error(`EACCES: permission denied, open '${path.join(dir, id)}.key'`);
-        }
-        const keyPath = path.join(dir, `${id}.key`);
-        fs.writeFileSync(keyPath, content, { mode: 0o600 });
-        materialised.push(keyPath);
-        return keyPath;
-      },
+      materializePrivateKey: writeKey,
+      materializeCallKey: (dir: string, content: string): string => writeKey(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
@@ -107,7 +116,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
         await world.hold?.();
         return o.runFails
           ? Promise.reject(new Error(`spawn ssh ENOENT at ${storageDir}`))
-          : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: o.stderr, timedOut: false });
+          : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: stderrOf(o, argv), timedOut: false });
       },
     },
   };

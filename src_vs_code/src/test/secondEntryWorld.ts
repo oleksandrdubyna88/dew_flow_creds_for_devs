@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { agentMayView } from '../mcpEntries';
+import { callKeyName } from '../materializedKeys';
 import { commandFingerprint } from '../commandTrust';
 import { terminalRunAction, vpnAction } from '../agentUseActions';
 import type { AgentUseDeps } from '../agentUseActions';
@@ -59,7 +60,22 @@ export interface SecondOptions {
   readonly visibleHops?: readonly number[];
   /** `deps.note` throws. */
   readonly noteThrows?: boolean;
+  /** The key writer throws what Node throws for a failed `open`, with the path that it was asked to write. */
+  readonly writeFails?: boolean;
+  /** The runner rejects with an error that holds the WHOLE argv (a stand-in for the worst case). */
+  readonly startFails?: boolean;
+  /** The pretended `ssh` answers exit code 255 and prints the paths that it was given. */
+  readonly sshPrints?: boolean;
+  /** `e1` gets a pinned host key, and the REAL `materializeKnownHosts` writes the pin file. */
+  readonly pinned?: boolean;
 }
+
+/** What the pretended `ssh` prints about the files that it was given (option `sshPrints`). */
+export const SSH_SAYS = {
+  notAccessible: (file: string): string => `Warning: Identity file ${file} not accessible: No such file or directory.`,
+  loadKey: (file: string): string => `Load key "${file}": invalid format`,
+  pin: (file: string): string => `Offending ED25519 key in ${file}:1`,
+} as const;
 
 /** The doors of the world: each one makes one call of a real action. */
 export type Door = 'exec' | 'terminal' | 'run' | 'runHidden' | 'rotate' | 'vpnUp';
@@ -73,6 +89,8 @@ export interface SecondWorld {
   readonly spawned: string[][];
   /** Every key file the calls materialised. */
   readonly materialised: string[];
+  /** Every path that the key writer was asked to write, pushed before the write: for a write that works and for one that fails. */
+  readonly attempted: string[];
   readonly storage: ReturnType<typeof memoryStorage>;
   readonly storageDir: string;
   /** The names and the ids of the entries the agent may not view in THIS world, and the folder of the world. */
@@ -96,6 +114,9 @@ const STATEMENT = 'echo {{creds:new}}';
 const entry = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMetadata =>
   ({ id, name, kind: 'ssh', isSshEnabled: true, host: 'h.example.test', user: 'u', ...extra });
 
+/** `formatHostKey(KEY)` of `hostKeyTrust.test.ts`: a host key that `parseHostKey` accepts. */
+const PINNED_HOST_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKNOWNKEY';
+
 const viewable: Partial<EntityMetadata> = { mcp: { view: true, use: true } };
 
 /** `e1`: the SSH entry `prod`, with the links the options ask for. */
@@ -106,6 +127,7 @@ function e1Of(o: Required<SecondOptions>): EntityMetadata {
     ...viewable,
     ...(o.key === 'none' ? {} : { sshKeyEntityId: HIDDEN_ID.key }),
     ...(o.hops === 0 ? {} : { jumpHostEntityId: HIDDEN_HOP_IDS[0] }),
+    ...(o.pinned ? { hostKey: PINNED_HOST_KEY } : {}),
   });
 }
 
@@ -171,25 +193,55 @@ interface Modules {
   readonly execOverSsh: typeof ExecOverSsh;
 }
 
-/** The I/O edges of the world, and nothing else. */
-function mocksOf(storageDir: string, spawned: string[][], materialised: string[]): Record<string, unknown> {
+interface Log {
+  readonly spawned: string[][];
+  readonly materialised: string[];
+  readonly attempted: string[];
+}
+
+/** The key writer of the world: ONE helper for `materializePrivateKey` and `materializeCallKey`, so that they cannot differ. */
+const keyWriter = (o: Required<SecondOptions>, log: Log) => (dir: string, name: string, content: string): string => {
+  const keyPath = path.join(dir, `${name}.key`);
+  log.attempted.push(keyPath);
+  if (o.writeFails) {
+    throw new Error(`EACCES: permission denied, open '${keyPath}'`);
+  }
+  fs.writeFileSync(keyPath, content, { mode: 0o600 });
+  log.materialised.push(keyPath);
+  return keyPath;
+};
+
+/** What the pretended `ssh` prints: each path comes from the argv that the product built, never a fixed path. */
+function sshSaysFor(argv: string[]): string {
+  const key = argv[argv.indexOf('-i') + 1];
+  const pin = argv.find((word) => word.startsWith('UserKnownHostsFile='));
+  const pinLines = pin === undefined ? [] : [SSH_SAYS.pin(pin.slice('UserKnownHostsFile='.length))];
+  return [SSH_SAYS.notAccessible(key), SSH_SAYS.loadKey(key), ...pinLines].join('\n');
+}
+
+/** The runner of the world: it records the argv, then starts nothing, fails to start, or prints. */
+const runner = (o: Required<SecondOptions>, log: Log) => (argv: string[]): Promise<unknown> => {
+  log.spawned.push(argv);
+  if (o.startFails) {
+    return Promise.reject(new Error(`spawn ssh ENOENT; the argv was: ${argv.join(' ')}`));
+  }
+  if (o.sshPrints) {
+    return Promise.resolve({ exitCode: 255, stdout: '', stderr: sshSaysFor(argv), timedOut: false });
+  }
+  return Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
+};
+
+/** The I/O edges of the world, and nothing else. With `pinned` the REAL `./hostKeyTrust` loads, so the pin file is a real file. */
+function mocksOf(o: Required<SecondOptions>, storageDir: string, log: Log): Record<string, unknown> {
+  const write = keyWriter(o, log);
   return {
     './keyInstaller': {
-      materializePrivateKey: (dir: string, id: string, content: string): string => {
-        const keyPath = path.join(dir, `${id}.key`);
-        fs.writeFileSync(keyPath, content, { mode: 0o600 });
-        materialised.push(keyPath);
-        return keyPath;
-      },
+      materializePrivateKey: write,
+      materializeCallKey: (dir: string, content: string): string => write(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
-    './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
-    './sshExecRunner': {
-      runSshExec: (argv: string[]): Promise<unknown> => {
-        spawned.push(argv);
-        return Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
-      },
-    },
+    ...(o.pinned ? {} : { './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined } }),
+    './sshExecRunner': { runSshExec: runner(o, log) },
     './sshConnect': { connectEntity: (): Promise<boolean> => Promise.resolve(false) },
   };
 }
@@ -201,7 +253,7 @@ function hiddenIdsOf(o: Required<SecondOptions>): string[] {
   return [...hops, ...key, HIDDEN_ID.ssh, HIDDEN_ID.launcher, HIDDEN_ID.dependency];
 }
 
-const defaults: Required<SecondOptions> = { key: 'none', keyVisible: false, hops: 0, unsafeAt: 0, visibleHops: [], noteThrows: false };
+const defaults: Required<SecondOptions> = { key: 'none', keyVisible: false, hops: 0, unsafeAt: 0, visibleHops: [], noteThrows: false, writeFails: false, startFails: false, sshPrints: false, pinned: false };
 
 export async function secondEntryWorld(options: SecondOptions = {}): Promise<SecondWorld> {
   const o = { ...defaults, ...options };
@@ -210,8 +262,9 @@ export async function secondEntryWorld(options: SecondOptions = {}): Promise<Sec
   const notes: string[] = [];
   const spawned: string[][] = [];
   const materialised: string[] = [];
+  const attempted: string[] = [];
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
-  const mod = loadWithVscode<Modules>('../sshUseActions', stub, mocksOf(storageDir, spawned, materialised));
+  const mod = loadWithVscode<Modules>('../sshUseActions', stub, mocksOf(o, storageDir, { spawned, materialised, attempted }));
   const storage = memoryStorage(stub);
   await seedEntry(storage, e1Of(o), { 'private key': OWN_KEY });
   await seedKey(storage, o);
@@ -239,7 +292,7 @@ export async function secondEntryWorld(options: SecondOptions = {}): Promise<Sec
     onPath: () => false,
     overSsh: mod.execOverSsh(sshDeps),
   };
-  return worldOf({ o, storage, storageDir, notes, spawned, materialised, hidden: hiddenIdsOf(o), mod, sshDeps, agentDeps, close: () => void owned.close() });
+  return worldOf({ o, storage, storageDir, notes, spawned, materialised, attempted, hidden: hiddenIdsOf(o), mod, sshDeps, agentDeps, close: () => void owned.close() });
 }
 
 interface Parts {
@@ -249,6 +302,7 @@ interface Parts {
   readonly notes: string[];
   readonly spawned: string[][];
   readonly materialised: string[];
+  readonly attempted: string[];
   readonly hidden: string[];
   readonly mod: Modules;
   readonly sshDeps: SshUseDeps;
@@ -277,6 +331,7 @@ function worldOf(p: Parts): SecondWorld {
     notes: p.notes,
     spawned: p.spawned,
     materialised: p.materialised,
+    attempted: p.attempted,
     storage: p.storage,
     storageDir: p.storageDir,
     hiddenNames,

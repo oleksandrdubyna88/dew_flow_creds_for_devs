@@ -555,7 +555,7 @@ function sshTerminalWorld(): SshTerminalWorld {
         return Promise.resolve({ knownHostsFile: undefined });
       },
     },
-    './keyInstaller': { materializePrivateKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
+    './keyInstaller': { materializePrivateKey: (): string => '/k', materializeCallKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
     './terminalManager': {
       openSshTerminal: (): unknown => {
         log.terminals += 1;

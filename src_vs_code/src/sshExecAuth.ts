@@ -1,10 +1,9 @@
-import * as crypto from 'node:crypto';
 import { describeError } from './describeError';
 import { StorageManager } from './storageManager';
 import { SshExecAuth } from './sshExecCommand';
 import { SshCredentialSource, SshCredentialStopped, resolveSshCredential } from './sshCredential';
 import { askpassEnv } from './sshAskpass';
-import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
+import { materializeCallKey, writeAskpassScriptFile } from './keyInstaller';
 import { EntityMetadata } from './types';
 import { pinRefusalFor } from './pinGate';
 import { isSealedText } from './secretEnvelope';
@@ -159,7 +158,7 @@ function byStoredKey(source: Extract<SshCredentialSource, { kind: 'storedKey' }>
     return { ok: false, reason: 'no_credential', message: locked, warning: source.warning };
   }
   try {
-    const keyPath = materializePrivateKey(storageDir, `${source.keyEntityId}-${crypto.randomUUID()}`, source.content);
+    const keyPath = materializeCallKey(storageDir, source.content);
     return { ok: true, keyPath, env: { ...process.env }, auth: 'key', materialized: keyPath, warning: source.warning };
   } catch (error) {
     return { ok: false, reason: 'internal', message: `Could not write the stored key to disk: ${describeError(error)}`, warning: source.warning };

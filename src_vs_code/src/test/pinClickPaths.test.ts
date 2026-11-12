@@ -10,6 +10,7 @@ import { EntityMetadata, TreeNode } from '../types';
 import { ACCOUNT, PIN, Sinks, clickVscode, everythingSunk, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust } from './vpnWorld';
+import { callKeyName } from '../materializedKeys';
 import type { AgentDoors } from '../agentDoors';
 
 /** No door is open: every field of the record, written out. */
@@ -260,6 +261,10 @@ test('the bridge (a click) opens a borrowed protected key with ITS PIN and write
       materializePrivateKey: (dir: string, name: string, content: string): string => {
         written.push(content);
         return `${dir}/${name}`;
+      },
+      materializeCallKey: (dir: string, content: string): string => {
+        written.push(content);
+        return `${dir}/${callKeyName()}`;
       },
       writeAskpassScriptFile: (dir: string): string => `${dir}/askpass.sh`,
     },
