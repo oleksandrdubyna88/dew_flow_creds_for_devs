@@ -1,6 +1,7 @@
 # PLAN — The path of a key file that an agent's call writes holds no id of an entry, E1: rule C, the name of a call file
 
-> Status: **stories only, nothing built yet, 2026-11-12.** Stories of epic E1 of
+> Status: **built on the branch, unmerged, 2026-11-12:** E1.1 in `8517c1ff` and `bd8285d6`, E1.2 in `ecf7ed78`, review fixes in
+> `4e30ea6d`; pull request #359. Stories of epic E1 of
 > [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md) (its §4.1 rows C1 to C5, §5, §6, §7, §9 and `## Epics` E1).
 > Written 2026-11-12 by Opus. Each `file:line` below was read on `42d7340d` (branch `fix/agent-refusal-key-file-path`; its
 > `src_vs_code` is the same as on `main` at `6dd96fe7`). E1.1 is the cornerstone; its buildable text is

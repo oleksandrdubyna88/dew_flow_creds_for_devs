@@ -1,6 +1,6 @@
 # PLAN — The path of a key file that an agent's call writes holds no id of an entry
 
-> Status: **plan only, nothing implemented yet, 2026-11-11.** Scope: the extension only (`src_vs_code/src`: the name of
+> Status: **built on `fix/agent-refusal-key-file-path`, unmerged, 2026-11-12 (pull request #359); written 2026-11-11.** Scope: the extension only (`src_vs_code/src`: the name of
 > the key file that an agent's SSH call writes, in `materializedKeys.ts`, `keyInstaller.ts` and `sshExecAuth.ts`; the
 > comments of C4; their tests), `src_vs_code/CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,
 > `todo/README.md`, and the boundary rows that are owed to the neighbour plans of §9. The owner said on 2026-11-11:
