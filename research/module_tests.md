@@ -2418,7 +2418,7 @@ not a valid host.`, and after the fix the file passed (40 of 40 on that run).
 - The config-snippet lookup stops at the first account that holds the id (N8 of the plan): with two accounts it can answer differently
   for a hidden config and a missing one. Nothing is named and no value is given.
 
-## The path of a call file holds no id (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md), rule C)
+## The path of a call file holds no id (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md), rule C)
 
 Rules A and B above prove what an answer says about an ENTRY. Rule C proves what an answer says about a FILE: the key file that an agent's
 SSH call writes for a borrowed key (an SSH entry that uses the stored key of a second entry) is named `call-<uuid>.key` by

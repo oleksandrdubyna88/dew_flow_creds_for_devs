@@ -1,12 +1,14 @@
 # PLAN — The path of a key file that an agent's call writes holds no id of an entry
 
-> Status: **built on `fix/agent-refusal-key-file-path`, unmerged, 2026-11-12 (pull request #359); written 2026-11-11.** Scope: the extension only (`src_vs_code/src`: the name of
+> Status: **IMPLEMENTED, 2026-11-12.** Merged as #359 (`c4c10cb3`) and released in extension 1.21.4 (release PR #360, tag
+> `extension-v1.21.4`). Deviations: §15. Ledger at promotion: epoch 1, one entry (1.1), no stop. Still open, for the owner:
+> N16 and N17 (§13). The two rows of the remote bridge plan were taken by that plan as its change 9.1. Written 2026-11-11. Scope: the extension only (`src_vs_code/src`: the name of
 > the key file that an agent's SSH call writes, in `materializedKeys.ts`, `keyInstaller.ts` and `sshExecAuth.ts`; the
 > comments of C4; their tests), `src_vs_code/CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,
 > `todo/README.md`, and the boundary rows that are owed to the neighbour plans of §9. The owner said on 2026-11-11:
 > build N10 as its own small plan after F7 epic 2 is released. N10 is item N10 of §11 of
-> [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7), and note 10
-> of [its E2 stories](../research/PLAN_agent_refusal_names_unlisted_entry_E2.md). One epic. A security fix for a defect
+> [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7), and note 10
+> of [its E2 stories](PLAN_agent_refusal_names_unlisted_entry_E2.md). One epic. A security fix for a defect
 > that is live on `main`. All `file:line` references were read on `b95282f1` (F7 epic 2 merged, #353). The ledger
 > opened at the first approval (below). The owner answered Q1 to Q3 of §14 on 2026-11-12 (yes to each; no section changes).
 > Approved by the `coai` plan round on 2026-11-12 (`proceed`, 2 of 2 reviewers, session `9f624efc`).
@@ -453,12 +455,12 @@ makes a sentence of a neighbour false is judged by that plan's own change rule.
 
 | Plan | Touches | This plan's part | The row that the neighbour gets, and where |
 |---|---|---|---|
-| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A, rule B; N10 of its §11 | this plan builds N10 and nothing more of F7. It changes no line of the chooser (`agentNaming.ts`) and no lookup | written already: its status block and its N10 point here. Nothing is owed |
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the bridged `ssh`: `sshUseActions.ts`, `sshExecAuth.ts`; E1.6 writes a key file for each hop and a per-call file (§4.9, §6) | the name of a call file, on a bridge too. No line of `bridgeScope.ts`; `bridgedRefusal` is not changed | OWED, in its §8 *Boundaries*: (1) after this plan the key file of a call has a random name, so the words *and a linked key's id in the file name* of its §4.2, and *a key path* of the Output row of §4.9, no longer tell an id; the laptop's path stays, as that plan decided. (2) The key files of the hops of E1.6 are written with `materializeCallKey`; a pin file for a hop, if E1.6 writes one, has no id of an entry in its name. The scan S1 of this plan fails on a call of `materializePrivateKey` in a new file. (3) Its §8 row on bodies that carry `describeError` text (*Could not run ssh*) stays open: this plan does not build it (Q1). (4) Whichever merges second re-reads `sshExecAuth.ts`. That plan is under change control (epoch 8): its owner session takes the row when it opens for E1.6, with the two rows that F7 owes it |
-| [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md) | Amendment 3, C.6: *a key left on disk … under `<keyEntityId>-<uuid>.key`* (at `:1902-1903` today) | that sentence becomes false: the name is `call-<uuid>.key` | OWED, beside that sentence: the name, with a pointer to this plan |
-| [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) | the argv and the environment of `ssh:exec` (`ownAgentOnly`, `sshUseActions.ts:346-348`) | none: this plan changes the VALUE of the word after `-i` (a file name). No flag, no option, no environment. Disjoint lines | OWED, under its status block: that sentence |
-| [PLAN_ssh_exec_absolute_program.md](PLAN_ssh_exec_absolute_program.md) | the program that `ssh:exec` starts on Windows, and maybe a `cwd` | none. Disjoint. The key path stays absolute, so a `cwd` changes nothing for it | OWED, under its status block: the same sentence; and: an error of the start then names an absolute program, which is not a path of the keys folder |
-| [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | a password connection with a jump host: `sshExecAuth.ts` (`byPassword`, `:78-101`), `sshAskpass.ts` | none in behaviour: this plan changes `byStoredKey` (`:156-167`) and one import of the same file. The askpass script has a fixed name (§4.3) | OWED, under its status block: disjoint lines of `sshExecAuth.ts`; if that plan writes a file for a hop on the agent's road (a key of the hop, a per-call configuration), the name comes from `callKeyName()`: no id of an entry |
+| [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A, rule B; N10 of its §11 | this plan builds N10 and nothing more of F7. It changes no line of the chooser (`agentNaming.ts`) and no lookup | written already: its status block and its N10 point here. Nothing is owed |
+| [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) | the bridged `ssh`: `sshUseActions.ts`, `sshExecAuth.ts`; E1.6 writes a key file for each hop and a per-call file (§4.9, §6) | the name of a call file, on a bridge too. No line of `bridgeScope.ts`; `bridgedRefusal` is not changed | OWED, in its §8 *Boundaries*: (1) after this plan the key file of a call has a random name, so the words *and a linked key's id in the file name* of its §4.2, and *a key path* of the Output row of §4.9, no longer tell an id; the laptop's path stays, as that plan decided. (2) The key files of the hops of E1.6 are written with `materializeCallKey`; a pin file for a hop, if E1.6 writes one, has no id of an entry in its name. The scan S1 of this plan fails on a call of `materializePrivateKey` in a new file. (3) Its §8 row on bodies that carry `describeError` text (*Could not run ssh*) stays open: this plan does not build it (Q1). (4) Whichever merges second re-reads `sshExecAuth.ts`. That plan is under change control (epoch 8): its owner session takes the row when it opens for E1.6, with the two rows that F7 owes it |
+| [PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md) | Amendment 3, C.6: *a key left on disk … under `<keyEntityId>-<uuid>.key`* (at `:1902-1903` today) | that sentence becomes false: the name is `call-<uuid>.key` | OWED, beside that sentence: the name, with a pointer to this plan |
+| [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md) | the argv and the environment of `ssh:exec` (`ownAgentOnly`, `sshUseActions.ts:346-348`) | none: this plan changes the VALUE of the word after `-i` (a file name). No flag, no option, no environment. Disjoint lines | OWED, under its status block: that sentence |
+| [PLAN_ssh_exec_absolute_program.md](../todo/PLAN_ssh_exec_absolute_program.md) | the program that `ssh:exec` starts on Windows, and maybe a `cwd` | none. Disjoint. The key path stays absolute, so a `cwd` changes nothing for it | OWED, under its status block: the same sentence; and: an error of the start then names an absolute program, which is not a path of the keys folder |
+| [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md) | a password connection with a jump host: `sshExecAuth.ts` (`byPassword`, `:78-101`), `sshAskpass.ts` | none in behaviour: this plan changes `byStoredKey` (`:156-167`) and one import of the same file. The askpass script has a fixed name (§4.3) | OWED, under its status block: disjoint lines of `sshExecAuth.ts`; if that plan writes a file for a hop on the agent's road (a key of the hop, a per-call configuration), the name comes from `callKeyName()`: no id of an entry |
 
 The order: this plan needs none of them, and none of them needs this plan. The table is complete for the plans that
 were open on 2026-11-11 and name a file or a function that this plan changes. Method: `grep -l` over `todo/PLAN_*.md`
@@ -579,9 +581,38 @@ stays; on a bridge `ssh`'s `stderr` keeps the laptop's path, and the bridge plan
 - **Q3. On a Remote Bridge, `ssh`'s `stderr` still shows the laptop's storage folder** (with no id after this plan).
   *Built on: it stays*; it is the bridge plan's standing decision, and that plan owns it.
 
+## 15. Deviations — what shipped differently from this plan (promoted 2026-11-12)
+
+1. **Change 1.1 (the only counted change).** `resolveExecAuth` has three more callers, the person's roads in
+   `commands/agentCommands.ts`; their key files got the random name too. Found by the lead's Opus review of the approval
+   round; the §1.3 search had read only the top folder of `src`.
+2. **C5: 10 sites in 8 files**, not the 4 worlds of the first text (and not *11 in 9*, a count error fixed before the
+   build). Three of them build no name (a fixed text or a throw), so the new member does the same there; the copy rule was
+   written into C5 before the build.
+3. **S1's first failure named two sites**, `sshExecAuth.ts:7` (the import) and `:162` (the call), not one: an import is an
+   occurrence by S1's own definition. S1 also finds an import with `as` (mutation 6), from the question consultants.
+4. **Green commits only.** The RED states of steps 1 to 3 stayed in the working tree; the fix commit `8517c1ff` quotes them
+   (15 failed tests in state 3, 0 compile errors). The spec first planned RED commits.
+5. **Mutation 4** kept its helper used (`sshSaysFor(argv).slice(0, 0)`) so that `noUnusedLocals` compiles; the printed text
+   is still fixed.
+6. **Review fixes after the build** (`4e30ea6d`): K5, K6 and U2 check the exact 8-4-4-4-12 shape of the uuid (coai code
+   round, RED-GREEN shown with a random name of the wrong shape); the rule is said for the KEY file of a call, because the
+   host-key pin and a Script entry's script keep the id of an entry that the agent may view (Opus code review).
+7. **Closing checks** also ran `npm run ratchet` (CI runs it; §5 step 8 did not list it).
+8. **Neighbour rows.** W1 to W3 were written on the branch; the two rows of the remote bridge plan were taken by that plan
+   as its change 9.1, on its E1.6 spec branch (not in #354).
+9. **Found along the way:** N15 (question consultants), N16 and N17 (Opus reviews), §13. Not built.
+10. **Process.** The E1.1 coder ran `python3 --version` once and edited some files with short `node -e` scripts; neither
+    changed the result. The release PR's `http · contract suite` failed once on a timing row of the start-server self-test
+    (*d*, exit after 3933 ms) and passed on a re-run; not related to this change.
+
+Gates: question consultants 2 of 2; `coai` plan round `proceed` 2 of 2 (3 findings rejected); cadence consultation solved;
+`coai` code round `proceed` 8 of 8 (3 accepted, 2 rejected); Opus plan review, Opus code review (ship); CodeRabbit 2
+findings, fixed. Launches: Fable 1 (the spec), Opus 3 (plan review, stories, code review), Sonnet 2 (E1.1, E1.2).
+
 ## Epics
 
-One epic. The stories are one document, [`todo/PLAN_agent_refusal_key_file_path_E1.md`](PLAN_agent_refusal_key_file_path_E1.md), written when the epic starts;
+One epic. The stories are one document, [`research/PLAN_agent_refusal_key_file_path_E1.md`](PLAN_agent_refusal_key_file_path_E1.md), written when the epic starts;
 it links back here and gets its own `todo/README.md` row. This file holds no story. Fable wrote this plan and the
 split (a security judgement). The question consultants were asked on 2026-11-12, before the plan round (consult
 `1b5b224b`; 2 of 2 rows answered, codex gpt-6-astra and gemini-4-argon-low). Both said: one epic with two stories,

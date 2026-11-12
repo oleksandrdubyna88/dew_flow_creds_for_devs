@@ -6,7 +6,7 @@
 
 **Boundary with [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md)** (F7, epic 2): that plan changes the third argument of the refusal function in `sshUseActions.ts` (what `execOverSsh` SAYS when it refuses a hidden second entry). It changes no program and no spawn, so its lines are disjoint from this plan's.
 
-**Boundary with [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)** (N10, rule C, 2026-11-12): that plan changes the VALUE of the word after `-i` of `ssh:exec` (the key file of a call is named `call-<uuid>.key`), and the key path stays absolute, so a `cwd` changes nothing for it. It changes no program and no spawn, so its lines are disjoint from this plan's. After this plan an error of the start names an absolute program, which is not a path of the keys folder.
+**Boundary with [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md)** (N10, rule C, 2026-11-12): that plan changes the VALUE of the word after `-i` of `ssh:exec` (the key file of a call is named `call-<uuid>.key`), and the key path stays absolute, so a `cwd` changes nothing for it. It changes no program and no spawn, so its lines are disjoint from this plan's. After this plan an error of the start names an absolute program, which is not a path of the keys folder.
 
 ## Symptom
 

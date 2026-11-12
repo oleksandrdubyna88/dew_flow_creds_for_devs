@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.4] — 2026-11-12 — Security — the key file of an agent's SSH call no longer carries the id of an entry
+
 ### Changed — security: the path of a key file that an agent's SSH call writes holds no id of an entry
 
 An SSH entry can use the key of a second entry (*SSH key source*). For each SSH call of an agent the extension writes that key to a

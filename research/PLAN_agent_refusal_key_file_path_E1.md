@@ -1,7 +1,7 @@
 # PLAN — The path of a key file that an agent's call writes holds no id of an entry, E1: rule C, the name of a call file
 
-> Status: **built on the branch, unmerged, 2026-11-12:** E1.1 in `8517c1ff` and `bd8285d6`, E1.2 in `ecf7ed78`, review fixes in
-> `4e30ea6d`; pull request #359. Stories of epic E1 of
+> Status: **IMPLEMENTED, 2026-11-12.** E1.1 in `8517c1ff` and `bd8285d6`, E1.2 in `ecf7ed78`, review fixes in `4e30ea6d`;
+> merged as #359 (`c4c10cb3`), released in extension 1.21.4 (#360). Promoted with its parent; deviations in the parent's §15. Stories of epic E1 of
 > [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md) (its §4.1 rows C1 to C5, §5, §6, §7, §9 and `## Epics` E1).
 > Written 2026-11-12 by Opus. Each `file:line` below was read on `42d7340d` (branch `fix/agent-refusal-key-file-path`; its
 > `src_vs_code` is the same as on `main` at `6dd96fe7`). E1.1 is the cornerstone; its buildable text is
@@ -179,7 +179,7 @@ file that the extension writes for one call holds nothing of the vault, no id an
 and the local path of the file of a borrowed key (a failed write, `Could not run ssh`, and the text of `ssh` on a call that
 answers 200 can carry it; a bridge closes the first two), whose name holds no id since rule C, below.
 (b) After that paragraph (after :6452), a new paragraph:
-*Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md)). The name
+*Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)). The name
 of a file that the extension writes for one call of an agent holds nothing of the vault: `materializeCallKey` (`keyInstaller.ts`)
 names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
 caller of `resolveExecAuth` uses it (the agent's calls and three commands of the person). So no text that shows the path of a call
@@ -193,7 +193,7 @@ tells no id of an entry (rule C, in *A lookup and a refusal name only what the a
 **`research/module_tests.md`** (D4):
 
 - **(a)** A new section directly above `## What none of them covers` (`:2420`), headed `## The path of a call file holds no id
-  (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md), rule C)`. It holds, from
+  (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md), rule C)`. It holds, from
   the build as it ran: where part C is (`agentKeyPath.test.ts` over `secondEntryWorld.ts` and its four options), the one-suite
   command, a table of flows (the fixture proof P1 to P7, K1, the nine cells K2 to K4 with assertion 1 first, G5, K5 in
   `sshExecAuth.test.ts`, K6 in `bridgeLinks.test.ts` with `printsKeyPath`, U1 to U3), **the scan** S1 and S2 in `keysDirPaths.test.ts`
