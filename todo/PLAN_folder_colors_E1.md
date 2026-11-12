@@ -122,8 +122,14 @@ code by Sonnet; review by Opus.
 - Two calls at once for two entries of ONE folder write once and return the same key. Two calls for TWO folders get
   two different keys in one window, and in two windows when the second window's `globalState` copy already holds the
   first write. It is NOT guaranteed across windows when that copy is stale (P1, E1 plan round 1): the second window
-  can then pick the same key. That outcome is a repeated colour, never a lost or overwritten one — the same as palette
-  reuse after twelve folders — and the spec's R4b tests it.
+  can then pick the same key, and the spec's R4b tests that outcome in the window that wrote. Worse is possible and is
+  NOT prevented here (the cadence consultation, 2026-11-12, verified in `storageManager.ts:1005`): `saveNodes` writes
+  the WHOLE node list from this window's copy, and the lease does not make that copy fresh, so a stale window's write
+  can drop another window's write made within the broadcast delay — the first folder's colour, or any other node
+  edit. That is a property of every leased write in this extension today
+  (`research/PLAN_cross_window_write_coordination.md` §2026-09-03, `windowLock.ts:17-21`), not new with this feature;
+  this feature adds one more such write per folder, once. A lost colour is picked again at the next terminal. The
+  module document names this residual; fixing the storage's freshness is outside this plan.
 - A failed write rejects that call only. The next call takes the lease as usual. Nothing is kept in memory.
 - A call for one account never reads or writes the nodes of another account.
 
@@ -323,5 +329,11 @@ The parent is not edited here. The lead decides each finding.
   covered by R5d. P5 is NOT used (it would be a second plan change). P6 (a)-(c) are readings of §3.2 and §6.1, not
   changes: "in the trash" is any depth; a parent that is not a folder is left alone; S2's tests are in
   `test/folderColorAllocator.test.ts` because they load real storage and a real lock. P7 is applied in S3 item 11.
+- **The cadence consultation (2026-11-12, epics 1-2).** (1) The stale-copy residual: accepted and named in the S2
+  contract above and in the module document. (2) X1 checks a MODULE, not the order inside a function: a new road
+  inside a module that already calls `ensureFolderColor` passes X1 uncoloured (verified: the counterexample holds).
+  Not changed now — changing a planned test after approval would be the plan's second change and stop it; recorded
+  as a known limit of X1 and as a follow-up (a shared async "allocate, then key" helper, with the synchronous
+  lookup-only builders exempted). (3) The form's precedence against the auto-pick goes into the E2 stories document.
 - **F6 — noted.** One branch per epic is the gate's order; the one PR of D4 is opened from the last epic's branch,
   which holds both epics.
