@@ -39,15 +39,15 @@ export const INTRODUCED = Object.freeze({
  * mod inside its repository; it is no sandbox: a repository with hostile hooks already runs code in its sessions.
  */
 export const RELEASED_MOD = Object.freeze({
-  version: '1.3.3',
+  version: '1.4.0',
   sha256: Object.freeze({
-    '.claude-plugin/plugin.json': '5559766d382b3c40e70ddc9b303146f4f28901090e15b6ded213560d8aa491e8',
+    '.claude-plugin/plugin.json': '5953668f9dc146986e11af4c59f7230d7a6c3cb00da14d57046301c2895e66c8',
     'hooks/hooks.json': 'd842d789476d67282d0f04b7e5fdc68a3d981ccec65dd79cfa2d11eed13fb828',
-    'hooks/register.tsx': '9735c090c750807170d4ed25a9520210401ea6e46ba9bfc06b0e41b46ebf7975',
-    'hooks/prompts.ts': '6d3234bc066d2aecea3de829d1a00837433517dfe313d42ab862b556123cf68c',
+    'hooks/register.tsx': 'f27f45e9e35ba0bd4410aaebb6fc72fcff69f3e120eb85d0575ea6160747f649',
+    'hooks/prompts.ts': '4de06f11b308b753d28f9171ef9727512badf8fc284b4935588d8ad0437f7a8d',
     'hooks/tasks.tsx': '52541431aad684757fac626a5c6d3231d7b633ff14d96efdc0d9dfbd0659e4cb',
-    'hooks/limits.tsx': '52606232202096d5f7d2be6c768e8b97c2a2ec9f4c40d9ee9650c4c6b917ba2d',
-    'types/index.d.ts': '79c8bd52d8a269c6d9f3ba33cacd0c79021aaf576a1e1ae5f27aaaa22a3f873b',
+    'hooks/limits.tsx': '77b6c214d56a25c15363231d8e8ec8c71d8bd574abd8aedef410b74e4d7b449b',
+    'types/index.d.ts': '367b2f22db3d42f2ea596c378373e0d4e6a43fad18a48649dcb84eae72d086a5',
   }),
 });
 export const OPTOUT_FILE = 'agent-models.optout';
