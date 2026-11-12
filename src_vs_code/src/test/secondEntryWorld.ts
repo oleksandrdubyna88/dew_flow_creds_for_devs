@@ -17,6 +17,7 @@ import { HIDDEN_HOP_IDS, asBroker, hiddenHops } from './agentSshWorld';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { markerOf } from './unlistedWorld';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * Part B of the class test (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md` §2): the REAL actions over a REAL vault in which the SSH
@@ -220,6 +221,7 @@ export async function secondEntryWorld(options: SecondOptions = {}): Promise<Sec
   const sshDeps: SshUseDeps = {
     storage,
     storageDir,
+    log: recordingLog().log,
     signal,
     acquireExecSlot: () => (): void => undefined,
     note: (message) => {

@@ -7,7 +7,7 @@ import {
   WSL_READY,
   WSL_WINDOWS_CLIENT,
   entity,
-  storage,
+  connectBase,
   world,
 } from './sshConnectWorld';
 
@@ -40,7 +40,7 @@ test('in a WSL window with a stored key and no relay, NOTHING is written and no 
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: WSL_NO_RELAY,
@@ -61,7 +61,7 @@ test('the machine in the heading comes from the DEPS, not from whatever runs the
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     remote: { ...WSL_NO_RELAY, hostPlatform: 'darwin' as NodeJS.Platform },
@@ -74,7 +74,7 @@ test('the refusal offers the button that fixes the FIRST thing missing', async (
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: WSL_NO_RELAY,
@@ -88,7 +88,7 @@ test('with the relay up and the agent serving the key, the line goes through the
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: WSL_READY,
@@ -122,7 +122,7 @@ test('an adopted relay whose owner has gone REFUSES instead of pointing ssh at n
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: true,
     remote: { ...WSL_READY, relay: { ...WSL_READY.relay, adopted: true } },
@@ -142,7 +142,7 @@ test('an adopted relay that IS still there connects, and pays one probe for it',
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: true,
     remote: { ...WSL_READY, relay: { ...WSL_READY.relay, adopted: true } },
@@ -167,7 +167,7 @@ test('a relay this window STARTED is not probed — its exit already removes the
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: true,
     remote: WSL_READY,
@@ -181,7 +181,7 @@ test('a PASSWORD in a WSL window refuses before any askpass file is written', as
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: WSL_NO_RELAY,
@@ -196,7 +196,7 @@ test('a key PATH in a WSL window refuses when there is no Windows client to hand
   const w = world({ source: { kind: 'keyPath', path: 'C:\\keys\\id_ed25519' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: WSL_NO_RELAY,
@@ -222,7 +222,7 @@ test('a stored key the agent cannot serve is handed to the WINDOWS client, spell
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     remote: WSL_WINDOWS_CLIENT,
@@ -255,7 +255,7 @@ test('the agent is NOT trusted on this route, however loaded it is', async () =>
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: true,
     remote: WSL_WINDOWS_CLIENT,
@@ -274,7 +274,7 @@ test('a pinned host key is NOT translated for a client that cannot open a /mnt/c
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     remote: WSL_WINDOWS_CLIENT,
@@ -297,7 +297,7 @@ test('a key PATH goes straight to it — that path was already what this client 
   });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     remote: WSL_WINDOWS_CLIENT,
@@ -321,7 +321,7 @@ test('an unnameable distribution CONNECTS through it, which is the whole claim',
     });
 
     await w.mod.connectEntity('a1', entity(), {
-      storage: storage,
+      ...connectBase(),
       storageDir: '/storage',
       agentServesKey: false,
       remote: { ...WSL_WINDOWS_CLIENT, side: { kind: 'wsl' as const, distro: '', problem } },
@@ -341,7 +341,7 @@ test('a PASSWORD still refuses, Windows client or not', async () => {
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     remote: WSL_WINDOWS_CLIENT,
@@ -365,7 +365,7 @@ test('a port forward is CONNECTED and said out loud, because its meaning changed
     'a1',
     entity({ portForwards: [{ kind: 'local', bindPort: 5432, host: 'db', hostPort: 5432 }] } as never),
     {
-      storage: storage,
+      ...connectBase(),
       storageDir: '/storage',
       agentServesKey: false,
       remote: WSL_WINDOWS_CLIENT,
@@ -383,7 +383,7 @@ test('every other remote window kind refuses, naming the machine that holds the 
     const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS });
 
     await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: {
@@ -416,7 +416,7 @@ test('a pinned host key is translated by ASKING the distribution', async () => {
   });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: WSL_READY,
@@ -443,7 +443,7 @@ test('a refused translation deletes the file it had already written, and opens n
   });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: WSL_READY,
@@ -464,7 +464,7 @@ test('a known_hosts path OUTSIDE our own directory is never deleted, whatever it
   });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: WSL_READY,
@@ -478,7 +478,7 @@ test('a LOCAL window is untouched: the platform is the host and there is no pref
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
       });
@@ -494,7 +494,7 @@ test('THE REPORT, both halves: the same click writes a key when the window is no
   // WSL window used to get: a decrypted key on the Windows disk and a terminal carrying its path.
   const before = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
   await before.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
       });
@@ -505,7 +505,7 @@ test('THE REPORT, both halves: the same click writes a key when the window is no
   // The same inputs, with the window identified. Nothing is written, nothing is opened.
   const after = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
   await after.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: WSL_NO_RELAY,
@@ -523,7 +523,7 @@ test('a relay socket that cannot be quoted REFUSES rather than running ssh witho
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: true,
         remote: {
@@ -554,7 +554,7 @@ test('the retry asks the AGENT again, not only the window', async () => {
   let loaded = false;
 
   await w.mod.connectEntity('a1', entity(), {
-    storage: storage,
+    ...connectBase(),
     storageDir: '/storage',
     agentServesKey: false,
     refreshAgentServesKey: (): boolean => loaded,
@@ -588,7 +588,7 @@ test('the remedy retries the connect exactly ONCE, however often it keeps failin
   const remedies: string[] = [];
 
   await w.mod.connectEntity('a1', entity(), {
-        storage: storage,
+        ...connectBase(),
         storageDir: '/storage',
         agentServesKey: false,
         remote: {

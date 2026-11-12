@@ -6,6 +6,7 @@ import type { UseAction } from '../useActions';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * The REAL `sshExecAction` over a vault that links its entry to a key and a jump host (E1.3 epoch 3, L1-L5).
@@ -119,6 +120,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const deps: SshUseDeps = {
     storage,
     storageDir,
+    log: recordingLog().log,
     signal: new AbortController().signal,
     acquireExecSlot: () => {
       slotsHeld += 1;

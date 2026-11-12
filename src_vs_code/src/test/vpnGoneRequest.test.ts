@@ -7,12 +7,13 @@ import { STORED_CONFIG, World, filesUnder, hostOs, memoryTrust, ownerChain, star
 import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { call, share, world as brokerWorld } from './brokerWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
 after(() => scope.close());
 
-type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown, trust: unknown) => (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
+type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown, trust: unknown, log: unknown) => (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
 
 /**
  * A gone request starts no VPN (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, story E4.S3).
@@ -386,7 +387,7 @@ test('the agent VPN opener hands its gate to the start: a request already gone s
   const w = world({});
   const dir = ownedDir(scope, 'opener');
   const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', w.vscode, CLI);
-  const open = agentVpnOpener(storageOf(wireguard()), dir, { noteUserActivity: () => undefined }, memoryTrust());
+  const open = agentVpnOpener(storageOf(wireguard()), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log);
 
   const gone = await open('a1', 'vpn', 'start', request.signal);
   assert.deepEqual(w.terminals.map((t) => t.name), [], 'the agent opener started a VPN for a request whose client had gone');
@@ -420,7 +421,7 @@ test('V1 through a local door: an agent\'s up and down, posted to the broker, ru
   for (const action of ['up', 'down'] as const) {
     const vw = world({});
     const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', vw.vscode, CLI);
-    const open = agentVpnOpener(storageOf(wireguard()), ownedDir(scope, 'agentvpn'), { noteUserActivity: () => void (vw.userActivity += 1) }, memoryTrust());
+    const open = agentVpnOpener(storageOf(wireguard()), ownedDir(scope, 'agentvpn'), { noteUserActivity: () => void (vw.userActivity += 1) }, memoryTrust(), recordingLog().log);
     const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, verb, gate) => open(accountId, 'vpn', verb, gate) };
     const bw = brokerWorld({ realAction: vpnAction(deps, action) });
     try {

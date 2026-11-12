@@ -3190,8 +3190,8 @@ passes `isDepColorKey`, else `undefined`, and every painter goes through it. Ent
 meaning of the same palette and is never read for a folder.
 
 **The auto-pick.** `ensureFolderColor(storage, accountId, entryId)` gives the entry's DIRECT parent folder a colour,
-once. It runs BEFORE a folder-named terminal is found or created, on the road of each of the five creation sites
-(next paragraph): the arrow and Run Script in `entryAt` (`commands/runCommands.ts`), the folder run in `colourRows`
+once. It runs BEFORE a folder-named terminal is found or created, on each of five roads (they reach the five
+`createTerminal` sites of the next paragraph): the arrow and Run Script in `entryAt` (`commands/runCommands.ts`), the folder run in `colourRows`
 (`commands/folderRunCommand.ts`, once per row to type, in row order, before the first preparation), the VPN
 launcher in `runWithLauncher` (`vpnLauncherRun.ts`, the launcher's own folder, after the `stop` return), and SSH
 Connect first in `connectEntity` (`sshConnect.ts`, before `prepareSshSession`). None of these runs adds an `await` where
@@ -3207,10 +3207,14 @@ upload, accepted. A failed write rejects that call only; each caller catches it,
 (source `folderColors`, `describeError`'s text, no folder or entry name; `noteColourFailure`) and goes on. No toast: the
 colour is cosmetic, the terminal opens without it, and the next open tries again because no string was stored.
 
-**Where it shows.** (1) The terminal's icon, at the five creation sites: SSH Connect (the key session through
-`SshTerminalPlace.color`, the password terminal in `sshConnect.ts`), the arrow and a history row (`openEntryTerminal`), a
-linked line and the folder run's linked rows (`openSshEntryTerminal`), the VPN launcher (the same guard), and Run
-Script (`pinnedTerminal`, `PinnedOptions.color`). The colour travels in `EntryTerminalKey.folderColor`, which
+**Where it shows.** (1) The terminal's icon, at the five `createTerminal` sites that spread `folderColorOption`:
+`terminalManager.ts` (`openSshTerminal`, :61, the key session; the colour rides in `SshTerminalPlace.color`),
+`sshConnect.ts` (the password terminal, :152), and `pinnedTerminal.ts` (`pinnedTerminal`, :86, with `PinnedOptions.color`;
+`openEntryTerminal`, :160; `openSshEntryTerminal`, :182). The roads that reach them: SSH Connect reaches the first two (the key
+session or the password terminal, by credential); the arrow, a history row, the folder run's local rows and the VPN launcher
+reach `openEntryTerminal` (through `sendGuarded` / `typeIntoNew` in `terminalGuard.ts`); a linked SSH line and the folder
+run's linked rows reach `openSshEntryTerminal` (through the SSH road, `sshRoad.ts`); Run Script reaches `pinnedTerminal`.
+The colour travels in `EntryTerminalKey.folderColor`, which
 `entryTerminalKey` sets from the folder and leaves out when there is none, so it never changes a title; the one spread
 is `folderColorOption` (`terminalColor.ts`, its own module so the tests that replace `pinnedTerminal` still find it).
 (2) The folder row: `folderIcon(type, key)` (`treeIcons.ts`) wears the folder's colour in place of `FOLDER_COLOR`,
@@ -3224,7 +3228,8 @@ Connect twice) keeps the colour it was made with, and the folder's colour changi
 a terminal that is already open.
 
 **No colour.** `Creds: before …` (the dependency chain), `Creds run: …` (the masked run), `Creds VPN: …` (the built-in
-VPN) and `env check: …` name no folder, so they get none. The trash and a folder inside it are never coloured. An entry
+VPN) and `env check: …` name no folder, so they get none. The trash itself is never painted; a folder inside the trash is
+never given a colour, and one it had before it went in keeps showing, on its row and on its entries' terminals. An entry
 at the root has no folder. A key this build does not know paints nothing and counts for nothing.
 
 **Residuals, named on purpose.** (P1) The lease serializes the windows; it does not make a window's `globalState` copy

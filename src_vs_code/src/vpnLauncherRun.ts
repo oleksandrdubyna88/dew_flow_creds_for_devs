@@ -56,8 +56,8 @@ export interface VpnRunContext {
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
   /** The person's road host, set by their Start only (E2.S1). Absent for an agent's `creds_vpn_up`, which keeps E1's refusal of a linked launcher (E2-D2). */
   readonly sshRoad?: SshRoad;
-  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). Absent: nothing is logged. */
-  readonly log?: DiagnosticWriter;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). */
+  readonly log: DiagnosticWriter;
 }
 
 /**

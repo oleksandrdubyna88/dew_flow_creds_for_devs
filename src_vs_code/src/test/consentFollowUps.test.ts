@@ -12,6 +12,7 @@ import { share, world as brokerWorld } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
 import { memoryTrust, storageOf, world as vpnWorld } from './vpnWorld';
 import { BUSY_PLACE } from '../aliasThrottle';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * The follow-up contract of the one dialog place (parent §4.10), per action, through the local doors (the alias and the MCP door):
@@ -76,7 +77,7 @@ for (const verb of ['up', 'down'] as const) {
       './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
     };
     const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
-    const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
+    const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log);
     const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, act, gate) => open(accountId, 'vpn', act, gate) };
     const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: [verb], realActions: { [verb]: vpnAction(deps, verb) }, aliasMap: { one: TARGET('vpn') }, mcpUse: 'usable' });
     try {

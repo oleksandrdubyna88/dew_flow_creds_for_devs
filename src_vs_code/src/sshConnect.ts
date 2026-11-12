@@ -57,8 +57,8 @@ export interface ConnectOptions extends PrepareOptions {
    * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
    */
   readonly allowRetry?: boolean;
-  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). Absent: nothing is logged. */
-  readonly log?: DiagnosticWriter;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). */
+  readonly log: DiagnosticWriter;
 }
 
 /** @returns whether a terminal was actually opened — a remote window can refuse. */

@@ -27,6 +27,7 @@ import { ownerChain, startVpn, world as vpnWorldOf } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 import { loadWithVscode } from './vscodeStub';
 import { fakePath } from './fakePaths';
+import { recordingLog } from './liveColourStorage';
 
 const scope = cleanupScope();
 after(() => scope.close());
@@ -41,7 +42,7 @@ const loadSshActions = async (): Promise<typeof import('../sshUseActions')> => l
 
 /** `SshUseDeps` over the world's typed deps: the one field `SshUseDeps` requires and `AgentUseDeps` leaves optional is given, and nothing is cast. */
 function sshUseDepsOf(gate: GateWorld['deps']): SshUseDeps {
-  return { ...gate, agentSocket: gate.agentSocket ?? ((): string | undefined => undefined) };
+  return { ...gate, log: recordingLog().log, agentSocket: gate.agentSocket ?? ((): string | undefined => undefined) };
 }
 
 /** What the stub of G17 says it also uses (the third amendment, A1). */

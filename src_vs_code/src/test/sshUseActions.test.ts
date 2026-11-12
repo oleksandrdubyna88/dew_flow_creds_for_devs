@@ -13,6 +13,7 @@ import type { UseActionContext } from '../useActions';
 import type { SshUseDeps } from '../sshUseActions';
 import type { StorageManager } from '../storageManager';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -164,6 +165,7 @@ function deps(w: World, parts: Parts): SshUseDeps {
   return {
     storage: w.storage,
     storageDir: w.storageDir,
+    log: recordingLog().log,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) | undefined => {
       if (parts.noSlot === true) {

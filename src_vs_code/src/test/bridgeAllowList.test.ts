@@ -14,6 +14,7 @@ import type { UseAction } from '../useActions';
 import { contractRoutes, strayRoutes, unnamedMessage, unnamedRoutes } from './contractRoutes';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * The allow-list of a Remote Bridge (E1.2's table of one route, filled by E1.3): default deny, every contract
@@ -227,7 +228,7 @@ async function realServedActions(): Promise<ServedWorld> {
   await seedEntry(storage, FORWARDING_ENTITY, {});
   const signal = new AbortController().signal;
   let socket: string | undefined;
-  const sshDeps: SshUseDeps = { storage, storageDir: '/unused', signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => socket };
+  const sshDeps: SshUseDeps = { storage, storageDir: '/unused', log: recordingLog().log, signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => socket };
   const agentDeps: AgentUseDeps & { onPath: (exe: string) => boolean } = {
     storage,
     storageDir: '/unused',

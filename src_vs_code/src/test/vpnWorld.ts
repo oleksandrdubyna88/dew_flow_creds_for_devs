@@ -7,7 +7,7 @@ import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import { EntityMetadata, TreeNode } from '../types';
 import { ownedDir, type Scope } from '../../scripts/lib/leftovers.cjs';
 import { DiagnosticWriter } from '../diagnosticWriter';
-import { colouringStorage } from './liveColourStorage';
+import { colouringStorage, recordingLog } from './liveColourStorage';
 
 /**
  * A VPN start under the `vscode` stub — the world `dependencyChain.test.ts` and
@@ -384,20 +384,17 @@ export type RunVpn = (
   dir: string,
   k: unknown,
   trust: unknown,
-  startGate?: AbortSignal,
-  lateAnswer?: (what: string) => void,
-  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
-  sshRoad?: unknown,
-  log?: DiagnosticWriter,
+  log: DiagnosticWriter,
+  seams?: { startGate?: AbortSignal; lateAnswer?: (what: string) => void; standingPrompt?: (prompt: PromiseLike<unknown>) => void; sshRoad?: unknown },
 ) => Promise<boolean>;
 
 export interface StartOptions {
   action?: 'start' | 'stop';
   /** The agent request's signal — absent for the person's own click. */
   startGate?: AbortSignal;
-  /** The person's road host (`SshRoad`), handed to `runVpn` as its second to last argument: absent is the agent's start (E2-D2). */
+  /** The person's road host (`SshRoad`), handed to `runVpn` in its seams object: absent is the agent's start (E2-D2). */
   sshRoad?: unknown;
-  /** The diagnostic log, handed to `runVpn` as its last argument. */
+  /** The diagnostic log, handed to `runVpn` as its seventh argument; a recording one when absent. */
   log?: DiagnosticWriter;
   storage?: ReturnType<typeof storageOf>;
   /** The trust store the start reads and writes; a fresh one when absent. */
@@ -408,6 +405,11 @@ export interface StartOptions {
    * an extension that was active before the click (`registerRunCommands` subscribes it at activation).
    */
   shellEvents?: () => void;
+}
+
+/** The log a start is handed: the test's own, else one that records. */
+function logOf(o: StartOptions): DiagnosticWriter {
+  return o.log ?? recordingLog().log;
 }
 
 /**
@@ -428,7 +430,7 @@ export async function startVpn(scope: Scope, w: World, nodes: Record<string, Ent
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   const storage = o.storage ?? storageOf(nodes);
   try {
-    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), o.startGate, undefined, undefined, o.sshRoad, o.log), dir };
+    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), logOf(o), { startGate: o.startGate, sshRoad: o.sshRoad }), dir };
   } catch (error) {
     return { started: false, dir, ended: requestsEnd(error) };
   }

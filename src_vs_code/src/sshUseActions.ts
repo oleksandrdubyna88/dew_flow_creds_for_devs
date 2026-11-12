@@ -73,8 +73,8 @@ export interface SshUseDeps {
    * it is not invisible: the route refuses as `agent-has-no-key` while the agent is serving it.</p>
    */
   servesKeyForEntity?(entity: EntityMetadata): boolean;
-  /** The diagnostic log, for the one line a failed folder-colour write leaves when the terminal opens. Optional: a test needs none. */
-  log?: DiagnosticWriter;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves when the terminal opens. */
+  log: DiagnosticWriter;
   /**
    * E1.6's writer of the per-call ssh_config a bridged `ssh` runs under (parent §4.9). ABSENT on the partial-E1 tree, and that absence is the
    * lock between partial E1 and E2 (`unguardedBridge`): a bridged call is refused before any slot, key or spawn. The parameter is E1.6's to
@@ -455,7 +455,7 @@ export function sshDepsFor(parts: {
   sshAgent: { socketPath: string | undefined; servesKeyForEntity(entity: EntityMetadata): boolean };
   relays: WslRelayManager;
   /** The diagnostic log (a failed folder-colour write leaves one line in it). */
-  log?: DiagnosticWriter;
+  log: DiagnosticWriter;
 }): SshWiredDeps {
   const deps: SshUseDeps = {
     storage: parts.storage,

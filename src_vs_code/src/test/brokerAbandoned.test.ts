@@ -9,6 +9,7 @@ import { World, call, share, world } from './brokerWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -572,6 +573,7 @@ function sshTerminalWorld(): SshTerminalWorld {
     return {
       storage,
       storageDir: ownedDir(scope, 'abandoned'),
+      log: recordingLog().log,
       signal: new AbortController().signal,
       acquireExecSlot: () => (): void => undefined,
       note: (): void => undefined,

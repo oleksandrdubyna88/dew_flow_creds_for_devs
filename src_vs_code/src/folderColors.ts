@@ -76,9 +76,10 @@ function folderOfEntry(storage: FolderColorStorage, accountId: string, entryId: 
 /**
  * Gives the folder that directly holds this entry its colour, once, and says which colour it wears.
  *
- * <p>Resolves with the key the folder wears after the call: the one written, the one found, or `undefined`
- * (no folder to colour, a trashed folder, or a stored value this build does not know, which stays
- * byte-identical). Rejects with `updateNodeFields`'s own error and catches nothing. Keeps nothing between
+ * <p>Resolves with the key the folder wears after the call: the one written, or the one found, or `undefined`
+ * (no folder to colour; the trash itself as the parent; or a folder holding no key this build knows, an unknown
+ * stored value included, which stays byte-identical). A folder inside the trash (any depth) is never GIVEN a
+ * colour, but one it already wore is returned and keeps painting. Rejects with `updateNodeFields`'s own error and catches nothing. Keeps nothing between
  * calls, starts no timer, and reads and writes `accountId` only.</p>
  *
  * <p><b>One critical section.</b> The check outside the lease skips the write for a folder that already
@@ -125,12 +126,12 @@ export async function ensureFolderColor(
  * What every caller of `ensureFolderColor` does with a rejection: it never stops the terminal, and it is never
  * silent. The colour is cosmetic (the terminal opens without it and the next open tries again, because no string
  * was stored), so there is no toast; the one line goes to the extension's diagnostic log, which is what a bug report
- * carries. The message is `describeError`'s and names no folder and no entry. Without a log (a caller no window
- * wired one into) it is dropped. Used as `ensureFolderColor(…).catch(noteColourFailure(log))`.
+ * carries. The message is `describeError`'s and names no folder and no entry. The log is required: a caller that
+ * had none would drop the line, so the compiler refuses it. Used as `ensureFolderColor(…).catch(noteColourFailure(log))`.
  */
-export function noteColourFailure(log: DiagnosticWriter | undefined): (error: unknown) => undefined {
+export function noteColourFailure(log: DiagnosticWriter): (error: unknown) => undefined {
   return (error) => {
-    log?.warn('folderColors', `a folder's colour could not be saved; its terminal opens without it: ${describeError(error)}`);
+    log.warn('folderColors', `a folder's colour could not be saved; its terminal opens without it: ${describeError(error)}`);
     return undefined;
   };
 }

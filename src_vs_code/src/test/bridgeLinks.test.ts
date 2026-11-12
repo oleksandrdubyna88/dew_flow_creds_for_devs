@@ -13,6 +13,7 @@ import { loadWithVscode } from './vscodeStub';
 import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
 import { WslRelayManager } from '../wslRelayManager';
 import { BUSY_PLACE } from '../aliasThrottle';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * What a Remote Bridge may be told about the entries an in-scope entry LINKS to (E1.3 epoch 3, L1-L5, A.3.6).
@@ -260,6 +261,7 @@ test('G2: production hands the actions no writer of the per-call ssh_config (E1.
   const parts: Parameters<typeof SshDepsFor>[0] = {
     storage: memoryStorage({ window: {} }),
     storageDir: '/unused',
+    log: recordingLog().log,
     agentServer: { signal, acquireExecSlot: () => undefined, note: () => undefined },
     sshAgent: { socketPath: undefined, servesKeyForEntity: () => false },
     relays: new WslRelayManager(() => { throw new Error('no relay is spawned here'); }, () => undefined),
