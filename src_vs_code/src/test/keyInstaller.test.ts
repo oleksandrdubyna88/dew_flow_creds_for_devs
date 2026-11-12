@@ -94,6 +94,21 @@ test('a materialized key lands under THIS window pid and gets a trailing newline
   assert.equal(fs.readFileSync(keyPath, 'utf8'), 'PRIVATE KEY BODY\n');
 });
 
+test('U2: a call key lands in keys/<pid>/ as <a call name>.key, with one end-of-line, mode 0600, and it is still ours to read', () => {
+  const w = world();
+  const keyPath = w.mod.materializeCallKey(w.storage, 'PRIVATE KEY BODY');
+
+  assert.equal(path.dirname(keyPath), w.mod.materializedKeysDir(w.storage));
+  assert.match(path.basename(keyPath), /^call-[0-9a-f-]{36}\.key$/);
+  assert.equal(fs.readFileSync(keyPath, 'utf8'), 'PRIVATE KEY BODY\n');
+  assert.equal(fs.readFileSync(w.mod.materializeCallKey(w.storage, 'BODY\n'), 'utf8'), 'BODY\n');
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(keyPath).mode & 0o777, 0o600);
+  }
+  assert.notEqual(w.mod.materializeCallKey(w.storage, 'PRIVATE KEY BODY'), keyPath, 'two calls, two paths');
+  assert.equal(w.mod.materializeCallKey.length, 2, 'no parameter for an id');
+});
+
 test('an already-terminated key is not given a SECOND newline', () => {
   const w = world();
   const keyPath = w.mod.materializePrivateKey(w.storage, 'ent-1', 'BODY\n');
@@ -202,6 +217,16 @@ test('removing what was never installed says so instead of claiming success', as
 test('a purge takes THIS window pid directory', () => {
   const w = world();
   const keyPath = w.mod.materializePrivateKey(w.storage, 'ent-1', 'PRIVATE');
+  w.mod.purgeMaterializedKeys(w.storage);
+
+  assert.equal(fs.existsSync(keyPath), false, 'decrypted material never outlives the session');
+});
+
+test('U3: a purge takes a call key with THIS window pid directory', () => {
+  const w = world();
+  const keyPath = w.mod.materializeCallKey(w.storage, 'PRIVATE');
+  assert.equal(fs.existsSync(keyPath), true, 'the call key was written');
+
   w.mod.purgeMaterializedKeys(w.storage);
 
   assert.equal(fs.existsSync(keyPath), false, 'decrypted material never outlives the session');
