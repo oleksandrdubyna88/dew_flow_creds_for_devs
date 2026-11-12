@@ -1,6 +1,7 @@
 import { DepColorKey, isDepColorKey } from './depColors';
 import { pickDepColor } from './depGraph';
-import { isTrashFolder } from './trash';
+import { parentFolderOf } from './moveGate';
+import { isInTrash, isTrashFolder } from './trash';
 import { TreeNode } from './types';
 
 /**
@@ -45,4 +46,73 @@ export function folderColorUsage(nodes: readonly TreeNode[]): Map<DepColorKey, n
 /** The key a new folder gets: the first one no folder wears, then the least worn, in palette order. */
 export function pickFolderColor(nodes: readonly TreeNode[]): DepColorKey {
   return pickDepColor(folderColorUsage(nodes));
+}
+
+/** The storage the allocator uses: three methods and nothing else. `StorageManager` satisfies it as it is. */
+export interface FolderColorStorage {
+  getNode(accountId: string, id: string): TreeNode | undefined;
+  getNodes(accountId: string): readonly TreeNode[];
+  updateNodeFields(accountId: string, id: string, patch: (node: TreeNode) => Partial<TreeNode>): Promise<void>;
+}
+
+/** Does this folder need a colour: a folder, holding no string at all (a key this build does not know included), outside the trash at any depth. */
+function needsColour(storage: FolderColorStorage, accountId: string, folder: TreeNode): boolean {
+  return (
+    folder.type === 'folder'
+    && typeof folder.folderColor !== 'string'
+    && !isInTrash(folder, (id) => storage.getNode(accountId, id))
+  );
+}
+
+/** The folder directly holding this entry; nothing for a missing entry, the root or a dangling parent. */
+function folderOfEntry(storage: FolderColorStorage, accountId: string, entryId: string): TreeNode | undefined {
+  const entry = storage.getNode(accountId, entryId);
+  return entry === undefined ? undefined : parentFolderOf(storage, accountId, entry);
+}
+
+/**
+ * Gives the folder that directly holds this entry its colour, once, and says which colour it wears.
+ *
+ * <p>Resolves with the key the folder wears after the call: the one written, the one found, or `undefined`
+ * (no folder to colour, a trashed folder, or a stored value this build does not know, which stays
+ * byte-identical). Rejects with `updateNodeFields`'s own error and catches nothing. Keeps nothing between
+ * calls, starts no timer, and reads and writes `accountId` only.</p>
+ *
+ * <p><b>One critical section.</b> The check outside the lease skips the write for a folder that already
+ * holds a string, because every `updateNodeFields` stamps the version vector. The fresh read, the tally, the
+ * choice and the write are ONE `updateNodeFields` call with a FUNCTION patch, which `StorageManager` runs in
+ * its write queue and under the cross-window lease (`windowLock.ts`, an atomic `mkdir`). The tally is taken
+ * INSIDE the patch, never before the call: two calls started together would otherwise count the same usage
+ * and give two folders one colour. Inside it the folder is checked again, so a colour saved meanwhile wins.</p>
+ *
+ * <p><b>Residuals, accepted by the plan.</b> (P1) The lease serializes the windows; it does not make a
+ * window's `globalState` copy fresh. A window that takes the lease before another's write has arrived by
+ * broadcast tallies an old list, so two folders can wear one colour (cosmetic; the folder form repairs it),
+ * and that stale copy can drop the other window's write, as it can for every leased write. (P2) A call that
+ * loses a race, in two windows or in one when two calls for one uncoloured folder start together, changes no
+ * field but stamps the folder once: three memento writes and one sync upload. (P3) The first open from an
+ * uncoloured folder waits for the lease with no bound and no timer here: a dead holder is broken after 15 s,
+ * a live one is waited for.</p>
+ */
+export async function ensureFolderColor(
+  storage: FolderColorStorage,
+  accountId: string,
+  entryId: string,
+): Promise<DepColorKey | undefined> {
+  const folder = folderOfEntry(storage, accountId, entryId);
+  if (folder === undefined) {
+    return undefined;
+  }
+  if (!needsColour(storage, accountId, folder)) {
+    return folderColorKeyOf(folder);
+  }
+  let written: DepColorKey | undefined;
+  await storage.updateNodeFields(accountId, folder.id, (now) => {
+    if (!needsColour(storage, accountId, now)) {
+      return {};
+    }
+    written = pickFolderColor(storage.getNodes(accountId));
+    return { folderColor: written };
+  });
+  return written ?? folderColorKeyOf(storage.getNode(accountId, folder.id));
 }
