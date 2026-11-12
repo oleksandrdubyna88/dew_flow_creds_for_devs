@@ -573,7 +573,7 @@ stays; on a bridge `ssh`'s `stderr` keeps the laptop's path, and the bridge plan
 
 ## Epics
 
-One epic. The stories are one document, `todo/PLAN_agent_refusal_key_file_path_E1.md`, written when the epic starts;
+One epic. The stories are one document, [`todo/PLAN_agent_refusal_key_file_path_E1.md`](PLAN_agent_refusal_key_file_path_E1.md), written when the epic starts;
 it links back here and gets its own `todo/README.md` row. This file holds no story. Fable wrote this plan and the
 split (a security judgement). The question consultants were asked on 2026-11-12, before the plan round (consult
 `1b5b224b`; 2 of 2 rows answered, codex gpt-6-astra and gemini-4-argon-low). Both said: one epic with two stories,

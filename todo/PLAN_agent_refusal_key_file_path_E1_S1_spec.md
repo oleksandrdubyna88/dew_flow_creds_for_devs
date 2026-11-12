@@ -166,6 +166,7 @@ assertions, in this order:
 - S1 fails. The failure names exactly two sites, both in one file: `sshExecAuth.ts:7` (the import) and `sshExecAuth.ts:162` (the
   call). No other file.
 - S2 passes. The two old tests of the file pass.
+- The definition `export function materializePrivateKey(` at `keyInstaller.ts:149` is an occurrence too. In state 1 it is the one occurrence in `keyInstaller.ts` (C2 is not there yet), so S2 passes for that file only because of it. Do not make the scan skip a definition.
 
 Save the text. Then run the `grep` of F4 and write its 8 lines into the summary, compared with the parent's §4.3: `keyInstaller.ts`,
 `sshSession.ts` and `transportFactory.ts` are on the list; `sshExecAuth.ts` is the defect. **A site in another file stops the work:**
@@ -499,6 +500,8 @@ PC empties the scratchpad; the commit body stays). Decided by the lead on 2026-1
   branch and the same pull request.
 
 ## Notes for the lead
+
+> Status of these notes, 2026-11-12, by the lead: 1, 2 and 5 are done in `42d7340d` (the counts, the S1 failure lines, the cornerstone line and the README row); 4 is decided in §11 (green commits only); 3 and 6 stand as written. The stories document [PLAN_agent_refusal_key_file_path_E1.md](PLAN_agent_refusal_key_file_path_E1.md) checked this spec against the code; its notes on the spec are the build facts that are newer than this text.
 
 Nothing below is decided in this spec. Each note says what the spec does meanwhile, inside the plan as written.
 
