@@ -96,7 +96,7 @@ function folderOfEntry(storage: FolderColorStorage, accountId: string, entryId: 
  *
  * <p><b>Residuals, accepted by the plan.</b> (P1) The lease serializes the windows; it does not make a
  * window's `globalState` copy fresh. A window that takes the lease before another's write has arrived by
- * broadcast tallies an old list, so two folders can wear one colour (E2's folder form will let a person change it),
+ * broadcast tallies an old list, so two folders can wear one colour (the folder form lets a person change it),
  * and that stale copy can drop the other window's write, as it can for every leased write. A dropped colour is picked
  * again at the folder's next terminal, possibly as a different key, while terminals already open keep the old one.
  * (P2) A call that loses a race, in two windows or in one when two calls for one uncoloured folder start together, changes no

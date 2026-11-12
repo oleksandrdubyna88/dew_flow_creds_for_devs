@@ -18,19 +18,19 @@ What you can do and what you will see:
 - **Choose a colour yourself.** *Edit* on a folder has a **Colour** row with twelve swatches. The colour that the folder wears is
   marked. Click a swatch and Save to change it. A Save in which you clicked no swatch writes no colour: a rename keeps a colour that
   the auto-pick or another window wrote while the form was open.
-- **The folder has no colour yet.** The row says which colour its first terminal would get now, and that this can change before then.
-  Choose one to set it now.
+- **The folder has no colour yet.** The **Colour** row says which colour its first terminal would get now, and that this can change
+  before then. Choose one to set it now.
 - **A terminal that is already open keeps its colour.** VS Code fixes the colour when the terminal is created. A new colour shows on
   the terminals that you open later.
 - **There is no way back to no colour.** You can change it to another one.
 - **No colour.** Other terminals (`Creds: before …`, `Creds run: …`, `Creds VPN: …`, `env check: …`), entries at the root and the Trash
   get none, and a folder in the Trash has no **Colour** row. A folder that was coloured before it went into the Trash keeps showing it.
-- **Export and Import do not carry the colour.** That is *Export / Share Externally* and *Import / Restore*. An imported folder gets a
-  colour at its first terminal. Sync and backup keep it.
+- **Two ways of moving a folder do not carry the colour.** That is *Export / Share Externally…* and *Import from External…*. An
+  imported folder gets a colour at its first terminal. Sync, backup and *Import / Restore* keep it.
 
 One limit stays, as before for every write of this extension: a window that has not yet received another window's write can pick the
-same colour for two folders, and, rarely, drop that write. A lost colour is picked again at the next terminal. The help describes the
-colour in all five languages.
+same colour for two folders, and, rarely, drop the other window's write (a colour, or any other edit made in that moment). A lost
+colour is picked again at the next terminal. The help describes the colour in all five languages.
 
 ## [1.21.3] — 2026-11-11 — Security — an agent's refusal no longer names a linked key entry or a jump host that it may not view
 
