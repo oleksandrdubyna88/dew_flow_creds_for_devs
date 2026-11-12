@@ -1,6 +1,6 @@
 /**
  * Which second entry a refusal is about, so that one chooser can decide whether the agent may be told about it (rule B of
- * `todo/PLAN_agent_refusal_names_unlisted_entry.md`). `relation` says HOW the addressed entry uses it: the key it borrows, or a hop of its chain.
+ * `research/PLAN_agent_refusal_names_unlisted_entry.md`). `relation` says HOW the addressed entry uses it: the key it borrows, or a hop of its chain.
  */
 export interface SecondEntry {
   readonly id: string;

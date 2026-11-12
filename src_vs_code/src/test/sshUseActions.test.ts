@@ -504,7 +504,7 @@ test('the terminal action refused because its client left is that request’s ab
   await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
 });
 
-// ---- rule B (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md`): over the world of `secondEntryWorld.ts`, whose resolver is the product's --------
+// ---- rule B (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md`): over the world of `secondEntryWorld.ts`, whose resolver is the product's --------
 
 /** The journal lines of the two relations, written out. The line names the relation and the addressed entry, never the second entry. */
 const TOLD = '(the agent was told only that another entry stopped the call)';

@@ -19,7 +19,7 @@ import { markerOf } from './unlistedWorld';
 import { loadWithVscode } from './vscodeStub';
 
 /**
- * Part B of the class test (`todo/PLAN_agent_refusal_names_unlisted_entry_E2.md` §2): the REAL actions over a REAL vault in which the SSH
+ * Part B of the class test (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md` §2): the REAL actions over a REAL vault in which the SSH
  * entry `prod` (`e1`) can use the key of a second entry and go through a chain of jump hosts, each hidden from agents.
  *
  * <p>Built the way `bridgeLinksWorld.ts` builds its world: only the I/O edges are replaced (`./keyInstaller`, which writes a REAL file in a

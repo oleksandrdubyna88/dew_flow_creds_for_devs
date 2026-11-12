@@ -1,12 +1,16 @@
 # PLAN — An agent's refusal never names an entry or a folder that the agent may not view
 
-> Status: **approved 2026-11-11 (epoch 1, by reviewers); epic 1 is merged (#347) and released in the extension 1.21.1; the stories of epic 2 are written and built on `fix/agent-refusal-names-second-entry` (2026-11-11); its code round and pull request follow.** The owner said yes on 2026-11-09
+> Status: **IMPLEMENTED, 2026-11-11.** Epic 1 (rule A) was merged as #347 (`cb017473`) and released in extension 1.21.1
+> (the heading of the CHANGELOG is #349). Epic 2 (rule B) was merged as #353 (`b95282f1`) and released in extension 1.21.3
+> (release PR #355). Deviations: §12. Ledger at promotion: epoch 1, one entry (1.1), no stop. Still open, for the owner: the
+> questions N1, N4, N5, N6, N2, N8 and N9 (§2.6, §11), and the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
+> N10 (§11) moved to its own plan, [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
 > plan of §7a. Two epics, in order, each with its own code round and its own pull request, on
 > `fix/agent-refusal-names-unlisted-entry` from `main` at `360d45b7` (extension 1.21.0). Found as F7: item 7 of §16 of
-> [PLAN_terminal_command_over_ssh_E3_S2_security.md](../research/PLAN_terminal_command_over_ssh_E3_S2_security.md).
+> [PLAN_terminal_command_over_ssh_E3_S2_security.md](PLAN_terminal_command_over_ssh_E3_S2_security.md).
 > Security fix for a defect that is live on `main` and in the released 1.21.0. All `file:line` references were read on
 > `360d45b7`.
 
@@ -584,15 +588,15 @@ sentence of a neighbour false, the repair of that sentence is judged by that pla
 
 | Plan | Touches | This plan's part | The row that the neighbour gets, and where |
 |---|---|---|---|
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall of a bridge: `closedIn`, `outOfScopeAnswer`, `bridgedRefusal`; E1.6 changes `sshUseActions.ts` and `sshExecAuth.ts` for the bridged legs | this plan edits no line of `bridgeScope.ts`. Epic 2 changes `bridgedRefusal`'s branch OFF a bridge and leaves the branch ON a bridge as it is (G9) | in its §8 *Boundaries*: the real lookup answers `closed` only for an entry that the agent may view, so an in-scope entry that is not visible reads as out of scope; the off-bridge sentences that name a second entry are this plan's (rule B); the bridged sentences and notes do not change; whichever merges second re-reads `sshUseActions.ts` and `sshExecAuth.ts` |
-| [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md) | the route table: `<r>` → `closed` (403 `denied`, the switch sentence) | that row stays true for an entry in scope that the agent may view; for one that it may not view the answer is the spec's own not-found answer | beside its route table (its row 7): the same sentence, with a pointer to this plan |
-| [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) | `ssh:exec`'s argv and environment in `execOverSsh` | none: this plan changes what `execOverSsh` SAYS when it refuses, not what it starts. Disjoint lines | under its status block: this plan's epic 2 changes the third argument of the refusal function in `sshUseActions.ts`; no argv, no environment |
-| [PLAN_ssh_exec_absolute_program.md](PLAN_ssh_exec_absolute_program.md) | the program that `ssh:exec` starts on Windows | none. Disjoint | under its status block: the same sentence |
-| [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md) | a password connection with a jump host (`sshExecAuth.ts`, `sshAskpass.ts`) | none in behaviour: epic 2 adds one field to the failure of `ExecAuth` and to the failure of `JumpChain`, and reads no password path | under its status block: the two failure types carry `second`; a new refusal on its paths that names a hop sets it |
-| [PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) | the stamp write in `credsAgentServer.ts`; it cites the 403 sentence for an own-only delete (`mayDelete`) | none: that case is an entry that the agent may view, so its sentence stays (G2). This plan edits no line of `credsAgentServer.ts` (795 of its 800 lines) | in its §5 *Out of scope*: the 403 that it cites stays for a visible entry; an entry that is not visible answers `not_found` before any stamp is read |
-| [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) item 6 | `vpnOutcome` in `agentUseActions.ts` | none. Disjoint lines of the same file | under its item 6: a new failure code or sentence there names the VPN entry only, or it goes through this plan's chooser |
-| [PLAN_query_refuses_client_commands.md](PLAN_query_refuses_client_commands.md) | the `query` action in `agentUseActions.ts` and `dbCliLauncher.ts` | none. Disjoint | in its §5 *Out of scope*: disjoint lines of `agentUseActions.ts` |
-| [PLAN_ssh_line_runs_in_login_shell.md](PLAN_ssh_line_runs_in_login_shell.md) (added 2026-11-11, by that plan) | the VALUE of `plan.remoteCommand` that `agentUseActions.ts:418` hands to `execOverSsh` (`exec ${SHELL:-sh} -l -c '<line>'`); `remoteLaunch.ts` | none: that plan changes no line of `sshUseActions.ts` or `agentUseActions.ts` and no refusal. Both edit `CHANGELOG.md`, `module_extension.md`, `module_tests.md` and the help in other sections; the second to merge re-reads them | written in that plan's §9 |
+| [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) | the wall of a bridge: `closedIn`, `outOfScopeAnswer`, `bridgedRefusal`; E1.6 changes `sshUseActions.ts` and `sshExecAuth.ts` for the bridged legs | this plan edits no line of `bridgeScope.ts`. Epic 2 changes `bridgedRefusal`'s branch OFF a bridge and leaves the branch ON a bridge as it is (G9) | in its §8 *Boundaries*: the real lookup answers `closed` only for an entry that the agent may view, so an in-scope entry that is not visible reads as out of scope; the off-bridge sentences that name a second entry are this plan's (rule B); the bridged sentences and notes do not change; whichever merges second re-reads `sshUseActions.ts` and `sshExecAuth.ts` |
+| [PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md) | the route table: `<r>` → `closed` (403 `denied`, the switch sentence) | that row stays true for an entry in scope that the agent may view; for one that it may not view the answer is the spec's own not-found answer | beside its route table (its row 7): the same sentence, with a pointer to this plan |
+| [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md) | `ssh:exec`'s argv and environment in `execOverSsh` | none: this plan changes what `execOverSsh` SAYS when it refuses, not what it starts. Disjoint lines | under its status block: this plan's epic 2 changes the third argument of the refusal function in `sshUseActions.ts`; no argv, no environment |
+| [PLAN_ssh_exec_absolute_program.md](../todo/PLAN_ssh_exec_absolute_program.md) | the program that `ssh:exec` starts on Windows | none. Disjoint | under its status block: the same sentence |
+| [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md) | a password connection with a jump host (`sshExecAuth.ts`, `sshAskpass.ts`) | none in behaviour: epic 2 adds one field to the failure of `ExecAuth` and to the failure of `JumpChain`, and reads no password path | under its status block: the two failure types carry `second`; a new refusal on its paths that names a hop sets it |
+| [PLAN_consent_coverage_per_door.md](../todo/PLAN_consent_coverage_per_door.md) | the stamp write in `credsAgentServer.ts`; it cites the 403 sentence for an own-only delete (`mayDelete`) | none: that case is an entry that the agent may view, so its sentence stays (G2). This plan edits no line of `credsAgentServer.ts` (795 of its 800 lines) | in its §5 *Out of scope*: the 403 that it cites stays for a visible entry; an entry that is not visible answers `not_found` before any stamp is read |
+| [PLAN_terminal_runs_followups.md](../todo/PLAN_terminal_runs_followups.md) item 6 | `vpnOutcome` in `agentUseActions.ts` | none. Disjoint lines of the same file | under its item 6: a new failure code or sentence there names the VPN entry only, or it goes through this plan's chooser |
+| [PLAN_query_refuses_client_commands.md](../todo/PLAN_query_refuses_client_commands.md) | the `query` action in `agentUseActions.ts` and `dbCliLauncher.ts` | none. Disjoint | in its §5 *Out of scope*: disjoint lines of `agentUseActions.ts` |
+| [PLAN_ssh_line_runs_in_login_shell.md](../todo/PLAN_ssh_line_runs_in_login_shell.md) (added 2026-11-11, by that plan) | the VALUE of `plan.remoteCommand` that `agentUseActions.ts:418` hands to `execOverSsh` (`exec ${SHELL:-sh} -l -c '<line>'`); `remoteLaunch.ts` | none: that plan changes no line of `sshUseActions.ts` or `agentUseActions.ts` and no refusal. Both edit `CHANGELOG.md`, `module_extension.md`, `module_tests.md` and the help in other sections; the second to merge re-reads them | written in that plan's §9 |
 
 The order: this plan needs none of them and none of them needs this plan. The table is complete for the plans that
 were open on 2026-11-11 and name a file or a function that this plan changes. Method: `grep -l` over
@@ -706,6 +710,70 @@ Both:
   (2026-11-11) and confirmed by the `coai` plan round and its consultant. Not built here: to build it in this plan is
   a counted change (a new site and a new row), so it is a question for the owner — its own small item, with a priority
   above N8.
+  **Moved on 2026-11-11:** the owner said yes to build it as its own small plan,
+  [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). It is not part of this plan, and it is not built here.
+
+## 12. Deviations — what shipped differently from this plan (promoted 2026-11-11)
+
+Shipped: epic 1 (rule A) as #347 (`cb017473`), released in extension 1.21.1 (CHANGELOG heading #349); epic 2 (rule B) as #353
+(`b95282f1`), released in extension 1.21.3 (release PR #355). Each stories document keeps its own notes ("Notes on the parent":
+9 notes in E1, 16 in E2); this section lists what a reader of the PARENT needs first and does not copy those notes.
+
+**Plan changes (the ledger above is the record).** One entry, 1.1: the two boundary rows of the bridge plan were not written
+there; they are owed (§7a). Epoch 1 is the only epoch and it is still open; it has no stop and no second change. The ledger is
+append-only and was left as it was at promotion.
+
+**Epic 1** ([PLAN_agent_refusal_names_unlisted_entry_E1.md](PLAN_agent_refusal_names_unlisted_entry_E1.md), notes 1-9):
+
+- The parent counted the harness checks in four ways (five, H1 to H5, H3 to H5, H1 to H6). Six were built, H1 to H6.
+- A6 was not complete: two more comments and the message of a test (`agentSshGate.test.ts`) said what A1 and A4 made false.
+  They were repaired too.
+- The contract routes include `health`; part A derives its routes from a helper that reads it too (`test/contractRoutes.ts`).
+- The fixture needed one more visible folder (with `create` on), the real create hook needed a world option, and a folder
+  sentence repeats the id that was sent, so bodies are equal after that value is replaced (notes 5-7).
+- The same fix holds between two accounts of one window, not only between two windows (rows X1, X2).
+- The harness got a RED proof by mutation (H1, H2, H3, H6); the parent gave none.
+- The boundary rows: six neighbours got theirs in #347 (and the login-shell plan wrote its own). The rows of the bridge plan and of
+  its E1 S3 spec stay OWED, with N7 (entry 1.1); they name #347 and #353.
+
+**Epic 2** ([PLAN_agent_refusal_names_unlisted_entry_E2.md](PLAN_agent_refusal_names_unlisted_entry_E2.md), notes 1-16):
+
+- **27 string fields, not 25.** The scan found 27 (5 scenarios and 22 written non-references), where the parent's §5.2 and
+  pass criterion 7 said 25 (5 + 20). Two more `string` fields share a line with other fields. The rule of the criterion is
+  unchanged: each field is in one of the two lists, 0 are in neither.
+- **Two existing tests changed** (`bridgeLinks.test.ts`): they pinned the very sentences that rows B1 and B2 replace. The parent's
+  §5.5 listed epic 1 only.
+- **Part B uses the real `StorageManager`**, in a new world `test/secondEntryWorld.ts`, and not `agentSshWorld.ts`: the rows that open a
+  stored value need the real resolver. B1 and B2 are in `sshUseActions.test.ts`, over that world.
+- **Own rows and mutations**: X3 to X6 (X5 a hidden unsafe hop at depth 4; X6 a chain of 5 hops, the depth cap) and M-b to M-d, a
+  third positive control, and two assertions more in G9. Each tests a site of §3.1; none adds a site.
+- **Own branch.** Epic 2 was built on `fix/agent-refusal-names-second-entry` (from `main` at `b15a5410`), not on the branch of the
+  status block, which was merged with #347.
+- **Who wrote.** Fable, not Opus, wrote the E2 stories, as a security judgement (as for E1); no story is a cornerstone.
+- Smaller notes: `refusal` has a third user that is reached on a bridge only; the private type `Refusal` of `sshOptions.ts` needed the
+  field too; G9 is true for B3 only where a bridge serves the link; the relation line of a linked run starts with the Terminal entry
+  (note 9); the journal count is of the lines that the ACTION writes.
+- **Gates (observed).** The `coai` plan round (session `dbe7d8d4`): `proceed`, 2 of 2 reviewers, 5 findings rejected with reasons.
+  The cadence consultation closed, solved: it added the depth-4 row X5, the 5-hop cap row X6 and the name-like-id qualification
+  of note 10. The lead's Opus review of the stories: "fix first", 8 findings fixed (`a5f59810`). The Opus code review: "ship",
+  3 minor fixes (`b38d421e`). The `coai` code round: `proceed`, 8 of 8 reviewers, 1 finding accepted (`e6ca474d`, no `as` casts in
+  the test world), 4 rejected. CodeRabbit, 3 minor: 2 documentation fixes accepted (`306ceeb2`), 1 rejected (the wording of one
+  journal line is the text of §2.5). The full suite: 7,747 tests, 0 failed, 37 skipped. The boxes of §10 are not ticked one by one
+  here; the two pull requests and this list are the record.
+
+**Found and NOT built.**
+
+- **N10, the key file path (a new leak, found by the E2 stories).** Off a Remote Bridge, the path of a borrowed key
+  (`<storageDir>/keys/<keyEntityId>-<uuid>.key`) reaches the agent in a failed key write, in `Could not run ssh`, and in the
+  error text of `ssh` itself, and an imported id can look like a name. It is NOT built here, because a new site and a new row would
+  be a second change of the plan. Checked: the three code paths above were read at their `file:line`; (c), the text of a real
+  `ssh` on a 200 answer, was NOT run against a real `ssh`. The owner said yes on 2026-11-11 to build it as its own small plan:
+  [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md).
+- **N8** (the config-snippet lookup stops at the first account that holds the id) and **N9** (`whyUnusable` says "switch is off" for an
+  SSH node in the Trash and for a link to a folder; the journal only) are known and not built.
+
+**Owner questions still open.** N1, N4, N5, N6 (the four list fields of §2.6, each a change of a documented MCP answer), N2 (the
+help says that the journal holds every refusal; a lookup refusal writes no line), N8 and N9. N10 is not a question any more.
 
 ## Epics
 

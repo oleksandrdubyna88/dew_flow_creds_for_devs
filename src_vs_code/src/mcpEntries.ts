@@ -284,7 +284,7 @@ function shown(node: TreeNode, resolved: ResolvedMcpAccess): boolean {
  *
  * <p>It reads the node in that account only and resolves the tree with a lookup bound to that account, so a folder walk
  * never leaves it. A missing node answers `false`. It has no reader in the lookups of rule A (they ask `shown` through
- * `verdictFor`); a refusal that is about a SECOND entry asks it (rule B of `todo/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
+ * `verdictFor`); a refusal that is about a SECOND entry asks it (rule B of `research/PLAN_agent_refusal_names_unlisted_entry.md`).</p>
  */
 export function agentMayView(source: Pick<McpVaultSource, 'getNode'>, accountId: string, entityId: string): boolean {
   const byId = (id: string): TreeNode | undefined => source.getNode(accountId, id);

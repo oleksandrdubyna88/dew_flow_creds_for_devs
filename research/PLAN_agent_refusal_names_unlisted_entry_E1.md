@@ -1,6 +1,11 @@
 # PLAN — An agent's refusal never names an unlisted entry, E1: rule A, the addressed node
 
-> Status: **stories written 2026-11-11; E1.1 to E1.3 are merged (#347, `cb017473`) and released in the extension 1.21.1; this document is promoted later, together with the parent, in the task that finishes epic 2.** Stories of epic E1 of
+> Status: **IMPLEMENTED, 2026-11-11.** Written 2026-11-11 by Fable. E1.1 to E1.3 were merged as #347 (`cb017473`) and released in
+> extension 1.21.1 (the CHANGELOG heading is #349); promoted together with the parent and the E2 document, in the task that finished epic 2.
+> Deviations: the nine "Notes on the parent" at the end of this document (the harness has six checks H1 to H6; A6 had two more
+> comments and one test message to repair; the fixture needs one more visible folder; a real create hook needs a world option;
+> the same rule holds between two accounts of one window, rows X1 and X2; the harness got a RED proof by mutation) and the parent's §12.
+> The two boundary rows of the bridge plan stay owed (the parent's §7a, entry 1.1). Stories of epic E1 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (its §2.2 to §2.6, §3.1 rows
 > A1 to A6, §3.2, §3.4, §4 steps 1 to 8, §5.1, §5.3 to §5.8, §6, §7a, §10 and `## Epics` E1).
 >
