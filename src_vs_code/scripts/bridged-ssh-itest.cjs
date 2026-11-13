@@ -80,9 +80,10 @@ async function legs567(rig) {
   try {
     writeControl(rig, `Host *\n  BatchMode no\n  PasswordAuthentication yes\n  KbdInteractiveAuthentication no\n  PubkeyAuthentication no\n  NumberOfPasswordPrompts 1\n${CONTROL_BASE.map((l) => `  ${l}`).join('\n')}\n`);
     clearAskpassLog(rig);
-    const argv = ['-F', rig.control, '-J', `${R.ME}@127.0.0.1:${sshdA.hop.port}`, '-p', String(sshdA.destination.port), `${R.ME}@127.0.0.2`, 'true'];
-    await R.control(rig, argv, { env: { ...process.env, ...ASKPASS_ENV(rig) } });
-    check('(a) 5 control: a hop that offers passwords only DOES ask the askpass script, with this rig\'s hand-written argv', askpassLog(rig).some((line) => line.includes('127.0.0.1')), JSON.stringify(askpassLog(rig)));
+    const argv = ['-v', '-F', rig.control, '-J', `${R.ME}@127.0.0.1:${sshdA.hop.port}`, '-p', String(sshdA.destination.port), `${R.ME}@127.0.0.2`, 'true'];
+    const done = await R.control(rig, argv, { env: { ...process.env, ...ASKPASS_ENV(rig) } });
+    const why = { askpass: askpassLog(rig), code: done.code, stderr: done.stderr.trim().split(/\r?\n/).slice(-25), hop: R.tail(sshdA.hop) };
+    check('(a) 5 control: a hop that offers passwords only DOES ask the askpass script, with this rig\'s hand-written argv', askpassLog(rig).some((line) => line.includes('127.0.0.1')), JSON.stringify(why, null, 1));
   } finally {
     await sshdA.close();
   }
