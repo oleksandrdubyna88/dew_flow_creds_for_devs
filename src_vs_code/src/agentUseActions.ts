@@ -27,6 +27,7 @@ import { LaunchPlan, SshLink, planLaunch, refusalSaid, sshLinkOf, trustLineFor }
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
+import { bridgedSshEnv } from './bridgedSshEnv';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
 import { fieldReadingOf } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
@@ -607,7 +608,7 @@ export function dbQueryAction(
       if (refusal !== undefined) {
         return fail('not_supported', refusal);
       }
-      const launch = buildDbQueryLaunch(dbType, connection, query);
+      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined });
       if (launch === undefined) {
         return fail(
           'not_supported',
@@ -626,7 +627,8 @@ export function dbQueryAction(
       }
       try {
         const outcome = await runBounded(launch.exe, launch.args, false, {
-          env: { ...process.env, ...launch.env },
+          // A bridged client gets the allow-list of `ssh` and its own password variable, and nothing else of the extension host's environment (§4.9 row 5, §4.11).
+          env: ctx.bridge === undefined ? { ...process.env, ...launch.env } : bridgedSshEnv(process.env, process.platform, launch.env),
           timeoutMs: clampExecTimeout(undefined),
           ...launchGuards(deps.signal, ctx),
         });
