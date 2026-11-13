@@ -148,18 +148,18 @@ test('F3: an unpinned key destination has no block of its own', () => {
 
 test('F4: a Windows path with a space and backslashes is in quotes, backslashes once, and "%" in our own paths is written "%%"', () => {
   const written = text(input({
-    hops: [{ host: 'hop.example', identityFile: 'C:\\Users\\My Name\\keys\\1\\call-a.key', typedKeyPath: false, check: { pinnedFile: 'C:\\Users\\My Name\\keys\\1\\call-b.known_hosts' } }],
-    destination: { host: 'prod.corp.com', pinnedFile: 'C:\\Users\\100%me\\keys\\call-c.known_hosts' },
-    noDefaultIdentity: 'C:\\Users\\100%me\\keys\\no-default-identity',
-    firstContactFile: 'C:\\Users\\My Name\\bridges\\known_hosts',
-    personKnownHosts: 'C:\\Users\\My Name\\.ssh\\known_hosts',
+    hops: [{ host: 'hop.example', identityFile: 'C:\\Users\\me\\My Name\\keys\\1\\call-a.key', typedKeyPath: false, check: { pinnedFile: 'C:\\Users\\me\\My Name\\keys\\1\\call-b.known_hosts' } }],
+    destination: { host: 'prod.corp.com', pinnedFile: 'C:\\Users\\me\\100%\\keys\\call-c.known_hosts' },
+    noDefaultIdentity: 'C:\\Users\\me\\100%\\keys\\no-default-identity',
+    firstContactFile: 'C:\\Users\\me\\My Name\\bridges\\known_hosts',
+    personKnownHosts: 'C:\\Users\\me\\My Name\\.ssh\\known_hosts',
   }));
 
-  assert.ok(written.includes('  IdentityFile "C:\\Users\\My Name\\keys\\1\\call-a.key"\n'), written);
+  assert.ok(written.includes('  IdentityFile "C:\\Users\\me\\My Name\\keys\\1\\call-a.key"\n'), written);
   assert.ok(!written.includes('\\\\'), 'a backslash is never doubled');
-  assert.ok(written.includes('  UserKnownHostsFile "C:\\Users\\100%%me\\keys\\call-c.known_hosts"\n'), 'the pin path of the destination');
-  assert.ok(written.includes('  IdentityFile "C:\\Users\\100%%me\\keys\\no-default-identity"\n'), 'the sentinel');
-  assert.ok(written.includes('  UserKnownHostsFile "C:\\Users\\My Name\\bridges\\known_hosts" "C:\\Users\\My Name\\.ssh\\known_hosts"\n'));
+  assert.ok(written.includes('  UserKnownHostsFile "C:\\Users\\me\\100%%\\keys\\call-c.known_hosts"\n'), 'the pin path of the destination');
+  assert.ok(written.includes('  IdentityFile "C:\\Users\\me\\100%%\\keys\\no-default-identity"\n'), 'the sentinel');
+  assert.ok(written.includes('  UserKnownHostsFile "C:\\Users\\me\\My Name\\bridges\\known_hosts" "C:\\Users\\me\\My Name\\.ssh\\known_hosts"\n'));
 });
 
 /** The measured value of the parent's D15: a line break and a ProxyCommand that wins over `Host *`'s. */

@@ -256,7 +256,7 @@ test('K1: an entry the import made from a Host block with an IdentityFile line i
   const stub = { window: {} };
   const storage = memoryStorage(stub);
   const [auth, credential] = loadEachWithVscode(['../sshExecAuth', '../sshCredential'], stub) as [typeof import('../sshExecAuth'), typeof import('../sshCredential')];
-  const lines: ReadonlyArray<readonly [string, string]> = [['~/.ssh/id_work', '~/.ssh/id_work'], ['"C:\\Users\\Jo Doe\\.ssh\\id work"', 'C:\\Users\\Jo Doe\\.ssh\\id work']];
+  const lines: ReadonlyArray<readonly [string, string]> = [['~/.ssh/id_work', '~/.ssh/id_work'], ['"C:\\Users\\me\\Jo Doe\\.ssh\\id work"', 'C:\\Users\\me\\Jo Doe\\.ssh\\id work']];
   for (const [at, [line, value]] of lines.entries()) {
     const details = importedWith(at, line);
     await seedEntry(storage, details, {});
