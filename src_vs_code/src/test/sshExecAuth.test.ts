@@ -1,6 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { loadWithVscode } from './vscodeStub';
+import { loadEachWithVscode, loadWithVscode } from './vscodeStub';
+import { parseSshConfig } from '../importFormats';
+import { buildSshExecArgv } from '../sshExecCommand';
+import { ACCOUNT, memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { ExecAuth } from '../sshExecAuth';
 import { pinRefusalFor } from '../pinGate';
@@ -237,4 +240,32 @@ test('B6: a stopped value of the entry that was asked for says no second entry',
   const own = refused(await withCredential({ ...BORROWED, ownerName: ENTITY.name, ownerId: ENTITY.id })('/store'));
   assert.equal(own.second, undefined);
   assert.equal(own.message, pinRefusalFor('deploy key'), 'the message does not change');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * K1 (E1.6, M8 (6a)): an imported IdentityFile reaches `-i` unchanged. M8 compared this by hand; this runs it.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The entry the import makes from one Host block whose IdentityFile line is `line`. */
+function importedWith(at: number, line: string): EntityMetadata {
+  const imported = parseSshConfig(`Host box${at}\n  HostName box${at}.example.com\n  User dev\n  IdentityFile ${line}\n`).entities[0];
+  return { ...imported.details, id: `imp${at}`, name: imported.name } as EntityMetadata;
+}
+
+test('K1: an entry the import made from a Host block with an IdentityFile line is a keyPath credential, and the word after -i is the line\'s value, byte for byte', async () => {
+  const stub = { window: {} };
+  const storage = memoryStorage(stub);
+  const [auth, credential] = loadEachWithVscode(['../sshExecAuth', '../sshCredential'], stub) as [typeof import('../sshExecAuth'), typeof import('../sshCredential')];
+  const lines: ReadonlyArray<readonly [string, string]> = [['~/.ssh/id_work', '~/.ssh/id_work'], ['"C:\\Users\\Jo Doe\\.ssh\\id work"', 'C:\\Users\\Jo Doe\\.ssh\\id work']];
+  for (const [at, [line, value]] of lines.entries()) {
+    const details = importedWith(at, line);
+    await seedEntry(storage, details, {});
+
+    const source = await credential.resolveSshCredential(storage, ACCOUNT, details);
+    assert.deepEqual(source, { kind: 'keyPath', path: value, warning: undefined }, `the credential is the keyPath branch: ${JSON.stringify(source)}`);
+    const resolved = await auth.resolveExecAuth(storage, ACCOUNT, details, '/unused');
+    assert.ok(resolved.ok && resolved.keyPath === value, JSON.stringify(resolved));
+    const argv = buildSshExecArgv(details, resolved.keyPath, 'id', resolved.auth) ?? [];
+    assert.equal(argv[argv.indexOf('-i') + 1], value, `the word after -i is the line's value: ${argv.join(' ')}`);
+  }
 });
