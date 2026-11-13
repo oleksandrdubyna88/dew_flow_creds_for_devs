@@ -59,24 +59,24 @@ async function legF(rig, check) {
 /** `bridges/known_hosts` read-only: the call is refused (R7) before any spawn, because an `accept-new` that cannot write goes on and records nothing. */
 async function readOnlyLeg(rig, check) {
   if (typeof process.getuid === 'function' && process.getuid() === 0) {
-    console.log('skip  (f) read-only bridges/known_hosts — running as root, which can write a 0444 file');
+    console.log('skip  (f) read-only bridges/known_hosts — running as root, which can write a 0400 file');
     return;
   }
   fs.mkdirSync(path.dirname(knownHostsOf(rig)), { recursive: true });
   fs.appendFileSync(knownHostsOf(rig), '');
-  fs.chmodSync(knownHostsOf(rig), 0o444);
+  fs.chmodSync(knownHostsOf(rig), 0o400);
   const spawns = rig.spawns;
   try {
     const result = await R.production(rig, { destination: noDest({ port: 22 }), keyPath: rig.key('dest_key') });
     check('(f): bridges/known_hosts made read-only: the call is refused (R7) with zero spawns', result.refused !== undefined && result.refused.code === 'internal' && rig.spawns === spawns, JSON.stringify(result.refused));
     const started = await R.sshd(rig, 'f-record', { hostKey: 'host_dest', authorized: 'authorized_dest', address: '127.0.0.2' });
     const readOnly = rig.key('read-only-known-hosts');
-    fs.writeFileSync(readOnly, '', { mode: 0o444 });
+    fs.writeFileSync(readOnly, '', { mode: 0o400 });
     const done = await R.control(rig, ['-F', '/dev/null', '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${readOnly}`, '-o', 'BatchMode=yes', '-i', rig.key('dest_key'), '-p', String(started.port), `${R.ME}@127.0.0.2`, 'true']);
     console.log(`record (f): a hand-written accept-new call with a read-only known-hosts file ${done.code === 0 ? 'LOGGED IN' : `failed (${done.code})`}, and ${fs.statSync(readOnly).size > 0 ? 'wrote' : 'wrote no'} line`);
     await endChild(started.sshd);
   } finally {
-    fs.chmodSync(knownHostsOf(rig), 0o644);
+    fs.chmodSync(knownHostsOf(rig), 0o600);
   }
 }
 

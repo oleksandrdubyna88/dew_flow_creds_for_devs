@@ -1,6 +1,6 @@
 # PLAN — E1.6 spec: SSH execution containment — what each leg of a bridged `ssh` offers, and to whom
 
-> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code; not built.**
+> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 on the owner's Windows host is still owed before the merge.**
 > **Revised the same day after two reviews of `a30faed7` (an Opus judge and a Fable security judge):** the user rule, the host rule and the
 > equal `Host` words, first contact that cannot be written, the `%` rule, the pin line's spelling, and the tests and mutations for them. The
 > decisions of that day are in §S6.10.
@@ -342,8 +342,10 @@ Host *
   `Host` words, and `ssh` keeps them apart, because it matches the text before any address normalisation (measured with `-G` on 10.2p1, 2026-11-13).
 
 **A relative typed key path. [C]** A key path that is neither absolute nor starts with `~` is read by `ssh` against the call folder, the spawn's
-`cwd`, on a bridge. Off a bridge, it is read against the extension host's own working folder. So on a bridge it **fails at `ssh`** (`no such
-identity`, or `Permission denied`), and no other file is loaded. It is not refused before the spawn, and the refusal list is unchanged. The help
+`cwd`, on a bridge. Off a bridge, it is read against the extension host's own working folder. So on a bridge a plain relative path **fails at
+`ssh`** (`no such identity`, or `Permission denied`), because the call folder holds `c.conf` alone. *Corrected 2026-11-13 (CodeRabbit):* the
+path rule does not refuse `..`, so a typed `../../../id` climbs from `keys/<pid>/<call>/` into the storage folder, and a file found there would
+be loaded. The path is the person's own typing, never the agent's. It is not refused before the spawn, and the refusal list is unchanged. The help
 (E4) tells the person to type an absolute path. The parent's §4.9 *fails at `ssh`* list says so (2026-11-13).
 
 **Two legs with one `Host` word are refused. [C]** The words are compared in lower case, after the brackets are off, among the destination and
@@ -849,14 +851,16 @@ B6 leaves the old bridged tests red (the review judged this acceptable).
 **Test counts.** 7863 tests before (7826 pass, 37 skipped). 7923 after the build. 7930 after the fix-forward: 7893 pass, 0 fail, 37 skipped.
 Typecheck, lint, ratchet, public hygiene, the leftovers check and plan-lifecycle are clean.
 
-**Mutations (§S6.6).** Each was run by a script that applied it, compiled, ran 12 test files and restored the file. Each failed the case the
-spec names, and on these points more than it names:
+**Mutations (§S6.6), unit halves.** Each was run by a script that applied it, compiled, ran 12 test files and restored the file. Each one run
+failed the unit case the spec names, and on these points more than it names:
 - T2: dropping one password line alone fails F2 and L1, not "F2 and leg 0 only".
 - T22a survived at first: `bridgedConfigText` refused the same pair after a write. W4 now asserts that no key file was asked for, and T22a then
   fails W4.
 - T8 fails L9 only because L9 now sets `SSH_ASKPASS` and `DISPLAY`.
 - The other 31 mutations, T1-T31 and a K1 mutation, failed as named.
-- T15 needs the itest and was not run. V1 has no mutation.
+- T15 has only an itest half. V1 has no mutation.
+- **The itest halves** (T1, T2, T3, T6, T7, T9, T10, T12, T13, T15, T16, T18, T21, T24, T26, T28, T30) are being run on CI from the branch
+  `tmp/e16-itest-mutations` (workflow dispatch; the PR branch is untouched). Their table goes here and into the PR before the merge.
 
 Eight more mutations of the fix-forward each fail their own case: DISPLAY on win32, `readText`, `afterRun`, `reportFirstContact`, R9, the `%`
 rule, the field sentences and the partial key.

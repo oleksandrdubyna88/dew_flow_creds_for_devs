@@ -114,9 +114,10 @@ async function received(scope, exe, build, markerPath) {
   const { args, env } = build(server.address().port);
   const client = launch(scope, exe, args, { env });
   try {
-    await Promise.race([client.done, new Promise((resolve) => setTimeout(resolve, 20_000))]);
+    // A client that hangs after the LOCAL INFILE request must FAIL the leg, not pass it with empty bytes: the timeout is reported.
+    const ended = await Promise.race([client.done.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 20_000))]);
     await new Promise((resolve) => setTimeout(resolve, 200));
-    return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, stderr: client.stderr };
+    return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, timedOut: !ended, stderr: client.stderr };
   } finally {
     await endChild(client);
     await new Promise((resolve) => server.close(resolve));
@@ -133,17 +134,17 @@ async function legM(scope, dir, name, exe, product) {
   const connect = (port) => ['-h', '127.0.0.1', '-P', String(port), '-u', 'u'];
   const manual = (flag) => (port) => ({ args: [...connect(port), flag, '-e', 'select 1'], env: base });
   const control = await received(scope, exe, manual('--local-infile=1'), marker);
-  check(`(m) ${name} control: with --local-infile=1 the server receives the marker's bytes`, control.bytes === MARKER_TEXT, JSON.stringify(control));
+  check(`(m) ${name} control: with --local-infile=1 the server receives the marker's bytes`, !control.timedOut && control.bytes === MARKER_TEXT, JSON.stringify(control));
   if (name === 'oracle') {
     const gap = await received(scope, exe, manual('--local-infile=0'), marker);
-    check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', gap.bytes === MARKER_TEXT, JSON.stringify(gap));
+    check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', !gap.timedOut && gap.bytes === MARKER_TEXT, JSON.stringify(gap));
   }
   const productionBuild = (port) => {
     const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true });
     return { args: launchOf.args, env: product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home, MYSQL_HOME: dir }, 'linux', launchOf.env) };
   };
   const production = await received(scope, exe, productionBuild, marker);
-  check(`(m) ${name}: with the bridged arguments, the same option file and the allow-list environment, the server receives none of the bytes`, production.bytes === '' && production.requested, JSON.stringify(production));
+  check(`(m) ${name}: with the bridged arguments, the same option file and the allow-list environment, the server receives none of the bytes`, !production.timedOut && production.bytes === '' && production.requested, JSON.stringify(production));
 }
 
 async function main(scope) {

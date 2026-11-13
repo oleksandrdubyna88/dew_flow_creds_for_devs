@@ -6,6 +6,15 @@ import { LinksWorld, linksWorld } from './bridgeLinksWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { Ask, Door, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 import { loadWithVscode } from './vscodeStub';
+import { BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
+
+/** The allow-list names this process holds, per platform: what `bridgedSshEnv` takes from it (on win32 under any letter case). */
+function allowListedNames(): string[] {
+  const names: readonly string[] = process.platform === 'win32' ? BRIDGED_ENV_WINDOWS : BRIDGED_ENV_POSIX;
+  const keys = Object.keys(process.env);
+  return names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
+}
+
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
@@ -189,7 +198,7 @@ test('Q4 (E1.6): the environment of a bridged database client is the allow-list 
     try {
       assert.equal((await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'))).status, 200);
       assert.equal((await send(viaMain(ww), query('/v1/alias/query'))).status, 200);
-      const allowed = ['PATH', 'HOME'].filter((name) => process.env[name] !== undefined);
+      const allowed = allowListedNames();
       assert.deepEqual(Object.keys(qw.spawns[0].env).sort(), [...allowed, 'PGPASSWORD'].sort(), 'through the bridge');
       assert.equal(qw.spawns[1].env.PGOPTIONS, '-c search_path=somewhere-else', 'through the main port: the whole environment, as today');
     } finally {

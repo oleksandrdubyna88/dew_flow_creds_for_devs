@@ -3909,6 +3909,10 @@ flips it). The pieces, in the order a call meets them:
   After the run the journal gets J1 for each line added to that file (`first contact through a Remote Bridge: <name> <algorithm> <fingerprint> was added to bridges/known_hosts`) and J2 for
   each first-contact leg whose name is in neither that file nor the person's own (so the next call would accept any key). The person's own `known_hosts` is read, never written. What is
   promised is *opened before, reported after*: a write that fails later in the call is not prevented, because `ssh` itself goes on after it.
+  One case of that is known and open on Windows. When the storage folder is a UNC path (`\\server\share\…`, for example a roaming profile),
+  `ssh` 8.7+ reads the `\\` inside the quoted value as one `\`. The pre-spawn open, made by Node, passes, but `ssh` cannot write the file, so the
+  first contact is not recorded and only J2 reports it. This was measured with `-G` on 10.2p1 and is not yet measured on Windows. It is owed
+  before any switch-on build (E1.6 spec §S6.10).
 - *The database client on a bridge* (`dbCliLauncher.ts`, `agentUseActions.ts`). `buildDbQueryLaunch(..., { bridged: true })` puts `-X` first on `psql` and `--no-defaults` first on `mysql` (an option
   file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME` and its own
   password variable. Off a bridge both are today's.

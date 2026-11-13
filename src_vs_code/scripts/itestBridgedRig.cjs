@@ -85,7 +85,7 @@ async function makeRig(section, check) {
   fs.writeFileSync(rig.key('authorized_hop'), fs.readFileSync(rig.key('hop_key.pub'), 'utf8'));
   fs.writeFileSync(rig.key('authorized_dest'), fs.readFileSync(rig.key('dest_key.pub'), 'utf8'));
   fs.writeFileSync(rig.key('askpass.sh'), `#!/bin/sh\nprintf '%s\\n' "$1" >> "${rig.key('askpass.log')}"\nprintf 'not-the-password\\n'\n`, { mode: 0o700 });
-  rig.base = { storageDir: rig.storageDir, home: rig.home, platform: process.platform, note: (message) => void rig.notes.push(message) };
+  rig.base = { storageDir: rig.storageDir, home: rig.home, platform: process.platform, note: (message) => { rig.notes.push(message); } };
   return rig;
 }
 

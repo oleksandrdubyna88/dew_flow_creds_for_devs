@@ -155,7 +155,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   if (options.keyReadThrows === true) {
     storage.getPrivateKey = () => Promise.reject(new Error('the keychain would not answer'));
   }
-  const realWriter = call.bridgedSshConfigWriter({ storage, storageDir, home, note: (message) => void notes.push(message) });
+  const realWriter = call.bridgedSshConfigWriter({ storage, storageDir, home, note: (message) => { notes.push(message); } });
   const counted = (writer: BridgedSshConfigWriter): BridgedSshConfigWriter => (request) => {
     configWrites += 1;
     return writer(request);

@@ -200,7 +200,7 @@ function pathRefusal(input: ConfigInput): string | undefined {
     ['known-hosts', input.firstContactFile],
     ['known-hosts', input.personKnownHosts],
   ];
-  return input.hops.map(hopPathRefusal).find((field) => field !== undefined)
+  return input.hops.map((hop, at) => hopPathRefusal(hop, at)).find((field) => field !== undefined)
     ?? checks.find(([, value]) => value !== undefined && unsafeSshConfigValue(value))?.[0];
 }
 

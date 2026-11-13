@@ -116,14 +116,14 @@ async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfi
     ].join('\n'),
   );
   const sshd = launch(scope, SSHD, ['-d', '-e', '-f', config]);
-  const listening = new RegExp(String.raw`Server listening on ${regexpLiteral(address)} port ${port}`);
+  const listening = new RegExp(`Server listening on ${regexpLiteral(address)} port ${port}`);
   const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
   return failure === undefined ? { sshd, port, knownHosts } : { sshd, failure };
 }
 
 /** `text` as a regular expression that matches it literally: every metacharacter, the backslash included, is escaped. */
 function regexpLiteral(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /**

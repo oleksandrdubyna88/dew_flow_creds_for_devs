@@ -16,6 +16,14 @@ import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
 import { WslRelayManager } from '../wslRelayManager';
 import { BUSY_PLACE } from '../aliasThrottle';
 import { recordingLog } from './liveColourStorage';
+import { BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
+
+/** The allow-list names this process holds, per platform: what `bridgedSshEnv` takes from it (on win32 under any letter case). */
+function allowListedNames(): string[] {
+  const names: readonly string[] = process.platform === 'win32' ? BRIDGED_ENV_WINDOWS : BRIDGED_ENV_POSIX;
+  const keys = Object.keys(process.env);
+  return names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
+}
 
 /**
  * What a Remote Bridge may be told about the entries an in-scope entry LINKS to (E1.3 epoch 3, L1-L5, A.3.6).
@@ -376,7 +384,7 @@ test('L9: the environment of a bridged key call is the allow-list, with no askpa
   try {
     await both({}, {}, async ({ lw, ww }) => {
       assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
-      const allowed = ['PATH', 'HOME'].filter((name) => process.env[name] !== undefined);
+      const allowed = allowListedNames();
       assert.deepEqual(Object.keys(lw.runs[0].env).sort(), allowed.sort());
       assert.equal((await body(viaMain(ww), ww)).status, 200);
       assert.equal(lw.runs[1].env.BRIDGE_TEST_SECRET, 'a-secret-of-the-test-process');
