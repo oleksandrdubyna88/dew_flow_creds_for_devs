@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.4...extension-v1.22.0) (2026-11-13)
+
+
+### Features
+
+* **tree:** a folder has a colour; its Creds: and Creds SSH: terminals and its row wear it ([#363](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/363)) ([0922493](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0922493b1b0b026d1e5afa7efa4023458a6cf5ba))
+
 ## [1.21.4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.3...extension-v1.21.4) (2026-11-12)
 
 
