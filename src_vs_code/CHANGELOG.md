@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] — 2026-11-13 — A folder has a colour, and its terminals wear it
+
 ### Added — a folder has a colour, and its terminals wear it
 
 The first terminal that you open from an entry in a folder gives that folder a colour, once. It is the colour of the dependency
@@ -31,6 +33,7 @@ What you can do and what you will see:
 One limit stays, as before for every write of this extension: a window that has not yet received another window's write can pick the
 same colour for two folders, and, rarely, drop the other window's write (a colour, or any other edit made in that moment). A lost
 colour is picked again at the next terminal. The help describes the colour in all five languages.
+
 ## [1.21.4] — 2026-11-12 — Security — the key file of an agent's SSH call no longer carries the id of an entry
 
 ### Changed — security: the path of a key file that an agent's SSH call writes holds no id of an entry
