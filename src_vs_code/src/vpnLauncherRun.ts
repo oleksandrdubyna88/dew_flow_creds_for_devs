@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { DiagnosticWriter } from './diagnosticWriter';
+import { ensureFolderColor, noteColourFailure } from './folderColors';
 import { StorageManager } from './storageManager';
 import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
@@ -54,6 +56,10 @@ export interface VpnRunContext {
   readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
   /** The person's road host, set by their Start only (E2.S1). Absent for an agent's `creds_vpn_up`, which keeps E1's refusal of a linked launcher (E2-D2). */
   readonly sshRoad?: SshRoad;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves (`noteColourFailure`). */
+  readonly log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed: called once when this start wrote the launcher's folder's FIRST colour, because that save fires no event. */
+  readonly onMutated: () => void;
 }
 
 /**
@@ -76,6 +82,24 @@ export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetada
     void vscode.window.showInformationMessage(launcherStopNote(launcher.name));
     return false;
   }
+  if (!(await foldersColourSaved(ctx, launcher))) {
+    return false;
+  }
+  return launchOnItsRoad(ctx, launcher);
+}
+
+/**
+ * The launcher's OWN folder gets its colour before every gate, so the rule "no await between `configFor` and the send" stands.
+ * The save is an await like any other on a start's path: `false` when the request has gone meanwhile, so a client that left during
+ * it gets no trust question, no chain and no line.
+ */
+async function foldersColourSaved(ctx: VpnRunContext, launcher: EntityMetadata): Promise<boolean> {
+  await ensureFolderColor(ctx.storage, ctx.accountId, launcher.id, ctx.onMutated).catch(noteColourFailure(ctx.log));
+  return !requestGone(ctx.startGate);
+}
+
+/** The local road for no link or an agent's start, the linked road otherwise. */
+function launchOnItsRoad(ctx: VpnRunContext, launcher: EntityMetadata): Promise<boolean> {
   const link = linkOf(ctx, launcher);
   return ctx.sshRoad === undefined || link.kind === 'none' ? runLocalLauncher(ctx, launcher) : runLinkedLauncher(ctx, ctx.sshRoad, launcher, link);
 }

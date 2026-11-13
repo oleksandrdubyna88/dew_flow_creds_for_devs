@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a folder has a colour, and its terminals wear it
+
+The first terminal that you open from an entry in a folder gives that folder a colour, once. It is the colour of the dependency
+palette that the fewest folders wear, out of twelve. The row of the folder wears it. So does the icon of its terminals,
+`Creds: <folder> / <entry>` and `Creds SSH: <folder> / <entry>`. VS Code cannot colour a part of a terminal name, so the icon is
+where the colour shows.
+
+What you can do and what you will see:
+
+- **Choose a colour yourself.** *Edit* on a folder has a **Colour** row with twelve swatches. The colour that the folder wears is
+  marked. Click a swatch and Save to change it. A Save in which you clicked no swatch writes no colour: a rename keeps a colour that
+  the auto-pick or another window wrote while the form was open.
+- **The folder has no colour yet.** The **Colour** row says which colour its first terminal would get now, and that this can change
+  before then. Choose one to set it now.
+- **A terminal that is already open keeps its colour.** VS Code fixes the colour when the terminal is created. A new colour shows on
+  the terminals that you open later.
+- **There is no way back to no colour.** You can change it to another one.
+- **No colour.** Other terminals (`Creds: before …`, `Creds run: …`, `Creds VPN: …`, `env check: …`), entries at the root and the Trash
+  get none, and a folder in the Trash has no **Colour** row. A folder that was coloured before it went into the Trash keeps showing it.
+- **Two ways of moving a folder do not carry the colour.** That is *Export / Share Externally…* and *Import from External…*. An
+  imported folder gets a colour at its first terminal. Sync, backup and *Import / Restore* keep it.
+
+One limit stays, as before for every write of this extension: a window that has not yet received another window's write can pick the
+same colour for two folders, and, rarely, drop the other window's write (a colour, or any other edit made in that moment). A lost
+colour is picked again at the next terminal. The help describes the colour in all five languages.
 ## [1.21.4] — 2026-11-12 — Security — the key file of an agent's SSH call no longer carries the id of an entry
 
 ### Changed — security: the path of a key file that an agent's SSH call writes holds no id of an entry

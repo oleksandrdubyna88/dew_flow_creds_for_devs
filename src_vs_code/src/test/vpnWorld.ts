@@ -6,6 +6,8 @@ import { endedStage } from '../requestLife';
 import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import { EntityMetadata, TreeNode } from '../types';
 import { ownedDir, type Scope } from '../../scripts/lib/leftovers.cjs';
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { colouringStorage, recordingLog } from './liveColourStorage';
 
 /**
  * A VPN start under the `vscode` stub — the world `dependencyChain.test.ts` and
@@ -28,6 +30,8 @@ export interface FakeTerminal {
   shellPath?: string;
   /** The environment the terminal was CREATED with (a password road's askpass variables), or `undefined`. */
   env?: Record<string, string>;
+  /** The `color` the terminal was created with; the property is ABSENT when the options carried none (E1.S3). */
+  color?: { id: string };
   executed: string[];
   sent: string[];
   /** How many times the terminal was brought to the front. */
@@ -115,6 +119,11 @@ export interface WorldOptions {
   onSend?: (name: string, line: string) => void;
 }
 
+/** `vscode.ThemeColor` as the world sees it: it keeps the id it was built with. */
+class ThemeColorStub {
+  constructor(readonly id: string) {}
+}
+
 export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}): World {
   const terminals: FakeTerminal[] = [];
   const [warnings, infos]: [string[], string[]] = [[], []];
@@ -127,8 +136,8 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
   };
   let listed: LiveTerminal[] = [];
   const reads = { disposals: 0, afterDispose: 0 };
-  const makeTerminal = (o: { name: string; shellPath?: string; env?: Record<string, string> }): LiveTerminal => {
-    const record: FakeTerminal = { name: o.name, shellPath: o.shellPath, env: o.env, executed: [], sent: [], shown: 0, disposed: 0 };
+  const makeTerminal = (o: { name: string; shellPath?: string; env?: Record<string, string>; color?: { id: string } }): LiveTerminal => {
+    const record: FakeTerminal = { name: o.name, shellPath: o.shellPath, env: o.env, executed: [], sent: [], shown: 0, disposed: 0, ...('color' in o ? { color: o.color } : {}) };
     terminals.push(record);
     const terminal: LiveTerminal & { creationOptions: unknown } = {
       name: o.name,
@@ -190,6 +199,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
     listed = [...listed, live[name]];
   }
   const vscode = {
+    ThemeColor: ThemeColorStub,
     env: { remoteName: undefined, shell: undefined },
     window: {
       get terminals(): LiveTerminal[] {
@@ -199,7 +209,7 @@ export function world(exitCodes: Record<string, number>, opts: WorldOptions = {}
       set terminals(list: LiveTerminal[]) {
         listed = list;
       },
-      createTerminal: (o: { name: string; shellPath?: string; env?: Record<string, string> }): LiveTerminal => {
+      createTerminal: (o: { name: string; shellPath?: string; env?: Record<string, string>; color?: { id: string } }): LiveTerminal => {
         if (opts.failCreate?.test(o.name) === true) {
           throw new Error(`no terminal for ${o.name}`);
         }
@@ -328,11 +338,16 @@ export function storageOf(
   config: () => Promise<string | undefined> = () => Promise.resolve(STORED_CONFIG),
   placed: Record<string, TreeNode> = {},
 ) {
-  return {
-    getNode: (_account: string, id: string): TreeNode | undefined =>
-      nodes[id] === undefined ? folderIn(placed, id) : { id, name: nodes[id].name, type: 'entity', details: nodes[id], parentId: placed[id]?.id },
-    getVpnConfig: config,
-  };
+  const getNode = (_account: string, id: string): TreeNode | undefined =>
+    nodes[id] === undefined ? folderIn(placed, id) : { id, name: nodes[id].name, type: 'entity', details: nodes[id], parentId: placed[id]?.id };
+  // The colour write (E1.S3): the entries and the folders they sit in, and a folder's new colour goes back into `placed`.
+  const colouring = colouringStorage({
+    all: () => [...Object.keys(nodes).map((id) => getNode('a1', id)), ...new Set(Object.values(placed))].filter((node): node is TreeNode => node !== undefined),
+    replace: (node) => {
+      Object.entries(placed).filter(([, folder]) => folder.id === node.id).forEach(([entryId]) => (placed[entryId] = node));
+    },
+  });
+  return { getNode, getVpnConfig: config, getNodes: colouring.getNodes, updateNodeFields: colouring.updateNodeFields, written: colouring.written, failNextWrite: colouring.failNextWrite };
 }
 
 export function memoryTrust() {
@@ -369,18 +384,21 @@ export type RunVpn = (
   dir: string,
   k: unknown,
   trust: unknown,
-  startGate?: AbortSignal,
-  lateAnswer?: (what: string) => void,
-  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
-  sshRoad?: unknown,
+  log: DiagnosticWriter,
+  onMutated: () => void,
+  seams?: { startGate?: AbortSignal; lateAnswer?: (what: string) => void; standingPrompt?: (prompt: PromiseLike<unknown>) => void; sshRoad?: unknown },
 ) => Promise<boolean>;
 
 export interface StartOptions {
   action?: 'start' | 'stop';
   /** The agent request's signal — absent for the person's own click. */
   startGate?: AbortSignal;
-  /** The person's road host (`SshRoad`), handed to `runVpn` as its last argument: absent is the agent's start (E2-D2). */
+  /** The person's road host (`SshRoad`), handed to `runVpn` in its seams object: absent is the agent's start (E2-D2). */
   sshRoad?: unknown;
+  /** The diagnostic log, handed to `runVpn` as its seventh argument; a recording one when absent. */
+  log?: DiagnosticWriter;
+  /** The tree repaint, handed to `runVpn` as its eighth argument; one that does nothing when absent. */
+  onMutated?: () => void;
   storage?: ReturnType<typeof storageOf>;
   /** The trust store the start reads and writes; a fresh one when absent. */
   trust?: ReturnType<typeof memoryTrust>;
@@ -390,6 +408,16 @@ export interface StartOptions {
    * an extension that was active before the click (`registerRunCommands` subscribes it at activation).
    */
   shellEvents?: () => void;
+}
+
+/** The tree repaint a start is handed: the test's own, else one that does nothing. */
+function repaintOf(o: StartOptions): () => void {
+  return o.onMutated ?? ((): void => undefined);
+}
+
+/** The log a start is handed: the test's own, else one that records. */
+function logOf(o: StartOptions): DiagnosticWriter {
+  return o.log ?? recordingLog().log;
 }
 
 /**
@@ -410,7 +438,7 @@ export async function startVpn(scope: Scope, w: World, nodes: Record<string, Ent
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
   const storage = o.storage ?? storageOf(nodes);
   try {
-    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), o.startGate, undefined, undefined, o.sshRoad), dir };
+    return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => void (w.userActivity += 1) }, trustOf(o), logOf(o), repaintOf(o), { startGate: o.startGate, sshRoad: o.sshRoad }), dir };
   } catch (error) {
     return { started: false, dir, ended: requestsEnd(error) };
   }

@@ -16,6 +16,7 @@ import type { AgentDoors } from '../agentDoors';
 /** No door is open: every field of the record, written out. */
 const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false, standingConsent: false };
 import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end — also when one of them fails. */
 const scope = cleanupScope();
@@ -111,6 +112,7 @@ async function click(row: Row, inputs: (string | undefined)[], protect = true): 
     register: (command, handler) => handlers.set(command, handler),
     storage,
     storageDir: path.join(REAL_DIR(), 'creds-test'),
+    log: recordingLog().log,
     doorsAt: (): AgentDoors => NO_DOORS,
     mutated: () => undefined,
     vaultKeys: { noteUserActivity: () => undefined },
@@ -333,7 +335,7 @@ test('Start VPN writes the OPENED config where the tunnel reads it, after one PI
     await seedEntry(storage, details, { 'VPN configuration': await locked(VPN) });
     const { writeVpnConfig } = loadWithVscode<typeof import('../vpnLauncherRun')>('../vpnLauncherRun', stub);
 
-    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: memoryTrust() }, 'prod.conf');
+    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: memoryTrust(), log: recordingLog().log, onMutated: () => undefined }, 'prod.conf');
 
     assert.equal(written === undefined ? undefined : fs.readFileSync(written, 'utf8'), expected);
     assert.equal(s.boxes, 1);

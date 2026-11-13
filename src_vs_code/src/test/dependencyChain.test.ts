@@ -7,6 +7,7 @@ import { chainTerminalTitle } from '../terminalTitles';
 import { EntityMetadata } from '../types';
 import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, rootTitle, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -84,7 +85,7 @@ test('a launcher in the Trash is not run — the built-in launcher is used, with
     './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
   });
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
-  await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust());
+  await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log, () => undefined);
   assert.ok(w.warnings.some((t) => /The launcher of "ops relay stage" no longer exists/.test(t)), w.warnings.join('\n'));
   // The trashed launcher's own title would name the Trash folder, so the check looks for the entry half under any folder.
   assert.deepEqual(w.terminals.filter((t) => t.name.endsWith('start openvpn')).map((t) => t.name), [], 'the trashed launcher never ran');
@@ -133,7 +134,7 @@ test('the chain terminal closed between two steps: the second is refused, never 
     './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
   });
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: vpn.name, details: vpn } };
-  const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
+  const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust(), recordingLog().log, () => undefined);
 
   assert.equal(started, false);
   assert.deepEqual(terminalNamed(w, chainTerminalTitle('ops relay stage')).executed, ['first-step']);

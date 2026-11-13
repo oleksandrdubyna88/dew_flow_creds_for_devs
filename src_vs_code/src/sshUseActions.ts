@@ -9,6 +9,7 @@ import {
   errorBody,
   statusForErrorCode,
 } from './brokerProtocol';
+import { DiagnosticWriter } from './diagnosticWriter';
 import { StorageManager } from './storageManager';
 import { CallTarget, OverSsh, OverSshCall, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
@@ -72,6 +73,10 @@ export interface SshUseDeps {
    * it is not invisible: the route refuses as `agent-has-no-key` while the agent is serving it.</p>
    */
   servesKeyForEntity?(entity: EntityMetadata): boolean;
+  /** The diagnostic log, for the one line a failed folder-colour write leaves when the terminal opens. */
+  log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed, for the terminal this action opens when it writes the folder's first colour. */
+  onMutated(): void;
   /**
    * E1.6's writer of the per-call ssh_config a bridged `ssh` runs under (parent §4.9). ABSENT on the partial-E1 tree, and that absence is the
    * lock between partial E1 and E2 (`unguardedBridge`): a bridged call is refused before any slot, key or spawn. The parameter is E1.6's to
@@ -375,6 +380,8 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
       // cleanup on close — and, since this window may be attached to WSL, the same remote-window
       // decision and the same answer about whether the agent already holds the key.
       const opened = await connectEntity(ctx.accountId, entity, {
+        log: deps.log,
+        onMutated: deps.onMutated,
         storage: deps.storage,
         storageDir: deps.storageDir,
         agentServesKey: deps.servesKeyForEntity?.(entity) === true,
@@ -450,6 +457,10 @@ export function sshDepsFor(parts: {
   agentServer: { signal: AbortSignal; acquireExecSlot(): (() => void) | undefined; note(message: string): void };
   sshAgent: { socketPath: string | undefined; servesKeyForEntity(entity: EntityMetadata): boolean };
   relays: WslRelayManager;
+  /** The diagnostic log (a failed folder-colour write leaves one line in it). */
+  log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed (the first colour a terminal gives its folder). */
+  onMutated(): void;
 }): SshWiredDeps {
   const deps: SshUseDeps = {
     storage: parts.storage,
@@ -464,6 +475,8 @@ export function sshDepsFor(parts: {
     // it needs the same two facts: which window this is, and whether the agent already holds this
     // key. Without the second it would ask for a route that always refuses as `agent-has-no-key`.
     relays: parts.relays,
+    log: parts.log,
+    onMutated: parts.onMutated,
     servesKeyForEntity: (entity): boolean => parts.sshAgent.servesKeyForEntity(entity),
   };
   return { ...deps, overSsh: execOverSsh(deps) };

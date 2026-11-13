@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { EntityKind, FolderType, TreeNode } from './types';
+import { DepColorKey, depColorThemeId } from './depColors';
 import { assertNever, isEntityKind, resolveKind } from './entityKind';
 import { accessLevel, mcpIconFile } from './mcpIcons';
 import { resolveMcpInTree } from './mcpAccess';
@@ -91,8 +92,12 @@ const HISTORY_COLOR = new vscode.ThemeColor('credSshManager.historyIcon');
 /** Folders are painted dark orange so they never blend in with items. */
 export const FOLDER_COLOR = new vscode.ThemeColor('credSshManager.folderIcon');
 
-export function folderIcon(folderType: FolderType | undefined): vscode.ThemeIcon {
-  return new vscode.ThemeIcon(folderIconId(folderType), FOLDER_COLOR);
+/**
+ * A folder row's icon: its type's glyph, in the folder's own colour when it has one (`folderColorKeyOf`), else the
+ * one folder colour. The glyph does not depend on the colour. The trash row never calls this with a key.
+ */
+export function folderIcon(folderType: FolderType | undefined, colorKey?: DepColorKey): vscode.ThemeIcon {
+  return new vscode.ThemeIcon(folderIconId(folderType), colorKey === undefined ? FOLDER_COLOR : new vscode.ThemeColor(depColorThemeId(colorKey)));
 }
 
 /**

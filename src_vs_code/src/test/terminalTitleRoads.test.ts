@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
+import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
+import { recordingLog } from './liveColourStorage';
 import { EntityMetadata, TreeNode } from '../types';
 import { arrowWorld } from './arrowWorld';
 import { FOLDER_NODE, L, named, session, folderWorld, folderModals } from './folderWorld';
-import { noteOurSend, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, titleIn, world } from './vpnWorld';
+import { FakeTerminal, noteOurSend, ownerChain, rootTitle, startVpn, storageOf, terminalNamed, titleIn, world } from './vpnWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -178,4 +180,157 @@ test('the_script_terminal_carries_the_folder', async () => {
   assert.match(both[1].sent[0], /^bash /);
   assert.deepEqual(filesUnder(dir).map((f) => path.basename(f)), ['script-s1.sh']);
   assert.ok(both[1].sent[0].includes(dir), both[1].sent[0]);
+});
+
+// ---------- E: the folder's colour on the terminal (E1.S3) ----------
+
+const KEY = DEP_COLOR_KEYS[2];
+const COLOURED_OPS: TreeNode = { ...OPS, folderColor: KEY };
+
+/** The theme id a terminal wears, or `undefined` when the creation options carried no `color` at all. */
+const colourOf = (t: FakeTerminal): string | undefined => ('color' in t ? t.color?.id : undefined);
+
+test('the_arrows_terminal_wears_its_folder_colour', async () => {
+  const aw = arrowWorld({ parent: COLOURED_OPS }, [['alert', LINE]]);
+
+  await aw.run(alert());
+
+  assert.equal(colourOf(terminalNamed(aw, titleIn(OPS, 'alert'))), depColorThemeId(KEY));
+  const root = arrowWorld({}, [['alert', LINE]]);
+  await root.run(alert());
+  assert.equal('color' in terminalNamed(root, rootTitle('alert')), false, 'an entry at the root has no folder, so no colour');
+});
+
+test('the_first_arrow_colours_its_folder_once', async () => {
+  const aw = arrowWorld({ parent: OPS }, [['alert', LINE]]);
+
+  await aw.run(alert());
+
+  assert.equal(aw.colourWrites.length, 1);
+  assert.deepEqual(aw.colourWrites[0].change, { folderColor: DEP_COLOR_KEYS[0] });
+  assert.equal(aw.colourWrites[0].id, OPS.id);
+  assert.equal(colourOf(terminalNamed(aw, titleIn(OPS, 'alert'))), depColorThemeId(DEP_COLOR_KEYS[0]), 'and the terminal wears it');
+  await aw.run(alert());
+  assert.equal(aw.colourWrites.length, 1, 'a second arrow writes nothing');
+});
+
+test('the_first_arrow_repaints_the_tree_once_and_a_folder_with_a_colour_never', async () => {
+  const aw = arrowWorld({ parent: OPS }, [['alert', LINE]]);
+
+  await aw.run(alert());
+  assert.equal(aw.colourWrites.length, 1, 'the first arrow wrote the colour');
+  assert.equal(aw.refreshed.count, 1, 'and the tree repaints once, so the folder row shows it');
+  await aw.run(alert());
+  assert.equal(aw.refreshed.count, 1, 'a second arrow found a colour and wrote nothing: no repaint');
+
+  const wearing = arrowWorld({ parent: COLOURED_OPS }, [['alert', LINE]]);
+  await wearing.run(alert());
+  assert.equal(wearing.refreshed.count, 0, 'a folder that already wore a colour is not repainted');
+});
+
+test('a_failed_colour_write_repaints_nothing', async () => {
+  const aw = arrowWorld({ parent: OPS, colourWriteFails: new Error('the store is down') }, [['alert', LINE]]);
+
+  await aw.run(alert());
+
+  assert.equal(aw.refreshed.count, 0, 'nothing was saved, so there is nothing to repaint');
+});
+
+test('a_folder_run_repaints_the_tree_once_for_two_rows_of_one_uncoloured_folder', async () => {
+  const w = folderWorld([session('a'), session('b')]);
+
+  await w.click();
+
+  assert.equal(w.colourWrites.length, 1);
+  assert.equal(w.refreshed.count, 1);
+});
+
+test('the_launchers_start_repaints_the_tree_once_for_its_folder_colour', async () => {
+  const w = world({});
+  const nodes = ownerChain();
+  let repaints = 0;
+
+  const { started } = await startVpn(scope, w, nodes, { storage: storageOf(nodes, undefined, { start: folder('x', 'X') }), onMutated: () => void (repaints += 1) });
+
+  assert.equal(started, true, w.warnings.join('\n'));
+  assert.equal(repaints, 1);
+});
+
+test('a_folder_run_colours_the_folder_once_and_every_row_wears_it', async () => {
+  const w = folderWorld([session('a'), session('b')]);
+
+  await w.click();
+
+  assert.equal(w.colourWrites.length, 1, 'one write for two rows of one folder');
+  assert.deepEqual(w.colourWrites[0].change, { folderColor: DEP_COLOR_KEYS[0] });
+  for (const name of ['a', 'b']) {
+    assert.deepEqual(named(w, name).map(colourOf), [depColorThemeId(DEP_COLOR_KEYS[0])], name);
+  }
+  assert.match(w.infos[0], /^Typed 2 of 2 /);
+});
+
+test('the_launcher_wears_its_own_folders_colour', async () => {
+  // The VPN's folder Y already wears the first key; the launcher's folder X has none, so the launcher's start gives X the
+  // next one — and the launcher's terminal wears X's colour, never Y's.
+  const w = world({});
+  const X = folder('x', 'X');
+  const Y = { ...folder('y', 'Y'), folderColor: DEP_COLOR_KEYS[0] };
+  const nodes = ownerChain();
+  const storage = storageOf(nodes, undefined, { start: X, vpn: Y });
+
+  const { started } = await startVpn(scope, w, nodes, { storage });
+
+  assert.equal(started, true, w.warnings.join('\n'));
+  assert.equal(colourOf(terminalNamed(w, titleIn(X, 'start openvpn'))), depColorThemeId(DEP_COLOR_KEYS[1]));
+  assert.deepEqual(storage.written.map((write) => [write.id, write.change]), [['x', { folderColor: DEP_COLOR_KEYS[1] }]], 'only the launcher\'s folder was coloured');
+});
+
+test('the_script_terminal_wears_its_folder_colour', async () => {
+  const dir = ownedDir(scope, 'script');
+  const aw = arrowWorld({ parent: COLOURED_OPS, storageDir: dir });
+  const script: EntityMetadata = { id: 's1', name: 'sc', isSshEnabled: false, isScript: true, script: 'echo hi', scriptLanguage: 'bash' };
+
+  await aw.runScript(script);
+
+  assert.equal(colourOf(terminalNamed(aw, titleIn(OPS, 'sc'))), depColorThemeId(KEY));
+});
+
+test('a_failed_colour_write_still_opens_the_terminal', async () => {
+  const aw = arrowWorld({ parent: OPS, colourWriteFails: new Error('the store is down') }, [['alert', LINE]]);
+
+  await aw.run(alert());
+
+  const terminal = terminalNamed(aw, titleIn(OPS, 'alert'));
+  assert.deepEqual(terminal.sent, [LINE], 'the line was typed');
+  assert.equal('color' in terminal, false, 'into a terminal with no colour');
+  assert.deepEqual([aw.warnings, aw.infos], [[], []], 'no toast');
+  assert.equal(aw.logged.length, 1, 'one line in the diagnostic log');
+  assert.equal(aw.logged[0].source, 'folderColors');
+  assert.match(aw.logged[0].message, /the store is down/, 'it carries describeError\'s text');
+  assert.doesNotMatch(aw.logged[0].message, /ops|alert/, 'and names no folder or entry');
+  await aw.run(alert());
+  assert.equal(aw.colourWrites.length, 2, 'the next open tries again: nothing was stored');
+});
+
+test('a_failed_colour_write_does_not_stop_a_folder_run_or_a_launcher', async () => {
+  const run = folderWorld([session('a'), session('b')], { colourWriteFails: new Error('the store is down') });
+
+  await run.click();
+
+  assert.match(run.infos[0], /^Typed 2 of 2 /, 'both rows were typed');
+  assert.deepEqual(run.logged.map((line) => line.source), ['folderColors'], 'one line for the one failed write');
+  assert.equal(run.logged[0].message, 'a folder\'s colour could not be saved; its terminal opens without it: the store is down', 'which names no folder or entry');
+
+  const w = world({});
+  const X = folder('x', 'X');
+  const nodes = ownerChain();
+  const storage = storageOf(nodes, undefined, { start: X, vpn: X });
+  storage.failNextWrite(new Error('the store is down'));
+  const { log, lines } = recordingLog();
+
+  const { started } = await startVpn(scope, w, nodes, { storage, log });
+
+  assert.equal(started, true, w.warnings.join('\n'));
+  assert.equal('color' in terminalNamed(w, titleIn(X, 'start openvpn')), false, 'the launcher\'s terminal has no colour');
+  assert.deepEqual(lines.map((line) => line.source), ['folderColors']);
 });

@@ -3,6 +3,7 @@ import { asElement } from '../commandTargets';
 import { isCommandTrusted } from '../commandTrust';
 import { dependencyRequest, liveDetails, runDependenciesFirst, trustAll, withSshSteps } from '../dependencyRunHost';
 import { describeError } from '../describeError';
+import { ensureFolderColor, noteColourFailure } from '../folderColors';
 import {
   CHANGED_ROW,
   CLOSE_AND_RUN,
@@ -200,6 +201,7 @@ async function runChosen(host: RunCommandsHost, folder: Folder, plan: FolderPlan
 
 /** The run's one owner of the prepared sessions: prepare inside the `try`, type, and clean whatever was not handed over. */
 async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: FolderPlan, chosen: Chosen): Promise<void> {
+  await colourRows(host, folder, linesToType(plan, chosen.closing));
   const keyOfRow: KeyOfRow = (row) => entryTerminalKeyOf(host.storage, folder.accountId, row.id, row.name);
   const prepared: Prepared = { rows: new Map(), sessions: ownedSessions(), stopped: false };
   try {
@@ -212,6 +214,18 @@ async function prepareAndType(host: RunCommandsHost, folder: Folder, plan: Folde
   } finally {
     prepared.sessions.cleanAll();
     prepared.rows.clear();
+  }
+}
+
+/**
+ * The folder gets its colour before the first preparation, once per row to type and in row order (the first call writes, the
+ * others only read; a row moved meanwhile colours the folder its terminal opens in). It awaits nothing after the last
+ * preparation. A failed write never stops the run. `keyOf` is not re-read: it only FINDS terminals by title, which a
+ * colour does not change, and the keys that CREATE terminals come from `keyOfRow`, read fresh after this.
+ */
+async function colourRows(host: RunCommandsHost, folder: Folder, rows: readonly LineRow[]): Promise<void> {
+  for (const row of rows) {
+    await ensureFolderColor(host.storage, folder.accountId, row.id, host.onMutated).catch(noteColourFailure(host.log));
   }
 }
 

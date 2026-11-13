@@ -6,9 +6,11 @@ import {
   StoredAccount,
   TeamMember,
   isEntityMetadata,
+  isTreeNode,
   teamOthers,
 } from '../types';
 import { isBackupBundle } from '../backupBundleType';
+import { DEP_COLOR_KEYS } from '../depColors';
 
 const entity = {
   id: 'e1',
@@ -199,6 +201,7 @@ test('every group of isTreeNode refuses at least one value', () => {
     ['folder extras', { ...folder, isTrash: 'yes' }],
     ['folder extras', { ...folder, trashRetentionDays: 'thirty' }],
     ['folder extras', { ...folder, folderAsksForPin: 'yes' }],
+    ['folder extras', { ...folder, folderColor: 3 }],
     ['folder type', { ...folder, folderType: 'not-a-kind' }],
   ];
   for (const [group, value] of refused) {
@@ -207,4 +210,12 @@ test('every group of isTreeNode refuses at least one value', () => {
   assert.ok(guard(folder), 'and a plain folder is still admitted');
   assert.ok(guard({ ...folder, v: { deviceA: 1, deviceB: 2 } }), 'a real vector is admitted');
   assert.ok(guard({ ...folder, type: 'entity', details: { id: 'f1', name: 'n', isSshEnabled: false } }));
+});
+
+test('a_folder_colour_from_a_newer_build_is_kept', () => {
+  // The field is a string, not a DepColorKey, on purpose: a palette key minted by a newer build
+  // must not make this build reject the whole folder (and with it, on sync, the vault's tree).
+  const folder = { id: 'f1', name: 'Production', type: 'folder', parentId: null };
+  assert.ok(isTreeNode({ ...folder, folderColor: DEP_COLOR_KEYS[2] }), 'a key of this build is admitted');
+  assert.ok(isTreeNode({ ...folder, folderColor: 'depColor99' }), 'a key of a newer build is admitted');
 });

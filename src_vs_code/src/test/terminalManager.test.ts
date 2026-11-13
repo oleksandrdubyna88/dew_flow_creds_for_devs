@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 
@@ -16,6 +17,8 @@ type Manager = typeof import('../terminalManager');
 interface FakeTerminal {
   name: string;
   shellPath?: string;
+  /** The `color` the terminal was created with; absent when the options carried none. */
+  color?: { id: string };
   exitStatus?: { code: number };
   shown: number;
   sent: string[];
@@ -38,8 +41,8 @@ function world(existing: FakeTerminal[] = [], local = true): World {
   const mod = loadWithVscode<Manager>('../terminalManager', {
     window: {
       terminals,
-      createTerminal: ({ name, shellPath: pinned }: { name: string; shellPath?: string }): FakeTerminal => {
-        const t: FakeTerminal = { name, shellPath: pinned, shown: 0, sent: [] };
+      createTerminal: ({ name, shellPath: pinned, ...rest }: { name: string; shellPath?: string; color?: { id: string } }): FakeTerminal => {
+        const t: FakeTerminal = { name, shellPath: pinned, shown: 0, sent: [], ...('color' in rest ? { color: rest.color } : {}) };
         Object.assign(t, {
           show: (): void => {
             t.shown += 1;
@@ -58,6 +61,9 @@ function world(existing: FakeTerminal[] = [], local = true): World {
       },
     },
     workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
+    ThemeColor: class {
+      constructor(readonly id: string) {}
+    },
   }, { './pinnedTerminal': { composedShellPath: (): string | undefined => (local ? PINNED : undefined) } });
   return { mod, terminals, created, warnings };
 }
@@ -240,4 +246,19 @@ test('no prefix leaves the line exactly as it was — the local path is byte-ide
   w.mod.openSshTerminal(entity());
 
   assert.match(w.created[0].sent[0], /^ssh /);
+});
+
+test('the_ssh_terminal_wears_the_place_colour_and_none_without_one', () => {
+  for (const key of DEP_COLOR_KEYS) {
+    const w = world();
+    w.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1', color: key });
+    assert.equal(w.created[0].color?.id, depColorThemeId(key), key);
+  }
+  const plain = world();
+  plain.mod.openSshTerminal(entity(), {}, process.platform, '', { title: TITLE, accountId: 'a1' });
+  assert.equal(plain.created.length, 1);
+  assert.equal('color' in plain.created[0], false, 'a place without a colour creates the terminal with no color property');
+  const defaultPlace = world();
+  defaultPlace.mod.openSshTerminal(entity());
+  assert.equal('color' in defaultPlace.created[0], false, 'the default place has no folder, so no colour');
 });

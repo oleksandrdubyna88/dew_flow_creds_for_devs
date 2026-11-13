@@ -6,6 +6,7 @@ import type { UseAction } from '../useActions';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 import { callKeyName } from '../materializedKeys';
 
 /**
@@ -128,6 +129,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const deps: SshUseDeps = {
     storage,
     storageDir,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: () => {
       slotsHeld += 1;

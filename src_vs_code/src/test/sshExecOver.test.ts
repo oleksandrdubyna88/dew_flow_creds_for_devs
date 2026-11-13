@@ -16,6 +16,7 @@ import { clampExecTimeout } from '../brokerProtocol';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { sshNode } from './sshRoadWorld';
 import { HOST_SOCKET, OUR_SOCKET } from './fakePaths';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -112,6 +113,7 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
   const deps: SshUseDeps = {
     storage,
     storageDir,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) => {
       slots.taken += 1;

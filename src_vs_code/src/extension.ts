@@ -620,7 +620,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
-  const sshDeps = sshDepsFor({ storage, storageDir, agentServer, sshAgent, relays: wslRelay });
+  const sshDeps = sshDepsFor({ storage, storageDir, agentServer, sshAgent, relays: wslRelay, log, onMutated: mutated });
   useActions.register(sshExecAction(sshDeps));
   useActions.register(sshTerminalAction(sshDeps));
 
@@ -633,7 +633,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
     // The human Start button's own function, plus the request's start gate (E4.S3).
-    open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState),
+    open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState, log, mutated),
   };
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
@@ -837,7 +837,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
   };
 
-  registerRunCommands({ context, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
+  registerRunCommands({ context, log, onMutated: mutated, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
 
   registerPinCommands({ register, storage, refresh: () => mutated() });
 
@@ -925,7 +925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
   });
 
-  registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys, trust: context.globalState, sshRoad: sshRoadOf(sshDeps) });
+  registerEntityCommands({ doorsAt, log, mutated, register, storage, storageDir, vaultKeys, trust: context.globalState, sshRoad: sshRoadOf(sshDeps) });
   registerTreeMutationCommands({ announceArrival, doorsFor, log, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
   registerExportCommand({ corpPolicyOf, log, register, storage, vaultKeys });
 

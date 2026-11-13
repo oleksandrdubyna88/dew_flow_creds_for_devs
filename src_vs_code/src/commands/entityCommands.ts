@@ -1,5 +1,6 @@
 import { TreeNode } from '../types';
 import { AgentDoors } from '../agentDoors';
+import { DiagnosticWriter } from '../diagnosticWriter';
 import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import { asElement } from '../commandTargets';
@@ -40,6 +41,8 @@ export interface EntityCommandsHost {
   readonly trust: TrustStore;
   /** The person's road host: what lets Start run a launcher linked to an SSH entry (E2.S1). Optional: a test host needs none; absent keeps E1's refusal of a linked launcher. */
   readonly sshRoad?: SshRoad;
+  /** The diagnostic log: where a failed folder-colour write of a launcher's Start leaves its one line. */
+  readonly log: DiagnosticWriter;
 }
 
 /**
@@ -181,7 +184,7 @@ async function copyTotpCode(host: EntityCommandsHost, target: unknown): Promise<
  * tunnel. Each file written from a protected value says it is outside the PIN (`outsidePinNote`).
  */
 function registerFiles(host: EntityCommandsHost): void {
-  const { register, storage, storageDir, vaultKeys, trust, sshRoad } = host;
+  const { register, storage, storageDir, vaultKeys, trust, sshRoad, log, mutated } = host;
   register('credSshManager.installSshKey', (target) => installSshKey(host, target));
   register('credSshManager.removeInstalledKey', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -202,8 +205,8 @@ function registerFiles(host: EntityCommandsHost): void {
   // a launcher's command and a dependency chain are confirmed against (issue #103). No start gate: the
   // person clicked, and no client's departure can cancel what they asked for (E4.S3). `sshRoad` is the person's road host: a launcher
   // linked to an SSH entry runs only from here (E2.S1).
-  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, undefined, undefined, undefined, sshRoad));
-  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, undefined));
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, log, mutated, { sshRoad }));
+  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, log, mutated));
 }
 
 /**

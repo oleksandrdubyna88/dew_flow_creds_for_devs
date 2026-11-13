@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
+import { DiagnosticWriter } from './diagnosticWriter';
 import { StorageManager } from './storageManager';
 import { VaultKeys } from './vaultKeys';
 import { asElement } from './commandTargets';
@@ -36,10 +37,10 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  * function the human Start button calls, plus the request's start gate. `runVpn`'s own answer goes back, so a
  * refusal the person saw never reaches the agent as "opened".
  */
-export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore): VpnUseDeps['open'] {
+export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore, log: DiagnosticWriter, onMutated: () => void): VpnUseDeps['open'] {
   return async (accountId, entityId, action, startGate, lateAnswer, standingPrompt) => {
     const node = storage.getNode(accountId, entityId);
-    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate, lateAnswer, standingPrompt);
+    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, log, onMutated, { startGate, lateAnswer, standingPrompt });
   };
 }
 
@@ -48,6 +49,14 @@ function notePersonsAct(vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, startGat
   if (startGate === undefined) {
     vaultKeys.noteUserActivity();
   }
+}
+
+/** The optional seams of a start, each described on {@link runVpn}: an agent's opener sets the first three, the person's own Start `sshRoad`. */
+export interface VpnStartSeams {
+  readonly startGate?: AbortSignal;
+  readonly lateAnswer?: (what: string) => void;
+  readonly standingPrompt?: (prompt: PromiseLike<unknown>) => void;
+  readonly sshRoad?: SshRoad;
 }
 
 /**
@@ -86,20 +95,22 @@ export async function runVpn(
   storageDir: string,
   vaultKeys: Pick<VaultKeys, 'noteUserActivity'>,
   trust: TrustStore,
-  startGate: AbortSignal | undefined,
-  lateAnswer?: (what: string) => void,
-  standingPrompt?: (prompt: PromiseLike<unknown>) => void,
-  sshRoad?: SshRoad,
+  log: DiagnosticWriter,
+  onMutated: () => void,
+  seams: VpnStartSeams = {},
 ): Promise<boolean> {
-  notePersonsAct(vaultKeys, startGate);
+  notePersonsAct(vaultKeys, seams.startGate);
   const entry = vpnEntry(target);
-  if (entry === undefined || requestGone(startGate)) {
+  if (entry === undefined || requestGone(seams.startGate)) {
     return false;
   }
-  // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
-  // computer's, and a tunnel there is not the one the person asked for.
+  return runUnlessRefused({ ...entry, storage, storageDir, trust, log, onMutated, ...seams }, action);
+}
+
+/** Refused BEFORE the config is written: in a Remote-SSH window the terminal is another computer's, and a tunnel there is not the one the person asked for. */
+async function runUnlessRefused(ctx: VpnRunContext, action: 'start' | 'stop'): Promise<boolean> {
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate, lateAnswer, standingPrompt, sshRoad }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry(ctx, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {

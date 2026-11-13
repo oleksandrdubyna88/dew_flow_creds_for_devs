@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { DEP_COLOR_KEYS } from '../depColors';
 import { escapeControl } from '../transitSecretReport';
 import {
   chainTerminalTitle,
@@ -99,5 +100,44 @@ test('an_ssh_title_never_equals_the_entry_terminal_title_of_the_same_entry', () 
   // Both are lookup keys: a linked Terminal entry's arrow (entryTerminalTitle) must never find an SSH Connect session.
   for (const key of [entryTerminalKey('x', folder('f', 'ops')), entryTerminalKey('x', undefined)]) {
     assert.notEqual(sshTerminalTitle(key), entryTerminalTitle(key));
+  }
+});
+
+/** A folder wearing a colour (a stored string, as storage holds it). */
+function coloured(id: string, name: string, folderColor: string, extra: Partial<TreeNode> = {}): TreeNode {
+  return { ...folder(id, name), folderColor, ...extra };
+}
+
+test('a_coloured_folder_puts_its_colour_in_the_key', () => {
+  for (const colour of DEP_COLOR_KEYS) {
+    assert.equal(entryTerminalKey('x', coloured('f', 'ops', colour)).folderColor, colour);
+  }
+  const source = sourceOf(coloured('now', 'now', DEP_COLOR_KEYS[2]), entry('e', 'now'));
+  assert.equal(entryTerminalKeyOf(source, 'acc', 'e', 'x').folderColor, DEP_COLOR_KEYS[2], 'the key read from storage carries it too');
+});
+
+test('an_uncoloured_folder_gives_todays_key', () => {
+  const noColour: Array<[string, TreeNode | undefined]> = [
+    ['an uncoloured folder', folder('f', 'ops')],
+    ['the root', undefined],
+    ['a key of a newer build', coloured('n', 'ops', 'depColor99')],
+    ['the trash, which is never coloured', coloured('t', 'ops', DEP_COLOR_KEYS[1], { isTrash: true })],
+  ];
+  for (const [what, parent] of noColour) {
+    const key = entryTerminalKey('x', parent);
+    assert.deepEqual(key, { entryName: 'x', folderName: parent?.name }, what);
+    assert.equal('folderColor' in key, false, `${what}: the property is left out, not set to undefined`);
+  }
+  const dangling = entryTerminalKeyOf(sourceOf(entry('e', 'gone')), 'acc', 'e', 'x');
+  assert.deepEqual(dangling, { entryName: 'x', folderName: undefined }, 'a dangling parent');
+  assert.equal('folderColor' in dangling, false);
+});
+
+test('the_colour_never_changes_a_title', () => {
+  for (const colour of DEP_COLOR_KEYS) {
+    const plain = entryTerminalKey('x', folder('f', 'ops'));
+    const painted = entryTerminalKey('x', coloured('f', 'ops', colour));
+    assert.equal(entryTerminalTitle(painted), entryTerminalTitle(plain), colour);
+    assert.equal(sshTerminalTitle(painted), sshTerminalTitle(plain), colour);
   }
 });

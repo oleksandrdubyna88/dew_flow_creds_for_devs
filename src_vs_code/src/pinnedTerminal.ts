@@ -13,6 +13,8 @@ import {
 } from './hostShell';
 import { onPath } from './installFlow';
 import { EntryTerminalKey, entryTerminalTitle } from './terminalTitles';
+import { DepColorKey } from './depColors';
+import { folderColorOption } from './terminalColor';
 
 /**
  * The `vscode` half of "which shell reads this line" (issue #103); the decisions are `hostShell.ts`.
@@ -69,6 +71,8 @@ export interface PinnedOptions {
   env?: Record<string, string>;
   /** Dispose a live terminal of this name first — a script re-run must not inherit old values. */
   fresh?: boolean;
+  /** The folder's colour. Like `env`, only settable at creation: a terminal that is found keeps the colour it was made with. */
+  color?: DepColorKey;
 }
 
 export function pinnedTerminal(name: string, options: PinnedOptions = {}): PinnedTerminal {
@@ -79,7 +83,7 @@ export function pinnedTerminal(name: string, options: PinnedOptions = {}): Pinne
   const shell = pinnedShell();
   const terminal =
     reusableTerminal(name, shell, options) ??
-    vscode.window.createTerminal({ name, shellPath: shell.shellPath, env: options.env });
+    vscode.window.createTerminal({ name, shellPath: shell.shellPath, env: options.env, ...folderColorOption(options.color) });
   terminal.show();
   return { ok: true, terminal, shell };
 }
@@ -152,7 +156,8 @@ export function openEntryTerminal(key: EntryTerminalKey, terminalOs: string | un
     return usable;
   }
   const name = entryTerminalTitle(key);
-  const terminal = vscode.window.createTerminal(usable.choice.kind === 'pinned' ? { name, shellPath: pinnedShell().shellPath } : { name });
+  const shell = usable.choice.kind === 'pinned' ? { shellPath: pinnedShell().shellPath } : {};
+  const terminal = vscode.window.createTerminal({ name, ...shell, ...folderColorOption(key.folderColor) });
   terminal.show();
   return { ok: true, terminal, family: usable.family };
 }
@@ -174,7 +179,7 @@ export function findSshTerminal(key: EntryTerminalKey): vscode.Terminal | undefi
  * never reused. Its shell is SSH Connect's (`composedShellPath`, D14); *Runs on* is the REMOTE's system and is not read.
  */
 export function openSshEntryTerminal(key: EntryTerminalKey, env: Record<string, string> | undefined): vscode.Terminal {
-  const terminal = vscode.window.createTerminal({ name: entryTerminalTitle(key), shellPath: composedShellPath(), env });
+  const terminal = vscode.window.createTerminal({ name: entryTerminalTitle(key), shellPath: composedShellPath(), env, ...folderColorOption(key.folderColor) });
   terminal.show();
   return terminal;
 }
