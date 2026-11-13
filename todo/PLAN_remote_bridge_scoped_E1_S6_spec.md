@@ -829,5 +829,76 @@ or a new path shape against D16. So none is built here, and none is counted, bec
 
 ## S6.13 — As built
 
-Not built. The coder writes here: the RED record of B0, each **[S]** that changed and why, the line counts, the mutations' outputs, what the
-record legs of (f) and (j) printed, the M9 result, and the order in which #359 and this story merged.
+*Written by the lead from the coder's (Sonnet) two reports, 2026-11-13.* Built on `docs/remote-bridge-e1-6-spec`, PR #365.
+
+**Commits.** The build is `4c4b7f83` (B1-B2), `94f99e58` (B3-B4), `16e5d078` (B5-B7), `376bdfe1` (B8), `ea09a15c` (B10) and `77e0b152` (two
+tests given teeth by T8 and T22a). `4abf2e47` is B9 with its harnesses. After the review (Opus; Fable on security) came the fix-forward:
+`947bb1db`, `9a819751`, `ded151e7`, `c9e48f14`, and the CI library line. B3+B4 and B5+B6+B7 are one commit each, because without B7's writer
+B6 leaves the old bridged tests red (the review judged this acceptable).
+
+**Order with #359.** #359 was on the branch before the first commit. Hop keys are written with `materializeCallKey`.
+
+**RED record of B0.** Each new test file was run against the old code or with its module missing:
+- `sshExecCommand`: 8 of 26 failed (A1-A5, A7-A9).
+- `bridgeLinks` with `bridgeRunSites`: 15 failed (L1, L3, K6, F1, G1, G2, L6-L9, L11-L14, C10).
+- `dbCliLauncher`: Q1, Q2 and Q4 failed.
+- V1, K1 and A6/Q3 test behaviour that already existed, so they had no RED.
+- Fix-forward: the `keyInstaller` partial-key case and the first-contact report note were RED first; the DISPLAY, `fieldRefusal`, EISDIR and
+  storage-`%` cases failed to load before their code existed.
+
+**Test counts.** 7863 tests before (7826 pass, 37 skipped). 7923 after the build. 7930 after the fix-forward: 7893 pass, 0 fail, 37 skipped.
+Typecheck, lint, ratchet, public hygiene, the leftovers check and plan-lifecycle are clean.
+
+**Mutations (§S6.6).** Each was run by a script that applied it, compiled, ran 12 test files and restored the file. Each failed the case the
+spec names, and on these points more than it names:
+- T2: dropping one password line alone fails F2 and L1, not "F2 and leg 0 only".
+- T22a survived at first: `bridgedConfigText` refused the same pair after a write. W4 now asserts that no key file was asked for, and T22a then
+  fails W4.
+- T8 fails L9 only because L9 now sets `SSH_ASKPASS` and `DISPLAY`.
+- The other 31 mutations, T1-T31 and a K1 mutation, failed as named.
+- T15 needs the itest and was not run. V1 has no mutation.
+
+Eight more mutations of the fix-forward each fail their own case: DISPLAY on win32, `readText`, `afterRun`, `reportFirstContact`, R9, the `%`
+rule, the field sentences and the partial key.
+
+**[S] items that changed, and why.**
+- New modules keep each file under 300 lines: `bridgedSshRefusals.ts` (pass 1 and `fieldRefusal`), `bridgedSshSentences.ts` (R1-R10, J1, J2,
+  the known-hosts reading), `bridgedSshRoad.ts` (the bridged half of `execOverSsh`), and the harness helpers `itestBridgedRig.cjs` and
+  `itestBridgedTrust.cjs`.
+- `process.env` is read in `bridgedSshRoad.ts`, the one source given to `bridgedSpawn`. Checklist item 2's grep should name that file.
+- `bridgedSpawn` passes `ownAgent: false`, because `launchRoadScan.test.ts` F5 needs every call to name it. On a bridge it has no effect.
+- The field names of `bridgedConfigText` are `hop:<n>:host|key|pin`, `destination:host|pin`, `keys`, `known-hosts` and `hosts`. The export
+  `bridgedKeyPathProblem` returns `'value'` or `'percent'`, so R10 can be told from R6.
+- The second line (`fieldRefusal`) maps a host field to that entry's R6 host sentence, and a hop key to R10 or that hop's R6 key sentence.
+  `hosts` maps to R4 with the later word. `hop:N:pin`, `destination:pin` and `keys` keep the keys-folder sentence: the pin files and the sentinel
+  have names we made, so the keys folder is the only R6 row that can be at fault.
+- R4 names the later duplicate word. J1 and J2 use `destination.name`.
+- `remove()` writes one note per call.
+- `readText` reads only ENOENT as empty. Any other error is R7 before the spawn and one note after it. `afterRun` and `reportFirstContact`
+  write `ssh:exec — first contact of the call could not be reported: <why>` and no longer swallow the error.
+- `materializePrivateKey` removes its own file when the write, the chmod or the lock throws, and rethrows. That covers hop keys and the
+  destination key.
+- `askpassOf(env, platform)` drops `DISPLAY` on win32.
+- Harness legs:
+  - (m) control uses `--local-infile=1`.
+  - (j) control uses a direct connection to a silent listener: `ssh` loads identities after the connect.
+  - Leg 0 checks the hop block in `-G` output by its text.
+  - (i) makes both `/etc/ssh/ssh_config` and the rig's config hostile, with an agent running. Each control must show the agent-forwarding
+    request and the remote forward, and production must show neither.
+  - (n) asserts the askpass log has a line.
+- CI: Oracle's `mysql-client` and `libmariadb3` come from apt. MariaDB's `mariadb-client-core` is downloaded and unpacked, and both are named to
+  the harness by absolute path. The two client packages conflict on Ubuntu.
+- Not done: replacing `held.files`, `written.files.push` and `written.dir =` with new objects. They are the trackers that let a throw mid-pass
+  remove what was written, and a rewrite was not local.
+
+**Line counts.** `sshUseActions.ts` 536, `keyInstaller.ts` 321, `bridgedSshCall.ts` 296, `bridgedSshConfig.ts` 225, `sshExecCommand.ts` 213,
+`bridgedSshRefusals.ts` 179, `bridgedSshSentences.ts` 110, `bridgedSshRoad.ts` 70, `bridgedSshEnv.ts` 47.
+
+**Live harnesses.** This host has no `sshd` and no mysql client, so only leg (a) 0 ran (`ssh -G` under the production file on 10.2p1): 14 of
+14 checks green. A few things were probed outside the harness: (c) an alias does not resolve, (j) control `ssh -v` names the file `${VAR}`
+expands to, and (e) R1-R3 spend no spawn. Every other leg first runs on CI. The record legs of (f) and (j) print there; their output is copied
+into the PR.
+
+**Open risks found at review** are in §S6.10, *Also owed to the next stop*.
+
+**M9:** not yet recorded. It needs the owner's Windows host and is a merge condition (§S6.12).
