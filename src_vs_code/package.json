@@ -58,6 +58,8 @@
     "itest:server": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/server-transport-itest.cjs",
     "itest:agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/agent-broker-itest.cjs",
     "itest:ssh-agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/ssh-agent-itest.cjs",
+    "itest:bridged-ssh": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-ssh-itest.cjs",
+    "itest:bridged-mysql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-itest.cjs",
     "itest:masked-run": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/masked-run-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",

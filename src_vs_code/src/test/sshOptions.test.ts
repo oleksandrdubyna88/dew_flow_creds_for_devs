@@ -7,7 +7,9 @@ import {
   normalizeForwards,
   parseForward,
   renderForward,
+  hopOf,
   resolveJumpChain,
+  resolveJumpHops,
   sshOptionArgv,
 } from '../sshOptions';
 import { EntityMetadata } from '../types';
@@ -225,4 +227,35 @@ test('B5: a circle, a missing hop and the depth cap name the starting entry, so 
     assert.equal(chain.ok, false);
     assert.equal(secondOf(chain), undefined);
   }
+});
+
+// ---- E1.6 B1: the hop entries of the walk, in the order ssh contacts them ------------------------
+
+test('J1: resolveJumpHops answers the hop entries in the order of the -J text, and the same value as resolveJumpChain', () => {
+  const outer = host('outer');
+  const inner = host('inner', { jumpHostEntityId: 'outer', port: 2222 });
+  const target = host('target', { jumpHostEntityId: 'inner' });
+  const byId = (id: string) => ({ outer, inner }[id]);
+
+  const walked = resolveJumpHops(target, byId);
+
+  assert.ok(walked.ok && walked.hops !== undefined);
+  assert.deepEqual(walked.hops.map((hop) => hop.id), ['outer', 'inner']);
+  assert.equal(walked.hops.map(hopOf).join(','), walked.value);
+  const chain = resolveJumpChain(target, byId);
+  assert.ok(chain.ok);
+  assert.equal(walked.value, chain.value);
+  assert.deepEqual(resolveJumpHops(host('plain'), byId), { ok: true, value: undefined, hops: [] });
+  const gone = host('t', { jumpHostEntityId: 'gone' });
+  assert.deepEqual(resolveJumpHops(gone, byId), resolveJumpChain(gone, byId), 'a refusal is the same refusal');
+});
+
+test('J2: resolveJumpChain answers the object it always did: the keys ok and value, and no other', () => {
+  const bastion = host('bastion');
+  const target = host('target', { jumpHostEntityId: 'bastion' });
+
+  const chain = resolveJumpChain(target, () => bastion);
+
+  assert.deepEqual(Object.keys(chain), ['ok', 'value']);
+  assert.deepEqual(Object.keys(resolveJumpChain(host('plain'), () => undefined)), ['ok', 'value']);
 });

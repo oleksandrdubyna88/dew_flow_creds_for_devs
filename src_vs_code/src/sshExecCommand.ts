@@ -1,6 +1,7 @@
 import { EntityMetadata } from './types';
 import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 import { sshOptionArgv } from './sshOptions';
+import { BRIDGED_ASKPASS_OPTIONS, bridgedHostWord, bridgedKeyPathProblem, unsafeBridgedUser } from './bridgedSshConfig';
 
 /** The vault-resolved half, identical in meaning to `SshCommandOptions` on the human path. */
 export interface SshExecOptions {
@@ -15,6 +16,13 @@ export interface SshExecOptions {
    * and `-o ForwardAgent=no`. `true` or absent: today's argv.
    */
   ownAgent?: boolean;
+  /**
+   * A bridged call only (E1.6): the relative name of the per-call `-F` file, `c.conf`. The spawn's `cwd` is the folder that holds it. A bridged
+   * call with no file is refused (`undefined`), like an unsafe host.
+   */
+  configFile?: string;
+  /** A bridged call only: the destination's host key is pinned in the file's destination block (`StrictHostKeyChecking=yes`), or not (`accept-new`). */
+  pinned?: boolean;
 }
 
 /**
@@ -102,6 +110,41 @@ function ownAgentWords(entity: EntityMetadata, options: SshExecOptions): string[
   return options.bridged !== true && agentForwardTakenAway(entity, options) ? ['-o', 'ForwardAgent=no'] : [];
 }
 
+/** The two words that say how the host's key is trusted. On a bridge the pin is in the file's destination block, so no word names `UserKnownHostsFile`. */
+function hostKeyWords(options: SshExecOptions): string[] {
+  if (options.bridged === true) {
+    return ['-o', `StrictHostKeyChecking=${options.pinned === true ? 'yes' : 'accept-new'}`];
+  }
+  return options.knownHostsFile === undefined
+    ? ['-o', 'StrictHostKeyChecking=accept-new']
+    : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`];
+}
+
+/** What a bridged call adds after the six options: the password words for a password destination, then the one file `ssh` may read. */
+function bridgedWords(auth: SshExecAuth, configFile: string): string[] {
+  return [...BRIDGED_SSH_OPTIONS, ...(auth === 'askpass' ? BRIDGED_ASKPASS_OPTIONS : []), '-F', configFile];
+}
+
+const userTaken = (entity: EntityMetadata): boolean => entity.user === undefined || entity.user.length === 0 || !unsafeBridgedUser(entity.user);
+const keyTaken = (keyPath: string | undefined): boolean => keyPath === undefined || keyPath.length === 0 || bridgedKeyPathProblem(keyPath) === undefined;
+
+/** The file is named and no known-hosts file is (the pin is in the file), and the user and the key path pass their rules. */
+function valuesTaken(entity: EntityMetadata, keyPath: string | undefined, options: SshExecOptions): boolean {
+  return options.configFile !== undefined && options.knownHostsFile === undefined && userTaken(entity) && keyTaken(keyPath);
+}
+
+/**
+ * The destination word of a bridged call, or `undefined` when the call is refused: no file, a known-hosts file given (the pin is in the file), a user
+ * or a host or a key path that a bridge does not take. The writer has refused these already, with the reason; this is the second line, on the
+ * one function that builds the argv. The host is the `Host` word: with its brackets off, because `ssh` cannot resolve a bracketed destination (X8).
+ */
+function bridgedTarget(entity: EntityMetadata, keyPath: string | undefined, options: SshExecOptions): string | undefined {
+  const word = bridgedHostWord(entity.host as string, 'destination');
+  return word !== undefined && valuesTaken(entity, keyPath, options) ? targetOf(entity.user, word) : undefined;
+}
+
+const targetOf = (user: string | undefined, host: string): string => (user ? `${user}@${host}` : host);
+
 /**
  * `[(-o BatchMode=yes | -o NumberOfPasswordPrompts=1), -o
  *   StrictHostKeyChecking=accept-new, -o ConnectTimeout=10, (-i keyPath)?,
@@ -135,6 +178,11 @@ export function buildSshExecArgv(
   if (!isSafeSshTarget(entity)) {
     return undefined;
   }
+  const bridged = options.bridged === true;
+  const target = bridged ? bridgedTarget(entity, keyPath, options) : targetOf(entity.user, entity.host as string); // isSafeSshTarget above proved the host non-empty
+  if (target === undefined) {
+    return undefined;
+  }
   const argv: string[] = [
     ...noTtyPrefix(options),
     ...(auth === 'askpass' ? ['-o', 'NumberOfPasswordPrompts=1'] : ['-o', 'BatchMode=yes']),
@@ -142,19 +190,13 @@ export function buildSshExecArgv(
   // A pinned key is enforced here exactly as on the human path (audit B10): with a pin, a
   // changed host key fails the call instead of being accepted silently. An agent's exec is
   // precisely where nobody is watching a warning scroll past.
-  argv.push(
-    ...(options.knownHostsFile === undefined
-      ? ['-o', 'StrictHostKeyChecking=accept-new']
-      : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`]),
-    '-o', 'ConnectTimeout=10',
-  );
+  argv.push(...hostKeyWords(options), '-o', 'ConnectTimeout=10');
   // The same shared composer the human path uses — see `sshOptions.ts`. A bridged call is one fresh connection: the composer gets the
   // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
   // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.
-  const bridged = options.bridged === true;
   argv.push(...sshOptionArgv(composedEntity(entity, options), options.jump), ...ownAgentWords(entity, options));
   if (bridged) {
-    argv.push(...BRIDGED_SSH_OPTIONS);
+    argv.push(...bridgedWords(auth, options.configFile as string));
   }
   if (keyPath !== undefined && keyPath.length > 0) {
     argv.push('-i', keyPath);
@@ -166,9 +208,6 @@ export function buildSshExecArgv(
   // ssh's own getopt, and `-oProxyCommand=…` runs a LOCAL command before any
   // authentication — proven against OpenSSH 10.3, which executed it. `shell: false`
   // does not help: the injection is in ssh's parser, not a shell's.
-  argv.push('--');
-  const host = entity.host as string; // isSafeSshTarget above proved it non-empty
-  argv.push(entity.user ? `${entity.user}@${host}` : host);
-  argv.push(remoteCommand);
+  argv.push('--', target, remoteCommand);
   return argv;
 }

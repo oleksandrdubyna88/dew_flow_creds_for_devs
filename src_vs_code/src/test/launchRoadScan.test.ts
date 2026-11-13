@@ -171,7 +171,7 @@ const ALLOWED_SENDS: AllowList = {
   'agentUseActions.ts': [{ line: 'const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));', because: 'the agent creds_run of an entry with no link: the local road' }],
   'sshUseActions.ts': [
     {
-      line: 'const outcome = await runSshExec(argv, { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) });',
+      line: 'const response: ExecResponseBody = await runSshExec(launch.argv, runOptions(deps, ctx, call, launch));',
       because: "ssh:exec and the agent's run over SSH (E3.S2): the argv comes from buildSshExecArgv, no shell",
     },
   ],

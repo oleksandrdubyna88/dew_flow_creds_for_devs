@@ -1,13 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { BridgedSshConfigWriter, bridgedSshConfigWriter as RealWriter } from '../bridgedSshCall';
 import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
 import type { EntityMetadata, PortForward } from '../types';
 import type { UseAction } from '../useActions';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
-import { loadWithVscode } from './vscodeStub';
+import { loadEachWithVscode } from './vscodeStub';
 import { recordingLog } from './liveColourStorage';
-import { callKeyName } from '../materializedKeys';
+import { callKeyName, materializedKeysDir } from '../materializedKeys';
 
 /**
  * The REAL `sshExecAction` over a vault that links its entry to a key and a jump host (E1.3 epoch 3, L1-L5).
@@ -37,8 +38,21 @@ export interface LinksOptions {
   readonly runFails?: boolean;
   /** Writing the key file fails, with a message that carries a path. */
   readonly writeFails?: boolean;
-  /** The deps carry no `bridgedSshConfig`, as production's do until E1.6 (Amendment 6, F.4): a bridged call is refused before any slot or key. */
+  /** The deps carry no `bridgedSshConfig`: a bridged call is refused before any slot or key (Amendment 6, F.4; E1.6 keeps the refusal for a world with no writer). */
   readonly noConfigWriter?: true;
+  /** A writer of the test's own, in place of the real one of E1.6 (L14: a stub that says ok for an entry the argv rules refuse). */
+  readonly writer?: (real: BridgedSshConfigWriter) => BridgedSshConfigWriter;
+  /** `j1`'s credential: a stored key of its own (default), a stored password, nothing, a key sealed with its own PIN, or the path in `jumpEntry.sshKeyPath`. */
+  readonly hopKey?: 'plain' | 'password' | 'none' | 'sealed' | 'typed';
+  /** The chain walk answers a `-J` text and NO hop entries, as a caller that built the chain by hand would (R9). */
+  readonly dropHops?: true;
+  /** `e1` logs in by a stored password (and has no key). */
+  readonly destPassword?: string;
+  /** Fields of `e1` and of `j1` that a test sets over the defaults (a user, a pin, a key path). */
+  readonly entry?: Partial<EntityMetadata>;
+  readonly jumpEntry?: Partial<EntityMetadata>;
+  /** Called inside the pretended `ssh`, after its `cwd` was read: a test adds a line to `bridges/known_hosts` here, as `ssh` would. */
+  readonly onRun?: (run: Run, world: { readonly storageDir: string; readonly home: string }) => void;
   /** The keychain read of the linked key rejects, as a keychain that errors does (a thrown read must answer, and give the slot back). */
   readonly keyReadThrows?: true;
   /** The SSH agent's socket is up (a path): with `agentForward`, a signing prompt may follow the Allow. No real socket exists here, so the run itself stands in for the prompt (`hold`). */
@@ -51,6 +65,11 @@ export interface Run {
   readonly env: NodeJS.ProcessEnv;
   /** The bound the action handed the runner: the exec ends at it. */
   readonly timeoutMs?: number;
+  /** The working folder of the spawn: `undefined` off a bridge. */
+  readonly cwd?: string;
+  /** What the folder held while the pretended `ssh` ran, and the text of `c.conf` then (`undefined` with no `cwd`). */
+  readonly cwdFiles?: string[];
+  readonly conf?: string;
 }
 
 export interface LinksWorld {
@@ -60,8 +79,10 @@ export interface LinksWorld {
   readonly notes: string[];
   /** Every key file the run materialised. */
   readonly materialised: string[];
-  /** How many times the per-call ssh_config writer was called. Nothing calls it on the partial-E1 tree: the argv has no `-F` to name a file. */
+  /** How many times the per-call ssh_config writer was called. */
   readonly configWrites: number;
+  /** The injected home of the person's own `known_hosts`: a folder of this world. */
+  readonly home: string;
   /** Awaited inside the pretended `ssh`, before it answers: a test sets it to stand for a signing prompt that is open. */
   hold?: () => Promise<void>;
   /** The agent's socket as the action sees it NOW: a test brings it up or takes it down between a dialog's opening and its Allow. */
@@ -73,6 +94,9 @@ export interface LinksWorld {
 }
 
 export const KEY_BODY = 'PRIVATE KEY BODY';
+export const HOP_KEY_BODY = 'HOP PRIVATE KEY BODY';
+export const HOP_KEY_NAME = 'hop-key';
+export const HOP_PASSWORD = 'hop-password-value';
 export const KEY_NAME = 'deploy-key';
 export const JUMP_NAME = 'jump';
 export const STDERR_WITH_A_HOST = 'kex_exchange_identification: jump.example.com';
@@ -85,7 +109,7 @@ const stderrOf = (o: { readonly stderr: string; readonly printsKeyPath: boolean 
   o.printsKeyPath ? `Load key "${argv[argv.indexOf('-i') + 1]}": invalid format` : o.stderr;
 
 export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld> {
-  const o = { key: 'plain', jump: 'none', agentForward: false, forwards: false, stderr: '', printsKeyPath: false, runFails: false, writeFails: false, ...options } as const;
+  const o = { key: 'plain', jump: 'none', hopKey: 'plain', destPassword: undefined, entry: {}, jumpEntry: {}, agentForward: false, forwards: false, stderr: '', printsKeyPath: false, runFails: false, writeFails: false, ...options } as const;
   const owned = cleanupScope();
   const storageDir = ownedDir(owned, 'links');
   const runs: Run[] = [];
@@ -93,12 +117,14 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const materialised: string[] = [];
   let configWrites = 0;
   let slotsHeld = 0;
+  const home = ownedDir(owned, 'home');
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const writeKey = (dir: string, id: string, content: string): string => {
     if (o.writeFails) {
       throw new Error(`EACCES: permission denied, open '${path.join(dir, id)}.key'`);
     }
-    const keyPath = path.join(dir, `${id}.key`);
+    fs.mkdirSync(materializedKeysDir(dir), { recursive: true, mode: 0o700 });
+    const keyPath = path.join(materializedKeysDir(dir), `${id}.key`);
     fs.writeFileSync(keyPath, content, { mode: 0o600 });
     materialised.push(keyPath);
     return keyPath;
@@ -109,10 +135,13 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       materializeCallKey: (dir: string, content: string): string => writeKey(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
+    ...(options.dropHops === true ? { './sshOptions': withoutHops() } : {}),
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
     './sshExecRunner': {
-      runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string; timeoutMs?: number }): Promise<unknown> => {
-        runs.push({ argv, program: run.program, env: run.env, timeoutMs: run.timeoutMs });
+      runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string; timeoutMs?: number; cwd?: string }): Promise<unknown> => {
+        const seen = { argv, program: run.program, env: run.env, timeoutMs: run.timeoutMs, cwd: run.cwd, ...readFolder(run.cwd) };
+        runs.push(seen);
+        options.onRun?.(seen, { storageDir, home });
         await world.hold?.();
         return o.runFails
           ? Promise.reject(new Error(`spawn ssh ENOENT at ${storageDir}`))
@@ -120,12 +149,17 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       },
     },
   };
-  const mod = loadWithVscode<{ sshExecAction: typeof SshExecAction }>('../sshUseActions', stub, mocks);
+  const [mod, call] = loadEachWithVscode(['../sshUseActions', '../bridgedSshCall'], stub, mocks) as [{ sshExecAction: typeof SshExecAction }, { bridgedSshConfigWriter: typeof RealWriter }];
   const storage = memoryStorage(stub);
   await seedVault(storage, o);
   if (options.keyReadThrows === true) {
     storage.getPrivateKey = () => Promise.reject(new Error('the keychain would not answer'));
   }
+  const realWriter = call.bridgedSshConfigWriter({ storage, storageDir, home, note: (message) => { notes.push(message); } });
+  const counted = (writer: BridgedSshConfigWriter): BridgedSshConfigWriter => (request) => {
+    configWrites += 1;
+    return writer(request);
+  };
   const deps: SshUseDeps = {
     storage,
     storageDir,
@@ -139,11 +173,8 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     },
     note: (message) => void notes.push(message),
     agentSocket: () => world.socket,
-    // E1.6's writer, stood in for: it records its calls and writes nothing, because on this tree no call is made (the argv has no `-F`).
-    ...(options.noConfigWriter === true ? {} : { bridgedSshConfig: () => {
-      configWrites += 1;
-      return { cwd: storageDir, configFile: 'c.conf' };
-    } }),
+    // E1.6's real writer over this vault, counted; a test may put its own in front of it.
+    ...writerDeps(options, realWriter, counted),
   };
   const world: LinksWorld = {
     exec: mod.sshExecAction(deps),
@@ -158,20 +189,21 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       return slotsHeld;
     },
     storageDir,
+    home,
     cleanup: () => void owned.close(), // the folder is owned and claimed: closing the scope removes it
   };
   return world;
 }
 
 /** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
-type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket'>>;
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket' | 'writer' | 'onRun' | 'destPassword' | 'dropHops'>> & { readonly destPassword: string | undefined };
 
 type Storage = Parameters<typeof seedEntry>[0];
 
 async function seedVault(storage: Storage, o: Resolved): Promise<void> {
-  await seedEntry(storage, ssh('e1', 'prod', linksOf(o)), {});
+  await seedEntry(storage, ssh('e1', 'prod', linksOf(o)), o.destPassword === undefined ? {} : { password: o.destPassword });
   await seedKey(storage, o.key);
-  await seedJump(storage, o.jump);
+  await seedJump(storage, o);
 }
 
 /** A `local` and a `remote` forward: the first opens the laptop's port to the server, the second a listener on the server. */
@@ -189,7 +221,7 @@ function forwardingOf(o: Resolved): Partial<EntityMetadata> {
 function linksOf(o: Resolved): Partial<EntityMetadata> {
   const key = o.key === 'none' ? {} : { sshKeyEntityId: 'k1' };
   const jump = o.jump === 'none' ? {} : { jumpHostEntityId: 'j1' };
-  return { host: 'prod.corp.com', user: 'deploy', ...key, ...jump, ...forwardingOf(o) };
+  return { host: 'prod.corp.com', user: 'deploy', ...key, ...jump, ...forwardingOf(o), ...o.entry };
 }
 
 /** The key entry `k1`: an `sshkey` that is never shared with an agent, holding the key body, in the clear or sealed under its own PIN. */
@@ -202,10 +234,62 @@ async function seedKey(storage: Storage, key: NonNullable<LinksOptions['key']>):
   await seedEntry(storage, details, { 'private key': sealed ? await locked(KEY_BODY) : KEY_BODY });
 }
 
-async function seedJump(storage: Storage, jump: NonNullable<LinksOptions['jump']>): Promise<void> {
-  if (jump !== 'none') {
-    await seedEntry(storage, ssh('j1', JUMP_NAME, { host: jump === 'valid' ? 'jump.example.com' : 'bad host!', user: 'hop' }), {});
+/** `j1`: a jump host with a key entry of its own (`hk1`), a stored password, a typed path, or nothing (`hopKey`), and the test's own fields over it. */
+function hopEntry(o: Resolved): EntityMetadata {
+  const own = hasHopKeyEntry(o) ? { sshKeyEntityId: 'hk1' } : {};
+  return ssh('j1', JUMP_NAME, { host: o.jump === 'valid' ? 'jump.example.com' : 'bad host!', user: 'hop', ...own, ...o.jumpEntry });
+}
+
+const hasHopKeyEntry = (o: Resolved): boolean => o.hopKey === 'plain' || o.hopKey === 'sealed';
+
+async function seedJump(storage: Storage, o: Resolved): Promise<void> {
+  if (o.jump === 'none') {
+    return;
   }
+  await seedEntry(storage, hopEntry(o), o.hopKey === 'password' ? { password: HOP_PASSWORD } : {});
+  await seedHopKey(storage, o);
+}
+
+/** The key entry `hk1` that `j1` links to: in the clear, or sealed under its own PIN. */
+async function seedHopKey(storage: Storage, o: Resolved): Promise<void> {
+  if (!hasHopKeyEntry(o)) {
+    return;
+  }
+  const sealed = o.hopKey === 'sealed';
+  const details = { id: 'hk1', name: HOP_KEY_NAME, kind: 'sshkey', isSshEnabled: false, pinProtected: sealed || undefined } as EntityMetadata;
+  await seedEntry(storage, details, { 'private key': sealed ? await locked(HOP_KEY_BODY) : HOP_KEY_BODY });
+}
+
+/** `sshOptions` with a `resolveJumpHops` that keeps the `-J` text and drops the entries. */
+function withoutHops(): Record<string, unknown> {
+  const real = require('../sshOptions') as typeof import('../sshOptions');
+  return {
+    ...real,
+    resolveJumpHops: (...args: Parameters<typeof real.resolveJumpHops>) => {
+      const chain = real.resolveJumpHops(...args);
+      return chain.ok ? { ok: true, value: chain.value } : chain;
+    },
+  };
+}
+
+/** The deps' writer of the per-call file: none, or the real one (counted), or the test's own put in front of it. */
+function writerDeps(
+  options: LinksOptions,
+  real: BridgedSshConfigWriter,
+  counted: (writer: BridgedSshConfigWriter) => BridgedSshConfigWriter,
+): Pick<SshUseDeps, 'bridgedSshConfig'> {
+  if (options.noConfigWriter === true) {
+    return {};
+  }
+  return { bridgedSshConfig: counted(options.writer === undefined ? real : options.writer(real)) };
+}
+
+/** The tail of the file: what a pretended `ssh` reads of its working folder while it "runs". */
+function readFolder(cwd: string | undefined): { cwdFiles?: string[]; conf?: string } {
+  if (cwd === undefined) {
+    return {};
+  }
+  return { cwdFiles: fs.readdirSync(cwd), conf: fs.readFileSync(path.join(cwd, 'c.conf'), 'utf8') };
 }
 
 export { ACCOUNT };

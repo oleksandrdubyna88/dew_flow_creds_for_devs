@@ -234,7 +234,9 @@ export function buildDbQueryLaunch(
   dbType: DbType,
   connectionString: string,
   query: string,
+  options: { readonly bridged?: boolean } = {},
 ): DbQueryLaunch | undefined {
+  const bridged = options.bridged === true;
   const cli = CLIS[dbType];
   if (cli === undefined || cli.passwordEnv === undefined) {
     return undefined;
@@ -268,11 +270,13 @@ export function buildDbQueryLaunch(
       // platform, whatever a later character folds to. Do not trim it.
       return {
         exe: cli.exe,
-        args: ['-c', ' ' + query, '--', withoutPassword(connectionString)],
+        // A bridged call also reads none of the person's own `psqlrc` (`-X`, first): the agent's query would otherwise run after a startup file it cannot see (E1.6, parent §4.11).
+        args: [...(bridged ? ['-X'] : []), '-c', ' ' + query, '--', withoutPassword(connectionString)],
         env,
       };
     case 'mysql': {
-      const args = ['-h', parts.host ?? 'localhost'];
+      // A bridged call reads no option file at all (`--no-defaults`, first: it must come before any other option). Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`; this is the flag that closes it.
+      const args = [...(bridged ? ['--no-defaults'] : []), '-h', parts.host ?? 'localhost'];
       if (parts.port !== undefined) {
         args.push('-P', parts.port);
       }

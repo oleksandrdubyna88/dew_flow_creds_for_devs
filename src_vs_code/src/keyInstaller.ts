@@ -162,10 +162,28 @@ export function materializePrivateKey(
     keysDir,
     `${safeFileComponent(entityId)}${suffix === undefined ? '' : `-${safeFileComponent(suffix)}`}.key`,
   );
-  fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
-  fs.chmodSync(keyPath, 0o600);
-  lockToOwner(keyPath);
+  try {
+    fs.writeFileSync(keyPath, ensureTrailingNewline(content), { mode: 0o600 });
+    fs.chmodSync(keyPath, 0o600);
+    lockToOwner(keyPath);
+  } catch (error) {
+    throw withoutPartialKey(keyPath, error);
+  }
   return keyPath;
+}
+
+/**
+ * A key file that was only partly made (the write, the chmod or the lock failed) is a whole or partial private key on disk that no caller knows about,
+ * because the caller gets a path only from a return. So the writer removes its own file, and answers the error to rethrow: the original one, or, when
+ * the removal fails too, the original with that said.
+ */
+function withoutPartialKey(keyPath: string, error: unknown): unknown {
+  try {
+    fs.rmSync(keyPath, { force: true });
+    return error;
+  } catch (removal) {
+    return new Error(`${describeError(error)} (and the key file could not be removed: ${describeError(removal)})`);
+  }
 }
 
 /**

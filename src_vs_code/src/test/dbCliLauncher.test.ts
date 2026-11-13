@@ -411,3 +411,39 @@ test('the over-refusal sentences say how to write the word as SQL, and that way 
   assert.notEqual(refuseQuery('mysql', 'select a, /* c */ connect from t'), undefined);
   assert.notEqual(refuseQuery('mssql', 'select a /* c */ ed from t'), undefined);
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.6 B8 (Q1-Q3): the flags a bridged query adds, so the person's own client configuration is not read
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('Q1: a bridged postgres launch has -X first, then -c, the query with its one leading space, --, and the URI', () => {
+  const args = buildDbQueryLaunch('postgres', PG, 'select 1', { bridged: true })?.args ?? [];
+
+  assert.deepEqual(args.slice(0, 4), ['-X', '-c', ' select 1', '--']);
+  assert.equal(args.length, 5);
+  assert.equal(args[4], buildDbQueryLaunch('postgres', PG, 'select 1')?.args[3], 'the URI is the same');
+});
+
+/** The argv of a launch that must exist. */
+const argvOf = (dbType: DbType, connection: string, bridged: boolean): string[] => (buildDbQueryLaunch(dbType, connection, 'select 2', { bridged }) as { args: string[] }).args;
+
+test('Q2: a bridged mysql launch has --no-defaults first; the three pins stand after the connection flags and before -e', () => {
+  const args = argvOf('mysql', MY, true);
+
+  assert.equal(args[0], '--no-defaults');
+  assert.equal(args[1], '-h');
+  for (const flag of ['--skip-named-commands', '--delimiter=;', '--local-infile=0']) {
+    assertBetween(args, flag, args.indexOf('-D'), args.indexOf('-e'));
+  }
+  assert.deepEqual(args.slice(1), argvOf('mysql', MY, false), 'and the rest is today\'s, word for word');
+});
+
+test('Q3: a bridged mssql launch has no new flag, and off a bridge all three launches are today\'s', () => {
+  assert.deepEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { bridged: true }), buildDbQueryLaunch('mssql', MS, 'select 1'));
+  const connections = { postgres: PG, mysql: MY, mssql: MS } as const;
+  for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
+    assert.deepEqual(buildDbQueryLaunch(dbType, connections[dbType], 'select 1', { bridged: false }), buildDbQueryLaunch(dbType, connections[dbType], 'select 1'));
+  }
+  assert.equal(buildDbQueryLaunch('mysql', MY, 'select 2')?.args.includes('--no-defaults'), false, 'off a bridge: never --no-defaults');
+  assert.equal(buildDbQueryLaunch('postgres', PG, 'select 2')?.args.includes('-X'), false);
+});

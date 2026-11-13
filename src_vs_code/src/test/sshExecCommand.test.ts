@@ -141,7 +141,7 @@ test('C.1: BRIDGED_SSH_OPTIONS is the six options, in this order, and nothing el
 });
 
 test('F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination', () => {
-  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', KEY_FILE);
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true, configFile: 'c.conf' }, 'key', KEY_FILE);
   const joined = argv.join(' ');
   for (const forbidden of ['-A', '-L', '-R', '-D']) {
     assert.ok(!argv.includes(forbidden), `${forbidden} is not sent on a bridge: ${joined}`);
@@ -165,7 +165,7 @@ test('F1: off a bridge the same entry is byte for byte today\'s — -J -A -L …
 
 test('F1: the six options ride both authentication branches of a bridged call', () => {
   for (const auth of ['key', 'askpass'] as const) {
-    assert.notEqual(sixAt(argvWith(entity(), { bridged: true }, auth)), -1, auth);
+    assert.notEqual(sixAt(argvWith(entity(), { bridged: true, configFile: 'c.conf' }, auth)), -1, auth);
   }
 });
 
@@ -220,7 +220,81 @@ test('a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_
   const quiet = argvWith(entity(), { ownAgent: false });
   assert.ok(!quiet.includes('-A') && pairs(quiet) === 0 && !quiet.includes('ForwardAgent=no'), `an entry that does not forward gets neither word: ${quiet.join(' ')}`);
 
-  const bridged = argvWith(everything, { bridged: true, ownAgent: false });
+  const bridged = argvWith(everything, { bridged: true, configFile: 'c.conf', ownAgent: false });
   assert.equal(sixAt(bridged) !== -1 && pairs(bridged) === 1, true, `a bridged call keeps its six options, and no second pair: ${bridged.join(' ')}`);
-  assert.deepEqual(bridged, argvWith(everything, { bridged: true }), 'ownAgent changes nothing on a bridge');
+  assert.deepEqual(bridged, argvWith(everything, { bridged: true, configFile: 'c.conf' }), 'ownAgent changes nothing on a bridge');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.6 B6 (A1-A9) — what a bridged argv says: the file, the pin in the file, the password words, the Host word, and the rules a value must pass
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const BRIDGED = { bridged: true, configFile: 'c.conf' } as const;
+
+test('A1: a bridged key call with a jump and a port has the words of B6, in order', () => {
+  const argv = argvWith(entity({ port: 2222 }), { ...BRIDGED, jump: 'hop@jump.example.com' }, 'key', KEY_FILE);
+
+  assert.deepEqual(argv, [
+    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10',
+    '-J', 'hop@jump.example.com', ...SIX, '-F', 'c.conf', '-i', KEY_FILE, '-p', '2222', '--', 'deploy@example.com', 'id',
+  ]);
+});
+
+test('A2: a bridged call with no configFile is refused', () => {
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { bridged: true }), undefined);
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'askpass', { bridged: true }), undefined);
+});
+
+test('A3: a pinned bridged call says StrictHostKeyChecking=yes, no word starts with UserKnownHostsFile=, and -i is there', () => {
+  const argv = argvWith(entity(), { ...BRIDGED, pinned: true }, 'key', KEY_FILE);
+
+  assert.ok(argv.includes('StrictHostKeyChecking=yes'), argv.join(' '));
+  assert.ok(!argv.includes('StrictHostKeyChecking=accept-new'));
+  assert.deepEqual(argv.filter((word) => word.startsWith('UserKnownHostsFile=')), []);
+  assert.equal(argv[argv.indexOf('-i') + 1], KEY_FILE);
+});
+
+test('A4: a bridged call that is given a known-hosts file is refused', () => {
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { ...BRIDGED, knownHostsFile: '/p/known_hosts' }), undefined);
+});
+
+test('A5: a bridged password call has the three password words after the six and before -F, and no word names PubkeyAuthentication', () => {
+  const argv = argvWith(entity(), { ...BRIDGED, pinned: true }, 'askpass');
+
+  assert.deepEqual(argv.slice(0, 2), ['-o', 'NumberOfPasswordPrompts=1']);
+  const six = sixAt(argv);
+  assert.deepEqual(argv.slice(six + SIX.length, six + SIX.length + 8), ['-o', 'BatchMode=no', '-o', 'PasswordAuthentication=yes', '-o', 'KbdInteractiveAuthentication=yes', '-F', 'c.conf']);
+  assert.ok(!argv.some((word) => word.includes('PubkeyAuthentication')));
+  assert.ok(!argvWith(entity(), BRIDGED, 'key').includes('PasswordAuthentication=yes'), 'a key call has none of them');
+});
+
+test('A6: off a bridge a configFile or a pinned flag changes nothing: today\'s argv', () => {
+  const plain = argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts' }, 'key', KEY_FILE);
+
+  assert.deepEqual(argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts', configFile: 'c.conf', pinned: false }, 'key', KEY_FILE), plain);
+  assert.deepEqual(plain.slice(0, 8), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'ConnectTimeout=10']);
+  assert.ok(!plain.includes('-F'));
+});
+
+test('A7: a bridged destination [::1] and ::1, with a user, are the word u@::1; off a bridge each is as typed', () => {
+  for (const host of ['[::1]', '::1']) {
+    const argv = argvWith(entity({ host, user: 'u' }), BRIDGED, 'key');
+    assert.equal(argv.at(-2), 'u@::1', host);
+  }
+  assert.equal(argvWith(entity({ host: '[::1]', user: 'u' }), {}, 'key').at(-2), 'u@[::1]');
+  assert.equal(argvWith(entity({ host: '::1', user: 'u' }), {}, 'key').at(-2), 'u@::1');
+});
+
+test('A8: a bridged destination user with $ or a backslash is refused, a plain one is not; off a bridge CORP\\alice runs as today', () => {
+  const results = ['$BRIDGE_PROBE', 'CORP\\alice', 'alice', 'alice-name'].map((user) => buildSshExecArgv(entity({ user }), undefined, 'id', 'key', BRIDGED) !== undefined);
+
+  assert.deepEqual(results, [false, false, true, true]);
+  assert.equal(argvWith(entity({ user: 'CORP\\alice' }), {}, 'key').at(-2), 'CORP\\alice@example.com');
+});
+
+test('A9: a bridged key path with %, with ${ and a host with a port are refused', () => {
+  assert.equal(buildSshExecArgv(entity(), '/k/%u/id', 'id', 'key', BRIDGED), undefined);
+  assert.equal(buildSshExecArgv(entity(), '/k/${X}/id', 'id', 'key', BRIDGED), undefined);
+  assert.equal(buildSshExecArgv(entity({ host: 'gw:2201' }), KEY_FILE, 'id', 'key', BRIDGED), undefined);
+  assert.notEqual(buildSshExecArgv(entity(), '/k/~/id', 'id', 'key', BRIDGED), undefined, 'control: a plain path is an argv');
 });
