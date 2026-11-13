@@ -287,8 +287,16 @@ async function main() {
     check('the live legs ran', process.env.CI !== 'true', `${SSHD} is missing — a skipped live leg on the runner proves nothing`);
     console.log('skip  the legs that need sshd — sshd is not installed');
   } else {
-    for (const leg of [legs567, legB, legC, legD, legE, legJ, legK, trustLegs]) {
-      await leg(rig, check);
+    // BRIDGED_ITEST_LEGS (e.g. "d,f"): run only these legs; the mutation runner uses it. Unset: every leg.
+    const only = process.env.BRIDGED_ITEST_LEGS?.split(',');
+    const wanted = (tag) => only === undefined || only.includes(tag);
+    for (const [tag, leg] of [['a', legs567], ['b', legB], ['c', legC], ['d', legD], ['e', legE], ['j', legJ], ['k', legK]]) {
+      if (wanted(tag)) {
+        await leg(rig, check);
+      }
+    }
+    if (only === undefined || only.some((tag) => 'fhin'.includes(tag))) {
+      await trustLegs(rig, check, only);
     }
   }
   console.log(failures === 0 ? '\nall bridged ssh checks passed' : `\n${failures} check(s) failed`);

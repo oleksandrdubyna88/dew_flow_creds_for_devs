@@ -239,9 +239,11 @@ async function legN(rig, check) {
   }
 }
 
-async function trustLegs(rig, check) {
-  for (const leg of [legF, legH, legI, legN]) {
-    await leg(rig, check);
+async function trustLegs(rig, check, only) {
+  for (const [tag, leg] of [['f', legF], ['h', legH], ['i', legI], ['n', legN]]) {
+    if (only === undefined || only.includes(tag)) {
+      await leg(rig, check);
+    }
   }
   check('the person\'s own known_hosts is byte for byte the same after every leg of the harness', R.sha(rig.personFile) === rig.personHash);
 }

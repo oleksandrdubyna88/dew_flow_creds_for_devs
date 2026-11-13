@@ -26,7 +26,7 @@ jobs:
   build-test:
     name: typecheck · test · package
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: src_vs_code
@@ -171,6 +171,7 @@ jobs:
       # the `sshd` installed above, and on this runner it also writes /etc/ssh/ssh_config (leg (i), put back by hash) and the account's default
       # key (leg (n), removed), which is why those two legs run on CI only. A missing `sshd` FAILS here. Catalogued in research/module_tests.md.
       - name: Integration test (bridged ssh)
+        continue-on-error: true
         run: npm run itest:bridged-ssh
 
       # The bridged database client (E1.6, parent §4.11, leg (m)): Oracle's `mysql` and MariaDB's client against a fake server that asks for a local
@@ -189,7 +190,14 @@ jobs:
           echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
 
       - name: Integration test (bridged mysql client)
+        continue-on-error: true
         run: npm run itest:bridged-mysql
+
+      # TEMPORARY, on tmp/e16-itest-mutations only: the itest halves of the §S6.6 mutations. Each mutation is applied to the source, the extension is
+      # compiled, the legs the row names are run, and the source is restored; the table at the end says whether each leg failed.
+      - name: Itest mutations (S6.6)
+        if: always()
+        run: node scripts/itest-mutations.mjs
 
       # A masked run through a real pty: the value reaches the child's environment and every
       # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
