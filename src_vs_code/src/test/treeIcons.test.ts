@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { DEP_COLOR_KEYS, DepColorKey, depColorThemeId } from '../depColors';
 import { ENTITY_KINDS, EntityKind, TreeNode } from '../types';
 
 /**
@@ -240,4 +241,25 @@ test('port 0 is shown — a numeric field must not be dropped for being falsy', 
   w.mod.buildTooltip(node('odd', { port: 0 }));
 
   assert.match(w.markdowns[0].value, /Port/);
+});
+
+type PlainIcon = { id: string; color?: { id: string } };
+
+/** The icon of a folder of `type`, wearing `key` when given. */
+function iconOf(w: World, type: Parameters<Icons['folderIcon']>[0], key?: DepColorKey): PlainIcon {
+  return w.mod.folderIcon(type, key) as unknown as PlainIcon;
+}
+
+/** The theme colour id that icon wears. */
+const colourOf = (w: World, type: Parameters<Icons['folderIcon']>[0], key?: DepColorKey): string | undefined => iconOf(w, type, key).color?.id;
+
+test('a_folder_icon_wears_the_folder_colour', () => {
+  const w = world();
+  for (const type of [...ENTITY_KINDS, 'project', undefined] as const) {
+    assert.equal(colourOf(w, type), 'credSshManager.folderIcon', `${String(type)} without a key keeps the folder colour`);
+    for (const key of DEP_COLOR_KEYS) {
+      assert.equal(colourOf(w, type, key), depColorThemeId(key), `${String(type)} folder wearing ${key}`);
+      assert.equal(iconOf(w, type, key).id, iconOf(w, type).id, 'the glyph does not change');
+    }
+  }
 });

@@ -453,6 +453,15 @@ export interface TreeNode {
    * half not, with nothing on screen to tell them apart.</p>
    */
   mcp?: McpAccess;
+  /**
+   * Folders only: the colour this folder wears — a key of the dependency palette (`depColors.ts`),
+   * written once by `ensureFolderColor` or by the folder form, and then kept.
+   *
+   * <p>A `string`, not a `DepColorKey`, deliberately: a key minted by a newer build must survive
+   * this build's guard and its sync merge instead of rejecting the folder. It is painted only through
+   * `folderColorKeyOf` (`folderColors.ts`), which is where an unknown key stops counting.</p>
+   */
+  folderColor?: string;
 }
 
 /** A person discovered on a vault location (folder or server). */

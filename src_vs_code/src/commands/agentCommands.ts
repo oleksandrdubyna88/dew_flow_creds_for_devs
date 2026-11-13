@@ -566,6 +566,8 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         // Windows and posted into the distribution's shell — the defect this carries the fix for.
         // `target` rides along so *Add Key to Agent* acts on the row that was clicked.
         remote: remoteWindowDeps(wslRelay, remedyRunner(target)),
+        // The one line a failed folder-colour write leaves; without it the failure would be silent (S3-D2).
+        log, onMutated: mutated,
       });
     }
   });

@@ -4,7 +4,7 @@
 > (the heading of the CHANGELOG is #349). Epic 2 (rule B) was merged as #353 (`b95282f1`) and released in extension 1.21.3
 > (release PR #355). Deviations: §12. Ledger at promotion: epoch 1, one entry (1.1), no stop. Still open, for the owner: the
 > questions N1, N4, N5, N6, N2, N8 and N9 (§2.6, §11), and the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
-> N10 (§11) moved to its own plan, [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). The owner said yes on 2026-11-09
+> N10 (§11) moved to its own plan, [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md). The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
@@ -711,7 +711,7 @@ Both:
   a counted change (a new site and a new row), so it is a question for the owner — its own small item, with a priority
   above N8.
   **Moved on 2026-11-11:** the owner said yes to build it as its own small plan,
-  [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md). It is not part of this plan, and it is not built here.
+  [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md). It is not part of this plan, and it is not built here.
 
 ## 12. Deviations — what shipped differently from this plan (promoted 2026-11-11)
 
@@ -768,7 +768,7 @@ append-only and was left as it was at promotion.
   error text of `ssh` itself, and an imported id can look like a name. It is NOT built here, because a new site and a new row would
   be a second change of the plan. Checked: the three code paths above were read at their `file:line`; (c), the text of a real
   `ssh` on a 200 answer, was NOT run against a real `ssh`. The owner said yes on 2026-11-11 to build it as its own small plan:
-  [PLAN_agent_refusal_key_file_path.md](../todo/PLAN_agent_refusal_key_file_path.md).
+  [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md).
 - **N8** (the config-snippet lookup stops at the first account that holds the id) and **N9** (`whyUnusable` says "switch is off" for an
   SSH node in the Trash and for a link to a folder; the journal only) are known and not built.
 

@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { lockToOwner, materializedKeysDir, safeFileComponent } from '../materializedKeys';
+import { callKeyName, lockToOwner, materializedKeysDir, safeFileComponent } from '../materializedKeys';
 import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -131,4 +131,14 @@ test('a very long id is truncated, but still unique', () => {
 
   assert.ok(first.length < 100, String(first.length));
   assert.notEqual(first, second);
+});
+
+test('U1: a call name is call- and a random uuid, new for each call, and the sanitiser gives it back with no change', () => {
+  const first = callKeyName();
+  const second = callKeyName();
+
+  assert.match(first, /^call-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.notEqual(first, second);
+  assert.equal(safeFileComponent(first), first);
+  assert.equal(callKeyName.length, 0, 'no parameter: no id of an entry can arrive in the name');
 });

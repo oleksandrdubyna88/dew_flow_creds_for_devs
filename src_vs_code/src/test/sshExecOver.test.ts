@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { callKeyName } from '../materializedKeys';
 import { locked, memoryStorage, seedEntry } from './pinWorld';
 import type { EntityMetadata } from '../types';
 import type { OverSshCall, UseActionContext } from '../useActions';
@@ -15,6 +16,7 @@ import { clampExecTimeout } from '../brokerProtocol';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { sshNode } from './sshRoadWorld';
 import { HOST_SOCKET, OUR_SOCKET } from './fakePaths';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -78,15 +80,17 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
   const notes: string[] = [];
   const knownHosts = path.join(storageDir, 'known_hosts-s1');
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
+  const writeKey = (dir: string, id: string, content: string): string => {
+    const keyPath = path.join(dir, `${id}.key`);
+    fs.writeFileSync(keyPath, content, { mode: 0o600 });
+    materialised.push(keyPath);
+    return keyPath;
+  };
   const mod = loadWithVscode<Actions>('../sshUseActions', stub, {
     './sshCredential': { resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source) },
     './keyInstaller': {
-      materializePrivateKey: (dir: string, id: string, content: string): string => {
-        const keyPath = path.join(dir, `${id}.key`);
-        fs.writeFileSync(keyPath, content, { mode: 0o600 });
-        materialised.push(keyPath);
-        return keyPath;
-      },
+      materializePrivateKey: writeKey,
+      materializeCallKey: (dir: string, content: string): string => writeKey(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
     './hostKeyTrust': { materializeKnownHosts: (): string => knownHosts },
@@ -109,6 +113,7 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
   const deps: SshUseDeps = {
     storage,
     storageDir,
+    log: recordingLog().log, onMutated: () => undefined,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) => {
       slots.taken += 1;

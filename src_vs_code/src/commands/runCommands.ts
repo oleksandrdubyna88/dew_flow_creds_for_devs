@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { RefSource, resolveSecretRefs } from '../secretRef';
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { ensureFolderColor, noteColourFailure } from '../folderColors';
 import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import { nodeAt } from '../entityViewerCommands';
@@ -33,6 +35,10 @@ export interface RunCommandsHost {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
+  /** The diagnostic log: where a failed folder-colour write leaves its one line (`noteColourFailure`). */
+  readonly log: DiagnosticWriter;
+  /** The tree's repaint after the vault changed: called once when a run wrote a folder's FIRST colour, because that save fires no event (`ensureFolderColor`'s `onWrote`). */
+  readonly onMutated: () => void;
   /**
    * The person's road host (E2.S1 of `PLAN_terminal_command_over_ssh.md`): how a linked entry's SSH session is prepared and
    * refused. Only the person's roads hold it; the agent's calls keep E1's refusal (E2-D2).
@@ -72,6 +78,8 @@ async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | 
     return undefined;
   }
   const { accountId, node } = element;
+  // The folder gets its colour BEFORE the key is read, so the terminal this run opens wears it. A failed write never stops the run.
+  await ensureFolderColor(host.storage, accountId, node.id, host.onMutated).catch(noteColourFailure(host.log));
   const key = entryTerminalKeyOf(host.storage, accountId, node.id, element.node.details.name);
   return { accountId, id: node.id, name: node.name, details: element.node.details, key };
 }
@@ -264,7 +272,7 @@ async function printsConfirmed(host: RunCommandsHost, ready: ReadyScript): Promi
  */
 function launchScript(host: RunCommandsHost, ready: ReadyScript): void {
   const resolved = resolveScriptEnv(ready.script, ready.entry.details.scriptVars, ready.language);
-  const opened = pinnedTerminal(entryTerminalTitle(ready.entry.key), { env: resolved.env, fresh: true });
+  const opened = pinnedTerminal(entryTerminalTitle(ready.entry.key), { env: resolved.env, fresh: true, color: ready.entry.key.folderColor });
   if (!opened.ok) {
     warn(opened.reason);
     return;

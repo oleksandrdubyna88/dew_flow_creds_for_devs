@@ -6,6 +6,20 @@ import { FORM_SECTIONS } from './formSections';
 import { mcpSwitchStyles } from './mcpSwitches';
 
 /**
+ * The dependency swatches' rules, shared by the entity form's Depends-on rows and the folder
+ * form's Colour row, so the two cannot drift into two sizes of one square. No backticks in the
+ * comment inside: one ends this template literal.
+ */
+export const DEP_SWATCH_STYLES = `.depSwatches { display: inline-flex; gap: 3px; }
+  /* A swatch is painted with the contributed theme colour itself — a webview is given every
+     registered colour as a CSS variable — so what is picked here is what the tree will show,
+     in whichever theme is on. The hex behind the comma is only there for the case where that
+     variable is absent, so the picker degrades to twelve distinguishable squares. */
+  .depSwatch { width: 18px; height: 18px; padding: 0; border-radius: 3px; cursor: pointer;
+               border: 1px solid var(--vscode-widget-border, #8884); }
+  .depSwatchOn { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }`;
+
+/**
  * The entity form's stylesheet, out of `entityFormPage.ts` for the recurring reason: the page
  * crossed the 800-line ceiling, and a stylesheet is the one part of a page that reads as a unit
  * on its own.
@@ -63,14 +77,7 @@ export function formStyleSheet(uiScale: number): string {
   ${mcpSwitchStyles()}
   .depRow { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
   .depGone { opacity: .7; font-style: italic; }
-  .depSwatches { display: inline-flex; gap: 3px; }
-  /* A swatch is painted with the contributed theme colour itself — a webview is given every
-     registered colour as a CSS variable — so what is picked here is what the tree will show,
-     in whichever theme is on. The hex behind the comma is only there for the case where that
-     variable is absent, so the picker degrades to ten distinguishable squares. */
-  .depSwatch { width: 18px; height: 18px; padding: 0; border-radius: 3px; cursor: pointer;
-               border: 1px solid var(--vscode-widget-border, #8884); }
-  .depSwatchOn { outline: 2px solid var(--vscode-focusBorder, #007fd4); outline-offset: 1px; }
+  ${DEP_SWATCH_STYLES}
   .depRemove { padding: 1px 8px; }
   .envRow label { opacity: .85; }
   /* The config section's Raw / Fields tabs. Coloured from the editor's own tokens rather than

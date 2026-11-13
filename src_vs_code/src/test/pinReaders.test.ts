@@ -3,6 +3,7 @@ import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import * as world from './pinWorld';
+import { callKeyName } from '../materializedKeys';
 import { EntityMetadata } from '../types';
 import { lockSecret } from '../secretEnvelope';
 import { automaticPinRefusal, openStored, pinFieldRefusal, pinPromptFor, silentPinGate } from '../pinGate';
@@ -136,7 +137,7 @@ test('the SSH broker refuses a protected password rather than handing ssh an env
     {},
     {
       './sshCredential': { resolveSshCredential: () => Promise.resolve({ kind: 'password', password: value }) },
-      './keyInstaller': { writeAskpassScriptFile: (d: string) => `${d}/askpass.sh`, materializePrivateKey: () => '' },
+      './keyInstaller': { writeAskpassScriptFile: (d: string) => `${d}/askpass.sh`, materializePrivateKey: () => '', materializeCallKey: () => '' },
     },
   );
 
@@ -402,6 +403,10 @@ test('the broker refuses a protected stored KEY, says why, and writes nothing to
       materializePrivateKey: (dir: string, name: string, content: string): string => {
         materialized.push(content);
         return `${dir}/${name}`;
+      },
+      materializeCallKey: (dir: string, content: string): string => {
+        materialized.push(content);
+        return `${dir}/${callKeyName()}`;
       },
       writeAskpassScriptFile: (dir: string): string => `${dir}/askpass.sh`,
     },

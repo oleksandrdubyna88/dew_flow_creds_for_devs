@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { McpAccess, readMcpAccess } from './mcpAccess';
+import { DepColorKey, isDepColorKey } from './depColors';
 import { FolderFormOptions, renderFolderHtml } from './folderFormPage';
 import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { FORM_WEBVIEW_OPTIONS, formPanels } from './formPanels';
@@ -24,11 +25,13 @@ export interface FolderFormValues {
    * passes on what it said.</p>
    */
   mcp?: McpAccess;
+  /** Present only when a swatch was clicked: an untouched row is not a choice, so it sends nothing. */
+  folderColor?: DepColorKey;
 }
 
 interface FolderFormMessage {
   type: 'save' | 'cancel' | 'zoom';
-  data?: { name?: unknown; mcp?: unknown };
+  data?: { name?: unknown; mcp?: unknown; folderColor?: unknown };
   /** `zoom` only (T28): which way the press went. The page reports the press, the host clamps. */
   delta?: number;
 }
@@ -90,9 +93,11 @@ export function showFolderForm(options: FolderFormOptions): Promise<FolderFormVa
 }
 
 /** Everything from a webview is untrusted input, including a message this extension sent for. */
-export function readValues(data: { name?: unknown; mcp?: unknown }): FolderFormValues {
+export function readValues(data: { name?: unknown; mcp?: unknown; folderColor?: unknown }): FolderFormValues {
   return {
     name: typeof data.name === 'string' ? data.name.trim() : '',
     mcp: readMcpAccess(data.mcp),
+    // A palette key or nothing: the webview is untrusted, and a stored string that is not a key of this build is never written.
+    folderColor: isDepColorKey(data.folderColor) ? data.folderColor : undefined,
   };
 }

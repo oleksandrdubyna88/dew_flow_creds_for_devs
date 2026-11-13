@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * `runVpn` tells its caller whether it started anything — and where it runs the line.
@@ -57,6 +58,8 @@ type RunVpn = (
   storage: unknown,
   storageDir: string,
   vaultKeys: unknown,
+  trust: unknown,
+  log: unknown,
 ) => Promise<boolean>;
 
 function vpnNode(vpnType: string): unknown {
@@ -78,7 +81,7 @@ test('a VPN with no stored config reports FALSE — an agent is never told "open
   });
   const storage = { getVpnConfig: () => Promise.resolve(undefined) };
 
-  const started = await runVpn(vpnNode('openvpn'), 'start', storage, 'C:\\store', vaultKeys);
+  const started = await runVpn(vpnNode('openvpn'), 'start', storage, 'C:\\store', vaultKeys, undefined, recordingLog().log);
 
   assert.equal(started, false, 'nothing started, so the caller must hear false');
   assert.equal(s.created.length, 0, 'no terminal is opened for a refusal');
@@ -89,7 +92,7 @@ test('an unsupported VPN type reports FALSE', async () => {
   const s = stub();
   const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', s.vscode);
 
-  const started = await runVpn(vpnNode('ikev2'), 'start', { getVpnConfig: () => Promise.resolve('x') }, 'C:\\store', vaultKeys);
+  const started = await runVpn(vpnNode('ikev2'), 'start', { getVpnConfig: () => Promise.resolve('x') }, 'C:\\store', vaultKeys, undefined, recordingLog().log);
 
   assert.equal(started, false);
 });
@@ -98,7 +101,7 @@ test('in a Remote-SSH window nothing is typed into the far machine, and the call
   const s = stub('ssh-remote');
   const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', s.vscode);
 
-  const started = await runVpn(vpnNode('wireguard'), 'stop', { getVpnConfig: () => Promise.resolve('x') }, '/store', vaultKeys);
+  const started = await runVpn(vpnNode('wireguard'), 'stop', { getVpnConfig: () => Promise.resolve('x') }, '/store', vaultKeys, undefined, recordingLog().log);
 
   assert.equal(started, false);
   assert.equal(s.created.length, 0);
@@ -113,7 +116,7 @@ test('a WireGuard stop runs in a terminal whose shell is PINNED, not the default
     './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'wg-quick' }) },
   });
 
-  const started = await runVpn(vpnNode('wireguard'), 'stop', { getVpnConfig: () => Promise.resolve('x') }, '/store', vaultKeys);
+  const started = await runVpn(vpnNode('wireguard'), 'stop', { getVpnConfig: () => Promise.resolve('x') }, '/store', vaultKeys, undefined, recordingLog().log);
 
   assert.equal(started, true);
   assert.equal(s.created.length, 1);

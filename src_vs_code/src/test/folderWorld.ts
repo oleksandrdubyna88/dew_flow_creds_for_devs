@@ -1,6 +1,8 @@
 import { siblingOrder } from '../stateKeys';
 import { EntityMetadata, TreeNode } from '../types';
 import { registerRunWorld } from './arrowWorld';
+import { WrittenChange } from './folderColorStorage';
+import { LogLine, colouringStorage, recordingLog } from './liveColourStorage';
 import { FakeTerminal, HeldDialog, World, WorldOptions, hostOs, memoryTrust, seedTrusted, titleIn, until, world } from './vpnWorld';
 
 /**
@@ -50,6 +52,8 @@ export interface FolderWorldOptions extends WorldOptions {
   mocks?: Record<string, unknown>;
   /** The person's road host (`SshRoad`), as `registerRunCommands` receives it (E2.S2). */
   sshRoad?: unknown;
+  /** Storage's first folder-colour write rejects with this error (a storage that cannot save). */
+  colourWriteFails?: Error;
 }
 
 export interface FolderWorld extends World {
@@ -63,6 +67,12 @@ export interface FolderWorld extends World {
   activity(): number;
   /** The tree the handler reads: a test edits an entry's record in place, as a sync or an edit does while a modal sits. */
   nodes: TreeNode[];
+  /** Every folder-colour write storage was asked for, in order (E1.S3). */
+  colourWrites: WrittenChange[];
+  /** What the diagnostic log was given, in order (E1.S3). */
+  logged: LogLine[];
+  /** How many times the host's tree repaint (`onMutated`) was called. */
+  refreshed: { count: number };
 }
 
 function trustStore(o: FolderWorldOptions): ReturnType<typeof memoryTrust> {
@@ -100,12 +110,32 @@ export function folderWorld(entries: readonly EntityMetadata[], o: FolderWorldOp
   const nodes = treeOf(entries, o);
   const folder = nodes[0];
   const activity = { count: 0 };
+  const colouring = colouringStorage({
+    all: () => nodes,
+    replace: (node) => {
+      const at = nodes.findIndex((n) => n.id === node.id);
+      if (at >= 0) {
+        nodes[at] = node;
+      }
+    },
+  });
+  if (o.colourWriteFails !== undefined) {
+    colouring.failNextWrite(o.colourWriteFails);
+  }
+  const { log, lines: logged } = recordingLog();
+  const refreshed = { count: 0 };
   const handlers = registerRunWorld(w, {
+    log,
+    onMutated: () => {
+      refreshed.count += 1;
+    },
     store,
     storage: {
       getNode: (_account: string, id: string) => nodes.find((n) => n.id === id),
       getChildren: (_account: string, parent: string | null) => nodes.filter((n) => (n.parentId ?? null) === parent).sort(siblingOrder),
       getHistory: () => Promise.resolve([]),
+      getNodes: colouring.getNodes,
+      updateNodeFields: colouring.updateNodeFields,
     },
     mocks: o.mocks,
     sshRoad: o.sshRoad,
@@ -122,6 +152,9 @@ export function folderWorld(entries: readonly EntityMetadata[], o: FolderWorldOp
     trust: store,
     activity: () => activity.count,
     nodes,
+    colourWrites: colouring.written,
+    logged,
+    refreshed,
   };
 }
 

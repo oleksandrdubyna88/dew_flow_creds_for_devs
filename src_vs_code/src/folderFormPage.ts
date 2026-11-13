@@ -5,6 +5,9 @@ import { escapeHtml } from './webviewHtml';
 import { formHeaderHtml, pageChromeCss } from './pageChrome';
 import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
 import { mcpSwitchScript } from './mcpSwitchScript';
+import { DEP_COLOR_LABELS, DepColorKey } from './depColors';
+import { DEP_SWATCH_STYLES } from './entityFormStyles';
+import { folderSwatchScript } from './folderSwatchScript';
 
 /**
  * The folder form's page — markup, CSS and its inline script.
@@ -22,7 +25,7 @@ import { mcpSwitchScript } from './mcpSwitchScript';
  * box, and that was the whole of it. Agent access inherits from the folder, so it needed
  * somewhere to be set, and a rename box is not a place to put five permissions.</p>
  *
- * <p>Deliberately small. Name and agent access, and nothing else — in particular NOT the folder
+ * <p>Deliberately small. Name, colour and agent access, and nothing else — in particular NOT the folder
  * TYPE, which dictates what kind of entity the folder may hold. Changing it after the fact would
  * strand contents the folder no longer admits; that is a feature with a migration question of
  * its own, not a field to slip into a form while adding another.</p>
@@ -59,6 +62,16 @@ export interface FolderFormOptions {
    * them should have to know that a page has a text size.
    */
   uiScale?: number;
+  /**
+   * The palette key this folder wears, when it wears one this build knows. The swatch row marks it;
+   * marking it is not a choice, so a Save that clicked no swatch sends no colour back.
+   */
+  folderColor?: DepColorKey;
+  /**
+   * The colour the first terminal opened from this folder would get right now, set only when the
+   * folder holds no colour at all. It is a preview: another folder can take it before then.
+   */
+  suggestedColor?: DepColorKey;
   /** The Trash, or anything inside it: nothing there is reachable, whatever a switch says. */
   inTrash: boolean;
 }
@@ -92,6 +105,7 @@ export function renderFolderHtml(options: FolderFormOptions): string {
   .mcpSeg { width: 26px; height: 4px; border-radius: 2px; opacity: .18; }
   .mcpSegOn { opacity: 1; }
   ${mcpSwitchStyles()}
+  ${DEP_SWATCH_STYLES}
 </style>
 </head>
 <body>
@@ -104,16 +118,20 @@ ${formHeaderHtml({ heading: `Edit: ${options.name}`, chip: 'folder', uiScale })}
            value="${escapeHtml(options.name)}">
   </fieldset>
 
+  ${colourFieldset(options)}
+
   ${options.inTrash ? trashNotice() : accessFieldset(options, mcp, decided, inheritedFrom)}
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const chk = (id) => document.getElementById(id)?.checked === true;
   ${options.inTrash ? 'function collectMcp() { return undefined; }' : mcpSwitchScript(options.mcp)}
+  ${colourScript(options)}
   function save() {
     vscode.postMessage({ type: 'save', data: {
       name: document.getElementById('name').value,
       mcp: collectMcp(),
+      folderColor: collectFolderColor(),
     }});
   }
   document.getElementById('save').addEventListener('click', save);
@@ -189,6 +207,37 @@ function accessFieldset(
     ).join('')}
     ${mcpAskHtml(options.mcp?.ask, options.inheritedAsk)}
   </fieldset>`;
+}
+
+/**
+ * The Colour row: the twelve swatches, and, for a folder with no colour yet, what the first terminal would give it.
+ * Nothing in the Trash, which is never painted.
+ *
+ * <p>The line is a preview, not a promise: the auto-pick runs when the first terminal opens, and another folder can
+ * take the colour before then, so it says so. The label comes from our own table and goes through the escaper all the
+ * same. A folder holding a colour this build does not know gets no line, because the auto-pick never writes over one.</p>
+ */
+function colourFieldset(options: FolderFormOptions): string {
+  if (options.inTrash) {
+    return '';
+  }
+  const suggested = options.suggestedColor;
+  const line =
+    suggested === undefined
+      ? ''
+      : `<p class="hint" id="folderColorHint">${escapeHtml(
+          `No colour yet. The first terminal opened from this folder gets the least-used colour at that moment (now: ${DEP_COLOR_LABELS[suggested]}; this can change before then). Choose one to set it now.`,
+        )}</p>`;
+  return `<fieldset>
+    <legend>Colour</legend>
+    <span class="depSwatches" id="folderSwatches"></span>
+    ${line}
+  </fieldset>`;
+}
+
+/** The row's script, or, in the Trash, the collector that reports no choice (the shape of the switches' one). */
+function colourScript(options: FolderFormOptions): string {
+  return options.inTrash ? 'function collectFolderColor() { return undefined; }' : folderSwatchScript(options.folderColor);
 }
 
 /** No switches for the Trash: they would be controls that decide nothing. */

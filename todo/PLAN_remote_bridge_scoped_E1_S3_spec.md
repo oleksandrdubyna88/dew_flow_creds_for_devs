@@ -1914,7 +1914,7 @@ does not overwrite it, and this spec found no sweep of that folder. The private 
 own account until they delete it; nothing else gains a read. The note names the path's failure, not the key. The leftover is recorded in the todo of
 C.11 so E4 can decide whether a sweep at activation is wanted; it is not built here.
 
-*Note, 2026-11-12 (the parent's change 9.1):* after N10 of F7 (`todo/PLAN_agent_refusal_key_file_path.md`, creds PR #359) the
+*Note, 2026-11-12 (the parent's change 9.1):* after N10 of F7 (`research/PLAN_agent_refusal_key_file_path.md`, creds PR #359) the
 file is written by `materializeCallKey(storageDir, content)` under `call-<uuid>.key`, with no entry id in its name; the text above
 stays as written for epoch 3.
 

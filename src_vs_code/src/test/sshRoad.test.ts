@@ -45,9 +45,9 @@ function loadRoad(vscode: Record<string, unknown>, mocks: Record<string, unknown
   return loadWithVscode<Road>('../sshRoad', vscode, { './sshSession': {}, './sshConnect': {}, './remoteConnectHost': {}, ...mocks });
 }
 
-/** The deps of a road over the shared typed storage (these tests never read it): a typed partial, so a field added to `SshRoadDeps` is a compile error here and not a cast. */
+/** The deps of a road over a fresh typed storage (these tests never read it): a typed partial, so a field added to `SshRoadDeps` is a compile error here and not a cast. */
 function roadDeps(over: Partial<SshRoadDeps> = {}): SshRoadDeps {
-  return { storage, storageDir: '/storage', ...over };
+  return { storage: storage(), storageDir: '/storage', ...over };
 }
 
 /** A ready whose `cleanup()` is counted. */
@@ -126,7 +126,6 @@ test('a_refusal_shows_the_remedy_once_and_never_retries', async () => {
   assert.deepEqual(w.openers, [], 'no credential was looked up: nothing was prepared again');
   assert.deepEqual(w.materialised, []);
   assert.deepEqual(w.sshTerminals, []);
-  void storage;
 });
 
 // H3

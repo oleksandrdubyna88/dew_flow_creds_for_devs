@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { after, test } from 'node:test';
 import { isCommandTrusted } from '../commandTrust';
+import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
 import { RemotePlan, planLaunch, sshLinkOf, sshLinkRefusal, trustLineFor, typedLine } from '../remoteLaunch';
 import type { ReadySsh } from '../sshSession';
+import { entryTerminalKey, entryTerminalTitle } from '../terminalTitles';
 import type { EntityMetadata, TreeNode } from '../types';
 import { ArrowOptions, ArrowWorld, arrowWorld } from './arrowWorld';
 import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
@@ -440,4 +442,18 @@ test('a_pinned_terminal_without_env_is_not_found_in_one_opened_with_env', () => 
   const opened = w.terminals.filter((t) => t.name === 'Script');
   assert.equal(opened.length, 2, 'a second terminal opened');
   assert.equal(opened[1].env, undefined);
+});
+
+// C6 (E1.S3): the terminal a linked arrow opens wears its folder's colour, like the arrow's own.
+test('a_linked_arrows_terminal_wears_its_folder_colour', async () => {
+  const parent: TreeNode = { id: 'ops-id', name: 'ops', type: 'folder', folderType: 'terminal', parentId: null, folderColor: DEP_COLOR_KEYS[3] };
+  const { aw } = setup(undefined, { parent });
+
+  await aw.run(LINKED);
+
+  const terminal = terminalNamed(aw, entryTerminalTitle(entryTerminalKey('deploy', parent)));
+  assert.equal(terminal.color?.id, depColorThemeId(DEP_COLOR_KEYS[3]));
+  const root = setup();
+  await root.aw.run(LINKED);
+  assert.equal('color' in terminalNamed(root.aw, TITLE), false, 'an entry at the root has no folder, so no colour');
 });

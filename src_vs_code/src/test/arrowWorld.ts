@@ -1,6 +1,9 @@
 import { FieldReading } from '../fieldReading';
 import type { EnvDrop } from '../sshProgram';
 import { EntityMetadata, TreeNode } from '../types';
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { WrittenChange } from './folderColorStorage';
+import { LogLine, colouringStorage, recordingLog } from './liveColourStorage';
 import { World, WorldOptions, memoryTrust, seedTrusted, world } from './vpnWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -44,6 +47,12 @@ export interface ArrowWorld extends World {
   nodes: Record<string, unknown>;
   /** How many times storage's `getNode` was called with `id`, from the start of the world. */
   reads(id: string): number;
+  /** Every folder-colour write storage was asked for, in order (E1.S3). */
+  colourWrites: WrittenChange[];
+  /** What the diagnostic log was given, in order (E1.S3). */
+  logged: LogLine[];
+  /** How many times the host's tree repaint (`onMutated`) was called. */
+  refreshed: { count: number };
 }
 
 export type Handler = (target: unknown) => Promise<void>;
@@ -65,6 +74,10 @@ export interface RunWorldHost {
   storageDir?: string;
   /** The person's road host (`SshRoad`) `registerRunCommands` is given. Default `NO_ROAD`: a test that reaches it fails loudly. */
   sshRoad?: unknown;
+  /** The diagnostic log `registerRunCommands` is given. Default: one that keeps nothing. */
+  log?: DiagnosticWriter;
+  /** The tree repaint `registerRunCommands` is given. Default: one that does nothing. */
+  onMutated?: () => void;
 }
 
 /** The road host of a world that has none: reaching it is the test's failure, not a silent pass. */
@@ -74,6 +87,12 @@ const NO_ROAD = {
 };
 
 const roadOf = (host: RunWorldHost): unknown => host.sshRoad ?? NO_ROAD;
+
+/** The tree repaint of a world that was given none does nothing. */
+const repaintOf = (host: RunWorldHost): (() => void) => host.onMutated ?? ((): void => undefined);
+
+/** The diagnostic log of a world that was given none keeps nothing. */
+const logOf = (host: RunWorldHost): DiagnosticWriter => host.log ?? recordingLog().log;
 
 /** The nodes storage holds from the start, by id. */
 function seededNodes(others: readonly TreeNode[] | undefined): Record<string, unknown> {
@@ -100,8 +119,24 @@ export function registerRunWorld(w: World, host: RunWorldHost): Record<string, H
     storageDir: host.storageDir ?? '/storage',
     vaultKeys: { noteUserActivity: () => host.onActivity?.() },
     sshRoad: roadOf(host),
+    log: logOf(host),
+    onMutated: repaintOf(host),
   });
   return handlers;
+}
+
+/** The colour-write half of storage over the world's nodes; `fails` makes its first write reject. */
+function colouringOver(nodes: Record<string, unknown>, fails: Error | undefined): ReturnType<typeof colouringStorage> {
+  const colouring = colouringStorage({
+    all: () => Object.values(nodes) as TreeNode[],
+    replace: (node) => {
+      nodes[node.id] = node;
+    },
+  });
+  if (fails !== undefined) {
+    colouring.failNextWrite(fails);
+  }
+  return colouring;
 }
 
 /** What an arrow world is built from: where the entry is stored, what the element claims, where a script is written. */
@@ -122,6 +157,8 @@ export interface ArrowOptions extends WorldOptions {
   events?: string[];
   /** Called by the mock AFTER it records a run: a test throws from it (a failed terminal creation) or calls `options.onEnded?.()` in it (a run that ended while being created). */
   onMasked?: (options: MaskedRecord) => void;
+  /** Storage's first folder-colour write rejects with this error (a storage that cannot save). */
+  colourWriteFails?: Error;
 }
 
 /** The tree element a click hands over: the node as the menu drew it, its `parentId` possibly old. */
@@ -144,7 +181,14 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
   const readsOf: Record<string, number> = {};
   const history: { name: string; details: EntityMetadata }[] = [];
   const subscriptions: unknown[] = [];
+  const colouring = colouringOver(nodes, opts.colourWriteFails);
+  const { log, lines: logged } = recordingLog();
+  const refreshed = { count: 0 };
   const handlers = registerRunWorld(w, {
+    log,
+    onMutated: () => {
+      refreshed.count += 1;
+    },
     store,
     storage: {
       getNode: (_account: string, id: string) => {
@@ -152,6 +196,8 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
         return nodes[id];
       },
       getHistory: () => Promise.resolve(history),
+      getNodes: colouring.getNodes,
+      updateNodeFields: colouring.updateNodeFields,
     },
     mocks: {
       '../maskedTerminal': {
@@ -169,8 +215,9 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
   });
   /** Storage holds the entry (and its folder) as the tree has them NOW. */
   const seed = (entry: EntityMetadata, nodeName: string): void => {
+    // The folder is seeded ONCE: a colour a run wrote into it must survive the next click.
     if (opts.parent !== undefined) {
-      nodes[opts.parent.id] = opts.parent;
+      nodes[opts.parent.id] ??= opts.parent;
     }
     nodes[entry.id] = { id: entry.id, type: 'entity', name: nodeName, details: entry, parentId: opts.parent?.id };
   };
@@ -183,7 +230,7 @@ export function arrowWorld(opts: ArrowOptions = {}, trusted: readonly (readonly 
     history[index] = revision;
     return handlers['credSshManager.runCommand']({ kind: 'revision', accountId: 'a1', index, node: { id: entry.id, name: entry.name, details: entry } });
   };
-  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision, nodes, reads: (id) => readsOf[id] ?? 0 };
+  return { ...w, run: invoke('credSshManager.runCommand'), runScript: invoke('credSshManager.runScript'), runWithSecrets: invoke('credSshManager.runWithSecrets'), trust: store, masked, subscriptions, runRevision, nodes, reads: (id) => readsOf[id] ?? 0, colourWrites: colouring.written, logged, refreshed };
 }
 
 /** A vault of one account `me` holding the entities named, each with the one password: the `refSource` of `arrowWorld`, and the ids it was asked to read. */

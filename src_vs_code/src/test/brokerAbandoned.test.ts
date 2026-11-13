@@ -9,6 +9,7 @@ import { World, call, share, world } from './brokerWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { recordingLog } from './liveColourStorage';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
 const scope = cleanupScope();
@@ -554,7 +555,7 @@ function sshTerminalWorld(): SshTerminalWorld {
         return Promise.resolve({ knownHostsFile: undefined });
       },
     },
-    './keyInstaller': { materializePrivateKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
+    './keyInstaller': { materializePrivateKey: (): string => '/k', materializeCallKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
     './terminalManager': {
       openSshTerminal: (): unknown => {
         log.terminals += 1;
@@ -572,6 +573,7 @@ function sshTerminalWorld(): SshTerminalWorld {
     return {
       storage,
       storageDir: ownedDir(scope, 'abandoned'),
+      log: recordingLog().log, onMutated: () => undefined,
       signal: new AbortController().signal,
       acquireExecSlot: () => (): void => undefined,
       note: (): void => undefined,

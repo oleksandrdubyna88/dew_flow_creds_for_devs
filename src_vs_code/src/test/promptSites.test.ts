@@ -13,6 +13,7 @@ import { Walker, rootsOf, walkerOver } from './promptSiteWalk';
 import { memoryStorage } from './pinWorld';
 import { discoverSources } from './tempSiteScan';
 import { loadWithVscode } from './vscodeStub';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * The prompt-site ledger (parent §7, §4.10's follow-up contract): every place the extension can ask a person something is a row of
@@ -191,7 +192,7 @@ const TARGET = { accountId: 'a1', entityId: 'e1', entityName: 'prod' };
 function realFactories(): Record<string, UseAction> {
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const ssh = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub);
-  const sshDeps: SshUseDeps = { storage: memoryStorage(stub), storageDir: '/unused', signal: new AbortController().signal, acquireExecSlot: () => undefined, note: () => undefined, agentSocket: () => undefined };
+  const sshDeps: SshUseDeps = { storage: memoryStorage(stub), storageDir: '/unused', log: recordingLog().log, onMutated: () => undefined, signal: new AbortController().signal, acquireExecSlot: () => undefined, note: () => undefined, agentSocket: () => undefined };
   const agent: AgentUseDeps & { onPath: (exe: string) => boolean; overSsh: OverSsh } = {
     storage: memoryStorage(stub),
     storageDir: '/unused',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { TreeNode } from '../types';
-import { loadWithVscode } from './vscodeStub';
+import { twoWindows } from './twoWindowsWorld';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -30,104 +30,6 @@ after(() => scope.close());
  * secrets — while window B runs a whole import to completion. Every `await` in the removal was always
  * such a point; this one is simply the one a test can name.</p>
  */
-
-interface Storage {
-  addNode(accountId: string, node: TreeNode): Promise<void>;
-  setPassword(accountId: string, id: string, value: string): Promise<void>;
-  getPassword(accountId: string, id: string): Promise<string | undefined>;
-  upsertAccount(account: { accountId: string; email: string; provider: string }): Promise<void>;
-  getAccounts(): readonly { accountId: string }[];
-  removeAccount(accountId: string): Promise<void>;
-  importBundle(accountId: string, bundle: unknown): Promise<void>;
-  exportBundle(accountId: string): Promise<unknown>;
-}
-
-/** One store, two windows — and a gate on one key, which is what makes the interleaving repeatable. */
-function sharedMemento(): {
-  api: { get<T>(key: string, fallback?: T): T | undefined; update(key: string, value: unknown): Promise<void> };
-  pauseOn(key: string): { reached: Promise<void>; release: () => void };
-} {
-  const map = new Map<string, unknown>();
-  const gates = new Map<string, { open: Promise<void>; release: () => void; arrive: () => void }>();
-  return {
-    api: {
-      get: <T>(key: string, fallback?: T): T | undefined => (map.has(key) ? (map.get(key) as T) : fallback),
-      update: async (key: string, value: unknown): Promise<void> => {
-        const gate = gates.get(key);
-        if (gate !== undefined) {
-          gates.delete(key);
-          gate.arrive();
-          await gate.open;
-        }
-        map.set(key, value !== null && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value);
-      },
-    },
-    pauseOn: (key: string) => {
-      let release = (): void => {};
-      let arrive = (): void => {};
-      const open = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const reached = new Promise<void>((resolve) => {
-        arrive = resolve;
-      });
-      gates.set(key, { open, release, arrive });
-      return { reached, release };
-    },
-  };
-}
-
-function sharedSecrets(): { api: object; keys: () => string[] } {
-  const map = new Map<string, string>();
-  return {
-    keys: () => [...map.keys()],
-    api: {
-      get: (k: string) => Promise.resolve(map.get(k)),
-      store: (k: string, v: string) => {
-        map.set(k, v);
-        return Promise.resolve();
-      },
-      delete: (k: string) => {
-        map.delete(k);
-        return Promise.resolve();
-      },
-      onDidChange: () => ({ dispose: () => undefined }),
-    },
-  };
-}
-
-/**
- * Two StorageManagers over ONE memento and ONE keychain: two windows of the same profile.
- *
- * <p>`lockDir` is what makes the difference the whole plan is about. Without it each window has a
- * `SerialQueue` and nothing else, which is what the reproduction below shows costing an import. With
- * it they share a lock directory on the real filesystem — the real `mkdir`, not a fake, because the
- * atomicity of that one call is the entire design.</p>
- */
-function twoWindows(lockDir?: string): {
-  a: Storage; b: Storage; memento: ReturnType<typeof sharedMemento>; keys: () => string[];
-} {
-  const { StorageManager } = loadWithVscode<{ StorageManager: new (m: unknown, s: unknown, d?: string) => Storage }>(
-    '../storageManager',
-    {
-      EventEmitter: class {
-        event = (): void => {};
-        fire(): void {}
-      },
-      Uri: { file: (p: string): object => ({ fsPath: p }) },
-      workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
-      window: { setStatusBarMessage: () => ({ dispose: (): void => undefined }) },
-    },
-  );
-  const memento = sharedMemento();
-  const secrets = sharedSecrets();
-  return {
-    a: new StorageManager(memento.api, secrets.api, lockDir),
-    b: new StorageManager(memento.api, secrets.api, lockDir),
-    memento,
-    keys: secrets.keys,
-  };
-}
 
 /** A real directory, because the lock's whole claim is about a real `mkdir`. */
 function lockDirectory(): string {

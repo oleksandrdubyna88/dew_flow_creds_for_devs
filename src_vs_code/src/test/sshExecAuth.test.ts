@@ -4,6 +4,7 @@ import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import type { ExecAuth } from '../sshExecAuth';
 import { pinRefusalFor } from '../pinGate';
+import { callKeyName } from '../materializedKeys';
 
 /**
  * Turning a saved credential into what a non-interactive `ssh` needs.
@@ -44,6 +45,11 @@ function withCredential(
           writes.push(`key:${name}`);
           return `${dir}/${name}`;
         },
+        materializeCallKey: (dir: string): string => {
+          const name = callKeyName();
+          writes.push(`key:${name}`);
+          return `${dir}/${name}`;
+        },
         writeAskpassScriptFile: (dir: string): string => {
           writes.push('askpass');
           return `${dir}/askpass.sh`;
@@ -67,16 +73,19 @@ function refused(result: ExecAuth): Extract<ExecAuth, { ok: false }> {
   return result as Extract<ExecAuth, { ok: false }>;
 }
 
-test('a stored key is written out, and the argv is told it is a KEY', async () => {
+test('K5: a stored key is written out under a call name that holds nothing of the id of the key entry, and the argv is told it is a KEY', async () => {
   const writes: string[] = [];
   const result = await withCredential(
-    { kind: 'storedKey', keyEntityId: 'k7', content: 'PRIVATE' },
+    { kind: 'storedKey', keyEntityId: 'deploy-key', content: 'PRIVATE' },
     writes,
   )('/store');
 
   const auth = ok(result);
   assert.equal(auth.auth, 'key');
-  assert.ok(auth.keyPath?.startsWith('/store/k7-'), auth.keyPath);
+  const last = (auth.keyPath ?? '').split('/').at(-1) ?? '';
+  assert.ok(!last.includes('deploy-key'), `the last part of the key path holds the id of the key entry: ${last}`);
+  assert.match(last, /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.ok(auth.keyPath?.startsWith('/store/'));
   assert.notEqual(auth.materialized, undefined, 'the caller must know to delete it');
   assert.equal(writes.length, 1);
 });
@@ -164,6 +173,9 @@ test('a key that cannot be written is an internal failure, not a passwordless at
       },
       './keyInstaller': {
         materializePrivateKey: (): string => {
+          throw new Error('EACCES: read-only file system');
+        },
+        materializeCallKey: (): string => {
           throw new Error('EACCES: read-only file system');
         },
         writeAskpassScriptFile: (): string => '/x',

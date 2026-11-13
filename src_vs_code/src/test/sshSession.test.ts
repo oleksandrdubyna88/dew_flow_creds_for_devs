@@ -28,7 +28,7 @@ const ready = (p: PreparedSsh): ReadySsh => {
 };
 
 const STORED = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' };
-const base = { storage, storageDir: '/storage' };
+const base = { storage: storage(), storageDir: '/storage' };
 const KEY = '/storage/keys/k1.key';
 
 test('prepare opens no terminal and sends nothing — stored key, relay, password', async () => {

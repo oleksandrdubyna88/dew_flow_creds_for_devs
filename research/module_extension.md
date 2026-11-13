@@ -2469,7 +2469,7 @@ cannot delete theirs. The chain's two sends (`sendText` without shell integratio
 
 *The used entry and its burn (`brokerCall.ts`).* A linked run is an agent's USE of the SSH entry, so the SSH entry gets the one-use promise it has under `creds_exec`. The action declares `uses(target)` (`UsedEntry { accountId, entityId, entityName }`, only when the gate answers `linked`); the server asks it once per call in the step of `summarize` (`usedByCall`) and `CallSubject.uses` carries it to `run` as `ctx.uses`. `performCall` takes the turns of the grant's entry and of the used entry in one fixed order (the spent markers first, the grant's entry first; the one-use turns in ascending lane key, a plain compare, nested), so no two calls can wait for each other; an entry that is not one-use is never queued. `burnInTurn` burns the grant's entry, then, in a `finally`, the used one, after a 200 only; the spent marker is a member of the lane's per-window set (at most 512 keys). A call that finds the used entry already spent is refused `denied` with `usedEntrySpent(name)`, naming ONE entry (the Terminal entry); an SSH entry whose delete FAILED stays spent. A waiting rotated value of the SSH entry is released right after the grant's own and before the mask table is read (`prepared()` in `credsAgentServer.ts`, which stays at 800 lines or fewer).
 
-*The SSH call (`sshUseActions.ts`).* `execOverSsh(deps)` is the body `ssh:exec` always had (the credential from `resolveExecAuth`, which refuses a PIN-locked or woven password; the argv from `buildSshExecArgv`; the spawn; the key file removed in `finally`), taken out and shared: the caller decides WHICH entry, WHICH command and WHAT jump chain (a thunk, so `ssh:exec` still resolves it after the credential) and holds the exec slot. `sshDepsFor` returns `SshWiredDeps` (the deps plus `overSsh`), so `agentUseActions.ts`, which imports no `vscode`, receives the call by injection. The agent's linked run sends the BARE line as ONE remote command (`planLaunch` with `stayOpen: false`; no stay-open wrapper, no login shell) and says `ownAgentOnly: true` and `noTty: true`: `-T` first, no `-A` unless the extension's own agent is up (`ownAgent` is written at the call of `buildSshExecArgv`, so `launchRoadScan.test.ts` F5 finds it there), and the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name removed from the child's environment (`envWithout(prepared.env, E3_INHERITED_DROP, process.platform)`); the extension's own socket is laid on top when its agent serves the run. `ssh:exec` says `ownAgentOnly: false` and no `noTty`, and the three clicks of `commands/agentCommands.ts` call `buildSshExecArgv` with neither option: their argv and environment are today's (the recorded limit of `PLAN_ssh_exec_own_agent_forwarding.md`; `PLAN_ssh_exec_absolute_program.md` for the program and folder, which stay as they were). One snapshot: `plan.ssh` is the object the gate's `link` carried, not a second `sshLinkOf`.
+*The SSH call (`sshUseActions.ts`).* `execOverSsh(deps)` is the body `ssh:exec` always had (the credential from `resolveExecAuth`, which refuses a PIN-locked or woven password; a stored key is written to `keys/<pid>/call-<uuid>.key` by `materializeCallKey`, a random name, so that a text that shows the path tells no id of an entry (rule C, in *A lookup and a refusal name only what the agent may view*); the argv from `buildSshExecArgv`; the spawn; the key file removed in `finally`), taken out and shared: the caller decides WHICH entry, WHICH command and WHAT jump chain (a thunk, so `ssh:exec` still resolves it after the credential) and holds the exec slot. `sshDepsFor` returns `SshWiredDeps` (the deps plus `overSsh`), so `agentUseActions.ts`, which imports no `vscode`, receives the call by injection. The agent's linked run sends the BARE line as ONE remote command (`planLaunch` with `stayOpen: false`; no stay-open wrapper, no login shell) and says `ownAgentOnly: true` and `noTty: true`: `-T` first, no `-A` unless the extension's own agent is up (`ownAgent` is written at the call of `buildSshExecArgv`, so `launchRoadScan.test.ts` F5 finds it there), and the host's `SSH_AUTH_SOCK` and every `CREDS_REF_` name removed from the child's environment (`envWithout(prepared.env, E3_INHERITED_DROP, process.platform)`); the extension's own socket is laid on top when its agent serves the run. `ssh:exec` says `ownAgentOnly: false` and no `noTty`, and the three clicks of `commands/agentCommands.ts` call `buildSshExecArgv` with neither option: their argv and environment are today's (the recorded limit of `PLAN_ssh_exec_own_agent_forwarding.md`; `PLAN_ssh_exec_absolute_program.md` for the program and folder, which stay as they were). One snapshot: `plan.ssh` is the object the gate's `link` carried, not a second `sshLinkOf`.
 
 *Masking.* `maskEntriesWithLink(source, accountId, entityId)` (`maskEntries.ts`) is the broker's root for the mask table: the Terminal entry's values and, when `sshLinkOf` accepts a link, the SSH entry's too, because a run that uses its credential can print it. It widens the table in this one place, never in an action; a Terminal entry that is gone still throws `MaskSourceUnavailable`, and a missing or refused SSH entry adds nothing. The prompt-site walk's root is `maskEntriesWithLink` for that reason (a deviation recorded in the E3 stories document). `useRoute` (`bridgeAllowList.ts`) has a branch of its own for `run`: still `not_supported`, now saying E3 decided.
 
@@ -3176,6 +3176,107 @@ bridge's `:bridged` / `:nobridge` pair pushed it to 810. A row builder is the ch
 there to give its own file, because it reads nothing off the provider that cannot be handed to it.
 The alternative each time was to shorten a comment until the file fit, which buys a green lint by
 deleting the reason the code is the way it is.
+
+### Folder colours — a folder's terminals and its row (Unreleased)
+
+> Design record: [PLAN_folder_colors.md](PLAN_folder_colors.md) and its two epic files, [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md) (the colour is picked for the person) and
+> [PLAN_folder_colors_E2.md](PLAN_folder_colors_E2.md) (the person chooses it in the folder form, and the documents). Both epics are built; the deviations are § 9 of the first.
+
+**The field.** `TreeNode.folderColor` (`types.ts`) is a key of the dependency palette (`depColors.ts`), on a folder
+only. It is typed `string`, not `DepColorKey`, and the node guard checks only that it is a string, so a key minted by
+a newer build survives a sync or an import byte for byte. It is PAINTED only when this build knows it:
+`folderColorKeyOf` (`folderColors.ts`, no `vscode`) answers a key for a folder that is not the trash and whose value
+passes `isDepColorKey`, else `undefined`, and every painter goes through it. Entries' `details.depColor` is another
+meaning of the same palette and is never read for a folder.
+
+**The auto-pick.** `ensureFolderColor(storage, accountId, entryId, onWrote?)` gives the entry's DIRECT parent folder a colour,
+once. It runs BEFORE a folder-named terminal is found or created, on each of five roads (they reach the five
+`createTerminal` sites of the next paragraph): the arrow and Run Script in `entryAt` (`commands/runCommands.ts`), the folder run in `colourRows`
+(`commands/folderRunCommand.ts`, once per row to type, in row order, before the first preparation), the VPN
+launcher in `runWithLauncher` (`vpnLauncherRun.ts`, the launcher's own folder, after the `stop` return), and SSH
+Connect first in `connectEntity` (`sshConnect.ts`, before `prepareSshSession`). None of these runs adds an `await` where
+a document forbids one: SSH Connect's open half after prepare, the launcher's `configFor` to its send, and the folder
+run's last preparation to its last send stay synchronous. At the root, in the trash (any depth), for a dangling parent
+or a missing entry it writes nothing. A folder that holds ANY string, an unknown key included, is left byte-identical.
+Otherwise one `updateNodeFields` call with a FUNCTION patch does the fresh read, the tally (`pickFolderColor`: the
+first key no folder wears, then the least worn in palette order), the choice and the write, inside the write queue and
+the cross-window lease. The check that skips the call for a folder already holding a string sits OUTSIDE the lease,
+because every `updateNodeFields` stamps the version vector. A call that loses a race (two calls for one folder in
+one window, or two windows) changes no field and still stamps the folder once: three memento writes and one sync
+upload, accepted. A failed write rejects that call only; each caller catches it, writes ONE line to the diagnostic log
+(source `folderColors`, `describeError`'s text, no folder or entry name; `noteColourFailure`) and goes on. No toast: the
+colour is cosmetic, the terminal opens without it, and the next open tries again because no string was stored.
+The save fires no event (`StorageManager.touch` only counts), so the folder row would keep its old colour until something else
+repainted the tree: the call that actually WROTE a colour (its patch chose one; not a folder that already wore one, not a
+call that lost a race, not a rejected write) calls `onWrote` once, after the save. Each road passes its host's tree repaint,
+required in its dependency object like `log`: `RunCommandsHost.onMutated` (the arrow, Run Script and the folder run),
+`ConnectOptions.onMutated` (SSH Connect; `SshUseDeps.onMutated` for the agent's terminal), and `VpnRunContext.onMutated`
+(`runVpn`'s eighth argument); `extension.ts` wires all of them to `mutated`. `folderColors.ts` keeps no state and imports no `vscode`.
+The launcher also reads `requestGone(ctx.startGate)` after its colour await, before any trust question, chain or line; SSH
+Connect needs no read of its own because `prepareSshSession` opens with one.
+
+**Where it shows.** (1) The terminal's icon, at the five `createTerminal` sites that spread `folderColorOption`:
+`terminalManager.ts` (`openSshTerminal`, :61, the key session; the colour rides in `SshTerminalPlace.color`),
+`sshConnect.ts` (the password terminal, :152), and `pinnedTerminal.ts` (`pinnedTerminal`, :86, with `PinnedOptions.color`;
+`openEntryTerminal`, :160; `openSshEntryTerminal`, :182). The roads that reach them: SSH Connect reaches the first two (the key
+session or the password terminal, by credential); the arrow, a history row, the folder run's local rows and the VPN launcher
+reach `openEntryTerminal` (through `sendGuarded` / `typeIntoNew` in `terminalGuard.ts`); a linked SSH line and the folder
+run's linked rows reach `openSshEntryTerminal` (through the SSH road, `sshRoad.ts`); Run Script reaches `pinnedTerminal`.
+The colour travels in `EntryTerminalKey.folderColor`, which
+`entryTerminalKey` sets from the folder and leaves out when there is none, so it never changes a title; the one spread
+is `folderColorOption` (`terminalColor.ts`, its own module so the tests that replace `pinnedTerminal` still find it).
+(2) The folder row: `folderIcon(type, key)` (`treeIcons.ts`) wears the folder's colour in place of `FOLDER_COLOR`,
+`treeDataProvider.ts` passing `folderColorKeyOf(node)`; the trash row keeps its own colour. The glyph never changes.
+`folderColorScan.test.ts` holds both: a module that builds a terminal key must call `ensureFolderColor(`, and every
+`createTerminal(` for a folder title spreads `folderColorOption(` (X1 checks a module, not the order inside a function:
+a new road in a module that already colours passes it uncoloured).
+
+**The choice in the form.** *Edit* on a folder shows a **Colour** row (`folderFormPage.ts`, `colourFieldset`) with the twelve
+swatches of the dependency picker, not a copy of them: `folderSwatchScript.ts` paints the same palette JSON (`paletteJson`,
+exported from `depPickerScript.ts`) with the same classes `depSwatches` / `depSwatch` / `depSwatchOn`, and `DEP_SWATCH_STYLES`
+(`entityFormStyles.ts`) is the one set of rules both forms load. There is no "no colour" swatch: the way back does not exist.
+Only a CLICK is a choice (the edit intent). The stored colour is marked when the row first paints, but `folderChosen` stays
+undefined until a click, and the page posts only `folderChosen`; so a Save in which no swatch was clicked sends no `folderColor`.
+A click on the marked swatch is a choice too, and the host then writes nothing for it. `readValues` (`folderFormPanel.ts`) keeps
+the field only when `isDepColorKey` accepts it, because the webview is untrusted input; anything else becomes `undefined`.
+The save is ONE `updateNodeFields` call with a FUNCTION patch (`editFolder`, `entityEditCommands.ts`), run inside the
+cross-window lease: `{ name, mcp, ...folderColorChange(now, chosen) }`. `folderColorChange` (`folderColors.ts`) sets
+`folderColor` only on a folder outside the trash (any depth) and only for a chosen key that differs from the node AS IT IS THEN
+(`now`), never from the copy read when the form opened. So a rename keeps a colour that the auto-pick or another window wrote
+while the form was open, and an explicit choice wins over the auto-pick in either order. That holds as far as the write is visible in the saving window: the patch sees this window's
+copy of the node list, and a write from another window that has not arrived by broadcast is not seen (the residual named below).
+A folder outside the trash holding no string shows the suggestion line (`folderFormColour`,
+`suggestedColor = pickFolderColor(nodes)`): *No colour yet. The first terminal opened from this folder gets the least-used colour at that moment (now: <label>; this can change before
+then). Choose one to set it now.* It is a preview, not a promise, because the auto-pick runs at the first terminal and another folder
+can take the colour before then. A folder holding a string this build does not know (`depColor99`) gets neither a mark nor the line,
+because the auto-pick never writes over a string. A folder in the trash gets no Colour row, like the access switches: the trash is
+never painted, and nothing inside it (any depth) is GIVEN a colour, by the auto-pick or by a Save; a colour a folder wore before
+it went in keeps showing. A Save still stamps the folder once, as before this feature: `editFolder` writes `name` and `mcp` on every Save and `updateNodeFields` stamps on every call, so the colour adds no field and no second write for an
+equal key, and a Save that changes nothing and so writes nothing stays out of scope.
+
+**The limit.** VS Code fixes a terminal's colour when the terminal is CREATED. A terminal that is found (a second arrow,
+Connect twice) keeps the colour it was made with, and the folder's colour changing later (the form above) never repaints
+a terminal that is already open.
+
+**No colour.** `Creds: before …` (the dependency chain), `Creds run: …` (the masked run), `Creds VPN: …` (the built-in
+VPN) and `env check: …` name no folder, so they get none. The trash itself is never painted; a folder inside the trash is
+never given a colour, and one it had before it went in keeps showing, on its row and on its entries' terminals. An entry
+at the root has no folder. A key this build does not know paints nothing and counts for nothing.
+
+**Residuals, named on purpose.** (P1) The lease serializes the windows; it does not make a window's `globalState` copy
+fresh. A window that takes the lease before another's write has arrived by broadcast can pick the same key for a
+second folder (cosmetic; the folder form repairs it), and `saveNodes` writes the WHOLE node list from that stale copy, so it
+can drop the other window's write made within the broadcast delay: the first folder's colour, or any other node edit.
+That is true of every leased write in this extension (`windowLock.ts`; `PLAN_cross_window_write_coordination.md`
+§2026-09-03), not new here; this feature adds one more such write per folder, once, and a lost colour is picked again
+at the next terminal. (P2) The empty stamp above. (P3) The first open from an uncoloured folder waits for the lease with
+no bound and no timer of its own: a dead holder is broken after 15 s, a live one is waited for. (F4) `entryAt` also
+serves Run with Secrets, whose terminal gets no colour, and it runs before the trust question; so such a run, or a
+cancelled trust question, still gives the folder its colour. One auto-pick write per folder, ever. (F5) *Export / Share
+Externally…* and *Import from External…* do not carry the colour: an imported folder is rebuilt from name, type and the PIN
+preference, and gets its colour again at its first terminal; *Import / Restore*, sync and backup move whole nodes and keep it.
+The stale-copy write has a plan of its own, a stub:
+[PLAN_node_writes_refuse_stale_base.md](../todo/PLAN_node_writes_refuse_stale_base.md).
 
 ### The form is three modules, not one file (audit A1's tail)
 
@@ -6446,10 +6547,16 @@ only that another entry stopped the call)`. A line names the RELATION and never 
 readable by a local process. The addressed entry is the one that the agent asked for; for a linked `creds_run` that is the Terminal entry, and the
 person opens it, then the SSH entry that it runs over. **What rule B does not hide:** that a second entry exists (a missing hop and a refused hop
 read differently, and an id that is hidden answers `not_found`); its address (the `ssh` output of a call that answers 200 can show the address of a
-hop, because the mask covers stored secret values); and the path of a borrowed key, whose file name is `<storageDir>/keys/<keyEntityId>-<uuid>.key`
-(a failed write, `Could not run ssh`, and the text of `ssh` on a call that answers 200 can carry it, and a vault that was imported can hold an
-id that reads like a name; a bridge closes the first two). That last one is not built: it is a question for the owner. Pinned by part B of the same
+hop, because the mask covers stored secret values); and the local path of the file of a borrowed key (a failed write, `Could not run ssh`, and the text of `ssh` on a call that answers 200 can carry it; a bridge closes the first two), whose name holds no id since rule C, below. Pinned by part B of the same
 class test and by `agentNaming.test.ts` (see `module_tests.md`).
+
+*Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)). The name
+of the key file that the extension writes for one call of an agent holds nothing of the vault (the host-key pin `known_hosts-<id>`
+and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view): `materializeCallKey` (`keyInstaller.ts`)
+names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
+caller of `resolveExecAuth` uses it (the agent's calls and three commands of the person). So no text that shows the path of a call
+file can tell the id of an entry, on any door and on a Remote Bridge, also for an imported id that reads like a name. Pinned by
+part C of the class test, `agentKeyPath.test.ts`, and by the scan of `keysDirPaths.test.ts` (see `module_tests.md`).
 
 **Rotation, and why the agent never sees a value.** The agent writes `{{creds:new}}`; the window
 generates, substitutes, runs, snapshots the old value into history and stores the new one. Three

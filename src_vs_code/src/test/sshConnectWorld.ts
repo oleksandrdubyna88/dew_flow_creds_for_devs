@@ -2,6 +2,9 @@ import { loadEachWithVscode } from './vscodeStub';
 import { EntityMetadata, TreeNode } from '../types';
 import { StorageManager } from '../storageManager';
 import * as sshProgram from '../sshProgram';
+import { FolderColorFake, folderColorStorage } from './folderColorStorage';
+import { DiagnosticWriter } from '../diagnosticWriter';
+import { recordingLog } from './liveColourStorage';
 
 /**
  * The human Connect path (audit A3).
@@ -33,6 +36,8 @@ export interface Terminal {
   name: string;
   sent: string[];
   env?: Record<string, string>;
+  /** The `color` the terminal was created with; the property is absent when the options carried none. */
+  color?: { id: string };
   disposed: boolean;
   exitStatus?: unknown;
 }
@@ -46,7 +51,7 @@ export interface World {
   openers: unknown[];
   forgotten: string[];
   /** Terminals opened through `openSshTerminal`, with the key path each was given. */
-  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string; title?: string }[];
+  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string; title?: string; place?: { title: string; accountId: string; color?: string } }[];
   created: Terminal[];
   existing: Terminal[];
   warnings: string[];
@@ -67,6 +72,8 @@ export interface World {
   pinSuffixes: (string | undefined)[];
   /** Every line put on the clipboard — a refusal's *Copy the Windows command* button. */
   copied: string[];
+  /** The modules `world`'s `alsoLoad` named, from the SAME graph as `mod`, in order. */
+  loaded: unknown[];
 }
 
 export interface Parts {
@@ -95,9 +102,15 @@ export interface Parts {
   duringRefusal?: () => void;
   /** Runs while the distribution is asked to translate a path — the last await before a late refusal (E4.S4). */
   duringTranslate?: () => void;
+  /** More of the `vscode` stub, merged over the connect path's own (a test that loads a command module needs `workspace`). */
+  hostStub?: Record<string, unknown>;
 }
 
-export function world(parts: Parts): World {
+/**
+ * @param alsoLoad further modules to load into the same graph and stub, handed back in `loaded`: the real command that calls
+ *   `connectEntity` (`../commands/agentCommands`) is then exercised over the same substitutes.
+ */
+export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
   const closeListeners: ((t: unknown) => void)[] = [];
   const w: World = {
     mod: undefined as never,
@@ -116,6 +129,7 @@ export function world(parts: Parts): World {
     hostKeyAsked: [],
     pinSuffixes: [],
     copied: [],
+    loaded: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
   if (parts.existingNamed !== undefined) {
@@ -126,9 +140,9 @@ export function world(parts: Parts): World {
   const opened = parts.sshTerminal === undefined ? undefined : { name: 'ssh', dispose: (): void => undefined };
   w.sshTerminalHandle = opened;
 
-  const [mod, seam] = loadEachWithVscode(
-    ['../sshConnect', '../sshSession'],
-    vscodeStub(w, parts, closeListeners),
+  const [mod, seam, ...loaded] = loadEachWithVscode(
+    ['../sshConnect', '../sshSession', ...alsoLoad],
+    { ...vscodeStub(w, parts, closeListeners), ...parts.hostStub },
     {
       './sshCredential': {
         resolveSshCredential: (_s: unknown, _a: unknown, _e: unknown, open: unknown): Promise<unknown> => {
@@ -189,9 +203,9 @@ export function world(parts: Parts): World {
           options: unknown,
           platform?: string,
           prefix?: string,
-          place?: { title: string; accountId: string },
+          place?: { title: string; accountId: string; color?: string },
         ): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title });
+          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title, place });
           return opened;
         },
         buildSshCommand: (entity: { host?: string }): string | undefined =>
@@ -210,6 +224,7 @@ export function world(parts: Parts): World {
   );
   w.mod = mod as Connect;
   w.seam = seam as Seam;
+  w.loaded = loaded;
   return w;
 }
 
@@ -219,8 +234,8 @@ function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => voi
   return {
     window: {
       terminals: w.existing,
-      createTerminal: (o: { name: string; env?: Record<string, string> }): Terminal => {
-        const t: Terminal = { name: o.name, env: o.env, sent: [], disposed: false };
+      createTerminal: (o: { name: string; env?: Record<string, string>; color?: { id: string } }): Terminal => {
+        const t: Terminal = { name: o.name, env: o.env, sent: [], disposed: false, ...('color' in o ? { color: o.color } : {}) };
         Object.assign(t, {
           show: (): void => undefined,
           sendText: (line: string): void => {
@@ -251,6 +266,9 @@ function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => voi
         return Promise.resolve(undefined);
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+    },
+    ThemeColor: class {
+      constructor(readonly id: string) {}
     },
     env: {
       clipboard: {
@@ -297,21 +315,28 @@ export const entity = (extra: Partial<EntityMetadata> = {}): EntityMetadata =>
  * The entry `e1` sits in the folder "ssh connections", so a connect names that folder in its terminal title (the owner,
  * 2026-11-10).
  */
-const E1_IN_FOLDER: TreeNode = { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' };
-const FOLDER: TreeNode = { id: 'f1', name: 'ssh connections', type: 'folder', folderType: 'ssh', parentId: null };
+export const E1_IN_FOLDER: TreeNode = { id: 'e1', name: 'prod', type: 'entity', parentId: 'f1' };
+export const FOLDER: TreeNode = { id: 'f1', name: 'ssh connections', type: 'folder', folderType: 'ssh', parentId: null };
 /** The entry `e1` at the root, for a test that moves it out of its folder. */
 export const E1_AT_ROOT: TreeNode = { ...E1_IN_FOLDER, parentId: null };
 
 /**
- * A storage that knows exactly these nodes. The connect path reads only `getNode` here (the terminal title's folder)
- * besides the modules these tests replace, so that member is typed against the real `StorageManager`; the one cast is
- * here, and `PrepareOptions.storage` carries the note (typescript.doctrine § 3).
+ * A storage that knows exactly these nodes. Besides the modules these tests replace, the connect path uses the three
+ * methods of the folder-colour allocator (`getNode`, `getNodes`, `updateNodeFields`), which `folderColorStorage` (the
+ * shared fake of E1.S2) provides and records; those are typed against the real `StorageManager`, and the one cast is
+ * here (`PrepareOptions.storage` carries the note, typescript.doctrine § 3). `written` is every colour write, and `failNextWrite` makes the next one reject.
  */
-export function storageWith(...nodes: TreeNode[]): StorageManager {
-  const read: Pick<StorageManager, 'getNode'> = { getNode: (_accountId, id) => nodes.find((node) => node.id === id) };
-  return read as StorageManager;
+export function storageWith(...nodes: TreeNode[]): StorageManager & Pick<FolderColorFake, 'written' | 'failNextWrite'> {
+  const fake = folderColorStorage({ [ACCOUNT_ID]: nodes });
+  const read: Pick<StorageManager, 'getNode' | 'getNodes' | 'updateNodeFields'> = fake;
+  return Object.assign(read as StorageManager, { written: fake.written, failNextWrite: fake.failNextWrite });
 }
-export const storage = storageWith(E1_IN_FOLDER, FOLDER);
+/** The account every connect of these tests is for. */
+export const ACCOUNT_ID = 'a1';
+/** A storage of its own for one test (`e1` in an uncoloured `f1`): the first connect writes a colour into it, so it is never shared. */
+export const storage = (): ReturnType<typeof storageWith> => storageWith(E1_IN_FOLDER, FOLDER);
+/** The two options every connect needs besides `storageDir`: a fresh `storage()` and a recording log (a failed colour write leaves its one line there). */
+export const connectBase = (): { storage: ReturnType<typeof storageWith>; log: DiagnosticWriter; onMutated: () => void } => ({ storage: storage(), log: recordingLog().log, onMutated: () => undefined });
 /** The title every connect of `entity()` gives its terminal. */
 export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };

@@ -1,3 +1,5 @@
+import { DepColorKey } from './depColors';
+import { folderColorKeyOf } from './folderColors';
 import { parentFolderOf } from './moveGate';
 import { escapeControl } from './transitSecretReport';
 import { TreeNode } from './types';
@@ -13,14 +15,20 @@ export interface EntryTerminalKey {
   readonly entryName: string;
   /** The direct parent folder's name as stored; `undefined` at the root and for a dangling parent. */
   readonly folderName: string | undefined;
+  /** The folder's colour; present only when the folder has one this build knows (`folderColorKeyOf`). */
+  readonly folderColor?: DepColorKey;
 }
 
 /** The shape of storage this module reads: what `parentFolderOf` takes (one node by id). */
 export type NodeSource = Parameters<typeof parentFolderOf>[0];
 
-/** The ONE constructor: the entry's `details.name` and its direct parent folder node (`undefined` at the root). */
+/**
+ * The ONE constructor: the entry's `details.name` and its direct parent folder node (`undefined` at the root). The
+ * folder's colour is carried when it has one this build knows, and the property is left OUT otherwise.
+ */
 export function entryTerminalKey(entryName: string, folder: TreeNode | undefined): EntryTerminalKey {
-  return { entryName, folderName: folder?.name };
+  const folderColor = folderColorKeyOf(folder);
+  return folderColor === undefined ? { entryName, folderName: folder?.name } : { entryName, folderName: folder?.name, folderColor };
 }
 
 /**
