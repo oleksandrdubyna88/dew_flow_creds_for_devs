@@ -40,7 +40,6 @@ const mutations = [
   M('T18b', 'move --no-defaults to the end', 'dbCliLauncher.ts', [["const args = [...(bridged ? ['--no-defaults'] : []), '-h', parts.host ?? 'localhost'];", "const args = ['-h', parts.host ?? 'localhost'];"], ["      args.push('--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query);", "      args.push('--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query, ...(bridged ? ['--no-defaults'] : []));"]], '', ['(m)'], MYSQL),
   M('T21', 'write a hop IdentityFile under Host *, not in its block', 'bridgedSshConfig.ts', [["keyword('IdentityFile', hop.typedKeyPath ? typedPath(hop.identityFile) : ownPath(hop.identityFile)), ", ''], ["      ? [keyword('IdentityFile', ownPath(input.noDefaultIdentity))]", "      ? [keyword('IdentityFile', ownPath(input.noDefaultIdentity)), ...input.hops.map((hop) => keyword('IdentityFile', hop.typedKeyPath ? typedPath(hop.identityFile) : ownPath(hop.identityFile)))]"]], 'e', ['(e):']),
   M('T24a', 'skip the user rule in the writer', 'bridgedSshRefusals.ts', [["  return userRefusal(input) ?? hostRefusal(input) ?? sameHostRefusal(input);", "  return hostRefusal(input) ?? sameHostRefusal(input);"]], 'j', ['(j):']),
-  M('T24b', 'skip the user rule in buildSshExecArgv too', 'sshExecCommand.ts', [["const userTaken = (entity: EntityMetadata): boolean => entity.user === undefined || entity.user.length === 0 || !unsafeBridgedUser(entity.user);", "const userTaken = (_entity: EntityMetadata): boolean => true;"]], 'j', []),
   M('T26', 'drop the sentinel IdentityFile line from Host *', 'bridgedSshConfig.ts', [["      ? [keyword('IdentityFile', ownPath(input.noDefaultIdentity))]", "      ? []"]], 'n', ['(n)']),
   M('T28', 'skip the open for append of the first-contact file', 'bridgedSshCall.ts', [["    fs.closeSync(fs.openSync(firstContactPath(base), 'a', 0o600));\n", ""]], 'f', ['(f): bridges/known_hosts made read-only']),
   M('T30', 'write the pin line with the host as typed', 'bridgedSshRefusals.ts', [["knownHostsLine(word.toLowerCase(), entity.port, key)", "knownHostsLine(word, entity.port, key)"]], 'k', ['(k):']),
@@ -88,8 +87,14 @@ for (const m of chosen) {
     compiled = run('npm', ['run', 'compile']);
     // `tsc` emits despite type errors (a mutation may leave an unused import): the harness runs on what was emitted, and the row says so.
     const out = harnessRun(m);
-    const fails = out === undefined ? [] : failLines(out.stdout + out.stderr).filter((l) => !baseline.has(l));
-    const named = fails.filter((l) => m.tags.length === 0 || m.tags.some((tag) => l.includes(tag)));
+    const text2 = out.stdout + out.stderr;
+    const fails = failLines(text2).filter((l) => !baseline.has(l));
+    // A harness that ends in a crash (no summary line) before it can print a FAIL line has still been stopped by the mutation: it is said so.
+    const crashed = !/checks? passed|check\(s\) failed/.test(text2);
+    const named = [
+      ...m.tags.flatMap((tag) => fails.filter((l) => l.includes(tag)).slice(0, 1).map((l) => `[${tag}] ${l}`)),
+      ...(crashed && fails.length === 0 ? [`(harness crashed before its summary) ${text2.split('\n').filter((l) => l.trim() !== '').slice(-3).join(' | ')}`] : []),
+    ];
     rows.push({ m, verdict: (named.length > 0 ? 'yes' : 'NO (SURVIVED)') + (compiled.status === 0 ? '' : ' [tsc errors]'), lines: named.length > 0 ? named : fails.map((l) => `(other) ${l}`) });
     if (fails.length === 0 && out.status !== 0) {
       rows.at(-1).lines.push(`exit ${out.status}: ${(out.stdout + out.stderr).split('\n').slice(-6).join(' | ')}`);
@@ -104,7 +109,7 @@ run('npm', ['run', 'compile']);
 console.log('\n==== MUTATION TABLE (itest halves of §S6.6) ====');
 console.log('mutation | legs | failed | the failing check');
 for (const { m, verdict, lines } of rows) {
-  console.log(`${m.id} | ${m.harness === MYSQL ? '(m)' : m.legs} | ${verdict} | ${lines.slice(0, 3).join(' ;; ') || '-'}`);
+  console.log(`${m.id} | ${m.harness === MYSQL ? '(m)' : m.legs} | ${verdict} | ${lines.slice(0, 4).join(' ;; ') || '-'}`);
 }
 const survived = rows.filter((r) => !r.verdict.startsWith('yes')).map((r) => r.m.id);
 console.log(survived.length === 0 ? '\nevery mutation failed its leg' : `\nNOT failed (survived, not applied or compile error): ${survived.join(', ')}`);

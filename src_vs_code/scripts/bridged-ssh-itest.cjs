@@ -90,7 +90,9 @@ async function legs567(rig) {
   const sshdB = await R.pair(rig, 'a6', { hop: { first: passwordsOnly } });
   try {
     clearAskpassLog(rig);
-    const result = await R.production(rig, { destination: R.destinationEntry(sshdB.destination), keyPath: rig.key('dest_key'), hops: asHop(rig, sshdB.hop, 'hop_key') });
+    // A PASSWORD destination, so that the askpass names ARE in the environment of the outer ssh and so of the hop leg: this is the call that would hand the destination's password to the hop.
+    const destination = R.destinationEntry(sshdB.destination, { hostKey: R.pinOf(rig.key('host_dest')) });
+    const result = await R.production(rig, { destination, auth: 'askpass', keyPath: undefined, hops: asHop(rig, sshdB.hop, 'hop_key'), askpassEnv: ASKPASS_ENV(rig) });
     check('(a) 6: the production call never asks the askpass script (its log is empty)', askpassLog(rig).length === 0, JSON.stringify(askpassLog(rig)));
     check('(a) 6: and the hop\'s sshd saw the connection, so the empty log is not a rig that could not connect', R.sawConnection(sshdB.hop), R.tail(sshdB.hop));
     check('(a) 6: the call did not log in (the hop takes passwords only)', result.refused === undefined && result.code !== 0, JSON.stringify(result.code));
@@ -186,7 +188,8 @@ async function legD(rig) {
     for (const [at, [label, extraEnv]] of [['without SSH_AUTH_SOCK', {}], ['with SSH_AUTH_SOCK put back by hand under the production file', { SSH_AUTH_SOCK: socket }]].entries()) {
       const started = await R.pair(rig, `d-${at}`, {});
       try {
-        const result = await R.production(rig, { destination: R.destinationEntry(started.destination, { jumpHostEntityId: undefined }), keyPath: rig.key('other_key'), extraEnv });
+        // `-i` names the agent key's PUBLIC file: with IdentitiesOnly, an agent key that matches an identity file is the only one the agent could add, so only `IdentityAgent none` keeps it out.
+        const result = await R.production(rig, { destination: R.destinationEntry(started.destination, { jumpHostEntityId: undefined }), keyPath: rig.key('dest_key.pub'), extraEnv });
         check(`(d): production ${label}: Permission denied`, result.refused === undefined && result.code === 255 && /Permission denied/.test(result.stderr) && result.env.SSH_AUTH_SOCK === undefined, JSON.stringify([result.code, result.stderr]));
       } finally {
         await started.close();
@@ -220,6 +223,22 @@ async function legE(rig) {
     const destFp = R.fingerprint(rig.key('dest_key.pub'));
     check('(e): the hop\'s sshd accepted the hop key and its log names no other key', R.accepted(started.hop, hopFp) && !started.hop.sshd.stderr.includes(destFp), R.tail(started.hop));
     check('(e): the destination\'s sshd accepted the destination key and its log names no other key', R.accepted(started.destination, destFp) && !started.destination.sshd.stderr.includes(hopFp), R.tail(started.destination));
+  } finally {
+    await started.close();
+  }
+  await legEOffers(rig);
+}
+
+/** (e) again: a destination that refuses the first key it is offered is not offered the hop's key next (a hop `IdentityFile` written under `Host *` would be). */
+async function legEOffers(rig) {
+  const started = await R.pair(rig, 'e2', {});
+  try {
+    const destination = R.destinationEntry(started.destination, { hostKey: R.pinOf(rig.key('host_dest')) });
+    const result = await R.production(rig, { destination, keyPath: rig.key('other_key'), hops: asHop(rig, started.hop, 'hop_key') });
+    const log = started.destination.sshd.stderr;
+    check('(e): the destination refused the first key (the call is Permission denied)', result.refused === undefined && result.code === 255, JSON.stringify([result.code, result.stderr]));
+    check('(e): the destination\'s sshd log names the key it was offered', log.includes(R.fingerprint(rig.key('other_key.pub'))), R.tail(started.destination));
+    check('(e): and names the hop key nowhere: a destination is offered its own key and no other', !log.includes(R.fingerprint(rig.key('hop_key.pub'))), R.tail(started.destination));
   } finally {
     await started.close();
   }

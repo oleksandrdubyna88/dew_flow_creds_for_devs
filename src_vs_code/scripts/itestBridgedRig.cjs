@@ -143,7 +143,8 @@ async function production(rig, call) {
     files.remove();
     return { refused: { ok: false, code: 'no_credential', reason: 'the argv rules refused' } };
   }
-  const conf = fs.readFileSync(path.join(spawn.cwd, 'c.conf'), 'utf8');
+  // A folder with no c.conf is not this harness's crash: ssh is started in it and fails by itself, and the leg reports that.
+  const conf = fs.existsSync(path.join(spawn.cwd, 'c.conf')) ? fs.readFileSync(path.join(spawn.cwd, 'c.conf'), 'utf8') : undefined;
   try {
     rig.spawns += 1;
     const client = launch(rig.scope, 'ssh', [...extraArgs, ...spawn.argv], { cwd: spawn.cwd, env: { ...spawn.env, ...extraEnv } });

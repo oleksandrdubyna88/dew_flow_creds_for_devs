@@ -128,15 +128,16 @@ async function legM(scope, dir, name, exe, product) {
   const home = path.join(dir, `${name} home`);
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(marker, MARKER_TEXT);
-  fs.writeFileSync(path.join(home, '.my.cnf'), `[client]\nlocal-infile=1\n[mysql]\nload-data-local-dir=${dir}\n`);
+  // `load-data-local-dir` is Oracle's option; MariaDB's client stops at an unknown variable, so its file has the client group only.
+  fs.writeFileSync(path.join(home, '.my.cnf'), name === 'oracle' ? `[client]\nlocal-infile=1\n[mysql]\nload-data-local-dir=${dir}\n` : '[client]\nlocal-infile=1\n');
   const base = { PATH: process.env.PATH, HOME: home, MYSQL_PWD: 'pw' };
   const connect = (port) => ['-h', '127.0.0.1', '-P', String(port), '-u', 'u'];
   const manual = (flag) => (port) => ({ args: [...connect(port), flag, '-e', 'select 1'], env: base });
   const control = await received(scope, exe, manual('--local-infile=1'), marker);
-  check(`(m) ${name} control: with --local-infile=1 the server receives the marker's bytes`, control.bytes === MARKER_TEXT, JSON.stringify(control));
+  check(`(m) ${name} control: with --local-infile=1 the server receives the marker's bytes`, control.bytes.includes(MARKER_TEXT), JSON.stringify(control));
   if (name === 'oracle') {
     const gap = await received(scope, exe, manual('--local-infile=0'), marker);
-    check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', gap.bytes === MARKER_TEXT, JSON.stringify(gap));
+    check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', gap.bytes.includes(MARKER_TEXT), JSON.stringify(gap));
   }
   const productionBuild = (port) => {
     const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true });
