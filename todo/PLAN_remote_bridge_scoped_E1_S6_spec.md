@@ -338,6 +338,13 @@ Host *
   the brackets off. **A hop needs the brackets** (X8: `-J` does not take a bare address). **The destination may have them or not**: off a bridge
   only the bare form works (X8), and on a bridge the argv's destination word is the `Host` word, so both forms work there;
 - everything else is refused: `gw:2201` (a port typed into the host field), `[gw]`, a bracket in any other place.
+- IPv6 zone ids (`fe80::1%eth0`) are not supported: `%` fails `isSafeSshHost`. Two spellings of one address (`::1` and `0:0:0:0:0:0:0:1`) are two
+  `Host` words, and `ssh` keeps them apart, because it matches the text before any address normalisation (measured with `-G` on 10.2p1, 2026-11-13).
+
+**A relative typed key path. [C]** A key path that is neither absolute nor starts with `~` is read by `ssh` against the call folder, the spawn's
+`cwd`, on a bridge. Off a bridge, it is read against the extension host's own working folder. So on a bridge it **fails at `ssh`** (`no such
+identity`, or `Permission denied`), and no other file is loaded. It is not refused before the spawn, and the refusal list is unchanged. The help
+(E4) tells the person to type an absolute path. The parent's §4.9 *fails at `ssh`* list says so (2026-11-13).
 
 **Two legs with one `Host` word are refused. [C]** The words are compared in lower case, after the brackets are off, among the destination and
 every hop. The writer refuses first (R4). `bridgedConfigText` refuses again by itself, so no caller can get a file in which two legs are one
@@ -426,8 +433,8 @@ Each scenario names its observation. A sentence is asserted beside an observatio
 | F3 | An unpinned key destination | no destination block |
 | F4 | A Windows path with a space and backslashes; a keys folder with `%` in it | each path is in quotes, backslashes once, `%` written `%%` in our own paths |
 | F5 | (D15) the measured value, a line break and `ProxyCommand /tmp/evil %h`, as a hop's key path; then `"`, CR, 0x1B, 0x7F, `${X}`, a last backslash and the empty text, in each path field in turn | `ok: false` with that field's name; no text is answered; the name holds nothing of the value |
-| F6 | Hosts `HOP.Example`, a hop `[::1]`, a destination `::1` and a destination `[::1]` | `bridgedHostWord` answers `HOP.Example`, `::1`, `::1`, `::1`; the lines are `Host HOP.Example` and `Host ::1`; `knownHostsName` answers `hop.example` for port 22 and `[::1]:2222` for port 2222 |
-| F7 | Hosts `gw:2201` (as a hop, and as the destination), a hop `::1` with no brackets, `[gw]`, `a[b`, `[::1]x` | `bridgedHostWord` answers `undefined`; `bridgedConfigText` answers `ok: false` with the host field |
+| F6 | Hosts `HOP.Example`, a hop `[::1]`, a destination `::1`, a destination `[::1]`, and a hop `[::1]` with a destination `0:0:0:0:0:0:0:1` | `bridgedHostWord` answers `HOP.Example`, `::1`, `::1`, `::1`; the last pair gives two words and no refusal; the lines are `Host HOP.Example` and `Host ::1`; `knownHostsName` answers `hop.example` for port 22 and `[::1]:2222` for port 2222 |
+| F7 | Hosts `gw:2201` (as a hop, and as the destination), a hop `::1` with no brackets, `[gw]`, `a[b`, `[::1]x`, `fe80::1%eth0` and `[fe80::1%eth0]` | `bridgedHostWord` answers `undefined`; `bridgedConfigText` answers `ok: false` with the host field |
 | F8 | Inside `bridgedConfigText` alone: a hop `[::1]` and the destination `::1`; two hops `Hop.example` and `hop.EXAMPLE`; a hop and an unpinned destination with one host | `ok: false`, no text. The writer's own check is not on this road: the function refuses by itself |
 | F9 | `unsafeBridgedUser` for `$BRIDGE_PROBE`, `CORP\alice`, `alice`, `alice-name`, and `a b` | true, true, false, false, true |
 | F10 | A hop's typed key path `/k/%u/id` | `ok: false` with the key path field |
@@ -603,7 +610,7 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 8. The As-built names each **[S]** that changed, with the reason.
 9. *What a hop is offered.* Read the written `c.conf` of L3 and of itest (e): one `IdentityFile` in the hop's block, that hop's own, and three keywords. No road gives a hop the destination's key or password.
 10. *What the destination is offered.* A password leaves only through the outer leg, only to a pinned host, at most once for each method.
-11. *Who is trusted.* A pinned leg reads its entry's pin alone. First contact is recorded in `bridges/known_hosts`, or the call does not start; a call that left no record says so in the journal. The person's `known_hosts` is read and never written.
+11. *Who is trusted.* A pinned leg reads its entry's pin alone. The call does not start when `bridges/known_hosts` cannot be opened for append. That check is made once, before the spawn: a write that fails later in the call (a full disk, a permission changed meanwhile) is not prevented, because `ssh` itself goes on after it (`sshconnect.c:1245-1247`), and it is reported after the call by J2. So this row promises *opened before, reported after*, not *recorded or refused*. A key destination sends no password, so a missed record costs the record, and the next call is a first contact again, journaled again. The person's `known_hosts` is read and never written.
 12. *What is not consulted.* No agent, no default identity, no file but `c.conf`, on the outer leg and on every nested leg.
 13. *The rules.* Every path that reaches the file or `-i` passes the value rule and the `%` rule; every user and every host of a leg passes its rule. The review looks for a value that reaches `ssh` by another road.
 14. *The `-J` text.* It is built from the entries the writer checked (`files.jump`), not from a text the caller handed in.
@@ -749,7 +756,7 @@ explicitly. X10 is its evidence. The same review can weigh `IdentityFile none` a
 | C8 | Row 8: no forwarding on an exec leg | B3 | F2, F1 of `bridgeLinks` (kept) | (i) |
 | C9 | Row 9: no local subprocess but the askpass script | B3 | F2 | (c) |
 | C10 | Row 10: the per-call file alone is read | B6, B7 | A1, A2, L1 | (c), (i); (a) 0 |
-| C11 | Row 11: pinned legs read their own file; first contact is recorded in `bridges/known_hosts`, or the call does not start; the person's file is never written | B3, B5, B7 | F1, F3, F6, W6, W9, W10, W14, W15, L13 | (f), (h), (k) |
+| C11 | Row 11: pinned legs read their own file; the call does not start unless `bridges/known_hosts` opens for append, and a record missing after the call is reported (J2); the person's file is never written | B3, B5, B7 | F1, F3, F6, W6, W9, W10, W14, W15, L13 | (f), (h), (k) |
 | C12 | Row 12: no multiplexing | B3, B9 | F2 | the mux pair of `scripts/itestForwardAgent.cjs`, rewritten (B9) |
 | C13 | Row 13: a refusal is generic to the agent, detailed in the journal | B7 | L2, L3, L6, L7, L8, L11, L12, L14 | — |
 | C14 | The file: order, three and two keywords, the lock-down, quotes, backslashes once | B3 | F1, F2, F4, F6 | (a) 0 |
