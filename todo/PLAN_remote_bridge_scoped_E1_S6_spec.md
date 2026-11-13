@@ -672,6 +672,11 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
   not match fails closed: `Host *` has no key and checks strictly.
 - **What a database client does with no `LANG` or `LC_ALL`** (the output's character set). Q4 pins the environment, not the output (P4).
 - **`.mylogin.cnf`.** By MySQL's documentation, `--no-defaults` still reads it. It can hold a host, a user, a password, a port and a socket. Not run.
+  *Corrected 2026-11-13, after the code review (Fable; a consultant read Oracle's `mysys/my_default.cc` for 8.0.40 and 8.4.0):* the five
+  fields are what `mysql_config_editor` writes, not what the reader accepts. The reader takes any recognised client option from the file's
+  `[client]` and `[mysql]` groups, so a hand-written `.mylogin.cnf` can carry `load-data-local-dir` (which acts under `--local-infile=0`) or
+  `plugin-dir` with `default-auth`. That is confirmed from the source for 8.0 and 8.4 only; 9.x was not read, and the file disclosure or plugin
+  load it allows was not run. B8 does not claim this file is closed. The remedy is owed (§S6.10).
 - **Legs (i) and (n) off CI.** (i) writes a system file and (n) writes a default key into the account's own `.ssh` folder, so they run on the CI runner only.
 - **A hostile `~/.ssh/config` of the account itself.** `ssh` reads the home of the account, not `HOME` (the parent's measurement, §7). So the
   production legs of (b) and (c) never meet the rig's config as the person's file; their controls show what that config does when it is read. Only
@@ -714,6 +719,41 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 **Owed to the next stop of the plan.** The FIDO-PIN risk of §S6.9, with its text there: at the next whole-plan review, and in any case before
 any real-token measurement or any switch-on owner build (E2.4) and before E4.1's flip; if no stop comes earlier, the lead schedules that review
 explicitly. X10 is its evidence. The same review can weigh `IdentityFile none` against the sentinel (P3).
+
+**Also owed to the next stop, from the code review of 2026-11-13** (Opus and Fable on `154ab5ca..4abf2e47`). The same deadline applies to each
+item: the next whole-plan review, and in any case before any switch-on owner build (E2.4) and before E4.1. A consultant counted the first three
+under the change-control rule, one consult each. Each remedy proposed would be a change: a new refusal, a new environment variable on B4's list,
+or a new path shape against D16. So none is built here, and none is counted, because no remedy was accepted. The bridge stays unreachable
+(`bridgeBoundary.test.ts`, R1).
+
+1. **`.mylogin.cnf`** (§S6.9, corrected): proposed remedy `MYSQL_TEST_LOGIN_FILE` set to an absent path for a bridged `mysql`. MariaDB ignores
+   it; `--no-login-paths` is fatal on MariaDB. First step: a fixture with `load-data-local-dir=/`, run as `mysql --no-defaults --verbose --help`,
+   with and without the variable.
+2. **A backslash pair inside a quoted path, on Windows.** Inside quotes `ssh` 8.7+ reads `\\` as `\` and `\'` as `'`. Measured with `-G` on
+   10.2p1: a UNC storage folder written once as `"\\fs\…"` is read as `\fs\…`. A pinned leg then fails closed. An unpinned key leg runs
+   `accept-new` against a file it cannot write, so a first contact is not recorded and only J2 reports it afterwards. A typed hop key path has
+   the same reading. Proposed remedies: refuse `\\` and `\'` in the value rule, or write our own Windows paths with `/`. Either would be a change.
+   `8.0`-`8.6` read quoted text verbatim, so doubling is no remedy. First step: an unpinned call on Windows with a disposable UNC storage folder,
+   then a look at `bridges/known_hosts`.
+3. **A hop whose host is `none`.** `-J none` turns the jump off: `ssh` goes straight to the destination and skips the bastion the entry names.
+   The destination leg keeps its own pin and key, and no credential crosses legs. Measured with `-G` on 10.2p1. Proposed remedy: refuse a hop
+   word equal to `none` in any letter case. That is a new refusal against §S6.3's host rule.
+4. **A `hostKey` that does not parse is read as unpinned** (`bridgedSshRefusals.ts`). A key leg then gets `accept-new`; a password destination
+   is still refused (R5). It behaves the same off a bridge.
+5. **Older clients** (Fable, partly from memory of the source; not run on them):
+   - `CheckHostIP` defaults to yes before 8.5, so a direct first contact also writes an IP line into `bridges/known_hosts`.
+   - `%%` in `UserKnownHostsFile` is expanded only from 8.4. On older clients a storage path holding `%` is read literally: a pinned leg fails
+     closed and a first contact records nothing.
+   - `GlobalKnownHostsFile none` is a relative file named `none` before about 8.5. That is harmless only because the call folder holds `c.conf`
+     alone.
+   - `SSH_ASKPASS_REQUIRE` exists from 8.4.
+   - Before 8.7 `KbdInteractiveAuthentication no` does not override `ChallengeResponseAuthentication yes`, so on a hop leg `BatchMode yes` is
+     what closes it.
+
+   Every keyword the file writes exists in 8.0, so no line is fatal there. The plan names no oldest client; the review chooses one.
+6. **R10 when the storage folder itself holds `%`.** Every stored-key call is then refused, because the `-i` path is the call's own. Measured:
+   `-i` with `%%` fails "not accessible", so escaping is no remedy. The sentence *Choose a key file…* misleads in that case. A regression test
+   pins the refusal. A sentence that names the storage folder would be a new sentence.
 
 **For the owner: none.** Q1-Q4 and Q8 are decided (parent §2.1), and this spec builds under them. M9 needs the owner's Windows host; that is a measurement.
 
