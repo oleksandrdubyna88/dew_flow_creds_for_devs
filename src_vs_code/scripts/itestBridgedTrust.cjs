@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('node:child_process');
 const R = require('./itestBridgedRig.cjs');
-const { endChild } = require('./itestSshd.cjs');
+const { endChild, launch } = require('./itestSshd.cjs');
 
 const CHANGED = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/;
 const noDest = (started, extra = {}) => R.destinationEntry(started, { jumpHostEntityId: undefined, ...extra });
@@ -140,7 +140,11 @@ const sudoOk = () => {
   }
 };
 
-/** (i) CI only: a hostile system ssh_config. Control: it works when read. Production: it is never read (`-F c.conf` replaces the system file too). */
+/** The words `ssh -v` prints when it asks for agent forwarding and for a remote forward: the two things the hostile files ask for. */
+const AGENT_REQUEST = /Requesting authentication agent forwarding/;
+const FORWARD_REQUEST = /remote forward|forwarded to local/i;
+
+/** (i) CI only: a hostile system ssh_config AND a hostile rig config. Controls: each works when read. Production: neither is read (`-F c.conf` replaces them). */
 async function legI(rig, check) {
   if (process.env.CI !== 'true') {
     console.log('skip  (i) the system ssh_config legs — they write /etc/ssh/ssh_config, so they run on the CI runner only');
@@ -152,25 +156,42 @@ async function legI(rig, check) {
   fs.copyFileSync(system, backup);
   const hash = R.sha(system);
   const hostile = `\nHost *\n  ForwardAgent yes\n  RemoteForward 2299 127.0.0.1:22\n  IdentityFile ${rig.key('dest_key')}\n`;
+  fs.writeFileSync(rig.control, `${hostile}  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n`);
+  const socket = path.join(rig.dir, 'agent-i.sock');
+  const agent = launch(rig.scope, 'ssh-agent', ['-D', '-a', socket]);
   try {
+    await waitForSocket(socket);
     execFileSync('sudo', ['-n', 'tee', '-a', system], { input: hostile, stdio: ['pipe', 'ignore', 'ignore'] }); // NOSONAR: CI runner
-    const control = await R.pair(rig, 'i-control', {});
-    try {
-      const done = await R.control(rig, ['-v', '-F', system, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-p', String(control.destination.port), `${R.ME}@127.0.0.2`, 'true']);
-      check('(i) control: under -F /etc/ssh/ssh_config the hostile IdentityFile logs in and -v shows the forwarding request', done.code === 0 && /remote forward|forwarded to local/i.test(done.stderr), JSON.stringify([done.code, done.stderr.slice(-400)]));
-    } finally {
-      await control.close();
+    const env = { ...process.env, SSH_AUTH_SOCK: socket };
+    for (const [label, config] of [['/etc/ssh/ssh_config', system], ['the rig\'s own config', rig.control]]) {
+      const control = await R.pair(rig, `i-control-${label.length}`, {});
+      try {
+        const done = await R.control(rig, ['-v', '-F', config, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null', '-p', String(control.destination.port), `${R.ME}@127.0.0.2`, 'true'], { env });
+        check(`(i) control: under -F ${label} the hostile IdentityFile logs in and -v shows the agent-forwarding request and the remote forward`, done.code === 0 && AGENT_REQUEST.test(done.stderr) && FORWARD_REQUEST.test(done.stderr), JSON.stringify([done.code, done.stderr.slice(-400)]));
+      } finally {
+        await control.close();
+      }
     }
     const production = await R.pair(rig, 'i', {});
     try {
-      const result = await R.production(rig, { destination: noDest(production.destination), keyPath: rig.key('other_key'), extraArgs: ['-v'] });
-      check('(i): production: Permission denied for that key, and -v shows no forwarding request', result.refused === undefined && result.code === 255 && !/remote forward|forwarded to local|agent forwarding/i.test(result.stderr), JSON.stringify([result.code, result.stderr.slice(-400)]));
+      // The agent's socket is put back into the environment of the production call, so that "no agent request" is shown with an agent that COULD be asked.
+      const result = await R.production(rig, { destination: noDest(production.destination), keyPath: rig.key('other_key'), extraArgs: ['-v'], extraEnv: { SSH_AUTH_SOCK: socket } });
+      check('(i): production: Permission denied for that key, and -v shows no agent request and no forwarding request', result.refused === undefined && result.code === 255 && !AGENT_REQUEST.test(result.stderr) && !FORWARD_REQUEST.test(result.stderr), JSON.stringify([result.code, result.stderr.slice(-400)]));
     } finally {
       await production.close();
     }
   } finally {
+    await endChild(agent);
     execFileSync('sudo', ['-n', 'cp', backup, system], { stdio: 'ignore' }); // NOSONAR: CI runner
     check('(i) the system file was put back, byte for byte', R.sha(system) === hash);
+  }
+}
+
+/** Waits (at most 5 s) for a socket file to appear. */
+async function waitForSocket(file) {
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(file) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 
@@ -205,7 +226,9 @@ async function legN(rig, check) {
       const destination = noDest(production.destination, { hostKey: R.pinOf(rig.key('host_dest')) });
       const env = { SSH_ASKPASS: rig.key('askpass.sh'), SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'not-the-password', DISPLAY: ':0' };
       const result = await R.production(rig, { destination, auth: 'askpass', keyPath: undefined, askpassEnv: env });
+      const asked = fs.existsSync(rig.key('askpass.log')) ? fs.readFileSync(rig.key('askpass.log'), 'utf8').trim().split('\n').filter((l) => l !== '') : [];
       check('(n): a pinned password destination is Permission denied, and sshd saw no public-key attempt', result.refused === undefined && result.code === 255 && !/method publickey/.test(production.destination.sshd.stderr), R.tail(production.destination));
+      check('(n): and the askpass script was asked (its log has a line): the password method was tried, so the missing key is not a call that never got that far', asked.length >= 1, JSON.stringify(asked));
       console.log(`record (P3) (n): the call's stderr, to see whether the sentinel's path is in it: ${JSON.stringify(result.stderr ?? '')}`);
     } finally {
       await production.close();

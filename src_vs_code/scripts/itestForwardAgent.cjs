@@ -104,6 +104,9 @@ async function productionLeg(rig, started, command) {
   }
   try {
     const spawn = call.bridgedSpawn({ destination, keyPath: rig.userKey, auth: 'key', askpassEnv: {}, remoteCommand: command, files, sourceEnv: process.env, platform: process.platform });
+    if (spawn === undefined) {
+      return { failure: 'bridgedSpawn refused the argv of the rig\'s own entry (R8): no spawn' };
+    }
     return await runClient(rig, undefined, spawn.argv, started, { cwd: spawn.cwd, env: { ...spawn.env, SSH_AUTH_SOCK: rig.agentSocket } });
   } finally {
     files.remove();
@@ -153,6 +156,10 @@ async function joiningLeg(check, rig, a, b) {
 /** Leg 4: the production call for B: a fresh connection to B, with no agent. Under the per-call file (`-F c.conf`, `ControlPath none`) the master's config is not read at all: this is the "no multiplexing" half. */
 async function bridgedLeg(check, rig, b) {
   const result = await productionLeg(rig, b, 'printenv SSH_AUTH_SOCK SSH_CONNECTION');
+  if (result.failure !== undefined) {
+    check('the production bridged call for B was made (its files were written and its argv accepted)', false, result.failure);
+    return;
+  }
   const lines = result.stdout.split(/\r?\n/);
   check('the production bridged argv joins no master: printenv answers 1 (SSH_AUTH_SOCK unset) and prints exactly one line, the connection, ending in B\'s port', result.code === 1 && lines.length === 1 && lines[0].trim().endsWith(String(b.port)), JSON.stringify(result));
   check('and it reached B: sshd B saw the connection, so the empty answer is not a connection that never happened', REACHED_B.test(b.sshd.stderr), sshdTail(b));
