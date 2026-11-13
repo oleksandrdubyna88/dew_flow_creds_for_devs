@@ -78,9 +78,11 @@ async function legs567(rig) {
   const passwordsOnly = ['PubkeyAuthentication no', 'PasswordAuthentication yes', 'KbdInteractiveAuthentication no'];
   const sshdA = await R.pair(rig, 'a5', { hop: { first: passwordsOnly } });
   try {
-    writeControl(rig, `Host *\n  BatchMode no\n  PasswordAuthentication yes\n  KbdInteractiveAuthentication no\n  PubkeyAuthentication no\n  NumberOfPasswordPrompts 1\n${CONTROL_BASE.map((l) => `  ${l}`).join('\n')}\n`);
+    // `ssh` passes `-F <path>` UNQUOTED into the ProxyCommand it builds from ProxyJump (seen on CI: the nested leg read "…/rig" of "…/rig home/…"),
+    // so a control with a hop names its file relative to its `cwd` (the rig's folder), as production does with `c.conf` (D16).
+    fs.writeFileSync(path.join(rig.dir, 'a5-control.conf'), `Host *\n  BatchMode no\n  PasswordAuthentication yes\n  KbdInteractiveAuthentication no\n  PubkeyAuthentication no\n  NumberOfPasswordPrompts 1\n${CONTROL_BASE.map((l) => `  ${l}`).join('\n')}\n`);
     clearAskpassLog(rig);
-    const argv = ['-v', '-F', rig.control, '-J', `${R.ME}@127.0.0.1:${sshdA.hop.port}`, '-p', String(sshdA.destination.port), `${R.ME}@127.0.0.2`, 'true'];
+    const argv = ['-v', '-F', 'a5-control.conf', '-J', `${R.ME}@127.0.0.1:${sshdA.hop.port}`, '-p', String(sshdA.destination.port), `${R.ME}@127.0.0.2`, 'true'];
     const done = await R.control(rig, argv, { env: { ...process.env, ...ASKPASS_ENV(rig) } });
     const why = { askpass: askpassLog(rig), code: done.code, stderr: done.stderr.trim().split(/\r?\n/).slice(-25), hop: R.tail(sshdA.hop) };
     check('(a) 5 control: a hop that offers passwords only DOES ask the askpass script, with this rig\'s hand-written argv', askpassLog(rig).some((line) => line.includes('127.0.0.1')), JSON.stringify(why, null, 1));

@@ -903,6 +903,12 @@ rule, the field sentences and the partial key.
 expands to, and (e) R1-R3 spend no spawn. Every other leg first runs on CI. The record legs of (f) and (j) print there; their output is copied
 into the PR.
 
+The first CI run was 2026-11-13, on OpenSSH 10.2p1 (Ubuntu). Every leg was green except the **(a) 5 control**. It failed because `ssh` puts
+`-F <path>` **unquoted** into the ProxyCommand it builds from `-J`. The `-v` line was `exec ssh -l runner -p … -F /tmp/…/rig home/.ssh/config
+-v -W …`, and the nested leg then opened `…/rig`. That leg was the rig's own error, since its control file sat under a folder with a space. The
+control now names its file relative to its `cwd`. The same run is evidence for D16: the relative `-F c.conf` is what keeps a storage path with
+a space from breaking every bridged hop.
+
 **Open risks found at review** are in §S6.10, *Also owed to the next stop*.
 
 **M9:** not yet recorded. It needs the owner's Windows host and is a merge condition (§S6.12).
