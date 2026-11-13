@@ -106,9 +106,9 @@ function writePins(base: BridgedBase, legs: readonly Leg[], written: Written): (
     if (leg.pinLine === undefined) {
       return undefined;
     }
-    const file = writeFile(materializedKeyPath(base.storageDir, `${callKeyName()}.known_hosts`), leg.pinLine);
-    written.files.push(file);
-    return file;
+    const file = materializedKeyPath(base.storageDir, `${callKeyName()}.known_hosts`);
+    written.files.push(file); // before the write: a write that fails half way leaves a file this call must still remove
+    return writeFile(file, leg.pinLine);
   });
 }
 

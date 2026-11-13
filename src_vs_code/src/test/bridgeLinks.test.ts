@@ -365,12 +365,14 @@ test('L8: a jump host whose key path is the measured value is refused (R6); no f
   });
 });
 
-const KEEP = ['BRIDGE_TEST_SECRET', 'SSH_AUTH_SOCK'] as const;
+const KEEP = ['BRIDGE_TEST_SECRET', 'SSH_AUTH_SOCK', 'SSH_ASKPASS', 'DISPLAY'] as const;
 
-test('L9: the environment of a bridged ssh is the allow-list; through the main port the two names the process holds are there', async () => {
+test('L9: the environment of a bridged key call is the allow-list, with no askpass name either; through the main port the names the process holds are there', async () => {
   const before = KEEP.map((name) => process.env[name]);
   process.env.BRIDGE_TEST_SECRET = 'a-secret-of-the-test-process';
   process.env.SSH_AUTH_SOCK = '/run/some-agent.sock';
+  process.env.SSH_ASKPASS = '/some/askpass';
+  process.env.DISPLAY = ':99';
   try {
     await both({}, {}, async ({ lw, ww }) => {
       assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);

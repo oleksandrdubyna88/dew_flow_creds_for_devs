@@ -37,6 +37,8 @@ interface World {
   readonly keysDir: string;
   /** The second `materializeCallKey` call throws. */
   failSecondKey(): void;
+  /** How many key files the call asked the installer to write: a refusal of pass 1 is a call that wrote none. */
+  keyWrites(): number;
 }
 
 function world(): World {
@@ -68,6 +70,7 @@ function world(): World {
     failSecondKey: () => {
       failAt = writes + 2;
     },
+    keyWrites: () => writes,
   };
 }
 
@@ -170,6 +173,7 @@ test('W4: equal hosts among the legs are refused (R4): the destination and a hop
     const result = refused(w.write(input));
     assert.deepEqual([result.code, result.reason], ['no_credential', `Two connections of this call go to the host "${word}". Through a Remote Bridge the destination and each jump host need a different host.`]);
     assert.deepEqual(tree(w.keysDir), []);
+    assert.equal(w.keyWrites(), 0, 'it was refused in pass 1: no key file was even asked for (the text function refuses again, but later, and after a write)');
   }
 });
 
