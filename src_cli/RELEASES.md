@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.5.0...cli-v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **leftovers:** E2.5 — the two repository guards run in CI, the exemptions are marked, and module_tests.md gets its Test leftovers section ([#330](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/330)) ([b6cc6b3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/b6cc6b359fa68b3257a91c60c1ca34e7d7b83d80))
+
 ## [0.5.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.4...cli-v0.5.0) (2026-11-09)
 
 
