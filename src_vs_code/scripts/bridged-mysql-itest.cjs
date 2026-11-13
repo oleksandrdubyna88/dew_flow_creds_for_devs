@@ -87,6 +87,12 @@ function step(socket, phase, incoming, markerPath, state) {
     if (incoming.payload[0] !== 0x03) {
       return 'command';
     }
+    if (state.requested) {
+      // Only the FIRST query is answered with the request: Oracle's 8.4 client sends more than one COM_QUERY for `-e`, and a request on each
+      // made the control receive the marker three times (CI, 2026-11-13). Every later query gets an OK.
+      socket.write(packet(incoming.sequence + 1, OK));
+      return 'command';
+    }
     state.requested = true;
     socket.write(packet(incoming.sequence + 1, Buffer.concat([Buffer.from([0xfb]), Buffer.from(markerPath)])));
     return 'infile';
@@ -129,7 +135,9 @@ async function legM(scope, dir, name, exe, product) {
   const home = path.join(dir, `${name} home`);
   fs.mkdirSync(home, { recursive: true });
   fs.writeFileSync(marker, MARKER_TEXT);
-  fs.writeFileSync(path.join(home, '.my.cnf'), `[client]\nlocal-infile=1\n[mysql]\nload-data-local-dir=${dir}\n`);
+  // `load-data-local-dir` is Oracle's alone: MariaDB's client stops on it as an unknown variable (CI, 2026-11-13), so its file has `[client]` only.
+  const oracleOnly = name === 'oracle' ? `[mysql]\nload-data-local-dir=${dir}\n` : '';
+  fs.writeFileSync(path.join(home, '.my.cnf'), `[client]\nlocal-infile=1\n${oracleOnly}`);
   const base = { PATH: process.env.PATH, HOME: home, MYSQL_PWD: 'pw' };
   const connect = (port) => ['-h', '127.0.0.1', '-P', String(port), '-u', 'u'];
   const manual = (flag) => (port) => ({ args: [...connect(port), flag, '-e', 'select 1'], env: base });
