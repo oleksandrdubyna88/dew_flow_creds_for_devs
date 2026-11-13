@@ -8,8 +8,8 @@
 > §4.9 whole, §4.2's two in-scope answers and N7, §4.11's bridged half, §5 step 3c, §6, §7 *The SSH contract* legs (a)-(i), *The file writer refuses
 > injection*, *In scope, visible or not*, *Links*, M8 and M9, §8, §9, `## Epics` E1, ledger entries 8.2 and 9.1). The parent is approved at epoch 9
 > and is not edited here. Where this spec found the parent silent or inexact, the point is in §S6.10 with its evidence, and the spec builds the
-> safe side. Two lines of the parent's file shape are built differently, by the lead's decision of 2026-11-12 (`IdentityFile none`; a fourth
-> keyword in a hop block); §S6.10 lists the parent's sentences that are owed for them.
+> safe side. The parent's file shape is built as written (the sentinel `IdentityFile`; three keywords in a hop block): §S6.10 says why two
+> other shapes that were measured are not built now.
 >
 > Scope: `src_vs_code/src` (`sshUseActions.ts`, `sshExecCommand.ts`, `sshOptions.ts` (one walk, two views, one export), `sshExecAuth.ts` (one export), `materializedKeys.ts`,
 > `agentUseActions.ts` (one call), `dbCliLauncher.ts`; new `bridgedSshConfig.ts`, `bridgedSshEnv.ts`, `bridgedSshCall.ts`); the tests of §S6.5;
@@ -57,7 +57,7 @@ order that the coder may replace, with the reason in §S6.13. A line with no mar
 | X7 | A hop `[::1]` and the destination `::1` under a file with one `Host ::1` block (the review's case, run again here) | `-G` of the destination lists the hop's `IdentityFile` and the hop's pin file. Two legs with one `Host` word are one block. |
 | X8 | `ssh -- 'u@[::1]'`; `-J 'h@::1'`; `-J 'h@gw:2201'` | `Could not resolve hostname [::1]`: `ssh` does not take brackets in its destination word. `Invalid -J argument` for a bare IPv6 address. The third gives the nested command `-p 2201` and the host `gw`. |
 | X9 | `-J` with the user `h$BRIDGE_PROBE`, and with `CORP\alice`, on this build (Ubuntu's 10.2p1) | `parse_jump: invalid username`, `Invalid -J argument`, no nested command. This build refuses both. It says nothing about an upstream build or about Windows (H7a). |
-| X10 | `IdentityFile none` in `Host *`, in place of the parent's sentinel path; a hop block with its own `IdentityFile` and `PubkeyAcceptedAlgorithms -sk-*` | The hop leg lists `identityfile <hop key>` then `identityfile none`; the destination lists `identityfile none` alone; `ssh -v` prints no `identity file` line for it and tries no default file. The hop leg's `pubkeyacceptedalgorithms` holds no `sk-` name; the destination's holds four. The lead measured the same with `-G` on Win32-OpenSSH 9.5p2 (2026-11-12). `-G` does not run the loader: leg (n) of §S6.5 does. |
+| X10 | **Measured, and not built (§S6.10).** `IdentityFile none` in `Host *`, in place of the parent's sentinel path; a hop block with its own `IdentityFile` and `PubkeyAcceptedAlgorithms -sk-*` | The hop leg lists `identityfile <hop key>` then `identityfile none`; the destination lists `identityfile none` alone; `ssh -v` prints no `identity file` line for it and tries no default file. The hop leg's `pubkeyacceptedalgorithms` holds no `sk-` name; the destination's holds four. The lead measured the same with `-G` on Win32-OpenSSH 9.5p2 (2026-11-12). `-G` does not run the loader. The row stays as evidence for the next whole-plan review. |
 | X11 | `-G` of the nested command under the file of §S6.3; and `-G` with no `-F` on this machine | Under the file: `gssapiauthentication no`, `hostbasedauthentication no`, `canonicalizehostname false`, `updatehostkeys false`, `verifyhostkeydns false`, `hashknownhosts no`, and no `pkcs11provider`, `knownhostscommand` or `sendenv` line. With no `-F`: `gssapiauthentication yes`, `hashknownhosts yes`, `updatehostkeys true` and four `sendenv` lines (the system file of this machine). |
 | X12 | The destination word `u@LocalHost` | `ssh -v` prints `Connecting to localhost`: `ssh` makes the host lower case for the connection. That the `known_hosts` lookup uses this name is the review's reading; leg (k) of §S6.5 proves it or not. |
 
@@ -119,6 +119,7 @@ export interface HopBlock { readonly host: string; readonly identityFile: string
 export interface ConfigInput {
   readonly hops: readonly HopBlock[];                       // ssh order; `host` as the entry holds it
   readonly destination: { readonly host: string; readonly pinnedFile?: string };
+  readonly noDefaultIdentity: string;                       // materializedKeyPath(storageDir, 'no-default-identity'); the file is never made
   readonly firstContactFile: string;                        // <storageDir>/bridges/known_hosts
   readonly personKnownHosts: string;                        // <injected home>/.ssh/known_hosts
 }
@@ -132,11 +133,11 @@ export function bridgedHostWord(host: string, leg: 'hop' | 'destination'): strin
 export function knownHostsName(hostWord: string, port: number | undefined): string;
 /** The file, or the name of the first field that failed a rule. It echoes no value. It refuses two legs with one `Host` word itself. */
 export function bridgedConfigText(input: ConfigInput): { readonly ok: true; readonly text: string } | { readonly ok: false; readonly field: string };
-export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: string]>;   // the 17 lines of `Host *` that hold no path, §S6.3
+export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: string]>;   // the 16 lines of `Host *` that hold no path, §S6.3
 export const BRIDGED_ASKPASS_OPTIONS: readonly string[];                                    // §S6.3
 ```
 
-The rules and the file's shape are §S6.3. There is no sentinel file and no builder for one: `Host *` says `IdentityFile none`. Tests F1-F10.
+The rules and the file's shape are §S6.3. The caller builds the sentinel's path with `materializedKeyPath`; this module joins no path. Tests F1-F10.
 
 **B4 — The environment. [C]** New `bridgedSshEnv.ts`, pure:
 
@@ -193,7 +194,7 @@ built from the hop entries it checked. So no hop can be in the argv that the rul
      first, as `<entry of the call>: <warning>`, as `prepareAuth` does for the destination (`sshUseActions.ts:189-193`); it is the journal's only,
      with no notice on screen;
    - a password destination with no pin (`auth === 'askpass'` and no line from `parseHostKey` and `knownHostsLine`, `hostKeyPin.ts:107`, `:124`) (R5);
-   - a path that fails the value rule or the `%` rule (§S6.3): the keys folder (`materializedKeysDir(storageDir)`), the first-contact file, the
+   - a path that fails the value rule (R6) or the `%` rule (R10) (§S6.3): the keys folder (`materializedKeysDir(storageDir)`), the first-contact file, the
      person's file, each hop's typed key path, the destination's `keyPath`.
 2. *Write*, in this order: the keys folder (0700); each `storedKey` hop's key with `materializeCallKey(storageDir, content)`; each pinned leg's pin
    file (below); `<storageDir>/bridges/` (0700); **when a leg is first contact, the first-contact file is opened for append (it is made with
@@ -292,7 +293,6 @@ Host <hop 1 Host word>                              one block for each hop, in s
   IdentityFile "<that hop's key file>"
   StrictHostKeyChecking <yes | accept-new>
   UserKnownHostsFile "<that hop's pin file>"        or, for accept-new: "<first-contact file>" "<person's file>"
-  PubkeyAcceptedAlgorithms -sk-*
 Host <destination Host word>                        only when the entry pins a host key
   StrictHostKeyChecking yes
   UserKnownHostsFile "<the destination's pin file>"
@@ -302,7 +302,7 @@ Host *
   KbdInteractiveAuthentication no
   IdentityAgent none
   IdentitiesOnly yes
-  IdentityFile none
+  IdentityFile "<keys/<pid>>/no-default-identity"
   ForwardAgent no
   ControlMaster no
   ControlPath none
@@ -317,21 +317,16 @@ Host *
   GlobalKnownHostsFile none
 ```
 
-- **A hop block has exactly those four keywords.** The destination block has exactly those two. `Host *` has exactly those eighteen lines, in
-  that order. A test parses the written text and fails on any other keyword in a block (F2). So a block cannot weaken `Host *`. The parent says
-  *three* for a hop block; the fourth is the next point, and the parent's sentence is owed (§S6.10).
-- **`PubkeyAcceptedAlgorithms -sk-*` in each hop block** (the lead, 2026-11-12, after two consultants; X10). For a password destination the hop
-  leg has the askpass names in its environment, because it is a child of the outer `ssh`. A FIDO key that asks for its PIN is then answered by
-  the askpass script with the destination's password (the review's reading of `sshconnect2.c:1263-1265`; not opened here). The value stays on
-  the laptop, but each call uses one try of the token's PIN. So a hop leg offers no `sk-` key. **The cost:** a hop whose key is a FIDO key fails
-  at `ssh` on a bridge, with or without a PIN. The destination keeps its `sk-` algorithms.
-- **`IdentityFile none` in `Host *`**, in place of the parent's sentinel path (the lead, 2026-11-12, after two consultants; X10). The list is
-  then not empty, so `ssh` adds no default identity file, and `none` is no file, so nothing is loaded and no path is printed. There is no
-  sentinel file, no builder for one, and no `no such identity: <path>` line. `IdentitiesOnly yes` and `IdentityAgent none` stay: `none` does not
-  switch off an agent. The parent's line is owed (§S6.10).
+- **A hop block has exactly those three keywords.** The destination block has exactly those two. `Host *` has exactly those eighteen lines, in
+  that order. A test parses the written text and fails on any other keyword in a block (F2). So a block cannot weaken `Host *`. This is the
+  parent's shape, as written.
+- **The sentinel.** The `IdentityFile` line of `Host *` names `materializedKeyPath(storageDir, 'no-default-identity')`: the one builder of a path
+  in the keys folder, so `test/keysDirPaths.test.ts:70-80` stays green. The file is never made. The line makes the list not empty, so `ssh` adds
+  no default identity file (the parent's measurement, §4.9). When `ssh` reaches that name it can print it (`no such identity: <path>`): the
+  keys folder's path may then be in stderr, which the parent's Output row allows (P3).
 - **The `Host` word** is the host as the entry holds it, with its brackets off and its letter case kept (X3, X4; the lead measured the same
   letter-case rule on Win32-OpenSSH 9.5p2, 2026-11-12). It is never made lower case in the file.
-- **Our own paths** (key files, pin files, the first-contact file, the person's file) are written with each `%` as `%%` (X2). A typed key path
+- **Our own paths** (key files, pin files, the sentinel, the first-contact file, the person's file) are written with each `%` as `%%` (X2). A typed key path
   of a hop is written as typed. Backslashes are written once.
 - `<home>` is the injected home (`os.homedir()` in production, the rig home in the itest). The writer reads no environment variable itself.
 
@@ -358,6 +353,8 @@ quote and the control characters. `${` is added from X1: a hop's typed key path 
 destination's password into a file name, and `ssh` names that file on stderr. The backslash is added from X5, so the journal says why.
 
 **The `%` rule. [C]** A hop's typed key path that holds `%` is refused. A `-i` path that holds `%` is refused, typed or written by this call.
+The journal sentence is R10: it says that a bridge does not support `%` in a key path, and asks for a key file whose absolute path has none.
+`~` stays allowed (K1, §S6.9). The import keeps `%` as typed (`importFormats.ts:145`, `:210`), so an imported `IdentityFile` can hold it.
 Two reasons. A `%` token in a path is expanded (X2), and `ssh` prints the expanded name when it cannot load the file: the agent would read the
 laptop's login, home or host name. And `-i` checks the text as written and loads the text as expanded (X1a), so no spelling of `%` works there.
 
@@ -377,16 +374,16 @@ nothing else.
 
 | Leg | Offers | Never offers | Trusts the host by |
 |---|---|---|---|
-| A hop | one signature, with that hop entry's own key (stored, written for the call; or the file at its typed path), and never with a FIDO key | a password, a keyboard-interactive answer, an agent's keys, a default identity, the destination's key | its entry's pin, alone; or first contact, recorded in `bridges/known_hosts` |
+| A hop | one signature, with that hop entry's own key (stored, written for the call; or the file at its typed path) | a password, a keyboard-interactive answer, an agent's keys, a default identity, the destination's key | its entry's pin, alone; or first contact, recorded in `bridges/known_hosts` |
 | A key destination | one signature, with the entry's key (`-i`) | a password, a keyboard-interactive answer, an agent's keys, a default identity, a hop's key | its entry's pin, alone; or first contact, recorded in `bridges/known_hosts` |
-| A password destination | the entry's password, through the askpass script, at most once for each method, to the pinned destination only | a key (`Host *` names none), an agent | its entry's pin, alone. No pin: no spawn |
+| A password destination | the entry's password, through the askpass script, at most once for each method, to the pinned destination only | a key (the sentinel is the only identity, and it is no file), an agent | its entry's pin, alone. No pin: no spawn |
 
 ## S6.4 — Refusals and sentences (exact)
 
 Every refusal below is made **before any spawn**. The agent reads `BRIDGE_USE_REFUSED(<entry of the call>)` (`bridgeScope.ts`, through
 `bridgedRefusal`, `sshUseActions.ts:135-143`) and nothing else. The sentence goes to the laptop's journal as
 `<entry of the call>: <sentence> (a Remote Bridge was told only that it could not be used)`. It may name a hop entry: that is N7's stated
-boundary (parent §4.2). The code is `no_credential` for every row but R7 and R9, as L2 and L3 have it today, so the code tells the agent nothing
+boundary (parent §4.2). The code is `no_credential` for every row but R7 and R9 (so for R10 too), as L2 and L3 have it today, so the code tells the agent nothing
 new; R7 and R9 are `internal`.
 
 | # | When | The journal sentence [C] | Pinned beside |
@@ -400,6 +397,7 @@ new; R7 and R9 are `internal`.
 | R7 | a write fails, or the first-contact file cannot be opened for append | `Could not write the files of this call: <describeError>` | what was written is gone; no spawn |
 | R8 | the argv is `undefined` (the second line of B6) | `"<entry>" cannot be given to ssh through a Remote Bridge: its host, its user or its key path is not one a bridge takes.` | no spawn; the files of the call are gone |
 | R9 | the chain has a `-J` text and no hop entries | `The jump chain of this call gave no entries to check.` | no spawn; no file |
+| R10 | a hop's typed key path, or the `-i` path, holds `%` | `A Remote Bridge does not support "%" in a key path: <the key path of "<entry>" \| the key path of the jump host "<hop name>">. Choose a key file whose absolute path has no "%".` | no spawn; no file; the sentence holds no part of the path |
 | J1 | after the run, a new line in `bridges/known_hosts` | `<entry of the call>: first contact through a Remote Bridge: <first field of the line> <algorithm> <SHA256 fingerprint> was added to bridges/known_hosts` | the line is in the file |
 | J2 | after the run, a first-contact leg's name is in neither file | `<entry of the call>: after this call no host key line for <name> is in bridges/known_hosts, and none that this check can read is in your own known_hosts. If ssh reached that host in this call, it accepted the key and kept no record, and the next call accepts any key.` | the two files hold no line for the name |
 
@@ -409,10 +407,9 @@ R6's `<field>` and `<why>`:
 |---|---|
 | `the user of "<entry>"`, `the user of the jump host "<hop name>"` | `is not a valid user name, or holds "$" or a backslash` |
 | `the host of "<entry>"`, `the host of the jump host "<hop name>"` | `is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes` |
-| `the key path of "<entry>"`, `the key path of the jump host "<hop name>"` | `is empty, or holds a quote, a control character, "${" or "%", or ends with a backslash` |
-| `the keys folder`, `the known-hosts path` | `is empty, or holds a quote, a control character or "${", or ends with a backslash` |
+| `the key path of "<entry>"`, `the key path of the jump host "<hop name>"`, `the keys folder`, `the known-hosts path` | `is empty, or holds a quote, a control character or "${", or ends with a backslash` |
 
-R1-R6, R8 and R9 say what the code has just checked and nothing about what comes next. J1 says that a line was added; it does not say who the
+R1-R6 and R8-R10 say what the code has just checked and nothing about what comes next. J1 says that a line was added; it does not say who the
 host is. J2 says what the check read. It does not know whether `ssh` reached the host, so it says *if*; and it does not read a pattern line or
 a certificate-authority line of the person's file, so it says *that this check can read*.
 
@@ -425,7 +422,7 @@ Each scenario names its observation. A sentence is asserted beside an observatio
 | # | Scenario | Observation |
 |---|---|---|
 | F1 | Two hops (one pinned with a stored key, one unpinned with a typed key path) and a pinned destination | the text equals the expected text, byte for byte, in the order of §S6.3 |
-| F2 | The same text, parsed block by block | a hop block has `IdentityFile`, `StrictHostKeyChecking`, `UserKnownHostsFile`, `PubkeyAcceptedAlgorithms -sk-*` and no other keyword; the destination block has two; `Host *` has the eighteen lines in order, with `IdentityFile none`; the only `IdentityFile` lines of the text are one for each hop block and that one |
+| F2 | The same text, parsed block by block | a hop block has `IdentityFile`, `StrictHostKeyChecking`, `UserKnownHostsFile` and no other keyword; the destination block has two; `Host *` has the eighteen lines in order; the only `IdentityFile` lines of the text are one for each hop block and the sentinel's, and no line names `PubkeyAcceptedAlgorithms` |
 | F3 | An unpinned key destination | no destination block |
 | F4 | A Windows path with a space and backslashes; a keys folder with `%` in it | each path is in quotes, backslashes once, `%` written `%%` in our own paths |
 | F5 | (D15) the measured value, a line break and `ProxyCommand /tmp/evil %h`, as a hop's key path; then `"`, CR, 0x1B, 0x7F, `${X}`, a last backslash and the empty text, in each path field in turn | `ok: false` with that field's name; no text is answered; the name holds nothing of the value |
@@ -480,7 +477,7 @@ Each scenario names its observation. A sentence is asserted beside an observatio
 | W10 | A first-contact leg; a line appended to `bridges/known_hosts` between the write and `afterRun()` | one sentence J1 with the fingerprint of that key; a second call with no new line answers no J1 |
 | W11 | A hop's user `$BRIDGE_PROBE`; then `CORP\alice`; then the same two as the destination's user; then `alice` and `alice-name` | R6 with the user field for the first four, nothing written; `ok: true` for the last two |
 | W12 | A hop `gw:2201`; a hop `::1` with no brackets; the destination `gw:2201`; the destination `::1` | R6 with the host field for the first three, nothing written; `ok: true` for the fourth |
-| W13 | The destination's `keyPath` is `/k/%u/id`; then `/k/${X}/id`; a hop's typed key path `/k/%d/id` | R6 with the key path field; nothing written |
+| W13 | The destination's `keyPath` is `/k/%u/id`; then `/k/${X}/id`; a hop's typed key path `/k/%d/id` | R10 with the key path field for the two paths with `%`, R6 for the path with `${`; nothing written; no sentence holds a part of the path |
 | W14 | A first-contact leg, and `bridges/known_hosts` cannot be opened for append (the path is a folder); then a call whose legs are all pinned, with no such file | `internal`, R7, and `keys/<pid>/` holds no file and no folder; then `ok: true` and the file is not made |
 | W15 | A first-contact leg and no new line: with both files empty; with a plain line for the name in the person's file; with a hashed line (`\|1\|…`) for the name there; with a line for the name in `bridges/known_hosts` | one sentence J2 with the name; then none, none, none |
 | W16 | A hop whose credential carries a `warning` | the journal has `<entry of the call>: <warning>`; the call goes on |
@@ -490,7 +487,7 @@ Each scenario names its observation. A sentence is asserted beside an observatio
 | # | Scenario | Observation |
 |---|---|---|
 | L1 | (rewritten) `e1` with its linked key, through the bridge | 200; the argv has `-F`, `c.conf`; `cwd` is a folder in `keys/<pid>/` that held `c.conf` alone; the text read there is §S6.3's for no hop; after the call the key file and the folder are gone; one dialog |
-| L3 | (kept; `j1` now has a stored key) a jump host out of scope | 200; `-J hop@jump.example.com`; the text read during the run has the `Host jump.example.com` block with a `call-….key` and its four keywords; the body holds nothing of `jump` |
+| L3 | (kept; `j1` now has a stored key) a jump host out of scope | 200; `-J hop@jump.example.com`; the text read during the run has the `Host jump.example.com` block with a `call-….key` and its three keywords; the body holds nothing of `jump` |
 | L6 | `j1` with a password; with no key; with a sealed key | the body is `BRIDGE_USE_REFUSED('prod')` with `no_credential`; the journal holds the exact line of R1, R2 or R3; `runs` is empty; the slot is back; `keys/<pid>/` is empty |
 | L7 | `e1` with a password and no pin, through the bridge; then through the main port | refused with R5 in the journal, `runs` empty; the main port answers 200 with today's argv |
 | L8 | (parent §7 D15) `j1`'s `sshKeyPath` is the measured value | refused with R6; `runs` is empty; no `c.conf` was written; the body and the journal line hold no `ProxyCommand` |
@@ -529,7 +526,7 @@ that this rig can make it happen. A **record** leg asserts nothing about the bui
 
 | Leg | Control (the bad thing happens) | Production (it does not) |
 |---|---|---|
-| (a) | Leg 5: a hop that offers passwords only (`PubkeyAuthentication no`, `PasswordAuthentication yes`, `KbdInteractiveAuthentication no` as its first lines); the hand-written argv; the askpass stub's log has a line | Leg 0, no `sshd`: `ssh -G -F c.conf -l hop -p 1 -W '[127.0.0.2]:22' 127.0.0.1` in the call folder reports `batchmode yes`, `passwordauthentication no`, `kbdinteractiveauthentication no`, `identityagent none`, `identityfile <the hop key>` then `identityfile none`, `gssapiauthentication no`, `hostbasedauthentication no`, `canonicalizehostname false`, `updatehostkeys false`, `verifyhostkeydns false`, no `sk-` in `pubkeyacceptedalgorithms`, and no `pkcs11provider`, `knownhostscommand` or `sendenv` line (X11). Leg 6: the hop of leg 5; the stub's log is empty and the hop's `sshd` saw the connection. Leg 7 (this spec's): the hop takes the hop key; the destination offers `PasswordAuthentication yes` and `KbdInteractiveAuthentication no` as its first lines; the log has exactly one line and its prompt names `127.0.0.2` |
+| (a) | Leg 5: a hop that offers passwords only (`PubkeyAuthentication no`, `PasswordAuthentication yes`, `KbdInteractiveAuthentication no` as its first lines); the hand-written argv; the askpass stub's log has a line | Leg 0, no `sshd`: `ssh -G -F c.conf -l hop -p 1 -W '[127.0.0.2]:22' 127.0.0.1` in the call folder reports `batchmode yes`, `passwordauthentication no`, `kbdinteractiveauthentication no`, `identityagent none`, `identityfile <the hop key>` then the sentinel's path and no other `identityfile` line, `gssapiauthentication no`, `hostbasedauthentication no`, `canonicalizehostname false`, `updatehostkeys false`, `verifyhostkeydns false`, and no `pkcs11provider`, `knownhostscommand` or `sendenv` line (X11). Leg 6: the hop of leg 5; the stub's log is empty and the hop's `sshd` saw the connection. Leg 7 (this spec's): the hop takes the hop key; the destination offers `PasswordAuthentication yes` and `KbdInteractiveAuthentication no` as its first lines; the log has exactly one line and its prompt names `127.0.0.2` |
 | (b) | `AcceptEnv BRIDGE_TEST_*` on the `sshd`, `SendEnv BRIDGE_TEST_*` in the rig's config, the whole environment: the remote `printenv BRIDGE_TEST_SECRET` prints the value | exit 1 and an empty stdout; the keys of the spawn's environment are the allow-list |
 | (c) | `ProxyCommand sh -c 'touch <marker>; exec nc %h %p'`, `PermitLocalCommand yes`, `LocalCommand touch <marker2>`, `Host dest-alias` in the rig's config: both markers exist | no marker exists; an entry whose host is `dest-alias` fails to resolve |
 | (d) | a key held only by a live `ssh-agent`: the control logs in | `Permission denied`, with `SSH_AUTH_SOCK` not in the environment; **and again with `SSH_AUTH_SOCK` put back by hand under the production file**: `Permission denied` too, so `IdentityAgent none` is proved alone |
@@ -540,7 +537,7 @@ that this rig can make it happen. A **record** leg asserts nothing about the bui
 | (i) | only when `CI=true`: `/etc/ssh/ssh_config` and the rig's config each get `ForwardAgent yes`, a `RemoteForward` and an `IdentityFile` the destination accepts; under `-F /etc/ssh/ssh_config`, and under `-F <rig>/.ssh/config`, the control logs in with that key and `-v` shows the forwarding request | `Permission denied` for that key; `-v` shows no agent request and no forwarding request; the system file is put back in a `finally` and compared by hash |
 | (j) | (this spec's, from X1) a hand-written file whose hop block has `IdentityFile "${BRIDGE_TEST_SECRET}"`, the variable in the environment: `ssh -v` names a file called by the value. **A record leg for the user (H7a):** in the rig of leg 7, with `BRIDGE_PROBE=dummy` in the environment, a hand-written `-J '$BRIDGE_PROBE@127.0.0.1:<port>'`: the harness prints whether this build refused the user (`invalid username`, as X9) or started the nested command, and whether `dummy` is in `ssh`'s stderr or in the hop's `sshd` log | L8 and F5 are the production half for the path: the writer refuses, so there is nothing to run. For the user, in the same rig and with the same variable: a hop whose user is `$BRIDGE_PROBE`, then `CORP\alice`: `ok: false` with R6, **zero spawns**, and the hop's `sshd` saw no connection |
 | (k) | the same call with another host key in the pin line: refused on that leg | (this spec's, from X3 and X12) a pinned hop whose entry host is `LocalHost`: the call logs in. So the block `Host LocalHost` matched the host as typed (the hop key was offered), and the pin line `[localhost]:<port>` matched the name `ssh` looks up |
-| (n) | (this spec's, from X10; `-G` never runs the identity loader) only when `CI=true`, and only when the runner's `~/.ssh/id_ed25519` does not exist (the leg fails if it does, and writes nothing): the leg makes that default key, the destination's `sshd` authorises it and offers passwords too, and a hand-written call under `-F <an empty file>` logs in with it | a pinned password destination, so the call names no key and `Host *`'s `IdentityFile none` is the whole list (with `-i`, or in a hop block, the list is not empty anyway): the call is `Permission denied`, the `sshd -d` log shows that no key was offered, and the askpass log has a line. The default key file is removed in a `finally` |
+| (n) | (this spec's; `-G` never runs the identity loader) only when `CI=true`, and only when the runner's `~/.ssh/id_ed25519` does not exist (the leg fails if it does, and writes nothing): the leg makes that default key, the destination's `sshd` authorises it and offers passwords too, and a hand-written call under `-F <an empty file>` logs in with it | a pinned password destination, so the call names no key and the sentinel is the whole list (with `-i`, or in a hop block, the list is not empty anyway): the call is `Permission denied`, the `sshd -d` log shows that no key was offered, and the askpass log has a line. The harness prints the call's stderr, which shows whether the sentinel's path is in it (P3). The default key file is removed in a `finally` |
 
 Legs (a) 5-7, (b)-(d), (h) and (n) need different `sshd` settings, so each starts its own. Legs (i) and (n) are skipped with a printed line off CI; on CI they never skip.
 
@@ -582,11 +579,11 @@ Mutate, watch the named case fail, restore; both outputs go in the PR. One file 
 | T20 | Let an `undefined` argv reach `runSshExec` on a bridge | L14 |
 | T21 | Write a hop's `IdentityFile` under `Host *`, not in its block | F1, F2; itest (e): the destination's log then shows the hop key offered |
 | T22 | Compare the `Host` words before the brackets are off; then drop the check inside `bridgedConfigText` | W4 (the hop `[::1]` with the destination `::1`); then F8 |
-| T23 | Skip the value rule and the `%` rule for the destination's `-i` path, in the writer; then in `buildSshExecArgv` | W13; then A9 |
+| T23 | Skip the value rule and the `%` rule for the destination's `-i` path, in the writer; then in `buildSshExecArgv`; then answer R6 for a path with `%` | W13; then A9; then W13 (the sentence is R10's) |
 | T24 | Skip the user rule in the writer; then in `buildSshExecArgv`; then let `$` through the rule | W11, L12, itest (j); then A8; then F9 |
 | T25 | Let `:` through the host rule | F7; W12 |
-| T26 | Drop `IdentityFile none` | F2; itest (n) |
-| T27 | Drop `PubkeyAcceptedAlgorithms -sk-*` from the hop block | F2; itest (a) leg 0 |
+| T26 | Drop the sentinel's `IdentityFile` line from `Host *` | F2; itest (n): the default key is then offered and the call logs in |
+| T27 | Build the sentinel's path with `path.join(materializedKeysDir(…), …)` in `bridgedSshCall.ts` | `test/keysDirPaths.test.ts` |
 | T28 | Skip the open for append of the first-contact file | W14; itest (f) |
 | T29 | Call `afterRun()` after the `try`, not in the `finally` | L13 |
 | T30 | Write the pin line with the host as typed | W6; itest (k) |
@@ -604,7 +601,7 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 6. Each sentence of §S6.4 holds no part of a value, and says only what the code checked.
 7. The mutations of §S6.6 were run, and each named case failed for the reason given.
 8. The As-built names each **[S]** that changed, with the reason.
-9. *What a hop is offered.* Read the written `c.conf` of L3 and of itest (e): one `IdentityFile` in the hop's block, that hop's own, and `PubkeyAcceptedAlgorithms -sk-*`. No road gives a hop the destination's key or password.
+9. *What a hop is offered.* Read the written `c.conf` of L3 and of itest (e): one `IdentityFile` in the hop's block, that hop's own, and three keywords. No road gives a hop the destination's key or password.
 10. *What the destination is offered.* A password leaves only through the outer leg, only to a pinned host, at most once for each method.
 11. *Who is trusted.* A pinned leg reads its entry's pin alone. First contact is recorded in `bridges/known_hosts`, or the call does not start; a call that left no record says so in the journal. The person's `known_hosts` is read and never written.
 12. *What is not consulted.* No agent, no default identity, no file but `c.conf`, on the outer leg and on every nested leg.
@@ -638,18 +635,27 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
   out in turn. `BRIDGED_ENV_WINDOWS` is then set to what was needed and no wider. On Linux the same with `PATH`, `HOME`. **Added by this
   revision, in the same run:** an unpinned key destination, called from a profile whose path holds a space: the call logs in, and its line is
   in `bridges/known_hosts` afterwards; then the host key is changed, and the next call is refused. And a password call with a default identity
-  file in the profile's `.ssh` folder: `-v` shows that it is not offered (`IdentityFile none` at run time on Win32-OpenSSH). The results go to
-  the parent's §7 M9 row and to §S6.13.
+  file in the profile's `.ssh` folder: `-v` shows that it is not offered (the sentinel at run time on Win32-OpenSSH). **And the `%` check of the
+  bridge's own entry:** the run asks `includes('%')` of that entry's key path and records yes or no. It does not print the path (the repository
+  is public, and the owner's entry cannot be read from here). With yes, R10 refuses that entry on a bridge, and the DoD's `vpn-up` line needs
+  another key path. The results go to the parent's §7 M9 row, to the PR and to §S6.13.
 - **Windows and the file.** LF line ends, `%%`, a last backslash and `${…}` were measured on OpenSSH 10.2 on Linux only (X1, X1a, X2, X5). M8
   measured a quoted path with a space on Win32-OpenSSH 9.5p2. **Closed:** the letter case of a `Host` word. The lead measured on Win32-OpenSSH
-  9.5p2 (2026-11-12) that `Host HOP.Example` matches only that spelling, as X3 on Linux. `IdentityFile none` and `PubkeyAcceptedAlgorithms -sk-*`
-  were measured there with `-G` only (X10).
+  9.5p2 (2026-11-12) that `Host HOP.Example` matches only that spelling, as X3 on Linux.
 - **The user and the shell (H7a).** This spec did not open `ssh.c`. X9 shows only that this machine's build refuses such a user. The record leg
   of (j) says what the CI build does. The rule does not rest on either: the user is refused before the spawn.
 - **`ssh` goes on when it cannot write a first-contact line.** The review's reading of `sshconnect.c`; not opened and not run here. The record
   leg of (f) says what the CI build does. The open for append and J2 do not rest on it.
-- **The FIDO PIN and the askpass script.** The review's reading of `sshconnect2.c`; not run (no token here). `PubkeyAcceptedAlgorithms -sk-*`
-  was measured with `-G`; that a hop then never touches a token at run time is not measured.
+- **A known limit, not run: a FIDO key on a hop, and its PIN.** For a password destination the hop leg has the askpass names in its
+  environment, because it is a child of the outer `ssh`. By the review's reading of `sshconnect2.c:1263-1265` (not opened here; no token here),
+  a FIDO key that asks for its PIN is then answered by the askpass script with the destination's password. The value stays on the laptop, but
+  each call uses one try of the token's PIN. This spec builds nothing against it (§S6.10 says why). **Resolve the FIDO-PIN risk at the next
+  whole-plan review, and in any case before any real-token measurement or any switch-on owner build (E2.4) and before E4.1's flip; if no stop
+  comes earlier, the lead schedules that review explicitly.** It can wait because R1 (`test/bridgeBoundary.test.ts:158`) keeps every bridge door
+  closed until the switch, so E1.6's code reaches no user.
+- **The sentinel's line (P3).** By the review's reading of `sshconnect2.c:1529-1532`, `ssh` prints `no such identity: <path>` at the default
+  log level when authentication reaches the sentinel. Then a bridged call can show the keys folder's path in stderr. Not run here; legs (a) 7
+  and (n) print their stderr, and §S6.13 records it.
 - **The name `ssh` looks a host up by.** X12 shows the lower-case name for the connection. Leg (k) is the test for the pin line. Whether a
   pin line in another letter case would match too was not run; this spec writes the lower-case one.
 - **`~` in a typed key path.** `~/` and `~user/` are expanded (X2). When `ssh` cannot load the file it prints the expanded path, so the agent
@@ -674,8 +680,11 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
   the parent that they make inexact are listed below, and the lead edits the parent.
 - **Settled (the lead and the owner):** PR #359 merges first (§S6.1 E3); the dep `bridgedSshConfig` stays optional and a call with no writer is
   refused (B7); the bridged half of §4.11 is built by this story (B8); the value rule refuses `${` (P1).
-- **Settled by two consultants, checked by the lead with `ssh -G` on OpenSSH 10.2p1 and Win32-OpenSSH 9.5p2:** `IdentityFile none` under `Host *`
-  in place of the sentinel path (P3); `PubkeyAcceptedAlgorithms -sk-*` in each hop block.
+- **Two measured shapes are not built: `IdentityFile none` and `PubkeyAcceptedAlgorithms -sk-*` (X10).** A consultant counted them under the
+  change-control rule, and the lead verified the count: they are two plan changes (they would be 9.2 and 9.3). §4.9's Output row already allows
+  a key path in stderr, and *exactly three keywords* is a stated shape of the parent. Two changes in one epoch stop the whole plan. The decision
+  is not to stop now: this spec keeps the plan as written, with the sentinel and three keywords.
+- **Settled (the lead): the `%` rule stays (P9),** with the sentence R10 and the M9 check of §S6.9.
 - **Settled by a consultant, checked by the lead against `sshCommand.ts:91-93`:** the user rule is `isSafeSshUser` and no `$` and no backslash,
   for every user an entry holds.
 - **Measured by the lead:** the letter case of a `Host` word on Win32-OpenSSH 9.5p2 (P2).
@@ -690,16 +699,14 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
    - added: *the user of the destination or of a hop holds `$` or a backslash, so a Windows domain login written `CORP\alice` is refused*;
    - added: *a host holds `:` or a square bracket and is not an IPv6 address (in brackets for a hop), so a port typed into the host field is refused*;
    - added: *a call with an unpinned key leg cannot open `bridges/known_hosts` for writing*.
-2. **The same paragraph, the list of what fails at `ssh`:** added: *a hop's key is a FIDO (`sk-`) key, with or without a PIN, because each hop
-   block says `PubkeyAcceptedAlgorithms -sk-*`*.
-3. **§4.9, *The file*:** *carrying exactly three keywords, `IdentityFile <that hop's key>`, `StrictHostKeyChecking` and `UserKnownHostsFile`*
-   becomes four, with `PubkeyAcceptedAlgorithms -sk-*`; and *A hop block may carry no lock-down keyword but those three* becomes *those four*.
-4. **§4.9, *The file* and the table's row *Default identity files*:** `IdentityFile <keysDir>/no-default-identity` and *an `IdentityFile` line
-   under `Host *` naming a path in the keys folder that does not exist* become `IdentityFile none`.
-5. **§6:** a row for the per-call pin files: at most (1 + 4) × 8 files, under 1 KB each, removed in the call's `finally`; the purge covers a killed window (P6).
-6. **§7, the M9 row:** the first-contact measurements and the default-identity measurement of §S6.9.
-7. **The stories document** (`todo/PLAN_remote_bridge_scoped_E1.md:524`, `:571-572`): legs (a)-(i), and the bridged half of §4.11 (P7).
-8. **Stale line numbers of §4.11:** `agentUseActions.ts:342`, `:369`, `:372` are `:602`, `:629`, `:628` on this tree (H11).
+2. **§6:** a row for the per-call pin files: at most (1 + 4) × 8 files, under 1 KB each, removed in the call's `finally`; the purge covers a killed window (P6).
+3. **§7, the M9 row:** the first-contact measurements, the default-identity measurement and the `%` check of §S6.9.
+4. **The stories document** (`todo/PLAN_remote_bridge_scoped_E1.md:524`, `:571-572`): legs (a)-(i), and the bridged half of §4.11 (P7).
+5. **Stale line numbers of §4.11:** `agentUseActions.ts:342`, `:369`, `:372` are `:602`, `:629`, `:628` on this tree (H11).
+
+**Owed to the next stop of the plan.** The FIDO-PIN risk of §S6.9, with its text there: at the next whole-plan review, and in any case before
+any real-token measurement or any switch-on owner build (E2.4) and before E4.1's flip; if no stop comes earlier, the lead schedules that review
+explicitly. X10 is its evidence. The same review can weigh `IdentityFile none` against the sentinel (P3).
 
 **For the owner: none.** Q1-Q4 and Q8 are decided (parent §2.1), and this spec builds under them. M9 needs the owner's Windows host; that is a measurement.
 
@@ -709,13 +716,13 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 |---|---|---|---|
 | P1 | D15 names a quote and control characters. X1: `${VAR}` in a path of the file is replaced by an environment variable of the `ssh` process, and a nested hop leg has `CREDS_SSH_PASSWORD` in its environment for a password destination | The value rule refuses `${` | Settled |
 | P2 | §4.9 does not say how the `Host` word is spelled. X3: a pattern in another letter case does not match | The host as typed, brackets off; equal words compared in lower case | Settled; measured on both builds |
-| P3 | The sentinel path would be printed (`no such identity: <path>`, the review's reading of `sshconnect2.c:1529-1532`) | `IdentityFile none` | Settled; leg (n) is its run-time test |
+| P3 | The sentinel's path can be printed (`no such identity: <path>`, the review's reading of `sshconnect2.c:1529-1532`) | The sentinel, as the parent says. The keys folder's path may be in stderr, which the parent's Output row allows | Stays. Leg (n) is the run-time test that no default identity is offered. `IdentityFile none` (X10) waits for the next whole-plan review |
 | P4 | §4.11 gives the database child the same list as `ssh`. No `LANG` or `LC_*` is on it | The list as written | Open; it changes no secret |
 | P5 | `sshUseActions.ts:254-258`: an entry whose host or user fails `isSafeSshTarget` gives `runSshExec` an `undefined` argv, and Node then starts `ssh` with no arguments (H4) | On a bridge: R6 from the writer, and R8 as the second line (L11, L14). Off a bridge: not changed | Off a bridge it has no owner |
-| P6 | §6 has no row for the per-call pin files | As item 5 above | Owed |
+| P6 | §6 has no row for the per-call pin files | As item 2 above | Owed |
 | P7 | The stories document says legs (a)-(g) and names no database flag | This spec follows the parent | Owed |
-| P8 | **The host rule, where this spec does not follow the review's words.** The review said: refuse a host that holds `:` unless it is one bracketed literal. X8: `ssh` cannot resolve a bracketed destination word, off a bridge and on one, and a bare address is the only form that works off a bridge | A hop: brackets needed. The destination: an IPv6 address with or without brackets, and the argv word has them off. `gw:2201` and `[gw]` are refused for both | **Open: the lead decides.** With the review's words as written, an IPv6 destination entry has no spelling that works both on a bridge and off one |
-| P9 | **The `%` rule and an imported `IdentityFile`.** An entry whose key path holds a `%` token (`%d/.ssh/id`) is refused on a bridge. M8 (6) did not write the form of the owner's path here | Refused, with R6 in the journal | **Open: the lead checks the form** of the path of the bridge's own entry. If it holds `%`, the DoD's `vpn-up` line cannot pass, and this rule needs the owner |
+| P8 | **The host rule, where this spec does not follow the review's words.** The review said: refuse a host that holds `:` unless it is one bracketed literal. X8: `ssh` cannot resolve a bracketed destination word, off a bridge and on one, and a bare address is the only form that works off a bridge | A hop: brackets needed. The destination: an IPv6 address with or without brackets, and the argv word has them off. `gw:2201` and `[gw]` are refused for both | **Settled (a consultant, checked by the lead with `ssh -G` on 10.2p1, 2026-11-13):** this form stays. `Host` blocks match the text before any address normalisation, so `Host ::1` and `Host 0:0:0:0:0:0:0:1` stay apart; a zone id (`%`) fails `isSafeSshHost`; add regression cases for both, and say that zone ids are not supported |
+| P9 | **The `%` rule and an imported `IdentityFile`.** An entry whose key path holds a `%` token (`%d/.ssh/id`) is refused on a bridge. M8 (6) did not write the form of the owner's path here | Refused, with R10 in the journal. `~` stays allowed (K1) | Settled (the lead): the refusal stays. The import keeps `%` as typed (`importFormats.ts:145`, `:210`). M9 asks `includes('%')` of the bridge's own entry without printing the path, and the PR records the result before the merge |
 
 ## S6.11 — What this changes for a local user; the CHANGELOG; the documents
 
@@ -745,8 +752,8 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 | C11 | Row 11: pinned legs read their own file; first contact is recorded in `bridges/known_hosts`, or the call does not start; the person's file is never written | B3, B5, B7 | F1, F3, F6, W6, W9, W10, W14, W15, L13 | (f), (h), (k) |
 | C12 | Row 12: no multiplexing | B3, B9 | F2 | the mux pair of `scripts/itestForwardAgent.cjs`, rewritten (B9) |
 | C13 | Row 13: a refusal is generic to the agent, detailed in the journal | B7 | L2, L3, L6, L7, L8, L11, L12, L14 | — |
-| C14 | The file: order, four and two keywords (the parent says three: §S6.10), the lock-down, quotes, backslashes once | B3 | F1, F2, F4, F6 | (a) 0 |
-| C15 | D15: a value that could change the file is refused, no spawn, no file | B3, B5, B6 | F5, F10, W13, A9, L8 | (j) |
+| C14 | The file: order, three and two keywords, the lock-down, quotes, backslashes once | B3 | F1, F2, F4, F6 | (a) 0 |
+| C15 | D15: a value that could change the file is refused, no spawn, no file; and no `%` in a key path (R10) | B3, B5, B6 | F5, F10, W13, A9, L8 | (j) |
 | C16 | D16: a relative `-F`, a fresh folder per call with one file | B2, B5, B7 | P1, W1, L1 | every leg (the storage folder has a space in its name) |
 | C17 | Equal hosts among one call's legs are refused, and a host has one `Host` word | B3, B5 | F6, F7, F8, W4, W12, A7 | (e) |
 | C18 | Epoch 9: no `-o UserKnownHostsFile` on a bridge; the pin in the destination block; `-i` kept | B3, B6 | A3, A4, F1 | (h) |
@@ -771,7 +778,7 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 - [ ] `research/module_extension.md` and `research/module_tests.md` say what was built; `node .agents/conventions/tools/plan-lifecycle.mjs` is clean.
 - [ ] The PR body says what changes for a local user (nothing, with the tests that show it) and lists the points of §S6.10 with what was built.
 - [ ] The Opus review and Fable's authentication judgement (§S6.7, points 9-15) are done, and the `coai` code round reached `proceed`.
-- [ ] **M9 is recorded before the merge**, with the first-contact and default-identity measurements of §S6.9. §S6.13 is written.
+- [ ] **M9 is recorded before the merge**, with the first-contact and default-identity measurements of §S6.9 and the `%` check of the bridge's own entry, whose result is in the PR. §S6.13 is written.
 
 ## S6.13 — As built
 
