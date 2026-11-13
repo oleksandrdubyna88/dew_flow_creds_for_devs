@@ -79,6 +79,8 @@ const HARNESSES = [
   { name: 'cli', script: 'creds-cli-itest.cjs', needs: 'the .NET CLI built — dotnet build src_cli/src/CredsCli.csproj -m:4', windows: false },
   { name: 'mcp', script: 'creds-mcp-itest.cjs', needs: 'creds-mcp built — dotnet build src_mcp/src/CredsMcp.csproj -m:4', windows: false },
   { name: 'masked-run', script: 'masked-run-itest.cjs', needs: 'nothing', windows: false },
+  { name: 'bridged-ssh', script: 'bridged-ssh-itest.cjs', needs: 'OpenSSH with sshd (POSIX only; CI installs it)', windows: false },
+  { name: 'bridged-mysql', script: 'bridged-mysql-itest.cjs', needs: "Oracle's mysql and MariaDB's client (Linux; CI installs them)", windows: false },
   {
     // The one harness outside this directory: it drives the SERVER binary, so it lives in the
     // server's tree and runs on the server's CI path filter. `itest:all` still covers it, because a

@@ -64,9 +64,9 @@ function settledAfter(promise, ms) {
   return Promise.race([promise, bound]).finally(() => clearTimeout(timer));
 }
 
-/** A real ssh with `argv` under `config`, the agent in its environment; what it answered, and the sshd it spoke to. */
-async function runClient(rig, config, argv, started) {
-  const client = launch(rig.scope, 'ssh', ['-F', config, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
+/** A real ssh with `argv` under `config` (no `-F` is added when `config` is undefined: the argv names its own), the agent in its environment; what it answered, and the sshd it spoke to. */
+async function runClient(rig, config, argv, started, options = {}) {
+  const client = launch(rig.scope, 'ssh', config === undefined ? argv : ['-F', config, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket }, ...options });
   let timer;
   try {
     const timeout = new Promise((resolve) => {
@@ -88,7 +88,29 @@ function sshdIn(rig, name) {
   return startSshd(rig.scope, dir, rig.hostKey, rig.authorizedKeys);
 }
 
-/** One leg: a real ssh runs `printenv SSH_AUTH_SOCK` on its own sshd, with or without the bridged options; what the remote printed. */
+/**
+ * The PRODUCTION call of a bridged `ssh:exec` for `entityOn(port)` (E1.6): `writeBridgedCall` and `bridgedSpawn` from `out/`, the host key of that sshd pinned in the
+ * entry, and a real ssh with that argv, environment and cwd. The live agent's socket is put back into the environment on purpose, so that "forwards nothing"
+ * is shown with an agent that COULD be forwarded. The old hand-built bridged argv (`knownHostsFile`, no `-F`) is refused by the argv builder since B6.
+ */
+async function productionLeg(rig, started, command) {
+  const call = require(path.join(rig.out, 'bridgedSshCall.js'));
+  const base = { storageDir: rig.storageDir, home: rig.home, platform: process.platform, note: () => undefined };
+  const hostKey = fs.readFileSync(started.knownHosts, 'utf8').trim().split(/\s+/).slice(1, 3).join(' ');
+  const destination = { ...entityOn(started.port), hostKey };
+  const files = call.writeBridgedCall(base, { destination, auth: 'key', keyPath: rig.userKey, hops: [] });
+  if (!files.ok) {
+    return { failure: files.reason };
+  }
+  try {
+    const spawn = call.bridgedSpawn({ destination, keyPath: rig.userKey, auth: 'key', askpassEnv: {}, remoteCommand: command, files, sourceEnv: process.env, platform: process.platform });
+    return await runClient(rig, undefined, spawn.argv, started, { cwd: spawn.cwd, env: { ...spawn.env, SSH_AUTH_SOCK: rig.agentSocket } });
+  } finally {
+    files.remove();
+  }
+}
+
+/** One leg: a real ssh runs `printenv SSH_AUTH_SOCK` on its own sshd, hand-built under the rig's config (the control) or as the production call; what the remote printed. */
 async function oneLeg(rig, bridged) {
   const { buildSshExecArgv } = require(path.join(rig.out, 'sshExecCommand.js'));
   const started = await sshdIn(rig, bridged ? 'leg-bridged' : 'leg-control');
@@ -96,7 +118,10 @@ async function oneLeg(rig, bridged) {
     if (started.failure !== undefined) {
       return { failure: started.failure };
     }
-    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: started.knownHosts, bridged });
+    if (bridged) {
+      return await productionLeg(rig, started, 'printenv SSH_AUTH_SOCK');
+    }
+    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: started.knownHosts });
     return await runClient(rig, rig.config, argv, started);
   } finally {
     await endChild(started.sshd);
@@ -125,11 +150,9 @@ async function joiningLeg(check, rig, a, b) {
   check("and it never reached the server it named: SSH_CONNECTION ends in A's port", (lines[1] ?? '').trim().endsWith(String(a.port)), JSON.stringify(joined));
 }
 
-/** Leg 4: the production argv for B under the same config: a fresh connection to B, with no agent. */
+/** Leg 4: the production call for B: a fresh connection to B, with no agent. Under the per-call file (`-F c.conf`, `ControlPath none`) the master's config is not read at all: this is the "no multiplexing" half. */
 async function bridgedLeg(check, rig, b) {
-  const { buildSshExecArgv } = require(path.join(rig.out, 'sshExecCommand.js'));
-  const argv = buildSshExecArgv(entityOn(b.port), rig.userKey, 'printenv SSH_AUTH_SOCK SSH_CONNECTION', 'key', { knownHostsFile: b.knownHosts, bridged: true });
-  const result = await runClient(rig, rig.muxConfig, argv, b);
+  const result = await productionLeg(rig, b, 'printenv SSH_AUTH_SOCK SSH_CONNECTION');
   const lines = result.stdout.split(/\r?\n/);
   check('the production bridged argv joins no master: printenv answers 1 (SSH_AUTH_SOCK unset) and prints exactly one line, the connection, ending in B\'s port', result.code === 1 && lines.length === 1 && lines[0].trim().endsWith(String(b.port)), JSON.stringify(result));
   check('and it reached B: sshd B saw the connection, so the empty answer is not a connection that never happened', REACHED_B.test(b.sshd.stderr), sshdTail(b));
@@ -183,6 +206,7 @@ async function liveNoAgentForward(check, out) {
   try {
     const rig = {
       dir, scope: section, out, hostKey: path.join(dir, 'host_key'), userKey: path.join(dir, 'user_key'), authorizedKeys: path.join(dir, 'authorized_keys'),
+      storageDir: path.join(dir, 'storage'), home: path.join(dir, 'home'),
       config: path.join(dir, 'ssh_config'), muxConfig: path.join(dir, 'ssh_config_mux'), muxSocket: path.join(dir, 'mux.sock'), agentSocket: path.join(dir, 'a.sock'),
     };
     const failed = (await keygen(rig.hostKey)) ?? (await keygen(rig.userKey));

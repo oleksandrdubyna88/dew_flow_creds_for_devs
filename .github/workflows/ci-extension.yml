@@ -167,6 +167,20 @@ jobs:
       - name: Integration test (SSH agent against a real ssh-add)
         run: npm run itest:ssh-agent
 
+      # The bridged `ssh:exec` (E1.6, parent §4.9 and §7): a REAL `ssh` and a REAL `sshd -d` under the per-call file the product writes. It needs
+      # the `sshd` installed above, and on this runner it also writes /etc/ssh/ssh_config (leg (i), put back by hash) and the account's default
+      # key (leg (n), removed), which is why those two legs run on CI only. A missing `sshd` FAILS here. Catalogued in research/module_tests.md.
+      - name: Integration test (bridged ssh)
+        run: npm run itest:bridged-ssh
+
+      # The bridged database client (E1.6, parent §4.11, leg (m)): Oracle's `mysql` and MariaDB's client against a fake server that asks for a local
+      # file. Both clients are named by an absolute path; a missing one FAILS here.
+      - name: Install the mysql and mariadb clients
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mysql-client mariadb-client
+
+      - name: Integration test (bridged mysql client)
+        run: npm run itest:bridged-mysql
+
       # A masked run through a real pty: the value reaches the child's environment and every
       # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
       # written, so the Linux one is what CI exercises.

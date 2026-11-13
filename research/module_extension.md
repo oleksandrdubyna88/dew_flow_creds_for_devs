@@ -3868,6 +3868,58 @@ key file that cannot be removed (Amendment 3, C.6: `removeKeyFile` catches the `
 `ssh:exec — the key file could not be removed: …` to the journal, and the exec slot comes back in the same `finally`; the finished
 result stands, and the leftover file is the person's own, in a folder only they can read).
 
+**The bridged `ssh:exec` road (E1.6 of the scoped remote bridge; spec `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`).** A bridged call no longer runs
+under the laptop's `ssh_config`: it runs under ONE file written for the call, with an environment built new, and what each leg offers and to whom is
+decided by the code before the spawn. Nothing here is reachable by a user while `test/bridgeBoundary.test.ts` R1 keeps every bridge door closed (E4.1
+flips it). The pieces, in the order a call meets them:
+
+- *The walk.* `ssh:exec` resolves its chain with `resolveJumpHops` (`sshOptions.ts`), which answers the hop ENTRIES in the order of the `-J` text beside
+  the same value `resolveJumpChain` always answered (one private walk, two views; `resolveJumpChain` answers the same object, key for key). A chain with a `-J`
+  text and no entries on a bridge is refused (`internal`, R9): the hop blocks could not be written.
+- *The writer* (`bridgedSshCall.ts`, with its pass 1 in `bridgedSshRefusals.ts` and the sentences in `bridgedSshSentences.ts`). `sshDepsFor` wires
+  `bridgedSshConfigWriter`; a deps with no writer is still refused before any slot (`unguardedBridge`, reason `no per-call ssh_config for this call`).
+  `writeBridgedCall(base, input)` has two passes. **Pass 1 writes nothing** and refuses, in this order: a user (the destination's or a hop's) that fails
+  `unsafeBridgedUser` (`isSafeSshUser` and no `$` and no backslash: a `-J` user reaches a shell on some builds, so a Windows login `CORP\alice` is refused on a
+  bridge), a host that fails `bridgedHostWord` (a name, or an IPv6 address: brackets for a hop, with or without them for the destination; `gw:2201` and `[gw]` are
+  refused; a zone id fails `isSafeSshHost`), two legs with one `Host` word (compared in lower case, brackets off: R4), a hop credential that is a password, nothing,
+  a value the opener stopped or a sealed key (R1-R3; the sealed check is `sealedKeyRefusal`, shared with `byStoredKey`), a password destination with no pin (R5), and
+  a path that fails the value rule (empty, a quote, a control character, `${`, a last backslash: R6) or holds `%` in a typed key path or in `-i` (R10: `ssh` expands it,
+  X2). **Pass 2 writes**, and a failure in it removes what it wrote and answers `internal` (R7): the keys folder (0700); each stored hop key with
+  `materializeCallKey` (a random name, no id: change 9.1); one pin file for each pinned leg, `call-<uuid>.known_hosts`, holding `knownHostsLine(<the Host word in lower case>, port, key)`
+  (never `materializeKnownHosts`); `bridges/` (0700) and, when a leg is first contact, `bridges/known_hosts` **opened for append** (an `accept-new` that cannot write goes on and
+  records nothing); the call's folder `keys/<pid>/<call name>/` (0700, `bridgedCallFolder`) and `c.conf` (0600). Its answer carries `cwd`, `configFile` (`c.conf`), `pinned`,
+  `jump` (the `-J` text built with `hopOf` from the entries it CHECKED), `afterRun()` and `remove()`. A hop credential's `warning` goes to the journal first.
+- *The file* (`bridgedSshConfig.ts`, pure). In this order: one `Host <word>` block for each hop with exactly three keywords (`IdentityFile`, `StrictHostKeyChecking`,
+  `UserKnownHostsFile`: the pin file, or for `accept-new` the first-contact file and the person's own `known_hosts`), a destination block of two keywords only when the entry pins a
+  host key, then `Host *` from `BRIDGED_LOCKDOWN` (sixteen lines) plus the sentinel `IdentityFile "<keys>/no-default-identity"` (a file never made: it makes the identity list not empty,
+  so `ssh` adds no default file) and `UserKnownHostsFile "<storageDir>/bridges/known_hosts" "<home>/.ssh/known_hosts"`. A caller hands in no keyword. Our own paths are quoted with
+  each `%` written `%%`; a typed key path is written as typed; backslashes are written once. The `Host` word keeps its letter case (a pattern is compared with the host as typed).
+  `bridgedConfigText` asks every rule again and refuses two legs with one word itself, so no caller can get a file in which two legs are one block.
+- *The spawn* (`bridgedSpawn`). `buildSshExecArgv` on a bridge takes `configFile` and `pinned`: `-o StrictHostKeyChecking=yes|accept-new` and **no** `UserKnownHostsFile` word,
+  `BRIDGED_SSH_OPTIONS`, for a password destination `BRIDGED_ASKPASS_OPTIONS` (`BatchMode=no`, `PasswordAuthentication=yes`, `KbdInteractiveAuthentication=yes`; they bind the outer leg
+  only), `-F c.conf` (relative: `-F` is handed to the nested `-J` command unquoted), `-i`, `-p`, `--` and the destination as `user@<Host word>`. It answers `undefined` for a call with no file,
+  with a known-hosts file, or whose user, host or key path fails its rule: the second line (R8, `no_credential`). The `cwd` is the call's folder, which holds `c.conf` and nothing else.
+  The environment is `bridgedSshEnv(process.env, platform, extra)`: `PATH` and `HOME` (POSIX), or the Windows eight, and for a password destination only the four askpass names
+  (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `DISPLAY`); never `SSH_AUTH_SOCK` or a `CREDS_REF_` name; it throws on an `extra` name that is not on its list.
+- *The road* (`execOverSsh`, with `bridgedSshRoad.ts` for the bridged half). Off a bridge the lines are the ones it always ran. On a bridge: the writer, `bridgedSpawn`, and `runSshExec`
+  with that argv, environment and `cwd`; in the `finally`, the sentences of `files.afterRun()` go to the journal, then the destination's key file is removed as before, then `files.remove()`
+  (each file in its own try; a failure is one note, `ssh:exec — a file of the call could not be removed: …`). Every refusal is before the spawn, goes to the journal as
+  `<entry>: <sentence> (a Remote Bridge was told only that it could not be used)`, and answers the agent `BRIDGE_USE_REFUSED(<entry>)` with code `no_credential` (R7 and R9: `internal`).
+- *First contact.* A leg whose entry pins no host key is first contact: `accept-new`, recorded in `bridges/known_hosts`, which lives outside the keys folder so the record survives a purge.
+  After the run the journal gets J1 for each line added to that file (`first contact through a Remote Bridge: <name> <algorithm> <fingerprint> was added to bridges/known_hosts`) and J2 for
+  each first-contact leg whose name is in neither that file nor the person's own (so the next call would accept any key). The person's own `known_hosts` is read, never written. What is
+  promised is *opened before, reported after*: a write that fails later in the call is not prevented, because `ssh` itself goes on after it.
+- *The database client on a bridge* (`dbCliLauncher.ts`, `agentUseActions.ts`). `buildDbQueryLaunch(..., { bridged: true })` puts `-X` first on `psql` and `--no-defaults` first on `mysql` (an option
+  file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME` and its own
+  password variable. Off a bridge both are today's.
+
+*What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
+alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
+names in its environment for a password destination: the spec's §S6.9, to be settled at the next whole-plan review); the Windows environment list is M9's to shorten. Tests: `bridgedSshConfig.test.ts` (F1-F10),
+`bridgedSshEnv.test.ts` (N1-N6), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
+real writer and a real broker), `dbCliLauncher.test.ts` and `bridgeRunSites.test.ts` (Q1-Q4), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
+`scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`) and `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`), catalogued in `module_tests.md`.
+
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts
 (`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
 the call grant are reserved, then the action starts), because a modal can be open for a minute while the person narrows
@@ -3986,7 +4038,7 @@ the served JSON. The alias listing is built by `aliasesIn`: the scope is read **
 only. The local doors keep `visibleMcpEntries` and `OPEN_VIEW` as they were. **The `exec` guard** (`unguardedBridge`,
 `sshUseActions.ts`): a bridged `exec` with no `bridgedSshConfig` writer is refused `403 denied` with `BRIDGE_USE_REFUSED` and the
 journal reason `no per-call ssh_config yet: E1.6`, before any slot, key or spawn; production's `sshDepsFor` sets no writer, so every
-bridged exec is refused until E1.6 removes the guard in the commit that writes the file. **`tokenStatusNow`**
+bridged exec is refused until E1.6 removes the guard in the commit that writes the file. **(Superseded by E1.6, 2026-11-13: `sshDepsFor` now wires `bridgedSshConfigWriter`; the guard stays for a deps with no writer, with the reason `no per-call ssh_config for this call`; see *The bridged `ssh:exec` road*.)** **`tokenStatusNow`**
 (`brokerBridgeToken.ts`) runs on the bridged branch of the token route alone: a token that ran out between its header and its
 body is answered `401 unauthorized` with the unknown-token sentence and no line (D22), while the header-time `lookup` still names
 which expiry it was; the main port is unchanged. D.7 is therefore unreachable before E2, and so is every bridged-only item
