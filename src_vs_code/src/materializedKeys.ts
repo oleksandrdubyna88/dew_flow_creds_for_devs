@@ -124,3 +124,18 @@ export function callKeyName(): string {
 export function materializedKeyPath(storageDir: string, name: string): string {
   return path.join(materializedKeysDir(storageDir), safeFileComponent(name));
 }
+
+/** The one file of a bridged call's folder: the `-F` file, named by a relative `-F c.conf` (parent D16). */
+export const BRIDGED_CONFIG_FILE = 'c.conf';
+
+/**
+ * The folder of ONE bridged call, `keys/<pid>/<callName>/`, and its one file. It creates nothing.
+ *
+ * <p>`callName` is always a fresh `callKeyName()`: no entry id, no id from a request. The folder is the `cwd` of the spawn and holds
+ * `c.conf` and nothing else, because on Windows a bare `ssh` is resolved through the current directory before `PATH`. It is built
+ * here, beside `materializedKeyPath`, so `keysDirPaths.test.ts` needs no exception.</p>
+ */
+export function bridgedCallFolder(storageDir: string, callName: string): { readonly dir: string; readonly file: string } {
+  const dir = path.join(materializedKeysDir(storageDir), safeFileComponent(callName));
+  return { dir, file: path.join(dir, BRIDGED_CONFIG_FILE) };
+}

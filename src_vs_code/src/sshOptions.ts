@@ -102,10 +102,14 @@ export function normalizeForwards(forwards: readonly PortForward[] | undefined):
   return (forwards ?? []).filter((f) => f.disabled !== true && isValidForward(f)).map((f) => ({ ...f }));
 }
 
-export type JumpChain = { ok: true; value: string | undefined } | { ok: false; reason: string; second?: SecondEntry };
+/**
+ * What a jump walk answers. `hops` is the entries that made `value`, in the order of the `-J` text: only `resolveJumpHops` fills it
+ * (E1.6: the writer of a bridged call's file needs the entries, not only their text). Optional so a caller that builds the type by hand needs no edit.
+ */
+export type JumpChain = { ok: true; value: string | undefined; hops?: readonly EntityMetadata[] } | { ok: false; reason: string; second?: SecondEntry };
 
-/** `user@host` or `user@host:port` — one hop of a `-J` value. */
-function hopOf(entity: EntityMetadata): string {
+/** `user@host` or `user@host:port` — one hop of a `-J` value. Exported: the writer of a bridged call builds its `-J` text with it from the entries it checked. */
+export function hopOf(entity: EntityMetadata): string {
   const base = entity.user ? `${entity.user}@${entity.host}` : (entity.host as string);
   return entity.port !== undefined && entity.port !== DEFAULT_SSH_PORT ? `${base}:${entity.port}` : base;
 }
@@ -173,20 +177,45 @@ export function resolveJumpChain(
   entity: EntityMetadata,
   byId: (id: string) => EntityMetadata | undefined,
 ): JumpChain {
-  const hops: string[] = [];
+  const walked = walkHops(entity, byId);
+  return walked.ok ? { ok: true, value: joinHops(walked.nearestFirst.map(hopOf)) } : walked;
+}
+
+/**
+ * The same walk as `resolveJumpChain`, with the hop entries too, in the order of the `-J` text (the one contacted first, first). The
+ * `value` is what `resolveJumpChain` answers, because both read ONE walk (E1.6, B1).
+ */
+export function resolveJumpHops(
+  entity: EntityMetadata,
+  byId: (id: string) => EntityMetadata | undefined,
+): JumpChain {
+  const walked = walkHops(entity, byId);
+  if (!walked.ok) {
+    return walked;
+  }
+  const hops = [...walked.nearestFirst].reverse();
+  return { ok: true, value: joinHops(walked.nearestFirst.map(hopOf)), hops };
+}
+
+/** The one walk: the hop entries nearest-first, or the refusal. */
+function walkHops(
+  entity: EntityMetadata,
+  byId: (id: string) => EntityMetadata | undefined,
+): { ok: true; nearestFirst: EntityMetadata[] } | { ok: false; reason: string; second?: SecondEntry } {
+  const nearestFirst: EntityMetadata[] = [];
   const seen = new Set<string>([entity.id]);
   let current = entity.jumpHostEntityId;
   while (isSet(current)) {
-    const refusal = refuseWalk(entity, current, seen, hops.length) ?? refuseHop(entity, byId(current));
+    const refusal = refuseWalk(entity, current, seen, nearestFirst.length) ?? refuseHop(entity, byId(current));
     if (refusal !== undefined) {
       return refusal;
     }
     seen.add(current);
     const hop = byId(current) as EntityMetadata;
-    hops.push(hopOf(hop));
+    nearestFirst.push(hop);
     current = hop.jumpHostEntityId;
   }
-  return { ok: true, value: joinHops(hops) };
+  return { ok: true, nearestFirst };
 }
 
 /**

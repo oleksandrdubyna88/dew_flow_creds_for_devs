@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { callKeyName, lockToOwner, materializedKeysDir, safeFileComponent } from '../materializedKeys';
+import { BRIDGED_CONFIG_FILE, bridgedCallFolder, callKeyName, lockToOwner, materializedKeysDir, safeFileComponent } from '../materializedKeys';
 import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
@@ -141,4 +141,17 @@ test('U1: a call name is call- and a random uuid, new for each call, and the san
   assert.notEqual(first, second);
   assert.equal(safeFileComponent(first), first);
   assert.equal(callKeyName.length, 0, 'no parameter: no id of an entry can arrive in the name');
+});
+
+test('P1: the folder of one bridged call is in keys/<pid>/, holds the file c.conf, and a name with ../ cannot leave it', () => {
+  const name = callKeyName();
+  const folder = bridgedCallFolder('/profile/storage', name);
+
+  assert.equal(folder.dir, path.join(materializedKeysDir('/profile/storage'), name));
+  assert.equal(folder.file, path.join(folder.dir, 'c.conf'));
+  assert.equal(BRIDGED_CONFIG_FILE, 'c.conf');
+  const hostile = bridgedCallFolder('/profile/storage', '../../evil');
+  assert.equal(path.dirname(hostile.dir), materializedKeysDir('/profile/storage'));
+  assert.equal(path.basename(hostile.file), 'c.conf');
+  assert.equal(fs.existsSync(folder.dir), false, 'it creates nothing');
 });
