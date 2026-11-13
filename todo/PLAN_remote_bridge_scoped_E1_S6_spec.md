@@ -667,6 +667,7 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
   and (n) print their stderr, and §S6.13 records it.
 - **The name `ssh` looks a host up by.** X12 shows the lower-case name for the connection. Leg (k) is the test for the pin line. Whether a
   pin line in another letter case would match too was not run; this spec writes the lower-case one.
+  *Measured 2026-11-13 on 10.2p1 (CI, mutation T30):* a pin line in another letter case matches too. The lower-case line stays.
 - **`~` in a typed key path.** `~/` and `~user/` are expanded (X2). When `ssh` cannot load the file it prints the expanded path, so the agent
   can read the laptop's home folder. That is the parent's standing decision on a key path in stderr (N10 Q3), and `~/` is what an imported
   `IdentityFile` often holds (K1), so it is not refused.
@@ -859,8 +860,23 @@ failed the unit case the spec names, and on these points more than it names:
 - T8 fails L9 only because L9 now sets `SSH_ASKPASS` and `DISPLAY`.
 - The other 31 mutations, T1-T31 and a K1 mutation, failed as named.
 - T15 has only an itest half. V1 has no mutation.
-- **The itest halves** (T1, T2, T3, T6, T7, T9, T10, T12, T13, T15, T16, T18, T21, T24, T26, T28, T30) are being run on CI from the branch
-  `tmp/e16-itest-mutations` (workflow dispatch; the PR branch is untouched). Their table goes here and into the PR before the merge.
+- **The itest halves** ran on CI from the branch `tmp/e16-itest-mutations` (workflow dispatch; the PR branch was not touched), in run
+  [43507318723](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/actions/runs/43507318723). A runner applied one mutation,
+  compiled, ran only the named legs, and restored the file. Each mutation failed its leg except T30:
+  - T1 fails (d), the second production leg.
+  - T2 (all three lines) fails (a) 6 and (a) 0. One line alone fails (a) 0 only.
+  - T3 fails (h). T6 fails (k). T7 fails (b), the environment keys. T9 fails (e). T10 fails (f), R5. T12 fails (h), twice.
+  - T13 fails (a) 6, (e) and (i). T15 fails (f), J1. T16 fails (e) and (k).
+  - T18 fails (m), both dropped and moved to the end, on Oracle's client. MariaDB's `--local-infile=0` already wins over its option file.
+  - T21 fails (e)'s new offers check. T24 (writer) fails (j). T26 fails (n). T28 fails (f), R7.
+  - **T30 survived (k).** `ssh` matched a pin line written `[LocalHost]:port` for a host typed `LocalHost`, so on 10.2p1 the letter case of
+    a known-hosts line does not matter. The unit case W6 alone pins the lower-case line, which stays as the spec writes it. This answers
+    §S6.9's open point on the pin line's letter case.
+- **The first dispatch found four weak rig legs.** They are fixed on the PR branch:
+  - (d) now names the agent key's public file in `-i`, so only `IdentityAgent none` keeps the agent out (T1 survived before).
+  - (a) 6 now uses a pinned password destination with the askpass names in the environment (T2 survived before).
+  - (e) has a check that a refused first key is not followed by the hop key (T21 survived before).
+  - `production()` no longer crashes on a missing `c.conf` (T16).
 
 Eight more mutations of the fix-forward each fail their own case: DISPLAY on win32, `readText`, `afterRun`, `reportFirstContact`, R9, the `%`
 rule, the field sentences and the partial key.
