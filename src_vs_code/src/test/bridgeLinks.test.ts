@@ -422,7 +422,8 @@ test('L12: a user with $ or a backslash — the jump host\'s or the destination\
     });
     await both({ entry: { user: 'CORP\\alice' } }, {}, async ({ lw, ww }) => {
       assert.equal((await body(viaMain(ww), ww)).status, 200);
-      assert.equal(lw.runs[0].argv.at(-2), 'CORP\\alice@prod.corp.com');
+      const word = lw.runs[0].argv.at(-2) ?? '';
+      assert.deepEqual([word.split('@')[0], word.endsWith('@prod.corp.com')], ['CORP\\alice', true]);
     });
   } finally {
     delete process.env.BRIDGE_PROBE;
@@ -470,6 +471,26 @@ test('L14: a writer that says ok for an entry the argv rules refuse is stopped b
     ww.dispose();
     lw0.cleanup();
   }
+});
+
+test('R9: a chain with a -J text and no hop entries is refused (internal) before any write; nothing runs and keys/<pid>/ is empty', async () => {
+  await assertRefusedOnABridge({ jump: 'valid', dropHops: true }, 'The jump chain of this call gave no entries to check.', 'internal');
+  await both({ jump: 'valid', dropHops: true }, {}, async ({ lw, ww }) => {
+    assert.equal(lw.configWrites, 0, 'the writer was never asked');
+    assert.equal((await body(viaMain(ww), ww)).status, 200, 'control: the main port does not read the entries');
+  });
+});
+
+test('a first-contact report that cannot be made leaves one note, and the call is still answered and its files are gone', async () => {
+  const breaking: LinksOptions['writer'] = (real) => async (request) => {
+    const files = await real(request);
+    return files.ok ? { ...files, afterRun: (): readonly string[] => { throw new Error('the journal reader broke'); } } : files;
+  };
+  await both({ writer: breaking }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
+    assert.deepEqual(lw.notes.filter((note) => note.includes('could not be reported')), ['ssh:exec — first contact of the call could not be reported: the journal reader broke']);
+    assert.deepEqual(fs.readdirSync(materializedKeysDir(lw.storageDir)), []);
+  });
 });
 
 /* ---------------------------------------------------------------------------------------------------------------

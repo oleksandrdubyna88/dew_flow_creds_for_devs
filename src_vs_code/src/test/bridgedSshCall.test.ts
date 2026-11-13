@@ -3,7 +3,9 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, mock, test } from 'node:test';
-import type { BridgedCallFiles, BridgedCallInput, BridgedLeg, writeBridgedCall as WriteBridgedCall } from '../bridgedSshCall';
+import type { BridgedCallFiles, BridgedCallInput, BridgedLeg, bridgedSpawn as BridgedSpawn, writeBridgedCall as WriteBridgedCall } from '../bridgedSshCall';
+import { bridgedConfigText } from '../bridgedSshConfig';
+import type { fieldRefusal as FieldRefusal } from '../bridgedSshRefusals';
 import { pinRefusalFor } from '../pinGate';
 import { materializedKeysDir } from '../materializedKeys';
 import { resolveJumpChain } from '../sshOptions';
@@ -27,10 +29,12 @@ const PIN_A = `ssh-ed25519 ${KEY_A}`;
 const PIN_B = `ssh-ed25519 ${KEY_B}`;
 
 const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
+const { fieldRefusal } = loadWithVscode<{ fieldRefusal: typeof FieldRefusal }>('../bridgedSshRefusals', stub);
 const realInstaller = loadWithVscode<{ materializeCallKey(dir: string, content: string): string }>('../keyInstaller', stub);
 
 interface World {
   readonly write: (input: BridgedCallInput) => BridgedCallFiles;
+  readonly spawn: typeof BridgedSpawn;
   readonly notes: string[];
   readonly storageDir: string;
   readonly home: string;
@@ -41,8 +45,8 @@ interface World {
   keyWrites(): number;
 }
 
-function world(): World {
-  const storageDir = ownedDir(scope, 'bridged-call storage');
+function world(storageName = 'bridged-call storage'): World {
+  const storageDir = ownedDir(scope, storageName);
   const home = ownedDir(scope, 'bridged-call home');
   const notes: string[] = [];
   let writes = 0;
@@ -59,10 +63,11 @@ function world(): World {
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
   };
-  const mod = loadWithVscode<{ writeBridgedCall: typeof WriteBridgedCall }>('../bridgedSshCall', stub, mocks);
+  const mod = loadWithVscode<{ writeBridgedCall: typeof WriteBridgedCall; bridgedSpawn: typeof BridgedSpawn }>('../bridgedSshCall', stub, mocks);
   const base = { storageDir, home, platform: process.platform, note: (message: string): void => void notes.push(message) };
   return {
     write: (input) => mod.writeBridgedCall(base, input),
+    spawn: mod.bridgedSpawn,
     notes,
     storageDir,
     home,
@@ -365,4 +370,82 @@ test('W16: a hop credential\'s warning goes to the journal as "<entry of the cal
 
   assert.deepEqual(w.notes, ['prod: the key it names is gone; using its own']);
   files.remove();
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The review items of E1.6: DISPLAY, the second line's sentences, the errors that were swallowed, and a storage folder with a "%"
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const HOST_ENV = { PATH: '/usr/bin', HOME: '/home/me', DISPLAY: ':0', SSH_AUTH_SOCK: '/run/agent.sock' };
+const ASKPASS_ENV = { SSH_ASKPASS: '/s/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'pw', DISPLAY: ':0' };
+
+test('S6.3: DISPLAY reaches the outer ssh of a password destination off Windows only, even when the host environment holds one', () => {
+  const w = world();
+  const destination = entry('prod', { hostKey: PIN_A });
+  const files = okFiles(w.write(call(destination, [], { auth: 'askpass' })));
+  const spawnOn = (platform: NodeJS.Platform, askpassEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined =>
+    w.spawn({ destination, keyPath: undefined, auth: 'askpass', askpassEnv, remoteCommand: 'id', files, sourceEnv: HOST_ENV, platform })?.env;
+
+  assert.deepEqual(spawnOn('linux', ASKPASS_ENV), { PATH: '/usr/bin', HOME: '/home/me', ...ASKPASS_ENV }, 'control: off Windows the four names are there');
+  const windows = spawnOn('win32', { ...ASKPASS_ENV, DISPLAY: ':0' }) ?? {};
+  assert.ok(!('DISPLAY' in windows), `on win32 no DISPLAY: ${JSON.stringify(windows)}`);
+  assert.deepEqual(['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_SSH_PASSWORD'].map((name) => name in windows), [true, true, true]);
+  files.remove();
+});
+
+test('the second line: each field bridgedConfigText names becomes the sentence of that entry or that Host word', () => {
+  const hop = entry('hop1', { host: 'gw:2201' });
+  const input = call(entry('prod'), [leg(hop, typedKey('/k/%d/id'))]);
+  const configOf = (host: string, key: string, destinationHost = 'prod.example.com'): { field: string } => {
+    const made = bridgedConfigText({
+      hops: [{ host, identityFile: key, typedKeyPath: true, check: { firstContact: true } }],
+      destination: { host: destinationHost },
+      noDefaultIdentity: '/s/keys/no-default-identity', firstContactFile: '/s/bridges/known_hosts', personKnownHosts: '/h/.ssh/known_hosts',
+    });
+    assert.equal(made.ok, false);
+    return made as { field: string };
+  };
+  const reasonOf = (field: string, given = input): string => fieldRefusal(field, given).reason;
+  assert.equal(reasonOf(configOf('gw:2201', '/k/id').field), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of the jump host "hop1" is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
+  assert.equal(reasonOf(configOf('hop1.example.com', 'k/%d/id').field), 'A Remote Bridge does not support "%" in a key path: the key path of the jump host "hop1". Choose a key file whose absolute path has no "%".');
+  const dollar = call(entry('prod'), [leg(entry('hop1'), typedKey('/k/${X}/id'))]);
+  assert.equal(reasonOf(configOf('hop1.example.com', '/k/${X}/id').field, dollar), 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "hop1" is empty, or holds a quote, a control character or "${", or ends with a backslash.');
+  assert.equal(reasonOf(configOf('hop1.example.com', '/k/id', 'gw:1').field, call(entry('prod', { host: 'gw:1' }), [])), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of "prod" is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
+  const same = call(entry('prod', { host: 'Same.example' }), [leg(entry('hop1', { host: 'same.EXAMPLE' }))]);
+  assert.equal(configOf('same.EXAMPLE', '/k/id', 'Same.example').field, 'hosts');
+  assert.equal(reasonOf('hosts', same), 'Two connections of this call go to the host "same.EXAMPLE". Through a Remote Bridge the destination and each jump host need a different host.');
+  assert.match(reasonOf('known-hosts'), /the known-hosts path is empty/);
+  for (const field of ['keys', 'hop:0:pin', 'destination:pin']) {
+    assert.match(reasonOf(field), /the keys folder is empty/, field);
+  }
+});
+
+test('a read of a known-hosts file that fails for another reason than a missing file is not an empty file: the call is refused (R7) before the pass writes, and afterRun leaves one note', () => {
+  const w = world();
+  fs.mkdirSync(path.join(w.storageDir, 'bridges', 'known_hosts'), { recursive: true });
+  const pinned = refused(w.write(call(entry('dest', { hostKey: PIN_A }))));
+  assert.equal(pinned.code, 'internal');
+  assert.match(pinned.reason, /^Could not write the files of this call: EISDIR/);
+  assert.deepEqual(tree(w.keysDir), []);
+
+  const later = world();
+  const files = okFiles(later.write(call(entry('dest', { name: 'prod' }))));
+  fs.rmSync(path.join(later.storageDir, 'bridges', 'known_hosts'));
+  fs.mkdirSync(path.join(later.storageDir, 'bridges', 'known_hosts'));
+  assert.deepEqual(files.afterRun(), []);
+  assert.equal(later.notes.length, 1);
+  assert.match(later.notes[0], /^ssh:exec — first contact of the call could not be reported: EISDIR/);
+  files.remove();
+});
+
+test('E1.6 regression: a storage folder whose path holds % makes a bridged stored-key call refuse with R10 (kept on purpose: -i with %% fails "not accessible", X1a)', () => {
+  const w = world('bridged-call 100% storage');
+  assert.ok(w.storageDir.includes('%'));
+  const keyFile = path.join(w.keysDir, 'call-0.key');
+
+  const result = refused(w.write(call(entry('prod'), [], { keyPath: keyFile })));
+
+  assert.deepEqual([result.code, result.reason], ['no_credential', 'A Remote Bridge does not support "%" in a key path: the key path of "prod". Choose a key file whose absolute path has no "%".']);
+  assert.ok(!result.reason.includes(w.storageDir), 'no part of the path');
+  assert.deepEqual(tree(w.keysDir), []);
 });

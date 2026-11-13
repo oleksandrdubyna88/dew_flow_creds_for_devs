@@ -152,3 +152,28 @@ function legsRefusal(input: BridgedCallInput): Refusal | undefined {
 export function refusalOf(base: BridgedBase, input: BridgedCallInput): Refusal | undefined {
   return legsRefusal(input) ?? credentialRefusal(input) ?? passwordRefusal(input) ?? pathRefusal(base, input);
 }
+
+/** The sentence for a hop's key path as the second line meets it: `%` is R10, any other fault R6. */
+function hopKeyFieldRefusal(input: BridgedCallInput, at: number, who: Whose): Refusal {
+  const key = hopKeyOf(input.hops[at]);
+  return ('typed' in key ? keyPathRefusal(who, key.typed) : undefined) ?? noCredential(sentences.keyPath(who));
+}
+
+/**
+ * The refusal for a field that `bridgedConfigText` named: it refuses again what pass 1 let through (the second line), and the sentence is the one of
+ * that entry or that `Host` word. A pin file and the sentinel are named by our own folder, so for them the sentence is the keys folder's: the one R6 row
+ * that can be at fault when the path we made fails the value rule.
+ */
+export function fieldRefusal(field: string, input: BridgedCallInput): Refusal {
+  const parts = field.split(':');
+  const what = parts[parts.length - 1];
+  const at = parts[0] === 'hop' ? Number(parts[1]) : -1;
+  const who = legsOf(input)[at + 1];
+  const sentence: Record<string, () => Refusal> = {
+    hosts: () => sameHostRefusal(input) ?? noCredential(sentences.sameHost(input.destination.host ?? '')),
+    host: () => noCredential(sentences.host(who)),
+    key: () => hopKeyFieldRefusal(input, at, who),
+    'known-hosts': () => noCredential(sentences.knownHostsPath()),
+  };
+  return (sentence[what] ?? (() => noCredential(sentences.keysFolder())))();
+}

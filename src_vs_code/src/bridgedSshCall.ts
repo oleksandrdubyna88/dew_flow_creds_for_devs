@@ -7,15 +7,14 @@ import {
   BridgedBase,
   BridgedCallInput,
   HopKey,
+  fieldRefusal,
   firstContactPath,
   hopKeyOf,
   legsOf,
-  noCredential,
   noDefaultIdentity,
   personPath,
   pinLineOf,
   refusalOf,
-  Refusal,
   wordOf,
 } from './bridgedSshRefusals';
 import { Whose, firstContactSentences, knownHostsLines, sentences } from './bridgedSshSentences';
@@ -112,11 +111,15 @@ function writePins(base: BridgedBase, legs: readonly Leg[], written: Written): (
   });
 }
 
+/** A known-hosts file as text: a file that is not there is an empty one (first contact); any other failure is an error to surface, not an empty file. */
 function readText(file: string): string {
   try {
     return fs.readFileSync(file, 'utf8');
-  } catch {
-    return '';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return '';
+    }
+    throw error;
   }
 }
 
@@ -140,28 +143,25 @@ function hopBlocks(input: BridgedCallInput, keys: readonly HopKey[], hopFiles: r
   }));
 }
 
-/** The refusal for a field that `bridgedConfigText` named: it refuses again what pass 1 let through (the second line). */
-function fieldRefusal(field: string, input: BridgedCallInput): Refusal {
-  const [kind, index] = field.split(':');
-  const what = field.slice(field.lastIndexOf(':') + 1);
-  const who = legsOf(input)[kind === 'hop' ? Number(index) + 1 : 0];
-  const sentence: Record<string, () => string> = {
-    hosts: () => sentences.sameHost(input.destination.host ?? ''),
-    host: () => sentences.host(who),
-    'known-hosts': () => sentences.knownHostsPath(),
-  };
-  return noCredential((sentence[what] ?? sentences.keysFolder)());
-}
-
-/** What the call leaves in the journal about first contact (J1, J2), read from the two files as they are now. Never throws. */
+/** What the call leaves in the journal about first contact (J1, J2), read from the two files as they are now. Never throws: a file that cannot be read leaves one note. */
 function afterRunOf(base: BridgedBase, entry: string, before: readonly string[], names: readonly string[]): () => readonly string[] {
   return () => {
     try {
       return firstContactSentences(entry, before, readText(firstContactPath(base)), readText(personPath(base)), names);
-    } catch {
+    } catch (error) {
+      noteSafely(base, `ssh:exec — first contact of the call could not be reported: ${describeError(error)}`);
       return [];
     }
   };
+}
+
+/** A line to the journal that never throws: a journal that will not take it costs neither the slot nor the result (as `removeKeyFile` does). */
+function noteSafely(base: BridgedBase, message: string): void {
+  try {
+    base.note(message);
+  } catch {
+    /* the journal is the only place this could be said, and it will not take the line */
+  }
 }
 
 /** Removes the files and the folder; each in its own try. A failure is ONE note, and nothing is thrown (as `removeKeyFile` does). */
@@ -180,11 +180,7 @@ function removeAll(base: BridgedBase, written: Written): void {
     attempt(() => fs.rmSync(dir, { recursive: true, force: true }));
   }
   if (failures.length > 0) {
-    try {
-      base.note(`ssh:exec — a file of the call could not be removed: ${describeError(failures[0])}`);
-    } catch {
-      /* a journal that will not take the line costs neither the slot nor the result */
-    }
+    noteSafely(base, `ssh:exec — a file of the call could not be removed: ${describeError(failures[0])}`);
   }
 }
 
@@ -264,8 +260,10 @@ export function bridgedSshConfigWriter(parts: { storage: StorageManager; storage
 }
 
 /** The four names the credential of a password destination adds to the environment of the outer `ssh`. */
-function askpassOf(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(BRIDGED_ENV_EXTRA.slice(0, 4).flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
+function askpassOf(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Record<string, string> {
+  // `DISPLAY` is an askpass name off Windows only (`askpassEnv` sets none there), so a `DISPLAY` of the host that rode in with the merged environment is dropped.
+  const names = BRIDGED_ENV_EXTRA.slice(0, 4).filter((name) => platform !== 'win32' || name !== 'DISPLAY');
+  return Object.fromEntries(names.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
 }
 
 /**
@@ -293,6 +291,6 @@ export function bridgedSpawn(input: {
   if (argv === undefined) {
     return undefined;
   }
-  const extra = input.auth === 'askpass' ? askpassOf(input.askpassEnv) : {};
+  const extra = input.auth === 'askpass' ? askpassOf(input.askpassEnv, input.platform) : {};
   return { argv, env: bridgedSshEnv(input.sourceEnv, input.platform, extra), cwd: input.files.cwd };
 }

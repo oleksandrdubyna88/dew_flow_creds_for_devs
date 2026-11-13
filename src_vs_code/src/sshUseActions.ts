@@ -282,8 +282,13 @@ function localLaunch(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall,
 function reportFirstContact(deps: SshUseDeps, files: BridgedFiles | undefined): void {
   try {
     files?.afterRun().forEach((sentence) => deps.note(sentence));
-  } catch {
-    /* the files are removed next, and the result is still answered */
+  } catch (error) {
+    // The files are removed next and the result is still answered; what failed is said once.
+    try {
+      deps.note(`ssh:exec — first contact of the call could not be reported: ${describeError(error)}`);
+    } catch {
+      /* a journal that will not take the line costs neither the slot nor the result (Amendment 6, D.6) */
+    }
   }
 }
 

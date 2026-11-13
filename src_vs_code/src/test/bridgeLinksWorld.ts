@@ -44,6 +44,8 @@ export interface LinksOptions {
   readonly writer?: (real: BridgedSshConfigWriter) => BridgedSshConfigWriter;
   /** `j1`'s credential: a stored key of its own (default), a stored password, nothing, a key sealed with its own PIN, or the path in `jumpEntry.sshKeyPath`. */
   readonly hopKey?: 'plain' | 'password' | 'none' | 'sealed' | 'typed';
+  /** The chain walk answers a `-J` text and NO hop entries, as a caller that built the chain by hand would (R9). */
+  readonly dropHops?: true;
   /** `e1` logs in by a stored password (and has no key). */
   readonly destPassword?: string;
   /** Fields of `e1` and of `j1` that a test sets over the defaults (a user, a pin, a key path). */
@@ -133,6 +135,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       materializeCallKey: (dir: string, content: string): string => writeKey(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
+    ...(options.dropHops === true ? { './sshOptions': withoutHops() } : {}),
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
     './sshExecRunner': {
       runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string; timeoutMs?: number; cwd?: string }): Promise<unknown> => {
@@ -193,7 +196,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
 }
 
 /** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
-type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket' | 'writer' | 'onRun' | 'destPassword'>> & { readonly destPassword: string | undefined };
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket' | 'writer' | 'onRun' | 'destPassword' | 'dropHops'>> & { readonly destPassword: string | undefined };
 
 type Storage = Parameters<typeof seedEntry>[0];
 
@@ -255,6 +258,18 @@ async function seedHopKey(storage: Storage, o: Resolved): Promise<void> {
   const sealed = o.hopKey === 'sealed';
   const details = { id: 'hk1', name: HOP_KEY_NAME, kind: 'sshkey', isSshEnabled: false, pinProtected: sealed || undefined } as EntityMetadata;
   await seedEntry(storage, details, { 'private key': sealed ? await locked(HOP_KEY_BODY) : HOP_KEY_BODY });
+}
+
+/** `sshOptions` with a `resolveJumpHops` that keeps the `-J` text and drops the entries. */
+function withoutHops(): Record<string, unknown> {
+  const real = require('../sshOptions') as typeof import('../sshOptions');
+  return {
+    ...real,
+    resolveJumpHops: (...args: Parameters<typeof real.resolveJumpHops>) => {
+      const chain = real.resolveJumpHops(...args);
+      return chain.ok ? { ok: true, value: chain.value } : chain;
+    },
+  };
 }
 
 /** The deps' writer of the per-call file: none, or the real one (counted), or the test's own put in front of it. */
