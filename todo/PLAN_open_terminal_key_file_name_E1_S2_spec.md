@@ -15,7 +15,7 @@ Paths are relative to `src_vs_code/src/` unless they start with another folder. 
 is [PLAN_open_terminal_key_file_name_E1_S1_spec.md](PLAN_open_terminal_key_file_name_E1_S1_spec.md); its names (FX, T-N17a, T-N17b,
 T-N17c, L1 to L11, W1 to W5, M1 to M6, B1 to B12) keep their meaning. This document continues the numbers: W6 to W9, M7 to M17,
 B13 to B21. FX-D, FX-L, T-N17d, G2, G3, G4 and the facts K1 to K13 are its own. **G1 of the S1 spec is replaced by G1 of this
-document**, and the S1 spec's list *Files with no change* no longer holds for `sshConnect.ts` and `test/sshConnectWorld.ts`.
+document**, and the S1 spec's list *Files with no change* no longer holds for `sshConnect.ts`, `test/sshConnectWorld.ts` and `terminalManager.ts` (one comment).
 This document keeps no change ledger: a change of it is an entry in the parent (`plan-change-control.md`).
 
 ## What E1.S2 builds, in one paragraph

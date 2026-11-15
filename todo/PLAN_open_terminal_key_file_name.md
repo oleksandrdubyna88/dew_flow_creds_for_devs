@@ -30,11 +30,11 @@ Narrowed: no — the scope grows by one story (E1.S2, no key file left by a Conn
 
 | Work | Where | Verdict | Action |
 |---|---|---|---|
-| the plan as first written, 50345d34 | pushed, unmerged | — | judge pending |
-| the epics, the E1.S1 spec and the ledger with change 1.1, 19a358d6 | pushed, unmerged | — | judge pending |
-| E1.S1 code and tests (the call name on every road of prepareSshSession), 3099f5a5 | pushed, unmerged | — | judge pending |
-| E1.S1 documents (CHANGELOG and the module documents), 895e345b | pushed, unmerged | — | judge pending |
-| change 1.2 and the stop, 3e8270c1 | pushed, unmerged | — | judge pending |
+| the plan as first written, 50345d34 | pushed, unmerged | fits | kept; its text was rewritten forward by the re-review revision 4c23b8bb |
+| the epics, the E1.S1 spec and the ledger with change 1.1, 19a358d6 | pushed, unmerged | fits | kept; superseded in part by E1.S2 (the S1 spec's G1 and its list of files with no change) |
+| E1.S1 code and tests (the call name on every road of prepareSshSession), 3099f5a5 | pushed, unmerged | fits | kept; superseded in part by E1.S2 (G1 rewritten, T-N17c extended, the world repaired W6-W9) |
+| E1.S1 documents (CHANGELOG and the module documents), 895e345b | pushed, unmerged | fits | kept; superseded in part by E1.S2 (the last two CHANGELOG sentences, the G1 clause and count in module_tests.md, the README row) |
+| change 1.2 and the stop, 3e8270c1 | pushed, unmerged | fits | kept; entry 1.2 and the stop stay; its routing of F2 to N16 was rewritten by 4c23b8bb |
 
   (The re-review, 2026-11-15. The consult for it is `d60bc360`: fix F2 in `openKeyTerminal` with a snapshot of the
   window's terminals taken directly before the synchronous open. The question consultants, `576f2936`, both: F2 is a
