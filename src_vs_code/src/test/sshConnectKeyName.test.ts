@@ -20,8 +20,9 @@ import {
   lastPart,
   storageWith,
   world,
+  writtenCallKey,
 } from './sshConnectWorld';
-import type { World } from './sshConnectWorld';
+import type { Parts, World } from './sshConnectWorld';
 
 /**
  * N17: the key file of a terminal has a call name (`PLAN_open_terminal_key_file_name.md`, E1.S1).
@@ -34,15 +35,16 @@ import type { World } from './sshConnectWorld';
 
 const linked = (): EntityMetadata => entity({ sshKeyEntityId: LINKED_KEY_ID });
 const linkedStorage = (): ReturnType<typeof storageWith> => storageWith(E1_IN_FOLDER, FOLDER, LINKED_KEY_NODE);
-const linkedWorld = (): World => world({ source: LINKED_SOURCE, options: OPTIONS, realTerminal: true });
+const linkedWorld = (extra: Partial<Parts> = {}): World => world({ source: LINKED_SOURCE, options: OPTIONS, realTerminal: true, ...extra });
 /** The options of the agent's `creds_open_terminal` (`sshUseActions.ts:382-392`), in a local window with a pinned shell. */
-const connect = (): ConnectOptions => ({
+const connect = (extra: Partial<ConnectOptions> = {}): ConnectOptions => ({
   ...connectBase(),
   storage: linkedStorage(),
   storageDir: '/storage',
   agentServesKey: false,
   remote: LOCAL_LINUX,
   startGate: new AbortController().signal,
+  ...extra,
 });
 
 test('FX, the fixture of N17: the key entry is in the world under an id that reads like a name, and its id and name are in no other text of the world', () => {
@@ -122,4 +124,53 @@ test('G1: a second Connect of a live session opens no terminal and types nothing
   w.closeTerminal(w.created[0]);
 
   assert.deepEqual([...w.forgotten].sort(), [...w.materialised].sort());
+});
+
+test("FX-D, the world's key writer: the key file is under the folder that the product handed to the writer", async () => {
+  const w = linkedWorld();
+
+  await w.mod.connectEntity(ACCOUNT_ID, linked(), connect({ storageDir: '/elsewhere' }));
+
+  assert.equal(w.materialised.length, 1);
+  const written = w.materialised[0];
+  assert.ok(
+    written.startsWith('/elsewhere/keys/'),
+    `FX-D: the key file is not under the folder that the product handed to the writer (/elsewhere): ${written}`,
+  );
+  assert.match(lastPart(written), CALL_KEY_FILE);
+  assert.ok(w.created[0].sent[0].includes(`-i "${written}"`));
+});
+
+test("FX-L, the close event of the world: a listener that was disposed hears no later close", async () => {
+  const w = linkedWorld();
+  await w.mod.connectEntity(ACCOUNT_ID, linked(), connect());
+  const a = writtenCallKey(w);
+
+  w.closeTerminal(w.created[0]);
+  assert.deepEqual(w.forgotten, [a]);
+
+  w.closeTerminal(w.created[0]);
+  assert.deepEqual(w.forgotten, [a], `FX-L: a listener that was disposed heard a later close: ${w.forgotten.join(', ')}`);
+});
+
+test("T-N17d: the dialog of a key that could not be written names the call-named file, and holds no id and no name of the linked key entry", async () => {
+  const w = linkedWorld({ materialiseFails: true });
+
+  const opened = await w.mod.connectEntity(ACCOUNT_ID, linked(), connect());
+
+  assert.equal(opened, false);
+  assert.deepEqual(w.created, []);
+  assert.deepEqual(w.materialised, []);
+  assert.equal(w.errors.length, 1);
+  const text = w.errors[0];
+  assert.match(text, /^Could not write the stored key to disk: /);
+  const named = /open '([^']+)'/.exec(text);
+  assert.notEqual(
+    named,
+    null,
+    `T-N17d: the dialog does not name the file that could not be written, as the text of the operating system does: ${text}`,
+  );
+  const found = keyLeaks(text);
+  assert.deepEqual(found, [], `T-N17d: the dialog holds ${found.join(' and ')}: ${text}`);
+  assert.match(lastPart((named as RegExpExecArray)[1]), CALL_KEY_FILE);
 });

@@ -1,4 +1,4 @@
-import { loadEachWithVscode } from './vscodeStub';
+import { StubEventEmitter, loadEachWithVscode } from './vscodeStub';
 import { EntityMetadata, TreeNode } from '../types';
 import { StorageManager } from '../storageManager';
 import * as sshProgram from '../sshProgram';
@@ -62,8 +62,10 @@ export interface World {
   errors: string[];
   /** Every path handed to the distribution for translation, in order. */
   translated: { distro: string; windowsPath: string }[];
-  /** Fires the onDidCloseTerminal listeners with a terminal. */
+  /** Fires the onDidCloseTerminal event with a terminal: every listener that is registered when it fires hears it; a listener that was disposed does not. */
   closeTerminal(t: unknown): void;
+  /** How many listeners of the close event are registered now. */
+  closeListenerCount(): number;
   /** What `openSshTerminal` returned — the terminal the wipe is registered against. */
   sshTerminalHandle?: unknown;
   /** Every install offer made, with the gate it was handed — only when the world says ssh is missing. */
@@ -96,6 +98,8 @@ export interface Parts {
   chooseButton?: boolean;
   /** Runs while the credential is being looked up — where an agent's client can leave (E4.S1). */
   duringLookup?: () => void;
+  /** Every credential lookup waits for this promise, so a test can hold several Connects inside prepare at once. */
+  lookupGate?: Promise<void>;
   /** This machine has no ssh client, so the connect path offers to install one (E4.S3). */
   sshMissing?: boolean;
   /** Runs while the host-key conversation is open — where an agent's client can leave (E4.S4). */
@@ -119,7 +123,7 @@ export interface Parts {
  *   `connectEntity` (`../commands/agentCommands`) is then exercised over the same substitutes.
  */
 export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
-  const closeListeners: ((t: unknown) => void)[] = [];
+  const closed = new StubEventEmitter<unknown>();
   const w: World = {
     mod: undefined as never,
     seam: undefined as never,
@@ -138,7 +142,8 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
     pinSuffixes: [],
     copied: [],
     loaded: [],
-    closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
+    closeTerminal: (t: unknown): void => closed.fire(t),
+    closeListenerCount: (): number => closed.listenerCount,
   };
   if (parts.existingNamed !== undefined) {
     w.existing.push(staleTerminal(parts.existingNamed));
@@ -150,13 +155,13 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
 
   const [mod, seam, ...loaded] = loadEachWithVscode(
     ['../sshConnect', '../sshSession', ...alsoLoad],
-    { ...vscodeStub(w, parts, closeListeners), ...parts.hostStub },
+    { ...vscodeStub(w, parts, closed), ...parts.hostStub },
     {
       './sshCredential': {
         resolveSshCredential: (_s: unknown, _a: unknown, _e: unknown, open: unknown): Promise<unknown> => {
           w.openers.push(open);
           parts.duringLookup?.();
-          return Promise.resolve(parts.source);
+          return parts.lookupGate === undefined ? Promise.resolve(parts.source) : parts.lookupGate.then(() => parts.source);
         },
       },
       './connectionOptions': {
@@ -210,25 +215,26 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
 }
 
 /**
- * ONE writer for the two members of the stand-in of `./keyInstaller`, so they cannot differ: it records the path and fails under
- * `materialiseFails`. The sibling still builds its name from the id; the call writer takes its name from the REAL `callKeyName`.
+ * ONE writer for the two members of the stand-in of `./keyInstaller`, so they cannot differ: it builds the path from the folder that the
+ * product handed in (`<dir>/keys/<name>.key`), records it, and fails under `materialiseFails`. The sibling still builds its name from the id; the call writer takes its name from the REAL `callKeyName`.
  */
-const keyWriter = (w: World, parts: Parts) => (name: string): string => {
+const keyWriter = (w: World, parts: Parts) => (dir: string, name: string): string => {
+  const keyPath = `${dir}/keys/${name}.key`;
   if (parts.materialiseFails === true) {
-    throw new Error('disk full');
+    // As the text of the operating system does (`fs.writeFileSync`), the failure names the file that could not be written.
+    throw new Error(`ENOSPC: no space left on device, open '${keyPath}'`);
   }
-  const keyPath = `/storage/keys/${name}.key`;
   w.materialised.push(keyPath);
   return keyPath;
 };
 
-/** The stand-in of `./keyInstaller`: both writers record in `materialised`; the call writer answers a REAL call name. */
+/** The stand-in of `./keyInstaller`: both writers record in `materialised`, under the folder that the product handed in; the call writer answers a REAL call name. */
 function keyInstallerFake(w: World, parts: Parts): Record<string, unknown> {
   const write = keyWriter(w, parts);
   return {
-    materializePrivateKey: (_dir: string, entityId: string, _content: string, suffix?: string): string =>
-      write(`${entityId}${suffix === undefined ? '' : `-${suffix}`}`),
-    materializeCallKey: (): string => write(callKeyName()),
+    materializePrivateKey: (dir: string, entityId: string, _content: string, suffix?: string): string =>
+      write(dir, `${entityId}${suffix === undefined ? '' : `-${suffix}`}`),
+    materializeCallKey: (dir: string): string => write(dir, callKeyName()),
     forgetMaterializedKey: (path: string): void => {
       w.forgotten.push(path);
     },
@@ -261,7 +267,7 @@ function terminalManagerFake(w: World, opened: unknown): Record<string, unknown>
 }
 
 /** The `vscode` the connect path sees: terminals and dialogs that record, a clipboard that records (E4.S4). */
-function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => void)[]): Record<string, unknown> {
+function vscodeStub(w: World, parts: Parts, closed: StubEventEmitter<unknown>): Record<string, unknown> {
   return {
     window: {
       terminals: w.existing,
@@ -282,10 +288,7 @@ function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => voi
         }
         return t;
       },
-      onDidCloseTerminal: (listener: (t: unknown) => void): { dispose(): void } => {
-        closeListeners.push(listener);
-        return { dispose: (): void => undefined };
-      },
+      onDidCloseTerminal: closed.event,
       showWarningMessage: (m: string, ...rest: unknown[]): Promise<string | undefined> => {
         w.warnings.push(m);
         const labels = rest.filter((r): r is string => typeof r === 'string');
