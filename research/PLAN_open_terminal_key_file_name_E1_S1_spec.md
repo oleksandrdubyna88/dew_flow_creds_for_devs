@@ -1,6 +1,6 @@
 # PLAN — E1.S1 spec: the key file of a terminal has a call name (CORNERSTONE)
 
-> Status: **built, 2026-11-15** (`3099f5a5` the code and the tests, `895e345b` the documents; not merged). Since the re-review
+> Status: **IMPLEMENTED, 2026-11-15** (`3099f5a5` the code and the tests, `895e345b` the documents; extension 1.22.1, #366). Since the re-review
 > of the parent for epoch 2, G1 of this document is replaced by G1 of
 > [the E1.S2 spec](PLAN_open_terminal_key_file_name_E1_S2_spec.md), which also changes `sshConnect.ts` and
 > `test/sshConnectWorld.ts`, and `terminalManager.ts` for one comment (they leave the list *Files with no change* below). The rest is the record of what E1.S1 built.
@@ -15,7 +15,7 @@
 > Fable writes this spec, a Sonnet coder builds it, Opus reviews it.
 
 Paths are relative to `src_vs_code/src/` unless they start with another folder. "The parent" is the plan linked above. "The N10
-spec" is [PLAN_agent_refusal_key_file_path_E1_S1_spec.md](../research/PLAN_agent_refusal_key_file_path_E1_S1_spec.md). The names
+spec" is [PLAN_agent_refusal_key_file_path_E1_S1_spec.md](PLAN_agent_refusal_key_file_path_E1_S1_spec.md). The names
 T-N17a, T-N17b, T-N17c, T20, T21, S1 and S2 are the parent's. Names that start with F, FX, G, L, W, M or B are this document's own.
 This document keeps no change ledger: a change of it is an entry in the parent (`plan-change-control.md`).
 
@@ -404,18 +404,18 @@ text, go on. The body of c1 is the record of the RED proof.
 
 ## 9. Done when (each item can be counted)
 
-- [ ] **S1 first.** The first run of S1 failed with exactly 2 sites in 1 file (`sshSession.ts:13`, `:472`).
-- [ ] **The world.** After step 2, `typecheck` exits 0 and `npm test` shows 1 failed test (S1).
-- [ ] **RED.** In state 3, 18 tests fail, each one by its assertion, 0 compile errors; FX and G1 pass. The texts are saved.
-- [ ] **GREEN.** After the fix the 18 pass. `npm test`, `npm run typecheck` and `npm run lint` are clean, with no new
+- [x] **S1 first.** The first run of S1 failed with exactly 2 sites in 1 file (`sshSession.ts:13`, `:472`).
+- [x] **The world.** After step 2, `typecheck` exits 0 and `npm test` shows 1 failed test (S1).
+- [x] **RED.** In state 3, 18 tests fail, each one by its assertion, 0 compile errors; FX and G1 pass. The texts are saved.
+- [x] **GREEN.** After the fix the 18 pass. `npm test`, `npm run typecheck` and `npm run lint` are clean, with no new
       `eslint-disable`.
-- [ ] **The callers.** `grep -rlw materializePrivateKey src --include=*.ts --exclude-dir=test` (in `src_vs_code`) gives exactly 2
+- [x] **The callers.** `grep -rlw materializePrivateKey src --include=*.ts --exclude-dir=test` (in `src_vs_code`) gives exactly 2
       files: `keyInstaller.ts`, `transportFactory.ts`. `grep -c materializePrivateKey src/sshSession.ts` and
       `grep -c keyEntityId src/sshSession.ts` each give 0.
-- [ ] **No literal.** `grep -rn "keys/k1" src/test` gives 1 line, the comment at `test/sshConnectRemote.test.ts:38`.
-- [ ] **The 6 mutations** each turned at least 1 named test red, and each was restored.
-- [ ] **No other file.** The files of *Files with no change* have no difference against `50345d34`.
-- [ ] **The documents** of §7 are in c2.
+- [x] **No literal.** `grep -rn "keys/k1" src/test` gives 1 line, the comment at `test/sshConnectRemote.test.ts:38`.
+- [x] **The 6 mutations** each turned at least 1 named test red, and each was restored.
+- [x] **No other file.** The files of *Files with no change* have no difference against `50345d34`.
+- [x] **The documents** of §7 are in c2.
 
 ## 10. Break it — ways to make the tests pass while the leak stays, and the row that stops each one
 

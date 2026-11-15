@@ -1,11 +1,11 @@
 # PLAN — the key file of a terminal is named `call-<uuid>.key`, and a terminal keeps one key file (N17)
 
-> Status: **in progress, epoch 2, 2026-11-15** (stopped at entry 1.2, re-reviewed, resumed). E1.S1 is built at `895e345b` and E1.S2 at `6c12b6d0` (the world) and `8b854bcd` (the fix), unmerged. This text is the plan as
-> revised for epoch 2 on 2026-11-15 (the re-review record below); epoch 2 is approved, and both stories are built on the branch.
+> Status: **IMPLEMENTED, 2026-11-15.** Extension 1.22.1 (#366, squash 7df8da1b; release PR #368). Epoch 2, one change (2.1);
+> epoch 1 stopped at entry 1.2 and was re-reviewed. Deviations: §9.
 > Scope: the extension only (`src_vs_code/src`): the name of the key file that `prepareSshSession` (`sshSession.ts`) writes
 > (built), the key file of a Connect that reuses a live terminal (`openKeyTerminal`, `sshConnect.ts`), their tests and the
 > test world, the scan of `keysDirPaths.test.ts`, the docs. Found as N17 of
-> [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus code
+> [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus code
 > review on 2026-11-12. Order of the follow-ups advised by the question consultants on 2026-11-15 (consult
 > `ad7ce1a5`): N17 first and alone; N16 (three roads of the person leave a key until the purge) is its own next plan.
 
@@ -287,20 +287,20 @@ steps, the texts measured on a copy of the compiled branch, and the order.
 
 ## 7. Definition of Done
 
-- [ ] **No id in a name.** No road of `prepareSshSession` writes a key file whose name holds an id; `sshSession.ts`
+- [x] **No id in a name.** No road of `prepareSshSession` writes a key file whose name holds an id; `sshSession.ts`
       is off `WRITER_LIST` (E1.S1).
-- [ ] **No accumulation on reuse.** A Connect or a `creds_open_terminal` that reuses a live terminal leaves no key
+- [x] **No accumulation on reuse.** A Connect or a `creds_open_terminal` that reuses a live terminal leaves no key
       file and no listener of its own; an open Connect terminal holds exactly one key file and one close listener,
       and none after it closes (E1.S2: G1, G2, G3).
-- [ ] T-N17a, T-N17b, T-N17c and the scan were watched RED, then GREEN, and M1 to M6 are recorded (E1.S1, in
+- [x] T-N17a, T-N17b, T-N17c and the scan were watched RED, then GREEN, and M1 to M6 are recorded (E1.S1, in
       `3099f5a5`). FX-D, FX-L and T-N17d were watched RED on the unrepaired world; G1, G2 and G3 were watched RED on
       the product of the branch; M7 to M17 are recorded (E1.S2).
-- [ ] Suite, typecheck, lint and build green.
-- [ ] The gates of §8 passed: the revised plan, one code round over the whole diff of E1, the own Opus review,
+- [x] Suite, typecheck, lint and build green.
+- [x] The gates of §8 passed: the revised plan, one code round over the whole diff of E1, the own Opus review,
       CodeRabbit.
-- [ ] CHANGELOG and research docs say what ships, in the same PR.
-- [ ] `plan-lifecycle.mjs` is clean; the summary names the epoch, the count and what was cut.
-- [ ] Released after the owner's word; this plan, its stories document and its two specs promoted to `research/` together.
+- [x] CHANGELOG and research docs say what ships, in the same PR.
+- [x] `plan-lifecycle.mjs` is clean; the summary names the epoch, the count and what was cut.
+- [x] Released after the owner's word; this plan, its stories document and its two specs promoted to `research/` together.
 
 ## 8. Build order and merge conditions
 
@@ -317,6 +317,34 @@ steps, the texts measured on a copy of the compiled branch, and the order.
 5. One PR for E1. **Merge conditions:** every item of §7 down to the documents; the checks of the head commit exist
    and pass; E1.S1 is not merged or released without E1.S2 (§1.2).
 6. Release after the owner's word; then the promotion.
+
+## 9. Deviations
+
+What shipped differently from the plan as first approved (50345d34):
+
+1. **A second story.** The first plan said "one line of product code" and "no change to `sshConnect.ts`". Fable's spec found that
+   the real `openSshTerminal` reuses a live terminal and types nothing (change 1.1); the cadence consultant and the Opus
+   review found that this growth has no fixed bound and that N16 does not cover it (change 1.2, which stopped the plan).
+   The re-review added E1.S2 to the same epic: `openKeyTerminal` forgets the key of a reused terminal at once.
+2. **Change 2.1 (CodeRabbit on #366).** A thrown `openSshTerminal` (`createTerminal`, `show`, `sendText`) left the key
+   until the window ended; `forgetWhenTheOpenThrows` forgets it and rethrows the same error. A catch, not a `finally`.
+3. **Files the first plan kept out:** `sshConnect.ts` (E1.S2, 2.1), one comment in `terminalManager.ts`, and the shared
+   `test/vscodeStub.ts` (a `listenerCount` getter; the close event of the world is `StubEventEmitter`).
+4. **The test world was repaired** after the Opus review of E1.S1 showed two mutations staying green: its key writer
+   ignored its folder, and its close stub's `dispose` did nothing (W6-W9: the folder, a real dispose, a failed write that
+   names the file, a lookup gate for overlapping Connects).
+5. **Order of the gates.** The cadence consultation the gate ordered before the build ran after E1.S1 was built
+   (`c35d5cf5`); it is the one that found the unbounded growth.
+6. **Mutations.** M7 as written did not compile (an unused `before`); a variant with the same behaviour was run. The
+   optional helper of M18 (no forgotten path follows `-i` in a live line) was not built; `sent.length` checks catch M18.
+7. **Rejected in the code rounds, with reasons:** a test fake that pushes into its recorder arrays (twice); a partial key
+   left by a failed write (twice; F4, fixed in the writer by #365); a claimed terminal with no line left after a thrown
+   `show`/`sendText` (older behaviour of the reuse rule; F5).
+8. **Checked: the test world and the real `terminalManager` composition. Not checked: a real VS Code window.** The reuse
+   rule rests on the same terminal object being in `window.terminals` before and after the open; if it ever were not,
+   the result is the old behaviour (a file kept until close), never an early delete.
+9. **Open after this plan:** F1 (the `suffix` parameter and three docblocks, after #365), F3 (`keyEntityId` unread), F4
+   (port `withoutPartialKey` if #365 does not land), F5 (`openSshTerminal` disposes a terminal whose start failed), and N16.
 
 ## Epics
 
