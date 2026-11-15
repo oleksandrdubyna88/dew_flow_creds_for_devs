@@ -259,7 +259,9 @@ one SSH entry never share a pin; the key is `call-<uuid>.key` on every road (`ma
 without; `connectEntity` never sets `isolate` and keeps the pin name `known_hosts-<id>`.
 
 The key file of a **Connect** is owned by `openKeyTerminal` (`sshConnect.ts`). It forgets the file when its terminal closes, at
-once when no terminal opened, and at once when `openSshTerminal` gave back a terminal that was in the window before the call (a
+once when no terminal opened, at once when `openSshTerminal` THROWS (`createTerminal`, `show` or `sendText` failed:
+`forgetWhenTheOpenThrows` forgets the file in a `catch` around that one call and rethrows the same error; no listener is registered, and
+there is no `finally`, because after a normal return the key of a new terminal stays until that terminal closes), and at once when `openSshTerminal` gave back a terminal that was in the window before the call (a
 reused live terminal of the entry: it types nothing, so no line names the new file and no `ssh` reads it). The file named by the
 reused terminal’s own line stays until that terminal closes. So an open Connect terminal holds at most one key file (the one its own line names) and one close listener,
 however often it is asked for; the file of a reused call exists for a moment, between prepare and the open half.
@@ -6129,7 +6131,7 @@ a clean install used to show one "Search" row and nothing else.
 | Path | Handling |
 |---|---|
 | Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`), and a copy cancels the wipe it supersedes. A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
-| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes; a Connect that reuses an open terminal deletes its file at once. **A key served by the SSH agent is never written at all** |
+| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes; a Connect that reuses an open terminal, or whose terminal fails to open (the open throws), deletes its file at once. **A key served by the SSH agent is never written at all** |
 | TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |
 | Webviews | `default-src 'none'`, nonce-based scripts, `localResourceRoots: []`, everything escaped. The read-only viewer never receives secret values at all — copy actions round-trip through the extension host |
