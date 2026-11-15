@@ -1,6 +1,6 @@
 # PLAN — the key file of a terminal is named `call-<uuid>.key` (N17)
 
-> Status: **in progress, 2026-11-15.** Scope: the extension only (`src_vs_code/src`): the name of the key file that
+> Status: **stopped for re-review, 2026-11-15** (entry 1.2; built E1.S1 at 895e345b, unmerged). Scope: the extension only (`src_vs_code/src`): the name of the key file that
 > `prepareSshSession` (`sshSession.ts`) writes, its tests, the scan of `keysDirPaths.test.ts`, the docs. Found as N17 of
 > [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus code
 > review on 2026-11-12. Order of the follow-ups advised by the question consultants on 2026-11-15 (consult
@@ -8,7 +8,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-15 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-15 · by reviewers · state: stopped
 
 - 1.1 · 2026-11-15 · reviewer · approach — Fable's spec found that the real `openSshTerminal` reuses a live terminal
   of the entry and types nothing (`terminalManager.ts:51-57`): after the fix each extra Connect of a live session writes
@@ -16,6 +16,10 @@
   says so; guard G1 is added to §3. (The round's accepted finding, T-N17c, and the spec consult's points were folded in
   at the round's resolve, before approval, and are not entries. The line numbers, the file list of §3.5 and the two S1
   sites are repairs.)
+- 1.2 · 2026-11-15 · reviewer · scope — the growth of 1.1 has no fixed bound (an agent's `creds_open_terminal` on a
+  live session adds a file per call too) and N16 does not cover this road; F2 (forget the key of a reused terminal at
+  once) is recorded and routed. Raised by the cadence consultant (`c35d5cf5`) and the Opus code review; the question
+  consultants split (`692ebd61`), so by the rule it counts. This second change stopped the plan.
 
 ## 1. Symptom
 
@@ -50,7 +54,9 @@ consultant, 2026-11-15). The solved instance to copy is `byStoredKey` of `sshExe
   touches the lines that the open bridge PR #365 changes in `keyInstaller.ts`, so it waits for #365 (follow-up F1).
 - A second Connect while the entry's terminal lives opens no terminal and types nothing (`terminalManager.ts:51-57`),
   but `prepareSshSession` has written a key: one more `call-<uuid>.key` per such click, deleted when that terminal
-  closes (change 1.1). Bounded by the clicks of one session; not fixed here (N16 is the plan for key lifetimes).
+  closes (change 1.1). There is no fixed bound: each such Connect, and each `creds_open_terminal` of an agent on a live
+  session, adds one file and one close listener until that terminal closes or the purge runs (the cadence consultant,
+  2026-11-15, `c35d5cf5`). Not fixed here: the fix is in `sshConnect.ts` and would be a second change; follow-up F2.
 - No change to `keyInstaller.ts`, `materializedKeys.ts`, `sshConnect.ts`, `sshRoad.ts` or any purge.
 
 ## 3. Tests (RED first)
@@ -109,6 +115,9 @@ Each new or changed assertion is watched RED on today's code before the fix, the
 
 ## 6. Follow-ups
 
+- F2: a reused live terminal keeps a key file per repeated Connect (§2, change 1.1). `openKeyTerminal` should forget
+  the key at once when `openSshTerminal` answered an existing terminal, with a repeated-Connect test that asserts no
+  accumulation. Not one of N16's three roads (`agentCommands.ts`); it goes into the N16 plan as a fourth.
 - F1: after #365 merges, drop the `suffix` parameter of `materializePrivateKey` (no product caller passes it).
 
 ## 7. Definition of Done
