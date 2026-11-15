@@ -118,11 +118,13 @@ function openReady(ready: ReadySsh, place: SshTerminalPlace): boolean {
  * no terminal opened; and at once when `openSshTerminal` gave back a terminal that was in the window before the call (a live
  * terminal of this entry, reused). It typed nothing then, so no line names this file and no `ssh` will read it. The file that
  * the reused terminal's own line names stays until that terminal closes. So an open terminal holds at most one key file (the one its own line names) and one listener.
+ * When `openSshTerminal` THROWS (`createTerminal`, `show` or `sendText` failed) the file is forgotten at once too, and the same error
+ * goes on to the caller (`forgetWhenTheOpenThrows`): no listener is registered, and nothing would ever close a terminal that was never handed back.
  */
 function openKeyTerminal(ready: ReadySsh, place: SshTerminalPlace): boolean {
   // The terminals of the window DIRECTLY before the open, with no `await` between: one that is in this set was not made by this call.
   const before = new Set(vscode.window.terminals);
-  const terminal = openSshTerminal(ready.entity, ready.options, ready.platform, ready.prefix, place);
+  const terminal = forgetWhenTheOpenThrows(ready, place);
   const materialized = ready.materializedKeyPath;
   if (materialized !== undefined) {
     if (terminal === undefined || before.has(terminal)) {
@@ -137,6 +139,22 @@ function openKeyTerminal(ready: ReadySsh, place: SshTerminalPlace): boolean {
     }
   }
   return terminal !== undefined;
+}
+
+/**
+ * `openSshTerminal`, with the one cleanup its throw needs: the key file of this call is forgotten and the SAME error is rethrown.
+ * A catch and not a `finally`: after a normal return the key of a new terminal must stay until that terminal closes
+ * (`openKeyTerminal`). `forgetMaterializedKey` never throws, so it cannot hide the original error.
+ */
+function forgetWhenTheOpenThrows(ready: ReadySsh, place: SshTerminalPlace): ReturnType<typeof openSshTerminal> {
+  try {
+    return openSshTerminal(ready.entity, ready.options, ready.platform, ready.prefix, place);
+  } catch (error) {
+    if (ready.materializedKeyPath !== undefined) {
+      forgetMaterializedKey(ready.materializedKeyPath);
+    }
+    throw error;
+  }
 }
 
 /**

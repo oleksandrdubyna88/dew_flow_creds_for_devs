@@ -289,3 +289,38 @@ test("T-N17d: the dialog of a key that could not be written names the call-named
   assert.deepEqual(found, [], `T-N17d: the dialog holds ${found.join(' and ')}: ${text}`);
   assert.match(lastPart((named as RegExpExecArray)[1]), CALL_KEY_FILE);
 });
+
+/**
+ * A Connect whose terminal fails to open (change 2.1 of N17): `openSshTerminal` throws from `createTerminal` or from `sendText`.
+ * The ORIGINAL error reaches the caller, the key file that this call wrote is forgotten once and at once (no line names it, no
+ * `ssh` will read it), and no close listener is left behind.
+ */
+async function connectWhoseTerminalFails(at: 'createTerminal' | 'sendText', message: string): Promise<{ w: World; error: Error; thrown: unknown }> {
+  const error = new Error(message);
+  const w = linkedWorld({ terminalFault: { at, error } });
+  const thrown = await w.mod.connectEntity(ACCOUNT_ID, linked(), connect()).then(
+    () => undefined,
+    (e: unknown) => e,
+  );
+  return { w, error, thrown };
+}
+
+for (const [id, at, message] of [
+  ['T-N17e', 'createTerminal', 'N17e: the terminal host could not create a terminal'],
+  ['T-N17f', 'sendText', 'N17f: the terminal host could not type the line'],
+] as const) {
+  test(`${id}: a Connect whose ${at} throws rejects with that same error, forgets the key file it wrote once, and leaves no close listener`, async () => {
+    const { w, error, thrown } = await connectWhoseTerminalFails(at, message);
+
+    assert.equal(thrown, error, `${id}: connectEntity did not reject with the original error: ${String(thrown)}`);
+    assert.equal((thrown as Error).message, message);
+    const written = writtenCallKey(w);
+    assert.deepEqual(
+      w.forgotten,
+      [written],
+      `${id}: the key file of a terminal that failed to open was not forgotten exactly once; written ${written}, forgotten: ${w.forgotten.join(', ') || 'nothing'}`,
+    );
+    assert.equal(w.closeListenerCount(), 0, `${id}: a close listener was left behind`);
+    assert.equal(at === 'sendText' ? w.created[0].sent.length : w.created.length, 0, `${id}: nothing was typed`);
+  });
+}

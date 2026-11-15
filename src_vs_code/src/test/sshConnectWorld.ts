@@ -116,6 +116,11 @@ export interface Parts {
    * stay empty: a test reads `w.created`.
    */
   realTerminal?: boolean;
+  /**
+   * Only with `realTerminal`: the stub's `createTerminal` (`at: 'createTerminal'`) or the created terminal's `sendText` (`at: 'sendText'`)
+   * throws `error`, so the real `openSshTerminal` throws. A test keeps `error` and compares the object it catches with it.
+   */
+  terminalFault?: { at: 'createTerminal' | 'sendText'; error: Error };
 }
 
 /**
@@ -272,10 +277,12 @@ function vscodeStub(w: World, parts: Parts, closed: StubEventEmitter<unknown>): 
     window: {
       terminals: w.existing,
       createTerminal: (o: { name: string; env?: Record<string, string>; color?: { id: string } }): Terminal => {
+        throwsAt(parts, 'createTerminal');
         const t: Terminal = { name: o.name, env: o.env, sent: [], disposed: false, ...('color' in o ? { color: o.color } : {}) };
         Object.assign(t, {
           show: (): void => undefined,
           sendText: (line: string): void => {
+            throwsAt(parts, 'sendText');
             t.sent.push(line);
           },
           dispose: (): void => {
@@ -316,6 +323,13 @@ function vscodeStub(w: World, parts: Parts, closed: StubEventEmitter<unknown>): 
       },
     },
   };
+}
+
+/** Throws the world's `terminalFault` when it names `at` — and only under `realTerminal`, which no older test sets with a fault. */
+function throwsAt(parts: Parts, at: 'createTerminal' | 'sendText'): void {
+  if (parts.realTerminal === true && parts.terminalFault?.at === at) {
+    throw parts.terminalFault.error;
+  }
 }
 
 /** A terminal already open under `name` — one a fresh session must dispose rather than reuse. */
