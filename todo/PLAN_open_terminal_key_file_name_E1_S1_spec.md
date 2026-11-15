@@ -1,6 +1,10 @@
 # PLAN — E1.S1 spec: the key file of a terminal has a call name (CORNERSTONE)
 
-> Status: **spec only, nothing built, 2026-11-15.** Cornerstone spec, written by Fable before its code. Story E1.S1 of
+> Status: **built, 2026-11-15** (`3099f5a5` the code and the tests, `895e345b` the documents; not merged). Since the re-review
+> of the parent for epoch 2, G1 of this document is replaced by G1 of
+> [the E1.S2 spec](PLAN_open_terminal_key_file_name_E1_S2_spec.md), which also changes `sshConnect.ts` and
+> `test/sshConnectWorld.ts` (they leave the list *Files with no change* below). The rest is the record of what E1.S1 built.
+> Cornerstone spec, written by Fable before its code. Story E1.S1 of
 > [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md) (its §2, §3 items 1 to 8 and 2a, §4, `## Epics` E1).
 > This file is promoted together with the parent.
 >
