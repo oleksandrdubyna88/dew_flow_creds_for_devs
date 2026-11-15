@@ -46,6 +46,12 @@ Narrowed: no — the scope grows by one story (E1.S2, no key file left by a Conn
 
 > Epoch 2 · approved 2026-11-15 · by reviewers · state: open
 
+- 2.1 · 2026-11-15 · reviewer · approach — CodeRabbit on #366: when `openSshTerminal` throws (`createTerminal`, `show`,
+  `sendText`), `openKeyTerminal` forgets nothing, and each such open leaves its own `call-<uuid>.key` until this window
+  ends. Fix: catch, forget the key, rethrow the original error; the success paths do not change. A RED test, a
+  mutation, docs, another code round. The question consultants split (`566e3730`); the lead took codex's reading (the
+  roads of `sshRoad.ts` already clean up on a thrown open, `sshRoadArrow.test.ts`; N16 does not cover this road).
+
 ## 1. Symptom
 
 ### 1.1 The name of the key file tells the id of a key entry (fixed on the branch by E1.S1)
