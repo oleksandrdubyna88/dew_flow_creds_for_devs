@@ -3186,7 +3186,7 @@ there to give its own file, because it reads nothing off the provider that canno
 The alternative each time was to shorten a comment until the file fit, which buys a green lint by
 deleting the reason the code is the way it is.
 
-### Folder colours — a folder's terminals and its row (Unreleased)
+### Folder colours — a folder's terminals and its row (1.22.0)
 
 > Design record: [PLAN_folder_colors.md](PLAN_folder_colors.md) and its two epic files, [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md) (the colour is picked for the person) and
 > [PLAN_folder_colors_E2.md](PLAN_folder_colors_E2.md) (the person chooses it in the folder form, and the documents). Both epics are built; the deviations are § 9 of the first.

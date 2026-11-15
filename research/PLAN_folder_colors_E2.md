@@ -1,6 +1,6 @@
 # PLAN — folder colours, epic E2: the person chooses the colour; the documents are complete
 
-> Status: **IMPLEMENTED, 2026-11-12.** Stories of epic E2 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the person
+> Status: **IMPLEMENTED, 2026-11-12.** Released in extension 1.22.0 (#363; release PR #364), 2026-11-13. Stories of epic E2 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the person
 > chooses the colour in the folder form, and the documents are complete. Scope: `src_vs_code` only. No cornerstone.
 > Deviations: below, and § 9 of the parent. Built on `feat/folder-colors-e2`, which starts at the end of E1 (`6c9149bd`).
 
