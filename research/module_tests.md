@@ -2474,7 +2474,7 @@ writeKey }` and a call: S1, at the line of the import. The full suite after the 
   stored key on a Windows computer after the release shows it.
 - A new thing that throws inside the `try` of `execOverSsh`.
 - The sentences of (a) and (b) off a bridge still hold the local path (G2, G3 of the plan). This is a decision, not a gap.
-- The person's roads. Since N17 every road of `prepareSshSession` (Connect, `creds_open_terminal`, the runs over SSH) writes `call-<uuid>.key`, so their key file names no longer hold the id of the key entry; the pin `known_hosts-<id>` and the askpass script still hold the id of the SSH entry itself. No test of this plan reads the person's terminal; `sshConnectKeyName.test.ts` (N17) does.
+- The person's roads. Since N17 every road of `prepareSshSession` (Connect, `creds_open_terminal`, the runs over SSH) writes `call-<uuid>.key`, so their key file names no longer hold the id of the key entry; only the pin `known_hosts-<id>` (`known_hosts-<id>-<uuid>` when isolated) still holds the id of the SSH entry itself; the askpass script has a fixed name. No test of this plan reads the person's terminal; `sshConnectKeyName.test.ts` (N17) does.
 
 ## What none of them covers
 

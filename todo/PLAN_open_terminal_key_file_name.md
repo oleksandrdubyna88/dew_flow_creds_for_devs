@@ -280,6 +280,10 @@ steps, the texts measured on a copy of the compiled branch, and the order.
   same holds for every agent call since 1.21.4 (`sshExecAuth.ts:161`). The cure is in the writer (`materializePrivateKey`
   removes its own file on failure), which the open PR #365 adds as `withoutPartialKey`. If #365 does not land, port that
   change on its own.
+- F5 (a note, from the code round of change 2.1; older behaviour, not a regression): when `createTerminal` succeeds and
+  `show` or `sendText` then throws, the claimed terminal with no line stays in the window, and the next Connect of the
+  entry reuses it and types nothing, so the person gets an empty shell until they close it. The cure is in
+  `openSshTerminal` (`terminalManager.ts`): dispose and unclaim a terminal it just made when its start fails. A todo.
 
 ## 7. Definition of Done
 

@@ -166,7 +166,7 @@ export interface ReadySsh {
   readonly jump: string | undefined;
   /** `describeSshTarget(entity)` — the `SSH: <target>` terminal name. `undefined` when the entity has no host. */
   readonly target: string | undefined;
-  /** The key file THIS preparation wrote, or `undefined`. connectEntity's two forget sites read it. */
+  /** The key file THIS preparation wrote, or `undefined`. `openKeyTerminal` and `forgetWhenTheOpenThrows` (sshConnect.ts) forget it. */
   readonly materializedKeyPath: string | undefined;
   /**
    * Forget the materialised key and our pin file. Idempotent: the second call does nothing. The OWNER calls
