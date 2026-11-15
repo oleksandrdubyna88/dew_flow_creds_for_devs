@@ -927,4 +927,42 @@ a space from breaking every bridged hop.
 
 **Open risks found at review** are in §S6.10, *Also owed to the next stop*.
 
-**M9:** not yet recorded. It needs the owner's Windows host and is a merge condition (§S6.12).
+**M9: run 2026-11-15 as re-review evidence. It stopped the parent plan (its ledger entries 9.2 and 9.3), so it is not a merge pass.**
+
+How it was run:
+- The lead ran it, not the owner, on the owner's Windows PC through WSL interop.
+- The runtime was VS Code's own: `Code.exe` with `ELECTRON_RUN_AS_NODE=1`, Electron 43.8.6, node 24.22.1. That is the extension host's runtime and its libuv.
+- The driver called the branch's compiled `writeBridgedCall`, `bridgedSpawn`, `sshSpawnLaunch`, `writeAskpassScriptFile` and `askpassEnv` from `out/`; the code was `f5b452b9`.
+- It spawned the way the runner does: `shell: false`, `windowsHide: true`, stdio `ignore`/`pipe`/`pipe`.
+- The client was Win32-OpenSSH 9.5p2.
+- The server was a throwaway `sshd` (Alpine, OpenSSH 9.9p2) in a `wslc` container on Windows' `127.0.0.1:2222`, with a throwaway account, password and keys.
+- The storage folder's path held a space.
+- The output masks the user name and the password. The driver stays on that host.
+
+A probe "+ `PROGRAMDATA`" is the production environment with that one name added by the driver, never by the product.
+
+| Leg | Environment asked | Result |
+|---|---|---|
+| A0 key, pinned, as built | the eight of `BRIDGED_ENV_WINDOWS` | exit 255, no stdout, no stderr |
+| A0 password, pinned, as built | the eight + the three askpass names | exit 255, nothing printed |
+| A1 key, pinned | + `PROGRAMDATA` | logs in |
+| A2 password, pinned, `-v` | + `PROGRAMDATA` | `askpass.bat` answers; `Authenticated to 127.0.0.1 ([127.0.0.1]:2222) using "password"`; `Will attempt key:` names only the sentinel |
+| A3 each name taken out in turn, key and password | the eight + `PROGRAMDATA`, less one | all 16 log in except the two without `PROGRAMDATA` (exit 255, nothing printed) |
+| A4 first contact, unpinned key | + `PROGRAMDATA` | logs in. The journal has J1 (`first contact through a Remote Bridge: [127.0.0.1]:2222 ssh-ed25519 SHA256:… was added to bridges/known_hosts`). `bridges/known_hosts` was absent before and holds one line, the server's key, after |
+| B1 unpinned, the server's key then changed | + `PROGRAMDATA` | refused: `Host key verification failed`, the offending line `bridges\known_hosts:1` |
+| B2 key pinned to the old key, the key changed | + `PROGRAMDATA` | refused; the offending line is in the call's own pin file |
+| B3 password pinned to the old key, the key changed | + `PROGRAMDATA` | refused before authentication |
+| C1 a default identity in the profile | + `PROGRAMDATA` | The control (`-F` an empty file) offered `~\.ssh\id_ed25519` and logged in by `publickey`. The production password call then listed only the sentinel under `Will attempt key:` and logged in by `password` |
+
+What the run shows, and what it does not:
+- **Win32-OpenSSH 9.5p2 does not start without `PROGRAMDATA`.** Even `-V` exits 255 with nothing printed. As built, every bridged call on Windows fails, and `BRIDGED_ENV_WINDOWS` needs that name. That is change 9.2.
+- **libuv adds names on Windows.** When `HOMEDRIVE`, `HOMEPATH`, `PATH`, `SYSTEMROOT`, `TEMP` or `USERPROFILE` is absent, libuv puts the extension host's value back. It adds `LOGONSERVER`, `SYSTEMDRIVE`, `USERDOMAIN`, `USERNAME` and `WINDIR` too. That is change 9.3.
+  - So taking out one of those six measured the restored value, not its absence.
+  - "Logs in without it" is a real result only for `TMP` and `COMSPEC`. `askpass.bat` ran without `COMSPEC`.
+- **Win32-OpenSSH takes `~` from the account's profile, not from `USERPROFILE`.** A control with `USERPROFILE` set to a folder whose path holds a space still listed the real profile's `.ssh\id_*` under `-v`.
+  - So a profile path with a space reaches the extension's own paths, but not ssh's `~`. In the first-contact leg, the space was in the storage folder's path.
+  - For C1, a throwaway `id_ed25519` was put into the real profile's `.ssh` and removed after the leg. The folder listed the same files before and after.
+- **Linux (WSL), OpenSSH 10.2p1 on both ends.** The `sshd` was unpacked from the Ubuntu package with `libwrap0` and ran as a non-root user. The production call came through the itest rig.
+  - With `PATH` and `HOME`, the key call logs in, and also with either one alone.
+  - The password call asked askpass once, and the `sshd` logged a password attempt, in all three cases. It cannot log in, because a non-root `sshd` cannot check a password. That is a limit of the rig.
+- **Not done: the `%` check of the bridge's own entry.** That entry's key path cannot be read from here, so the check stays with the owner.
