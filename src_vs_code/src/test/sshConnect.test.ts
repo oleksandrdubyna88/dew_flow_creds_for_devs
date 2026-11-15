@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { DEP_COLOR_KEYS, depColorThemeId } from '../depColors';
 import { StorageManager } from '../storageManager';
 import { recordingLog } from './liveColourStorage';
-import { E1_AT_ROOT, E1_IN_FOLDER, FOLDER, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, connectBase, entity, storageWith, world } from './sshConnectWorld';
+import { E1_AT_ROOT, E1_IN_FOLDER, FOLDER, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_RELAY, WSL_READY, connectBase, entity, storageWith, world, writtenCallKey } from './sshConnectWorld';
 
 /**
  * The human Connect path (audit A3): WHICH credential reaches ssh, and what each way leaves behind.
@@ -11,7 +11,7 @@ import { E1_AT_ROOT, E1_IN_FOLDER, FOLDER, OPTIONS, OUR_PIN, SSH_TITLE, WSL_NO_R
  * <p>Tested as a SEQUENCE rather than as a result, because nothing this module returns tells you
  * whether a decrypted key was written to disk or whether it was wiped afterwards. Its collaborators
  * are substituted in <code>sshConnectWorld.ts</code>, which is what makes the sequence observable:
- * the point is not what <code>materializePrivateKey</code> does but whether this module calls it.</p>
+ * the point is not what <code>materializeCallKey</code> does but whether this module calls it.</p>
  */
 
 
@@ -44,8 +44,7 @@ test('a stored key is materialised and passed to the terminal', async () => {
         storageDir: '/storage',
       });
 
-  assert.deepEqual(w.materialised, ['/storage/keys/k1.key']);
-  assert.equal(w.sshTerminals[0].keyPath, '/storage/keys/k1.key');
+  assert.equal(w.sshTerminals[0].keyPath, writtenCallKey(w));
 });
 
 test('the decrypted key is WIPED when the terminal closes', async () => {
@@ -67,7 +66,7 @@ test('the decrypted key is WIPED when the terminal closes', async () => {
 
   w.closeTerminal(w.sshTerminalHandle);
 
-  assert.deepEqual(w.forgotten, ['/storage/keys/k1.key'], 'wiped when THIS session ends');
+  assert.deepEqual(w.forgotten, [writtenCallKey(w)], 'wiped when THIS session ends');
 });
 
 test('a terminal that could not be opened wipes the key IMMEDIATELY', async () => {
@@ -83,7 +82,7 @@ test('a terminal that could not be opened wipes the key IMMEDIATELY', async () =
         storageDir: '/storage',
       });
 
-  assert.deepEqual(w.forgotten, ['/storage/keys/k1.key']);
+  assert.deepEqual(w.forgotten, [writtenCallKey(w)]);
 });
 
 test('a key that cannot be written is reported, and no terminal is opened', async () => {

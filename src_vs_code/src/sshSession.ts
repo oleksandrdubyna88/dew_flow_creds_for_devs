@@ -10,7 +10,7 @@ import { buildSshCommand, describeSshTarget } from './terminalManager';
 import { sshClientPresent } from './sshProgram';
 import { offerToInstall } from './toolEnsure';
 import { requestGone } from './requestLife';
-import { forgetMaterializedKey, materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
+import { forgetMaterializedKey, materializeCallKey, writeAskpassScriptFile } from './keyInstaller';
 import { SshCredentialSource, SshCredentialStopped, resolveSshCredential } from './sshCredential';
 import { clickOpener } from './pinClick';
 import { ConnectionOptions, connectionOptions } from './connectionOptions';
@@ -123,11 +123,10 @@ export interface PrepareOptions {
    */
   readonly startGate?: AbortSignal;
   /**
-   * Make this preparation's files its own: the key is written as `<id>-<uuid>.key` and the pin as
-   * `known_hosts-<id>-<uuid>`, a fresh uuid per preparation, in the same `keys/<pid>/` folder so the purge
-   * still owns them. Two prepares of one SSH entry then never share a path, and `cleanup()` of one cannot
-   * delete the other's files (lead amendment §S3.13 A1). Every road passes it; `connectEntity` never does,
-   * so SSH Connect keeps today's file names.
+   * Make this preparation's PIN file its own: it is written as `known_hosts-<id>-<uuid>`, a fresh uuid per preparation,
+   * in the same `keys/<pid>/` folder so the purge still owns it. Two prepares of one SSH entry then never share a pin, and
+   * `cleanup()` of one cannot delete the other's (lead amendment §S3.13 A1). Every road passes it; `connectEntity` never does,
+   * so SSH Connect keeps the pin name `known_hosts-<id>`. The key file needs no switch: it is `call-<uuid>.key` on every road.
    */
   readonly isolate?: boolean;
 }
@@ -215,7 +214,6 @@ interface Routed extends Gathered {
 interface Resolved extends Routed {
   /** What `connectionOptions` returned — the name of the pin file we wrote is HERE, never on `options`. */
   readonly resolved: ConnectionOptions;
-  readonly suffix: string | undefined;
 }
 
 interface Composed extends Resolved {
@@ -348,7 +346,7 @@ async function withOptions(r: Routed): Promise<PreparedSsh> {
     connect.startGate,
     suffix,
   );
-  return resolved === undefined ? stopped('connection-options') : composed({ ...r, resolved, suffix });
+  return resolved === undefined ? stopped('connection-options') : composed({ ...r, resolved });
 }
 
 /** Rows 9-10. */
@@ -454,7 +452,7 @@ function windowsClientNote(route: Routed['route'], ssh: EntityMetadata): void {
 
 /** Rows 19-20, and the `ready` of a key or no credential at all. */
 function keyBranch(s: Staged): PreparedSsh {
-  const key = keyFile(s.source, s.connect.storageDir, s.suffix);
+  const key = keyFile(s.source, s.connect.storageDir);
   if (key === 'failed') {
     giveBack(s);
     return stopped('key-write-failed');
@@ -462,14 +460,17 @@ function keyBranch(s: Staged): PreparedSsh {
   return ready(s, { entity: { ...s.ssh, sshKeyPath: key.keyPath }, materializedKeyPath: key.materialized });
 }
 
+/**
+ * The name of the key file is random (`materializeCallKey`, rule C), for every road, with `isolate` and without. The path is typed
+ * into a terminal, so it must tell no id of a key entry.
+ */
 function keyFile(
   source: SshCredentialSource,
   storageDir: string,
-  suffix: string | undefined,
 ): { keyPath?: string; materialized?: string } | 'failed' {
   if (source.kind === 'storedKey') {
     try {
-      const keyPath = materializePrivateKey(storageDir, source.keyEntityId, source.content, suffix);
+      const keyPath = materializeCallKey(storageDir, source.content);
       return { keyPath, materialized: keyPath };
     } catch (error) {
       void vscode.window.showErrorMessage(`Could not write the stored key to disk: ${describeError(error)}`);

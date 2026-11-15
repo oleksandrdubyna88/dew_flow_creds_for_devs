@@ -5,6 +5,8 @@ import * as sshProgram from '../sshProgram';
 import { FolderColorFake, folderColorStorage } from './folderColorStorage';
 import { DiagnosticWriter } from '../diagnosticWriter';
 import { recordingLog } from './liveColourStorage';
+import { callKeyName } from '../materializedKeys';
+import * as assert from 'node:assert/strict';
 
 /**
  * The human Connect path (audit A3).
@@ -25,7 +27,7 @@ import { recordingLog } from './liveColourStorage';
  * </ul>
  *
  * <p>Its collaborators are substituted, which is what makes the sequence observable: the point
- * is not what `materializePrivateKey` does (that is `keyInstaller.test.ts`) but whether this
+ * is not what `materializeCallKey` does (that is `keyInstaller.test.ts`) but whether this
  * module calls it, and whether it calls `forgetMaterializedKey` afterwards.</p>
  */
 
@@ -104,6 +106,12 @@ export interface Parts {
   duringTranslate?: () => void;
   /** More of the `vscode` stub, merged over the connect path's own (a test that loads a command module needs `workspace`). */
   hostStub?: Record<string, unknown>;
+  /**
+   * The REAL `./terminalManager` (`openSshTerminal`, `buildSshCommand`) composes and types the line, and the stub lists the terminals
+   * it creates in `window.terminals` as VS Code does, so the real reuse rule sees a live one. `sshTerminals` and `sshTerminalHandle`
+   * stay empty: a test reads `w.created`.
+   */
+  realTerminal?: boolean;
 }
 
 /**
@@ -167,20 +175,7 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
           return Promise.resolve(parts.pinFor === undefined ? parts.options : parts.pinFor(suffix));
         },
       },
-      './keyInstaller': {
-        materializePrivateKey: (_dir: string, entityId: string, _content: string, suffix?: string): string => {
-          if (parts.materialiseFails === true) {
-            throw new Error('disk full');
-          }
-          const path = `/storage/keys/${entityId}${suffix === undefined ? '' : `-${suffix}`}.key`;
-          w.materialised.push(path);
-          return path;
-        },
-        forgetMaterializedKey: (path: string): void => {
-          w.forgotten.push(path);
-        },
-        writeAskpassScriptFile: (): string => '/storage/keys/askpass.sh',
-      },
+      './keyInstaller': keyInstallerFake(w, parts),
       './wslProcess': {
         // Never a real `wsl.exe` in a unit test. '' is the module's own "it would not say".
         // An adopted relay is probed before its socket is used; a world says so with `socketAlive`.
@@ -197,21 +192,7 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
       // Which shell a composed ssh line gets (issue #103) is `pinnedTerminal`'s question and its own
       // tests'; here it is a fixed answer, so no real `where pwsh.exe` runs inside an SSH scenario.
       './pinnedTerminal': { composedShellPath: (): string | undefined => undefined },
-      './terminalManager': {
-        openSshTerminal: (
-          entity: { sshKeyPath?: string },
-          options: unknown,
-          platform?: string,
-          prefix?: string,
-          place?: { title: string; accountId: string; color?: string },
-        ): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title, place });
-          return opened;
-        },
-        buildSshCommand: (entity: { host?: string }): string | undefined =>
-          entity.host === undefined ? undefined : `ssh ${String(entity.host)}`,
-        describeSshTarget: (entity: { host?: string }): string | undefined => entity.host,
-      },
+      ...terminalManagerMock(w, parts, opened),
       './sshAskpass': {
         askpassEnv: (script: string, password: string): Record<string, string> => ({
           SSH_ASKPASS: script,
@@ -228,6 +209,56 @@ export function world(parts: Parts, alsoLoad: readonly string[] = []): World {
   return w;
 }
 
+/**
+ * ONE writer for the two members of the stand-in of `./keyInstaller`, so they cannot differ: it records the path and fails under
+ * `materialiseFails`. The sibling still builds its name from the id; the call writer takes its name from the REAL `callKeyName`.
+ */
+const keyWriter = (w: World, parts: Parts) => (name: string): string => {
+  if (parts.materialiseFails === true) {
+    throw new Error('disk full');
+  }
+  const keyPath = `/storage/keys/${name}.key`;
+  w.materialised.push(keyPath);
+  return keyPath;
+};
+
+/** The stand-in of `./keyInstaller`: both writers record in `materialised`; the call writer answers a REAL call name. */
+function keyInstallerFake(w: World, parts: Parts): Record<string, unknown> {
+  const write = keyWriter(w, parts);
+  return {
+    materializePrivateKey: (_dir: string, entityId: string, _content: string, suffix?: string): string =>
+      write(`${entityId}${suffix === undefined ? '' : `-${suffix}`}`),
+    materializeCallKey: (): string => write(callKeyName()),
+    forgetMaterializedKey: (path: string): void => {
+      w.forgotten.push(path);
+    },
+    writeAskpassScriptFile: (): string => '/storage/keys/askpass.sh',
+  };
+}
+
+/** The map entry of the stand-in of `./terminalManager`, or none: `realTerminal` loads the real module under the stub. */
+function terminalManagerMock(w: World, parts: Parts, opened: unknown): Record<string, unknown> {
+  return parts.realTerminal === true ? {} : { './terminalManager': terminalManagerFake(w, opened) };
+}
+
+/** The stand-in of `./terminalManager`: it records arguments and composes nothing; it returns the ONE `opened` object. */
+function terminalManagerFake(w: World, opened: unknown): Record<string, unknown> {
+  return {
+    openSshTerminal: (
+      entity: { sshKeyPath?: string },
+      options: unknown,
+      platform?: string,
+      prefix?: string,
+      place?: { title: string; accountId: string; color?: string },
+    ): unknown => {
+      w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix, title: place?.title, place });
+      return opened;
+    },
+    buildSshCommand: (entity: { host?: string }): string | undefined =>
+      entity.host === undefined ? undefined : `ssh ${String(entity.host)}`,
+    describeSshTarget: (entity: { host?: string }): string | undefined => entity.host,
+  };
+}
 
 /** The `vscode` the connect path sees: terminals and dialogs that record, a clipboard that records (E4.S4). */
 function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => void)[]): Record<string, unknown> {
@@ -246,6 +277,9 @@ function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => voi
           },
         });
         w.created.push(t);
+        if (parts.realTerminal === true) {
+          w.existing.push(t);
+        }
         return t;
       },
       onDidCloseTerminal: (listener: (t: unknown) => void): { dispose(): void } => {
@@ -340,6 +374,37 @@ export const connectBase = (): { storage: ReturnType<typeof storageWith>; log: D
 /** The title every connect of `entity()` gives its terminal. */
 export const SSH_TITLE = 'Creds SSH: ssh connections / prod';
 export const OPTIONS = { knownHostsFile: undefined };
+
+/** A key entry that the SSH entry borrows. Its id reads like a name (an imported id can), and it is not the SSH entry's id. */
+export const LINKED_KEY_ID = 'hid-key-8f3k2';
+export const LINKED_KEY_NAME = 'hidden-deploy-key';
+export const LINKED_KEY_NODE: TreeNode = { id: LINKED_KEY_ID, name: LINKED_KEY_NAME, type: 'entity', parentId: 'f1' };
+export const LINKED_SOURCE = { kind: 'storedKey', keyEntityId: LINKED_KEY_ID, content: 'PRIVATE' };
+/** The last part of a call key file: `call-`, a uuid, `.key`. */
+export const CALL_KEY_FILE = /^call-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.key$/;
+/** A local window whose shell is pinned, so the typed line is the same text on every runner (the reason of `WSL_NO_RELAY`). */
+export const LOCAL_LINUX = {
+  side: { kind: 'local' as const },
+  relay: { enabled: false, running: false, socket: '' },
+  hostPlatform: 'linux' as NodeJS.Platform,
+};
+
+/** The text after the last `/` (the world's writer joins with `/` on every platform). */
+export const lastPart = (file: string): string => file.slice(file.lastIndexOf('/') + 1);
+
+/** Those of the linked key entry's id and name that `text` holds. */
+export const keyLeaks = (text: string): string[] => [LINKED_KEY_ID, LINKED_KEY_NAME].filter((part) => text.includes(part));
+
+/**
+ * The one key file a test expects to have been written, as a call name. The length is checked FIRST: a comparison with
+ * `undefined` must not pass. A test compares with the returned path and never types a name.
+ */
+export function writtenCallKey(w: Pick<World, 'materialised'>): string {
+  assert.equal(w.materialised.length, 1, `one key file was expected: ${w.materialised.join(', ')}`);
+  const written = w.materialised[0] as string;
+  assert.match(lastPart(written), CALL_KEY_FILE, `the key file has no call name: ${written}`);
+  return written;
+}
 
 /** The shape materializeKnownHosts actually writes: keys/<pid>/, which is what the deletion guard keys on. */
 export const OUR_PIN = `/storage/keys/${process.pid}/known_hosts-e1`;
