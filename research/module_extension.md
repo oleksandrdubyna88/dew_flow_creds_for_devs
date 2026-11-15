@@ -254,8 +254,9 @@ deviation from the old behaviour; a second, harmless one: a safe host with an un
 because `buildSshCommand` returns `undefined` through `isSafeSshTarget` while `knownHostsLine` checks only the host,
 so the pin was written, and the old code left it); `ready` holds the key and the
 pin, and its OWNER calls `cleanup()` (key and pin, idempotent) on every exit that did not hand the session to
-a terminal or a child. With `isolate: true` the key and the pin carry a per-preparation uuid, so two sessions of
-one SSH entry never share a file; `connectEntity` never sets it and keeps today's names.
+a terminal or a child. With `isolate: true` only the PIN carries a per-preparation uuid (`known_hosts-<id>-<uuid>`), so two sessions of
+one SSH entry never share a pin; the key is `call-<uuid>.key` on every road (`materializeCallKey`, rule C), with `isolate` and
+without; `connectEntity` never sets `isolate` and keeps the pin name `known_hosts-<id>`.
 
 A **pinned host key survives** the WSL route: `UserKnownHostsFile` has no mode requirement, so the
 file is translated by asking the distribution (`translateWindowsPath` → `wslpath -a`, bounded and
@@ -6554,9 +6555,11 @@ class test and by `agentNaming.test.ts` (see `module_tests.md`).
 of the key file that the extension writes for one call of an agent holds nothing of the vault (the host-key pin `known_hosts-<id>`
 and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view): `materializeCallKey` (`keyInstaller.ts`)
 names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
-caller of `resolveExecAuth` uses it (the agent's calls and three commands of the person). So no text that shows the path of a call
+writer of a stored SSH key for a call or for a session uses it: the callers of `resolveExecAuth` (the agent's calls and three commands of
+the person) and `prepareSshSession` (`sshSession.ts`: Connect, `creds_open_terminal` and the runs over SSH; N17, plan `PLAN_open_terminal_key_file_name.md`).
+Only the deploy key of the git sync keeps a name from an id (`git-<id>`, `transportFactory.ts`). So no text that shows the path of a call
 file can tell the id of an entry, on any door and on a Remote Bridge, also for an imported id that reads like a name. Pinned by
-part C of the class test, `agentKeyPath.test.ts`, and by the scan of `keysDirPaths.test.ts` (see `module_tests.md`).
+part C of the class test, `agentKeyPath.test.ts`, by the scan of `keysDirPaths.test.ts`, by `sshConnectKeyName.test.ts` and by T-N17a of `sshSession.test.ts` (see `module_tests.md`).
 
 **Rotation, and why the agent never sees a value.** The agent writes `{{creds:new}}`; the window
 generates, substitutes, runs, snapshots the old value into history and stores the new one. Three

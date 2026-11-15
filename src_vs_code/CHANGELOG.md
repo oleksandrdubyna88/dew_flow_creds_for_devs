@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: the key file of a terminal
+
+The key file that *Connect via SSH*, an agent's `creds_open_terminal` and the runs over SSH write for a stored key is now named
+`call-<uuid>.key`. Before, the name began with the id of the key entry, so the `ssh -i "<path>"` line in the terminal showed the id of
+a linked key entry, also to an agent that can read the terminal and may not view that entry. The file is deleted as before: when its
+terminal closes or its run ends. Two Connects of one entry now write two files, and each terminal deletes its own. A second click on
+Connect while that terminal is still open opens nothing and types nothing, and it leaves one more key file until that terminal closes.
+
 ## [1.22.0] — 2026-11-13 — A folder has a colour, and its terminals wear it
 
 ### Added — a folder has a colour, and its terminals wear it
