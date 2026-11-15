@@ -982,7 +982,10 @@ names libuv adds (9.3). `-J none`, a pin that does not parse, `.mylogin.cnf` and
 tests: one pins the request, one observes the child or the receiver.
 
 **Supersedes.** B4's Windows list and `BRIDGED_ENV_EXTRA`; §S6.3 *The environment*; N2; the words *builds nothing against it* of §S6.9's FIDO
-bullet; R6's keys-folder sentence. Everything else of §S6.2-§S6.7 stands. Q12-Q14 wait for the owner: if an answer differs from the default,
+bullet; R6's keys-folder sentence; for Y4, §S6.3's *exactly those eighteen lines* of `Host *` and F2's *the eighteen lines* and *no line
+names `PubkeyAcceptedAlgorithms`* (nineteen lines now, the new one once and in `Host *`: F11), and §S6.10's *not built* for
+`PubkeyAcceptedAlgorithms -sk-*`, which Y4 builds in `Host *` (`IdentityFile none` and a hop block with a fourth keyword stay unbuilt).
+Everything else of §S6.2-§S6.7 stands. Q12-Q14 wait for the owner: if an answer differs from the default,
 the lead says which of Y3-Y5 changes before the coder starts.
 
 **The order. [C]** Probes first, each in a commit that adds only the probe and is watched on CI (PW2: run by the lead) before the code that
