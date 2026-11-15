@@ -4,14 +4,24 @@ import { test } from 'node:test';
 import type { PreparedSsh, ReadySsh } from '../sshSession';
 import type { PreparedForTyping } from '../remoteLaunch';
 import {
+  CALL_KEY_FILE,
+  E1_IN_FOLDER,
+  FOLDER,
+  LINKED_KEY_ID,
+  LINKED_KEY_NODE,
+  LINKED_SOURCE,
   OPTIONS,
   OUR_PIN,
   WSL_NO_RELAY,
   WSL_READY,
   WSL_WINDOWS_CLIENT,
   entity,
+  keyLeaks,
+  lastPart,
   storage,
+  storageWith,
   world,
+  writtenCallKey,
 } from './sshConnectWorld';
 
 /**
@@ -29,7 +39,6 @@ const ready = (p: PreparedSsh): ReadySsh => {
 
 const STORED = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' };
 const base = { storage: storage(), storageDir: '/storage' };
-const KEY = '/storage/keys/k1.key';
 
 test('prepare opens no terminal and sends nothing — stored key, relay, password', async () => {
   const worlds = [
@@ -54,12 +63,12 @@ test('ready with a stored key wrote the key; cleanup deletes it and our pin', as
 
   const r = ready(await w.seam.prepareSshSession('a1', entity(), base));
 
-  assert.equal(r.materializedKeyPath, KEY);
-  assert.equal(r.entity.sshKeyPath, KEY);
-  assert.deepEqual(w.materialised, [KEY]);
+  const written = writtenCallKey(w);
+  assert.equal(r.materializedKeyPath, written);
+  assert.equal(r.entity.sshKeyPath, written);
   assert.deepEqual(w.forgotten, []);
   r.cleanup();
-  assert.deepEqual(w.forgotten, [KEY, OUR_PIN]);
+  assert.deepEqual(w.forgotten, [written, OUR_PIN]);
 });
 
 test('cleanup twice forgets once', async () => {
@@ -206,7 +215,7 @@ test('the snapshot is the entity handed in; the key path is set or cleared on th
 
   assert.equal(r.snapshot, ssh, 'the same object, not a copy');
   assert.equal(ssh.sshKeyPath, undefined, 'the argument is never written to');
-  assert.equal(r.entity.sshKeyPath, KEY);
+  assert.equal(r.entity.sshKeyPath, writtenCallKey(stored));
   assert.equal(r.jump, 'jump.corp');
   assert.equal(r.target, 'prod.corp.com');
 
@@ -249,7 +258,7 @@ test('the Windows-client route: program word, key written, pin not translated, t
   assert.equal(r.options.program, '/mnt/c/Windows/System32/OpenSSH/ssh.exe');
   assert.equal(r.options.knownHostsFile, OUR_PIN);
   assert.deepEqual(w.translated, []);
-  assert.deepEqual(w.materialised, [KEY]);
+  writtenCallKey(w);
   assert.equal(r.platform, 'linux');
   assert.equal(w.warnings.length, 1);
   assert.match(w.warnings[0], /binds on WINDOWS/);
@@ -297,7 +306,7 @@ test('cleanup never deletes a known_hosts file outside our directory', async () 
 
   r.cleanup();
 
-  assert.deepEqual(w.forgotten, [KEY]);
+  assert.deepEqual(w.forgotten, [writtenCallKey(w)]);
 });
 
 test('the local window with no ssh client: the install offer carries the gate, nothing else happens', async () => {
@@ -342,7 +351,12 @@ test('T20: two isolated prepares of one SSH entry write four distinct files; cle
   ];
   assert.ok(files.every((f) => f !== undefined));
   assert.equal(new Set(files).size, 4, `four distinct files: ${files.join(', ')}`);
-  assert.match(first.materializedKeyPath as string, /\/k1-[0-9a-f-]{36}\.key$/);
+  assert.match(lastPart(first.materializedKeyPath as string), CALL_KEY_FILE);
+  assert.match(lastPart(second.materializedKeyPath as string), CALL_KEY_FILE);
+  assert.ok(
+    !(first.materializedKeyPath as string).includes(w.pinSuffixes[0] as string),
+    'the key name is not built from the suffix of the session',
+  );
   assert.match(first.options.knownHostsFile as string, /known_hosts-e1-[0-9a-f-]{36}$/);
   assert.notEqual(w.pinSuffixes[0], w.pinSuffixes[1]);
 
@@ -353,12 +367,37 @@ test('T20: two isolated prepares of one SSH entry write four distinct files; cle
   assert.equal(w.forgotten.length, 4);
 });
 
-test('T21: a non-isolated prepare writes today’s names', async () => {
+test('T21: a non-isolated prepare writes a call-named key and today’s pin name, and asks no suffix of the known_hosts writer', async () => {
   const w = world({ source: STORED, options: { knownHostsFile: OUR_PIN } });
 
   const r = ready(await w.seam.prepareSshSession('a1', entity(), base));
 
-  assert.equal(r.materializedKeyPath, KEY);
+  assert.equal(r.materializedKeyPath, writtenCallKey(w));
   assert.equal(r.options.knownHostsFile, OUR_PIN);
   assert.deepEqual(w.pinSuffixes, [undefined], 'no suffix asked of the known_hosts writer');
 });
+
+for (const [mode, extra] of [
+  ['non-isolated', {}],
+  ['isolated', { isolate: true }],
+] as const) {
+  test(`T-N17a (${mode}): the key file of a linked key entry has a call name, with no id and no name of that entry`, async () => {
+    const w = world({ source: LINKED_SOURCE, options: OPTIONS });
+
+    const r = ready(
+      await w.seam.prepareSshSession('a1', entity({ sshKeyEntityId: LINKED_KEY_ID }), {
+        storage: storageWith(E1_IN_FOLDER, FOLDER, LINKED_KEY_NODE),
+        storageDir: '/storage',
+        ...extra,
+      }),
+    );
+
+    assert.equal(w.materialised.length, 1, `one key file: ${w.materialised.join(', ')}`);
+    const written = w.materialised[0] as string;
+    assert.equal(r.materializedKeyPath, written);
+    assert.equal(r.entity.sshKeyPath, written);
+    const found = keyLeaks(written);
+    assert.deepEqual(found, [], `T-N17a (${mode}): the path of the key file holds ${found.join(' and ')}: ${written}`);
+    assert.match(lastPart(written), CALL_KEY_FILE);
+  });
+}

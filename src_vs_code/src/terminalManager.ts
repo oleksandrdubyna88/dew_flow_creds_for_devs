@@ -51,6 +51,7 @@ export function openSshTerminal(
   const existing = vscode.window.terminals.find(
     (t) => t.exitStatus === undefined && isSshTerminalOf(t, place.accountId, entity.id),
   );
+  // A reused terminal gets NO line: `openKeyTerminal` (sshConnect.ts) forgets the key file of such a call at once.
   if (existing) {
     existing.show();
     return existing;

@@ -91,15 +91,14 @@ test('the guard would notice — it finds the sanctioned join in the owning modu
 
 /**
  * The files that may name `materializePrivateKey` (the writer of a key file whose name is built from an id), and why. A key file of
- * an agent's call is written by `materializeCallKey`, whose name is random (rule C). A new caller of the writer needs a decision in
- * the plan, not a new name on this list.
+ * a call or of an SSH session (Connect, `creds_open_terminal`, the runs over SSH) is written by `materializeCallKey`, whose name is
+ * random (rule C). A new caller of the writer needs a decision in the plan, not a new name on this list.
  *
  * <p>What the scan does NOT find: a name that is built at run time (`mod['materialize' + …]`); a new call inside a file of this
  * list; and the other writers that name a file from an id through `materializedKeyPath` (`known_hosts-<id>`, `agent-script-<id>`).</p>
  */
 const WRITER_LIST: Readonly<Record<string, string>> = {
   'keyInstaller.ts': 'the writer itself, and `materializeCallKey`, which gives it a random name',
-  'sshSession.ts': "the person's Connect and the person's roads: the path goes into the person's terminal or a dialog, no agent reads it",
   'transportFactory.ts': "the deploy key of the vault's git sync: no action of an agent imports this module",
 };
 
@@ -137,8 +136,8 @@ test('only the written files name materializePrivateKey: a key file of a call is
   );
 });
 
-test('the scan of the writer would notice: the list is exactly three files, and the scan finds a call in each', () => {
-  assert.deepEqual(Object.keys(WRITER_LIST).sort(), ['keyInstaller.ts', 'sshSession.ts', 'transportFactory.ts']);
+test('the scan of the writer would notice: the list is exactly two files, and the scan finds a call in each', () => {
+  assert.deepEqual(Object.keys(WRITER_LIST).sort(), ['keyInstaller.ts', 'transportFactory.ts']);
 
   const sites = writerSites();
   for (const file of Object.keys(WRITER_LIST)) {

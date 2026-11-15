@@ -147,6 +147,11 @@ export class StubEventEmitter<T> {
 
   private readonly listeners: ((value: T) => void)[] = [];
 
+  /** How many listeners are registered now: a disposed one is no longer counted. */
+  get listenerCount(): number {
+    return this.listeners.length;
+  }
+
   readonly event = (listener: (value: T) => void): { dispose(): void } => {
     this.listeners.push(listener);
     return {
