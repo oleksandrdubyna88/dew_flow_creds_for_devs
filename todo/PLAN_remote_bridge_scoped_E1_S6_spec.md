@@ -970,6 +970,20 @@ What the run shows, and what it does not:
   - The password call asked askpass once, and the `sshd` logged a password attempt, in all three cases. It cannot log in, because a non-root `sshd` cannot check a password. That is a limit of the rig.
 - **Not done: the `%` check of the bridge's own entry.** That entry's key path cannot be read from here, so the check stays with the owner.
 
+**PW2 and PW3: run 2026-11-15 by the lead, the same rig and runtime, a fresh storage folder whose path holds a space.**
+
+| Probe | Environment asked | Result |
+|---|---|---|
+| PW2 A1 key, pinned | exactly the seven of Y1 | logs in |
+| PW2 A2 + C1 password, pinned, `-v` (a throwaway `id_ed25519` in the account profile's `.ssh`, removed after) | the seven + the three askpass names | logs in by `password` through `askpass.bat`; `Will attempt key:` names only the sentinel |
+| PW2 A4 first contact, unpinned | the seven | logs in; J1 in the journal; `bridges/known_hosts` absent before, one line after |
+| PW3 `cmd /d /c set` | the seven | the child holds `USERNAME`, `USERDOMAIN` and `LOGONSERVER` with the host's values (libuv) |
+| PW3 `cmd /d /c set` | the seven + `USERNAME`, `USERDOMAIN`, `LOGONSERVER` given as empty strings | the three are present and empty: libuv backfills only an absent name; `ssh -V` exits 0 |
+| PW3 A1, A2, A4 | the seven + the three empty (no default identity planted) | all three log in as in PW2 |
+
+PW3 is an observation for Q14 (the parent's §2.1), not a decision: giving the three identity names empty values would keep the account's
+name, domain and logon server out of `ssh.exe`, leaving `SYSTEMDRIVE` and `WINDIR` as the only values libuv adds.
+
 ## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
 
 *Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
@@ -1022,11 +1036,12 @@ export const BRIDGED_ENV_WINDOWS = ['PATH', 'SYSTEMROOT', 'USERPROFILE', 'HOMEDR
 export const BRIDGED_ENV_RUNTIME_ADDED_WINDOWS = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP',
   'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR'] as const;
 export const BRIDGED_ENV_EXTRA = ['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_SSH_PASSWORD', 'DISPLAY',
-  'PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE'] as const;
+  'PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'] as const;
 ```
 
 `TMP` and `COMSPEC` go only after PW2 passed; if PW2 fails a leg, the name that leg needs stays and §S6.13 says which run showed it. The module's
-doc comment and every comment that says *exactly* say **asked for**: no comment claims what a child receives or what a value holds. N2 becomes
+doc comment and every comment that says *exactly* say **asked for**: no comment claims what a child receives or what a value holds. That includes the module's doc comment, whose *no … `PGPASSFILE`* is false
+under Y6: it says instead that `PGPASSFILE` and `MYSQL_TEST_LOGIN_FILE` are asked for only as paths that never exist. N2 becomes
 *the keys are exactly the seven*. New **N6a**: a `win32` source that lacks `SYSTEMDRIVE` and `USERNAME` gives an answer with neither key (the
 module adds nothing; the runtime does). L9 and Q4 keep their words with *asked for*.
 
@@ -1034,7 +1049,9 @@ module adds nothing; the runtime does). L9 and Q4 keep their words with *asked f
 - **(b) 3:** the control's environment with `BRIDGE_TEST_SECRET` in it, under the **production** file: the remote `printenv` exits 1 with an
   empty stdout. (Until now the production leg showed nothing about `SendEnv`: the marker was not in the child at all.)
 - **(b) 4:** `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK` set in the harness; `/usr/bin/env` started with the environment and `cwd` that
-  `bridgedSpawn` answers, by the same spawn options as the production runner: the names it prints are exactly the asked ones.
+  `bridgedSpawn` answers, through the production spawner itself (`runBounded`, `sshExecRunner.ts:112`), not `spawnSync` or the harness's
+  `launch`: the names it prints are exactly the asked ones. PW1 and WN3 on `windows-latest` call `runBounded` too, so the runner's
+  pass-through is observed, not only the request.
 
 **Y3 — The client check and the floor. [C]** New `bridgedSshClient.ts`, pure, no `vscode`:
 
@@ -1087,9 +1104,13 @@ reaches the prompt with it. If it does not, (o) is reported *not measured* in §
 - **R11, a pin that does not parse.** A leg whose entry has a `hostKey` that is not empty after a trim and for which `parseHostKey` answers
   `undefined` is refused. Order in `refusalOf`: users, hosts, equal hosts, **R11**, hop credentials, R5, paths. So a password destination
   with such a pin hears R11, not R5. An empty `hostKey` is unpinned, as today.
-- **A doubled backslash.** `unsafeSshConfigValue` also refuses a value that holds `\\` or `\'`. It guards the values the **file** carries:
-  hop key paths, pin files, the sentinel, both known-hosts paths. A destination's typed key path goes to `-i` on the argv only, so
-  `bridgedKeyPathProblem` does not refuse it for this reason.
+- **A doubled backslash.** A new `unsafeBridgedFileValue(value)` in `bridgedSshConfig.ts` answers true when `unsafeSshConfigValue(value)` does
+  or the value holds `\\` or `\'`, and every value the **file** carries passes it: hop key paths (typed or materialised), pin files, the
+  sentinel, both known-hosts paths. `unsafeSshConfigValue` itself is unchanged, so `bridgedKeyPathProblem` (`bridgedSshConfig.ts:94-99`),
+  which calls it, still lets a destination's typed `-i \\fs\…` path through: that path goes to `-i` on the argv only. A hop's typed key path
+  goes into the file, so it meets both checks. *(The lead, 2026-11-15, from the Opus sort: the earlier text put the rule inside
+  `unsafeSshConfigValue`, which `bridgedKeyPathProblem` calls, so the two sentences contradicted each other.)* The person's own
+  `known_hosts` path is in the file too: a profile folder on a UNC path refuses every bridged call (the parent's cost list says so).
 - **R14, the storage folder.** When the path at fault is one this extension made (the keys folder, the call's own key file, a pin file, the
   sentinel, `bridges/known_hosts`), the sentence is R14: for `%` (today R10's *Choose a key file…*) and for every R6 reason. R10 stays for
   a typed path. R6's known-hosts sentence stays for the person's own `known_hosts` path.
@@ -1120,6 +1141,8 @@ reaches the prompt with it. If it does not, (o) is reported *not measured* in §
 is. Off a bridge the launch is byte for byte today's. **Q4a, Q4b:** the keys of the bridged spawn's environment hold the name, and off a bridge
 they do not. **Leg (m), added:** PD1's case as an assertion on the production launch's environment: no marker in the output of either client.
 **Leg (r):** PD2's fake server: the control sends the marker from `.pgpass`; the production launch sends no password message that holds it.
+**Row 9 (the sort, 2026-11-15):** after PD3 answered as expected, `psql` on a bridge also gets `PGSSLCERT` and `PGSSLKEY`, each a path from the
+same builder that nothing writes; leg (r) gains PD3's case: the control offers the rig home's `.postgresql` certificate, production none.
 
 **Y7 — Before the merge. [C]** PW2's table and the owner's `%` check (§S6.9) are in §S6.13 and in the PR. The parent's §7 M9 row gets what PW2 gave.
 
