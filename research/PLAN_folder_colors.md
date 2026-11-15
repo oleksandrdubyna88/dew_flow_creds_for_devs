@@ -1,5 +1,5 @@
 # PLAN — a folder has a colour, and its terminals wear it
-> Status: **IMPLEMENTED, 2026-11-12.** Scope: the extension only (`src_vs_code`): one node field, the folder row's icon,
+> Status: **IMPLEMENTED, 2026-11-12.** Released in extension 1.22.0 (#363; release PR #364), 2026-11-13. Scope: the extension only (`src_vs_code`): one node field, the folder row's icon,
 > the `Creds:` and `Creds SSH:` terminals' icon, and a colour picker in the folder form. Built in 2 epics on
 > `feat/folder-colors-e1` and `feat/folder-colors-e2`. Deviations: § 9. Ledger at promotion: epoch 1, one entry (1.1), no
 > stop. Approved by the coai plan gate 2026-11-12 (proceed, 2 of 2 reviewers, 6 findings accepted).

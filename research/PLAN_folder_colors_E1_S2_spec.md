@@ -1,6 +1,6 @@
 # PLAN — folder colours, E1.S2 spec: the allocator (cornerstone)
 
-> Status: **IMPLEMENTED, 2026-11-12.** The cornerstone spec of story E1.S2, by Fable: `ensureFolderColor` as a function
+> Status: **IMPLEMENTED, 2026-11-12.** Released in extension 1.22.0 (#363; release PR #364), 2026-11-13. The cornerstone spec of story E1.S2, by Fable: `ensureFolderColor` as a function
 > patch inside the cross-window lease. Deviations: the end of this file, and § 9 of the parent.
 > Parent: [PLAN_folder_colors.md](PLAN_folder_colors.md) (§3.2 as rewritten by ledger entry 1.1, §6.1, `## Epics`).
 > Stories document: [PLAN_folder_colors_E1.md](PLAN_folder_colors_E1.md) (section *E1.S2*, decision D2 of S3).
