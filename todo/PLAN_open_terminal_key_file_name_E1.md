@@ -1,6 +1,6 @@
 # PLAN — N17, epic E1: the stories
 
-> Status: **E1.S1 built (`3099f5a5`, `895e345b`), E1.S2 specified, not built; 2026-11-15.** The stories document of
+> Status: **E1.S1 built (`3099f5a5`, `895e345b`), E1.S2 built (`6c12b6d0`, `8b854bcd`, documents in the commit after); 2026-11-15.** The stories document of
 > epic E1 of [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md) (see its `## Epics`). This
 > document keeps no change ledger: a change of it is an entry in the parent.
 
@@ -20,8 +20,9 @@ brief are in its spec.
 
 - **Kind.** Security work outside the cornerstone quota: spec by Fable, code by Sonnet, review by Opus.
 - **Spec.** [PLAN_open_terminal_key_file_name_E1_S2_spec.md](PLAN_open_terminal_key_file_name_E1_S2_spec.md).
+- **State.** Built at `6c12b6d0` (the three tests of the world and its repairs W6-W9), `8b854bcd` (G1-G4, the fix in `openKeyTerminal`, the comment in `terminalManager.ts`, the mutation checks M7-M18) and the documents commit after them; awaits the Opus code review.
 - **Depends on.** E1.S1; built forward on the same branch.
 - **What.** The repairs of the test world with FX-D, FX-L and T-N17d watched RED; G1 rewritten, G2 and G3 watched RED,
-  G4 and the extended T-N17c as guards; the fix in `openKeyTerminal` (`sshConnect.ts`); the mutation checks M7 to M17;
+  G4 and the extended T-N17c as guards; the fix in `openKeyTerminal` (`sshConnect.ts`); the mutation checks M7 to M18;
   the documents of the parent's §4.
 - **Merge condition.** E1.S1 is not merged or released without E1.S2 (the parent's §8).

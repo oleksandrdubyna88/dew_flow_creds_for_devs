@@ -1,6 +1,6 @@
 # PLAN — E1.S2 spec: a Connect that reuses a live terminal leaves no key file (SECURITY)
 
-> Status: **spec only, nothing built, 2026-11-15.** Security spec, written by Fable before its code (the row *Security
+> Status: **built, 2026-11-15** (`6c12b6d0` the world and its three tests, `8b854bcd` the tests of the product, the fix and the mutation checks; the documents in the commit after; not merged, awaits the Opus code review). Security spec, written by Fable before its code (the row *Security
 > judgement* of `subagent-models.md`; not a cornerstone: the plan's quota is 1 and E1.S1 holds it). Story E1.S2 of
 > [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md) (its §2.2, §2.3, §3 items 9 to 14, §4, `## Epics` E1).
 > The parent is stopped for its re-review: no code of this story is written before epoch 2 is approved (the parent's §8).

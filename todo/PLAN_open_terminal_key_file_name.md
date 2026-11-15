@@ -1,7 +1,7 @@
 # PLAN — the key file of a terminal is named `call-<uuid>.key`, and a terminal keeps one key file (N17)
 
-> Status: **in progress, epoch 2, 2026-11-15** (stopped at entry 1.2, re-reviewed, resumed). E1.S1 is built at `895e345b`, unmerged. This text is the plan as
-> revised for epoch 2 on 2026-11-15 (the re-review record below); epoch 2 is approved, and E1.S2 is not built yet.
+> Status: **in progress, epoch 2, 2026-11-15** (stopped at entry 1.2, re-reviewed, resumed). E1.S1 is built at `895e345b` and E1.S2 at `6c12b6d0` (the world) and `8b854bcd` (the fix), unmerged. This text is the plan as
+> revised for epoch 2 on 2026-11-15 (the re-review record below); epoch 2 is approved, and both stories are built on the branch.
 > Scope: the extension only (`src_vs_code/src`): the name of the key file that `prepareSshSession` (`sshSession.ts`) writes
 > (built), the key file of a Connect that reuses a live terminal (`openKeyTerminal`, `sshConnect.ts`), their tests and the
 > test world, the scan of `keysDirPaths.test.ts`, the docs. Found as N17 of
