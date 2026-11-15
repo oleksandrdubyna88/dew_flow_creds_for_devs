@@ -1,9 +1,8 @@
 # PLAN — E1.S2 spec: a Connect that reuses a live terminal leaves no key file (SECURITY)
 
-> Status: **built, 2026-11-15** (`6c12b6d0` the world and its three tests, `8b854bcd` the tests of the product, the fix and the mutation checks; the documents in the commit after; not merged, awaits the Opus code review). Security spec, written by Fable before its code (the row *Security
+> Status: **IMPLEMENTED, 2026-11-15** (`6c12b6d0` the world and its three tests, `8b854bcd` the tests of the product, the fix and the mutation checks, `1e96559d` the documents; change 2.1 in `e7df2d24`; extension 1.22.1, #366). Security spec, written by Fable before its code (the row *Security
 > judgement* of `subagent-models.md`; not a cornerstone: the plan's quota is 1 and E1.S1 holds it). Story E1.S2 of
 > [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md) (its §2.2, §2.3, §3 items 9 to 14, §4, `## Epics` E1).
-> The parent is stopped for its re-review: no code of this story is written before epoch 2 is approved (the parent's §8).
 > This file is promoted together with the parent.
 >
 > Scope: `src_vs_code/src` — `sshConnect.ts` (`openKeyTerminal`: one snapshot, one condition, its docblock), one comment in
@@ -432,18 +431,17 @@ text, go on.
 
 ## 9. Done when (each item can be counted)
 
-The boxes are ticked at the promotion, after the PR merges.
 
-- [ ] **The world first.** In state 1, 3 tests fail (FX-D, FX-L, T-N17d), each by its assertion, 0 compile errors. After step 2,
+- [x] **The world first.** In state 1, 3 tests fail (FX-D, FX-L, T-N17d), each by its assertion, 0 compile errors. After step 2,
       `typecheck` exits 0 and `npm test` shows 0 failed tests, with no older test edited.
-- [ ] **RED.** In state 3, 3 tests fail (G1, G2, G3), each by its assertion; G4 and T-N17c pass. The texts are saved.
-- [ ] **GREEN.** After the fix all pass. `npm test`, `npm run typecheck` and `npm run lint` are clean, with no new
+- [x] **RED.** In state 3, 3 tests fail (G1, G2, G3), each by its assertion; G4 and T-N17c pass. The texts are saved.
+- [x] **GREEN.** After the fix all pass. `npm test`, `npm run typecheck` and `npm run lint` are clean, with no new
       `eslint-disable`.
-- [ ] **One place.** `git diff 3e8270c1 -- src_vs_code/src ':!src_vs_code/src/test'` shows `sshConnect.ts` (`openKeyTerminal`
+- [x] **One place.** `git diff 3e8270c1 -- src_vs_code/src ':!src_vs_code/src/test'` shows `sshConnect.ts` (`openKeyTerminal`
       only) and one comment line in `terminalManager.ts`, and no other file.
-- [ ] **The 11 mutations** each turned its named tests red, and each was restored.
-- [ ] **No other file.** The files of *Files with no change* have no difference against `3e8270c1`.
-- [ ] **The documents** of §7 are in c5; the CHANGELOG no longer says that a key file is left.
+- [x] **The 11 mutations** each turned its named tests red, and each was restored.
+- [x] **No other file.** The files of *Files with no change* have no difference against `3e8270c1`.
+- [x] **The documents** of §7 are in c5; the CHANGELOG no longer says that a key file is left.
 
 ## 10. Break it — ways to make the tests pass while the defect stays, and the row that stops each one
 

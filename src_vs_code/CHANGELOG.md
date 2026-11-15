@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.1] — 2026-11-15 — Security — the key file of a terminal holds no id, and a terminal keeps one
+
 ### Changed — security: the key file of a terminal
 
 The key file that *Connect via SSH*, an agent's `creds_open_terminal` and the runs over SSH write for a stored key is now named

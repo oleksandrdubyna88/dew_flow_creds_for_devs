@@ -1,6 +1,6 @@
 # PLAN — N17, epic E1: the stories
 
-> Status: **E1.S1 built (`3099f5a5`, `895e345b`), E1.S2 built (`6c12b6d0`, `8b854bcd`, documents in the commit after), change 2.1 built (the commit after `ddc61d63`); 2026-11-15.** The stories document of
+> Status: **IMPLEMENTED, 2026-11-15** (extension 1.22.1, #366). The stories document of
 > epic E1 of [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md) (see its `## Epics`). This
 > document keeps no change ledger: a change of it is an entry in the parent.
 

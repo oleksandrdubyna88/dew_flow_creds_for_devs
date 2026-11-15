@@ -561,7 +561,9 @@ keys folder: the folder of the window when it starts and ends, and the folder of
   types `ssh -i "<path>"` into a VS Code terminal (`sshCommand.ts:232-233`). The answer to the agent is `opened` or one
   fixed sentence (§4.3), but an agent in the same window with a tool that reads the terminal could read the id of a
   linked key entry that it may not view. Not built here (§8: the person's roads keep their names); a question for the
-  owner. Found by the lead's Opus code review on 2026-11-12, by reading; not run.
+  owner. Found by the lead's Opus code review on 2026-11-12, by reading; not run. **Fixed in extension 1.22.1** (#366,
+  2026-11-15) by [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md): every road of
+  `prepareSshSession` writes a stored key as `call-<uuid>.key` (a key given as a path is used where it is), and a Connect that reuses a live terminal forgets its key at once.
 
 ## 14. Questions for the owner
 
