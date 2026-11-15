@@ -432,6 +432,8 @@ text, go on.
 
 ## 9. Done when (each item can be counted)
 
+The boxes are ticked at the promotion, after the PR merges.
+
 - [ ] **The world first.** In state 1, 3 tests fail (FX-D, FX-L, T-N17d), each by its assertion, 0 compile errors. After step 2,
       `typecheck` exits 0 and `npm test` shows 0 failed tests, with no older test edited.
 - [ ] **RED.** In state 3, 3 tests fail (G1, G2, G3), each by its assertion; G4 and T-N17c pass. The texts are saved.
@@ -495,7 +497,7 @@ Nothing below is decided in this spec against the parent. Each note says what th
 6. **The call of the agent's action is `sshUseActions.ts:382`**, not `:377` as the parent's first text said; the parent is
    corrected.
 7. **The S1 spec stays as the record of what E1.S1 built.** Its G1 and its list *Files with no change* are replaced here (the
-   paragraph under the status line). Its status line still says "spec only, nothing built"; the code is at `3099f5a5`.
+   paragraph under the status line). Its status line says "built"; the code is at `3099f5a5`.
 8. **PR #365 changes the three documents of §7** (K13). Whichever of the two merges second takes `main` in by a merge and
    resolves the documents by hand.
 9. **M16 edits the shared stand-in** `test/vscodeStub.ts` for one run. Restore it before any other suite is trusted.

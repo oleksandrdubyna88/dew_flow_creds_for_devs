@@ -13,8 +13,8 @@ The key file that *Connect via SSH*, an agent's `creds_open_terminal` and the ru
 a linked key entry, also to an agent that can read the terminal and may not view that entry. The file is deleted as before: when its
 terminal closes or its run ends. Two terminals of one entry have two files, and each terminal deletes its own. A second *Connect via
 SSH*, or a second `creds_open_terminal` of an agent, while the entry's terminal is still open brings that terminal forward and types
-nothing; the key file written for that call is deleted at once. So an open terminal keeps exactly one key file, however often it is
-asked for.
+nothing; the key file written for that call is deleted at once. So an open terminal keeps at most one key file (the one its own line names), however often it
+is asked for.
 
 ## [1.22.0] — 2026-11-13 — A folder has a colour, and its terminals wear it
 

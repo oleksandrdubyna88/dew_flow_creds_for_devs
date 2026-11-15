@@ -269,6 +269,11 @@ steps, the texts measured on a copy of the compiled branch, and the order.
 - F2: no longer a follow-up. It is E1.S2 of this plan (§2.2), and it does not go into the N16 plan.
 - F3 (a candidate, from the E1.S1 spec): after E1.S1 nothing in the product reads `keyEntityId` of a stored-key
   source (`sshCredential.ts:27`, `:86`). Not removed here.
+- F4 (a note, from the code round of epoch 2; the finding was rejected, so it is no entry): a key write that fails
+  part-way leaves a partial key file that no caller knows, under a new random name on each retry, until the purge. The
+  same holds for every agent call since 1.21.4 (`sshExecAuth.ts:161`). The cure is in the writer (`materializePrivateKey`
+  removes its own file on failure), which the open PR #365 adds as `withoutPartialKey`. If #365 does not land, port that
+  change on its own.
 
 ## 7. Definition of Done
 

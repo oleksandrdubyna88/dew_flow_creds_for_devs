@@ -261,7 +261,7 @@ without; `connectEntity` never sets `isolate` and keeps the pin name `known_host
 The key file of a **Connect** is owned by `openKeyTerminal` (`sshConnect.ts`). It forgets the file when its terminal closes, at
 once when no terminal opened, and at once when `openSshTerminal` gave back a terminal that was in the window before the call (a
 reused live terminal of the entry: it types nothing, so no line names the new file and no `ssh` reads it). The file named by the
-reused terminal’s own line stays until that terminal closes. So an open Connect terminal holds one key file and one close listener,
+reused terminal’s own line stays until that terminal closes. So an open Connect terminal holds at most one key file (the one its own line names) and one close listener,
 however often it is asked for; the file of a reused call exists for a moment, between prepare and the open half.
 
 A **pinned host key survives** the WSL route: `UserKnownHostsFile` has no mode requirement, so the
