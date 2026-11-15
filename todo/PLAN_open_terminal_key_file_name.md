@@ -1,7 +1,7 @@
 # PLAN — the key file of a terminal is named `call-<uuid>.key`, and a terminal keeps one key file (N17)
 
-> Status: **stopped for re-review, 2026-11-15** (entry 1.2). E1.S1 is built at `895e345b`, unmerged. This text is the plan as
-> revised for epoch 2 on 2026-11-15 (the re-review record below); epoch 2 is not approved, and E1.S2 is not built.
+> Status: **in progress, epoch 2, 2026-11-15** (stopped at entry 1.2, re-reviewed, resumed). E1.S1 is built at `895e345b`, unmerged. This text is the plan as
+> revised for epoch 2 on 2026-11-15 (the re-review record below); epoch 2 is approved, and E1.S2 is not built yet.
 > Scope: the extension only (`src_vs_code/src`): the name of the key file that `prepareSshSession` (`sshSession.ts`) writes
 > (built), the key file of a Connect that reuses a live terminal (`openKeyTerminal`, `sshConnect.ts`), their tests and the
 > test world, the scan of `keysDirPaths.test.ts`, the docs. Found as N17 of
@@ -11,7 +11,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-15 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-15 · by reviewers · state: closed
 
 - 1.1 · 2026-11-15 · reviewer · approach — Fable's spec found that the real `openSshTerminal` reuses a live terminal
   of the entry and types nothing (`terminalManager.ts:51-57`): after the fix each extra Connect of a live session writes
@@ -40,7 +40,11 @@ Narrowed: no — the scope grows by one story (E1.S2, no key file left by a Conn
   window's terminals taken directly before the synchronous open. The question consultants, `576f2936`, both: F2 is a
   second story of the SAME epic, built forward on the same branch, then one code round over the whole diff of E1. The
   whole plan below is revised against that; what the revision changes is the baseline of epoch 2 and is no entry. An
-  Opus judge fills the verdicts of the table. The line of epoch 2 is written when the revised plan is approved.)
+  Opus judge filled the verdicts of the table. The revised plan passed the document review (interim path, 2 findings
+  accepted: the stories document and the projected size) and the lead's Opus review (approve, 6 low findings folded
+  into the E1.S2 spec).)
+
+> Epoch 2 · approved 2026-11-15 · by reviewers · state: open
 
 ## 1. Symptom
 
@@ -144,6 +148,11 @@ names it was found on the Connect road only.
 A window has at most one live Connect terminal per entry of an account, plus terminals that have ended and are not
 closed yet; each holds one file. No call of an agent adds to this once the entry's terminal is live.
 
+**Projected size.** A key file is the private key itself: about 0.4 kB for ed25519, about 3.3 kB for RSA 4096. A
+heavy window, 30 open Connect terminals of stored-key entries plus 10 that have ended and are not closed, holds 40
+files, at most 40 × 3.3 kB ≈ 132 kB, and 40 listeners. The count is bounded by the terminals the person keeps open;
+repeated Connects and agent calls on a live terminal add nothing. Before E1.S2 each such call added one file.
+
 ### 2.4 What does not change
 
 `keyInstaller.ts`, `materializedKeys.ts`, `sshRoad.ts`, `dependencyRunHost.ts`, any purge, and the code of
@@ -237,7 +246,7 @@ steps, the texts measured on a copy of the compiled branch, and the order.
   that the runner prints), and what the tests do not prove (a real VS Code window).
 - The parent plan's §13 N17 line gets "fixed in <version>, PLAN_open_terminal_key_file_name.md" at promotion (a
   research document; appended, not rewritten).
-- `todo/README.md`: a row for this plan and one for each spec; removed at promotion.
+- `todo/README.md`: a row for this plan, its stories document and each spec; removed at promotion.
 
 ## 5. Out of scope
 
@@ -276,7 +285,7 @@ steps, the texts measured on a copy of the compiled branch, and the order.
       CodeRabbit.
 - [ ] CHANGELOG and research docs say what ships, in the same PR.
 - [ ] `plan-lifecycle.mjs` is clean; the summary names the epoch, the count and what was cut.
-- [ ] Released after the owner's word; this plan and its two specs promoted to `research/` together.
+- [ ] Released after the owner's word; this plan, its stories document and its two specs promoted to `research/` together.
 
 ## 8. Build order and merge conditions
 
@@ -302,8 +311,8 @@ for one change in one function (`keyFile`, `sshSession.ts`), so a split would le
 That still holds for E1.S1. The re-review adds E1.S2 to the SAME epic (the question consultants, `576f2936`, both):
 it has the same goal (what Connect leaves on disk and in a terminal for a stored key), the same branch and the same
 PR, and it is not a part of E1.S1 cut off: E1.S1 is green alone, and E1.S2 is a second change in a second function
-(`openKeyTerminal`, `sshConnect.ts`) with tests of its own. The stories are here, not in a stories document, as for a
-plan this size. Fable wrote this split and its revision (a security judgement). One epic gives a cornerstone quota of
+(`openKeyTerminal`, `sshConnect.ts`) with tests of its own. The stories are in the stories document [PLAN_open_terminal_key_file_name_E1.md](PLAN_open_terminal_key_file_name_E1.md)
+(the document review of the re-review, 2026-11-15). Fable wrote this split and its revision (a security judgement). One epic gives a cornerstone quota of
 1; E1.S1 holds it. E1.S2 is security work with a spec by Fable (the row *Security judgement* of
 `subagent-models.md`, outside the quota) and is no second cornerstone.
 
@@ -324,17 +333,7 @@ Cornerstones: 1 of 1 — E1.S1 (spec: [PLAN_open_terminal_key_file_name_E1_S1_sp
   either a decrypted key that stays on disk with no reader, once per call, or a key deleted while the line that names
   it has just been typed.
 
-**Stories.**
-
-- **E1.S1 · The call name on every road of `prepareSshSession`** (cornerstone: security; spec by Fable, code by
-  Sonnet, review by Opus). Built at `3099f5a5` and `895e345b`. The scan with its list of two, the new member and the
-  real-terminal switch of the test world, T-N17a, T-N17b and T-N17c watched RED, T20 and T21, the literal assertions,
-  the fix in `sshSession.ts`, the mutation checks M1 to M6, and the documents of §4. The spec is the file linked in
-  the ledger line above.
-- **E1.S2 · A Connect that reuses a live terminal leaves no key file** (security; spec by Fable, code by Sonnet,
-  review by Opus; not a cornerstone). Depends on E1.S1. The repairs of the test world with FX-D, FX-L and T-N17d
-  watched RED; G1 rewritten, G2 and G3 watched RED, G4 and the extended T-N17c as guards; the fix in `openKeyTerminal`
-  (`sshConnect.ts`); the mutation checks M7 to M17; the documents of §4. Spec:
-  [PLAN_open_terminal_key_file_name_E1_S2_spec.md](PLAN_open_terminal_key_file_name_E1_S2_spec.md), by Fable, 2026-11-15.
+**Stories.** [PLAN_open_terminal_key_file_name_E1.md](PLAN_open_terminal_key_file_name_E1.md): E1.S1 (cornerstone, built) and E1.S2 (security,
+not built).
 
 END OF PLAN

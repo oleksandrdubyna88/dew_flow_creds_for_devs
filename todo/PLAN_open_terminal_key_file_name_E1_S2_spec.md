@@ -31,7 +31,7 @@ in four places, so that the tests of this story, and three mutations that are gr
 ## Binding constraints
 
 - **No plan change.** Build what the parent and this document say. If a step cannot be done as written, or a test shows something
-  that this document does not say: stop and tell the lead. Do not repair the parent.
+  that this document does not say: stop and tell the lead. Do not repair the parent (its status paragraph excepted: c5 updates it).
 - **A RED proof is a failed assertion, never a compile error.** `npm test` runs `tsc` first. Read the exit of `tsc` before any
   test result. This is why the three tests of step 1 use only members that the world has today, and why the world gets its new
   members (step 2) before the tests of step 3 name them.
@@ -375,7 +375,10 @@ set.)
 
 Each mutation must compile (`tsc`; lint is not asked of a mutation): a red by a compile error proves nothing. After each one,
 restore the file and see that `git status --short` shows only the changes of the story. Record the red tests of each mutation.
-The lists are those of K12 (f); a difference goes to the lead.
+The lists are those of K12 (f); a difference goes to the lead. Judge each mutation on the six suites that load `sshConnectWorld.ts`
+(`sshConnectKeyName`, `sshConnect`, `sshConnectRemote`, `sshSession`, `keysDirPaths`, `terminalManager`) plus `npm test` once:
+for M16, which edits the shared `test/vscodeStub.ts`, reds in suites that do not load `sshConnectWorld.ts` are recorded, not a
+difference.
 
 | # | The change, exact | Must go red |
 |---|---|---|
@@ -390,6 +393,7 @@ The lists are those of K12 (f); a difference goes to the lead.
 | M15 | Reuse judged by an earlier terminal of the entry, an ended one too: `before.has(terminal)` becomes `[...before].some((t) => isSshTerminalOf(t, place.accountId, ready.entity.id))` | T-N17c (the key of the terminal that replaced an ended one is forgotten), and no other |
 | M16 | The world's `dispose` a no-op again: in `test/vscodeStub.ts:156`, `this.listeners.splice(at, 1);` becomes `void at;` | FX-L, G1, G2, G3, G4, T-N17c |
 | M17 | The old writer back (M1 of the S1 spec) | T-N17d, at its assertion 4 (`the dialog holds hid-key-8f3k2`); and the tests of M1 |
+| M18 | The reuse branch of `openSshTerminal` (`terminalManager.ts:54-57`) also types the line (`existing.sendText(\`${prefix}${command}\`, true)` before `return existing`): the coupling the fix rests on | G1, G2, G3 (the lead's Opus review of the revised plan, 2026-11-15). Better still: a helper used after each Connect in G1-G4 and T-N17c asserts that no path in `forgotten` follows `-i` in a line of a terminal that is not closed |
 
 ## 7. Step 6 — the documents (the parent's §4)
 
@@ -424,7 +428,7 @@ text, go on.
 | c3 | steps 1 and 2: the three tests and W6 to W9 | green; `typecheck` clean; no older test changed | `test(ssh): N17 — the world's key writer uses its folder, its close event disposes, its failed write names the file` — its body quotes the three RED texts and says that no older test changed colour |
 | state 3 (RED, not committed) | step 3: G1 rewritten, G2, G3, G4, T-N17c extended | 3 red (G1, G2, G3), no other | — |
 | c4 | steps 3 to 5: the tests, the fix, the comment in `terminalManager.ts`, the results of M7 to M17 | green | `fix(ssh): N17 — a Connect that reuses a live terminal forgets its key file at once` — its body quotes the three RED texts, the pass, and the red tests of each mutation |
-| c5 | step 6: the documents | green | `docs(ssh): N17 — one key file per terminal: the CHANGELOG and the module documents` |
+| c5 | step 6: the documents, and the status lines (the parent's status paragraph, the status and E1.S2 **State** of `PLAN_open_terminal_key_file_name_E1.md`, this spec's status, the README rows) | green | `docs(ssh): N17 — one key file per terminal: the CHANGELOG and the module documents` |
 
 ## 9. Done when (each item can be counted)
 
