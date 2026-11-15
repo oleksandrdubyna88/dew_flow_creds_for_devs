@@ -1,6 +1,6 @@
 # PLAN — E1.6 spec: SSH execution containment — what each leg of a bridged `ssh` offers, and to whom
 
-> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged.**
+> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward, built on this PR once that epoch opens.**
 > **Revised the same day after two reviews of `a30faed7` (an Opus judge and a Fable security judge):** the user rule, the host rule and the
 > equal `Host` words, first contact that cannot be written, the `%` rule, the pin line's spelling, and the tests and mutations for them. The
 > decisions of that day are in §S6.10.
@@ -151,7 +151,7 @@ export function bridgedSshEnv(source: NodeJS.ProcessEnv, platform: NodeJS.Platfo
 ```
 
 Rules: `source` is never spread. On `win32` a listed name is found in `source` in any letter case and written under the list's spelling. A
-name that `source` does not hold is left out, not written as `undefined`. Tests N1-N6. M9 may make the Windows list shorter (§S6.9).
+name that `source` does not hold is left out, not written as `undefined`. Tests N1-N6. M9 may make the Windows list shorter (§S6.9). *For the Windows list and `BRIDGED_ENV_EXTRA`, §S6.14 Y1 supersedes this block.*
 
 **B5 — The files of one call.** New `bridgedSshCall.ts` (it imports `./keyInstaller`, so tests load it with the `vscode` stub).
 
@@ -719,6 +719,9 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
 4. **The stories document** (`todo/PLAN_remote_bridge_scoped_E1.md:524`, `:571-572`): legs (a)-(i), and the bridged half of §4.11 (P7).
 5. **Stale line numbers of §4.11:** `agentUseActions.ts:342`, `:369`, `:372` are `:602`, `:629`, `:628` on this tree (H11).
 
+**Disposed on 2026-11-15 by the parent's revision for epoch 10** (its §4.9, the table *What was owed to this review, disposed*): the FIDO-PIN risk and
+items 1-6 below. What is built for each is §S6.14. The two lists stay here as the record of what was owed.
+
 **Owed to the next stop of the plan.** The FIDO-PIN risk of §S6.9, with its text there: at the next whole-plan review, and in any case before
 any real-token measurement or any switch-on owner build (E2.4) and before E4.1's flip; if no stop comes earlier, the lead schedules that review
 explicitly. X10 is its evidence. The same review can weigh `IdentityFile none` against the sentinel (P3).
@@ -966,3 +969,189 @@ What the run shows, and what it does not:
   - With `PATH` and `HOME`, the key call logs in, and also with either one alone.
   - The password call asked askpass once, and the `sshd` logged a password attempt, in all three cases. It cannot log in, because a non-root `sshd` cannot check a password. That is a limit of the rig.
 - **Not done: the `%` check of the bridge's own entry.** That entry's key path cannot be read from here, so the check stays with the owner.
+
+## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
+
+*Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
+before epoch 10 opens and the sort has marked E1.6.* The parent's text it builds from: §4.9 (the Environment row, *The client check, and the
+floor*, the table *What was owed to this review, disposed*, the cost list), §4.11, §5 step 3d, §7 (legs (b), (o)-(r), the M9 row, the probe
+table), §8, §9, §2.1 Q12-Q14. **[C]** and **[S]** mean what they mean above.
+
+**Why.** The spec treated what it hands to `ssh` as proof of what `ssh` does. M9 found the list that no `ssh.exe` starts under (9.2) and the
+names libuv adds (9.3). `-J none`, a pin that does not parse, `.mylogin.cnf` and the FIDO PIN have the same shape. So every item below has two
+tests: one pins the request, one observes the child or the receiver.
+
+**Supersedes.** B4's Windows list and `BRIDGED_ENV_EXTRA`; §S6.3 *The environment*; N2; the words *builds nothing against it* of §S6.9's FIDO
+bullet; R6's keys-folder sentence. Everything else of §S6.2-§S6.7 stands. Q12-Q14 wait for the owner: if an answer differs from the default,
+the lead says which of Y3-Y5 changes before the coder starts.
+
+**The order. [C]** Probes first, each in a commit that adds only the probe and is watched on CI (PW2: run by the lead) before the code that
+depends on it. Then the RED tests of Y1-Y6. Then the code. A probe that answers against the parent's probe table stops the work and goes to the lead.
+
+**Y0 — The probes (parent §7, the probe table).**
+- **PV1. [C]** `ci-extension.yml` runs `npm run itest:bridged-ssh` on `ubuntu-22.04` and `ubuntu-24.04` too, with the same `sshd` install step.
+  The harness prints `ssh -V` as its first line. [S] One small matrix job beside `build-test`; legs (i) and (n) run there as on `ubuntu-latest`.
+- **PW1. [C]** New `test/bridgedEnvWindows.test.ts`, run by the `runner-windows` job in a step of its own. Off `win32` every case is skipped by
+  name. On `win32`, with `spawnSync`, `shell: false`, `windowsHide: true`, and `env` = `bridgedSshEnv(process.env, 'win32')`:
+
+  | # | Scenario | Observation |
+  |---|---|---|
+  | WN1 | `%SystemRoot%\System32\OpenSSH\ssh.exe -V` | exit 0; stderr starts with `OpenSSH_for_Windows_`; the test prints that line and `process.version` |
+  | WN2 | the same with `PROGRAMDATA` taken out of the object | recorded, not asserted: the exit code and both streams are printed |
+  | WN3 | `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK` set in the test process; the child is `process.execPath -e` printing the names of its environment | neither name is printed, in any letter case; every printed name is in `BRIDGED_ENV_WINDOWS` or `BRIDGED_ENV_RUNTIME_ADDED_WINDOWS`; the list is printed |
+  | WN4 | for each of `psql`, `mysql`, `sqlcmd` found on `PATH`: its version flag | exit 0; a client that is not found is a skip named *not measured*, never a pass |
+- **PW2.** The lead's M9 driver on the owner's Windows host: legs A1, A2, A4 and C1 of §S6.13 with exactly the seven names of Y1. Its table goes
+  into §S6.13 before `BRIDGED_ENV_WINDOWS` changes.
+- **PD1. [C]** In `scripts/bridged-mysql-itest.cjs`, a record leg: `mysql_config_editor` writes a login file under the rig home with
+  `--login-path=client --host=<marker>`; then `--no-defaults --verbose --help` of each client under that home, with and without
+  `MYSQL_TEST_LOGIN_FILE` at a path that does not exist. The leg prints whether the marker stands in each output. [S] If the CI image has no
+  `mysql_config_editor`, the leg fails and names the package.
+- **PD2. [C]** A record leg (new `scripts/bridged-psql-itest.cjs`, or a leg of the mysql harness: [S]): a fake server that answers a start-up
+  message with a request for a clear-text password, records the password message and closes; `psql` under a rig home whose `.pgpass` holds a
+  marker for that host and port, with no `PGPASSWORD`, once with no `PGPASSFILE` and once with it at a path that does not exist.
+- **PF1.** The control of leg (o) (Y4), on each image of PV1.
+
+**Y1 — The environment asked for. [C]** In `bridgedSshEnv.ts`:
+
+```ts
+export const BRIDGED_ENV_WINDOWS = ['PATH', 'SYSTEMROOT', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'TEMP', 'PROGRAMDATA'] as const;
+/** What Node's libuv writes into every Windows child whose block lacks it. This module never writes one: the list is for the tests and the documents. */
+export const BRIDGED_ENV_RUNTIME_ADDED_WINDOWS = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP',
+  'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR'] as const;
+export const BRIDGED_ENV_EXTRA = ['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_SSH_PASSWORD', 'DISPLAY',
+  'PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE'] as const;
+```
+
+`TMP` and `COMSPEC` go only after PW2 passed; if PW2 fails a leg, the name that leg needs stays and §S6.13 says which run showed it. The module's
+doc comment and every comment that says *exactly* say **asked for**: no comment claims what a child receives or what a value holds. N2 becomes
+*the keys are exactly the seven*. New **N6a**: a `win32` source that lacks `SYSTEMDRIVE` and `USERNAME` gives an answer with neither key (the
+module adds nothing; the runtime does). L9 and Q4 keep their words with *asked for*.
+
+**Y2 — The environment received. [C]** In `scripts/bridged-ssh-itest.cjs`, leg (b) gains two legs:
+- **(b) 3:** the control's environment with `BRIDGE_TEST_SECRET` in it, under the **production** file: the remote `printenv` exits 1 with an
+  empty stdout. (Until now the production leg showed nothing about `SendEnv`: the marker was not in the child at all.)
+- **(b) 4:** `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK` set in the harness; `/usr/bin/env` started with the environment and `cwd` that
+  `bridgedSpawn` answers, by the same spawn options as the production runner: the names it prints are exactly the asked ones.
+
+**Y3 — The client check and the floor. [C]** New `bridgedSshClient.ts`, pure, no `vscode`:
+
+```ts
+export const BRIDGED_SSH_FLOOR = { other: [8, 9], win32: [9, 5] } as const;
+export type ClientVerdict = { ok: true; version: string } | { ok: false; sentence: string };
+/** Reads what `ssh -V` answered. `ssh` prints its version on stderr. */
+export function clientVerdict(exit: number | null, stdout: string, stderr: string, platform: NodeJS.Platform): ClientVerdict;
+```
+
+- The version token is the first match of `OpenSSH_(for_Windows_)?(\d+)\.(\d+)` in stderr, then stdout. Major and minor are compared as
+  numbers. On `win32` the token must be the `for_Windows_` one.
+- `ok: false` with **R12** when the exit is not 0 or there is no token; with **R13** when the version is below the floor or, on `win32`, the
+  build is another one.
+- **Where. [C]** On the bridged branch of `execOverSsh`, after pass 1's refusals and before any file of the call is written. So a refused
+  entry still spends no spawn, and R1-R11 are said before R12 and R13. The spawn is `ssh -V` with the program of `sshSpawnLaunch`, the
+  environment `bridgedSshEnv(process.env, process.platform)`, `cwd` at a fresh call folder that holds nothing and is removed afterwards, a 10 s
+  timeout that kills the tree. A good verdict is kept for the life of the dependencies object; a bad one is not kept. [S] The seam is a dep,
+  `SshUseDeps.bridgedClient`, as `bridgedSshConfig` is; a bridged call with no such dep is refused (R8's road).
+- **Tests.** `test/bridgedSshClient.test.ts`:
+
+  | # | Scenario | Observation |
+  |---|---|---|
+  | CV1 | `OpenSSH_10.2p1 Ubuntu-…, OpenSSL …` on `linux`, exit 0 | ok, `10.2` |
+  | CV2 | `OpenSSH_8.9p1` and `OpenSSH_8.8p1` on `linux` | ok; R13 |
+  | CV3 | `OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2` and `OpenSSH_for_Windows_8.1p1` on `win32` | ok; R13 |
+  | CV4 | `OpenSSH_9.9p1` on `win32` | R13 |
+  | CV5 | exit 255, both streams empty | R12 with `255` |
+  | CV6 | exit 0 and no token; a stderr of 4000 characters | R12; the sentence holds no part of the output |
+
+  `test/bridgeLinks.test.ts`: **L15** the stub answers `OpenSSH_8.6p1`: `runs` holds the `-V` spawn alone, the body is
+  `BRIDGE_USE_REFUSED`, the journal has R13. **L16** two good calls: one `-V` spawn. **L17** a bad answer then a good one: two `-V` spawns
+  and the second call runs. **L18** an entry refused by R5: no `-V` spawn.
+- **Itest (q). [C]** The real `ssh -V` through `clientVerdict` on every image: ok, and the version is printed. Two stand-in programs (shell
+  scripts in the rig, named to the harness as the program): one prints `OpenSSH_8.6p1`, one exits 255 and prints nothing; the harness counts
+  one spawn each and no `ssh`.
+
+**Y4 — No security key. [C]** `Host *` gains `PubkeyAcceptedAlgorithms -sk-*`, straight after the sentinel's `IdentityFile` line. No hop block
+and no destination block gains a keyword. **F11:** the line stands once, in `Host *`. **Leg (o):** the harness writes a key file of `ssh-keygen`'s type
+`ed25519-sk` (an Ed25519 security key) with the verify-required flag from random bytes, with no token; its public line goes into the hop's
+`authorized_keys`; the destination is a pinned password entry and the askpass stub logs each prompt. Control, a hand-written file without the
+line: the log holds a prompt that begins `Enter PIN for`. Production: the log is empty, and the hop leg ends `Permission denied`. [S] The
+file's layout is the `openssh-key-v1` one (cipher and kdf `none`; the public part is the type, 32 bytes and the application `ssh:`; the private
+part adds one flag byte, a key handle and an empty reserved string), written from memory of `PROTOCOL.u2f`: PF1 says whether the CI client
+reaches the prompt with it. If it does not, (o) is reported *not measured* in §S6.13 and in the PR, and F11 is all that pins the line.
+
+**Y5 — Three refusals and one sentence. [C]** All in pass 1 (`bridgedSshRefusals.ts`), with `bridgedConfigText` as the second line as today.
+- **A hop named `none`.** `bridgedHostWord(host, 'hop')` answers `undefined` for `none` in any letter case; R6 is said. A destination named
+  `none` and a hop named `none.example` are not refused.
+- **R11, a pin that does not parse.** A leg whose entry has a `hostKey` that is not empty after a trim and for which `parseHostKey` answers
+  `undefined` is refused. Order in `refusalOf`: users, hosts, equal hosts, **R11**, hop credentials, R5, paths. So a password destination
+  with such a pin hears R11, not R5. An empty `hostKey` is unpinned, as today.
+- **A doubled backslash.** `unsafeSshConfigValue` also refuses a value that holds `\\` or `\'`. It guards the values the **file** carries:
+  hop key paths, pin files, the sentinel, both known-hosts paths. A destination's typed key path goes to `-i` on the argv only, so
+  `bridgedKeyPathProblem` does not refuse it for this reason.
+- **R14, the storage folder.** When the path at fault is one this extension made (the keys folder, the call's own key file, a pin file, the
+  sentinel, `bridges/known_hosts`), the sentence is R14: for `%` (today R10's *Choose a key file…*) and for every R6 reason. R10 stays for
+  a typed path. R6's known-hosts sentence stays for the person's own `known_hosts` path.
+- **The sentences (journal only; the agent reads `BRIDGE_USE_REFUSED`).**
+
+  | # | When | Sentence |
+  |---|---|---|
+  | R6 | a host | …`is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.` |
+  | R6 | a path | …`is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.` |
+  | R11 | a pin that does not parse | `The host key stored for <the host key of "E"> cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.` |
+  | R12 | no version | `ssh did not answer its version under the environment a Remote Bridge gives it (exit <code>). No call can go through a Remote Bridge from this computer until it does.` |
+  | R13 | below the floor, or another build on Windows | `The ssh on this computer answered <token>. A Remote Bridge needs OpenSSH 8.9 or newer, and on Windows the OpenSSH that Windows ships, 9.5 or newer.` |
+  | R14 | a path this extension made | `The folder VS Code gives this extension for its files has a path that cannot be given to ssh through a Remote Bridge: it holds "%", two backslashes in a row, or another character a bridge refuses. Stored keys cannot be used through a Remote Bridge from this computer.` |
+
+  `<the host key of "E">` is built by `of(who, 'host key')`. `<token>` is the matched version token and nothing else of the output. R12-R14
+  name no entry: they are true of the computer. Each sentence says what was just checked and nothing about what comes next.
+- **Tests** (unit, `test/bridgedSshConfig.test.ts` and `test/bridgeLinks.test.ts`; each observes `runs` empty and no file written): a hop
+  `none`, `NONE`; a destination `none` runs; a key destination and a hop with `hostKey: 'host ssh-ed25519 AAAA…'` (a `known_hosts` line, the
+  likely typed form) and with `'garbage'`: R11, and `bridges/known_hosts` byte for byte as before; a password destination with `'garbage'`:
+  R11; a storage folder `\\fs\share\x` on `win32`: R14; a hop key path `C:\keys\\id` and `C:\'k\id`: R6; a destination's typed
+  `\\fs\keys\id`: the call runs and `-i` carries it unchanged; a storage folder with `%` and a stored key: R14, and a typed path with `%`: R10.
+- **Leg (p). [C]** Against the rig: a chain whose one hop has the host `none`, no user and port 22: zero spawns; the record leg prints
+  `ssh -G -J none` and `ssh -G -J u@none`, the first with no `proxyjump` line. A key destination with a pin that does not parse: zero spawns.
+
+**Y6 — What the database clients read. [C]** Only after PD1 and PD2 answered as the parent's probe table expects. `buildDbQueryLaunch` takes
+`{ bridged, absentFile }`; on a bridge `mysql` gets `MYSQL_TEST_LOGIN_FILE = absentFile` and `psql` gets `PGPASSFILE = absentFile`, in
+`launch.env`. `absentFile` is a path from the sanctioned builder in `materializedKeys.ts`, with a name nothing ever writes, as the sentinel's
+is. Off a bridge the launch is byte for byte today's. **Q4a, Q4b:** the keys of the bridged spawn's environment hold the name, and off a bridge
+they do not. **Leg (m), added:** PD1's case as an assertion on the production launch's environment: no marker in the output of either client.
+**Leg (r):** PD2's fake server: the control sends the marker from `.pgpass`; the production launch sends no password message that holds it.
+
+**Y7 — Before the merge. [C]** PW2's table and the owner's `%` check (§S6.9) are in §S6.13 and in the PR. The parent's §7 M9 row gets what PW2 gave.
+
+**Mutations, added to §S6.6.**
+
+| # | Mutation | Must fail |
+|---|---|---|
+| T32 | Drop `PROGRAMDATA` from `BRIDGED_ENV_WINDOWS` | N2; WN1, while that image's client needs it (WN2 records whether it does) |
+| T33 | Spread the source in `bridgedSshEnv` | N1, N6a; WN3; (b) 4 |
+| T34 | Drop `PubkeyAcceptedAlgorithms -sk-*` | F11; (o), when PF1 showed the prompt |
+| T35 | Compare the version as text | CV1 (`10.2` against `8.9`) |
+| T36 | Keep a bad verdict | L17 |
+| T37 | Run the check before pass 1 | L18 |
+| T38 | Read a pin that does not parse as no pin | the R11 cases; (p) |
+| T39 | Let a hop named `none` through | the `none` cases; (p) |
+| T40 | Drop `MYSQL_TEST_LOGIN_FILE`, then `PGPASSFILE` | Q4a and (m); Q4b and (r) |
+
+**Which owed items land here, and which later.** All seven land here (the FIDO PIN; `.mylogin.cnf`; the backslash pair; a hop named `none`;
+a pin that does not parse; older clients; R10 on a storage folder with `%`), with the two the revision found (`~/.pgpass`; the database
+clients on Windows, observed by WN4). Later: the supervisor's use of the client check (E2.2a); the lifting of the UNC refusal, a todo with
+probe PU1 (E4.3); the two defects off a bridge, on `main` (parent §8).
+
+**Documents.** `research/module_extension.md`: the environment as asked for and as received, the client check, the floor, the new refusals.
+`research/module_tests.md`: PW1's step, PV1's job, legs (o)-(r). No CHANGELOG bullet, as §S6.11 says: no door reaches any of it.
+
+**Not verified by this amendment.**
+- No login, no `sshd` and no database client was run for it. Run here on 2026-11-15 (OpenSSH 10.2p1, `-G` only): `-J none` and `-J NONE`
+  print no `proxyjump`; `u@none`, `none:22` and `a,none` keep it; `PubkeyAcceptedAlgorithms -sk-*` in `Host *` leaves no `sk-` name in the
+  list, against four without it.
+- That a security key's PIN is asked through askpass, and that a key whose algorithm is not accepted is skipped before it signs: the
+  review's reading of `sshconnect2.c` and the writer's memory of it. Leg (o) is the observation.
+- How Win32-OpenSSH asks for a security key's PIN. Not looked at; the line removes the question on that build too, by `-G` (X10).
+- That an absent `MYSQL_TEST_LOGIN_FILE` or `PGPASSFILE` is passed over silently, and that `psql` uses `.pgpass` when an entry stores no
+  password: the clients' documentation, from memory. PD1 and PD2 are the observations.
+- The OpenSSH versions of the `ubuntu-22.04` and `ubuntu-24.04` images, and the client and the database clients on `windows-latest`: from
+  memory. Each probe prints what it met.
+- libuv's list is the one M9 saw under Electron 43.8.6. Another runtime may add other names: WN3 fails then, and the parent's row is
+  corrected first.
