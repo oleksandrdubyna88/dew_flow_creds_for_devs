@@ -563,7 +563,7 @@ keys folder: the folder of the window when it starts and ends, and the folder of
   linked key entry that it may not view. Not built here (§8: the person's roads keep their names); a question for the
   owner. Found by the lead's Opus code review on 2026-11-12, by reading; not run. **Fixed in extension 1.22.1** (#366,
   2026-11-15) by [PLAN_open_terminal_key_file_name.md](PLAN_open_terminal_key_file_name.md): every road of
-  `prepareSshSession` writes `call-<uuid>.key`, and a Connect that reuses a live terminal forgets its key at once.
+  `prepareSshSession` writes a stored key as `call-<uuid>.key` (a key given as a path is used where it is), and a Connect that reuses a live terminal forgets its key at once.
 
 ## 14. Questions for the owner
 
