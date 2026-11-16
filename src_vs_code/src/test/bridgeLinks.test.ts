@@ -463,8 +463,8 @@ test('Y5: a jump host named none or NONE is refused (R6) with nothing run and no
   });
 });
 
-const R11_PROD = 'The host key stored for the host key of "prod" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.';
-const R11_HOP = `The host key stored for the host key of the jump host "${JUMP_NAME}" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`;
+const R11_PROD = 'The host key stored for the host of "prod" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.';
+const R11_HOP = `The host key stored for the host of the jump host "${JUMP_NAME}" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`;
 
 test('Y5: a host key that does not parse (a known_hosts line, garbage) is R11 for a key destination, a hop and a password destination; no run, no file, and bridges/known_hosts is not made', async () => {
   const typedLine = `prod.corp.com ssh-ed25519 ${KEY_LINE}`;

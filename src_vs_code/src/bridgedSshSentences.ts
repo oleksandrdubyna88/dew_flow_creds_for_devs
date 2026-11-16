@@ -38,7 +38,7 @@ export const sentences = {
   /** R9 */ noHopEntries: (): string => 'The jump chain of this call gave no entries to check.',
   /** R10 */ percent: (who: Whose): string => `A Remote Bridge does not support "%" in a key path: ${of(who, 'key path')}. Choose a key file whose absolute path has no "%".`,
   /** R11 */ hostKeyUnreadable: (who: Whose): string =>
-    `The host key stored for ${of(who, 'host key')} cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`,
+    `The host key stored for ${of(who, 'host')} cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`,
   /** R14, a path this extension made: the storage folder and what is under it */ storageFolder: (): string =>
     'The folder VS Code gives this extension for its files has a path that cannot be given to ssh through a Remote Bridge: it holds "%", two backslashes in a row, '
     + 'or another character a bridge refuses. Stored keys cannot be used through a Remote Bridge from this computer.',

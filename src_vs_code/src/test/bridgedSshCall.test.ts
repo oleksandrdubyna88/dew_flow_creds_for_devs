@@ -478,8 +478,8 @@ test('Y5: a hostKey that does not parse — "garbage", or a whole known_hosts li
   const knownHostsLine = `prod.example.com ssh-ed25519 ${KEY_A}`;
   const before = 'earlier.example ssh-ed25519 AAAA\n';
   const cases: ReadonlyArray<readonly [string, (hostKey: string) => BridgedCallInput, string]> = [
-    ['the key destination', (hostKey) => call(entry('prod', { hostKey })), 'the host key of "prod"'],
-    ['a hop', (hostKey) => call(entry('prod'), [leg(entry('hop', { hostKey }))]), 'the host key of the jump host "hop"'],
+    ['the key destination', (hostKey) => call(entry('prod', { hostKey })), 'the host of "prod"'],
+    ['a hop', (hostKey) => call(entry('prod'), [leg(entry('hop', { hostKey }))]), 'the host of the jump host "hop"'],
   ];
   for (const [what, build, who] of cases) {
     for (const hostKey of ['garbage', knownHostsLine, 'ssh-ed25519', `ssh-ed25519 ${KEY_A.slice(0, 20)}`]) {
@@ -499,12 +499,12 @@ test('Y5: a hostKey that does not parse — "garbage", or a whole known_hosts li
 
 test('Y5: R11 is said in its place — after users, hosts and equal hosts, before a hop credential, R5 and paths; an empty or blank hostKey is no pin as before', () => {
   const asRefusal = (input: BridgedCallInput): string => refused(world().write(input)).reason;
-  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [], { auth: 'askpass' })), R11_LINE('the host key of "prod"'), 'a password destination with a pin that does not parse hears R11, not R5');
+  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [], { auth: 'askpass' })), R11_LINE('the host of "prod"'), 'a password destination with a pin that does not parse hears R11, not R5');
   assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', user: 'a b' }))), /the user of "prod"/, 'a user is said first');
   assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', host: 'gw:2201' }))), /the host of "prod" is not a valid host/, 'a host is said before it');
   assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', host: 'same.example' }), [leg(entry('hop', { host: 'same.example' }))])), /^Two connections of this call go to the host/, 'equal hosts too');
-  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [leg(entry('hop'), { kind: 'password', password: 'pw' })])), R11_LINE('the host key of "prod"'), 'before a hop credential (R1)');
-  assert.equal(asRefusal(call(entry('prod'), [leg(entry('hop', { hostKey: 'garbage' }), { kind: 'password', password: 'pw' })])), R11_LINE('the host key of the jump host "hop"'), 'a hop with both faults: its pin first');
+  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [leg(entry('hop'), { kind: 'password', password: 'pw' })])), R11_LINE('the host of "prod"'), 'before a hop credential (R1)');
+  assert.equal(asRefusal(call(entry('prod'), [leg(entry('hop', { hostKey: 'garbage' }), { kind: 'password', password: 'pw' })])), R11_LINE('the host of the jump host "hop"'), 'a hop with both faults: its pin first');
   assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [], { keyPath: '/k/%u/id' })), /^The host key stored for /, 'before the paths (R10)');
   for (const hostKey of ['', '   ', undefined]) {
     const w = world();
