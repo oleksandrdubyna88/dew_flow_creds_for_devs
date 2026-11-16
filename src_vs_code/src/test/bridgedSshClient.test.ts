@@ -5,7 +5,7 @@ import { TestContext, test } from 'node:test';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { BRIDGED_ENV_POSIX, bridgedSshEnv } from '../bridgedSshEnv';
 import { sentences } from '../bridgedSshSentences';
-import { CLIENT_CHECK_TIMEOUT_MS, ClientRunner, ClientVerdict, bridgedSshClientCheck, clientVerdictUnder } from '../bridgedSshClient';
+import { BRIDGED_SSH_FLOOR, CLIENT_CHECK_TIMEOUT_MS, ClientRunner, ClientVerdict, bridgedSshClientCheck, clientVerdict, clientVerdictUnder } from '../bridgedSshClient';
 import { materializedKeysDir } from '../materializedKeys';
 import { notStarted } from '../requestLife';
 
@@ -203,4 +203,28 @@ test('the real runner: a stand-in that prints its version on stderr is ok; one t
   assert.deepEqual(fs.readdirSync(materializedKeysDir(dir)), [], 'no folder is left');
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(fs.existsSync(marker), false, 'the child was killed at the bound and never went on');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The floor itself (the owner's Q12, 2026-11-16): the cases above hold under an injected floor; these read the constant
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('the floor is OpenSSH 8.9, and Win32-OpenSSH 9.5 on Windows', () => {
+  assert.deepEqual(BRIDGED_SSH_FLOOR, { other: [8, 9], win32: [9, 5] });
+});
+
+test('CV2, CV3 and CV4 under the constant: 8.9 is ok and 8.8 is R13 on linux; 9.5p2 is ok and 8.1 is R13 on win32; the portable 9.9 is R13 on win32', () => {
+  assert.deepEqual(clientVerdict(0, '', 'OpenSSH_8.9p1 Ubuntu-3ubuntu0.1\n', 'linux'), { ok: true, version: '8.9' });
+  assert.deepEqual(clientVerdict(0, '', 'OpenSSH_8.8p1\n', 'linux'), below('OpenSSH_8.8'));
+  assert.deepEqual(clientVerdict(0, '', 'OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2\n', 'win32'), { ok: true, version: '9.5' });
+  assert.deepEqual(clientVerdict(0, '', 'OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2\n', 'win32'), below('OpenSSH_for_Windows_8.1'));
+  assert.deepEqual(clientVerdict(0, '', 'OpenSSH_9.9p1\n', 'win32'), below('OpenSSH_9.9'));
+});
+
+test('a check built with no floor of its own is under the constant: 8.6 is refused with the R13 sentence of the owner\'s floor', async (t) => {
+  const { run } = recordingRunner([OLD]);
+
+  const verdict = await bridgedSshClientCheck({ storageDir: storage(t), run, platform: 'linux', source: SOURCE })({ program: 'ssh' });
+
+  assert.deepEqual(verdict, { ok: false, sentence: 'The ssh on this computer answered OpenSSH_8.6. A Remote Bridge needs OpenSSH 8.9 or newer, and on Windows the OpenSSH that Windows ships, 9.5 or newer.' });
 });

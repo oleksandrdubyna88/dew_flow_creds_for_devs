@@ -10,7 +10,7 @@ import { SshExecOptions, SshExecOutcome, runSshExec } from './sshExecRunner';
  * The client check of a bridged `ssh:exec` and the floor under it (the E1.6 spec §S6.14 Y3, the parent's §4.9 and Q12): what `ssh -V` answered,
  * read as a verdict. Pure and `vscode`-free: the reading (`clientVerdict`) is pure, and the spawn that asks (`bridgedSshClientCheck`) takes its runner as a part.
  *
- * <p>The floor is a version that was run, not one that was read about: the oldest OpenSSH the bridged itest runs on in CI (probe PV1) and the
+ * <p>The floor is meant to be a version that was run, not one that was read about: the oldest OpenSSH the bridged itest runs on in CI (probe PV1, not yet run) and the
  * one Win32-OpenSSH measured. It is the one constant here, `BRIDGED_SSH_FLOOR`, and the verdict takes it as a parameter so a test can say
  * which floor it is about.</p>
  */
@@ -24,8 +24,8 @@ export interface BridgedFloor {
   readonly win32: Version;
 }
 
-/** Held until probe PV1 has run: the values are set in the commit that follows it. Until then no version is below it. */
-export const BRIDGED_SSH_FLOOR: BridgedFloor = { other: [0, 0], win32: [0, 0] };
+/** OpenSSH 8.9, and Win32-OpenSSH 9.5 on Windows (the owner's Q12, 2026-11-16; 8.9 is held until probe PV1 has run the bridged itest on it). */
+export const BRIDGED_SSH_FLOOR: BridgedFloor = { other: [8, 9], win32: [9, 5] };
 
 export type ClientVerdict = { ok: true; version: string } | { ok: false; sentence: string };
 
