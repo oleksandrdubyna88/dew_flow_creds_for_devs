@@ -1,5 +1,6 @@
 import type { ErrorCode } from './brokerProtocol';
 import { BridgedCallFiles, BridgedSshConfigWriter, bridgedSpawn } from './bridgedSshCall';
+import type { ClientVerdict } from './bridgedSshClient';
 import { sentences } from './bridgedSshSentences';
 import { sshSpawnLaunch } from './sshProgram';
 import type { JumpChain } from './sshOptions';
@@ -38,6 +39,9 @@ function hopsOf(chain: Extract<JumpChain, { ok: true }>): readonly EntityMetadat
   return chain.value !== undefined && chain.hops === undefined ? undefined : (chain.hops ?? []);
 }
 
+/** The program the call's `ssh` is started as: the check asks THIS one for its version, and the call then runs it. */
+const programOf = (call: OverSshCall): string => sshSpawnLaunch(call.ssh, undefined, process.platform).program;
+
 function launchOf(call: OverSshCall, prepared: Prepared, files: BridgedFiles, refuse: Refuse): Launch | UseActionResult {
   const spawn = bridgedSpawn({
     destination: call.ssh, keyPath: prepared.keyPath, auth: prepared.auth, askpassEnv: prepared.env, remoteCommand: call.remoteCommand,
@@ -46,20 +50,35 @@ function launchOf(call: OverSshCall, prepared: Prepared, files: BridgedFiles, re
   if (spawn === undefined) {
     return refuse('no_credential', sentences.argvRefused(call.ssh.name));
   }
-  return { argv: spawn.argv, program: sshSpawnLaunch(call.ssh, undefined, process.platform).program, env: spawn.env, cwd: spawn.cwd };
+  return { argv: spawn.argv, program: programOf(call), env: spawn.env, cwd: spawn.cwd };
 }
 
-/** The launch of a call on a bridge, or the refusal. `writer` is the dep `unguardedBridge` proved present. */
+/**
+ * The launch of a call on a bridge, or the refusal. `writer` and `client` are the deps `unguardedBridge` proved present; `client` asks the `ssh` of
+ * a program for its version, and the writer calls it after pass 1 and before it writes a file.
+ */
 export async function bridgedLaunch(
-  parts: { writer: BridgedSshConfigWriter; ctx: UseActionContext; call: OverSshCall; prepared: Prepared; chain: Extract<JumpChain, { ok: true }>; refuse: Refuse },
+  parts: {
+    writer: BridgedSshConfigWriter;
+    client: (program: string) => Promise<ClientVerdict>;
+    ctx: UseActionContext;
+    call: OverSshCall;
+    prepared: Prepared;
+    chain: Extract<JumpChain, { ok: true }>;
+    refuse: Refuse;
+  },
   held: { files?: BridgedFiles },
 ): Promise<Launch | UseActionResult> {
-  const { writer, ctx, call, prepared, chain, refuse } = parts;
+  const { writer, client, ctx, call, prepared, chain, refuse } = parts;
   const hops = hopsOf(chain);
   if (hops === undefined) {
     return refuse('internal', sentences.noHopEntries());
   }
-  const files = await writer({ accountId: ctx.accountId, destination: call.ssh, auth: prepared.auth, keyPath: prepared.keyPath, hops });
+  const beforeFiles = async (): Promise<string | undefined> => {
+    const verdict = await client(programOf(call));
+    return verdict.ok ? undefined : verdict.sentence;
+  };
+  const files = await writer({ accountId: ctx.accountId, destination: call.ssh, auth: prepared.auth, keyPath: prepared.keyPath, hops, beforeFiles });
   if (!files.ok) {
     return refuse(files.code, files.reason);
   }

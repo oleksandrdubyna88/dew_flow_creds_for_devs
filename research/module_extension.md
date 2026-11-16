@@ -3905,6 +3905,20 @@ flips it). The pieces, in the order a call meets them:
   with that argv, environment and `cwd`; in the `finally`, the sentences of `files.afterRun()` go to the journal, then the destination's key file is removed as before, then `files.remove()`
   (each file in its own try; a failure is one note, `ssh:exec — a file of the call could not be removed: …`). Every refusal is before the spawn, goes to the journal as
   `<entry>: <sentence> (a Remote Bridge was told only that it could not be used)`, and answers the agent `BRIDGE_USE_REFUSED(<entry>)` with code `no_credential` (R7 and R9: `internal`).
+- *The client check, and the floor* (§S6.14 Y3; `bridgedSshClient.ts`, no `vscode`). A bridged `ssh` is first asked for its version. `clientVerdict(exit, stdout, stderr, platform)` reads what
+  `ssh -V` answered: the token is `^OpenSSH_(for_Windows_)?(\d+)\.(\d+)` at the very start of **stderr** (a word later in a line, or on stdout, is not a version), major and minor are compared as
+  numbers, and on `win32` the token must be the `for_Windows_` one. R12 (`sentences.clientNoVersion`) when the exit is not 0 or there is no token, with the exit code and nothing of the output; R13
+  (`clientBelowFloor`) when the version is below the floor or, on `win32`, the build is another, with the matched token and the floor. Both name no entry: they are true of the computer, and
+  they reach the journal only, as every refusal does (the agent reads `BRIDGE_USE_REFUSED`). The floor is the one constant `BRIDGED_SSH_FLOOR` (`{ other, win32 }`); the verdict can be asked under another
+  floor (`clientVerdictUnder`), so a test says which floor it is about. **Where:** `bridgedSshClientCheck({ storageDir, … })` is the dep `SshUseDeps.bridgedClient`, as `bridgedSshConfig` is for the writer;
+  a bridged call with none is refused before any slot (`unguardedBridge`, reason `no client check for this call`). The road gives the writer a `beforeFiles` hook; the real writer calls it after pass 1 has
+  refused nothing and before pass 2 writes a file, so a call that pass 1 refuses spends no `-V` spawn, and R1-R11 are said before R12 and R13 (a writer that does not call it skips the check: only the
+  real one is wired in production). The spawn is `runSshExec(['-V'], …)` with the program of `sshSpawnLaunch` (the one the call then runs), the environment `bridgedSshEnv(process.env, process.platform)`, a fresh
+  call folder under `keys/<pid>/` (`bridgedCallFolder`) that holds nothing and is removed afterwards (a failed removal is one journal note and does not hide the verdict), the window's and the request's guards,
+  and a 10 s timeout (`CLIENT_CHECK_TIMEOUT_MS`); `runBounded` ends a child that outlives it with SIGTERM, then SIGKILL, and the verdict is R12 (no exit code). A runner that cannot start `ssh` at all is R12 too; a request
+  that ended is not an answer, and its error goes on. **A good verdict is kept per program for the life of the check** (one check per `sshDepsFor`, so per window); a bad one is not kept, and the next call asks
+  again. Tests: `bridgedSshClient.test.ts` (CV1-CV7, the spawn's program, argv, environment, folder and bound, the keeping, a real stand-in program killed at the bound), `bridgeLinks.test.ts` (L15-L18, G3, and G2 for
+  the wiring).
 - *First contact.* A leg whose entry pins no host key is first contact: `accept-new`, recorded in `bridges/known_hosts`, which lives outside the keys folder so the record survives a purge.
   After the run the journal gets J1 for each line added to that file (`first contact through a Remote Bridge: <name> <algorithm> <fingerprint> was added to bridges/known_hosts`) and J2 for
   each first-contact leg whose name is in neither that file nor the person's own (so the next call would accept any key). The person's own `known_hosts` is read, never written. What is

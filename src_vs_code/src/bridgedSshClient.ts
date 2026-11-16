@@ -1,8 +1,14 @@
+import * as fs from 'node:fs';
+import { describeError } from './describeError';
+import { bridgedSshEnv } from './bridgedSshEnv';
 import { sentences } from './bridgedSshSentences';
+import { bridgedCallFolder, callKeyName } from './materializedKeys';
+import { endedStage } from './requestLife';
+import { SshExecOptions, SshExecOutcome, runSshExec } from './sshExecRunner';
 
 /**
  * The client check of a bridged `ssh:exec` and the floor under it (the E1.6 spec §S6.14 Y3, the parent's §4.9 and Q12): what `ssh -V` answered,
- * read as a verdict. Pure and `vscode`-free.
+ * read as a verdict. Pure and `vscode`-free: the reading (`clientVerdict`) is pure, and the spawn that asks (`bridgedSshClientCheck`) takes its runner as a part.
  *
  * <p>The floor is a version that was run, not one that was read about: the oldest OpenSSH the bridged itest runs on in CI (probe PV1) and the
  * one Win32-OpenSSH measured. It is the one constant here, `BRIDGED_SSH_FLOOR`, and the verdict takes it as a parameter so a test can say
@@ -67,4 +73,96 @@ export function clientVerdictUnder(floor: BridgedFloor, exit: number | null, _st
   return acceptable(token, platform, floor)
     ? { ok: true, version: textOf(token.version) }
     : { ok: false, sentence: sentences.clientBelowFloor(token.text, textOf(floor.other), textOf(floor.win32)) };
+}
+
+// ---- the spawn that asks -------------------------------------------------------------------------------------------------------------
+
+/** How long `ssh -V` has: a client that does not answer in this time is killed and has not answered. */
+export const CLIENT_CHECK_TIMEOUT_MS = 10_000;
+
+/** What the runner answers: the part of `SshExecOutcome` the verdict reads. */
+export type ClientRunner = (argv: string[], options: SshExecOptions) => Promise<Pick<SshExecOutcome, 'exitCode' | 'stdout' | 'stderr'>>;
+
+/** One check: the program `sshSpawnLaunch` chose for the call, and the guards that end the child with the window or the request. */
+export interface ClientCheckCall {
+  readonly program: string;
+  readonly guards?: Pick<SshExecOptions, 'signal' | 'startGate'>;
+}
+
+export type BridgedClientCheck = (call: ClientCheckCall) => Promise<ClientVerdict>;
+
+/** What the check is built from; everything but `storageDir` is for a test to say. */
+export interface ClientCheckParts {
+  readonly storageDir: string;
+  readonly run?: ClientRunner;
+  readonly floor?: BridgedFloor;
+  readonly platform?: NodeJS.Platform;
+  readonly source?: NodeJS.ProcessEnv;
+  readonly timeoutMs?: number;
+  /** The journal's line writer, for the one thing the check cannot say any other way: its folder could not be removed. */
+  readonly note?: (message: string) => void;
+}
+
+/** The parts with every default filled in. */
+type Resolved = Required<Omit<ClientCheckParts, 'note'>> & Pick<ClientCheckParts, 'note'>;
+
+/**
+ * The check a bridged call makes before its first file is written: `ssh -V` through the runner, with the program the call would use, the
+ * environment of a bridged child and a folder of its own that holds nothing and is removed afterwards (a bare `ssh` on Windows is resolved
+ * through the current folder before `PATH`, so the child is never started in a folder with anything in it). A GOOD verdict is kept for this
+ * check's life, per program; a bad one is not kept, so the next call asks again. A runner that fails (no `ssh` at all) is a client that did
+ * not answer; a request that ended is not, and its error goes on.
+ */
+export function bridgedSshClientCheck(given: ClientCheckParts): BridgedClientCheck {
+  const parts: Resolved = { run: runSshExec, floor: BRIDGED_SSH_FLOOR, platform: process.platform, source: process.env, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, ...given };
+  const good = new Map<string, ClientVerdict>();
+  return async (call) => {
+    const kept = good.get(call.program);
+    if (kept !== undefined) {
+      return kept;
+    }
+    const verdict = await ask(parts, call);
+    if (verdict.ok) {
+      good.set(call.program, verdict);
+    }
+    return verdict;
+  };
+}
+
+/** The child, in a folder of its own: the runner's answer read as a verdict, or R12 when it could not be started. */
+async function spawnVersion(parts: Resolved, call: ClientCheckCall, dir: string): Promise<ClientVerdict> {
+  try {
+    const outcome = await parts.run(['-V'], {
+      program: call.program,
+      env: bridgedSshEnv(parts.source, parts.platform),
+      cwd: dir,
+      timeoutMs: parts.timeoutMs,
+      ...call.guards,
+    });
+    return clientVerdictUnder(parts.floor, outcome.exitCode, outcome.stdout, outcome.stderr, parts.platform);
+  } catch (error) {
+    if (endedStage(error) !== undefined) {
+      throw error;
+    }
+    return { ok: false, sentence: sentences.clientNoVersion(null) };
+  }
+}
+
+/** Removes the folder; a failure is one journal note, never a throw that would hide the verdict. */
+function removeFolder(parts: Resolved, dir: string): void {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (error) {
+    parts.note?.(`ssh:exec — the folder of the client check could not be removed: ${describeError(error)}`);
+  }
+}
+
+async function ask(parts: Resolved, call: ClientCheckCall): Promise<ClientVerdict> {
+  const folder = bridgedCallFolder(parts.storageDir, callKeyName());
+  try {
+    fs.mkdirSync(folder.dir, { recursive: true, mode: 0o700 });
+    return await spawnVersion(parts, call, folder.dir);
+  } finally {
+    removeFolder(parts, folder.dir);
+  }
 }
