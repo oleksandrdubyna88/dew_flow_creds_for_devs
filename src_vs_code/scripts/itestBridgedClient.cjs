@@ -70,8 +70,9 @@ function installSshShim(bin, log, pathValue) {
 }
 
 /** The shim, put FIRST on the PATH (by its folder and by a link to it), is never what it wraps; and a link to it, found in another folder, is refused. */
-function shimSelfCheck(bin, real, check) {
-  const holder = fs.mkdtempSync(path.join(path.dirname(bin), 'q-link-'));
+function shimSelfCheck(rig, bin, real, check) {
+  const holder = rig.key('q-links');
+  fs.mkdirSync(holder, { recursive: true });
   const binLink = path.join(holder, 'bin-link');
   fs.symlinkSync(bin, binLink);
   const other = path.join(holder, 'other');
@@ -105,7 +106,7 @@ async function legQ(rig, check) {
   if (installed.refused !== undefined) {
     return;
   }
-  shimSelfCheck(bin, installed.real, check);
+  shimSelfCheck(rig, bin, installed.real, check);
   standIn(rig.key('q-below.sh'), logs.below, "printf 'OpenSSH_8.6p1, OpenSSL 1.1.1k  25 Mar 2021\\n' >&2");
   standIn(rig.key('q-dead.sh'), logs.dead, 'exit 255');
   const notes = [];
