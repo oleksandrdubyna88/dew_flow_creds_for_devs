@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.0...extension-v1.22.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **ssh:** N17 — the key file of a terminal is named call-&lt;uuid&gt;.key, and a terminal keeps one ([#366](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/366)) ([7df8da1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/7df8da1bc9511a71bfe8753776a464d2b4a9957a))
+
+## [1.22.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.4...extension-v1.22.0) (2026-11-13)
+
+
+### Features
+
+* **tree:** a folder has a colour; its Creds: and Creds SSH: terminals and its row wear it ([#363](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/363)) ([0922493](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0922493b1b0b026d1e5afa7efa4023458a6cf5ba))
+
 ## [1.21.4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.21.3...extension-v1.21.4) (2026-11-12)
 
 

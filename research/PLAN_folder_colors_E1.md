@@ -1,6 +1,6 @@
 # PLAN — folder colours, epic E1: a folder gets a colour; its terminals and its row show it
 
-> Status: **IMPLEMENTED, 2026-11-12.** Stories of epic E1 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the colour is
+> Status: **IMPLEMENTED, 2026-11-12.** Released in extension 1.22.0 (#363; release PR #364), 2026-11-13. Stories of epic E1 of [PLAN_folder_colors.md](PLAN_folder_colors.md): the colour is
 > picked, and the terminal icon and the folder row wear it. Scope: `src_vs_code` only. Deviations: below, and § 9 of the
 > parent. Built on `feat/folder-colors-e1`.
 

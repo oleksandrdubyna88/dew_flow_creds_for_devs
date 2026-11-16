@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.1] — 2026-11-15 — Security — the key file of a terminal holds no id, and a terminal keeps one
+
+### Changed — security: the key file of a terminal
+
+The key file that *Connect via SSH*, an agent's `creds_open_terminal` and the runs over SSH write for a stored key is now named
+`call-<uuid>.key`. Before, the name began with the id of the key entry, so the `ssh -i "<path>"` line in the terminal showed the id of
+a linked key entry, also to an agent that can read the terminal and may not view that entry. The file is deleted as before: when its
+terminal closes or its run ends. Two terminals of one entry have two files, and each terminal deletes its own. A second *Connect via
+SSH*, or a second `creds_open_terminal` of an agent, while the entry's terminal is still open brings that terminal forward and types
+nothing; the key file written for that call is deleted at once. So an open terminal keeps at most one key file (the one its own line names), however often it
+is asked for. A *Connect via SSH*, or an agent's `creds_open_terminal`, whose terminal fails to open deletes its key file at once, and the error is reported as before.
+
+## [1.22.0] — 2026-11-13 — A folder has a colour, and its terminals wear it
+
 ### Added — a folder has a colour, and its terminals wear it
 
 The first terminal that you open from an entry in a folder gives that folder a colour, once. It is the colour of the dependency
@@ -31,6 +45,7 @@ What you can do and what you will see:
 One limit stays, as before for every write of this extension: a window that has not yet received another window's write can pick the
 same colour for two folders, and, rarely, drop the other window's write (a colour, or any other edit made in that moment). A lost
 colour is picked again at the next terminal. The help describes the colour in all five languages.
+
 ## [1.21.4] — 2026-11-12 — Security — the key file of an agent's SSH call no longer carries the id of an entry
 
 ### Changed — security: the path of a key file that an agent's SSH call writes holds no id of an entry

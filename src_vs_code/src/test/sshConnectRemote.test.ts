@@ -9,6 +9,7 @@ import {
   entity,
   connectBase,
   world,
+  writtenCallKey,
 } from './sshConnectWorld';
 
 /**
@@ -228,9 +229,10 @@ test('a stored key the agent cannot serve is handed to the WINDOWS client, spell
     remote: WSL_WINDOWS_CLIENT,
   });
 
-  assert.deepEqual(w.materialised, ['/storage/keys/k1.key'], 'written where ssh.exe can read it');
+  // The key is written where ssh.exe can read it.
+  const written = writtenCallKey(w);
   assert.equal(w.sshTerminals.length, 1);
-  assert.equal(w.sshTerminals[0].keyPath, '/storage/keys/k1.key', 'NOT translated — this client reads Windows paths');
+  assert.equal(w.sshTerminals[0].keyPath, written, 'NOT translated — this client reads Windows paths');
   assert.equal(
     (w.sshTerminals[0].options as { program?: string }).program,
     '/mnt/c/Windows/System32/OpenSSH/ssh.exe',
@@ -262,7 +264,7 @@ test('the agent is NOT trusted on this route, however loaded it is', async () =>
   });
 
   assert.equal(w.sshTerminals.length, 1);
-  assert.equal(w.sshTerminals[0].keyPath, '/storage/keys/k1.key', 'this entity’s key, named');
+  assert.equal(w.sshTerminals[0].keyPath, writtenCallKey(w), 'this entity’s key, named');
 });
 
 test('a pinned host key is NOT translated for a client that cannot open a /mnt/c path', async () => {
@@ -483,7 +485,7 @@ test('a LOCAL window is untouched: the platform is the host and there is no pref
         agentServesKey: false,
       });
 
-  assert.deepEqual(w.materialised, ['/storage/keys/k1.key']);
+  writtenCallKey(w);
   assert.equal(w.sshTerminals[0].platform, process.platform);
   assert.equal(w.sshTerminals[0].prefix, undefined);
 });
@@ -499,8 +501,7 @@ test('THE REPORT, both halves: the same click writes a key when the window is no
         agentServesKey: false,
       });
 
-  assert.deepEqual(before.materialised, ['/storage/keys/k1.key']);
-  assert.deepEqual(before.sshTerminals.map((t) => t.keyPath), ['/storage/keys/k1.key']);
+  assert.deepEqual(before.sshTerminals.map((t) => t.keyPath), [writtenCallKey(before)]);
 
   // The same inputs, with the window identified. Nothing is written, nothing is opened.
   const after = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
