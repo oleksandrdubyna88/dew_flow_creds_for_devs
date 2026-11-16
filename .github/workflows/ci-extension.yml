@@ -191,6 +191,16 @@ jobs:
       - name: Integration test (bridged mysql client)
         run: npm run itest:bridged-mysql
 
+      # PD2 (the E1.6 spec §S6.14 Y0; parent §7's probe table): a RECORD leg of `psql` against a fake PostgreSQL server: does libpq read the
+      # person's `.pgpass` from the rig home, and does `PGPASSFILE` naming a path that never exists close it? The leg asserts nothing about the
+      # build and prints what the client did; the harness fails only for the rig's own faults (no `psql`, a fake server the client never reached).
+      # The client comes from `postgresql-client`, named by an absolute path.
+      - name: Install PostgreSQL's psql
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client
+
+      - name: Integration test (bridged psql client, probe PD2)
+        run: npm run itest:bridged-psql
+
       # A masked run through a real pty: the value reaches the child's environment and every
       # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
       # written, so the Linux one is what CI exercises.
