@@ -69,14 +69,11 @@ function fakeServer(markerPath) {
       }
     });
   });
-  /** Resolves when every connection of the client has been read to its end (or after `ms`): what the client sent is then all in `state`. */
-  const drained = (ms) => {
-    let timer;
-    const bound = new Promise((resolve) => {
-      timer = setTimeout(resolve, ms);
-    });
-    return Promise.race([Promise.all([...open].map((socket) => new Promise((resolve) => socket.once('close', resolve)))), bound]).finally(() => clearTimeout(timer));
-  };
+  /**
+   * Resolves `true` when every connection of the client has been read to its end: what the client sent is then all in `state`. After `ms` it resolves
+   * `false`: some connection was still open, so `state` may hold only part of what the client sent, and the caller must not pass on it.
+   */
+  const drained = (ms) => within(Promise.all([...open].map((socket) => new Promise((resolve) => socket.once('close', resolve)))).then(() => true), ms, false);
   return { server, state, drained };
 }
 
@@ -146,10 +143,11 @@ async function received(scope, exe, build, markerPath) {
   try {
     // A client that hangs after the LOCAL INFILE request must FAIL the leg, not pass it with empty bytes: the timeout is reported.
     // The result is read only after the client's pipes have CLOSED (`closed`, which follows `done` and the last chunk of its output) and the server
-    // has read each of its connections to the end: no fixed delay stands in for either.
+    // has read each of its connections to the end: no fixed delay stands in for either. A connection still open after its bound (`drained` false)
+    // is reported as a timeout too, so no (m) check passes on bytes that may be partial.
     const ended = await within(client.closed.then(() => true), 20_000, false);
-    await drained(2000);
-    return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, timedOut: !ended, stderr: client.stderr };
+    const read = await drained(2000);
+    return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, timedOut: !ended || !read, stderr: client.stderr };
   } finally {
     await endChild(client);
     await new Promise((resolve) => server.close(resolve));
