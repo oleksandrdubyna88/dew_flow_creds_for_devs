@@ -12,7 +12,6 @@
 // and the folder the check made for each of the three is gone. The control is the first of the three, which shows this rig sees an `ssh` start.
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('node:child_process');
 const R = require('./itestBridgedRig.cjs');
 
 const linesOf = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '') : []);
@@ -28,17 +27,85 @@ function names(dir) {
   return walk(dir).sort();
 }
 
+/**
+ * The `ssh` the shim wraps: the first one on `pathValue` OUTSIDE the shim's folder, by REAL path (a folder reached through a link is the same
+ * folder). Nothing is spawned: the walk is the harness's own `shellPath`, which looks at the files. A result that lies inside the shim's folder
+ * (a link to the shim, in another folder) is refused, because a shim that wraps itself runs without end (the shared testing rule, "a shim never
+ * resolves to itself"). Answers `{ real }` or `{ refused }`, a sentence.
+ */
+function resolveRealSsh(bin, pathValue) {
+  const { pathDirsOf } = require(path.join(R.OUT, 'sshProgram.js'));
+  const { shellPath } = require(path.join(R.OUT, 'test', 'remoteShellHarness.js'));
+  const shimDir = realOf(bin);
+  const outside = pathDirsOf(pathValue, path.delimiter).filter((dir) => realOf(dir) !== shimDir);
+  const found = shellPath('ssh', outside.join(path.delimiter));
+  if (found === undefined) {
+    return { refused: 'no ssh was found on the PATH outside the folder of the shim' };
+  }
+  const real = realOf(found);
+  return real.startsWith(shimDir + path.sep) ? { refused: `the ssh found (${found}) is a link into the folder of the shim, which would run itself` } : { real };
+}
+
+/** The real path of `file`, or `file` itself when it cannot be resolved (a PATH entry that does not exist is no folder of the shim). */
+function realOf(file) {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
+/** The first install of the shim bakes the real client into it; a shim that is already there is kept as it is, and nothing is looked up again. */
+function installSshShim(bin, log, pathValue) {
+  const file = path.join(bin, 'ssh');
+  if (fs.existsSync(file)) {
+    return { real: fs.readFileSync(file, 'utf8').split('\n').find((line) => line.startsWith('exec "'))?.split('"')[1] };
+  }
+  const walked = resolveRealSsh(bin, pathValue);
+  if (walked.refused !== undefined) {
+    return walked;
+  }
+  fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\nexec "${walked.real}" "$@"\n`, { mode: 0o755 });
+  return walked;
+}
+
+/** The shim, put FIRST on the PATH (by its folder and by a link to it), is never what it wraps; and a link to it, found in another folder, is refused. */
+function shimSelfCheck(bin, real, check) {
+  const holder = fs.mkdtempSync(path.join(path.dirname(bin), 'q-link-'));
+  const binLink = path.join(holder, 'bin-link');
+  fs.symlinkSync(bin, binLink);
+  const other = path.join(holder, 'other');
+  fs.mkdirSync(other);
+  fs.symlinkSync(path.join(bin, 'ssh'), path.join(other, 'ssh'));
+  const rest = process.env.PATH ?? '';
+  const first = resolveRealSsh(bin, [bin, rest].join(path.delimiter));
+  const viaLink = resolveRealSsh(bin, [binLink, rest].join(path.delimiter));
+  const linked = resolveRealSsh(bin, other);
+  const alone = resolveRealSsh(bin, bin);
+  check('(q) self-check: with the shim first on the PATH, the lookup still answers the real ssh, never the shim', first.real !== undefined && fs.realpathSync(first.real) === fs.realpathSync(real), JSON.stringify(first));
+  check('(q) self-check: the shim reached through a link on the PATH is no more resolved than the shim itself', viaLink.real !== undefined && fs.realpathSync(viaLink.real) === fs.realpathSync(real), JSON.stringify(viaLink));
+  check('(q) self-check: a link to the shim in another folder is refused, with a sentence', linked.real === undefined && typeof linked.refused === 'string' && linked.refused !== '', JSON.stringify(linked));
+  check('(q) self-check: a PATH that holds only the shim finds no ssh and says so', alone.real === undefined && typeof alone.refused === 'string' && alone.refused !== '', JSON.stringify(alone));
+  const again = installSshShim(bin, path.join(holder, 'other.log'), '');
+  check('(q) self-check: a second install keeps what the first baked, and looks nothing up (an empty PATH changes nothing)', again.real === real && !fs.readFileSync(path.join(bin, 'ssh'), 'utf8').includes('other.log'), JSON.stringify(again));
+  fs.rmSync(holder, { recursive: true, force: true });
+}
+
 /** (q) the client check on the real `ssh -V`, and on two stand-ins. */
 async function legQ(rig, check) {
   const { bridgedSshClientCheck } = require(path.join(R.OUT, 'bridgedSshClient.js'));
   const bin = rig.key('q-bin');
   fs.mkdirSync(bin, { recursive: true });
-  const real = execFileSync('sh', ['-c', 'command -v ssh'], { encoding: 'utf8' }).trim(); // NOSONAR: the PATH's ssh is the tool under test
   const logs = { ssh: rig.key('q-ssh.log'), below: rig.key('q-below.log'), dead: rig.key('q-dead.log') };
   for (const log of Object.values(logs)) {
     fs.rmSync(log, { force: true });
   }
-  fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${logs.ssh}"\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const installed = installSshShim(bin, logs.ssh, process.env.PATH);
+  check('(q) the shim of the rig wraps the real ssh, resolved once outside its own folder by real path', installed.refused === undefined, installed.refused);
+  if (installed.refused !== undefined) {
+    return;
+  }
+  shimSelfCheck(bin, installed.real, check);
   standIn(rig.key('q-below.sh'), logs.below, "printf 'OpenSSH_8.6p1, OpenSSL 1.1.1k  25 Mar 2021\\n' >&2");
   standIn(rig.key('q-dead.sh'), logs.dead, 'exit 255');
   const notes = [];
