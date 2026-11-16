@@ -968,7 +968,7 @@ What the run shows, and what it does not:
 - **Linux (WSL), OpenSSH 10.2p1 on both ends.** The `sshd` was unpacked from the Ubuntu package with `libwrap0` and ran as a non-root user. The production call came through the itest rig.
   - With `PATH` and `HOME`, the key call logs in, and also with either one alone.
   - The password call asked askpass once, and the `sshd` logged a password attempt, in all three cases. It cannot log in, because a non-root `sshd` cannot check a password. That is a limit of the rig.
-- **Not done: the `%` check of the bridge's own entry.** That entry's key path cannot be read from here, so the check stays with the owner.
+- **The `%` check of the bridge's own entry: answered by the owner, 2026-11-16: no `%`.** That entry's key path cannot be read from here, so the owner looked; the path is not recorded.
 
 **PW2 and PW3: run 2026-11-15 by the lead, the same rig and runtime, a fresh storage folder whose path holds a space.**
 
@@ -1015,7 +1015,7 @@ depends on it. Then the RED tests of Y1-Y6. Then the code. A probe that answers 
   |---|---|---|
   | WN1 | `%SystemRoot%\System32\OpenSSH\ssh.exe -V` | exit 0; stderr starts with `OpenSSH_for_Windows_`; the test prints that line and `process.version` |
   | WN2 | the same with `PROGRAMDATA` taken out of the object | recorded, not asserted: the exit code and both streams are printed |
-  | WN3 | `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK` set in the test process; the child is `process.execPath -e` printing the names of its environment | neither name is printed, in any letter case; every printed name is in `BRIDGED_ENV_WINDOWS` or `BRIDGED_ENV_RUNTIME_ADDED_WINDOWS`; the list is printed |
+  | WN3 | `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK` set in the test process; the child is `process.execPath -e` printing the names of its environment | neither name is printed, in any letter case; every printed name is in `BRIDGED_ENV_WINDOWS` or `BRIDGED_ENV_RUNTIME_ADDED_WINDOWS`; `USERNAME`, `USERDOMAIN` and `LOGONSERVER` are printed with empty values (Q14); the list is printed, with no values but those three |
   | WN4 | for each of `psql`, `mysql`, `sqlcmd` found on `PATH`: its version flag | exit 0; a client that is not found is a skip named *not measured*, never a pass |
 - **PW2.** The lead's M9 driver on the owner's Windows host: legs A1, A2, A4 and C1 of §S6.13 with exactly the seven names of Y1. Its table goes
   into §S6.13 before `BRIDGED_ENV_WINDOWS` changes.
@@ -1035,6 +1035,8 @@ export const BRIDGED_ENV_WINDOWS = ['PATH', 'SYSTEMROOT', 'USERPROFILE', 'HOMEDR
 /** What Node's libuv writes into every Windows child whose block lacks it. This module never writes one: the list is for the tests and the documents. */
 export const BRIDGED_ENV_RUNTIME_ADDED_WINDOWS = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP',
   'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR'] as const;
+/** Asked for as empty strings on Windows, so the runtime does not fill them with the account's identity (Q14, PW3). */
+export const BRIDGED_ENV_BLANKED_WINDOWS = ['USERNAME', 'USERDOMAIN', 'LOGONSERVER'] as const;
 export const BRIDGED_ENV_EXTRA = ['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_SSH_PASSWORD', 'DISPLAY',
   'PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'] as const;
 ```
@@ -1042,8 +1044,9 @@ export const BRIDGED_ENV_EXTRA = ['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_S
 `TMP` and `COMSPEC` go only after PW2 passed; if PW2 fails a leg, the name that leg needs stays and §S6.13 says which run showed it. The module's
 doc comment and every comment that says *exactly* say **asked for**: no comment claims what a child receives or what a value holds. That includes the module's doc comment, whose *no … `PGPASSFILE`* is false
 under Y6: it says instead that `PGPASSFILE` and `MYSQL_TEST_LOGIN_FILE` are asked for only as paths that never exist. N2 becomes
-*the keys are exactly the seven*. New **N6a**: a `win32` source that lacks `SYSTEMDRIVE` and `USERNAME` gives an answer with neither key (the
-module adds nothing; the runtime does). L9 and Q4 keep their words with *asked for*.
+*the keys are exactly the seven, with the source's values, and the three blanked names, each `''`, whatever the source holds* (the owner's Q14,
+2026-11-16). New **N6a**: a `win32` source that lacks `SYSTEMDRIVE` gives an answer with no such key, and a source whose `USERNAME` is set
+gives `USERNAME: ''` (the module copies none of the three; the runtime adds `SYSTEMDRIVE` and `WINDIR`). On POSIX the three are never asked for. L9 and Q4 keep their words with *asked for*.
 
 **Y2 — The environment received. [C]** In `scripts/bridged-ssh-itest.cjs`, leg (b) gains two legs:
 - **(b) 3:** the control's environment with `BRIDGE_TEST_SECRET` in it, under the **production** file: the remote `printenv` exits 1 with an
@@ -1062,7 +1065,8 @@ export type ClientVerdict = { ok: true; version: string } | { ok: false; sentenc
 export function clientVerdict(exit: number | null, stdout: string, stderr: string, platform: NodeJS.Platform): ClientVerdict;
 ```
 
-- The version token is the first match of `OpenSSH_(for_Windows_)?(\d+)\.(\d+)` in stderr, then stdout. Major and minor are compared as
+- The version token is `^OpenSSH_(?:for_Windows_)?(\d+)\.(\d+)`, anchored at the start of the first line of **stderr** only (two consultants of
+  two, with Q12, approved by the owner 2026-11-16): `ssh -V` prints there, and a word later in a line, or on stdout, is not a version. Major and minor are compared as
   numbers. On `win32` the token must be the `for_Windows_` one.
 - `ok: false` with **R12** when the exit is not 0 or there is no token; with **R13** when the version is below the floor or, on `win32`, the
   build is another one.
@@ -1081,6 +1085,7 @@ export function clientVerdict(exit: number | null, stdout: string, stderr: strin
   | CV4 | `OpenSSH_9.9p1` on `win32` | R13 |
   | CV5 | exit 255, both streams empty | R12 with `255` |
   | CV6 | exit 0 and no token; a stderr of 4000 characters | R12; the sentence holds no part of the output |
+  | CV7 | `OpenSSH_9.9p1` on stdout only, stderr empty; `banner OpenSSH_9.9p1` on stderr | R12; R12 |
 
   `test/bridgeLinks.test.ts`: **L15** the stub answers `OpenSSH_8.6p1`: `runs` holds the `-V` spawn alone, the body is
   `BRIDGE_USE_REFUSED`, the journal has R13. **L16** two good calls: one `-V` spawn. **L17** a bad answer then a good one: two `-V` spawns
@@ -1159,6 +1164,8 @@ same builder that nothing writes; leg (r) gains PD3's case: the control offers t
 | T38 | Read a pin that does not parse as no pin | the R11 cases; (p) |
 | T39 | Let a hop named `none` through | the `none` cases; (p) |
 | T40 | Drop `MYSQL_TEST_LOGIN_FILE`, then `PGPASSFILE` | Q4a and (m); Q4b and (r) |
+| T41 | Copy `USERNAME` from the source instead of `''` (Q14) | N2, N6a; WN3 |
+| T42 | Drop the `^` anchor of the version token | CV7 |
 
 **Which owed items land here, and which later.** All seven land here (the FIDO PIN; `.mylogin.cnf`; the backslash pair; a hop named `none`;
 a pin that does not parse; older clients; R10 on a storage folder with `%`), with the two the revision found (`~/.pgpass`; the database
