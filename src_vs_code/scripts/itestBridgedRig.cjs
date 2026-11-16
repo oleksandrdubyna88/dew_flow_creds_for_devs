@@ -31,7 +31,8 @@ function loadProduct(dir) {
   withVscodeStub(dir);
   const call = require(path.join(OUT, 'bridgedSshCall.js'));
   const installer = require(path.join(OUT, 'keyInstaller.js'));
-  return { writeBridgedCall: call.writeBridgedCall, bridgedSpawn: call.bridgedSpawn, purge: installer.purgeMaterializedKeys };
+  const runner = require(path.join(OUT, 'sshExecRunner.js'));
+  return { writeBridgedCall: call.writeBridgedCall, bridgedSpawn: call.bridgedSpawn, purge: installer.purgeMaterializedKeys, runBounded: runner.runBounded };
 }
 
 function keygen(file) {

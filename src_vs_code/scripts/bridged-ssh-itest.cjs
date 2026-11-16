@@ -136,6 +136,66 @@ async function legB(rig) {
   } finally {
     await production.close();
   }
+  await legB3(rig, secret);
+}
+
+/**
+ * (b) 3 (Y2): the marker put BACK into the child's environment, under the PRODUCTION file. Until now the production leg showed nothing about the file's
+ * missing `SendEnv`: the marker was not in the child at all, so an empty `printenv` was true for either reason. Here it is in the child (the whole
+ * environment of the control, `extraEnv`), the `sshd` accepts it (`AcceptEnv`), and the remote `printenv` still exits 1 with nothing on stdout.
+ */
+async function legB3(rig, secret) {
+  const started = await R.pair(rig, 'b3', { destination: { extra: ['AcceptEnv BRIDGE_TEST_*'] } });
+  try {
+    const result = await R.production(rig, { destination: R.destinationEntry(started.destination, { jumpHostEntityId: undefined }), keyPath: rig.key('dest_key'), command: 'printenv BRIDGE_TEST_SECRET', sourceEnv: secret, extraEnv: secret });
+    check('(b) 3: under the production file the remote printenv still exits 1 with an empty stdout (the file has no SendEnv)', result.refused === undefined && result.code === 1 && result.stdout.trim() === '', JSON.stringify([result.code, result.stdout, result.stderr]));
+    check('(b) 3: and the sshd saw the connection, so the empty answer is not a call that never got there', R.sawConnection(started.destination), R.tail(started.destination));
+  } finally {
+    await started.close();
+  }
+}
+
+/** The names `/usr/bin/env` printed: the text before the first `=` of each line that holds one. */
+const namesPrinted = (stdout) => stdout.split('\n').filter((line) => line.includes('=')).map((line) => line.slice(0, line.indexOf('='))).sort();
+
+/**
+ * (b) 4 (Y2): the environment RECEIVED, read in a child. The harness sets `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK`; `/usr/bin/env` is started with the
+ * environment and the `cwd` that `bridgedSpawn` answers, through the production spawner itself (`runBounded`, `sshExecRunner.ts`), not `spawnSync`
+ * and not this harness's `launch`: the names it prints are exactly the asked ones, and neither marker. The control is the same child under the
+ * whole environment, which prints both: this rig can pass a name through the runner when it is asked to. Needs no `sshd`.
+ */
+async function legB4(rig) {
+  const markers = { BRIDGE_TEST_SECRET: 'the-secret-of-the-test-process', SSH_AUTH_SOCK: '/nonexistent/agent.sock' };
+  const before = Object.fromEntries(Object.keys(markers).map((name) => [name, process.env[name]]));
+  Object.assign(process.env, markers);
+  const destination = R.destinationEntry({ port: 22 }, { jumpHostEntityId: undefined });
+  const files = rig.product.writeBridgedCall(rig.base, { destination, auth: 'key', keyPath: rig.key('dest_key'), hops: [] });
+  try {
+    check('(b) 4: the production file of the call is written', files.ok, JSON.stringify(files));
+    if (!files.ok) {
+      return;
+    }
+    const spawn = rig.product.bridgedSpawn({ destination, keyPath: rig.key('dest_key'), auth: 'key', askpassEnv: {}, remoteCommand: 'true', files, sourceEnv: process.env, platform: process.platform });
+    const limits = { timeoutMs: 10_000 };
+    const control = await rig.product.runBounded('/usr/bin/env', [], false, { ...limits, env: { ...process.env } });
+    check('(b) 4 control: under the whole environment the child prints both markers (the runner passes a name when it is asked to)', Object.keys(markers).every((name) => namesPrinted(control.stdout).includes(name)), JSON.stringify(namesPrinted(control.stdout)));
+    const answer = await rig.product.runBounded('/usr/bin/env', [], false, { ...limits, env: spawn.env, cwd: spawn.cwd });
+    const asked = Object.keys(spawn.env).sort();
+    check('(b) 4: the names the child prints are exactly the asked ones, and neither marker is one of them', answer.exitCode === 0 && JSON.stringify(namesPrinted(answer.stdout)) === JSON.stringify(asked) && Object.keys(markers).every((name) => !namesPrinted(answer.stdout).includes(name)), JSON.stringify({ asked, printed: namesPrinted(answer.stdout), exit: answer.exitCode, stderr: answer.stderr }));
+    const where = await rig.product.runBounded('/bin/pwd', [], false, { ...limits, env: spawn.env, cwd: spawn.cwd });
+    check('(b) 4: the child started in the call\'s own folder', where.stdout.trim() === fs.realpathSync(spawn.cwd), JSON.stringify([where.stdout.trim(), spawn.cwd]));
+  } finally {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+    if (files.ok) {
+      files.remove();
+    }
+  }
 }
 
 /** (c) no local program is started by a configuration of the person's: a ProxyCommand, a LocalCommand, a Host alias. */
@@ -316,6 +376,7 @@ async function main() {
   const rig = await R.makeRig(section, check);
   const haveSshd = fs.existsSync(SSHD);
   await leg0(rig);
+  await legB4(rig);
   if (!haveSshd) {
     check('the live legs ran', process.env.CI !== 'true', `${SSHD} is missing — a skipped live leg on the runner proves nothing`);
     console.log('skip  the legs that need sshd — sshd is not installed');
