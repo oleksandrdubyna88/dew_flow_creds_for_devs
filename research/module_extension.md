@@ -3881,18 +3881,25 @@ flips it). The pieces, in the order a call meets them:
   `writeBridgedCall(base, input)` has two passes. **Pass 1 writes nothing** and refuses, in this order: a user (the destination's or a hop's) that fails
   `unsafeBridgedUser` (`isSafeSshUser` and no `$` and no backslash: a `-J` user reaches a shell on some builds, so a Windows login `CORP\alice` is refused on a
   bridge), a host that fails `bridgedHostWord` (a name, or an IPv6 address: brackets for a hop, with or without them for the destination; `gw:2201` and `[gw]` are
-  refused; a zone id fails `isSafeSshHost`), two legs with one `Host` word (compared in lower case, brackets off: R4), a hop credential that is a password, nothing,
-  a value the opener stopped or a sealed key (R1-R3; the sealed check is `sealedKeyRefusal`, shared with `byStoredKey`), a password destination with no pin (R5), and
-  a path that fails the value rule (empty, a quote, a control character, `${`, a last backslash: R6) or holds `%` in a typed key path or in `-i` (R10: `ssh` expands it,
-  X2). **Pass 2 writes**, and a failure in it removes what it wrote and answers `internal` (R7): the keys folder (0700); each stored hop key with
+  refused; a zone id fails `isSafeSshHost`; a HOP named `none`, in any letter case, has no word either, because `-J none` drops the jump: R6, the host sentence, which says
+  `is the word "none"`; a destination named `none` is an ordinary word), two legs with one `Host` word (compared in lower case, brackets off: R4), an entry whose `hostKey` is not
+  empty after a trim and does not parse with `parseHostKey` (R11: it is never run as an unpinned leg; a known_hosts line typed whole is one such value; a password destination with such a pin
+  hears R11, not R5), a hop credential that is a password, nothing, a value the opener stopped or a sealed key (R1-R3; the sealed check is `sealedKeyRefusal`, shared with
+  `byStoredKey`), a password destination with no pin (R5), and a path that fails its rule. A path the FILE carries (a hop's key path, typed or written for the call, the pin files, the sentinel,
+  both known-hosts paths) is asked `unsafeBridgedFileValue`: empty, a quote, a control character, `${`, two backslashes in a row, a backslash before an apostrophe, or a last backslash
+  (R6). A path that goes to the argv alone, the destination's typed `-i` path, is asked `unsafeSshConfigValue` (unchanged, so a typed `\\fs\keys\id` is let through and `-i` carries it as
+  typed); both kinds of typed path are refused for `%` (R10: `ssh` expands it, X2). Where the path at fault is one this extension made (the keys folder, the call's own key file, a pin
+  file, the sentinel, `bridges/known_hosts`), the sentence is R14, which names the storage folder and asks nothing of the person that they cannot do; R10 stays for a typed path and R6's
+  known-hosts sentence for the person's own `known_hosts`. **Pass 2 writes**, and a failure in it removes what it wrote and answers `internal` (R7): the keys folder (0700); each stored hop key with
   `materializeCallKey` (a random name, no id: change 9.1); one pin file for each pinned leg, `call-<uuid>.known_hosts`, holding `knownHostsLine(<the Host word in lower case>, port, key)`
   (never `materializeKnownHosts`); `bridges/` (0700) and, when a leg is first contact, `bridges/known_hosts` **opened for append** (an `accept-new` that cannot write goes on and
   records nothing); the call's folder `keys/<pid>/<call name>/` (0700, `bridgedCallFolder`) and `c.conf` (0600). Its answer carries `cwd`, `configFile` (`c.conf`), `pinned`,
   `jump` (the `-J` text built with `hopOf` from the entries it CHECKED), `afterRun()` and `remove()`. A hop credential's `warning` goes to the journal first.
 - *The file* (`bridgedSshConfig.ts`, pure). In this order: one `Host <word>` block for each hop with exactly three keywords (`IdentityFile`, `StrictHostKeyChecking`,
   `UserKnownHostsFile`: the pin file, or for `accept-new` the first-contact file and the person's own `known_hosts`), a destination block of two keywords only when the entry pins a
-  host key, then `Host *` from `BRIDGED_LOCKDOWN` (sixteen lines) plus the sentinel `IdentityFile "<keys>/no-default-identity"` (a file never made: it makes the identity list not empty,
-  so `ssh` adds no default file) and `UserKnownHostsFile "<storageDir>/bridges/known_hosts" "<home>/.ssh/known_hosts"`. A caller hands in no keyword. Our own paths are quoted with
+  host key, then `Host *` from `BRIDGED_LOCKDOWN` (seventeen lines) plus the sentinel `IdentityFile "<keys>/no-default-identity"` (a file never made: it makes the identity list not empty,
+  so `ssh` adds no default file), which is followed at once by `PubkeyAcceptedAlgorithms -sk-*` (asked for, in `Host *` alone, once: the algorithms of a security key are left out of what
+  `ssh` may offer; that no PIN is then asked is the itest's leg (o) to observe, and until it has run only the line is pinned), and `UserKnownHostsFile "<storageDir>/bridges/known_hosts" "<home>/.ssh/known_hosts"`. A caller hands in no keyword. Our own paths are quoted with
   each `%` written `%%`; a typed key path is written as typed; backslashes are written once. The `Host` word keeps its letter case (a pattern is compared with the host as typed).
   `bridgedConfigText` asks every rule again and refuses two legs with one word itself, so no caller can get a file in which two legs are one block.
 - *The spawn* (`bridgedSpawn`). `buildSshExecArgv` on a bridge takes `configFile` and `pinned`: `-o StrictHostKeyChecking=yes|accept-new` and **no** `UserKnownHostsFile` word,
@@ -3908,14 +3915,28 @@ flips it). The pieces, in the order a call meets them:
   with that argv, environment and `cwd`; in the `finally`, the sentences of `files.afterRun()` go to the journal, then the destination's key file is removed as before, then `files.remove()`
   (each file in its own try; a failure is one note, `ssh:exec — a file of the call could not be removed: …`). Every refusal is before the spawn, goes to the journal as
   `<entry>: <sentence> (a Remote Bridge was told only that it could not be used)`, and answers the agent `BRIDGE_USE_REFUSED(<entry>)` with code `no_credential` (R7 and R9: `internal`).
+- *The client check, and the floor* (§S6.14 Y3; `bridgedSshClient.ts`, no `vscode`). A bridged `ssh` is first asked for its version. `clientVerdict(exit, stdout, stderr, platform)` reads what
+  `ssh -V` answered: the token is `^OpenSSH_(for_Windows_)?(\d+)\.(\d+)` at the very start of **stderr** (a word later in a line, or on stdout, is not a version), major and minor are compared as
+  numbers, and on `win32` the token must be the `for_Windows_` one. R12 (`sentences.clientNoVersion`) when the exit is not 0 or there is no token, with the exit code and nothing of the output; R13
+  (`clientBelowFloor`) when the version is below the floor or, on `win32`, the build is another, with the matched token and the floor. Both name no entry: they are true of the computer, and
+  they reach the journal only, as every refusal does (the agent reads `BRIDGE_USE_REFUSED`). The floor is the one constant `BRIDGED_SSH_FLOOR` (`{ other, win32 }`): **OpenSSH 8.9, and Win32-OpenSSH 9.5 on Windows** (the owner's Q12, 2026-11-16; the 8.9 is held until probe PV1 has run the bridged itest on the older CI images, and no run of it is claimed here). 8.9 is accepted and 8.8 is R13 on a POSIX build; on `win32` 9.5p2 is accepted and 8.1p1 is R13, and the portable `OpenSSH_9.9p1` is R13 whatever its number. The verdict can be asked under another
+  floor (`clientVerdictUnder`), so a test says which floor it is about. **Where:** `bridgedSshClientCheck({ storageDir, … })` is the dep `SshUseDeps.bridgedClient`, as `bridgedSshConfig` is for the writer;
+  a bridged call with none is refused before any slot (`unguardedBridge`, reason `no client check for this call`). The road gives the writer a `beforeFiles` hook; the real writer calls it after pass 1 has
+  refused nothing and before pass 2 writes a file, so a call that pass 1 refuses spends no `-V` spawn, and R1-R11 are said before R12 and R13 (a writer that does not call it skips the check: only the
+  real one is wired in production). The spawn is `runSshExec(['-V'], …)` with the program of `sshSpawnLaunch` (the one the call then runs), the environment `bridgedSshEnv(process.env, process.platform)`, a fresh
+  call folder under `keys/<pid>/` (`bridgedCallFolder`) that holds nothing and is removed afterwards (a failed removal is one journal note and does not hide the verdict), the window's and the request's guards,
+  and a 10 s timeout (`CLIENT_CHECK_TIMEOUT_MS`); `runBounded` ends a child that outlives it with SIGTERM, then SIGKILL, and the verdict is R12 (no exit code). A runner that cannot start `ssh` at all is R12 too; a request
+  that ended is not an answer, and its error goes on. **A good verdict is kept per program for the life of the check** (one check per `sshDepsFor`, so per window); a bad one is not kept, and the next call asks
+  again. Tests: `bridgedSshClient.test.ts` (CV1-CV7, the spawn's program, argv, environment, folder and bound, the keeping, a real stand-in program killed at the bound), `bridgeLinks.test.ts` (L15-L18, G3, and G2 for
+  the wiring).
 - *First contact.* A leg whose entry pins no host key is first contact: `accept-new`, recorded in `bridges/known_hosts`, which lives outside the keys folder so the record survives a purge.
   After the run the journal gets J1 for each line added to that file (`first contact through a Remote Bridge: <name> <algorithm> <fingerprint> was added to bridges/known_hosts`) and J2 for
   each first-contact leg whose name is in neither that file nor the person's own (so the next call would accept any key). The person's own `known_hosts` is read, never written. What is
   promised is *opened before, reported after*: a write that fails later in the call is not prevented, because `ssh` itself goes on after it.
-  One case of that is known and open on Windows. When the storage folder is a UNC path (`\\server\share\…`, for example a roaming profile),
-  `ssh` 8.7+ reads the `\\` inside the quoted value as one `\`. The pre-spawn open, made by Node, passes, but `ssh` cannot write the file, so the
-  first contact is not recorded and only J2 reports it. This was measured with `-G` on 10.2p1 and is not yet measured on Windows. It is owed
-  before any switch-on build (E1.6 spec §S6.10).
+  A storage folder on a UNC path (`\\server\share\…`, for example a roaming profile) is the case that used to be open on Windows (`ssh` 8.7+ reads the `\\` inside the quoted value as
+  one `\`, so a first contact would not be recorded, measured with `-G` on 10.2p1, not yet on Windows). It is refused before the spawn now: the keys folder and `bridges/known_hosts`
+  are values of the file, so R14 is said, and so it is for a profile folder with `%` and a stored key. The person's own `known_hosts` on a UNC path is refused with R6's known-hosts
+  sentence. What is pinned is the refusal, in unit tests; nothing here claims how a Windows `ssh` reads such a path. Lifting the refusal is a todo (E4.3).
 - *The database client on a bridge* (`dbCliLauncher.ts`, `agentUseActions.ts`). `buildDbQueryLaunch(..., { bridged: true })` puts `-X` first on `psql` and `--no-defaults` first on `mysql` (an option
   file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME`, its own
   password variable and, since §S6.14 Y6, the names that close the files it would read under `HOME`: `buildDbQueryLaunch(..., { bridged, absentFile })` gives `mysql` `MYSQL_TEST_LOGIN_FILE` (`--no-defaults` still reads `.mylogin.cnf`; probe PD1)
@@ -3924,9 +3945,9 @@ flips it). The pieces, in the order a call meets them:
 
 *What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
 alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
-names in its environment for a password destination: the spec's §S6.9, to be settled at the next whole-plan review); the Windows list was shortened by M9 and PW2 to the seven (`TMP` and `COMSPEC` are not asked for). Tests: `bridgedSshConfig.test.ts` (F1-F10),
-`bridgedSshEnv.test.ts` (N1-N6a, N2a, N3a), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
-real writer and a real broker), `dbCliLauncher.test.ts` (Q1-Q3, Q5-Q9) and `bridgeRunSites.test.ts` (Q4a, Q4b), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
+names in its environment for a password destination; `PubkeyAcceptedAlgorithms -sk-*` is asked for in `Host *` so that no security key is offered, and leg (o) of the itest is what observes whether a client then asks for none); the Windows list was shortened by M9 and PW2 to the seven (`TMP` and `COMSPEC` are not asked for). Tests: `bridgedSshConfig.test.ts` (F1-F11, and the Y5 cases of the host word and the file's value rule),
+`bridgedSshEnv.test.ts` (N1-N6a, N2a, N3a), `bridgedSshCall.test.ts` (W1-W16 and the Y5 cases: `none`, R11 and its order, the doubled backslash, R14, real files), `bridgedSshClient.test.ts` (CV1-CV7 and the check), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2 and the Y5 cases, over the
+real writer and a real broker) and `bridgeLinksClient.test.ts` (L15-L18, G3), `dbCliLauncher.test.ts` (Q1-Q3, Q5-Q9) and `bridgeRunSites.test.ts` (Q4a, Q4b), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
 `scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`) and `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`), catalogued in `module_tests.md`.
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts

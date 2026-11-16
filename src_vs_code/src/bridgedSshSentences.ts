@@ -3,9 +3,9 @@ import { HostKey, hostKeyFingerprint } from './hostKeyPin';
 import type { EntityMetadata } from './types';
 
 /**
- * The journal sentences of a bridged `ssh:exec` (the E1.6 spec §S6.4, R1-R10, J1, J2) and the reading of a known-hosts file they need.
+ * The journal sentences of a bridged `ssh:exec` (the E1.6 spec §S6.4 and §S6.14, R1-R14, J1, J2) and the reading of a known-hosts file they need.
  *
- * <p>Pure, no `vscode`, no `fs`. Every sentence says what the code has just checked and nothing about what comes next, and R6 and R10 hold
+ * <p>Pure, no `vscode`, no `fs`. Every sentence says what the code has just checked and nothing about what comes next, and R6, R10, R11 and R14 hold
  * no part of a value: a path, a user and a host are named by the entry they belong to, never quoted. The agent reads none of these: it
  * reads `BRIDGE_USE_REFUSED(<entry of the call>)` and nothing else.</p>
  */
@@ -19,8 +19,8 @@ export interface Whose {
 const of = (who: Whose, what: string): string => (who.hop ? `the ${what} of the jump host "${who.entity.name}"` : `the ${what} of "${who.entity.name}"`);
 
 const R6_USER = 'is not a valid user name, or holds "$" or a backslash';
-const R6_HOST = 'is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes';
-const R6_PATH = 'is empty, or holds a quote, a control character or "${", or ends with a backslash';
+const R6_HOST = 'is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes';
+const R6_PATH = 'is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash';
 
 const r6 = (field: string, why: string): string => `A value of this call cannot be given to ssh through a Remote Bridge: ${field} ${why}.`;
 
@@ -32,17 +32,25 @@ export const sentences = {
   /** R6, a user */ user: (who: Whose): string => r6(of(who, 'user'), R6_USER),
   /** R6, a host */ host: (who: Whose): string => r6(of(who, 'host'), R6_HOST),
   /** R6, the key path of an entry */ keyPath: (who: Whose): string => r6(of(who, 'key path'), R6_PATH),
-  /** R6, our own folders */ keysFolder: (): string => r6('the keys folder', R6_PATH),
-  /** R6, the known-hosts paths */ knownHostsPath: (): string => r6('the known-hosts path', R6_PATH),
+  /** R6, the person's own known_hosts path (the one path of the file that is not ours) */ knownHostsPath: (): string => r6('the known-hosts path', R6_PATH),
   /** R7 */ writeFailed: (why: string): string => `Could not write the files of this call: ${why}`,
   /** R8 */ argvRefused: (entry: string): string => `"${entry}" cannot be given to ssh through a Remote Bridge: its host, its user or its key path is not one a bridge takes.`,
   /** R9 */ noHopEntries: (): string => 'The jump chain of this call gave no entries to check.',
   /** R10 */ percent: (who: Whose): string => `A Remote Bridge does not support "%" in a key path: ${of(who, 'key path')}. Choose a key file whose absolute path has no "%".`,
+  /** R11 */ hostKeyUnreadable: (who: Whose): string =>
+    `The host key stored for ${of(who, 'host')} cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`,
+  /** R14, a path this extension made: the storage folder and what is under it */ storageFolder: (): string =>
+    'The folder VS Code gives this extension for its files has a path that cannot be given to ssh through a Remote Bridge: it holds "%", two backslashes in a row, '
+    + 'or another character a bridge refuses. Stored keys cannot be used through a Remote Bridge from this computer.',
   /** J1 */ firstContactAdded: (entry: string, firstField: string, algorithm: string, fingerprint: string): string =>
     `${entry}: first contact through a Remote Bridge: ${firstField} ${algorithm} ${fingerprint} was added to bridges/known_hosts`,
   /** J2 */ firstContactNotKept: (entry: string, name: string): string =>
     `${entry}: after this call no host key line for ${name} is in bridges/known_hosts, and none that this check can read is in your own known_hosts. `
     + 'If ssh reached that host in this call, it accepted the key and kept no record, and the next call accepts any key.',
+  /** R12 */ clientNoVersion: (exit: number | null): string =>
+    `ssh did not answer its version under the environment a Remote Bridge gives it (exit ${exit === null ? 'unknown' : exit}). No call can go through a Remote Bridge from this computer until it does.`,
+  /** R13 */ clientBelowFloor: (token: string, floor: string, windowsFloor: string): string =>
+    `The ssh on this computer answered ${token}. A Remote Bridge needs OpenSSH ${floor} or newer, and on Windows the OpenSSH that Windows ships, ${windowsFloor} or newer.`,
 };
 
 /** The lines of a known-hosts text that a person or `ssh` wrote: no blank line, no comment. */

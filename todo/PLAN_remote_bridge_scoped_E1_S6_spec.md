@@ -1136,12 +1136,12 @@ reaches the prompt with it. If it does not, (o) is reported *not measured* in §
   |---|---|---|
   | R6 | a host | …`is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.` |
   | R6 | a path | …`is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.` |
-  | R11 | a pin that does not parse | `The host key stored for <the host key of "E"> cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.` |
+  | R11 | a pin that does not parse | `The host key stored for <the host of "E"> cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.` |
   | R12 | no version | `ssh did not answer its version under the environment a Remote Bridge gives it (exit <code>). No call can go through a Remote Bridge from this computer until it does.` |
   | R13 | below the floor, or another build on Windows | `The ssh on this computer answered <token>. A Remote Bridge needs OpenSSH 8.9 or newer, and on Windows the OpenSSH that Windows ships, 9.5 or newer.` |
   | R14 | a path this extension made | `The folder VS Code gives this extension for its files has a path that cannot be given to ssh through a Remote Bridge: it holds "%", two backslashes in a row, or another character a bridge refuses. Stored keys cannot be used through a Remote Bridge from this computer.` |
 
-  `<the host key of "E">` is built by `of(who, 'host key')`. `<token>` is the matched version token and nothing else of the output. R12-R14
+  `<the host of "E">` is built by `of(who, 'host')` (the lead, 2026-11-16: the earlier `'host key'` gave *the host key stored for the host key of*). `<token>` is the matched version token and nothing else of the output. R12-R14
   name no entry: they are true of the computer. Each sentence says what was just checked and nothing about what comes next.
 - **Tests** (unit, `test/bridgedSshConfig.test.ts` and `test/bridgeLinks.test.ts`; each observes `runs` empty and no file written): a hop
   `none`, `NONE`; a destination `none` runs; a key destination and a hop with `hostKey: 'host ssh-ed25519 AAAA…'` (a `known_hosts` line, the

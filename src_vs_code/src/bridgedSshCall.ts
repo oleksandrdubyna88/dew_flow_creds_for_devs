@@ -7,10 +7,12 @@ import {
   BridgedBase,
   BridgedCallInput,
   HopKey,
+  Refusal,
   fieldRefusal,
   firstContactPath,
   hopKeyOf,
   legsOf,
+  noCredential,
   noDefaultIdentity,
   personPath,
   pinLineOf,
@@ -59,6 +61,11 @@ export type BridgedSshConfigWriter = (call: {
   readonly auth: SshExecAuth;
   readonly keyPath: string | undefined;
   readonly hops: readonly EntityMetadata[];
+  /**
+   * Asked after pass 1 has refused nothing and before any file of the call is written (the client check, §S6.14 Y3): a sentence is a refusal,
+   * `undefined` goes on. So an entry that pass 1 refuses spends no spawn, and R1-R11 are said before R12 and R13.
+   */
+  readonly beforeFiles?: () => Promise<string | undefined>;
 }) => Promise<BridgedCallFiles>;
 
 // ---- pass 2: the files ---------------------------------------------------------------------------------------------------------------
@@ -230,13 +237,20 @@ function noteWarnings(base: BridgedBase, input: BridgedCallInput): void {
   });
 }
 
+/** Pass 1: the hop credentials' warnings go to the journal, then the first refusal, if any. Writes nothing. */
+function passOne(base: BridgedBase, input: BridgedCallInput): Refusal | undefined {
+  noteWarnings(base, input);
+  return refusalOf(base, input);
+}
+
 /** No vault: the legs are given. The itest calls this. */
 export function writeBridgedCall(base: BridgedBase, input: BridgedCallInput): BridgedCallFiles {
-  noteWarnings(base, input);
-  const refusal = refusalOf(base, input);
-  if (refusal !== undefined) {
-    return { ok: false, ...refusal };
-  }
+  const refusal = passOne(base, input);
+  return refusal === undefined ? passTwo(base, input) : { ok: false, ...refusal };
+}
+
+/** Pass 2: the files, for a call pass 1 let through. A failure removes what was written and is R7. */
+function passTwo(base: BridgedBase, input: BridgedCallInput): BridgedCallFiles {
   const written: Written = { files: [] };
   try {
     const files = writeFiles(base, input, written);
@@ -255,7 +269,13 @@ export function bridgedSshConfigWriter(parts: { storage: StorageManager; storage
   const base: BridgedBase = { storageDir: parts.storageDir, home: parts.home, platform: process.platform, note: parts.note };
   return async (call) => {
     const hops = await Promise.all(call.hops.map(async (entity) => ({ entity, credential: await resolveSshCredential(parts.storage, call.accountId, entity) })));
-    return writeBridgedCall(base, { destination: call.destination, auth: call.auth, keyPath: call.keyPath, hops });
+    const input: BridgedCallInput = { destination: call.destination, auth: call.auth, keyPath: call.keyPath, hops };
+    const refusal = passOne(base, input);
+    if (refusal !== undefined) {
+      return { ok: false, ...refusal };
+    }
+    const stopped = await call.beforeFiles?.();
+    return stopped === undefined ? passTwo(base, input) : { ok: false, ...noCredential(stopped) };
   };
 }
 

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BridgedSshConfigWriter, bridgedSshConfigWriter as RealWriter } from '../bridgedSshCall';
+import { bridgedSshClientCheck } from '../bridgedSshClient';
 import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
 import type { EntityMetadata, PortForward } from '../types';
 import type { UseAction } from '../useActions';
@@ -40,6 +41,14 @@ export interface LinksOptions {
   readonly writeFails?: boolean;
   /** The deps carry no `bridgedSshConfig`: a bridged call is refused before any slot or key (Amendment 6, F.4; E1.6 keeps the refusal for a world with no writer). */
   readonly noConfigWriter?: true;
+  /**
+   * The REAL client check over a pretended `ssh -V` that answers these, in order and the last one again: each spawn it makes is a `Run` in `runs`, with
+   * the program, the environment, the timeout and the folder it was given. Without it the deps' check is a stub that says ok and spawns nothing, so
+   * the world's other tests keep their `runs` to the `ssh` of the call.
+   */
+  readonly client?: readonly ClientAnswer[];
+  /** The deps carry no `bridgedClient`: a bridged call is refused before any slot or key (§S6.14 Y3, as `noConfigWriter`). */
+  readonly noClientCheck?: true;
   /** A writer of the test's own, in place of the real one of E1.6 (L14: a stub that says ok for an entry the argv rules refuse). */
   readonly writer?: (real: BridgedSshConfigWriter) => BridgedSshConfigWriter;
   /** `j1`'s credential: a stored key of its own (default), a stored password, nothing, a key sealed with its own PIN, or the path in `jumpEntry.sshKeyPath`. */
@@ -58,6 +67,16 @@ export interface LinksOptions {
   /** The SSH agent's socket is up (a path): with `agentForward`, a signing prompt may follow the Allow. No real socket exists here, so the run itself stands in for the prompt (`hold`). */
   readonly agentSocket?: string;
 }
+
+/** What a pretended `ssh -V` answers. */
+export interface ClientAnswer {
+  readonly exit: number | null;
+  readonly stderr: string;
+  readonly stdout?: string;
+}
+
+/** The floor the world's check is under: the values the cases are written for, whatever `BRIDGED_SSH_FLOOR` holds. */
+export const CHECK_FLOOR = { other: [8, 9], win32: [9, 5] } as const;
 
 export interface Run {
   readonly argv: string[];
@@ -175,6 +194,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     agentSocket: () => world.socket,
     // E1.6's real writer over this vault, counted; a test may put its own in front of it.
     ...writerDeps(options, realWriter, counted),
+    ...clientDeps(options, storageDir, runs),
   };
   const world: LinksWorld = {
     exec: mod.sshExecAction(deps),
@@ -196,7 +216,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
 }
 
 /** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
-type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket' | 'writer' | 'onRun' | 'destPassword' | 'dropHops'>> & { readonly destPassword: string | undefined };
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket' | 'writer' | 'onRun' | 'destPassword' | 'dropHops' | 'client' | 'noClientCheck'>> & { readonly destPassword: string | undefined };
 
 type Storage = Parameters<typeof seedEntry>[0];
 
@@ -282,6 +302,26 @@ function writerDeps(
     return {};
   }
   return { bridgedSshConfig: counted(options.writer === undefined ? real : options.writer(real)) };
+}
+
+/** The deps' client check: none, the real one over the answers the test gave (its spawns recorded as runs), or a stub that says ok and spawns nothing. */
+function clientDeps(options: LinksOptions, storageDir: string, runs: Run[]): Pick<SshUseDeps, 'bridgedClient'> {
+  if (options.noClientCheck === true) {
+    return {};
+  }
+  const answers = options.client;
+  if (answers === undefined) {
+    return { bridgedClient: () => Promise.resolve({ ok: true, version: 'stub' }) };
+  }
+  let asked = 0;
+  const run = (argv: string[], given: { env: NodeJS.ProcessEnv; program?: string; timeoutMs?: number; cwd?: string }): Promise<{ exitCode: number | null; stdout: string; stderr: string }> => {
+    const folder = given.cwd === undefined ? {} : { cwdFiles: fs.readdirSync(given.cwd) };
+    runs.push({ argv, program: given.program, env: given.env, timeoutMs: given.timeoutMs, cwd: given.cwd, ...folder });
+    const answer = answers[Math.min(asked, answers.length - 1)];
+    asked += 1;
+    return Promise.resolve({ exitCode: answer.exit, stdout: answer.stdout ?? '', stderr: answer.stderr });
+  };
+  return { bridgedClient: bridgedSshClientCheck({ storageDir, floor: CHECK_FLOOR, run }) };
 }
 
 /** The tail of the file: what a pretended `ssh` reads of its working folder while it "runs". */

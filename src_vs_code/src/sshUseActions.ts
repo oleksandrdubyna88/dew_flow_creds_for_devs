@@ -16,6 +16,7 @@ import { CallTarget, OverSsh, OverSshCall, UseAction, UseActionContext, UseActio
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
 import { resolveJumpHops } from './sshOptions';
 import { BridgedSshConfigWriter, bridgedSshConfigWriter } from './bridgedSshCall';
+import { BridgedClientCheck, bridgedSshClientCheck } from './bridgedSshClient';
 import { BridgedFiles, Launch, bridgedLaunch, isResult } from './bridgedSshRoad';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
@@ -86,11 +87,19 @@ export interface SshUseDeps {
    * any slot, key or spawn (`unguardedBridge`) and cannot run a bridged `ssh` with no file.
    */
   bridgedSshConfig?: BridgedSshConfigWriter;
+  /**
+   * The client check of a bridged call (§S6.14 Y3): asks the `ssh` the call would run for its version, under the bridged environment, and says whether
+   * the floor admits it. Production's is `bridgedSshClientCheck` (`sshDepsFor`), whose good verdict lives as long as these deps. Optional for the
+   * reason `bridgedSshConfig` is: a bridged call with none is refused before any slot, key or spawn (`unguardedBridge`), so no bridged `ssh` runs unchecked.
+   */
+  bridgedClient?: BridgedClientCheck;
 }
 
 export type { BridgedSshConfigWriter };
 /** The journal's reason while the writer is absent; the agent reads `BRIDGE_USE_REFUSED` and not this. */
 export const NO_BRIDGED_SSH_CONFIG = 'no per-call ssh_config for this call';
+/** The journal's reason while the client check is absent. */
+export const NO_BRIDGED_CLIENT = 'no client check for this call';
 
 /**
  * The program and environment that make `-A` more than a flag, plus one audit line when it
@@ -312,13 +321,18 @@ async function runCall(
   if (!chain.ok) {
     return refuse('no_credential', chain.reason, chain.second);
   }
-  const writer = deps.bridgedSshConfig as BridgedSshConfigWriter; // `unguardedBridge` refused a bridged call with none before any slot
-  const launch = ctx.bridge === undefined ? localLaunch(deps, ctx, call, prepared, chain.value) : await bridgedLaunch({ writer, ctx, call, prepared, chain, refuse }, held);
+  const launch = ctx.bridge === undefined ? localLaunch(deps, ctx, call, prepared, chain.value) : await bridgedLaunch({ ...bridgedParts(deps, ctx), ctx, call, prepared, chain, refuse }, held);
   if (isResult(launch)) {
     return launch;
   }
   const response: ExecResponseBody = await runSshExec(launch.argv, runOptions(deps, ctx, call, launch));
   return { status: 200, body: response };
+}
+
+/** The two deps a bridged call needs, which `unguardedBridge` proved present before any slot; the check is given the guards that end its child with the window or the request. */
+function bridgedParts(deps: SshUseDeps, ctx: UseActionContext): { writer: BridgedSshConfigWriter; client: (program: string) => ReturnType<BridgedClientCheck> } {
+  const check = deps.bridgedClient as BridgedClientCheck;
+  return { writer: deps.bridgedSshConfig as BridgedSshConfigWriter, client: (program) => check({ program, guards: launchGuards(deps.signal, ctx) }) };
 }
 
 /** What the runner is given: the launch, the bound, the guards; and a `cwd` only for a bridged call (off a bridge the runner is given none, as it always was). */
@@ -472,9 +486,15 @@ function openedMessage(entityName: string, entity: EntityMetadata): string {
   return `Claude Code opened an SSH terminal for "${entityName}"${target === undefined ? '' : ` (${target})`}.`;
 }
 
-/** A bridged call with no writer of the per-call file is refused before any slot, key or spawn: the generic sentence to the agent, this reason in the journal. Off a bridge, nothing. */
+/**
+ * A bridged call with no writer of the per-call file, or with no client check, is refused before any slot, key or spawn: the generic sentence to the
+ * agent, this reason in the journal. Off a bridge, nothing.
+ */
 function unguardedBridge(deps: SshUseDeps, ctx: UseActionContext, refuse: (code: ErrorCode, message: string) => UseActionResult): UseActionResult | undefined {
-  return ctx.bridge !== undefined && deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : undefined;
+  if (ctx.bridge === undefined) {
+    return undefined;
+  }
+  return deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : deps.bridgedClient === undefined ? refuse('denied', NO_BRIDGED_CLIENT) : undefined;
 }
 
 /**
@@ -531,6 +551,8 @@ export function sshDepsFor(parts: {
     servesKeyForEntity: (entity): boolean => parts.sshAgent.servesKeyForEntity(entity),
     // The writer of the per-call ssh_config of a bridged call: with it a bridged `ssh:exec` has the file it runs under (parent §4.9, E1.6).
     bridgedSshConfig: bridgedSshConfigWriter({ storage: parts.storage, storageDir: parts.storageDir, home: os.homedir(), note: parts.agentServer.note }),
+    // The client check of a bridged call (§S6.14 Y3): one per window, so a good answer is asked once for the window's life.
+    bridgedClient: bridgedSshClientCheck({ storageDir: parts.storageDir, note: parts.agentServer.note }),
   };
   return { ...deps, overSsh: execOverSsh(deps) };
 }

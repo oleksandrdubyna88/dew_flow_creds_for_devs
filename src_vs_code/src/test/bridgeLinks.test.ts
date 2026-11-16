@@ -9,22 +9,14 @@ import { code, message } from './bridgeDoorHarness';
 import { HOP_KEY_NAME, JUMP_NAME, KEY_BODY, KEY_NAME, LinksOptions, LinksWorld, STDERR_WITH_A_HOST, linksWorld } from './bridgeLinksWorld';
 import { materializedKeysDir } from '../materializedKeys';
 import { loadBridgeModules } from './bridgeModules';
-import { Door, WallOptions, WallWorld, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { Door, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 import { memoryStorage } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
 import { WslRelayManager } from '../wslRelayManager';
 import { BUSY_PLACE } from '../aliasThrottle';
 import { recordingLog } from './liveColourStorage';
-import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
-
-/** The names `bridgedSshEnv` ASKS FOR from this process, per platform: those it holds (on win32 under any letter case), and on win32 the three blanked ones, whatever it holds. */
-function allowListedNames(): string[] {
-  const names: readonly string[] = process.platform === 'win32' ? BRIDGED_ENV_WINDOWS : BRIDGED_ENV_POSIX;
-  const keys = Object.keys(process.env);
-  const held = names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
-  return process.platform === 'win32' ? [...held, ...BRIDGED_ENV_BLANKED_WINDOWS] : held;
-}
+import { allowListedNames, body, both, notified } from './bridgeLinksRun';
 
 /**
  * What a Remote Bridge may be told about the entries an in-scope entry LINKS to (E1.3 epoch 3, L1-L5, A.3.6).
@@ -36,29 +28,9 @@ function allowListedNames(): string[] {
  */
 
 const { scope } = loadBridgeModules();
-const notified = (line: string): string => `prod: ${line} (a Remote Bridge was told only that it could not be used)`;
 const { AGENT_FORWARD_REFUSED, BRIDGE_USE_REFUSED } = scope;
 
-const ASK = { path: '/v1/mcp/use/exec', body: { entry: 'e1', command: 'id' } };
 
-interface Ran {
-  readonly lw: LinksWorld;
-  readonly ww: WallWorld;
-}
-
-/** A links world and the wall world that runs its action for real; both are torn down whatever `scenario` did. */
-async function both(links: LinksOptions, wall: WallOptions, scenario: (r: Ran) => Promise<void>): Promise<void> {
-  const lw = await linksWorld(links);
-  const ww = await wallWorld({ ...wall, exec: lw.exec });
-  try {
-    await scenario({ lw, ww });
-  } finally {
-    ww.dispose();
-    lw.cleanup();
-  }
-}
-
-const body = (door: Door, ww: WallWorld): ReturnType<typeof send> => send(door, ASK).then((reply) => reply, () => assert.fail(`no answer through ${ww.main}`));
 
 test('L1: a linked key out of scope is part of using e1 — it works through the bridge, the file is gone after, and nothing about the key is told', async () => {
   await both({}, {}, async ({ lw, ww }) => {
@@ -95,7 +67,7 @@ function expectedConf(lw: LinksWorld, hopBlocks: readonly string[] = []): string
     ...hopBlocks,
     'Host *', '  BatchMode yes', '  PasswordAuthentication no', '  KbdInteractiveAuthentication no', '  IdentityAgent none', '  IdentitiesOnly yes',
     `  IdentityFile "${path.join(keys, 'no-default-identity')}"`,
-    '  ForwardAgent no', '  ControlMaster no', '  ControlPath none', '  ClearAllForwardings yes', '  ForwardX11 no', '  Tunnel no', '  PermitLocalCommand no', '  ProxyCommand none',
+    '  PubkeyAcceptedAlgorithms -sk-*', '  ForwardAgent no', '  ControlMaster no', '  ControlPath none', '  ClearAllForwardings yes', '  ForwardX11 no', '  Tunnel no', '  PermitLocalCommand no', '  ProxyCommand none',
     '  ConnectTimeout 10', '  StrictHostKeyChecking yes', `  UserKnownHostsFile "${firstContact}" "${person}"`, '  GlobalKnownHostsFile none', '',
   ].join('\n');
 }
@@ -326,6 +298,7 @@ test('G2: production hands the actions the real writer of the per-call ssh_confi
     relays: new WslRelayManager(() => { throw new Error('no relay is spawned here'); }, () => undefined),
   };
   assert.equal(typeof sshDepsFor(parts).bridgedSshConfig, 'function');
+  assert.equal(typeof sshDepsFor(parts).bridgedClient, 'function', 'and the client check of §S6.14 Y3');
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -366,7 +339,7 @@ test('L7: a password destination with no pin is refused through the bridge (R5);
 const MEASURED = '/k/id\nProxyCommand /tmp/evil %h';
 
 test('L8: a jump host whose key path is the measured value is refused (R6); no file is written and nothing says ProxyCommand', async () => {
-  const line = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character or "\${", or ends with a backslash.`;
+  const line = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character, "\${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.`;
   await assertRefusedOnABridge({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath: MEASURED } }, line);
   await both({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath: MEASURED } }, {}, async ({ lw, ww }) => {
     const reply = await body(viaBridge(ww.bridge), ww);
@@ -441,6 +414,65 @@ test('L12: a user with $ or a backslash — the jump host\'s or the destination\
 
 const KEY_LINE = 'AAAAC3NzaC1lZDI1NTE5AAAAIH87I+9WwO/5xAFxGCubfsyPx4wDNKN+ark5SZ/fA6J7';
 
+/* ---------------------------------------------------------------------------------------------------------------
+ * §S6.14 Y5: a hop named none, a host key that does not parse, a doubled backslash, and a typed path of the argv alone
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The runs of the call itself: what a refused call spends is none, and a call that is let through spends this one. */
+const execRuns = (lw: LinksWorld): LinksWorld['runs'] => lw.runs.filter((run) => !run.argv.includes('-V'));
+
+const R6_NONE = `A value of this call cannot be given to ssh through a Remote Bridge: the host of the jump host "${JUMP_NAME}" is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.`;
+
+test('Y5: a jump host named none or NONE is refused (R6) with nothing run and no file; a destination named none, and a jump host named none.example, run', async () => {
+  for (const host of ['none', 'NONE']) {
+    await assertRefusedOnABridge({ jump: 'valid', jumpEntry: { host } }, R6_NONE);
+  }
+  await both({ jump: 'valid', jumpEntry: { host: 'none.example' } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
+    assert.equal(execRuns(lw).length, 1);
+  });
+  await both({ entry: { host: 'none' } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
+    assert.equal(execRuns(lw).length, 1);
+  });
+});
+
+const R11_PROD = 'The host key stored for the host of "prod" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.';
+const R11_HOP = `The host key stored for the host of the jump host "${JUMP_NAME}" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`;
+
+test('Y5: a host key that does not parse (a known_hosts line, garbage) is R11 for a key destination, a hop and a password destination; no run, no file, and bridges/known_hosts is not made', async () => {
+  const typedLine = `prod.corp.com ssh-ed25519 ${KEY_LINE}`;
+  for (const hostKey of [typedLine, 'garbage']) {
+    await assertRefusedOnABridge({ entry: { hostKey } }, R11_PROD);
+    await assertRefusedOnABridge({ jump: 'valid', jumpEntry: { hostKey } }, R11_HOP);
+    await assertRefusedOnABridge({ key: 'none', destPassword: 'a password', entry: { hostKey } }, R11_PROD);
+  }
+  await both({ entry: { hostKey: 'garbage' } }, {}, async ({ lw, ww }) => {
+    await body(viaBridge(ww.bridge), ww);
+    assert.equal(fs.existsSync(path.join(lw.storageDir, 'bridges')), false, 'bridges/known_hosts was not made: byte for byte as before');
+  });
+  await both({ entry: { hostKey: `ssh-ed25519 ${KEY_LINE}` } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200, 'control: a pin that parses runs');
+    assert.equal(execRuns(lw).length, 1);
+  });
+});
+
+test('Y5: a jump host key path with two backslashes in a row or a backslash before an apostrophe is R6; the destination\'s typed -i path of that form runs and -i carries it unchanged; a typed % is still R10', async () => {
+  const hopLine = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character, "\${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.`;
+  for (const sshKeyPath of ['C:\\keys\\\\id', "C:\\'k\\id"]) {
+    await assertRefusedOnABridge({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath } }, hopLine);
+  }
+  const unc = '\\\\fs\\keys\\id';
+  await both({ key: 'none', entry: { sshKeyPath: unc } }, {}, async ({ lw, ww }) => {
+    const reply = await body(viaBridge(ww.bridge), ww);
+    assert.equal(reply.status, 200, reply.body);
+    const [run] = execRuns(lw);
+    assert.equal(run.argv[run.argv.indexOf('-i') + 1], unc, '-i carries the typed path unchanged');
+    assert.ok(!(run.conf ?? '').includes(unc), 'and the file does not hold it');
+  });
+  await assertRefusedOnABridge({ key: 'none', entry: { sshKeyPath: '/k/%u/id' } }, 'A Remote Bridge does not support "%" in a key path: the key path of "prod". Choose a key file whose absolute path has no "%".');
+});
+
 test('L13: a first-contact call whose ssh adds a line and then cannot start still has J1 in the journal, and its files are gone; a run that adds no line has J2', async () => {
   const addLine = (_run: unknown, at: { storageDir: string }): void => fs.appendFileSync(path.join(at.storageDir, 'bridges', 'known_hosts'), `prod.corp.com ssh-ed25519 ${KEY_LINE}\n`);
   await both({ runFails: true, onRun: addLine }, {}, async ({ lw, ww }) => {
@@ -481,6 +513,10 @@ test('L14: a writer that says ok for an entry the argv rules refuse is stopped b
     lw0.cleanup();
   }
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The client check (§S6.14 Y3, L15-L18): `ssh -V` is read before the first file of a bridged call, once per good answer
+ * ------------------------------------------------------------------------------------------------------------- */
 
 test('R9: a chain with a -J text and no hop entries is refused (internal) before any write; nothing runs and keys/<pid>/ is empty', async () => {
   await assertRefusedOnABridge({ jump: 'valid', dropHops: true }, 'The jump chain of this call gave no entries to check.', 'internal');

@@ -8,8 +8,9 @@ import { DEFAULT_SSH_PORT, isSafeSshHost, isSafeSshUser } from './sshCommand';
  * nothing else: a hop block carries exactly three keywords, the destination block exactly two, and `Host *` the lock-down. A hop block comes
  * BEFORE `Host *` because the first obtained value wins for every scalar keyword while `IdentityFile` accumulates.</p>
  *
- * <p>Every value that reaches the file is asked the same questions here, by ONE function for every path (`unsafeSshConfigValue`) and one more
- * for a key path that `ssh` expands (`%`). The writer asks them first, to say why; this module asks them again, so no caller can get a file
+ * <p>Every value that reaches the file is asked the same questions here, by ONE function for every path (`unsafeBridgedFileValue`, which is
+ * `unsafeSshConfigValue` and the two backslash cases) and one more for a key path that `ssh` expands (`%`). A path that goes to the argv alone (`-i`)
+ * is asked `unsafeSshConfigValue` and the `%` rule only. The writer asks them first, to say why; this module asks them again, so no caller can get a file
  * that holds a value the rules refuse.</p>
  */
 
@@ -41,8 +42,13 @@ export interface ConfigInput {
 export type ConfigText = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly field: string };
 
 /**
- * The sixteen lines of `Host *` that hold no path, in order. The two that hold one are written between them by `bridgedConfigText`:
- * `IdentityFile` after `IdentitiesOnly`, `UserKnownHostsFile` before `GlobalKnownHostsFile`. A caller hands in no keyword of its own.
+ * The seventeen lines of `Host *` that hold no path, in order. The two that hold one are written between them by `bridgedConfigText`:
+ * `IdentityFile` after `IdentitiesOnly`, `UserKnownHostsFile` before `GlobalKnownHostsFile`: nineteen lines in all. A caller hands in no keyword of
+ * its own.
+ *
+ * <p>`PubkeyAcceptedAlgorithms -sk-*` follows the sentinel `IdentityFile` straight away (Y4). It asks `ssh` to leave out the public-key algorithms whose names
+ * start `sk-` (a security key's), so that a key of that kind is not offered and its PIN is not asked for. It is in `Host *` alone: no hop block and no destination
+ * block carries a keyword of this kind. This file pins the request; whether a client then asks for no PIN is for leg (o) of `scripts/bridged-ssh-itest.cjs` to observe.</p>
  */
 export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: string]> = [
   ['BatchMode', 'yes'],
@@ -50,6 +56,7 @@ export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: s
   ['KbdInteractiveAuthentication', 'no'],
   ['IdentityAgent', 'none'],
   ['IdentitiesOnly', 'yes'],
+  ['PubkeyAcceptedAlgorithms', '-sk-*'],
   ['ForwardAgent', 'no'],
   ['ControlMaster', 'no'],
   ['ControlPath', 'none'],
@@ -83,6 +90,16 @@ export function unsafeSshConfigValue(value: string): boolean {
 }
 
 /**
+ * True when the value cannot be written into the FILE: what `unsafeSshConfigValue` refuses, or two backslashes in a row, or a backslash before an
+ * apostrophe (Y5: a UNC storage folder, and a hop key path that holds either, are what the parent's §4.9 table refuses before the spawn).
+ * Asked of EVERY value the file carries: a hop's key path (typed or written for the call), the pin files, the sentinel and both known-hosts paths.
+ * `unsafeSshConfigValue` is the rule of a path that goes to the argv alone (`-i`), where no such reading happens, and is unchanged.
+ */
+export function unsafeBridgedFileValue(value: string): boolean {
+  return unsafeSshConfigValue(value) || value.includes('\\\\') || value.includes("\\'");
+}
+
+/**
  * True when a user that an entry holds cannot go into a bridged argv: it fails `isSafeSshUser`, or holds `$` or a backslash (a `-J` user reaches
  * a shell on some builds, and a Windows login `CORP\alice` is refused: the E1.6 spec's H7a). An absent user is not asked.
  */
@@ -99,17 +116,32 @@ export function bridgedKeyPathProblem(value: string): 'value' | 'percent' | unde
 }
 
 /**
+ * What is wrong with a hop's typed key path, which `ssh` reads from the FILE: the file's value rule (`unsafeBridgedFileValue`), then `%`. A path that goes
+ * to `-i` alone is `bridgedKeyPathProblem`'s.
+ */
+export function bridgedFileKeyPathProblem(value: string): 'value' | 'percent' | undefined {
+  if (unsafeBridgedFileValue(value)) {
+    return 'value';
+  }
+  return value.includes('%') ? 'percent' : undefined;
+}
+
+/**
  * The `Host` word of a leg: the host with its brackets off and its letter case kept (a `Host` pattern is compared with the host as typed: X3),
- * or `undefined` when a bridge does not take the host. A host with no `:`, `[` or `]` is its own word. Any other host must be an IPv6 address,
+ * or `undefined` when a bridge does not take the host. A HOP named `none`, in any letter case, has none either: `-J none` drops the jump (Y5; measured
+ * with `ssh -G`, 10.2p1), whereas the destination named `none` is an ordinary word. A host with no `:`, `[` or `]` is its own word. Any other host must be an IPv6 address,
  * alone or with one pair of brackets around all of it; a hop needs the brackets (`-J` does not take a bare address: X8), the destination may
  * have them or not. `gw:2201`, `[gw]` and a bracket anywhere else are refused; a zone id fails `isSafeSshHost`.
  */
 export function bridgedHostWord(host: string, leg: 'hop' | 'destination'): string | undefined {
-  if (!isSafeSshHost(host)) {
+  if (!isSafeSshHost(host) || isNoneHop(host, leg)) {
     return undefined;
   }
   return /[:[\]]/.test(host) ? ipv6Word(host, leg) : host;
 }
+
+/** A hop named `none`, in any letter case: `-J none` drops the jump, so the word has no `Host` block to give it one. */
+const isNoneHop = (host: string, leg: 'hop' | 'destination'): boolean => leg === 'hop' && host.toLowerCase() === 'none';
 
 /** The address of a host that holds `:` or a bracket: an IPv6 address, in brackets for a hop and with or without them for the destination. */
 function ipv6Word(host: string, leg: 'hop' | 'destination'): string | undefined {
@@ -177,12 +209,12 @@ function hostRefusal(input: ConfigInput, words: readonly (string | undefined)[])
   return new Set(lower).size === lower.length ? undefined : 'hosts';
 }
 
-/** A hop's key file: a typed path is asked the `%` rule too; a file this call wrote only the value rule (its `%` is written `%%`). */
+/** A hop's key file: a typed path is asked the `%` rule too; a file this call wrote only the file's value rule (its `%` is written `%%`). */
 function hopKeyProblem(hop: HopBlock): 'value' | 'percent' | undefined {
   if (hop.typedKeyPath) {
-    return bridgedKeyPathProblem(hop.identityFile);
+    return bridgedFileKeyPathProblem(hop.identityFile);
   }
-  return unsafeSshConfigValue(hop.identityFile) ? 'value' : undefined;
+  return unsafeBridgedFileValue(hop.identityFile) ? 'value' : undefined;
 }
 
 /** The first path of a hop that fails: its key file, then its pin file. */
@@ -190,23 +222,23 @@ function hopPathRefusal(hop: HopBlock, at: number): string | undefined {
   if (hopKeyProblem(hop) !== undefined) {
     return `hop:${at}:key`;
   }
-  return 'pinnedFile' in hop.check && unsafeSshConfigValue(hop.check.pinnedFile) ? `hop:${at}:pin` : undefined;
+  return 'pinnedFile' in hop.check && unsafeBridgedFileValue(hop.check.pinnedFile) ? `hop:${at}:pin` : undefined;
 }
 
 function pathRefusal(input: ConfigInput): string | undefined {
   const checks: ReadonlyArray<readonly [string, string | undefined]> = [
     ['destination:pin', input.destination.pinnedFile],
     ['keys', input.noDefaultIdentity],
-    ['known-hosts', input.firstContactFile],
+    ['first-contact', input.firstContactFile],
     ['known-hosts', input.personKnownHosts],
   ];
   return input.hops.map((hop, at) => hopPathRefusal(hop, at)).find((field) => field !== undefined)
-    ?? checks.find(([, value]) => value !== undefined && unsafeSshConfigValue(value))?.[0];
+    ?? checks.find(([, value]) => value !== undefined && unsafeBridgedFileValue(value))?.[0];
 }
 
 /**
  * The file, or the name of the first field that failed a rule (`hop:<n>:host`, `hop:<n>:key`, `hop:<n>:pin`, `destination:host`,
- * `destination:pin`, `keys`, `known-hosts`, `hosts`). It echoes no value. It refuses two legs with one `Host` word itself, so no caller can
+ * `destination:pin`, `keys`, `first-contact`, `known-hosts`, `hosts`). It echoes no value. It refuses two legs with one `Host` word itself, so no caller can
  * get a file in which two legs are one block (X7: the destination would get the hop's key and the hop's pin file).
  */
 export function bridgedConfigText(input: ConfigInput): ConfigText {

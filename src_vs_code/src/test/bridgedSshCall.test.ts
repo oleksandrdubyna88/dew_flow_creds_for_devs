@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { after, mock, test } from 'node:test';
 import type { BridgedCallFiles, BridgedCallInput, BridgedLeg, bridgedSpawn as BridgedSpawn, writeBridgedCall as WriteBridgedCall } from '../bridgedSshCall';
 import { bridgedConfigText } from '../bridgedSshConfig';
-import type { fieldRefusal as FieldRefusal } from '../bridgedSshRefusals';
+import type { fieldRefusal as FieldRefusal, refusalOf as RefusalOf } from '../bridgedSshRefusals';
 import { pinRefusalFor } from '../pinGate';
 import { materializedKeysDir } from '../materializedKeys';
 import { resolveJumpChain } from '../sshOptions';
@@ -29,7 +29,7 @@ const PIN_A = `ssh-ed25519 ${KEY_A}`;
 const PIN_B = `ssh-ed25519 ${KEY_B}`;
 
 const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
-const { fieldRefusal } = loadWithVscode<{ fieldRefusal: typeof FieldRefusal }>('../bridgedSshRefusals', stub);
+const { fieldRefusal, refusalOf } = loadWithVscode<{ fieldRefusal: typeof FieldRefusal; refusalOf: typeof RefusalOf }>('../bridgedSshRefusals', stub);
 const realInstaller = loadWithVscode<{ materializeCallKey(dir: string, content: string): string }>('../keyInstaller', stub);
 
 interface World {
@@ -293,7 +293,7 @@ test('W11: a hop user with $ or a backslash, and the same two as the destination
   }
 });
 
-const HOST_REFUSAL = (field: string): string => `A value of this call cannot be given to ssh through a Remote Bridge: ${field} is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.`;
+const HOST_REFUSAL = (field: string): string => `A value of this call cannot be given to ssh through a Remote Bridge: ${field} is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.`;
 
 test('W12: a hop gw:2201, a bare ::1 as a hop and the destination gw:2201 are refused (R6, the host field); the destination ::1 is written', () => {
   const w = world();
@@ -309,7 +309,7 @@ test('W13: a key path with % is R10, with ${ is R6; the sentences hold no part o
   const percent = refused(w.write(call(entry('prod'), [], { keyPath: '/k/%u/id' })));
   assert.deepEqual([percent.code, percent.reason], ['no_credential', 'A Remote Bridge does not support "%" in a key path: the key path of "prod". Choose a key file whose absolute path has no "%".']);
   const dollar = refused(w.write(call(entry('prod'), [], { keyPath: '/k/${X}/id' })));
-  assert.equal(dollar.reason, 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of "prod" is empty, or holds a quote, a control character or "${", or ends with a backslash.');
+  assert.equal(dollar.reason, 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of "prod" is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.');
   const hop = refused(w.write(call(entry('prod'), [leg(entry('hop1'), typedKey('/k/%d/id'))])));
   assert.equal(hop.reason, 'A Remote Bridge does not support "%" in a key path: the key path of the jump host "hop1". Choose a key file whose absolute path has no "%".');
   for (const result of [percent, dollar, hop]) {
@@ -377,6 +377,9 @@ test('W16: a hop credential\'s warning goes to the journal as "<entry of the cal
  * ------------------------------------------------------------------------------------------------------------- */
 
 const HOST_ENV = { PATH: '/usr/bin', HOME: '/home/me', DISPLAY: ':0', SSH_AUTH_SOCK: '/run/agent.sock' };
+/** R14, said for a path this extension made (the storage folder and what is under it). */
+const R14 = 'The folder VS Code gives this extension for its files has a path that cannot be given to ssh through a Remote Bridge: it holds "%", two backslashes in a row, or another character a bridge refuses. Stored keys cannot be used through a Remote Bridge from this computer.';
+
 const ASKPASS_ENV = { SSH_ASKPASS: '/s/askpass.sh', SSH_ASKPASS_REQUIRE: 'force', CREDS_SSH_PASSWORD: 'pw', DISPLAY: ':0' };
 
 test('S6.3: DISPLAY reaches the outer ssh of a password destination off Windows only, even when the host environment holds one', () => {
@@ -406,18 +409,21 @@ test('the second line: each field bridgedConfigText names becomes the sentence o
     return made as { field: string };
   };
   const reasonOf = (field: string, given = input): string => fieldRefusal(field, given).reason;
-  assert.equal(reasonOf(configOf('gw:2201', '/k/id').field), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of the jump host "hop1" is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
+  assert.equal(reasonOf(configOf('gw:2201', '/k/id').field), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of the jump host "hop1" is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
   assert.equal(reasonOf(configOf('hop1.example.com', 'k/%d/id').field), 'A Remote Bridge does not support "%" in a key path: the key path of the jump host "hop1". Choose a key file whose absolute path has no "%".');
   const dollar = call(entry('prod'), [leg(entry('hop1'), typedKey('/k/${X}/id'))]);
-  assert.equal(reasonOf(configOf('hop1.example.com', '/k/${X}/id').field, dollar), 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "hop1" is empty, or holds a quote, a control character or "${", or ends with a backslash.');
-  assert.equal(reasonOf(configOf('hop1.example.com', '/k/id', 'gw:1').field, call(entry('prod', { host: 'gw:1' }), [])), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of "prod" is not a valid host, or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
+  assert.equal(reasonOf(configOf('hop1.example.com', '/k/${X}/id').field, dollar), 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "hop1" is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.');
+  assert.equal(reasonOf(configOf('hop1.example.com', '/k/id', 'gw:1').field, call(entry('prod', { host: 'gw:1' }), [])), 'A value of this call cannot be given to ssh through a Remote Bridge: the host of "prod" is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.');
   const same = call(entry('prod', { host: 'Same.example' }), [leg(entry('hop1', { host: 'same.EXAMPLE' }))]);
   assert.equal(configOf('same.EXAMPLE', '/k/id', 'Same.example').field, 'hosts');
   assert.equal(reasonOf('hosts', same), 'Two connections of this call go to the host "same.EXAMPLE". Through a Remote Bridge the destination and each jump host need a different host.');
-  assert.match(reasonOf('known-hosts'), /the known-hosts path is empty/);
-  for (const field of ['keys', 'hop:0:pin', 'destination:pin']) {
-    assert.match(reasonOf(field), /the keys folder is empty/, field);
+  assert.match(reasonOf('known-hosts'), /the known-hosts path is empty/, 'the person\'s own known_hosts: R6');
+  for (const field of ['keys', 'hop:0:pin', 'destination:pin', 'first-contact']) {
+    assert.equal(reasonOf(field), R14, `${field}: a path this extension made is R14`);
   }
+  assert.equal(reasonOf('hop:0:key', call(entry('prod'), [leg(entry('hop1'))])), R14, 'a stored hop key is a file this extension made');
+  const doubled = call(entry('prod'), [leg(entry('hop1'), typedKey('C:\\keys\\\\id'))]);
+  assert.equal(reasonOf('hop:0:key', doubled), 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "hop1" is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.', 'a typed hop path is the person\'s: R6');
 });
 
 test('a read of a known-hosts file that fails for another reason than a missing file is not an empty file: the call is refused (R7) before the pass writes, and afterRun leaves one note', () => {
@@ -438,14 +444,113 @@ test('a read of a known-hosts file that fails for another reason than a missing 
   files.remove();
 });
 
-test('E1.6 regression: a storage folder whose path holds % makes a bridged stored-key call refuse with R10 (kept on purpose: -i with %% fails "not accessible", X1a)', () => {
+test('E1.6 regression: a storage folder whose path holds % makes a bridged stored-key call refuse with R14, the sentence of the folder (kept on purpose: -i with %% fails "not accessible", X1a)', () => {
   const w = world('bridged-call 100% storage');
   assert.ok(w.storageDir.includes('%'));
   const keyFile = path.join(w.keysDir, 'call-0.key');
 
   const result = refused(w.write(call(entry('prod'), [], { keyPath: keyFile })));
 
-  assert.deepEqual([result.code, result.reason], ['no_credential', 'A Remote Bridge does not support "%" in a key path: the key path of "prod". Choose a key file whose absolute path has no "%".']);
+  assert.deepEqual([result.code, result.reason], ['no_credential', R14]);
   assert.ok(!result.reason.includes(w.storageDir), 'no part of the path');
   assert.deepEqual(tree(w.keysDir), []);
+});
+
+const R6_HOST_NONE = (field: string): string => `A value of this call cannot be given to ssh through a Remote Bridge: ${field} is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.`;
+
+test('Y5: a hop named none or NONE is refused with the host sentence of R6 and nothing is written; a destination named none and a hop named none.example are written', () => {
+  for (const host of ['none', 'NONE', 'None']) {
+    const w = world();
+    const result = refused(w.write(call(entry('dest'), [leg(entry('hop', { host }))])));
+    assert.deepEqual([result.code, result.reason], ['no_credential', R6_HOST_NONE('the host of the jump host "hop"')], host);
+    assert.deepEqual(tree(w.keysDir), [], 'no file and no folder');
+    assert.equal(w.keyWrites(), 0, 'refused in pass 1: no key file was asked for');
+  }
+  const asDestination = world();
+  okFiles(asDestination.write(call(entry('dest', { host: 'none' })))).remove();
+  const near = world();
+  okFiles(near.write(call(entry('dest'), [leg(entry('hop', { host: 'none.example' }))]))).remove();
+});
+
+const R11_LINE = (who: string): string => `The host key stored for ${who} cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`;
+
+test('Y5: a hostKey that does not parse — "garbage", or a whole known_hosts line — is R11 for a key destination and for a hop, writes no file, and leaves bridges/known_hosts byte for byte', () => {
+  const knownHostsLine = `prod.example.com ssh-ed25519 ${KEY_A}`;
+  const before = 'earlier.example ssh-ed25519 AAAA\n';
+  const cases: ReadonlyArray<readonly [string, (hostKey: string) => BridgedCallInput, string]> = [
+    ['the key destination', (hostKey) => call(entry('prod', { hostKey })), 'the host of "prod"'],
+    ['a hop', (hostKey) => call(entry('prod'), [leg(entry('hop', { hostKey }))]), 'the host of the jump host "hop"'],
+  ];
+  for (const [what, build, who] of cases) {
+    for (const hostKey of ['garbage', knownHostsLine, 'ssh-ed25519', `ssh-ed25519 ${KEY_A.slice(0, 20)}`]) {
+      const w = world();
+      fs.mkdirSync(path.join(w.storageDir, 'bridges'), { recursive: true });
+      fs.writeFileSync(path.join(w.storageDir, 'bridges', 'known_hosts'), before);
+      const result = refused(w.write(build(hostKey)));
+      assert.deepEqual([result.code, result.reason], ['no_credential', R11_LINE(who)], `${what}: ${hostKey}`);
+      assert.equal(fs.readFileSync(path.join(w.storageDir, 'bridges', 'known_hosts'), 'utf8'), before, `${what}: bridges/known_hosts is as it was`);
+      assert.deepEqual(tree(w.keysDir), [], `${what}: no pin file, no key file, no folder`);
+      assert.equal(w.keyWrites(), 0);
+    }
+    const control = world();
+    okFiles(control.write(build(PIN_A))).remove();
+  }
+});
+
+test('Y5: R11 is said in its place — after users, hosts and equal hosts, before a hop credential, R5 and paths; an empty or blank hostKey is no pin as before', () => {
+  const asRefusal = (input: BridgedCallInput): string => refused(world().write(input)).reason;
+  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [], { auth: 'askpass' })), R11_LINE('the host of "prod"'), 'a password destination with a pin that does not parse hears R11, not R5');
+  assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', user: 'a b' }))), /the user of "prod"/, 'a user is said first');
+  assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', host: 'gw:2201' }))), /the host of "prod" is not a valid host/, 'a host is said before it');
+  assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage', host: 'same.example' }), [leg(entry('hop', { host: 'same.example' }))])), /^Two connections of this call go to the host/, 'equal hosts too');
+  assert.equal(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [leg(entry('hop'), { kind: 'password', password: 'pw' })])), R11_LINE('the host of "prod"'), 'before a hop credential (R1)');
+  assert.equal(asRefusal(call(entry('prod'), [leg(entry('hop', { hostKey: 'garbage' }), { kind: 'password', password: 'pw' })])), R11_LINE('the host of the jump host "hop"'), 'a hop with both faults: its pin first');
+  assert.match(asRefusal(call(entry('prod', { hostKey: 'garbage' }), [], { keyPath: '/k/%u/id' })), /^The host key stored for /, 'before the paths (R10)');
+  for (const hostKey of ['', '   ', undefined]) {
+    const w = world();
+    okFiles(w.write(call(entry('prod', { hostKey }), [leg(entry('hop', { hostKey }))]))).remove();
+    assert.match(refused(world().write(call(entry('prod', { hostKey }), [], { auth: 'askpass' }))).reason, /logs in by password and pins no host key/, 'an empty pin is no pin: R5 for a password');
+  }
+});
+
+test('Y5: a hop key path that holds two backslashes in a row or a backslash before an apostrophe is R6 and nothing is written; the destination\'s typed -i path of that form is written and carried unchanged', () => {
+  for (const value of ['C:\\keys\\\\id', "C:\\'k\\id", '\\\\fs\\keys\\id']) {
+    const w = world();
+    const result = refused(w.write(call(entry('prod'), [leg(entry('hop1'), typedKey(value))])));
+    assert.equal(result.reason, 'A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "hop1" is empty, or holds a quote, a control character, "${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.', value);
+    assert.ok(!result.reason.includes('keys') && !result.reason.includes("'k"), 'the sentence holds no part of the path');
+    assert.deepEqual(tree(w.keysDir), []);
+    assert.equal(w.keyWrites(), 0);
+  }
+  const w = world();
+  const destination = entry('prod');
+  const typedPath = '\\\\fs\\keys\\id';
+  const files = okFiles(w.write(call(destination, [], { keyPath: typedPath })));
+  const spawned = w.spawn({ destination, keyPath: typedPath, auth: 'key', askpassEnv: {}, remoteCommand: 'id', files, sourceEnv: HOST_ENV, platform: 'win32' });
+  assert.ok(spawned !== undefined, 'the argv is built');
+  assert.equal(spawned.argv[spawned.argv.indexOf('-i') + 1], typedPath, '-i carries the typed path unchanged');
+  assert.ok(!fs.readFileSync(path.join(files.cwd, 'c.conf'), 'utf8').includes(typedPath), 'and the file does not hold it: it goes to the argv alone');
+  files.remove();
+});
+
+type Pass1Base = Parameters<typeof RefusalOf>[0];
+const NOT_REFUSED = '(not refused)';
+
+/** What pass 1 says for a call, as a sentence; the call it lets through says NOT_REFUSED. */
+const said = (base: Pass1Base, input: BridgedCallInput): string => refusalOf(base, input)?.reason ?? NOT_REFUSED;
+const saidCode = (base: Pass1Base, input: BridgedCallInput): string => refusalOf(base, input)?.code ?? NOT_REFUSED;
+
+test('Y5: a storage folder on a UNC path is R14, whatever the call; a stored key and a % in the folder are R14 too, and a typed path with % stays R10', () => {
+  const base = { storageDir: '\\\\fs\\share\\x', home: '/home/me', platform: 'win32' as const, note: (): void => undefined };
+  const keyFile = path.join(materializedKeysDir(base.storageDir), 'call-0.key');
+  for (const input of [call(entry('prod')), call(entry('prod'), [leg(entry('hop'))]), call(entry('prod'), [], { keyPath: keyFile }), call(entry('prod', { hostKey: PIN_A }), [], { auth: 'askpass' })]) {
+    assert.equal(said(base, input), R14);
+    assert.equal(saidCode(base, input), 'no_credential');
+  }
+  const percent = { ...base, storageDir: '/s/100%/x' };
+  assert.equal(said(percent, call(entry('prod'), [], { keyPath: path.join(materializedKeysDir(percent.storageDir), 'call-0.key') })), R14, 'the call\'s own key file');
+  assert.match(said(percent, call(entry('prod'), [], { keyPath: '/k/%u/id' })), /^A Remote Bridge does not support "%" in a key path: the key path of "prod"\. Choose a key file/, 'a typed path with %: R10');
+  const fine = { ...base, storageDir: '/s/plain' };
+  assert.equal(said(fine, call(entry('prod'))), NOT_REFUSED, 'control: an ordinary storage folder is not refused');
+  assert.match(said({ ...fine, home: '\\\\fs\\profile' }, call(entry('prod'))), /the known-hosts path is empty, or holds/, 'the person\'s own known_hosts keeps R6, its own sentence');
 });
