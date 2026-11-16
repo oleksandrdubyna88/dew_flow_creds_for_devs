@@ -60,10 +60,13 @@ export function knownHostsLines(text: string): string[] {
   return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '' && !line.startsWith('#'));
 }
 
-/** Whether one comma-separated part of a line's first field is the name, or is a hashed part (`|1|<salt>|<hash>`) that the name matches by HMAC-SHA1. */
+/**
+ * Whether one comma-separated part of a line's first field is the name, or is a hashed part (`|1|<salt>|<hash>`) that the name matches by HMAC-SHA1.
+ * A plain part is compared without regard to letter case, as OpenSSH matches host names in known_hosts (`[Host]:2222` keeps its brackets and port); a hash is of the name as given (`knownHostsName` gives it in lower case).
+ */
 function partNames(part: string, name: string): boolean {
   if (!part.startsWith('|1|')) {
-    return part === name;
+    return part.toLowerCase() === name.toLowerCase();
   }
   const [, , salt, hash] = part.split('|');
   if (salt === undefined || hash === undefined) {
@@ -77,7 +80,12 @@ function partNames(part: string, name: string): boolean {
  * a plain one (no `@marker`), and the name must equal a part of its first field or match a hashed part.
  */
 export function knownHostsHolds(text: string, name: string): boolean {
-  return knownHostsLines(text).some((line) => !line.startsWith('@') && (line.split(/\s+/)[0] ?? '').split(',').some((part) => partNames(part, name)));
+  return knownHostsLines(text).some((line) => lineNames(line, name));
+}
+
+/** Whether one line is a plain one (no `@marker`) whose first field names `name`. */
+function lineNames(line: string, name: string): boolean {
+  return !line.startsWith('@') && (line.split(/\s+/)[0] ?? '').split(',').some((part) => partNames(part, name));
 }
 
 /** The fingerprint of a key line's key, or a plain words when the key cannot be read (the line is still reported). */
@@ -110,11 +118,13 @@ function addedLines(before: readonly string[], after: readonly string[]): string
 }
 
 /**
- * What the call leaves in the journal about first contact: J1 for each line added to `bridges/known_hosts` since the writer read it, and J2 for
- * each first-contact leg whose name is in neither file. `before` is the lines the writer kept; `own` and `person` are the two files as they are now.
+ * What the call leaves in the journal about first contact: J1 for each line added to `bridges/known_hosts` since the writer read it that names one of
+ * this call's first-contact legs (a concurrent call's line for its own host is not this call's), and J2 for each first-contact leg whose name is in neither file. `before` is the lines the writer kept; `own` and `person` are the two files as they are now.
  */
 export function firstContactSentences(entry: string, before: readonly string[], own: string, person: string, names: readonly string[]): string[] {
-  const added = addedLines(before, knownHostsLines(own)).flatMap((line) => addedSentence(entry, line) ?? []);
+  const added = addedLines(before, knownHostsLines(own))
+    .filter((line) => names.some((name) => lineNames(line, name)))
+    .flatMap((line) => addedSentence(entry, line) ?? []);
   const kept = names.filter((name) => !knownHostsHolds(own, name) && !knownHostsHolds(person, name));
   return [...added, ...kept.map((name) => sentences.firstContactNotKept(entry, name))];
 }

@@ -276,6 +276,34 @@ test('W10: a line added to bridges/known_hosts after the write is one sentence J
   next.remove();
 });
 
+test('W10b: a line that another call added to bridges/known_hosts after the write is not J1 of this call; a line for this call\'s own host still is (also a hashed one, and one for the same host in other letter case)', () => {
+  const w = world();
+  const files = okFiles(w.write(call(entry('dest', { name: 'prod', host: 'prod.corp.com' }))));
+  const salt = crypto.randomBytes(20);
+  const hashedOther = `|1|${salt.toString('base64')}|${crypto.createHmac('sha1', salt).update('other.example').digest('base64')}`;
+  const hashedOwn = `|1|${salt.toString('base64')}|${crypto.createHmac('sha1', salt).update('prod.corp.com').digest('base64')}`;
+  fs.appendFileSync(path.join(w.storageDir, 'bridges', 'known_hosts'), [`other.example ${PIN_B}`, `${hashedOther} ${PIN_B}`, `[prod.corp.com]:2222 ${PIN_B}`, `prod.corp.com ${PIN_A}`, `${hashedOwn} ${PIN_A}`, `Prod.Corp.com ${PIN_A}`, ''].join('\n'));
+
+  assert.deepEqual(files.afterRun().map((line) => /: first contact through a Remote Bridge: (\S+ \S+ \S+) was added to /.exec(line)?.[1]), [
+    `prod.corp.com ssh-ed25519 ${FINGERPRINT_A}`,
+    `${hashedOwn} ssh-ed25519 ${FINGERPRINT_A}`,
+    `Prod.Corp.com ssh-ed25519 ${FINGERPRINT_A}`,
+  ]);
+  files.remove();
+});
+
+test('W10c: a line for another host is no J1 of a call that has none of its own, and that call still has J2', () => {
+  const w = world();
+  const files = okFiles(w.write(call(entry('dest', { name: 'prod', host: 'prod.corp.com' }))));
+  fs.appendFileSync(path.join(w.storageDir, 'bridges', 'known_hosts'), `other.example ${PIN_B}\n`);
+
+  const lines = files.afterRun();
+
+  assert.equal(lines.length, 1, JSON.stringify(lines));
+  assert.ok(lines[0].startsWith('prod: after this call no host key line for prod.corp.com is in bridges/known_hosts'), lines[0]);
+  files.remove();
+});
+
 const USER_REFUSAL = (field: string): string => `A value of this call cannot be given to ssh through a Remote Bridge: ${field} is not a valid user name, or holds "$" or a backslash.`;
 
 test('W11: a hop user with $ or a backslash, and the same two as the destination\'s user, are refused (R6); alice and alice-name are written', () => {
@@ -359,6 +387,23 @@ test('W15: a first-contact leg with no new line: J2 with both files empty; none 
   const files = okFiles(own.write(input));
   fs.appendFileSync(path.join(own.storageDir, 'bridges', 'known_hosts'), `${name} ${PIN_A}\n`);
   assert.ok(!files.afterRun().some((line) => line.includes('no host key line')), 'a line in bridges/known_hosts counts');
+  files.remove();
+});
+
+test('W15b: the host name in a known_hosts line is matched without regard to letter case, as ssh does: Prod.Corp.com and [Prod.Corp.com]:2222 are recognised, so no J2', () => {
+  for (const [host, port, line] of [['prod.corp.com', undefined, `Prod.Corp.com ${PIN_A}`], ['prod.corp.com', 2222, `[Prod.Corp.com]:2222 ${PIN_A}`], ['Prod.Corp.com', undefined, `PROD.corp.COM,other.example ${PIN_A}`]] as const) {
+    const w = world();
+    fs.mkdirSync(path.join(w.home, '.ssh'), { recursive: true });
+    fs.writeFileSync(path.join(w.home, '.ssh', 'known_hosts'), `${line}\n`);
+    const files = okFiles(w.write(call(entry('dest', { name: 'prod', host, port }))));
+    assert.deepEqual(files.afterRun(), [], line);
+    files.remove();
+  }
+  const wrongPort = world();
+  fs.mkdirSync(path.join(wrongPort.home, '.ssh'), { recursive: true });
+  fs.writeFileSync(path.join(wrongPort.home, '.ssh', 'known_hosts'), `[Prod.Corp.com]:2201 ${PIN_A}\n`);
+  const files = okFiles(wrongPort.write(call(entry('dest', { name: 'prod', host: 'prod.corp.com', port: 2222 }))));
+  assert.equal(files.afterRun().length, 1, 'another port is another name: J2 stays');
   files.remove();
 });
 
