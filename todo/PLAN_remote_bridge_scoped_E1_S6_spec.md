@@ -1000,8 +1000,8 @@ tests: one pins the request, one observes the child or the receiver.
 bullet; R6's keys-folder sentence; for Y4, §S6.3's *exactly those eighteen lines* of `Host *` and F2's *the eighteen lines* and *no line
 names `PubkeyAcceptedAlgorithms`* (nineteen lines now, the new one once and in `Host *`: F11), and §S6.10's *not built* for
 `PubkeyAcceptedAlgorithms -sk-*`, which Y4 builds in `Host *` (`IdentityFile none` and a hop block with a fourth keyword stay unbuilt).
-Everything else of §S6.2-§S6.7 stands. Q12-Q14 wait for the owner: if an answer differs from the default,
-the lead says which of Y3-Y5 changes before the coder starts.
+Everything else of §S6.2-§S6.7 stands. The owner answered Q12-Q14 on 2026-11-16: Q12 and Q13 as the defaults;
+Q14 with `USERNAME`, `USERDOMAIN` and `LOGONSERVER` asked for as empty strings, which Y1 builds. Epoch 10 opened the same day.
 
 **The order. [C]** Probes first, each in a commit that adds only the probe and is watched on CI (PW2: run by the lead) before the code that
 depends on it. Then the RED tests of Y1-Y6. Then the code. A probe that answers against the parent's probe table stops the work and goes to the lead.
@@ -1027,6 +1027,11 @@ depends on it. Then the RED tests of Y1-Y6. Then the code. A probe that answers 
 - **PD2. [C]** A record leg (new `scripts/bridged-psql-itest.cjs`, or a leg of the mysql harness: [S]): a fake server that answers a start-up
   message with a request for a clear-text password, records the password message and closes; `psql` under a rig home whose `.pgpass` holds a
   marker for that host and port, with no `PGPASSWORD`, once with no `PGPASSFILE` and once with it at a path that does not exist.
+- **PD3. [C]** A record leg beside PD2 (the same harness): a fake server that answers `SSLRequest` with `S`, completes TLS with a throwaway
+  server certificate, requests a client certificate, and records whether one was offered; `psql` under a rig home whose `.postgresql` holds a
+  throwaway `postgresql.crt` and `postgresql.key` (the marker), with `sslmode=require`, once with no `PGSSLCERT`/`PGSSLKEY` and once with each
+  at a path that does not exist. [S] The TLS side may use node's `tls` with `requestCert: true`. A marker offered **with** the variables too
+  stops the work and goes to the lead (the parent's probe table, row PD3).
 - **PF1.** The control of leg (o) (Y4), on each image of PV1.
 
 **Y1 — The environment asked for. [C]** In `bridgedSshEnv.ts`:
@@ -1141,7 +1146,7 @@ reaches the prompt with it. If it does not, (o) is reported *not measured* in §
 - **Leg (p). [C]** Against the rig: a chain whose one hop has the host `none`, no user and port 22: zero spawns; the record leg prints
   `ssh -G -J none` and `ssh -G -J u@none`, the first with no `proxyjump` line. A key destination with a pin that does not parse: zero spawns.
 
-**Y6 — What the database clients read. [C]** Only after PD1 and PD2 answered as the parent's probe table expects. `buildDbQueryLaunch` takes
+**Y6 — What the database clients read. [C]** Only after PD1, PD2 and PD3 answered as the parent's probe table expects. `buildDbQueryLaunch` takes
 `{ bridged, absentFile }`; on a bridge `mysql` gets `MYSQL_TEST_LOGIN_FILE = absentFile` and `psql` gets `PGPASSFILE = absentFile`, in
 `launch.env`. `absentFile` is a path from the sanctioned builder in `materializedKeys.ts`, with a name nothing ever writes, as the sentinel's
 is. Off a bridge the launch is byte for byte today's. **Q4a, Q4b:** the keys of the bridged spawn's environment hold the name, and off a bridge
