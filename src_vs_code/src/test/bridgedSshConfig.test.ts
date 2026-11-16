@@ -57,6 +57,7 @@ const HOST_STAR = (sentinel: string, firstContact: string, person: string): stri
   '  IdentityAgent none',
   '  IdentitiesOnly yes',
   `  IdentityFile "${sentinel}"`,
+  '  PubkeyAcceptedAlgorithms -sk-*',
   '  ForwardAgent no',
   '  ControlMaster no',
   '  ControlPath none',
@@ -117,7 +118,7 @@ function blocksOf(written: string): Block[] {
   return blocks;
 }
 
-test('F2: a hop block has three keywords, the destination two, Host * the eighteen lines in order; no other IdentityFile, no PubkeyAcceptedAlgorithms', () => {
+test('F2: a hop block has three keywords, the destination two, Host * the nineteen lines in order; no other IdentityFile', () => {
   const blocks = blocksOf(text(TWO_HOPS));
 
   assert.deepEqual(blocks.map((b) => b.host), ['hop1.example.com', 'Hop2.Example', 'prod.corp.com', '*']);
@@ -125,19 +126,41 @@ test('F2: a hop block has three keywords, the destination two, Host * the eighte
     assert.deepEqual(hop.lines.map(([word]) => word), ['IdentityFile', 'StrictHostKeyChecking', 'UserKnownHostsFile']);
   }
   assert.deepEqual(blocks[2].lines.map(([word]) => word), ['StrictHostKeyChecking', 'UserKnownHostsFile']);
-  assert.equal(blocks[3].lines.length, 18);
+  assert.equal(blocks[3].lines.length, 19);
   assert.deepEqual(
     blocks[3].lines.map(([word]) => word),
-    ['BatchMode', 'PasswordAuthentication', 'KbdInteractiveAuthentication', 'IdentityAgent', 'IdentitiesOnly', 'IdentityFile', 'ForwardAgent', 'ControlMaster', 'ControlPath',
+    ['BatchMode', 'PasswordAuthentication', 'KbdInteractiveAuthentication', 'IdentityAgent', 'IdentitiesOnly', 'IdentityFile', 'PubkeyAcceptedAlgorithms', 'ForwardAgent', 'ControlMaster', 'ControlPath',
       'ClearAllForwardings', 'ForwardX11', 'Tunnel', 'PermitLocalCommand', 'ProxyCommand', 'ConnectTimeout', 'StrictHostKeyChecking', 'UserKnownHostsFile', 'GlobalKnownHostsFile'],
   );
   const identityLines = blocks.flatMap((b) => b.lines).filter(([word]) => word === 'IdentityFile');
   assert.equal(identityLines.length, 3, 'one for each hop block, and the sentinel');
-  assert.ok(!text(TWO_HOPS).includes('PubkeyAcceptedAlgorithms'));
-  assert.equal(BRIDGED_LOCKDOWN.length, 16, 'the lines of Host * that hold no path');
+  assert.equal(BRIDGED_LOCKDOWN.length, 17, 'the lines of Host * that hold no path');
   for (const [word] of BRIDGED_LOCKDOWN) {
     assert.ok(!['IdentityFile', 'UserKnownHostsFile'].includes(word), `${word} holds a path, so it is written beside the lock-down`);
   }
+});
+
+const SK_LINE = '  PubkeyAcceptedAlgorithms -sk-*';
+
+test('F11: PubkeyAcceptedAlgorithms -sk-* is asked for once, in Host * and nowhere else, straight after the sentinel IdentityFile line — in every shape of file', () => {
+  const shapes: ReadonlyArray<readonly [string, ConfigInput]> = [
+    ['no hop, unpinned destination', input()],
+    ['one first-contact hop', input({ hops: [typed('hop.example', '/k/hop')] })],
+    ['two hops and a pinned destination', TWO_HOPS],
+  ];
+  for (const [shape, given] of shapes) {
+    const lines = text(given).split('\n');
+    assert.equal(lines.filter((line) => line === SK_LINE).length, 1, `${shape}: the line stands once`);
+    assert.equal(lines.filter((line) => line.includes('PubkeyAcceptedAlgorithms')).length, 1, `${shape}: no other spelling of the keyword`);
+    const star = blocksOf(text(given)).find((block) => block.host === '*');
+    assert.ok(star !== undefined, shape);
+    const words = star.lines.map(([word]) => word);
+    assert.equal(words[words.indexOf('IdentityFile') + 1], 'PubkeyAcceptedAlgorithms', `${shape}: straight after the sentinel's IdentityFile line`);
+    for (const block of blocksOf(text(given)).filter((other) => other.host !== '*')) {
+      assert.ok(!block.lines.some(([word]) => word === 'PubkeyAcceptedAlgorithms'), `${shape}: not in the block of ${block.host}`);
+    }
+  }
+  assert.ok(BRIDGED_LOCKDOWN.some(([word, value]) => word === 'PubkeyAcceptedAlgorithms' && value === '-sk-*'), 'it is a line of the lock-down, so no caller hands it in');
 });
 
 test('F3: an unpinned key destination has no block of its own', () => {

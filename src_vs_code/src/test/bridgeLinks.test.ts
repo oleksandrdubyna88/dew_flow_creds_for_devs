@@ -94,7 +94,7 @@ function expectedConf(lw: LinksWorld, hopBlocks: readonly string[] = []): string
     ...hopBlocks,
     'Host *', '  BatchMode yes', '  PasswordAuthentication no', '  KbdInteractiveAuthentication no', '  IdentityAgent none', '  IdentitiesOnly yes',
     `  IdentityFile "${path.join(keys, 'no-default-identity')}"`,
-    '  ForwardAgent no', '  ControlMaster no', '  ControlPath none', '  ClearAllForwardings yes', '  ForwardX11 no', '  Tunnel no', '  PermitLocalCommand no', '  ProxyCommand none',
+    '  PubkeyAcceptedAlgorithms -sk-*', '  ForwardAgent no', '  ControlMaster no', '  ControlPath none', '  ClearAllForwardings yes', '  ForwardX11 no', '  Tunnel no', '  PermitLocalCommand no', '  ProxyCommand none',
     '  ConnectTimeout 10', '  StrictHostKeyChecking yes', `  UserKnownHostsFile "${firstContact}" "${person}"`, '  GlobalKnownHostsFile none', '',
   ].join('\n');
 }

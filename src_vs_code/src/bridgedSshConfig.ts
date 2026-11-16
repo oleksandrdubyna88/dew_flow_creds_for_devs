@@ -41,8 +41,13 @@ export interface ConfigInput {
 export type ConfigText = { readonly ok: true; readonly text: string } | { readonly ok: false; readonly field: string };
 
 /**
- * The sixteen lines of `Host *` that hold no path, in order. The two that hold one are written between them by `bridgedConfigText`:
- * `IdentityFile` after `IdentitiesOnly`, `UserKnownHostsFile` before `GlobalKnownHostsFile`. A caller hands in no keyword of its own.
+ * The seventeen lines of `Host *` that hold no path, in order. The two that hold one are written between them by `bridgedConfigText`:
+ * `IdentityFile` after `IdentitiesOnly`, `UserKnownHostsFile` before `GlobalKnownHostsFile`: nineteen lines in all. A caller hands in no keyword of
+ * its own.
+ *
+ * <p>`PubkeyAcceptedAlgorithms -sk-*` follows the sentinel `IdentityFile` straight away (Y4). It asks `ssh` to leave out the public-key algorithms whose names
+ * start `sk-` (a security key's), so that a key of that kind is not offered and its PIN is not asked for. It is in `Host *` alone: no hop block and no destination
+ * block carries a keyword of this kind. This file pins the request; whether a client then asks for no PIN is for leg (o) of `scripts/bridged-ssh-itest.cjs` to observe.</p>
  */
 export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: string]> = [
   ['BatchMode', 'yes'],
@@ -50,6 +55,7 @@ export const BRIDGED_LOCKDOWN: ReadonlyArray<readonly [keyword: string, value: s
   ['KbdInteractiveAuthentication', 'no'],
   ['IdentityAgent', 'none'],
   ['IdentitiesOnly', 'yes'],
+  ['PubkeyAcceptedAlgorithms', '-sk-*'],
   ['ForwardAgent', 'no'],
   ['ControlMaster', 'no'],
   ['ControlPath', 'none'],
