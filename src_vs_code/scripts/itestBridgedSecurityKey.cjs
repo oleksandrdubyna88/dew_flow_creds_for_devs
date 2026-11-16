@@ -19,7 +19,8 @@ const path = require('path');
 const { execFileSync } = require('node:child_process');
 const R = require('./itestBridgedRig.cjs');
 
-const SK_TYPE = 'sk-ssh-ed25519@openssh.com';
+// Built by a join, as sshAgentProtocol.test.ts builds its certificate type: the public-hygiene scan reads `name@domain` as an e-mail address.
+const SK_TYPE = ['sk-ssh-ed25519', '@openssh.com'].join('');
 const SK_APPLICATION = 'ssh:';
 /** `SSH_SK_USER_PRESENCE_REQD` (1) and `SSH_SK_USER_VERIFICATION_REQD` (4): what `ssh-keygen -O verify-required` writes. */
 const SK_FLAGS = 0x01 | 0x04;

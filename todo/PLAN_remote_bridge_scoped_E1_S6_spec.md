@@ -985,6 +985,11 @@ What the run shows, and what it does not:
 PW3 is an observation for Q14 (the parent's §2.1), not a decision: giving the three identity names empty values would keep the account's
 name, domain and logon server out of `ssh.exe`, leaving `SYSTEMDRIVE` and `WINDIR` as the only values libuv adds.
 
+**Y0's probes: run 2026-11-16 on CI** (run 43919975918, at 09a8a6c7; commits af629d1e..dc8a88d8). PV1, PD1, PD2 and PD3 answered as the parent's
+probe table expects; PF1 measured leg (o)'s control on 8.9p1 only; PW1 ran under the old eight names and showed 9.2 again on node 22.23.4, so
+its decision is the same step on Y1's commit. Each result, with what it printed, is in the parent's probe table. The `runner-windows` job is red
+until Y1, by WN1, as expected.
+
 ## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
 
 *Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
