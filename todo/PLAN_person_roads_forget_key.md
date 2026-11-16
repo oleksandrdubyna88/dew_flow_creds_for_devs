@@ -1,7 +1,8 @@
 # PLAN — three roads of the person delete the key file they wrote (N16)
 
-> Status: **approved 2026-11-16 (coai plan gate, epoch 1 open); nothing implemented yet; split into three stories (`## Stories`), the
-> two security specs written 2026-11-16.** Scope: the extension only (`src_vs_code/src`): the bridge
+> Status: **approved 2026-11-16 (coai plan gate, epoch 1 open); BUILT 2026-11-16 on the branch `fix/n16-forget-person-keys` (S1, S2 and
+> S3, the documents), unmerged: the coai code gate, the lead's review of the whole diff, the PR, CI and the release are open.** Split into three
+> stories (`## Stories`); the two security specs were written 2026-11-16. Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the bridge spawner of
 > `extension.ts` (its exported function lives in a module of its own, `bridgeSpawner.ts`), one small new helper module
 > (`writtenKey.ts`), their tests, the docs. Found as N16 of
@@ -189,11 +190,11 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 
 ## 6. Definition of Done
 
-- [ ] The three roads forget the key they wrote, on every exit path of §2.1 and §2.2, and only a key they wrote.
-- [ ] The spawner's `exited` settles on `'error'`; a failed start ends the bridge row.
-- [ ] `agentCommands.ts` at most 800 lines, lint green.
-- [ ] The tests of §3 RED first, then GREEN; the mutation checks recorded.
-- [ ] The docs of §4.
+- [x] The three roads forget the key they wrote, on every exit path of §2.1 and §2.2, and only a key they wrote.
+- [x] The spawner's `exited` settles on `'error'`; a failed start ends the bridge row.
+- [x] `agentCommands.ts` at most 800 lines, lint green.
+- [x] The tests of §3 RED first, then GREEN; the mutation checks recorded.
+- [x] The docs of §4.
 - [ ] The coai code gate at `proceed`; the lead's Opus review; CI green on the head sha; CodeRabbit read.
 - [ ] Released as an extension patch with the owner's word; the plan promoted.
 

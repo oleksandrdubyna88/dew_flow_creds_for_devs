@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: a bridge, its socket check and Install creds on host delete their key file
+
+*Open Remote Bridge…*, the check of the bridge's socket and *Install creds on host* write the stored key of an entry to a
+`call-<uuid>.key` for their `ssh`. Before, none of them deleted it, so each start of a bridge left two files and each install one, until
+the window ended. Now the socket check and the install delete their file when they finish, on every way out: a check that finds the
+socket missing or wider than 600, an install that fails, one that the host cannot take, one that you answer *no*. The file of a bridge is
+deleted when its `ssh` has ended: by itself, by *Close Remote Bridge*, by a newer bridge of the same entry, or with the window. It stays
+while the bridge is open. A key file of your own (an entry that names a key file by its path) is never deleted. A started `ssh` that
+cannot be stopped keeps its file until the window's purge.
+
+A bridge whose `ssh` cannot start (`ssh` is not installed, for example) now ends, and its row goes back to *Open Remote Bridge…*. Before,
+it stayed *bridged* until the window ended. The diagnostic log says why it did not start.
+
 ## [1.22.1] — 2026-11-15 — Security — the key file of a terminal holds no id, and a terminal keeps one
 
 ### Changed — security: the key file of a terminal

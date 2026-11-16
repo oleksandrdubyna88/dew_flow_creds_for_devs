@@ -2578,6 +2578,18 @@ by itself must take its row back to *Open* rather than leave *Close* offered for
 longer exists. A row whose state went stale between render and click is told so ("it had already
 ended") rather than told a bridge was closed that was not.
 
+**The bridge's `ssh` and its key file (N16).** The spawner is `bridgeSpawner` in `bridgeSpawner.ts`, no longer a function of `activate`.
+`exited` of a bridge's process settles on the child's `'exit'`, and also, with `null`, on the `'error'` of a child that never started
+(it has no `pid`; `spawn ssh ENOENT` is one): a start that fails ends the bridge like any other end (`onEnded`, the row back to *Open
+Remote Bridge…*), where it used to stay *bridged* until the window ended. The `'error'` of a started child (Node emits one when a kill
+fails) settles nothing. Every `'error'` is handed to a reporter that `extension.ts` points at the diagnostic log (`describeBridgeError`:
+one sentence and the text of the error, never the argv, which names the key file). `openRemoteBridge` hands the key file it wrote to the
+bridge: `withWrittenKeyUntilExit` (`writtenKey.ts`) attaches one continuation to the process's `exited` that deletes it, and deletes it
+at once when nothing was started or the start throws. `writtenKey.ts` is the one place where the rule "the caller that got
+`materialized` deletes it when no `ssh` of its own will read the path again" is written for these three roads. The bound that stays: a
+started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
+activation; `stop()` drops the row before the kill, so nothing retries it.
+
 **A third token that is not a pair: `:signwindow`** (#197 E2.2). It is on an SSH key row only while the agent's window for that key is open, so the menu offers *Ask for Every Use Again* exactly then (`viewItem =~ /:signwindow/`, once as the row's inline button and once in the context menu). It is live state like `:bridged` — the provider asks the manager per row (`signWindowLabel(accountId, nodeId)`, a non-optional hook with a default) and never caches it — and it is never the persisted `:agenton`. The same hook gives the grey description its last part, *signs without asking until 12:10*; the manager's expiry timer, not a clock in the tree, repaints the row when the window ends. That text is live state, so it is not part of what the tree filter matches.
 
 ### Pasting a command
@@ -6131,7 +6143,7 @@ a clean install used to show one "Search" row and nothing else.
 | Path | Handling |
 |---|---|
 | Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`), and a copy cancels the wipe it supersedes. A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
-| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes; a Connect that reuses an open terminal, or whose terminal fails to open (the open throws), deletes its file at once. **A key served by the SSH agent is never written at all** |
+| SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes; a Connect that reuses an open terminal, or whose terminal fails to open (the open throws), deletes its file at once. The three roads of the person that write a key for a non-interactive `ssh` delete it too (N16): the bridge socket check and *Install creds on host* when they finish, on every way out (`writtenKey.ts`, `withWrittenKey`), and a bridge's file when its `ssh` has ended, whatever ended it (`withWrittenKeyUntilExit`); a started `ssh` whose stop fails keeps its file until the purge. A key file that the person named by its path is never deleted: only a credential with `materialized` is. **A key served by the SSH agent is never written at all** |
 | TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |
 | Webviews | `default-src 'none'`, nonce-based scripts, `localResourceRoots: []`, everything escaped. The read-only viewer never receives secret values at all — copy actions round-trip through the extension host |
