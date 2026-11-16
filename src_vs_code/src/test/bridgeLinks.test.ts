@@ -365,7 +365,7 @@ test('L7: a password destination with no pin is refused through the bridge (R5);
 const MEASURED = '/k/id\nProxyCommand /tmp/evil %h';
 
 test('L8: a jump host whose key path is the measured value is refused (R6); no file is written and nothing says ProxyCommand', async () => {
-  const line = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character or "\${", or ends with a backslash.`;
+  const line = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character, "\${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.`;
   await assertRefusedOnABridge({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath: MEASURED } }, line);
   await both({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath: MEASURED } }, {}, async ({ lw, ww }) => {
     const reply = await body(viaBridge(ww.bridge), ww);
@@ -439,6 +439,65 @@ test('L12: a user with $ or a backslash — the jump host\'s or the destination\
 });
 
 const KEY_LINE = 'AAAAC3NzaC1lZDI1NTE5AAAAIH87I+9WwO/5xAFxGCubfsyPx4wDNKN+ark5SZ/fA6J7';
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * §S6.14 Y5: a hop named none, a host key that does not parse, a doubled backslash, and a typed path of the argv alone
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The runs of the call itself: what a refused call spends is none, and a call that is let through spends this one. */
+const execRuns = (lw: LinksWorld): LinksWorld['runs'] => lw.runs.filter((run) => !run.argv.includes('-V'));
+
+const R6_NONE = `A value of this call cannot be given to ssh through a Remote Bridge: the host of the jump host "${JUMP_NAME}" is not a valid host, is the word "none", or holds ":" or a square bracket and is not an IPv6 address in the form a bridge takes.`;
+
+test('Y5: a jump host named none or NONE is refused (R6) with nothing run and no file; a destination named none, and a jump host named none.example, run', async () => {
+  for (const host of ['none', 'NONE']) {
+    await assertRefusedOnABridge({ jump: 'valid', jumpEntry: { host } }, R6_NONE);
+  }
+  await both({ jump: 'valid', jumpEntry: { host: 'none.example' } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
+    assert.equal(execRuns(lw).length, 1);
+  });
+  await both({ entry: { host: 'none' } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
+    assert.equal(execRuns(lw).length, 1);
+  });
+});
+
+const R11_PROD = 'The host key stored for the host key of "prod" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.';
+const R11_HOP = `The host key stored for the host key of the jump host "${JUMP_NAME}" cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`;
+
+test('Y5: a host key that does not parse (a known_hosts line, garbage) is R11 for a key destination, a hop and a password destination; no run, no file, and bridges/known_hosts is not made', async () => {
+  const typedLine = `prod.corp.com ssh-ed25519 ${KEY_LINE}`;
+  for (const hostKey of [typedLine, 'garbage']) {
+    await assertRefusedOnABridge({ entry: { hostKey } }, R11_PROD);
+    await assertRefusedOnABridge({ jump: 'valid', jumpEntry: { hostKey } }, R11_HOP);
+    await assertRefusedOnABridge({ key: 'none', destPassword: 'a password', entry: { hostKey } }, R11_PROD);
+  }
+  await both({ entry: { hostKey: 'garbage' } }, {}, async ({ lw, ww }) => {
+    await body(viaBridge(ww.bridge), ww);
+    assert.equal(fs.existsSync(path.join(lw.storageDir, 'bridges')), false, 'bridges/known_hosts was not made: byte for byte as before');
+  });
+  await both({ entry: { hostKey: `ssh-ed25519 ${KEY_LINE}` } }, {}, async ({ lw, ww }) => {
+    assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200, 'control: a pin that parses runs');
+    assert.equal(execRuns(lw).length, 1);
+  });
+});
+
+test('Y5: a jump host key path with two backslashes in a row or a backslash before an apostrophe is R6; the destination\'s typed -i path of that form runs and -i carries it unchanged; a typed % is still R10', async () => {
+  const hopLine = `A value of this call cannot be given to ssh through a Remote Bridge: the key path of the jump host "${JUMP_NAME}" is empty, or holds a quote, a control character, "\${", two backslashes in a row or a backslash before an apostrophe, or ends with a backslash.`;
+  for (const sshKeyPath of ['C:\\keys\\\\id', "C:\\'k\\id"]) {
+    await assertRefusedOnABridge({ jump: 'valid', hopKey: 'typed', jumpEntry: { sshKeyPath } }, hopLine);
+  }
+  const unc = '\\\\fs\\keys\\id';
+  await both({ key: 'none', entry: { sshKeyPath: unc } }, {}, async ({ lw, ww }) => {
+    const reply = await body(viaBridge(ww.bridge), ww);
+    assert.equal(reply.status, 200, reply.body);
+    const [run] = execRuns(lw);
+    assert.equal(run.argv[run.argv.indexOf('-i') + 1], unc, '-i carries the typed path unchanged');
+    assert.ok(!(run.conf ?? '').includes(unc), 'and the file does not hold it');
+  });
+  await assertRefusedOnABridge({ key: 'none', entry: { sshKeyPath: '/k/%u/id' } }, 'A Remote Bridge does not support "%" in a key path: the key path of "prod". Choose a key file whose absolute path has no "%".');
+});
 
 test('L13: a first-contact call whose ssh adds a line and then cannot start still has J1 in the journal, and its files are gone; a run that adds no line has J2', async () => {
   const addLine = (_run: unknown, at: { storageDir: string }): void => fs.appendFileSync(path.join(at.storageDir, 'bridges', 'known_hosts'), `prod.corp.com ssh-ed25519 ${KEY_LINE}\n`);

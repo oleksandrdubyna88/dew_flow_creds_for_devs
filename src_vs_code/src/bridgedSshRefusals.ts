@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { bridgedHostWord, bridgedKeyPathProblem, unsafeBridgedUser, unsafeSshConfigValue } from './bridgedSshConfig';
+import { bridgedFileKeyPathProblem, bridgedHostWord, bridgedKeyPathProblem, unsafeBridgedFileValue, unsafeBridgedUser } from './bridgedSshConfig';
 import { Whose, sentences } from './bridgedSshSentences';
 import { knownHostsLine, parseHostKey } from './hostKeyPin';
 import { materializedKeyPath, materializedKeysDir } from './materializedKeys';
@@ -66,6 +66,12 @@ function sameHostRefusal(input: BridgedCallInput): Refusal | undefined {
   return again === undefined ? undefined : noCredential(sentences.sameHost(again));
 }
 
+/** R11: an entry holds a host key (not empty after a trim) that does not parse. It is never run as no pin: the call is refused, with no file written. */
+function hostKeyRefusal(input: BridgedCallInput): Refusal | undefined {
+  const bad = legsOf(input).find((who) => (who.entity.hostKey ?? '').trim() !== '' && parseHostKey(who.entity.hostKey) === undefined);
+  return bad === undefined ? undefined : noCredential(sentences.hostKeyUnreadable(bad));
+}
+
 export type HopKey = { readonly stored: string } | { readonly typed: string };
 
 /** What a hop's credential allows: a stored key's content, a typed path, or why not (R1-R3). */
@@ -113,56 +119,76 @@ function passwordRefusal(input: BridgedCallInput): Refusal | undefined {
   return input.auth === 'askpass' && pinLineOf(input.destination, word) === undefined ? noCredential(sentences.passwordNoPin(input.destination.name)) : undefined;
 }
 
+/**
+ * Where a key path goes, which decides the rule it meets and the sentence: `argv` is the destination's `-i` path as the person typed it (it goes to the argv
+ * alone); `file` is a hop's typed path (it goes into the file too); `own` is the `-i` path of a key this call wrote, in this extension's keys folder.
+ */
+type KeyPathKind = 'argv' | 'file' | 'own';
+
 /** The key paths a person typed or a call names: the `-i` path (typed, or the file written for this call) and each typed hop path. */
-function keyPathsOf(input: BridgedCallInput): { who: Whose; value: string }[] {
-  const own = input.keyPath === undefined ? [] : [{ who: { entity: input.destination, hop: false }, value: input.keyPath }];
+function keyPathsOf(base: BridgedBase, input: BridgedCallInput): { who: Whose; value: string; kind: KeyPathKind }[] {
+  const own = input.keyPath === undefined ? [] : [{ who: { entity: input.destination, hop: false }, value: input.keyPath, kind: keyPathKindOf(base, input.keyPath) }];
   const hops = input.hops.flatMap((leg) => {
     const key = hopKeyOf(leg);
-    return 'typed' in key ? [{ who: { entity: leg.entity, hop: true }, value: key.typed }] : [];
+    return 'typed' in key ? [{ who: { entity: leg.entity, hop: true }, value: key.typed, kind: 'file' as const }] : [];
   });
   return [...own, ...hops];
 }
 
-/** `%` is R10, any other fault of a key path R6. */
-function keyPathRefusal(who: Whose, value: string): Refusal | undefined {
-  const problem = bridgedKeyPathProblem(value);
-  if (problem === undefined) {
-    return undefined;
-  }
-  return noCredential(problem === 'percent' ? sentences.percent(who) : sentences.keyPath(who));
+/** A `-i` path inside this window's keys folder is a file this extension made for the call; any other is the person's. */
+function keyPathKindOf(base: BridgedBase, value: string): KeyPathKind {
+  const keysDir = materializedKeysDir(base.storageDir);
+  return value.startsWith(keysDir) && /^[\\/]/.test(value.slice(keysDir.length)) ? 'own' : 'argv';
 }
 
-function ownPathRefusal(base: BridgedBase): Refusal | undefined {
-  if (unsafeSshConfigValue(materializedKeysDir(base.storageDir))) {
-    return noCredential(sentences.keysFolder());
+/** `%` is R10, any other fault of a key path R6; a path this extension made is R14 whatever its fault. */
+function keyPathRefusal(who: Whose, value: string, kind: KeyPathKind): Refusal | undefined {
+  const problem = kind === 'file' ? bridgedFileKeyPathProblem(value) : bridgedKeyPathProblem(value);
+  return problem === undefined ? undefined : noCredential(keyPathSentence(who, problem, kind));
+}
+
+function keyPathSentence(who: Whose, problem: 'value' | 'percent', kind: KeyPathKind): string {
+  if (kind === 'own') {
+    return sentences.storageFolder();
   }
-  return unsafeSshConfigValue(firstContactPath(base)) || unsafeSshConfigValue(personPath(base)) ? noCredential(sentences.knownHostsPath()) : undefined;
+  return problem === 'percent' ? sentences.percent(who) : sentences.keyPath(who);
+}
+
+/** R14 for the keys folder and `bridges/known_hosts` (this extension made them); R6's sentence for the person's own `known_hosts`. */
+function ownPathRefusal(base: BridgedBase): Refusal | undefined {
+  if (unsafeBridgedFileValue(materializedKeysDir(base.storageDir)) || unsafeBridgedFileValue(firstContactPath(base))) {
+    return noCredential(sentences.storageFolder());
+  }
+  return unsafeBridgedFileValue(personPath(base)) ? noCredential(sentences.knownHostsPath()) : undefined;
 }
 
 function pathRefusal(base: BridgedBase, input: BridgedCallInput): Refusal | undefined {
-  return keyPathsOf(input).map((typed) => keyPathRefusal(typed.who, typed.value)).find((refusal) => refusal !== undefined) ?? ownPathRefusal(base);
+  return keyPathsOf(base, input).map((typed) => keyPathRefusal(typed.who, typed.value, typed.kind)).find((refusal) => refusal !== undefined) ?? ownPathRefusal(base);
 }
 
-/** What is wrong with the legs themselves: a user, a host, or two legs with one host. */
+/** What is wrong with the legs themselves: a user, a host, two legs with one host, or a host key that does not parse (R11), in that order. */
 function legsRefusal(input: BridgedCallInput): Refusal | undefined {
-  return userRefusal(input) ?? hostRefusal(input) ?? sameHostRefusal(input);
+  return userRefusal(input) ?? hostRefusal(input) ?? sameHostRefusal(input) ?? hostKeyRefusal(input);
 }
 
-/** The first refusal, in this order: users, hosts, equal hosts, hop credentials, a password with no pin, paths. */
+/** The first refusal, in this order: users, hosts, equal hosts, a host key that does not parse (R11), hop credentials, a password with no pin (R5), paths. */
 export function refusalOf(base: BridgedBase, input: BridgedCallInput): Refusal | undefined {
   return legsRefusal(input) ?? credentialRefusal(input) ?? passwordRefusal(input) ?? pathRefusal(base, input);
 }
 
-/** The sentence for a hop's key path as the second line meets it: `%` is R10, any other fault R6. */
+/** The sentence for a hop's key path as the second line meets it: a file this call wrote is R14; a typed path `%` is R10, any other fault R6. */
 function hopKeyFieldRefusal(input: BridgedCallInput, at: number, who: Whose): Refusal {
   const key = hopKeyOf(input.hops[at]);
-  return ('typed' in key ? keyPathRefusal(who, key.typed) : undefined) ?? noCredential(sentences.keyPath(who));
+  if ('stored' in key) {
+    return noCredential(sentences.storageFolder());
+  }
+  return ('typed' in key ? keyPathRefusal(who, key.typed, 'file') : undefined) ?? noCredential(sentences.keyPath(who));
 }
 
 /**
  * The refusal for a field that `bridgedConfigText` named: it refuses again what pass 1 let through (the second line), and the sentence is the one of
- * that entry or that `Host` word. A pin file and the sentinel are named by our own folder, so for them the sentence is the keys folder's: the one R6 row
- * that can be at fault when the path we made fails the value rule.
+ * that entry or that `Host` word. A pin file, the sentinel, a stored hop key and `bridges/known_hosts` are named by our own folder, so for them the sentence
+ * is R14: the storage folder's. The person's own `known_hosts` is R6's known-hosts sentence.
  */
 export function fieldRefusal(field: string, input: BridgedCallInput): Refusal {
   const parts = field.split(':');
@@ -175,5 +201,5 @@ export function fieldRefusal(field: string, input: BridgedCallInput): Refusal {
     key: () => hopKeyFieldRefusal(input, at, who),
     'known-hosts': () => noCredential(sentences.knownHostsPath()),
   };
-  return (sentence[what] ?? (() => noCredential(sentences.keysFolder())))();
+  return (sentence[what] ?? (() => noCredential(sentences.storageFolder())))();
 }

@@ -9,6 +9,7 @@ import {
   bridgedHostWord,
   bridgedKeyPathProblem,
   knownHostsName,
+  unsafeBridgedFileValue,
   unsafeBridgedUser,
   unsafeSshConfigValue,
 } from '../bridgedSshConfig';
@@ -194,12 +195,12 @@ const PATH_FIELDS: ReadonlyArray<readonly [field: string, build: (value: string)
   ['hop:0:pin', (value) => input({ hops: [stored('hop.example', 'call-a', { pinnedFile: value })] })],
   ['destination:pin', (value) => input({ destination: { host: 'prod.corp.com', pinnedFile: value } })],
   ['keys', (value) => input({ noDefaultIdentity: value })],
-  ['known-hosts', (value) => input({ firstContactFile: value })],
+  ['first-contact', (value) => input({ firstContactFile: value })],
   ['known-hosts', (value) => input({ personKnownHosts: value })],
 ];
 
-test('F5: the measured value, a quote, CR, ESC, DEL, "${", a last backslash and the empty text are each refused in each path field, with the field and none of the value', () => {
-  const bad = [MEASURED, 'a\nb', 'a"b', 'a\rb', 'a\u001bb', 'a\u007fb', '/k/${X}/id', '/k/dir\\', ''];
+test('F5: the measured value, a quote, CR, ESC, DEL, "${", a last backslash, two backslashes in a row, a backslash before an apostrophe and the empty text are each refused in each path field, with the field and none of the value', () => {
+  const bad = [MEASURED, 'a\nb', 'a"b', 'a\rb', 'a\u001bb', 'a\u007fb', '/k/${X}/id', '/k/dir\\', '', 'C:\\keys\\\\id', "C:\\'k\\id", '\\\\fs\\share\\id'];
   for (const [field, build] of PATH_FIELDS) {
     for (const value of bad) {
       const made = bridgedConfigText(build(value));
@@ -258,4 +259,48 @@ test('the value rule and the password words', () => {
   assert.deepEqual([...BRIDGED_ASKPASS_OPTIONS], ['-o', 'BatchMode=no', '-o', 'PasswordAuthentication=yes', '-o', 'KbdInteractiveAuthentication=yes']);
   assert.deepEqual(['/a b/c', 'C:\\x\\y', '~/k', '/k/%u'].map(unsafeSshConfigValue), [false, false, false, false]);
   assert.deepEqual(['', 'a"', 'a\n', 'a${b', 'a\\'].map(unsafeSshConfigValue), [true, true, true, true, true]);
+});
+
+test('Y5: a hop named none, in any letter case, has no Host word and is refused with the host field; a destination named none, and a hop named none.example, are not', () => {
+  for (const host of ['none', 'NONE', 'None', 'nOnE']) {
+    assert.equal(bridgedHostWord(host, 'hop'), undefined, `${host} as a hop`);
+    assert.equal(refusedField(input({ hops: [typed(host, '/k/hop')] })), 'hop:0:host', host);
+    assert.equal(bridgedHostWord(host, 'destination'), host, `${host} as the destination is its own word`);
+  }
+  assert.equal(bridgedConfigText(input({ destination: { host: 'none' } })).ok, true, 'a destination named none is written');
+  for (const host of ['none.example', 'nonesuch', 'not-none', 'a.none']) {
+    assert.equal(bridgedHostWord(host, 'hop'), host, `${host} as a hop`);
+  }
+  assert.equal(bridgedConfigText(input({ hops: [typed('none.example', '/k/hop')] })).ok, true, 'control: the same field with another host is written');
+});
+
+test('Y5: unsafeBridgedFileValue is the value rule plus two backslashes in a row and a backslash before an apostrophe; unsafeSshConfigValue itself is unchanged', () => {
+  const refusedByBoth = ['', 'a"', 'a\n', 'a${b', 'a\\'];
+  const refusedByTheFileOnly = ['C:\\keys\\\\id', '\\\\fs\\share\\id', "C:\\'k\\id", 'a\\\\', "x\\'"];
+  const allowed = ['/a b/c', 'C:\\x\\y', '~/k', '/k/%u', "it's/fine", 'C:\\Users\\me\\a\\b'];
+  assert.deepEqual(refusedByBoth.map(unsafeBridgedFileValue), refusedByBoth.map(() => true));
+  assert.deepEqual(refusedByBoth.map(unsafeSshConfigValue), refusedByBoth.map(() => true));
+  assert.deepEqual(refusedByTheFileOnly.map(unsafeBridgedFileValue), refusedByTheFileOnly.map(() => true), 'a value the FILE carries');
+  assert.deepEqual(refusedByTheFileOnly.slice(0, 3).map(unsafeSshConfigValue), [false, false, false], 'the argv-only rule still lets them through');
+  assert.deepEqual(allowed.map(unsafeBridgedFileValue), allowed.map(() => false));
+});
+
+test('Y5: a path that goes to -i alone keeps the old rule (a UNC path is let through); a hop key path, which goes into the file, meets both', () => {
+  assert.equal(bridgedKeyPathProblem('\\\\fs\\keys\\id'), undefined, 'bridgedKeyPathProblem is the -i rule and is unchanged');
+  assert.equal(bridgedKeyPathProblem('C:\\keys\\\\id'), undefined);
+  assert.equal(bridgedKeyPathProblem('/k/%u/id'), 'percent');
+  assert.equal(refusedField(input({ hops: [typed('hop.example', '\\\\fs\\keys\\id')] })), 'hop:0:key', 'typed by the person, written into the file');
+  assert.equal(refusedField(input({ hops: [typed('hop.example', 'C:\\keys\\\\id')] })), 'hop:0:key');
+  assert.equal(refusedField(input({ hops: [typed('hop.example', "C:\\'k\\id")] })), 'hop:0:key');
+  assert.equal(bridgedConfigText(input({ hops: [typed('hop.example', 'C:\\keys\\id')] })).ok, true, 'control: single backslashes are written');
+});
+
+test('Y5: a Windows storage folder on a UNC path is refused in every path the file takes from it — the keys folder, the pin files, the sentinel, the first-contact file — and the person\'s own known_hosts has its own field', () => {
+  const unc = '\\\\fs\\share\\x';
+  assert.equal(refusedField(input({ noDefaultIdentity: `${unc}\\keys\\1\\no-default-identity` })), 'keys');
+  assert.equal(refusedField(input({ destination: { host: 'prod.corp.com', pinnedFile: `${unc}\\keys\\1\\call-c.known_hosts` } })), 'destination:pin');
+  assert.equal(refusedField(input({ hops: [stored('hop.example', 'call-a', { pinnedFile: `${unc}\\keys\\1\\call-b.known_hosts` })] })), 'hop:0:pin');
+  assert.equal(refusedField(input({ hops: [{ host: 'hop.example', identityFile: `${unc}\\keys\\1\\call-a.key`, typedKeyPath: false, check: { firstContact: true } }] })), 'hop:0:key');
+  assert.equal(refusedField(input({ firstContactFile: `${unc}\\bridges\\known_hosts` })), 'first-contact');
+  assert.equal(refusedField(input({ personKnownHosts: '\\\\fs\\profile\\.ssh\\known_hosts' })), 'known-hosts');
 });
