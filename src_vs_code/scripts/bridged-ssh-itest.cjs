@@ -158,7 +158,9 @@ async function legB3(rig, secret) {
 }
 
 /** The names `/usr/bin/env` printed: the text before the first `=` of each line that holds one. */
-const namesPrinted = (stdout) => stdout.split('\n').filter((line) => line.includes('=')).map((line) => line.slice(0, line.indexOf('='))).sort();
+/** Code-unit order, as `env` names are compared byte for byte (no locale). */
+const byCodeUnit = (a, b) => (a < b ? -1 : Number(a > b));
+const namesPrinted = (stdout) => stdout.split('\n').filter((line) => line.includes('=')).map((line) => line.slice(0, line.indexOf('='))).sort(byCodeUnit);
 
 /**
  * (b) 4 (Y2): the environment RECEIVED, read in a child. The harness sets `BRIDGE_TEST_SECRET` and `SSH_AUTH_SOCK`; `/usr/bin/env` is started with the
@@ -182,7 +184,7 @@ async function legB4(rig) {
     const control = await rig.product.runBounded('/usr/bin/env', [], false, { ...limits, env: { ...process.env } });
     check('(b) 4 control: under the whole environment the child prints both markers (the runner passes a name when it is asked to)', Object.keys(markers).every((name) => namesPrinted(control.stdout).includes(name)), JSON.stringify(namesPrinted(control.stdout)));
     const answer = await rig.product.runBounded('/usr/bin/env', [], false, { ...limits, env: spawn.env, cwd: spawn.cwd });
-    const asked = Object.keys(spawn.env).sort();
+    const asked = Object.keys(spawn.env).sort(byCodeUnit);
     check('(b) 4: the names the child prints are exactly the asked ones, and neither marker is one of them', answer.exitCode === 0 && JSON.stringify(namesPrinted(answer.stdout)) === JSON.stringify(asked) && Object.keys(markers).every((name) => !namesPrinted(answer.stdout).includes(name)), JSON.stringify({ asked, printed: namesPrinted(answer.stdout), exit: answer.exitCode, stderr: answer.stderr }));
     const where = await rig.product.runBounded('/bin/pwd', [], false, { ...limits, env: spawn.env, cwd: spawn.cwd });
     check('(b) 4: the child started in the call\'s own folder', where.stdout.trim() === fs.realpathSync(spawn.cwd), JSON.stringify([where.stdout.trim(), spawn.cwd]));

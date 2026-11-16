@@ -38,6 +38,15 @@ const OUT = path.join(__dirname, '..', 'out');
 const BOUND_MS = 20_000;
 const PD2_PASSWORD_MARKER = 'pd2-marker-password';
 const PD3_MARKER_CN = 'pd3-marker-client';
+/** Whether a password message held the marker. Read through a function: the state is filled by a socket callback, after the run. */
+const holdsMarker = (sent) => typeof sent === 'string' && sent === PD2_PASSWORD_MARKER;
+/** What a password message was, for the log: never its text (it is the marker, but a log line is not the place for a password). */
+const described = (sent) => {
+  if (sent === undefined) {
+    return 'none';
+  }
+  return `${holdsMarker(sent) ? 'the marker' : 'another value'} (${sent.length} characters)`;
+};
 const SSL_REQUEST = 80877103;
 const GSSENC_REQUEST = 80877104;
 
@@ -206,10 +215,10 @@ async function legPD2(scope, exe, dir, product) {
     reached(`(PD2) psql ${label}`, run);
     const sent = run.state.password;
     if (!withVariable) {
-      check('(r) PD2 control: with no PGPASSFILE the person\'s .pgpass is used and its marker is sent (this rig can make the bad thing happen)', sent === PD2_PASSWORD_MARKER, JSON.stringify({ sent, stderr: run.stderr }));
+      check('(r) PD2 control: with no PGPASSFILE the person\'s .pgpass is used and its marker is sent (this rig can make the bad thing happen)', holdsMarker(sent), JSON.stringify({ sent: described(sent), stderr: run.stderr }));
     }
-    console.log(`record (PD2) psql, ${label}: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker from .pgpass ${sent === PD2_PASSWORD_MARKER ? 'STANDS' : 'does not stand'} in it; psql said ${JSON.stringify(run.stderr)}`);
-    if (withVariable && sent === PD2_PASSWORD_MARKER) {
+    console.log(`record (PD2) psql, ${label}: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker from .pgpass ${holdsMarker(sent) ? 'STANDS' : 'does not stand'} in it; psql said ${JSON.stringify(run.stderr)}`);
+    if (withVariable && holdsMarker(sent)) {
       console.log('STOP (PD2): the marker was sent WITH PGPASSFILE set too — no remedy is built, and row 7 returns to the lead (parent §7, row PD2)');
     }
   }
@@ -226,8 +235,8 @@ async function legR2(scope, exe, dir, home, product) {
   });
   reached('(r) PD2 production', run);
   const sent = run.state.password;
-  console.log(`record (r) PD2 production: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker ${sent === PD2_PASSWORD_MARKER ? 'STANDS' : 'does not stand'} in it`);
-  check('(r) PD2 production: no password message holds the marker from the person\'s .pgpass', sent !== PD2_PASSWORD_MARKER, JSON.stringify({ sent, stderr: run.stderr }));
+  console.log(`record (r) PD2 production: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker ${holdsMarker(sent) ? 'STANDS' : 'does not stand'} in it`);
+  check('(r) PD2 production: no password message holds the marker from the person\'s .pgpass', !holdsMarker(sent), JSON.stringify({ sent: described(sent), stderr: run.stderr }));
 }
 
 /** The arguments of the production launch of `psql` for `uri` and the environment a bridged client gets, under `home`. */

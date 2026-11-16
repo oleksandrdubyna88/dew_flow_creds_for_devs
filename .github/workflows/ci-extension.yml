@@ -259,7 +259,7 @@ jobs:
           cache-dependency-path: src_vs_code/package-lock.json
 
       - name: Install
-        run: npm ci
+        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
 
       - name: The leftovers guard's dependencies
         working-directory: .
