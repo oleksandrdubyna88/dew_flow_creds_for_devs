@@ -865,7 +865,8 @@ failed the unit case the spec names, and on these points more than it names:
 - T15 has only an itest half. V1 has no mutation.
 - **The itest halves** ran on CI from the branch `tmp/e16-itest-mutations` (workflow dispatch; the PR branch was not touched), in run
   [43507318723](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/actions/runs/43507318723). A runner applied one mutation,
-  compiled, ran only the named legs, and restored the file. Each mutation failed its leg except T30:
+  compiled, ran only the named legs, and restored the file. Each mutation failed its leg except T30. **The baseline:** unmutated, every named leg
+  passed, in that run before the first mutation and on the PR head f5b452b9 (run 43510966411); so (f) is green without T15 and red with it.
   - T1 fails (d), the second production leg.
   - T2 (all three lines) fails (a) 6 and (a) 0. One line alone fails (a) 0 only.
   - T3 fails (h). T6 fails (k). T7 fails (b), the environment keys. T9 fails (e). T10 fails (f), R5. T12 fails (h), twice.
