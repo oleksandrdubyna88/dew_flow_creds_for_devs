@@ -36,6 +36,8 @@ export const sentences = {
   /** R7 */ writeFailed: (why: string): string => `Could not write the files of this call: ${why}`,
   /** R8 */ argvRefused: (entry: string): string => `"${entry}" cannot be given to ssh through a Remote Bridge: its host, its user or its key path is not one a bridge takes.`,
   /** R9 */ noHopEntries: (): string => 'The jump chain of this call gave no entries to check.',
+  /** R9, a writer that answered ok when the client check had not passed (the road's own second line; no number of its own in the spec) */ writtenUnchecked: (): string =>
+    'The files of this call were written without the client check having passed.',
   /** R10 */ percent: (who: Whose): string => `A Remote Bridge does not support "%" in a key path: ${of(who, 'key path')}. Choose a key file whose absolute path has no "%".`,
   /** R11 */ hostKeyUnreadable: (who: Whose): string =>
     `The host key stored for ${of(who, 'host')} cannot be read as a host key. Through a Remote Bridge a host key that an entry holds must be one ssh can check.`,

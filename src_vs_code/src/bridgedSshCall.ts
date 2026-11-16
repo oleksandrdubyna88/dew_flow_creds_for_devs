@@ -65,7 +65,7 @@ export type BridgedSshConfigWriter = (call: {
    * Asked after pass 1 has refused nothing and before the writer's files (the per-call file, hop keys, pins) are written (the client check, §S6.14 Y3; the destination's key file is the auth step's, written earlier): a sentence is a refusal,
    * `undefined` goes on. So an entry that pass 1 refuses spends no spawn, and R1-R11 are said before R12 and R13.
    */
-  readonly beforeFiles?: () => Promise<string | undefined>;
+  readonly beforeFiles: () => Promise<string | undefined>;
 }) => Promise<BridgedCallFiles>;
 
 // ---- pass 2: the files ---------------------------------------------------------------------------------------------------------------
@@ -274,7 +274,7 @@ export function bridgedSshConfigWriter(parts: { storage: StorageManager; storage
     if (refusal !== undefined) {
       return { ok: false, ...refusal };
     }
-    const stopped = await call.beforeFiles?.();
+    const stopped = await call.beforeFiles();
     return stopped === undefined ? passTwo(base, input) : { ok: false, ...noCredential(stopped) };
   };
 }

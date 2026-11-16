@@ -6,7 +6,7 @@ import { statusForErrorCode } from '../brokerProtocol';
 import { materializedKeysDir } from '../materializedKeys';
 import { code, message } from './bridgeDoorHarness';
 import { allowListedNames, body, both, notified } from './bridgeLinksRun';
-import { ClientAnswer, LinksWorld } from './bridgeLinksWorld';
+import { ClientAnswer, LinksOptions, LinksWorld } from './bridgeLinksWorld';
 import { loadBridgeModules } from './bridgeModules';
 import { viaBridge, viaMain } from './bridgeWallWorld';
 
@@ -94,4 +94,27 @@ test('G3: with no client check in the deps a bridged exec is refused generically
     assert.deepEqual([lw.runs.length, lw.materialised.length, lw.configWrites], [0, 0, 0]);
     assert.equal((await body(viaMain(ww), ww)).status, 200, 'control: off a bridge nothing is needed');
   });
+});
+
+const UNCHECKED_LINE = 'The files of this call were written without the client check having passed.';
+const noCheck = (): Promise<string | undefined> => Promise.resolve(undefined);
+
+test('L19: a writer that says ok without the client check having passed is refused (internal) by the road: nothing runs, its files are gone, one journal line', async () => {
+  const skipping: LinksOptions['writer'] = (real) => (request) => real({ ...request, beforeFiles: noCheck });
+  const asksThenIgnores: LinksOptions['writer'] = (real) => async (request) => {
+    await request.beforeFiles();
+    return real({ ...request, beforeFiles: noCheck });
+  };
+  for (const [writer, client] of [[skipping, [GOOD_VERSION]], [asksThenIgnores, [OLD_VERSION]]] as const) {
+    await both({ writer, client }, {}, async ({ lw, ww }) => {
+      const reply = await body(viaBridge(ww.bridge), ww);
+
+      assert.equal(reply.status, statusForErrorCode('internal'), `the call is refused: ${reply.body}`);
+      assert.deepEqual([reply.status, code(reply), message(reply)], [statusForErrorCode('internal'), 'internal', BRIDGE_USE_REFUSED('prod')]);
+      assert.deepEqual(lw.notes.filter((note) => note.includes(UNCHECKED_LINE)), [notified(UNCHECKED_LINE)], JSON.stringify(lw.notes));
+      assert.deepEqual(lw.runs.filter((run) => !(run.argv.length === 1 && run.argv[0] === '-V')), [], 'no ssh of the call was started');
+      assert.equal(lw.slotsHeld, 0, 'the slot is back');
+      assert.deepEqual(fs.readdirSync(materializedKeysDir(lw.storageDir)), [], 'the files the writer made are gone');
+    });
+  }
 });

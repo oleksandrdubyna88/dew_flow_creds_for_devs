@@ -55,7 +55,8 @@ function launchOf(call: OverSshCall, prepared: Prepared, files: BridgedFiles, re
 
 /**
  * The launch of a call on a bridge, or the refusal. `writer` and `client` are the deps `unguardedBridge` proved present; `client` asks the `ssh` of
- * a program for its version, and the writer calls it after pass 1 and before it writes a file.
+ * a program for its version, and the writer calls it after pass 1 and before it writes a file. A writer that answers ok when the check was not asked, or
+ * was asked and did not pass, is not believed: its files are removed and the call is refused (`writtenUnchecked`).
  */
 export async function bridgedLaunch(
   parts: {
@@ -74,13 +75,19 @@ export async function bridgedLaunch(
   if (hops === undefined) {
     return refuse('internal', sentences.noHopEntries());
   }
+  const checked = { passed: false };
   const beforeFiles = async (): Promise<string | undefined> => {
     const verdict = await client(programOf(call));
+    checked.passed = verdict.ok;
     return verdict.ok ? undefined : verdict.sentence;
   };
   const files = await writer({ accountId: ctx.accountId, destination: call.ssh, auth: prepared.auth, keyPath: prepared.keyPath, hops, beforeFiles });
   if (!files.ok) {
     return refuse(files.code, files.reason);
+  }
+  if (!checked.passed) {
+    files.remove(); // a writer that wrote its files and said ok without the client check passing: they are not used, and not left
+    return refuse('internal', sentences.writtenUnchecked());
   }
   held.files = files;
   return launchOf(call, prepared, files, refuse);

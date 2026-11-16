@@ -489,7 +489,8 @@ test('L13: a first-contact call whose ssh adds a line and then cannot start stil
 
 test('L14: a writer that says ok for an entry the argv rules refuse is stopped by the second line (R8); nothing runs and the writer\'s files are gone', async () => {
   const made: string[] = [];
-  const stub = (): ((call: { destination: { name: string } }) => Promise<unknown>) => async () => {
+  const stub = (): ((call: { beforeFiles: () => Promise<string | undefined> }) => Promise<unknown>) => async (call) => {
+    assert.equal(await call.beforeFiles(), undefined, 'the stub asks the client check first, as the real writer does, so the road believes its ok and the second line is what stops it');
     const dir = path.join(materializedKeysDir(lwStorage[0]), `stub-${made.length}`);
     fs.mkdirSync(dir, { recursive: true });
     made.push(dir);
