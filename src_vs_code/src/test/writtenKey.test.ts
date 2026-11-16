@@ -13,6 +13,7 @@ type Guards = typeof import('../writtenKey');
 const KEY_FILE = '/storage/keys/1/call-unit.key';
 const WRITTEN: ExecAuth = { ok: true, keyPath: KEY_FILE, env: {}, auth: 'key', materialized: KEY_FILE };
 const OWN_FILE: ExecAuth = { ok: true, keyPath: '/home/me/.ssh/id_ed25519', env: {}, auth: 'key' };
+const PASSWORD: ExecAuth = { ok: true, env: {}, auth: 'askpass' };
 const REFUSED: ExecAuth = { ok: false, reason: 'no_credential', message: 'nothing stored' };
 
 function guards(): { mod: Guards; forgotten: string[] } {
@@ -63,6 +64,15 @@ test('U3: withWrittenKey deletes nothing for a key file of the person or for a r
   await mod.withWrittenKey(OWN_FILE, () => Promise.resolve());
   await mod.withWrittenKey(REFUSED, () => Promise.resolve());
   await assert.rejects(mod.withWrittenKey(OWN_FILE, () => Promise.reject(new Error('the run failed'))));
+
+  assert.deepEqual(forgotten, []);
+});
+
+test('U3b: withWrittenKey deletes nothing for a password credential, which writes no key file', async () => {
+  const { mod, forgotten } = guards();
+
+  await mod.withWrittenKey(PASSWORD, () => Promise.resolve());
+  await assert.rejects(mod.withWrittenKey(PASSWORD, () => Promise.reject(new Error('the run failed'))));
 
   assert.deepEqual(forgotten, []);
 });
@@ -120,12 +130,13 @@ test('U7: an exited that REJECTS deletes the key file too, and leaves no unhandl
   assert.deepEqual(unhandled, []);
 });
 
-test('U8: withWrittenKeyUntilExit deletes nothing for a key file of the person or for a refusal, at the start and at the end', async () => {
+test('U8: withWrittenKeyUntilExit deletes nothing for a key file of the person, a password credential or a refusal, at the start and at the end', async () => {
   const { mod, forgotten } = guards();
 
   mod.withWrittenKeyUntilExit(OWN_FILE, () => ({ process: { exited: Promise.resolve(0) } }));
   mod.withWrittenKeyUntilExit(OWN_FILE, () => undefined);
   mod.withWrittenKeyUntilExit(REFUSED, () => undefined);
+  mod.withWrittenKeyUntilExit(PASSWORD, () => ({ process: { exited: Promise.resolve(0) } }));
   await turn();
 
   assert.deepEqual(forgotten, []);

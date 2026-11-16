@@ -104,14 +104,15 @@ export const ROW = { accountId: 'a1', node: { id: 'e1', name: 'box' } };
 export const KEY = 'a1:e1';
 
 function emptyWorld(parts: Parts): World {
-  const w: World = { handlers: new Map(), bridges: undefined as never, children: [], forgotten: [], runs: [], asked: [], ended: [], infos: [], warnings: [], errors: [], logs: [] };
+  const children: HeldChild[] = [];
+  const ended: string[] = [];
   const held: BridgeSpawner = () => {
     const child = heldChild();
-    w.children.push(child);
+    children.push(child);
     return child;
   };
-  w.bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void w.ended.push(key));
-  return w;
+  const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
+  return { handlers: new Map(), bridges, children, forgotten: [], runs: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
@@ -185,6 +186,8 @@ export function world(parts: Parts = {}): World {
   const details = { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: 'dev' };
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', vscodeStub(w, parts), mocksOf(w, parts));
   const say = (_area: string, text: string): void => void w.logs.push(text);
+  // The host is an untyped record on purpose, as in forgetAgentConsents.test.ts: only the fields these three roads read are
+  // supplied, and typing it would mean stubbing the whole extension (its provider, its stores, its servers) for nothing.
   mod.registerAgentCommands({
     MACHINES: [],
     agentServer: { setFolderHooks: (): void => undefined, share: (): Promise<string> => Promise.resolve(formatToken(4242, 'c2VjcmV0')), signal: undefined },

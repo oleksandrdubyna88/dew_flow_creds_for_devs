@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { cleanupScope, ownedFile } from '../../scripts/lib/leftovers.cjs';
 import * as realBridge from '../sshBridge';
 import { KEY, Parts, World, click, ownKeyFile, settled, world, writtenKey } from './personRoadsWorld';
 
@@ -153,7 +152,7 @@ test('B8: a bridge whose key is the person\'s own file deletes nothing, at its s
 });
 
 test('B9: a REAL key file of a bridge is on the disk while its ssh runs and gone when it has ended', async () => {
-  const keyFile = path.join(ownedDir(scope, 'keys'), 'call-bridge.key');
+  const keyFile = ownedFile(scope, 'keys', 'call-bridge.key');
   fs.writeFileSync(keyFile, 'not a key', { mode: 0o600 });
   const w = await opened({ clicks: [writtenKey(keyFile)], realForget: true });
 

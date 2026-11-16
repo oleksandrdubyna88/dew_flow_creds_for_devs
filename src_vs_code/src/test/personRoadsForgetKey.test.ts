@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { after, test, TestContext } from 'node:test';
-import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { cleanupScope, ownedFile } from '../../scripts/lib/leftovers.cjs';
 import { Parts, TIMED_OUT, World, click, ownKeyFile, ran, settled, world, writtenKey } from './personRoadsWorld';
 
 /**
@@ -49,7 +48,17 @@ test('C2: the socket check deletes its key file when the socket is missing', asy
 test('C3: the socket check deletes its key file when the mode cannot be read', async (t) => {
   const w = await checked(t, { checks: [writtenKey(CHECK)], run: () => ran('') });
 
+  assert.equal(w.runs.length, 2, `the check did not run twice (the sweep, the mode check): ${w.runs.length}`);
+  assert.ok(w.logs.some((line) => line.includes('its mode could not be read')), `the unreadable mode was not logged: ${w.logs.join(' | ')}`);
   assert.deepEqual(w.forgotten, [CHECK], 'C3: the socket check left its key file');
+});
+
+test('C3b: the socket check deletes its key file when the socket is wider than 600, and the warning is shown', async (t) => {
+  const w = await checked(t, { checks: [writtenKey(CHECK)], run: () => ran('644') });
+
+  assert.equal(w.runs.length, 2, `the check did not run twice (the sweep, the mode check): ${w.runs.length}`);
+  assert.equal(w.warnings.length, 1, `the wide mode was not warned about: ${w.warnings.join(' | ')}`);
+  assert.deepEqual(w.forgotten, [CHECK], 'C3b: the socket check left its key file');
 });
 
 test('C4: the socket check deletes its key file when the host gives no argv', async (t) => {
@@ -139,7 +148,7 @@ test('I7: the install deletes nothing when no key file was written for it', asyn
 });
 
 test('R1: a real key file of the socket check is gone from the disk when the check ends', async (t) => {
-  const keyFile = path.join(ownedDir(scope, 'keys'), 'call-check.key');
+  const keyFile = ownedFile(scope, 'keys', 'call-check.key');
   fs.writeFileSync(keyFile, 'not a key', { mode: 0o600 });
   const present: boolean[] = [];
   const w = await checked(t, { checks: [writtenKey(keyFile)], realForget: true, run: () => (present.push(fs.existsSync(keyFile)), ran('600')) });

@@ -860,3 +860,7 @@ M7 are this spec's own. When S2 is built, M3 also turns B8 and U8 red (measured 
 - The helper takes the whole answer of `resolveExecAuth`, also a refusal, so that nothing stands between the resolve and the
   guard. The warning of the install is therefore shown inside the guard.
 - `test/writtenKey.test.ts` cannot be RED first (the module does not exist). Its proof is M3, M4 and M5.
+- As built, after the Opus review of S1 (the nits, tests only): C3 now asserts its road first (two runs, the log line
+  `its mode could not be read`), so X6 holds for every test; C3b (the socket answers `644`: the warning is shown and the key is
+  forgotten) and U3b (a password credential, `auth: 'askpass'` with no `materialized`: nothing is forgotten; also in U8) were added,
+  and R1 builds its path with `ownedFile`. Checked by mutation: C3 with a `missing` answer is red; with the guard emptied C3b is red.
