@@ -18,6 +18,15 @@
   (The split into three stories with no epics was ordered by the same gate at that approval. It is the baseline of
   epoch 1, not an entry: `## Stories`.)
 
+- 1.1 · 2026-11-16 · reviewer · approach — the `'error'` of a bridge's child: the spawner hands every `'error'` to a
+  reporter that `extension.ts` points at the diagnostic log (`bridge`, the error's text), so a failed start keeps its
+  cause (`spawn ssh ENOENT`; before, an uncaught exception of the host) and a started child's error is seen; it still
+  settles `exited` only when the child never started. And §2.4 is narrowed: a started child whose `kill()` fails and
+  that never exits keeps its key until the purge (`stop()` drops the row before the kill, `sshBridgeManager.ts:81-89`,
+  so `dispose` cannot retry it); the synchronous purge on the window's dispose (`extension.ts:222-223`) and the next
+  activation retire it, best effort. Raised by the cadence consultant (`e7ead04b`) before the build; checked by
+  reading. A retry of a failed kill is not built.
+
 ## 1. Symptom
 
 `resolveExecAuth` (`sshExecAuth.ts:115`) writes a stored key to `keys/<pid>/call-<uuid>.key` and returns its path as
@@ -84,6 +93,15 @@ deletes nothing: the extension did not write it.
   and its `'exit'` settles `exited` later (the plan round, codex). A failed start then ends like any other end: the manager drops the row and
   calls `onEnded` (a log line and a tree refresh), and the key goes. A behaviour change, on purpose: today such a
   bridge stays *bridged* in the tree forever.
+- **Every `'error'` of the child goes to a reporter** (change 1.1). The listener above takes the event, which today is
+  an uncaught exception of the extension host; without more, a failed start would lose its cause (`spawn ssh ENOENT`)
+  and a kill that failed would be seen by nobody. So the spawner is handed a reporter, `(error: Error) => void`, and it
+  is required: a spawner made without one does not compile. Every `'error'` is handed to it, of a child that never
+  started and of a started one alike. `extension.ts` points it at the diagnostic log: `log.warn('bridge', …)`, one
+  line that says the `ssh` of a bridge did not start or could not be stopped, and the text of the error
+  (`describeError`). The line never holds the argv: Node's error object carries it, and the argv of a bridge names the
+  key file. The report changes nothing of the settle: `exited` still settles only when the child never started, and it
+  settles before the reporter is called, so a reporter that throws cannot keep a key file on the disk.
 
 ### 2.3 The file size
 
@@ -101,13 +119,14 @@ socket check is not done here.)
 |---|---|---|---|
 | a `call-<uuid>.key` of a socket check | one while that check runs (at most about 32 s: 1.5 s plus two runs of 15 s), none after | the check's `finally` | a killed window leaves `keys/<pid>/`; `purgeMaterializedKeys` (`keyInstaller.ts:280`) of the next window that activates or deactivates removes it |
 | a `call-<uuid>.key` of an install | one while that install runs or its question is open, none after | the handler's `finally` | as above |
-| a `call-<uuid>.key` of a bridge | one per LIVE bridge; a bridge is one per entry (`start` replaces) | the continuation on that bridge's `exited` | as above; `dispose` stops every bridge, so each `exited` settles at the window's end |
+| a `call-<uuid>.key` of a bridge | one per LIVE bridge; a bridge is one per entry (`start` replaces). Plus one per `ssh` that a failed kill left running (change 1.1, below) | the continuation on that bridge's `exited` | as above; `dispose` kills every bridge, and each `exited` settles when its killed `ssh` has ended. **Narrowed (change 1.1):** a STARTED child whose `kill()` fails and that never exits keeps its file. `stop()` drops the row before the kill (`sshBridgeManager.ts:81-89`), so `dispose` cannot try again, and a retry of a failed kill is not built. The failed kill is in the log (§2.2). The synchronous purge on the window's dispose (`extension.ts:222-223`) and the purge of the next activation retire the file, best effort |
 | a continuation on `exited` | one per started bridge | it runs once when the process ends | ends with the extension host |
 
 **Projected size.** A key file is about 0.4 kB (ed25519) to 3.3 kB (RSA 4096). A heavy window with 10 open bridges, one
 socket check and one install running holds 12 files, at most 12 × 3.3 kB ≈ 40 kB. Today the same window, after 50
 bridge starts and 20 installs, holds 120 files (≈ 400 kB) until it ends; after this plan the count is bounded by the
-bridges open now.
+bridges open now, plus the `ssh` processes that a failed kill left running (change 1.1; one file each, until the
+purge of the window's dispose or of the next activation; a kill that fails is rare and is in the log).
 
 ### 2.5 What does not change
 
@@ -134,6 +153,10 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 4. **The spawner**: a fake child that emits `'error'` settles `exited` with `null`; one that emits `'exit'` with its
    code; one that emits both settles once with the first; a STARTED child
    (it has a `pid`) that emits `'error'` settles nothing, and its later `'exit'` settles `exited` with its code.
+   The reporter (change 1.1): the error of a child that never started is reported AND settles `exited` with `null`;
+   each error of a started child is reported and does NOT settle `exited`; a reporter that throws does not keep
+   `exited` from settling; the log line holds the text of the error and never the argv; `extension.ts` hands the
+   spawner a reporter that writes that line to the `bridge` log (read from the source, as the other wiring scans do).
 4a. **A real file** (the plan round, codex): one road per kind (the socket check and a bridge) runs with the REAL
    `forgetMaterializedKey` and a key file written into a temporary `keys/<pid>/`; the file is gone after the check
    finishes and after the bridge's `exited` settles. A failed delete stays silent, as on every road today
@@ -141,7 +164,10 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 5. **Mutation checks** (by hand, recorded in the commit body): remove each of the four forgets in turn → its test is
    red; attach the bridge's forget to `onEnded` instead → the *Close* and replacement tests are red; drop the `'error'`
    listener → test 4 is red; drop its `pid` condition → the started-child case of test 4 is red; set the bridge's
-   flag before `start` → the throwing-`start` test is red.
+   flag before `start` → the throwing-`start` test is red. The reporter (change 1.1): drop the call of the reporter →
+   the report tests are red; report only when the child never started → the started-child report test is red; report
+   before the settle → the throwing-reporter test is red; hand the spawner a reporter that does nothing in
+   `extension.ts` → the wiring test is red; build the log line from the whole error object → the log-line test is red.
 6. The whole extension suite (`npm test` in `src_vs_code`), lint (`max-lines` included) and the build green before the PR.
 
 ## 4. Docs
@@ -223,8 +249,10 @@ keep no change ledger: a change of one is an entry here. They promote together w
   built and verified together, with a real process in the tests.
 - **Scope.** `src/writtenKey.ts`: `withWrittenKeyUntilExit(credential, start)`. `commands/agentCommands.ts`: the
   handler of `credSshManager.openRemoteBridge` from its resolve to `bridges.start` (794 lines after S2). New
-  `src/bridgeSpawner.ts`: `bridgeSpawner(spawn?)` and `bridgeProcessOf(child)`, moved out of `activate` first, word
-  for word, and then changed; `extension.ts` calls it (981 → 975 lines, `.size-baseline.json` lowered). Tests: new
+  `src/bridgeSpawner.ts`: `bridgeSpawner(parts)` and `bridgeProcessOf(child)`, moved out of `activate` first, word
+  for word, and then changed: `exited` settles on a failed start, and every `'error'` goes to a required reporter
+  (`parts.report`, `bridgeProcessOf(child, report)`; the log line is `describeBridgeError(error)`; change 1.1);
+  `extension.ts` calls it and hands it the reporter (981 → 975 lines, `.size-baseline.json` lowered). Tests: new
   `test/bridgeKeyHandoff.test.ts` (test 3 and the bridge half of 4a of §3), new `test/bridgeSpawner.test.ts` (test 4,
   two real processes, the wiring of `extension.ts`), `test/writtenKey.test.ts` extended. No change of
   `sshBridgeManager.ts`. Two commits: the move alone, then the rest (both halves in one commit).
@@ -234,10 +262,10 @@ keep no change ledger: a change of one is an entry here. They promote together w
   B4); the ordinary second *Open* is B3. "Remove each of the four forgets": the four are the socket check's and the
   install's guard (S1, M1 and M2), the continuation on `exited` (N1) and the delete at once (N2).
 - **Depends on.** S1 (`writtenKey.ts`, the world, the headroom under 800 lines).
-- **Done when.** The spawner was moved with no change of behaviour and the suite stayed green; the spec's twelve RED
-  scenarios were watched failing and pass, its five guards pass before and after; *Close* alone deletes nothing in a
-  test whose process ends only when the test says so; the two real-process tests pass; its eleven mutations each
-  turned red what the spec names and were restored; `agentCommands.ts` has 794 lines; typecheck, lint, the ratchet and
+- **Done when.** The spawner was moved with no change of behaviour and the suite stayed green; the spec's sixteen RED
+  scenarios were watched failing and pass, its four guards pass before and after; *Close* alone deletes nothing in a
+  test whose process ends only when the test says so; the two real-process tests pass, and the real failed start is
+  reported; its sixteen mutations each turned red what the spec names and were restored; `agentCommands.ts` has 794 lines; typecheck, lint, the ratchet and
   the whole suite green.
 - **Spec.** [PLAN_person_roads_forget_key_S2_spec.md](PLAN_person_roads_forget_key_S2_spec.md) (Fable, 2026-11-16).
 - **model:** fable writes the spec (the cornerstone, and security judgement); sonnet codes; opus reviews.
@@ -255,7 +283,7 @@ keep no change ledger: a change of one is an entry here. They promote together w
      with the window); the file of a bridge stays while the bridge is open; a key file of your own (an entry that
      names a key file by its path) is never deleted. A second paragraph: a bridge whose `ssh` cannot start (`ssh` is
      not installed, for example) now ends, and its row goes back to *Open Remote Bridge…*; before, it stayed
-     *bridged* until the window ended. No version heading: the release writes it.
+     *bridged* until the window ended. The diagnostic log says why it did not start. No version heading: the release writes it.
   2. `research/module_extension.md`, the row *SSH private key on disk* of the table *Secrets at rest and in flight*
      (`:6134`): add that the bridge socket check and *Install creds on host* delete their file when they finish, and
      that a bridge's file is deleted when its `ssh` has ended. Keep every sentence the row has.
@@ -263,7 +291,10 @@ keep no change ledger: a change of one is an entry here. They promote together w
      (`:2575-2579`): add the spawner's sentence: the bridge's `ssh` is started by `bridgeSpawner` (`bridgeSpawner.ts`);
      its `exited` settles on the child's `'exit'`, and also, with `null`, on the `'error'` of a child that never
      started (it has no `pid`), so a start that fails ends the bridge like any other end (`onEnded`, the row back to
-     *Open*) and the key file goes; the `'error'` of a started child settles nothing. Add one sentence on
+     *Open*) and the key file goes; the `'error'` of a started child settles nothing. Every `'error'` is handed to a
+     reporter that `extension.ts` points at the diagnostic log (`describeBridgeError`: one sentence and the text of
+     the error, never the argv). And the bound that stays (§2.4): a started `ssh` whose kill fails and that never
+     exits keeps its key file until the purge. Add one sentence on
      `writtenKey.ts`: the one place where the rule "the caller that got `materialized` deletes it" is written for
      these three roads.
   4. `research/module_tests.md`: a new section `## A bridge, its socket check and the install delete their key file
