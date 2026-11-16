@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const net = require('node:net');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { SSHD, launch, endChild } = require('./itestSshd.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { trustLegs } = require('./itestBridgedTrust.cjs');
@@ -295,11 +295,22 @@ async function legK(rig) {
   }
 }
 
+/**
+ * PV1 (the E1.6 spec §S6.14 Y0): the first line of the run is the client's own version line, so each CI image says which OpenSSH it measured.
+ * `ssh -V` answers on stderr. A client that does not answer is printed as such and not hidden: the legs below fail by themselves.
+ */
+function printClientVersion() {
+  const answer = spawnSync('ssh', ['-V'], { encoding: 'utf8', timeout: 10_000 }); // NOSONAR: the PATH's ssh is the tool under test
+  const line = `${answer.stderr ?? ''}${answer.stdout ?? ''}`.trim().split('\n')[0];
+  console.log(answer.error === undefined ? `ssh -V: exit ${answer.status}: ${line}` : `ssh -V: not run (${answer.error.code ?? answer.error.message})`);
+}
+
 async function main() {
   if (process.platform === 'win32') {
     console.log('skip  the bridged ssh harness — POSIX only; M8 and M9 cover Windows');
     return 0;
   }
+  printClientVersion();
   const section = harnessScope.sectionScope();
   const rig = await R.makeRig(section, check);
   const haveSshd = fs.existsSync(SSHD);

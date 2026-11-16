@@ -217,6 +217,51 @@ jobs:
           path: src_vs_code/creds-for-devs-ci.vsix
           retention-days: 14
 
+  # PV1 (the E1.6 spec §S6.14 Y0; parent §7's probe table): the bridged `ssh:exec` harness on the two OLDER Ubuntu images beside `ubuntu-latest`
+  # (OpenSSH 8.9 and 9.6 by those images' package lists, from memory: the harness prints `ssh -V` as its first line, so the log says what each
+  # image met). It decides the floor's constant (8.9). A leg that is red here for a cause the fix-forward cannot remove goes back to the lead.
+  # Same `sshd` install step as `build-test`; legs (i) and (n) run here as they do there (the images have passwordless `sudo`).
+  bridged-ssh-images:
+    name: bridged ssh · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      - name: Install sshd for the live OpenSSH login
+        run: |
+          test -x /usr/sbin/sshd || (sudo apt-get -o Acquire::Retries=3 update && sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends openssh-server)
+          sudo mkdir -p /run/sshd
+
+      - name: Integration test (bridged ssh)
+        run: npm run itest:bridged-ssh
+
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
