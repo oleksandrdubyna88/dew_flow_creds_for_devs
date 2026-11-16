@@ -12,11 +12,18 @@
 //        under a rig home whose `.pgpass` holds a MARKER for that host and port, with no `PGPASSWORD`: once with no `PGPASSFILE`, once with it at a
 //        path that does not exist. Expected by the parent: the file is used with no variable, and the variable closes it.
 //
+//   PD3  a fake server answers `SSLRequest` with `S`, completes TLS with a throwaway server certificate, REQUESTS a client certificate and records
+//        whether one was offered; `psql` runs with `sslmode=require` under a rig home whose `.postgresql` holds a throwaway `postgresql.crt` and
+//        `postgresql.key` (the marker: its subject is `CN=${PD3_MARKER_CN}`): once with no `PGSSLCERT` and `PGSSLKEY`, once with both at paths that do not exist.
+//        Expected by the parent: the certificate is offered with no variable, and the variables close it. A marker offered WITH the variables too
+//        stops the work and goes to the lead. Server and client certificates are made by `openssl` at run time, in the owned folder: nothing is committed.
+//
 // `psql` is named by an absolute path (`BRIDGED_PSQL`, default `/usr/bin/psql`); the harness prints its `--version`. With `CI=true` a missing one
 // FAILS; off CI it is a printed skip. POSIX only.
 const fs = require('fs');
 const path = require('path');
 const net = require('node:net');
+const tls = require('node:tls');
 const { execFileSync } = require('node:child_process');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { launch, endChild } = require('./itestSshd.cjs');
@@ -24,6 +31,7 @@ const { ownedDir } = require('./lib/leftovers.cjs');
 
 const BOUND_MS = 20_000;
 const PD2_PASSWORD_MARKER = 'pd2-marker-password';
+const PD3_MARKER_CN = 'pd3-marker-client';
 const SSL_REQUEST = 80877103;
 const GSSENC_REQUEST = 80877104;
 
@@ -55,9 +63,13 @@ const FATAL = withLength('E', Buffer.from('SFATAL\0C28P01\0Mthe fake server reco
  * The fake server: a first message with no type byte (length, code). An `SSLRequest` and a `GSSENCRequest` are answered `N` (this server has
  * neither); any other is the start-up message, answered with the clear-text request; the next message is the password, `p`, length and a
  * NUL-ended text. `state` records what arrived: the start-ups, the requests refused, the password text.
+ *
+ * With `tlsMaterial` (a throwaway `{ key, cert }`) an `SSLRequest` is answered `S` and the socket is handed to a TLS server that REQUESTS a client
+ * certificate and accepts any (or none): `state.secured` counts the completed handshakes and `state.peer` holds what the client offered.
  */
-function fakeServer() {
-  const state = { startups: 0, refused: 0, password: undefined };
+function fakeServer(tlsMaterial) {
+  const state = { startups: 0, refused: 0, password: undefined, sslRequests: 0, secured: 0, peer: undefined, tlsError: undefined };
+  const tlsServer = tlsMaterial === undefined ? undefined : secureServer(tlsMaterial, state);
   const server = net.createServer((socket) => {
     let pending = Buffer.alloc(0);
     let phase = 'first';
@@ -69,7 +81,7 @@ function fakeServer() {
       pending = Buffer.concat([pending, chunk]);
       for (let at = nextMessage(pending, phase); at !== undefined; at = nextMessage(pending, phase)) {
         pending = pending.subarray(at.size);
-        phase = step(socket, phase, at, state);
+        phase = step(socket, phase, at, state, tlsServer);
       }
     });
   });
@@ -86,14 +98,38 @@ function nextMessage(buffer, phase) {
   return buffer.length < skip + length ? undefined : { body: buffer.subarray(skip + 4, skip + length), size: skip + length };
 }
 
+/** What a client certificate says of itself: nothing offered is an empty object. */
+const peerOf = (certificate) => ({ offered: Object.keys(certificate).length > 0, commonName: certificate.subject?.CN });
+
+/** The TLS half of the fake server: a certificate is REQUESTED and none is verified, so what the client holds is only recorded. */
+function secureServer(material, state) {
+  const tlsServer = tls.createServer({ key: material.key, cert: material.cert, requestCert: true, rejectUnauthorized: false }, (secure) => {
+    state.secured += 1;
+    state.peer = { ...peerOf(secure.getPeerCertificate()), protocol: secure.getProtocol() };
+    secure.on('error', () => undefined);
+    secure.once('data', () => secure.end(FATAL));
+  });
+  tlsServer.on('tlsClientError', (error) => {
+    state.tlsError = error.message;
+  });
+  return tlsServer;
+}
+
 /** One message of the client; the next phase. */
-function step(socket, phase, incoming, state) {
+function step(socket, phase, incoming, state, tlsServer) {
   if (phase === 'password') {
     state.password = incoming.body.toString('utf8').replace(/\0$/, '');
     socket.end(FATAL);
     return 'done';
   }
   const code = incoming.body.length >= 4 ? incoming.body.readInt32BE(0) : 0;
+  if (code === SSL_REQUEST && tlsServer !== undefined) {
+    state.sslRequests += 1;
+    socket.write('S');
+    socket.removeAllListeners('data'); // the TLS server reads from here on
+    tlsServer.emit('connection', socket);
+    return 'upgraded';
+  }
   if (code === SSL_REQUEST || code === GSSENC_REQUEST) {
     state.refused += 1;
     socket.write('N');
@@ -126,8 +162,8 @@ async function endedWithin(promise, ms) {
 }
 
 /** One `psql` against one fake server; what the server saw and what the client said. `prepare(port)` writes the files the run needs. */
-async function psqlRun(scope, exe, { env, prepare }) {
-  const { server, state } = fakeServer();
+async function psqlRun(scope, exe, { env, prepare, tlsMaterial }) {
+  const { server, state } = fakeServer(tlsMaterial);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   prepare(port);
@@ -160,8 +196,51 @@ async function legPD2(scope, exe, dir) {
     reached(`(PD2) psql ${label}`, run);
     const sent = run.state.password;
     console.log(`record (PD2) psql, ${label}: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker from .pgpass ${sent === PD2_PASSWORD_MARKER ? 'STANDS' : 'does not stand'} in it; psql said ${JSON.stringify(run.stderr)}`);
+    if (withVariable && sent === PD2_PASSWORD_MARKER) {
+      console.log('STOP (PD2): the marker was sent WITH PGPASSFILE set too — no remedy is built, and row 7 returns to the lead (parent §7, row PD2)');
+    }
   }
   check('(PD2) the path given as PGPASSFILE does not exist', !fs.existsSync(absent), absent);
+}
+
+/** A throwaway self-signed certificate and its key, made by `openssl` into `folder`: `{ key, cert }` as file names. */
+function throwawayCertificate(folder, name, commonName) {
+  const key = path.join(folder, `${name}.key`);
+  const cert = path.join(folder, `${name}.crt`);
+  // The PATH's openssl is the tool that makes the rig's own throwaway material.
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '1', '-subj', `/CN=${commonName}`, '-keyout', key, '-out', cert], { stdio: 'pipe' }); // NOSONAR
+  fs.chmodSync(key, 0o600);
+  return { key, cert };
+}
+
+/** PD3: the person's client certificate, with no `PGSSLCERT` and `PGSSLKEY` and with both at paths that do not exist. */
+async function legPD3(scope, exe, dir) {
+  const home = path.join(dir, 'pd3 home');
+  const material = path.join(dir, 'pd3 material');
+  const absent = { cert: path.join(dir, 'pd3-client-cert-that-never-exists.crt'), key: path.join(dir, 'pd3-client-key-that-never-exists.key') };
+  fs.mkdirSync(path.join(home, '.postgresql'), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(material, { recursive: true });
+  const server = throwawayCertificate(material, 'server', 'localhost');
+  const person = throwawayCertificate(material, 'person', PD3_MARKER_CN);
+  fs.copyFileSync(person.cert, path.join(home, '.postgresql', 'postgresql.crt'));
+  fs.copyFileSync(person.key, path.join(home, '.postgresql', 'postgresql.key'));
+  fs.chmodSync(path.join(home, '.postgresql', 'postgresql.key'), 0o600);
+  const tlsMaterial = { key: fs.readFileSync(server.key), cert: fs.readFileSync(server.cert) };
+  for (const withVariables of [false, true]) {
+    const label = withVariables ? 'with PGSSLCERT and PGSSLKEY at paths that do not exist' : 'with no PGSSLCERT and no PGSSLKEY';
+    const run = await psqlRun(scope, exe, {
+      env: { PATH: process.env.PATH, HOME: home, PGSSLMODE: 'require', ...(withVariables ? { PGSSLCERT: absent.cert, PGSSLKEY: absent.key } : {}) },
+      prepare: () => undefined,
+      tlsMaterial,
+    });
+    check(`(PD3) psql ${label}: the client reached the fake server, completed TLS and ended in time`, run.ended && run.state.secured >= 1, JSON.stringify({ ...run.state, ended: run.ended, code: run.code, stderr: run.stderr }));
+    const peer = run.state.peer ?? { offered: false };
+    console.log(`record (PD3) psql, ${label}: exit ${run.code}; TLS ${run.state.secured >= 1 ? `completed (${peer.protocol})` : 'did NOT complete'}; a client certificate ${peer.offered ? 'was OFFERED' : 'was NOT offered'}; the marker (CN=${PD3_MARKER_CN}) ${peer.commonName === PD3_MARKER_CN ? 'STANDS' : 'does not stand'} in it (subject CN ${JSON.stringify(peer.commonName ?? null)}); psql said ${JSON.stringify(run.stderr)}`);
+    if (withVariables && peer.commonName === PD3_MARKER_CN) {
+      console.log('STOP (PD3): the marker was offered WITH PGSSLCERT and PGSSLKEY set too — no remedy is built, and row 9 returns to the lead (parent §7, row PD3)');
+    }
+  }
+  check('(PD3) the paths given as PGSSLCERT and PGSSLKEY do not exist', !fs.existsSync(absent.cert) && !fs.existsSync(absent.key), JSON.stringify(absent));
 }
 
 async function main(scope) {
@@ -177,6 +256,7 @@ async function main(scope) {
   } else {
     const dir = ownedDir(scope, 'bridged-psql');
     await legPD2(scope, exe, dir);
+    await legPD3(scope, exe, dir);
   }
   console.log(failures === 0 ? '\nall bridged psql checks passed' : `\n${failures} check(s) failed`);
   return failures === 0 ? 0 : 1;
