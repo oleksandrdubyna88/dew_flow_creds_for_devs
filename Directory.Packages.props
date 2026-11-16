@@ -27,14 +27,14 @@
          reason it is affordable was measured rather than assumed (2026-08-27): with PublishAot
          and JsonSerializerIsReflectionEnabledByDefault=false it publishes with zero trim
          warnings, and the published binary answers a real initialize/tools-list exchange. MIT. -->
-    <PackageVersion Include="ModelContextProtocol" Version="2.3.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- xUnit v3 on the native Microsoft Testing Platform: the test project builds into a
          self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
          aborts — run the executable (.agents/conventions/common/testing.md). -->
-    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <PackageVersion Include="xunit.v3" Version="4.0.3" />
 
     <!-- Hosts the API in-process (TestServer) so the suite needs no free port and no
          background `dotnet run`. -->
