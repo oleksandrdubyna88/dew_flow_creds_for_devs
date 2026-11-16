@@ -1004,6 +1004,20 @@ storage folder whose path holds a space, and **no environment edited**: every ca
 | FB1 | the container on hk_b; key, unpinned | `Host key verification failed` (the bridge-owned file) |
 | FB2, FB3 | key and password pinned to hk_a | `Host key verification failed`; no password asked |
 
+**As built for epoch 10 (§S6.14), 2026-11-16: where the code goes past or beside the text.** Built in three parallel streams and merged
+(Y0-Y2 and Y6; Y4 and Y5; Y3), then reviewed by an Opus judge and the coai code gate (`proceed`, eight of eight).
+- **Y3.** The good verdict is kept per program (`sshSpawnLaunch` may choose another program for one entry on Windows), not as one flag. The
+  runner kills the child at the bound, not a tree (`ssh -V` starts none). A window or request that ends while `ssh -V` runs goes on as ended,
+  not as R12; a runner that cannot start `ssh` leaves its cause in the journal beside R12 (the judge). The check runs between pass 1 and pass 2
+  through the writer's `beforeFiles`, which is required, and the road refuses (`internal`, *The files of this call were written without the
+  client check having passed.*) a writer that answers ok without the check having passed (the gate; L19). The destination's stored key is
+  written by the auth step before it, as since E1.1.
+- **Y5.** R11 names the host (`of(who, 'host')`). The field of the first-contact file is `first-contact`, apart from the person's `known-hosts`,
+  so the second line can say R14 for one and R6 for the other. A path is the extension's own when it lies under the keys folder.
+- **Y6.** One `absentFile`, `keys/<pid>/no-client-file`, serves all four variables; nothing writes it.
+- **First contact.** A call whose legs are all pinned reads neither known-hosts file (the gate; W17).
+- **Not built, rejected at the gate with a reason:** serialising two concurrent first contacts to one unseen host (Q3's trust on first use).
+
 ## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
 
 *Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
