@@ -45,7 +45,7 @@ const described = (sent) => {
   if (sent === undefined) {
     return 'none';
   }
-  return `${holdsMarker(sent) ? 'the marker' : 'another value'} (${sent.length} characters)`;
+  return holdsMarker(sent) ? 'the marker' : 'another value';
 };
 const SSL_REQUEST = 80877103;
 const GSSENC_REQUEST = 80877104;
