@@ -17,14 +17,18 @@ import { viaBridge, viaMain } from './bridgeWallWorld';
 
 const { BRIDGE_USE_REFUSED } = loadBridgeModules().scope;
 
-const GOOD_VERSION: ClientAnswer = { exit: 0, stderr: 'OpenSSH_10.2p1 Ubuntu-2ubuntu3, OpenSSL 3.4.1 11 Feb 2025\n' };
-const OLD_VERSION: ClientAnswer = { exit: 0, stderr: 'OpenSSH_8.6p1 Ubuntu-4ubuntu0.7, OpenSSL 3.0.2 15 Mar 2022\n' };
+// The real check asks the platform it runs on: off Windows a version alone counts; on win32 only the build Windows ships (`OpenSSH_for_Windows_`) does,
+// so the good and the below-floor answers are the ones that platform gives (the same pair as CV1-CV3 in bridgedSshClient.test.ts).
+const WINDOWS = process.platform === 'win32';
+const GOOD_VERSION: ClientAnswer = { exit: 0, stderr: WINDOWS ? 'OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2\n' : 'OpenSSH_10.2p1 Ubuntu-2ubuntu3, OpenSSL 3.4.1 11 Feb 2025\n' };
+const OLD_VERSION: ClientAnswer = { exit: 0, stderr: WINDOWS ? 'OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2\n' : 'OpenSSH_8.6p1 Ubuntu-4ubuntu0.7, OpenSSL 3.0.2 15 Mar 2022\n' };
 const NO_VERSION: ClientAnswer = { exit: 255, stderr: '' };
-const R13_LINE = 'The ssh on this computer answered OpenSSH_8.6. A Remote Bridge needs OpenSSH 8.9 or newer, and on Windows the OpenSSH that Windows ships, 9.5 or newer.';
+const OLD_TOKEN = WINDOWS ? 'OpenSSH_for_Windows_8.1' : 'OpenSSH_8.6';
+const R13_LINE = `The ssh on this computer answered ${OLD_TOKEN}. A Remote Bridge needs OpenSSH 8.9 or newer, and on Windows the OpenSSH that Windows ships, 9.5 or newer.`;
 const R12_LINE = 'ssh did not answer its version under the environment a Remote Bridge gives it (exit 255). No call can go through a Remote Bridge from this computer until it does.';
 const versionRuns = (lw: LinksWorld): LinksWorld['runs'] => lw.runs.filter((run) => run.argv.length === 1 && run.argv[0] === '-V');
 
-test('L15: a client that answers OpenSSH_8.6p1 is refused generically; runs holds the -V spawn alone, in an empty folder that is gone, and the journal has R13; the main port is not asked', async () => {
+test('L15: a client below the floor (OpenSSH_8.6p1, or OpenSSH_for_Windows_8.1p1 on Windows) is refused generically; runs holds the -V spawn alone, in an empty folder that is gone, and the journal has R13; the main port is not asked', async () => {
   await both({ client: [OLD_VERSION], jump: 'valid' }, {}, async ({ lw, ww }) => {
     const reply = await body(viaBridge(ww.bridge), ww);
 
