@@ -53,7 +53,10 @@ const OK = Buffer.from([0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
  */
 function fakeServer(markerPath) {
   const state = { received: [], requested: false };
+  const open = new Set();
   const server = net.createServer((socket) => {
+    open.add(socket);
+    socket.once('close', () => open.delete(socket));
     let pending = Buffer.alloc(0);
     let phase = 'login';
     socket.on('error', () => undefined);
@@ -66,7 +69,15 @@ function fakeServer(markerPath) {
       }
     });
   });
-  return { server, state };
+  /** Resolves when every connection of the client has been read to its end (or after `ms`): what the client sent is then all in `state`. */
+  const drained = (ms) => {
+    let timer;
+    const bound = new Promise((resolve) => {
+      timer = setTimeout(resolve, ms);
+    });
+    return Promise.race([Promise.all([...open].map((socket) => new Promise((resolve) => socket.once('close', resolve)))), bound]).finally(() => clearTimeout(timer));
+  };
+  return { server, state, drained };
 }
 
 function parsePacket(buffer) {
@@ -113,16 +124,31 @@ const versionOf = (exe) => {
   }
 };
 
+/** Resolves with `promise`'s value, or with `value` after `ms`; the timer does not outlive the race. */
+async function within(promise, ms, value) {
+  let timer;
+  const bound = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms, value);
+  });
+  try {
+    return await Promise.race([promise, bound]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** One real client against one fake server: the bytes of the marker that the server received. */
 async function received(scope, exe, build, markerPath) {
-  const { server, state } = fakeServer(markerPath);
+  const { server, state, drained } = fakeServer(markerPath);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { args, env } = build(server.address().port);
   const client = launch(scope, exe, args, { env });
   try {
     // A client that hangs after the LOCAL INFILE request must FAIL the leg, not pass it with empty bytes: the timeout is reported.
-    const ended = await Promise.race([client.done.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 20_000))]);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // The result is read only after the client's pipes have CLOSED (`closed`, which follows `done` and the last chunk of its output) and the server
+    // has read each of its connections to the end: no fixed delay stands in for either.
+    const ended = await within(client.closed.then(() => true), 20_000, false);
+    await drained(2000);
     return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, timedOut: !ended, stderr: client.stderr };
   } finally {
     await endChild(client);
