@@ -13,6 +13,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { clientVerdict } from '../bridgedSshClient';
 import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_RUNTIME_ADDED_WINDOWS, BRIDGED_ENV_WINDOWS, bridgedSshEnv } from '../bridgedSshEnv';
 import { runBounded } from '../sshExecRunner';
 
@@ -51,7 +52,7 @@ function onPath(name: string): string | undefined {
   return folders.map((folder) => path.join(folder, `${name}.exe`)).find((file) => fs.existsSync(file));
 }
 
-test('WN1: ssh.exe -V under the requested environment exits 0 and says OpenSSH_for_Windows_', { skip: SKIPPED_OFF_WINDOWS }, (t: TestContext) => {
+test('WN1: ssh.exe -V under the requested environment exits 0, says OpenSSH_for_Windows_ and meets the floor', { skip: SKIPPED_OFF_WINDOWS }, (t: TestContext) => {
   const env = requested();
   const answer = runUnder(sshExe(), ['-V'], env);
   const line = firstLine(answer.stderr ?? '');
@@ -60,6 +61,10 @@ test('WN1: ssh.exe -V under the requested environment exits 0 and says OpenSSH_f
   t.diagnostic(`PW1 WN1 the names the child was given (${Object.keys(env).length}): ${Object.keys(env).join(', ')}`);
   assert.equal(answer.status, 0, `ssh.exe -V did not exit 0 under ${Object.keys(env).join(', ')}: ${describe(answer)}`);
   assert.match(line, /^OpenSSH_for_Windows_/);
+  // The floor (Y3, Q12) is checked against what this image prints: the real constant, through the module's own reading of the answer.
+  const verdict = clientVerdict(answer.status, answer.stdout ?? '', answer.stderr ?? '', 'win32');
+  t.diagnostic(`PW1 WN1 clientVerdict on that answer (win32): ${JSON.stringify(verdict)}`);
+  assert.equal(verdict.ok, true, `the OpenSSH that windows-latest ships is below the Win32-OpenSSH floor, or is not read as a version: ${JSON.stringify(verdict)}`);
 });
 
 test('WN2: the same without PROGRAMDATA is recorded, not asserted', { skip: SKIPPED_OFF_WINDOWS }, (t: TestContext) => {
