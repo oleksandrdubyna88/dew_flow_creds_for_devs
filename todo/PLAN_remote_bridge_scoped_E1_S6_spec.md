@@ -1,6 +1,6 @@
 # PLAN — E1.6 spec: SSH execution containment — what each leg of a bridged `ssh` offers, and to whom
 
-> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward, built on this PR once that epoch opens.**
+> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward. Epoch 10 opened on 2026-11-16; §S6.14 is built on this PR the same day (As built for epoch 10: §S6.13), M9 passed again on it, and the merge is next.**
 > **Revised the same day after two reviews of `a30faed7` (an Opus judge and a Fable security judge):** the user rule, the host rule and the
 > equal `Host` words, first contact that cannot be written, the `%` rule, the pin line's spelling, and the tests and mutations for them. The
 > decisions of that day are in §S6.10.
