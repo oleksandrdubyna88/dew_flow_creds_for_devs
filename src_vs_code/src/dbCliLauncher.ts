@@ -211,6 +211,28 @@ export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): 
   return onPath(cli.exe) ? cli : undefined;
 }
 
+/**
+ * What a BRIDGED client is asked for so that it reads none of the person's own files under `HOME` (E1.6 §S6.14 Y6; probes PD1-PD3 saw each variable
+ * close its file): `mysql` gets `MYSQL_TEST_LOGIN_FILE` (`.mylogin.cnf`, which `--no-defaults` still reads), `psql` gets `PGPASSFILE` (`.pgpass`)
+ * and `PGSSLCERT` and `PGSSLKEY` (`~/.postgresql`), each at `absentFile`, a path nothing ever writes. `mssql` has none of these. `undefined`
+ * when a client that needs them has no `absentFile`: such a launch is refused, never made with the person's files readable.
+ */
+function clientFileNames(dbType: DbType, absentFile: string | undefined): Record<string, string> | undefined {
+  const names = CLIENT_FILE_NAMES[dbType] ?? [];
+  if (names.length === 0) {
+    return {};
+  }
+  return isPath(absentFile) ? Object.fromEntries(names.map((name) => [name, absentFile])) : undefined;
+}
+
+/** The variables of each client that close the person's own files: the client's own documentation names them (PD1-PD3). */
+const CLIENT_FILE_NAMES: Partial<Record<DbType, readonly string[]>> = {
+  mysql: ['MYSQL_TEST_LOGIN_FILE'],
+  postgres: ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'],
+};
+
+const isPath = (value: string | undefined): value is string => value !== undefined && value !== '';
+
 export interface DbQueryLaunch {
   exe: string;
   args: string[];
@@ -234,9 +256,13 @@ export function buildDbQueryLaunch(
   dbType: DbType,
   connectionString: string,
   query: string,
-  options: { readonly bridged?: boolean } = {},
+  options: { readonly bridged?: boolean; readonly absentFile?: string } = {},
 ): DbQueryLaunch | undefined {
   const bridged = options.bridged === true;
+  const closing = bridged ? clientFileNames(dbType, options.absentFile) : {};
+  if (closing === undefined) {
+    return undefined;
+  }
   const cli = CLIS[dbType];
   if (cli === undefined || cli.passwordEnv === undefined) {
     return undefined;
@@ -272,7 +298,7 @@ export function buildDbQueryLaunch(
         exe: cli.exe,
         // A bridged call also reads none of the person's own `psqlrc` (`-X`, first): the agent's query would otherwise run after a startup file it cannot see (E1.6, parent §4.11).
         args: [...(bridged ? ['-X'] : []), '-c', ' ' + query, '--', withoutPassword(connectionString)],
-        env,
+        env: { ...env, ...closing },
       };
     case 'mysql': {
       // A bridged call reads no option file at all (`--no-defaults`, first: it must come before any other option). Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`; this is the flag that closes it.
@@ -291,7 +317,7 @@ export function buildDbQueryLaunch(
       // only at a statement start, the split refuseQuery assumes, and no answer to a LOCAL INFILE
       // request. Known gap: Oracle's load-data-local-dir in an option file survives the last one.
       args.push('--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query);
-      return { exe: cli.exe, args, env };
+      return { exe: cli.exe, args, env: { ...env, ...closing } };
     }
     case 'mssql': {
       if (parts.user !== undefined) {

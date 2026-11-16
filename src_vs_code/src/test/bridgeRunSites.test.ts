@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import { test } from 'node:test';
 import type { AgentUseDeps, dbQueryAction as DbQueryAction } from '../agentUseActions';
 import type { DbType, EntityMetadata } from '../types';
@@ -190,18 +191,24 @@ test('C10 (change 6.2): a bridged exec says the connection starts here and the c
   }
 });
 
-test('Q4 (E1.6): the environment of a bridged database client is the allow-list and its password variable; through the main port the process environment is there', async () => {
+/** Q4 (E1.6) for one client: the keys of a bridged spawn's environment are the allow-list, its password variable and the names that close the person's own files (Y6); through the main port the whole process environment is there and none of those names is added. */
+async function assertClientEnvironment(dbType: DbType, connection: string, passwordEnv: string, passwordValue: string, closing: readonly string[]): Promise<void> {
   const before = process.env.PGOPTIONS;
   process.env.PGOPTIONS = '-c search_path=somewhere-else';
   try {
-    const qw = await queryWorld('postgres', 'postgresql://app:pw-one@db.example.test:5433/orders');
+    const qw = await queryWorld(dbType, connection);
     const ww = await wallWorld({ query: qw.action });
     try {
       assert.equal((await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'))).status, 200);
       assert.equal((await send(viaMain(ww), query('/v1/alias/query'))).status, 200);
       const allowed = allowListedNames();
-      assert.deepEqual(Object.keys(qw.spawns[0].env).sort(), [...allowed, 'PGPASSWORD'].sort(), 'through the bridge');
+      assert.deepEqual(Object.keys(qw.spawns[0].env).sort(), [...allowed, passwordEnv, ...closing].sort(), 'through the bridge');
+      for (const name of closing) {
+        const absent = qw.spawns[0].env[name] as string;
+        assert.ok(absent.includes('no-client-file') && !fs.existsSync(absent), `${name} names a path in the keys folder that nothing writes: ${absent}`);
+      }
       assert.equal(qw.spawns[1].env.PGOPTIONS, '-c search_path=somewhere-else', 'through the main port: the whole environment, as today');
+      assert.deepEqual(qw.spawns[1].env, { ...process.env, [passwordEnv]: passwordValue }, 'through the main port: today\'s environment and nothing added');
     } finally {
       ww.dispose();
     }
@@ -212,4 +219,12 @@ test('Q4 (E1.6): the environment of a bridged database client is the allow-list 
       process.env.PGOPTIONS = before;
     }
   }
+}
+
+test('Q4a (E1.6, Y6): the environment of a bridged mysql is the allow-list, its password variable and MYSQL_TEST_LOGIN_FILE at a path nothing writes; through the main port the process environment and no such name', async () => {
+  await assertClientEnvironment('mysql', 'mysql://app:pw-two@db.example.test:3307/orders', 'MYSQL_PWD', 'pw-two', ['MYSQL_TEST_LOGIN_FILE']);
+});
+
+test('Q4b (E1.6, Y6): the environment of a bridged psql is the allow-list, its password variable and PGPASSFILE, PGSSLCERT and PGSSLKEY at a path nothing writes; through the main port the process environment and no such name', async () => {
+  await assertClientEnvironment('postgres', 'postgresql://app:pw-one@db.example.test:5433/orders', 'PGPASSWORD', 'pw-one', ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY']);
 });

@@ -9,7 +9,7 @@
 //
 //   control   with `--local-infile=1` (the rig can make a client send a file at all), and, for Oracle's client, an option file that sets
 //             `load-data-local-dir` with `--local-infile=0` and NO `--no-defaults`: the marker's bytes arrive;
-//   production  the arguments of `buildDbQueryLaunch('mysql', …, { bridged: true })` and the environment of `bridgedSshEnv`, with the SAME option
+//   production  the arguments of `buildDbQueryLaunch('mysql', …, { bridged: true, absentFile })` and the environment of `bridgedSshEnv`, with the SAME option
 //             file in the rig home: the server receives none of the bytes, on each client.
 //
 // Oracle's client and MariaDB's are each named by an absolute path (`BRIDGED_MYSQL_ORACLE`, default `/usr/bin/mysql`; `BRIDGED_MYSQL_MARIADB`, default
@@ -174,7 +174,7 @@ async function legM(scope, dir, name, exe, product) {
     check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', !gap.timedOut && gap.bytes === MARKER_TEXT, JSON.stringify(gap));
   }
   const productionBuild = (port) => {
-    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true });
+    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(dir, 'no-client-file') });
     return { args: launchOf.args, env: product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home, MYSQL_HOME: dir }, 'linux', launchOf.env) };
   };
   const production = await received(scope, exe, productionBuild, marker);
@@ -205,7 +205,7 @@ function pd1Record(name, exe, home, absent, withVariable) {
 }
 
 /** PD1: `mysql_config_editor` writes a login file under a rig home, then every client present is asked what it reads. A missing editor FAILS on CI and names the package. */
-function recordLoginFile(dir, clients) {
+function recordLoginFile(dir, clients, product) {
   const [, oracle] = clients[0];
   const editor = process.env.BRIDGED_MYSQL_CONFIG_EDITOR ?? path.join(path.dirname(oracle), 'mysql_config_editor');
   const home = path.join(dir, 'pd1 home');
@@ -226,6 +226,31 @@ function recordLoginFile(dir, clients) {
       pd1Record(name, exe, home, absent, withVariable);
     }
   }
+  if (wrote) {
+    assertLoginFileClosed(dir, clients, home, product);
+  }
+}
+
+/**
+ * (m), added (E1.6 §S6.14 Y6): PD1's case as an ASSERTION on the production launch. The environment is the one `buildDbQueryLaunch('mysql', …, { bridged:
+ * true, absentFile })` and `bridgedSshEnv` hand a bridged client, with the rig home that holds the login file: the marker host stands in no output of
+ * either client. The control, for Oracle's client (which reads the file, PD1), is the same run without `MYSQL_TEST_LOGIN_FILE`: the marker stands, so this
+ * rig can make the bad thing happen. MariaDB's client reads no login file, so it has no control and its leg shows only that the launch does not change that.
+ */
+function assertLoginFileClosed(dir, clients, home, product) {
+  const absentFile = product.materializedKeyPath(dir, 'no-client-file');
+  const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile });
+  const production = product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, 'linux', launchOf.env);
+  const stands = (answer) => answer.stdout.includes(PD1_MARKER_HOST) || answer.stderr.includes(PD1_MARKER_HOST);
+  check('(m) the production launch names MYSQL_TEST_LOGIN_FILE at a path that does not exist', production.MYSQL_TEST_LOGIN_FILE === absentFile && !fs.existsSync(absentFile), JSON.stringify(production.MYSQL_TEST_LOGIN_FILE));
+  for (const [name, exe] of clients) {
+    if (name === 'oracle') {
+      const control = pd1Run(exe, ['--no-defaults', '--verbose', '--help'], { PATH: process.env.PATH, HOME: home });
+      check('(m) oracle control: with --no-defaults and no MYSQL_TEST_LOGIN_FILE the login file is still read (the marker host stands in the output)', control.code === 0 && stands(control), JSON.stringify({ code: control.code, stderr: control.stderr.slice(0, 200) }));
+    }
+    const closed = pd1Run(exe, ['--no-defaults', '--verbose', '--help'], production);
+    check(`(m) ${name}: under the production environment the marker host stands in no output of the client (${name === 'oracle' ? 'control above' : 'no control: this client reads no login file'})`, closed.code === 0 && !stands(closed), JSON.stringify({ code: closed.code, stderr: closed.stderr.slice(0, 200) }));
+  }
 }
 
 async function main(scope) {
@@ -237,6 +262,7 @@ async function main(scope) {
   const product = {
     ...require(path.join(OUT, 'dbCliLauncher.js')),
     ...require(path.join(OUT, 'bridgedSshEnv.js')),
+    ...require(path.join(OUT, 'materializedKeys.js')),
   };
   const clients = [['oracle', process.env.BRIDGED_MYSQL_ORACLE ?? '/usr/bin/mysql'], ['mariadb', process.env.BRIDGED_MYSQL_MARIADB ?? '/usr/bin/mariadb']];
   const present = [];
@@ -252,7 +278,7 @@ async function main(scope) {
     present.push([name, exe]);
   }
   if (present.length === clients.length) {
-    recordLoginFile(dir, present);
+    recordLoginFile(dir, present, product);
   } else {
     check('(PD1) both clients are present, so the record leg ran', process.env.CI !== 'true', 'a client is missing: PD1 asks each one');
   }

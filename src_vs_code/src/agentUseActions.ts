@@ -608,7 +608,9 @@ export function dbQueryAction(
       if (refusal !== undefined) {
         return fail('not_supported', refusal);
       }
-      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined });
+      // On a bridge the client is asked for the files it would read under the person's `HOME` (`.mylogin.cnf`, `.pgpass`, `.postgresql/`) at a path in the keys folder that nothing ever
+      // writes (E1.6 §S6.14 Y6), built by the one sanctioned builder as the call-free sentinel of `bridgedSshRefusals.ts` is.
+      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file') });
       if (launch === undefined) {
         return fail(
           'not_supported',

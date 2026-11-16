@@ -3917,14 +3917,16 @@ flips it). The pieces, in the order a call meets them:
   first contact is not recorded and only J2 reports it. This was measured with `-G` on 10.2p1 and is not yet measured on Windows. It is owed
   before any switch-on build (E1.6 spec §S6.10).
 - *The database client on a bridge* (`dbCliLauncher.ts`, `agentUseActions.ts`). `buildDbQueryLaunch(..., { bridged: true })` puts `-X` first on `psql` and `--no-defaults` first on `mysql` (an option
-  file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME` and its own
-  password variable. Off a bridge both are today's.
+  file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME`, its own
+  password variable and, since §S6.14 Y6, the names that close the files it would read under `HOME`: `buildDbQueryLaunch(..., { bridged, absentFile })` gives `mysql` `MYSQL_TEST_LOGIN_FILE` (`--no-defaults` still reads `.mylogin.cnf`; probe PD1)
+  and `psql` `PGPASSFILE` (`.pgpass`; PD2) and `PGSSLCERT` and `PGSSLKEY` (`~/.postgresql`; PD3), each at `absentFile`: a path from `materializedKeyPath(storageDir, 'no-client-file')`, a name nothing ever writes, so they are
+  asked for as paths that never exist. The probes saw each variable close its file, and MariaDB's client read none. A bridged `psql` or `mysql` launch with no `absentFile` is refused (`undefined`); `mssql` is given none of the four. Off a bridge the launch is byte for byte today's.
 
 *What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
 alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
 names in its environment for a password destination: the spec's §S6.9, to be settled at the next whole-plan review); the Windows list was shortened by M9 and PW2 to the seven (`TMP` and `COMSPEC` are not asked for). Tests: `bridgedSshConfig.test.ts` (F1-F10),
-`bridgedSshEnv.test.ts` (N1-N6a), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
-real writer and a real broker), `dbCliLauncher.test.ts` and `bridgeRunSites.test.ts` (Q1-Q4), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
+`bridgedSshEnv.test.ts` (N1-N6a, N2a, N3a), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
+real writer and a real broker), `dbCliLauncher.test.ts` (Q1-Q3, Q5-Q9) and `bridgeRunSites.test.ts` (Q4a, Q4b), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
 `scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`) and `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`), catalogued in `module_tests.md`.
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts

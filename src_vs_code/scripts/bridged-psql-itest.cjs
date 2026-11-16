@@ -18,6 +18,10 @@
 //        Expected by the parent: the certificate is offered with no variable, and the variables close it. A marker offered WITH the variables too
 //        stops the work and goes to the lead. Server and client certificates are made by `openssl` at run time, in the owned folder: nothing is committed.
 //
+// And leg (r) (§S6.14 Y6), the two cases as ASSERTIONS: the CONTROL (the first run of each: no variable) leaks the marker, and the PRODUCTION launch —
+// the arguments of `buildDbQueryLaunch('postgres', …, { bridged: true, absentFile })` and the environment of `bridgedSshEnv`, under the same rig home —
+// sends no password message that holds the marker (PD2) and offers no client certificate (PD3).
+//
 // `psql` is named by an absolute path (`BRIDGED_PSQL`, default `/usr/bin/psql`); the harness prints its `--version`. With `CI=true` a missing one
 // FAILS; off CI it is a printed skip. POSIX only.
 const fs = require('fs');
@@ -28,6 +32,8 @@ const { execFileSync } = require('node:child_process');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { launch, endChild } = require('./itestSshd.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
+
+const OUT = path.join(__dirname, '..', 'out');
 
 const BOUND_MS = 20_000;
 const PD2_PASSWORD_MARKER = 'pd2-marker-password';
@@ -162,13 +168,17 @@ async function endedWithin(promise, ms) {
 }
 
 /** One `psql` against one fake server; what the server saw and what the client said. `prepare(port)` writes the files the run needs. */
-async function psqlRun(scope, exe, { env, prepare, tlsMaterial }) {
+async function psqlRun(scope, exe, { env, prepare, tlsMaterial, build }) {
   const { server, state } = fakeServer(tlsMaterial);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   prepare(port);
-  const args = ['-w', '-X', '-h', '127.0.0.1', '-p', String(port), '-U', 'pdprobe', '-d', 'pdprobe', '-c', 'select 1'];
-  const client = launch(scope, exe, args, { env: { PGCONNECT_TIMEOUT: '10', PGSSLMODE: 'disable', PGGSSENCMODE: 'disable', ...env } });
+  // The probe's own arguments and environment, or (`build`) the PRODUCTION launch's: its arguments, and its environment alone beside a connect timeout.
+  const production = build === undefined ? undefined : build(port);
+  const args = production?.args ?? ['-w', '-X', '-h', '127.0.0.1', '-p', String(port), '-U', 'pdprobe', '-d', 'pdprobe', '-c', 'select 1'];
+  const given = production?.env ?? { PGSSLMODE: 'disable', PGGSSENCMODE: 'disable', ...env };
+  // `detached`: a session of its own, so a psql that wants a password cannot reach the terminal this harness runs in.
+  const client = launch(scope, exe, args, { env: { PGCONNECT_TIMEOUT: '10', ...given }, detached: true });
   try {
     const ended = await endedWithin(client.done, BOUND_MS);
     await endedWithin(client.closed, 2000);
@@ -183,7 +193,7 @@ async function psqlRun(scope, exe, { env, prepare, tlsMaterial }) {
 const reached = (name, run) => check(`${name}: the client reached the fake server and ended in time`, run.ended && run.state.startups >= 1, JSON.stringify({ ...run.state, ended: run.ended, code: run.code, stderr: run.stderr }));
 
 /** PD2: the person's `.pgpass`, with no `PGPASSFILE` and with one that names a path that does not exist. */
-async function legPD2(scope, exe, dir) {
+async function legPD2(scope, exe, dir, product) {
   const home = path.join(dir, 'pd2 home');
   const absent = path.join(dir, 'pd2-pgpass-that-never-exists');
   fs.mkdirSync(home, { recursive: true });
@@ -195,12 +205,35 @@ async function legPD2(scope, exe, dir) {
     });
     reached(`(PD2) psql ${label}`, run);
     const sent = run.state.password;
+    if (!withVariable) {
+      check('(r) PD2 control: with no PGPASSFILE the person\'s .pgpass is used and its marker is sent (this rig can make the bad thing happen)', sent === PD2_PASSWORD_MARKER, JSON.stringify({ sent, stderr: run.stderr }));
+    }
     console.log(`record (PD2) psql, ${label}: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker from .pgpass ${sent === PD2_PASSWORD_MARKER ? 'STANDS' : 'does not stand'} in it; psql said ${JSON.stringify(run.stderr)}`);
     if (withVariable && sent === PD2_PASSWORD_MARKER) {
       console.log('STOP (PD2): the marker was sent WITH PGPASSFILE set too — no remedy is built, and row 7 returns to the lead (parent §7, row PD2)');
     }
   }
   check('(PD2) the path given as PGPASSFILE does not exist', !fs.existsSync(absent), absent);
+  await legR2(scope, exe, dir, home, product);
+}
+
+/** (r), PD2's case: the production launch, under the rig home whose `.pgpass` holds the marker for this host and port, sends no password message that holds it. */
+async function legR2(scope, exe, dir, home, product) {
+  const absentFile = product.materializedKeyPath(dir, 'no-client-file');
+  const run = await psqlRun(scope, exe, {
+    prepare: (port) => fs.writeFileSync(path.join(home, '.pgpass'), `127.0.0.1:${port}:*:pdprobe:${PD2_PASSWORD_MARKER}\n`, { mode: 0o600 }),
+    build: (port) => productionLaunch(product, `postgresql://pdprobe@127.0.0.1:${port}/pdprobe`, home, absentFile),
+  });
+  reached('(r) PD2 production', run);
+  const sent = run.state.password;
+  console.log(`record (r) PD2 production: exit ${run.code}; a password message ${sent === undefined ? 'was NOT sent' : 'was sent'}; the marker ${sent === PD2_PASSWORD_MARKER ? 'STANDS' : 'does not stand'} in it`);
+  check('(r) PD2 production: no password message holds the marker from the person\'s .pgpass', sent !== PD2_PASSWORD_MARKER, JSON.stringify({ sent, stderr: run.stderr }));
+}
+
+/** The arguments of the production launch of `psql` for `uri` and the environment a bridged client gets, under `home`. */
+function productionLaunch(product, uri, home, absentFile) {
+  const launchOf = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile });
+  return { args: launchOf.args, env: product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, 'linux', launchOf.env) };
 }
 
 /** A throwaway self-signed certificate and its key, made by `openssl` into `folder`: `{ key, cert }` as file names. */
@@ -214,7 +247,7 @@ function throwawayCertificate(folder, name, commonName) {
 }
 
 /** PD3: the person's client certificate, with no `PGSSLCERT` and `PGSSLKEY` and with both at paths that do not exist. */
-async function legPD3(scope, exe, dir) {
+async function legPD3(scope, exe, dir, product) {
   const home = path.join(dir, 'pd3 home');
   const material = path.join(dir, 'pd3 material');
   const absent = { cert: path.join(dir, 'pd3-client-cert-that-never-exists.crt'), key: path.join(dir, 'pd3-client-key-that-never-exists.key') };
@@ -235,12 +268,30 @@ async function legPD3(scope, exe, dir) {
     });
     check(`(PD3) psql ${label}: the client reached the fake server, completed TLS and ended in time`, run.ended && run.state.secured >= 1, JSON.stringify({ ...run.state, ended: run.ended, code: run.code, stderr: run.stderr }));
     const peer = run.state.peer ?? { offered: false };
+    if (!withVariables) {
+      check('(r) PD3 control: with no PGSSLCERT and PGSSLKEY the person\'s client certificate is offered (this rig can make the bad thing happen)', peer.commonName === PD3_MARKER_CN, JSON.stringify(peer));
+    }
     console.log(`record (PD3) psql, ${label}: exit ${run.code}; TLS ${run.state.secured >= 1 ? `completed (${peer.protocol})` : 'did NOT complete'}; a client certificate ${peer.offered ? 'was OFFERED' : 'was NOT offered'}; the marker (CN=${PD3_MARKER_CN}) ${peer.commonName === PD3_MARKER_CN ? 'STANDS' : 'does not stand'} in it (subject CN ${JSON.stringify(peer.commonName ?? null)}); psql said ${JSON.stringify(run.stderr)}`);
     if (withVariables && peer.commonName === PD3_MARKER_CN) {
       console.log('STOP (PD3): the marker was offered WITH PGSSLCERT and PGSSLKEY set too — no remedy is built, and row 9 returns to the lead (parent §7, row PD3)');
     }
   }
   check('(PD3) the paths given as PGSSLCERT and PGSSLKEY do not exist', !fs.existsSync(absent.cert) && !fs.existsSync(absent.key), JSON.stringify(absent));
+  await legR3(scope, exe, dir, home, tlsMaterial, product);
+}
+
+/** (r), PD3's case: the production launch (`sslmode=require` in the stored URI), under the rig home with the marker certificate, offers no client certificate. */
+async function legR3(scope, exe, dir, home, tlsMaterial, product) {
+  const absentFile = product.materializedKeyPath(dir, 'no-client-file');
+  const run = await psqlRun(scope, exe, {
+    prepare: () => undefined,
+    tlsMaterial,
+    build: (port) => productionLaunch(product, `postgresql://pdprobe@127.0.0.1:${port}/pdprobe?sslmode=require`, home, absentFile),
+  });
+  check('(r) PD3 production: the client reached the fake server, completed TLS and ended in time', run.ended && run.state.secured >= 1, JSON.stringify({ ...run.state, ended: run.ended, code: run.code, stderr: run.stderr }));
+  const peer = run.state.peer ?? { offered: false };
+  console.log(`record (r) PD3 production: exit ${run.code}; a client certificate ${peer.offered ? 'was OFFERED' : 'was NOT offered'}; the marker ${peer.commonName === PD3_MARKER_CN ? 'STANDS' : 'does not stand'} in it`);
+  check('(r) PD3 production: no client certificate is offered, the marker\'s included', !peer.offered && peer.commonName !== PD3_MARKER_CN, JSON.stringify(peer));
 }
 
 async function main(scope) {
@@ -255,8 +306,9 @@ async function main(scope) {
     check('the psql client is installed', process.env.CI !== 'true', `${exe} is missing (the postgresql-client package) — a skipped leg on the runner proves nothing`);
   } else {
     const dir = ownedDir(scope, 'bridged-psql');
-    await legPD2(scope, exe, dir);
-    await legPD3(scope, exe, dir);
+    const product = { ...require(path.join(OUT, 'dbCliLauncher.js')), ...require(path.join(OUT, 'bridgedSshEnv.js')), ...require(path.join(OUT, 'materializedKeys.js')) };
+    await legPD2(scope, exe, dir, product);
+    await legPD3(scope, exe, dir, product);
   }
   console.log(failures === 0 ? '\nall bridged psql checks passed' : `\n${failures} check(s) failed`);
   return failures === 0 ? 0 : 1;
