@@ -78,7 +78,7 @@ import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
 import { MaskEntry, buildMaskTable } from './secretMasker';
 import { describeScan, scanForSecrets } from './secretScan';
-import * as childProcess from 'node:child_process';
+import { bridgeSpawner } from './bridgeSpawner';
 import * as fs from 'node:fs';
 import { applyEnvBindings } from './envApply';
 import { entityFieldReading } from './entityFieldReading';
@@ -186,13 +186,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // exist until above. A bridge ending by itself — a dropped network, a refused forward — is
   // exactly the kind of thing nobody sees happen and everybody needs afterwards.
   const bridges = new SshBridgeManager(
-    (command, args, env) => {
-      const child = childProcess.spawn(command, [...args], { env, windowsHide: true, stdio: 'ignore' });
-      return {
-        kill: () => child.kill(),
-        exited: new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code))),
-      };
-    },
+    bridgeSpawner(),
     (key, code) => {
       log.warn('bridge', `${key} ended (${String(code)})`);
       // A bridge that dies by itself — a dropped network, a killed ssh — must take its row
