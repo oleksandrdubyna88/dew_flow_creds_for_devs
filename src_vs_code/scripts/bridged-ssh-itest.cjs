@@ -19,6 +19,7 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const { SSHD, launch, endChild } = require('./itestSshd.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { trustLegs } = require('./itestBridgedTrust.cjs');
+const { legO } = require('./itestBridgedSecurityKey.cjs');
 const R = require('./itestBridgedRig.cjs');
 
 let failures = 0;
@@ -319,7 +320,7 @@ async function main() {
     check('the live legs ran', process.env.CI !== 'true', `${SSHD} is missing — a skipped live leg on the runner proves nothing`);
     console.log('skip  the legs that need sshd — sshd is not installed');
   } else {
-    for (const leg of [legs567, legB, legC, legD, legE, legJ, legK, trustLegs]) {
+    for (const leg of [legs567, legB, legC, legD, legE, legJ, legK, legO, trustLegs]) {
       await leg(rig, check);
     }
   }
