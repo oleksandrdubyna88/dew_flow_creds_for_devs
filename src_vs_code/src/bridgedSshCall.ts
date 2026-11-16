@@ -150,8 +150,11 @@ function hopBlocks(input: BridgedCallInput, keys: readonly HopKey[], hopFiles: r
   }));
 }
 
-/** What the call leaves in the journal about first contact (J1, J2), read from the two files as they are now. Never throws: a file that cannot be read leaves one note. */
+/** What the call leaves in the journal about first contact (J1, J2), read from the two files as they are now; with no first-contact leg (`names` is empty) it reads nothing and leaves nothing. Never throws: a file that cannot be read leaves one note. */
 function afterRunOf(base: BridgedBase, entry: string, before: readonly string[], names: readonly string[]): () => readonly string[] {
+  if (names.length === 0) {
+    return () => []; // every leg is pinned: no first contact can happen, and neither file is read
+  }
   return () => {
     try {
       return firstContactSentences(entry, before, readText(firstContactPath(base)), readText(personPath(base)), names);
@@ -201,7 +204,8 @@ function writeFiles(base: BridgedBase, input: BridgedCallInput, written: Written
   const hopFiles = writeKeys(base, keys, written);
   const pins = writePins(base, legs, written);
   openFirstContact(base, legs);
-  const before = knownHostsLines(readText(firstContactPath(base)));
+  const names = legs.filter((leg) => leg.pinLine === undefined).map((leg) => knownHostsName(leg.word, leg.who.entity.port));
+  const before = names.length === 0 ? [] : knownHostsLines(readText(firstContactPath(base)));
   const text = bridgedConfigText({
     hops: hopBlocks(input, keys, hopFiles, pins),
     destination: { host: input.destination.host as string, pinnedFile: pins[0] },
@@ -216,7 +220,6 @@ function writeFiles(base: BridgedBase, input: BridgedCallInput, written: Written
   fs.mkdirSync(folder.dir, { recursive: true, mode: 0o700 });
   written.dir = folder.dir;
   writeFile(folder.file, text.text);
-  const names = legs.filter((leg) => leg.pinLine === undefined).map((leg) => knownHostsName(leg.word, leg.who.entity.port));
   return {
     ok: true,
     cwd: folder.dir,

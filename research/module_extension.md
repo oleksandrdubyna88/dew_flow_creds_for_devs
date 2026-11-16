@@ -3903,7 +3903,7 @@ flips it). The pieces, in the order a call meets them:
   `materializeCallKey` (a random name, no id: change 9.1); one pin file for each pinned leg, `call-<uuid>.known_hosts`, holding `knownHostsLine(<the Host word in lower case>, port, key)`
   (never `materializeKnownHosts`); `bridges/` (0700) and, when a leg is first contact, `bridges/known_hosts` **opened for append** (an `accept-new` that cannot write goes on and
   records nothing); the call's folder `keys/<pid>/<call name>/` (0700, `bridgedCallFolder`) and `c.conf` (0600). Its answer carries `cwd`, `configFile` (`c.conf`), `pinned`,
-  `jump` (the `-J` text built with `hopOf` from the entries it CHECKED), `afterRun()` and `remove()`. A hop credential's `warning` goes to the journal first.
+  `jump` (the `-J` text built with `hopOf` from the entries it CHECKED), `afterRun()` and `remove()`. A hop credential's `warning` goes to the journal first. A call whose legs are ALL pinned has no first contact: it reads neither `bridges/known_hosts` nor the person's `known_hosts`, before the run or after it, and its `afterRun()` answers an empty list (W17).
 - *The file* (`bridgedSshConfig.ts`, pure). In this order: one `Host <word>` block for each hop with exactly three keywords (`IdentityFile`, `StrictHostKeyChecking`,
   `UserKnownHostsFile`: the pin file, or for `accept-new` the first-contact file and the person's own `known_hosts`), a destination block of two keywords only when the entry pins a
   host key, then `Host *` from `BRIDGED_LOCKDOWN` (seventeen lines) plus the sentinel `IdentityFile "<keys>/no-default-identity"` (a file never made: it makes the identity list not empty,

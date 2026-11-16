@@ -429,7 +429,7 @@ test('the second line: each field bridgedConfigText names becomes the sentence o
 test('a read of a known-hosts file that fails for another reason than a missing file is not an empty file: the call is refused (R7) before the pass writes, and afterRun leaves one note', () => {
   const w = world();
   fs.mkdirSync(path.join(w.storageDir, 'bridges', 'known_hosts'), { recursive: true });
-  const pinned = refused(w.write(call(entry('dest', { hostKey: PIN_A }))));
+  const pinned = refused(w.write(call(entry('dest', { name: 'prod' }))));
   assert.equal(pinned.code, 'internal');
   assert.match(pinned.reason, /^Could not write the files of this call: EISDIR/);
   assert.deepEqual(tree(w.keysDir), []);
@@ -442,6 +442,37 @@ test('a read of a known-hosts file that fails for another reason than a missing 
   assert.equal(later.notes.length, 1);
   assert.match(later.notes[0], /^ssh:exec — first contact of the call could not be reported: EISDIR/);
   files.remove();
+});
+
+const nodeFs = require('node:fs') as typeof fs; // the module under test reads through this object: a spy on the namespace import would not see it
+
+test('W17: with every leg pinned no first contact can happen, so the call reads neither bridges/known_hosts nor the person\'s known_hosts, before the run or after it', () => {
+  const w = world();
+  fs.mkdirSync(path.join(w.storageDir, 'bridges', 'known_hosts'), { recursive: true });
+  fs.mkdirSync(path.join(w.home, '.ssh', 'known_hosts'), { recursive: true });
+  const read = mock.method(nodeFs, 'readFileSync');
+  try {
+    const files = okFiles(w.write(call(entry('dest', { hostKey: PIN_A }), [leg(entry('hop', { hostKey: PIN_B }))])));
+    assert.deepEqual(files.afterRun(), []);
+    assert.deepEqual(w.notes, [], 'no note: nothing was read that could fail');
+    files.remove();
+    const known = read.mock.calls.map((one) => String(one.arguments[0])).filter((file) => file.endsWith(`${path.sep}known_hosts`));
+    assert.deepEqual(known, [], 'neither file was read');
+  } finally {
+    read.mock.restore();
+  }
+
+  const open = world();
+  const control = mock.method(nodeFs, 'readFileSync');
+  try {
+    const files = okFiles(open.write(call(entry('dest', { name: 'prod' }))));
+    files.afterRun();
+    files.remove();
+    assert.ok(control.mock.calls.some((one) => String(one.arguments[0]).endsWith(path.join('bridges', 'known_hosts'))), 'control: a first-contact leg reads bridges/known_hosts');
+    assert.ok(control.mock.calls.some((one) => String(one.arguments[0]).endsWith(path.join('.ssh', 'known_hosts'))), 'control: and, after the run, the person\'s own');
+  } finally {
+    control.mock.restore();
+  }
 });
 
 test('E1.6 regression: a storage folder whose path holds % makes a bridged stored-key call refuse with R14, the sentence of the folder (kept on purpose: -i with %% fails "not accessible", X1a)', () => {
