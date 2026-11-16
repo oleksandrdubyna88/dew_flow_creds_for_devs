@@ -1,11 +1,18 @@
 # PLAN — three roads of the person delete the key file they wrote (N16)
 
-> Status: **plan only, nothing implemented yet, 2026-11-16.** Scope: the extension only (`src_vs_code/src`): the bridge
+> Status: **approved 2026-11-16 (coai plan gate, epoch 1 open); nothing implemented yet.** Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the bridge spawner of
 > `extension.ts`, one small new helper module, their tests, the docs. Found as N16 of
 > [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus review
 > on 2026-11-12, by reading. The next plan after N17 in the order the question consultants advised on 2026-11-15
 > (`ad7ce1a5`).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-16 · by reviewers · state: open
+
+(The plan round's four accepted findings were folded in at its resolve, before approval, and are not entries: the
+whole span of the bridge guarded, the `'error'` of a started child, the real-file test.)
 
 ## 1. Symptom
 
@@ -53,20 +60,24 @@ deletes nothing: the extension did not write it.
 
 ### 2.2 The bridge (E1.S2)
 
+- **The whole span is guarded.** From the resolve until the continuation below is attached, the command owns the key:
+  a `try … finally` with a flag set only after that attach forgets `credential.materialized` on every other exit (no
+  argv, a throw while the argv is built, a throwing `start`, any early return), and a throw is rethrown unchanged (the
+  plan round, antigravity and codex).
 - After `bridges.start(...)` returns, the bridge's own `process.exited` gets one continuation that forgets THIS call's
   `materialized`. It is attached to the returned process, not to the manager's `onEnded`: `stop()` deletes the map row
   before it kills the process, and a replacement suppresses the old bridge's `onEnded` (`sshBridgeManager.ts:69-78`,
   `:81-89`), so `onEnded` does not fire on every end. `exited` resolves on the process's end whatever ended it (its
   own end, *Close*, a replacement, the window's `dispose`).
-- When `buildBridgeArgv` gives no argv (`:453-459`), the key is forgotten at once. When `bridges.start` throws (a
-  synchronous spawn error), the key is forgotten and the same error is rethrown.
 - **Why not delete after authentication** (the question consultants, 2026-11-16, `f4c62413`, both): a plain `ssh -N`
   gives no clean signal that it has authenticated; a timer races a slow login or a jump host, and parsing `-v` output or
   a `ControlMaster` is new machinery for a cleanup. The process's end is observable and testable. The cost: the key
   stays while the bridge lives (hours possibly), as a Connect terminal's key stays while its terminal lives.
 - **The spawner settles on a failed start:** the real spawner moves out of `activate` into an exported function (the
   spawn options do not change: `windowsHide`, `stdio: 'ignore'`, the resolved env), and `exited` also settles with
-  `null` on the child's `'error'`, once. A failed start then ends like any other end: the manager drops the row and
+  `null` on the child's `'error'` **when the child never started** (`child.pid === undefined`), once. An `'error'` of a
+  started child (Node also emits one when a kill fails) settles nothing: the process may still run and read its key,
+  and its `'exit'` settles `exited` later (the plan round, codex). A failed start then ends like any other end: the manager drops the row and
   calls `onEnded` (a log line and a tree refresh), and the key goes. A behaviour change, on purpose: today such a
   bridge stays *bridged* in the tree forever.
 
@@ -114,13 +125,19 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
    path); nothing is forgotten for a credential with no `materialized`.
 3. **The bridge**: right after the command returns the key is NOT forgotten; when the bridge's `exited` settles, it is
    forgotten once; *Close* and a replacement (a second open of the same entry) forget the first bridge's key and not
-   the second's; no argv forgets it at once; a throwing `start` forgets it and the command's promise rejects with the
-   same error.
+   the second's; no argv forgets it at once; a throw while the argv is built and a throwing `start` forget it and
+   the command's promise rejects with the same error.
 4. **The spawner**: a fake child that emits `'error'` settles `exited` with `null`; one that emits `'exit'` with its
-   code; one that emits both settles once with the first.
+   code; one that emits both settles once with the first; a STARTED child
+   (it has a `pid`) that emits `'error'` settles nothing, and its later `'exit'` settles `exited` with its code.
+4a. **A real file** (the plan round, codex): one road per kind (the socket check and a bridge) runs with the REAL
+   `forgetMaterializedKey` and a key file written into a temporary `keys/<pid>/`; the file is gone after the check
+   finishes and after the bridge's `exited` settles. A failed delete stays silent, as on every road today
+   (`forgetMaterializedKey` is best effort); the purge of §2.4 is what retires such a file.
 5. **Mutation checks** (by hand, recorded in the commit body): remove each of the four forgets in turn → its test is
    red; attach the bridge's forget to `onEnded` instead → the *Close* and replacement tests are red; drop the `'error'`
-   listener → test 4 is red.
+   listener → test 4 is red; drop its `pid` condition → the started-child case of test 4 is red; set the bridge's
+   flag before `start` → the throwing-`start` test is red.
 6. The whole extension suite (`npm test` in `src_vs_code`), lint (`max-lines` included) and the build green before the PR.
 
 ## 4. Docs
