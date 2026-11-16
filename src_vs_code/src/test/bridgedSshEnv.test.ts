@@ -1,8 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BRIDGED_ENV_EXTRA, BRIDGED_ENV_WINDOWS, bridgedSshEnv } from '../bridgedSshEnv';
+import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_EXTRA, BRIDGED_ENV_RUNTIME_ADDED_WINDOWS, BRIDGED_ENV_WINDOWS, bridgedSshEnv } from '../bridgedSshEnv';
 
-/** The environment of a bridged child (E1.6 spec §S6.3, N1-N6): an allow-list, built new. */
+/** The environment ASKED FOR a bridged child (E1.6 spec §S6.3, §S6.14 Y1, N1-N6a): an allow-list, built new. What a child RECEIVES is a second fact, observed by (b) 4 and PW1. */
 
 const forty = (): NodeJS.ProcessEnv => ({
   ...Object.fromEntries(Array.from({ length: 36 }, (_, i) => [`NAME_${i}`, `value-${i}`])),
@@ -19,18 +19,50 @@ test('N1: on linux, a source with forty names gives exactly PATH and HOME', () =
   assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/home/me' });
 });
 
-test('N2: on win32, Path and SystemRoot are found in any letter case and written under the list\'s spelling, with the source\'s values', () => {
+test('N2: on win32, the seven are found in any letter case and written under the list\'s spelling with the source\'s values, and the three blanked names are each "", whatever the source holds (Q14)', () => {
   const source: NodeJS.ProcessEnv = {
-    Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', UserProfile: 'C:\\Users\\me', HOMEDRIVE: 'C:', homepath: '\\Users\\me', Temp: 'C:\\t', tmp: 'C:\\t2', ComSpec: 'C:\\Windows\\cmd.exe',
-    HOME: '/ignored', SSH_AUTH_SOCK: 'x',
+    Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', UserProfile: 'C:\\Users\\me', HOMEDRIVE: 'C:', homepath: '\\Users\\me', Temp: 'C:\\t', ProgramData: 'C:\\ProgramData',
+    UserName: 'me', USERDOMAIN: 'CORP', logonserver: '\\\\DC1',
+    TMP: 'C:\\t2', ComSpec: 'C:\\Windows\\cmd.exe', SYSTEMDRIVE: 'C:', WINDIR: 'C:\\Windows', HOME: '/ignored', SSH_AUTH_SOCK: 'x',
   };
 
   const env = bridgedSshEnv(source, 'win32');
 
-  assert.deepEqual(Object.keys(env).sort(), [...BRIDGED_ENV_WINDOWS].sort());
+  assert.deepEqual(Object.keys(env).sort(), [...BRIDGED_ENV_WINDOWS, ...BRIDGED_ENV_BLANKED_WINDOWS].sort());
   assert.deepEqual(env, {
-    PATH: 'C:\\Windows', SYSTEMROOT: 'C:\\Windows', USERPROFILE: 'C:\\Users\\me', HOMEDRIVE: 'C:', HOMEPATH: '\\Users\\me', TEMP: 'C:\\t', TMP: 'C:\\t2', COMSPEC: 'C:\\Windows\\cmd.exe',
+    PATH: 'C:\\Windows', SYSTEMROOT: 'C:\\Windows', USERPROFILE: 'C:\\Users\\me', HOMEDRIVE: 'C:', HOMEPATH: '\\Users\\me', TEMP: 'C:\\t', PROGRAMDATA: 'C:\\ProgramData',
+    USERNAME: '', USERDOMAIN: '', LOGONSERVER: '',
   });
+});
+
+test('N6a: a win32 source with no SYSTEMDRIVE gives no such key (the runtime adds it), a source whose USERNAME is set gives USERNAME "", and on linux the three are never asked for', () => {
+  const noDrive = bridgedSshEnv({ PATH: 'C:\\Windows', USERNAME: 'me', SYSTEMROOT: 'C:\\Windows' }, 'win32');
+  const bare = bridgedSshEnv({}, 'win32');
+  const posix = bridgedSshEnv({ PATH: '/usr/bin', HOME: '/h', USERNAME: 'me', USERDOMAIN: 'D', LOGONSERVER: 'S' }, 'linux');
+
+  for (const added of ['SYSTEMDRIVE', 'WINDIR']) {
+    assert.ok(!(added in noDrive), `${added} is left to the runtime: this module copies none of it`);
+  }
+  assert.equal(noDrive.USERNAME, '');
+  assert.deepEqual(Object.keys(bare).sort(), [...BRIDGED_ENV_BLANKED_WINDOWS].sort(), 'with an empty source the three are still asked for, as ""');
+  assert.deepEqual(Object.keys(posix).sort(), ['HOME', 'PATH']);
+});
+
+test('N2a: the lists are what Y1 says: seven asked for, three blanked among the runtime\'s eleven, and the database names are the only extras after the four of askpass', () => {
+  assert.deepEqual([...BRIDGED_ENV_WINDOWS], ['PATH', 'SYSTEMROOT', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'TEMP', 'PROGRAMDATA']);
+  assert.deepEqual([...BRIDGED_ENV_BLANKED_WINDOWS], ['USERNAME', 'USERDOMAIN', 'LOGONSERVER']);
+  assert.deepEqual([...BRIDGED_ENV_RUNTIME_ADDED_WINDOWS].sort(), ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR']);
+  for (const name of BRIDGED_ENV_BLANKED_WINDOWS) {
+    assert.ok((BRIDGED_ENV_RUNTIME_ADDED_WINDOWS as readonly string[]).includes(name), `${name} is one the runtime would fill, which is why it is asked for as ""`);
+  }
+  assert.deepEqual([...BRIDGED_ENV_EXTRA].slice(4), ['PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY']);
+});
+
+test('N3a: the four client-file names are taken as extras (asked for as paths that never exist), and not from the source', () => {
+  const extra = { MYSQL_TEST_LOGIN_FILE: '/k/absent-a', PGPASSFILE: '/k/absent-b', PGSSLCERT: '/k/absent-c', PGSSLKEY: '/k/absent-d' };
+
+  assert.deepEqual(bridgedSshEnv({ PATH: '/usr/bin', ...Object.fromEntries(Object.keys(extra).map((name) => [name, '/the/persons'])) }, 'linux', extra), { PATH: '/usr/bin', ...extra });
+  assert.deepEqual(Object.keys(bridgedSshEnv({ PGPASSFILE: '/the/persons' }, 'linux')), []);
 });
 
 test('N3: the four askpass names are there when given as extra, and not when they are not', () => {

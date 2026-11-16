@@ -16,13 +16,14 @@ import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
 import { WslRelayManager } from '../wslRelayManager';
 import { BUSY_PLACE } from '../aliasThrottle';
 import { recordingLog } from './liveColourStorage';
-import { BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
+import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
 
-/** The allow-list names this process holds, per platform: what `bridgedSshEnv` takes from it (on win32 under any letter case). */
+/** The names `bridgedSshEnv` ASKS FOR from this process, per platform: those it holds (on win32 under any letter case), and on win32 the three blanked ones, whatever it holds. */
 function allowListedNames(): string[] {
   const names: readonly string[] = process.platform === 'win32' ? BRIDGED_ENV_WINDOWS : BRIDGED_ENV_POSIX;
   const keys = Object.keys(process.env);
-  return names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
+  const held = names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
+  return process.platform === 'win32' ? [...held, ...BRIDGED_ENV_BLANKED_WINDOWS] : held;
 }
 
 /**

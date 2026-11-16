@@ -3899,8 +3899,11 @@ flips it). The pieces, in the order a call meets them:
   `BRIDGED_SSH_OPTIONS`, for a password destination `BRIDGED_ASKPASS_OPTIONS` (`BatchMode=no`, `PasswordAuthentication=yes`, `KbdInteractiveAuthentication=yes`; they bind the outer leg
   only), `-F c.conf` (relative: `-F` is handed to the nested `-J` command unquoted), `-i`, `-p`, `--` and the destination as `user@<Host word>`. It answers `undefined` for a call with no file,
   with a known-hosts file, or whose user, host or key path fails its rule: the second line (R8, `no_credential`). The `cwd` is the call's folder, which holds `c.conf` and nothing else.
-  The environment is `bridgedSshEnv(process.env, platform, extra)`: `PATH` and `HOME` (POSIX), or the Windows eight, and for a password destination only the four askpass names
-  (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `DISPLAY`); never `SSH_AUTH_SOCK` or a `CREDS_REF_` name; it throws on an `extra` name that is not on its list.
+  The environment ASKED FOR is `bridgedSshEnv(process.env, platform, extra)`: `PATH` and `HOME` (POSIX); on Windows the seven of `BRIDGED_ENV_WINDOWS` (`PATH`, `SYSTEMROOT`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `TEMP`, `PROGRAMDATA`, with the source's values: Win32-OpenSSH answers 255 and prints nothing without `PROGRAMDATA`, M9)
+  and the three of `BRIDGED_ENV_BLANKED_WINDOWS` (`USERNAME`, `USERDOMAIN`, `LOGONSERVER`) as `''`; for a password destination only the four askpass names (`SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `CREDS_SSH_PASSWORD`, `DISPLAY`);
+  never `SSH_AUTH_SOCK` or a `CREDS_REF_` name; it throws on an `extra` name that is not on its list (`BRIDGED_ENV_EXTRA`). **What a child RECEIVES is a second fact.** On Windows Node's libuv adds eleven names of its own to a child whose block lacks them
+  (`BRIDGED_ENV_RUNTIME_ADDED_WINDOWS`: the seven that are there, plus `SYSTEMDRIVE`, `WINDIR` and the three identity names); the module writes none of them, and it asks for the three identity names as empty strings so the runtime does not fill them
+  with the account's name, domain and logon server (the owner's Q14, 2026-11-16; PW3 saw the empty values arrive). No comment claims what a child receives: it is observed in a child, by (b) 4 of `bridged-ssh-itest.cjs` on Linux and by WN3 of `bridgedEnvWindows.test.ts` through `runBounded` on `windows-latest`.
 - *The road* (`execOverSsh`, with `bridgedSshRoad.ts` for the bridged half). Off a bridge the lines are the ones it always ran. On a bridge: the writer, `bridgedSpawn`, and `runSshExec`
   with that argv, environment and `cwd`; in the `finally`, the sentences of `files.afterRun()` go to the journal, then the destination's key file is removed as before, then `files.remove()`
   (each file in its own try; a failure is one note, `ssh:exec — a file of the call could not be removed: …`). Every refusal is before the spawn, goes to the journal as
@@ -3919,8 +3922,8 @@ flips it). The pieces, in the order a call meets them:
 
 *What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
 alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
-names in its environment for a password destination: the spec's §S6.9, to be settled at the next whole-plan review); the Windows environment list is M9's to shorten. Tests: `bridgedSshConfig.test.ts` (F1-F10),
-`bridgedSshEnv.test.ts` (N1-N6), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
+names in its environment for a password destination: the spec's §S6.9, to be settled at the next whole-plan review); the Windows list was shortened by M9 and PW2 to the seven (`TMP` and `COMSPEC` are not asked for). Tests: `bridgedSshConfig.test.ts` (F1-F10),
+`bridgedSshEnv.test.ts` (N1-N6a), `bridgedSshCall.test.ts` (W1-W16, real files), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2, over the
 real writer and a real broker), `dbCliLauncher.test.ts` and `bridgeRunSites.test.ts` (Q1-Q4), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
 `scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`) and `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`), catalogued in `module_tests.md`.
 

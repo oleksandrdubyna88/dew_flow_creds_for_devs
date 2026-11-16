@@ -6,14 +6,15 @@
  * still says what it saw. A client that is not on the image is a case skipped by the name "not measured", never a pass.
  *
  * <p>Every child here starts the way a bridged one does: `shell: false`, `windowsHide: true`, and the `env` object `bridgedSshEnv(process.env,
- * 'win32')` answers. Nothing here changes `bridgedSshEnv`: WN1 starts `ssh.exe` under whatever list the module holds today.</p>
+ * 'win32')` answers. WN3 starts its child through `runBounded`, the production spawner.</p>
  */
 import * as assert from 'node:assert/strict';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { BRIDGED_ENV_WINDOWS, bridgedSshEnv } from '../bridgedSshEnv';
+import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_RUNTIME_ADDED_WINDOWS, BRIDGED_ENV_WINDOWS, bridgedSshEnv } from '../bridgedSshEnv';
+import { runBounded } from '../sshExecRunner';
 
 const SKIPPED_OFF_WINDOWS = process.platform === 'win32' ? false : 'skipped: PW1 observes Windows (ssh.exe, the runtime\'s environment, the database clients) and runs on windows-latest only';
 const BOUND_MS = 30_000;
@@ -72,8 +73,6 @@ test('WN2: the same without PROGRAMDATA is recorded, not asserted', { skip: SKIP
 const NAMES_CHILD = 'process.stdout.write(JSON.stringify(Object.entries(process.env).map(([name, value]) => [name, value === ""])))';
 /** What WN3 puts into the TEST process: neither may reach the child, in any letter case. */
 const PARENT_ONLY = ['BRIDGE_TEST_SECRET', 'SSH_AUTH_SOCK'] as const;
-/** The three names the owner asked for as empty strings (Q14); Y1 builds that. */
-const BLANKED_BY_Y1 = ['USERNAME', 'USERDOMAIN', 'LOGONSERVER'] as const;
 
 /** The names of the child's environment and whether each holds an empty value, read from what the child printed. */
 function namesOf(printed: string): Array<[string, boolean]> {
@@ -87,13 +86,13 @@ function emptinessOf(names: Array<[string, boolean]>, wanted: string): string {
 }
 
 /** Runs `body` with `PARENT_ONLY` set in this process, and puts the process's own environment back. */
-function withParentOnlyNames<T>(body: () => T): T {
+async function withParentOnlyNames<T>(body: () => Promise<T>): Promise<T> {
   const before = PARENT_ONLY.map((name): [string, string | undefined] => [name, process.env[name]]);
   for (const name of PARENT_ONLY) {
     process.env[name] = `${name}-of-the-test-process`;
   }
   try {
-    return body();
+    return await body();
   } finally {
     for (const [name, value] of before) {
       if (value === undefined) {
@@ -105,21 +104,25 @@ function withParentOnlyNames<T>(body: () => T): T {
   }
 }
 
-test('WN3: a child of node under the requested environment prints no name of the parent-only pair', { skip: SKIPPED_OFF_WINDOWS }, (t: TestContext) => {
-  const answer = withParentOnlyNames(() => runUnder(process.execPath, ['-e', NAMES_CHILD], requested()));
-  assert.equal(answer.status, 0, `the child of node did not run: ${describe(answer)}`);
+/** Every name of `names` that is in none of `known` (compared in upper case). */
+const outsideOf = (names: Array<[string, boolean]>, known: readonly string[]): string[] => names.map(([name]) => name).filter((name) => !known.includes(name.toUpperCase()));
+
+test('WN3: a child of node started by runBounded under the requested environment prints no parent-only name, only names of the lists, and the three blanked names empty', { skip: SKIPPED_OFF_WINDOWS }, async (t: TestContext) => {
+  // Through the production spawner (`runBounded`, Y2), so the runner's own pass-through is observed and not only the request.
+  const answer = await withParentOnlyNames(() => runBounded(process.execPath, ['-e', NAMES_CHILD], false, { env: requested(), timeoutMs: BOUND_MS }));
+  assert.equal(answer.exitCode, 0, `the child of node did not run: exit ${answer.exitCode}; stderr ${clip(answer.stderr)}`);
   const names = namesOf(answer.stdout);
   const upper = names.map(([name]) => name.toUpperCase());
-  const known: readonly string[] = BRIDGED_ENV_WINDOWS;
+  const known: readonly string[] = [...BRIDGED_ENV_WINDOWS, ...BRIDGED_ENV_BLANKED_WINDOWS, ...BRIDGED_ENV_RUNTIME_ADDED_WINDOWS];
 
-  t.diagnostic(`PW1 WN3 the child printed ${names.length} names: ${names.map(([name, empty]) => (empty ? `${name}(empty)` : name)).join(', ')}`);
-  t.diagnostic(`PW1 WN3 names the runtime added, not in BRIDGED_ENV_WINDOWS today: ${names.map(([name]) => name).filter((name) => !known.includes(name.toUpperCase())).join(', ')}`);
-  // RECORDED here, ASSERTED with Y1 (§S6.14): the new constants BRIDGED_ENV_RUNTIME_ADDED_WINDOWS and BRIDGED_ENV_BLANKED_WINDOWS do not exist yet, so
-  // "every printed name is in BRIDGED_ENV_WINDOWS or BRIDGED_ENV_RUNTIME_ADDED_WINDOWS" and "USERNAME, USERDOMAIN and LOGONSERVER are printed with empty
-  // values" cannot be asserted against this module. Y1 turns the two records below into assertions.
-  t.diagnostic(`PW1 WN3 (Y1-only, recorded) emptiness of ${BLANKED_BY_Y1.join(', ')}: ${BLANKED_BY_Y1.map((name) => `${name} empty=${emptinessOf(names, name)}`).join('; ')}`);
+  t.diagnostic(`PW1 WN3 the child printed ${names.length} names: ${names.map(([name, empty]) => (empty ? `${name}=""` : name)).join(', ')}`);
+  t.diagnostic(`PW1 WN3 names the runtime added beside the seven: ${outsideOf(names, BRIDGED_ENV_WINDOWS).join(', ')}`);
   for (const name of PARENT_ONLY) {
     assert.equal(upper.includes(name), false, `${name} reached the child, in some letter case`);
+  }
+  assert.deepEqual(outsideOf(names, known), [], 'every printed name is one of the seven, the three blanked or the runtime\'s eleven');
+  for (const name of BRIDGED_ENV_BLANKED_WINDOWS) {
+    assert.equal(emptinessOf(names, name), 'true', `${name} is printed, with an empty value (Q14)`);
   }
 });
 
