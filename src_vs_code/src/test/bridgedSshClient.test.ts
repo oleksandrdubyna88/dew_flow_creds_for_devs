@@ -158,6 +158,29 @@ test('a runner that cannot start ssh is R12, and the folder is gone; a request t
   assert.deepEqual(fs.readdirSync(materializedKeysDir(dir)), []);
 });
 
+test('a runner that cannot start ssh leaves one journal note with the cause, beside R12 (the judge, 2026-11-16)', async (t) => {
+  const dir = storage(t);
+  const notes: string[] = [];
+  const missing = recordingRunner([() => Promise.reject(Object.assign(new Error('spawn ssh ENOENT'), { code: 'ENOENT' }))]);
+  const check = bridgedSshClientCheck({ storageDir: dir, run: missing.run, floor: FLOOR, platform: 'linux', source: SOURCE, note: (line) => notes.push(line) });
+
+  assert.deepEqual(await check({ program: 'ssh' }), { ok: false, sentence: sentences.clientNoVersion(null) });
+  assert.deepEqual(notes, ['ssh:exec — the client check could not start ssh: spawn ssh ENOENT']);
+});
+
+test('a request or window that ended while ssh -V ran is not R12: the ended error goes on, nothing is kept, and the next call asks again (the judge, 2026-11-16)', async (t) => {
+  const dir = storage(t);
+  for (const guards of [{ signal: AbortSignal.abort() }, { signal: [new AbortController().signal, AbortSignal.abort()] }, { startGate: AbortSignal.abort() }]) {
+    const killed = recordingRunner([answer(null, ''), GOOD]);
+    const check = bridgedSshClientCheck({ storageDir: dir, run: killed.run, floor: FLOOR, platform: 'linux', source: SOURCE });
+
+    await assert.rejects(check({ program: 'ssh', guards }), (error: Error) => error.name === 'AbortError', JSON.stringify(Object.keys(guards)));
+    assert.deepEqual(await check({ program: 'ssh' }), { ok: true, version: '10.2' });
+    assert.equal(killed.seen.length, 2, 'the ended ask kept nothing');
+  }
+  assert.deepEqual(fs.readdirSync(materializedKeysDir(dir)), []);
+});
+
 test('a folder that cannot be removed is one journal note, and the verdict is still given', async (t) => {
   const dir = storage(t);
   const notes: string[] = [];

@@ -1081,7 +1081,8 @@ export function clientVerdict(exit: number | null, stdout: string, stderr: strin
   numbers. On `win32` the token must be the `for_Windows_` one.
 - `ok: false` with **R12** when the exit is not 0 or there is no token; with **R13** when the version is below the floor or, on `win32`, the
   build is another one.
-- **Where. [C]** On the bridged branch of `execOverSsh`, after pass 1's refusals and before any file of the call is written. So a refused
+- **Where. [C]** On the bridged branch of `execOverSsh`, after pass 1's refusals and before the writer's files (the per-call file, hop keys, pins; *before any file of the call* until the judge's
+  review of 2026-11-16: the destination's stored key is written by the auth step earlier, as since E1.1, and removed with the call). So a refused
   entry still spends no spawn, and R1-R11 are said before R12 and R13. The spawn is `ssh -V` with the program of `sshSpawnLaunch`, the
   environment `bridgedSshEnv(process.env, process.platform)`, `cwd` at a fresh call folder that holds nothing and is removed afterwards, a 10 s
   timeout that kills the tree. A good verdict is kept for the life of the dependencies object; a bad one is not kept. [S] The seam is a dep,

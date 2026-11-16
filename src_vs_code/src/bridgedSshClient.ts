@@ -3,7 +3,7 @@ import { describeError } from './describeError';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { sentences } from './bridgedSshSentences';
 import { bridgedCallFolder, callKeyName } from './materializedKeys';
-import { endedStage } from './requestLife';
+import { endedStage, notStarted } from './requestLife';
 import { SshExecOptions, SshExecOutcome, runSshExec } from './sshExecRunner';
 
 /**
@@ -99,7 +99,7 @@ export interface ClientCheckParts {
   readonly platform?: NodeJS.Platform;
   readonly source?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
-  /** The journal's line writer, for the one thing the check cannot say any other way: its folder could not be removed. */
+  /** The journal's line writer, for what the check cannot say any other way: its folder could not be removed, or `ssh` could not be started. */
   readonly note?: (message: string) => void;
 }
 
@@ -107,7 +107,8 @@ export interface ClientCheckParts {
 type Resolved = Required<Omit<ClientCheckParts, 'note'>> & Pick<ClientCheckParts, 'note'>;
 
 /**
- * The check a bridged call makes before its first file is written: `ssh -V` through the runner, with the program the call would use, the
+ * The check a bridged call makes before its per-call files are written (the destination's own key file, written by the auth step, comes
+ * earlier and goes with the call): `ssh -V` through the runner, with the program the call would use, the
  * environment of a bridged child and a folder of its own that holds nothing and is removed afterwards (a bare `ssh` on Windows is resolved
  * through the current folder before `PATH`, so the child is never started in a folder with anything in it). A GOOD verdict is kept for this
  * check's life, per program; a bad one is not kept, so the next call asks again. A runner that fails (no `ssh` at all) is a client that did
@@ -139,13 +140,36 @@ async function spawnVersion(parts: Resolved, call: ClientCheckCall, dir: string)
       timeoutMs: parts.timeoutMs,
       ...call.guards,
     });
+    if (guardsEnded(call.guards)) {
+      // The runner killed the child because the window or the request went: that is not the client's answer.
+      throw notStarted();
+    }
     return clientVerdictUnder(parts.floor, outcome.exitCode, outcome.stdout, outcome.stderr, parts.platform);
   } catch (error) {
-    if (endedStage(error) !== undefined) {
-      throw error;
-    }
-    return { ok: false, sentence: sentences.clientNoVersion(null) };
+    return notStartedVerdict(parts, error);
   }
+}
+
+/** A runner that threw: a request that ended goes on as itself; anything else is a client that did not answer (R12), with its cause in the journal. */
+function notStartedVerdict(parts: Resolved, error: unknown): ClientVerdict {
+  if (endedStage(error) !== undefined) {
+    throw error;
+  }
+  parts.note?.(`ssh:exec — the client check could not start ssh: ${describeError(error)}`);
+  return { ok: false, sentence: sentences.clientNoVersion(null) };
+}
+
+/** Whether the window or the request this check serves has gone (any kill signal, or the start gate). */
+function guardsEnded(guards: ClientCheckCall['guards']): boolean {
+  return [...signalsOf(guards?.signal), guards?.startGate].some((signal) => signal?.aborted === true);
+}
+
+/** The kill signals, as a list whatever shape they were given in. */
+function signalsOf(given: SshExecOptions['signal']): readonly AbortSignal[] {
+  if (given === undefined) {
+    return [];
+  }
+  return given instanceof AbortSignal ? [given] : given;
 }
 
 /** Removes the folder; a failure is one journal note, never a throw that would hide the verdict. */

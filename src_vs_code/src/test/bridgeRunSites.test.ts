@@ -7,16 +7,7 @@ import { LinksWorld, linksWorld } from './bridgeLinksWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { Ask, Door, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 import { loadWithVscode } from './vscodeStub';
-import { BRIDGED_ENV_BLANKED_WINDOWS, BRIDGED_ENV_POSIX, BRIDGED_ENV_WINDOWS } from '../bridgedSshEnv';
-
-/** The names `bridgedSshEnv` ASKS FOR from this process, per platform: those it holds (on win32 under any letter case), and on win32 the three blanked ones, whatever it holds. */
-function allowListedNames(): string[] {
-  const names: readonly string[] = process.platform === 'win32' ? BRIDGED_ENV_WINDOWS : BRIDGED_ENV_POSIX;
-  const keys = Object.keys(process.env);
-  const held = names.filter((name) => keys.some((key) => (process.platform === 'win32' ? key.toUpperCase() === name : key === name)));
-  return process.platform === 'win32' ? [...held, ...BRIDGED_ENV_BLANKED_WINDOWS] : held;
-}
-
+import { allowListedNames } from './bridgeLinksRun';
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
