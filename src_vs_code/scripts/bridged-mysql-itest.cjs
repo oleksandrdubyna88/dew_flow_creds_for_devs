@@ -18,7 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const net = require('node:net');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { launch, endChild } = require('./itestSshd.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
@@ -155,6 +155,53 @@ async function legM(scope, dir, name, exe, product) {
   check(`(m) ${name}: with the bridged arguments, the same option file and the allow-list environment, the server receives none of the bytes`, !production.timedOut && production.bytes === '' && production.requested, JSON.stringify(production));
 }
 
+// PD1 (the E1.6 spec §S6.14 Y0; parent §7's probe table): does `--no-defaults` still let a client read the person's `.mylogin.cnf`, and does
+// `MYSQL_TEST_LOGIN_FILE` at a path that does not exist close it? A RECORD leg: it asserts nothing about the build and prints, for each client and for
+// each of the two environments, whether the marker host of the login file stands in the output of `--no-defaults --verbose --help`. Expected by the
+// parent: Oracle's client reads the file and the variable closes it; MariaDB's client reads none. An answer against that goes to the lead.
+const PD1_MARKER_HOST = 'pd1-marker-host.invalid';
+
+/** The one child of this leg: bounded, never through a shell; the answer is what it printed. */
+function pd1Run(program, args, env) {
+  const answer = spawnSync(program, args, { env, encoding: 'utf8', timeout: 20_000 }); // NOSONAR: an absolute path chosen by the rig
+  return { code: answer.error === undefined ? answer.status : `spawn error ${answer.error.code ?? answer.error.message}`, stdout: answer.stdout ?? '', stderr: answer.stderr ?? '' };
+}
+
+/** The line of `text` that holds the marker, trimmed and clipped, or `none`. */
+const pd1Line = (text) => (text.split(/\r?\n/).find((line) => line.includes(PD1_MARKER_HOST)) ?? 'none').trim().slice(0, 120);
+
+/** One client under the rig home, with the variable or without it: the record line. */
+function pd1Record(name, exe, home, absent, withVariable) {
+  const env = { PATH: process.env.PATH, HOME: home, ...(withVariable ? { MYSQL_TEST_LOGIN_FILE: absent } : {}) };
+  const answer = pd1Run(exe, ['--no-defaults', '--verbose', '--help'], env);
+  const inOutput = answer.stdout.includes(PD1_MARKER_HOST) || answer.stderr.includes(PD1_MARKER_HOST);
+  console.log(`record (PD1) ${name}, ${withVariable ? 'with MYSQL_TEST_LOGIN_FILE at a path that does not exist' : 'with no MYSQL_TEST_LOGIN_FILE'}: exit ${answer.code}; the marker host ${inOutput ? 'STANDS' : 'does not stand'} in the output (stdout ${answer.stdout.length} bytes, stderr ${answer.stderr.length} bytes); the line: ${pd1Line(answer.stdout + '\n' + answer.stderr)}`);
+}
+
+/** PD1: `mysql_config_editor` writes a login file under a rig home, then every client present is asked what it reads. A missing editor FAILS on CI and names the package. */
+function recordLoginFile(dir, clients) {
+  const [, oracle] = clients[0];
+  const editor = process.env.BRIDGED_MYSQL_CONFIG_EDITOR ?? path.join(path.dirname(oracle), 'mysql_config_editor');
+  const home = path.join(dir, 'pd1 home');
+  const absent = path.join(dir, 'pd1-login-file-that-never-exists');
+  fs.mkdirSync(home, { recursive: true });
+  if (!fs.existsSync(editor)) {
+    check('(PD1) mysql_config_editor is installed', process.env.CI !== 'true', `${editor} is missing: it is in the Oracle client's package (mysql-client-core-8.0 on Ubuntu, installed by mysql-client) — the probe cannot write a login file without it`);
+    return;
+  }
+  const written = pd1Run(editor, ['set', '--login-path=client', `--host=${PD1_MARKER_HOST}`], { PATH: process.env.PATH, HOME: home });
+  const loginFile = path.join(home, '.mylogin.cnf');
+  const wrote = fs.existsSync(loginFile);
+  console.log(`record (PD1) mysql_config_editor: exit ${written.code}; ${wrote ? 'wrote' : 'did NOT write'} the login file under the rig home (${wrote ? fs.statSync(loginFile).size : 0} bytes); stderr ${JSON.stringify(written.stderr.trim().slice(0, 200))}`);
+  check('(PD1) mysql_config_editor wrote the login file under the rig home', wrote, JSON.stringify(written));
+  check('(PD1) the path given as MYSQL_TEST_LOGIN_FILE does not exist', !fs.existsSync(absent), absent);
+  for (const [name, exe] of clients) {
+    for (const withVariable of [false, true]) {
+      pd1Record(name, exe, home, absent, withVariable);
+    }
+  }
+}
+
 async function main(scope) {
   if (process.platform === 'win32') {
     console.log('skip  the bridged mysql harness — Linux only');
@@ -166,6 +213,7 @@ async function main(scope) {
     ...require(path.join(OUT, 'bridgedSshEnv.js')),
   };
   const clients = [['oracle', process.env.BRIDGED_MYSQL_ORACLE ?? '/usr/bin/mysql'], ['mariadb', process.env.BRIDGED_MYSQL_MARIADB ?? '/usr/bin/mariadb']];
+  const present = [];
   for (const [name, exe] of clients) {
     const version = fs.existsSync(exe) ? versionOf(exe) : undefined;
     console.log(`${name}: ${exe}: ${version ?? 'not found'}`);
@@ -175,6 +223,12 @@ async function main(scope) {
     }
     check(`${exe} is the ${name} client`, name === 'mariadb' ? /MariaDB/i.test(version) : !/MariaDB/i.test(version), version);
     await legM(scope, dir, name, exe, product);
+    present.push([name, exe]);
+  }
+  if (present.length === clients.length) {
+    recordLoginFile(dir, present);
+  } else {
+    check('(PD1) both clients are present, so the record leg ran', process.env.CI !== 'true', 'a client is missing: PD1 asks each one');
   }
   console.log(failures === 0 ? '\nall bridged mysql checks passed' : `\n${failures} check(s) failed`);
   return failures === 0 ? 0 : 1;
