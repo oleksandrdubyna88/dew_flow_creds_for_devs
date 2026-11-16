@@ -3,7 +3,7 @@ import { HostKey, hostKeyFingerprint } from './hostKeyPin';
 import type { EntityMetadata } from './types';
 
 /**
- * The journal sentences of a bridged `ssh:exec` (the E1.6 spec §S6.4 and §S6.14, R1-R11, R14, J1, J2) and the reading of a known-hosts file they need.
+ * The journal sentences of a bridged `ssh:exec` (the E1.6 spec §S6.4 and §S6.14, R1-R14, J1, J2) and the reading of a known-hosts file they need.
  *
  * <p>Pure, no `vscode`, no `fs`. Every sentence says what the code has just checked and nothing about what comes next, and R6, R10, R11 and R14 hold
  * no part of a value: a path, a user and a host are named by the entry they belong to, never quoted. The agent reads none of these: it
@@ -47,6 +47,10 @@ export const sentences = {
   /** J2 */ firstContactNotKept: (entry: string, name: string): string =>
     `${entry}: after this call no host key line for ${name} is in bridges/known_hosts, and none that this check can read is in your own known_hosts. `
     + 'If ssh reached that host in this call, it accepted the key and kept no record, and the next call accepts any key.',
+  /** R12 */ clientNoVersion: (exit: number | null): string =>
+    `ssh did not answer its version under the environment a Remote Bridge gives it (exit ${exit === null ? 'unknown' : exit}). No call can go through a Remote Bridge from this computer until it does.`,
+  /** R13 */ clientBelowFloor: (token: string, floor: string, windowsFloor: string): string =>
+    `The ssh on this computer answered ${token}. A Remote Bridge needs OpenSSH ${floor} or newer, and on Windows the OpenSSH that Windows ships, ${windowsFloor} or newer.`,
 };
 
 /** The lines of a known-hosts text that a person or `ssh` wrote: no blank line, no comment. */
