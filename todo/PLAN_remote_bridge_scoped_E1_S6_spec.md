@@ -990,6 +990,20 @@ probe table expects; PF1 measured leg (o)'s control on 8.9p1 only; PW1 ran under
 its decision is the same step on Y1's commit. Each result, with what it printed, is in the parent's probe table. The `runner-windows` job is red
 until Y1, by WN1, as expected.
 
+**M9 again, on the fixed code: run 2026-11-16 by the lead,** the same rig (the owner's Windows host, VS Code's runtime: Electron 43.8.6, node
+24.22.1; Win32-OpenSSH 9.5p2; the throwaway `sshd` in a wslc container on 127.0.0.1:2222), the branch's compiled code at 72716900, a fresh
+storage folder whose path holds a space, and **no environment edited**: every call ran with the environment `bridgedSpawn` built.
+
+| Leg | What ran | Result |
+|---|---|---|
+| F0 | `bridgedSshClientCheck` with the program of `sshSpawnLaunch` | ok, `9.5`; no note |
+| F0 | `cmd /d /c set` under `bridgedSshEnv` | the seven, `USERNAME`, `USERDOMAIN` and `LOGONSERVER` empty, `SYSTEMDRIVE` and `WINDIR` (libuv), and `COMSPEC`, `PATHEXT`, `PROMPT` (`cmd's` own) |
+| F1 | key, pinned to hk_a | logs in |
+| F2 | password, pinned, `-v`, an `id_ed25519` in the profile's `.ssh` | logs in by `password`; the only key offered is the sentinel `no-default-identity` |
+| F3 | key, unpinned, first contact | logs in; one line in `bridges/known_hosts`; J1 in the journal |
+| FB1 | the container on hk_b; key, unpinned | `Host key verification failed` (the bridge-owned file) |
+| FB2, FB3 | key and password pinned to hk_a | `Host key verification failed`; no password asked |
+
 ## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
 
 *Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
