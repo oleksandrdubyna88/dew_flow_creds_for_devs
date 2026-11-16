@@ -27,3 +27,40 @@ export async function withWrittenKey<T>(credential: ExecAuth, run: () => Promise
     forgetWrittenKey(credential);
   }
 }
+
+/** What a started bridge hands back, as much as the handoff reads: its process, whose `exited` settles when the process has ended. */
+interface Started {
+  readonly process: { readonly exited: Promise<unknown> };
+}
+
+/**
+ * Run `start` while the key file of `credential` is the caller's to delete, and hand the file to the process that `start` started.
+ *
+ * <ul>
+ * <li>`start` returns a started thing: ONE continuation on its process's `exited` deletes the file when that process has ended,
+ *     whatever ended it; nothing is deleted now.</li>
+ * <li>`start` returns `undefined` (nothing was started): the file is deleted at once.</li>
+ * <li>`start` throws: the file is deleted at once and the SAME error goes on to the caller.</li>
+ * </ul>
+ *
+ * <p>`handed` is set by the statement directly after the one that attaches the continuation, with nothing between them: an attach
+ * that throws leaves it false and the `finally` deletes; an attach that worked cannot be followed by a throw before the flag. So
+ * exactly one of the two deletes runs, on every path. `start` is synchronous on purpose: no `await` stands between the start and
+ * the attach.</p>
+ */
+export function withWrittenKeyUntilExit<T extends Started>(credential: ExecAuth, start: () => T | undefined): T | undefined {
+  let handed = false;
+  try {
+    const started = start();
+    if (started !== undefined) {
+      const forget = (): void => forgetWrittenKey(credential);
+      void started.process.exited.then(forget, forget);
+      handed = true;
+    }
+    return started;
+  } finally {
+    if (!handed) {
+      forgetWrittenKey(credential);
+    }
+  }
+}

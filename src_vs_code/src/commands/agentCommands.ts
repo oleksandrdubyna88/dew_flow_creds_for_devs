@@ -25,7 +25,7 @@ import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSo
 import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
-import { withWrittenKey } from '../writtenKey';
+import { withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
@@ -422,32 +422,39 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    if (credential.warning !== undefined) {
-      void vscode.window.showWarningMessage(credential.warning);
-    }
-    if (!credential.ok) {
-      void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
-      return;
-    }
-    const keyPath = credential.keyPath;
+    // N16: the key file of this call is this command's to delete until the bridge's ssh holds it; then that ssh's end deletes it.
+    const bridge = withWrittenKeyUntilExit(credential, () => {
+      if (credential.warning !== undefined) {
+        void vscode.window.showWarningMessage(credential.warning);
+      }
+      if (!credential.ok) {
+        void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
+        return undefined;
+      }
+      const keyPath = credential.keyPath;
 
-    const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
-    const argv = buildBridgeArgv(
-      details,
-      { port: parsed.port, remote, keyPath, auth: credential.auth },
-      isSafeSshTarget,
-    );
-    if (argv === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
+      const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
+      const argv = buildBridgeArgv(
+        details,
+        { port: parsed.port, remote, keyPath, auth: credential.auth },
+        isSafeSshTarget,
       );
+      if (argv === undefined) {
+        void vscode.window.showWarningMessage(
+          `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
+        );
+        return undefined;
+      }
+
+      // The RESOLVED environment, not the parent’s: a password entity carries its answer in
+      // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
+      // connection authenticate at all.
+      return bridges.start(key, remote.path, 'ssh', argv, credential.env);
+    });
+    if (bridge === undefined) {
       return;
     }
-
-    // The RESOLVED environment, not the parent’s: a password entity carries its answer in
-    // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
-    // connection authenticate at all.
-    bridges.start(key, remote.path, 'ssh', argv, credential.env);
+    const remote = { path: bridge.remotePath };
     provider.refresh();
 
     // The socket's permissions are the boundary on that host, and we cannot set them: for a

@@ -4,8 +4,8 @@ import type { ExecAuth } from '../sshExecAuth';
 import { loadWithVscode } from './vscodeStub';
 
 /**
- * The guard of a written key file (N16), alone: `withWrittenKey`, for a road that ends. The roads themselves are
- * `personRoadsForgetKey.test.ts`.
+ * The guards of a written key file (N16), alone: `withWrittenKey` for a road that ends, `withWrittenKeyUntilExit` for a road that
+ * hands the file to a process. The roads themselves are `personRoadsForgetKey.test.ts` and `bridgeKeyHandoff.test.ts`.
  */
 
 type Guards = typeof import('../writtenKey');
@@ -63,6 +63,70 @@ test('U3: withWrittenKey deletes nothing for a key file of the person or for a r
   await mod.withWrittenKey(OWN_FILE, () => Promise.resolve());
   await mod.withWrittenKey(REFUSED, () => Promise.resolve());
   await assert.rejects(mod.withWrittenKey(OWN_FILE, () => Promise.reject(new Error('the run failed'))));
+
+  assert.deepEqual(forgotten, []);
+});
+
+test('U4: withWrittenKeyUntilExit deletes nothing while the process runs, and once when it has ended', async () => {
+  const { mod, forgotten } = guards();
+  const exited = held<number | null>();
+  const started = { process: { exited: exited.promise } };
+
+  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, () => started), started, 'the started thing was not handed back');
+  await turn();
+  assert.deepEqual(forgotten, [], 'the key file was deleted while its process runs');
+
+  exited.resolve(null);
+  await turn();
+  assert.deepEqual(forgotten, [KEY_FILE]);
+});
+
+test('U5: withWrittenKeyUntilExit deletes at once when nothing was started, and when the start throws (the same error)', () => {
+  const { mod, forgotten } = guards();
+  const failure = new Error('spawn EACCES');
+
+  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, () => undefined), undefined);
+  assert.deepEqual(forgotten, [KEY_FILE]);
+
+  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, () => { throw failure; }), (error) => error === failure);
+  assert.deepEqual(forgotten, [KEY_FILE, KEY_FILE]);
+});
+
+test('U6: a continuation that cannot be attached deletes the key file once, at once, and the error goes on', () => {
+  const { mod, forgotten } = guards();
+  // What a broken spawner could hand back: a process with no `exited`. The attach throws; the finally is then the one delete.
+  const broken = { process: { get exited(): Promise<unknown> { throw new TypeError('no exited'); } } };
+
+  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, () => broken), TypeError);
+  assert.deepEqual(forgotten, [KEY_FILE]);
+});
+
+test('U7: an exited that REJECTS deletes the key file too, and leaves no unhandled rejection', async () => {
+  const { mod, forgotten } = guards();
+  const exited = held<number | null>();
+  const unhandled: unknown[] = [];
+  const note = (reason: unknown): void => void unhandled.push(reason);
+  process.on('unhandledRejection', note);
+  try {
+    mod.withWrittenKeyUntilExit(WRITTEN, () => ({ process: { exited: exited.promise } }));
+    exited.reject(new Error('the wait failed'));
+    await turn();
+    await turn();
+  } finally {
+    process.off('unhandledRejection', note);
+  }
+
+  assert.deepEqual(forgotten, [KEY_FILE]);
+  assert.deepEqual(unhandled, []);
+});
+
+test('U8: withWrittenKeyUntilExit deletes nothing for a key file of the person or for a refusal, at the start and at the end', async () => {
+  const { mod, forgotten } = guards();
+
+  mod.withWrittenKeyUntilExit(OWN_FILE, () => ({ process: { exited: Promise.resolve(0) } }));
+  mod.withWrittenKeyUntilExit(OWN_FILE, () => undefined);
+  mod.withWrittenKeyUntilExit(REFUSED, () => undefined);
+  await turn();
 
   assert.deepEqual(forgotten, []);
 });
