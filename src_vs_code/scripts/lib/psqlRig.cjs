@@ -262,27 +262,30 @@ const PQ2_SERVICE_PASSWORD_MARKER = 'pq2-marker-service-password';
 const PQ2_SERVICE_PASSFILE_MARKER = 'pq2-marker-service-passfile';
 const PQ2_STORED_PASSWORD = 'pq2-stored-password';
 const PQ2_SECOND_CN = 'pq2-second-client';
-/** The values a password message may hold in these legs, with the words that name them: a log line names a value and never writes it. */
-const PQ2_VALUES = [
-  [LABEL_PGPASS_MARKER, PD2_PASSWORD_MARKER],
-  [LABEL_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSWORD_MARKER],
-  [LABEL_SERVICE_PASSFILE_MARKER, PQ2_SERVICE_PASSFILE_MARKER],
-  [LABEL_STORED, PQ2_STORED_PASSWORD],
-];
 /**
- * The words for a password message, chosen by comparison with the values above: an empty message, one of the values (the words that name it), or another value.
- * The fake server calls this once, when it reads the message, and keeps the answer only: the text goes no further than this comparison.
+ * The words for a password message, chosen by comparison with the known values: an empty message, one of the values (each named by fixed
+ * words), or another value. The fake server calls this once, when it reads the message, and keeps the answer only: every return is a literal,
+ * so nothing of the text, nor any value paired with it, reaches a log line.
  */
 function classified(text) {
   if (text === '') {
     return LABEL_EMPTY;
   }
-  for (const [label, value] of PQ2_VALUES) {
-    if (text === value) {
-      return label;
-    }
+  if (text === PD2_PASSWORD_MARKER) {
+    return LABEL_PGPASS_MARKER;
   }
-  return LABEL_OTHER;
+  if (text === PQ2_SERVICE_PASSWORD_MARKER) {
+    return LABEL_SERVICE_PASSWORD_MARKER;
+  }
+  return classifiedRest(text);
+}
+
+/** The rest of `classified`, apart so that each function keeps to the complexity limit. */
+function classifiedRest(text) {
+  if (text === PQ2_SERVICE_PASSFILE_MARKER) {
+    return LABEL_SERVICE_PASSFILE_MARKER;
+  }
+  return text === PQ2_STORED_PASSWORD ? LABEL_STORED : LABEL_OTHER;
 }
 /** The words of `state.sent` for a log line: no message, or what `classified` said. */
 const labelled = (sent) => sent ?? 'no password message';
