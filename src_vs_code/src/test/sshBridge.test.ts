@@ -14,6 +14,7 @@ import {
   safeUserComponent,
   sweepCommand,
 } from '../sshBridge';
+import { pairAt, saysNoSharingBefore, sharingWords } from './noSharingArgv';
 
 /**
  * The `ssh -R` bridge that makes the broker reachable from a Remote-SSH host.
@@ -479,4 +480,92 @@ test('a missing socket is described as the bridge being DOWN, and names the like
   assert.match(text, /build box/);
   assert.match(text, /not|never/i, 'it says the bridge is not up');
   assert.match(text, /authenticat/i, 'and points at the cause a person can act on');
+});
+
+/* --- G2: the tunnel shares no connection (`PLAN_bridge_no_connection_sharing.md` §4.2, §7.2) --- */
+//
+// These say what is SENT, and where. What the two options do is asked of a real ssh (`noConnectionSharing.test.ts`) and of a
+// real sshd (section 9 of the SSH agent itest).
+
+/** Words a caller could pass in `extra`: none, a jump, and words that themselves name connection sharing. */
+const HOSTILE_EXTRA = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/x'];
+const EXTRAS: readonly (readonly string[])[] = [[], ['-J', 'hop@jump.example.com'], HOSTILE_EXTRA];
+
+interface Tunnel {
+  readonly label: string;
+  readonly argv: string[];
+  readonly extra: readonly string[];
+}
+
+interface TunnelParts {
+  readonly auth: 'key' | 'askpass';
+  readonly pin: boolean;
+  readonly key: boolean;
+  readonly port: boolean;
+  readonly extra: readonly string[];
+}
+
+/** One tunnel argv: the authentication, with or without a pin, a key and a port, and the caller's `extra`. */
+function tunnel(parts: TunnelParts): Tunnel {
+  const built = buildBridgeArgv(
+    parts.port ? { ...HOST, port: 2222 } : HOST,
+    {
+      port: 51234,
+      remote: { path: '/tmp/creds-dev-abc.sock' },
+      auth: parts.auth,
+      extra: parts.extra,
+      keyPath: parts.key ? '/keys/id_ed25519' : undefined,
+      knownHostsFile: parts.pin ? '/keys/known_hosts' : undefined,
+    },
+    SAFE,
+  );
+  assert.ok(built !== undefined, 'expected an argv');
+  return { label: JSON.stringify(parts), argv: built, extra: parts.extra };
+}
+
+const YES_NO = [false, true];
+
+/** Every combination: 2 × 2 × 2 × 2 × 3 = 48 argvs. */
+const everyTunnel = (): Tunnel[] =>
+  (['key', 'askpass'] as const).flatMap((auth) =>
+    YES_NO.flatMap((pin) => YES_NO.flatMap((key) => YES_NO.flatMap((port) => EXTRAS.map((extra) => tunnel({ auth, pin, key, port, extra }))))),
+  );
+
+/** Where the caller's `extra` stands: right after `-R` and its value. */
+const extraAt = (t: Tunnel): number[] => t.extra.map((_, i) => t.argv.indexOf('-R') + 2 + i);
+
+test('G2: every tunnel says ControlPath=none and ControlMaster=no exactly once, before -N, -R, the extra words, -i, -p and --', () => {
+  const tunnels = everyTunnel();
+  assert.equal(tunnels.length, 48, 'every combination');
+  const offenders = tunnels.filter((t) => !saysNoSharingBefore(t.argv, ['-N', '-R', '-i', '-p', '--']));
+  assert.deepEqual(
+    offenders.slice(0, 1).map((t) => `${t.label}: ${t.argv.join(' ')}`),
+    [],
+    `${offenders.length} of ${tunnels.length} tunnels do not say the two options once, before every word a caller can add`,
+  );
+});
+
+test('G2: a caller\'s own sharing words in extra stand after the two options, as they were passed', () => {
+  for (const t of everyTunnel().filter((one) => one.extra === HOSTILE_EXTRA)) {
+    const at = extraAt(t);
+    assert.deepEqual(at.map((i) => t.argv[i]), HOSTILE_EXTRA, `${t.label}: the caller's words are passed on unchanged, after -R`);
+    assert.deepEqual(pairAt(t.argv, 'ControlMaster=no').length, 1, `${t.label}: the caller's ControlMaster=auto is no second ControlMaster=no`);
+    assert.ok(pairAt(t.argv, 'ControlMaster=no')[0] + 2 <= at[0], `${t.label}: the first value wins, so the two options stand first: ${t.argv.join(' ')}`);
+  }
+});
+
+test('G2: no word the builder adds names connection sharing; only a caller\'s extra can', () => {
+  for (const t of everyTunnel()) {
+    assert.deepEqual(sharingWords(t.argv, extraAt(t)), [], t.label);
+  }
+  const hostile = everyTunnel().filter((one) => one.extra === HOSTILE_EXTRA)[0];
+  assert.deepEqual(sharingWords(hostile.argv), ['ControlMaster=auto', 'ControlPath=/x'], 'control: with nothing skipped, the scan finds the caller\'s two words');
+});
+
+test('G2: the tunnel keeps its own forward: no ClearAllForwardings word, and -R with its value', () => {
+  for (const t of everyTunnel()) {
+    assert.deepEqual(t.argv.filter((word) => /clearallforwardings/i.test(word)), [], `${t.label}: ClearAllForwardings=yes would clear the tunnel's own -R`);
+    assert.equal(t.argv[t.argv.indexOf('-R') + 1], '/tmp/creds-dev-abc.sock:127.0.0.1:51234', t.label);
+    assert.equal(t.argv.filter((word) => word === '-R').length, 1, t.label);
+  }
 });

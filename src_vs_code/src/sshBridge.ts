@@ -1,4 +1,4 @@
-import { SshExecAuth } from './sshExecCommand';
+import { NO_CONNECTION_SHARING, SshExecAuth } from './sshExecCommand';
 import { EntityMetadata } from './types';
 
 /**
@@ -152,12 +152,27 @@ function isUsablePort(port: number): boolean {
  * gives every bridge a fresh random path, so nothing of ours ever collides. What it does leave
  * is litter: one dead socket per dropped bridge, which nobody unlinks. Bounded and inert
  * (owner-only, in a sticky `/tmp`), but real.</p>
+ *
+ * <h3>No connection sharing (G2)</h3>
+ *
+ * <p>The last two options are {@link NO_CONNECTION_SHARING}: this `ssh` joins no master and becomes none. A bridge is closed by
+ * killing the process that was spawned, so that process must BE the connection that holds the forward. With `ControlMaster auto`
+ * and a `ControlPath` in the person's config it was not. Measured 2026-11-17 with this argv (OpenSSH 10.2p1 on both ends,
+ * loopback, one user, `ControlPersist` on): the spawned `ssh` exited with 0 after about half a second, a detached master held
+ * the forward, and the kill hit a pid that was gone; with the two options the process stays and the kill ends the forward. The
+ * measurement and its conditions are beside the constant.</p>
+ *
+ * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for an option:
+ * a caller's own sharing word in `extra` comes too late to change them. Only these two are shared with a bridged run. Its
+ * `ClearAllForwardings=yes` must never come here: it clears the forwards of the command line too, and the tunnel would lose
+ * its own `-R`.</p>
  */
 const FIXED_OPTIONS: readonly string[] = [
   '-o', 'ServerAliveInterval=30',
   '-o', 'ServerAliveCountMax=3',
   '-o', 'ExitOnForwardFailure=yes',
   '-o', 'ConnectTimeout=10',
+  ...NO_CONNECTION_SHARING,
 ];
 
 /** A pinned host key when the entity has one; otherwise trust on first use, as the exec path does. */
