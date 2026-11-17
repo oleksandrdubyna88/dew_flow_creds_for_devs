@@ -6,7 +6,7 @@ import { anyAgentAccess } from '../mcpAccess';
 import { ConsentStampStore, consentStampsFor } from '../mcpConsentPolicy';
 import { folderHooks } from '../mcpFolderHooks';
 import { CredsAgentServer } from '../credsAgentServer';
-import { AliasMap } from '../cliAliases';
+import { AliasMap, aliasFor, withoutAlias, describeAliasProblem, withAlias } from '../cliAliases';
 import { SshBridgeManager } from '../sshBridgeManager';
 import { createDiagnosticLog } from '../diagnosticLog';
 import { CredsProduct } from '../credsInstall';
@@ -21,34 +21,17 @@ import { InstallTarget } from '../installCommand';
 import { EntityMetadata } from '../types';
 import { SshExecAuth } from '../sshExecCommand';
 import { buildSshExecArgv } from '../sshExecCommand';
-import { sweepCommand } from '../sshBridge';
+import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSocket, isOwnerOnlyMode, describeWideSocket, remoteSocketPath, bridgeId, buildBridgeArgv, remoteInstructions } from '../sshBridge';
 import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
-import { modeCheckCommand } from '../sshBridge';
-import { interpretSocketProbe } from '../sshBridge';
-import { describeMissingSocket } from '../sshBridge';
-import { isOwnerOnlyMode } from '../sshBridge';
-import { describeWideSocket } from '../sshBridge';
-import { probeCommand } from '../remoteCliInstall';
-import { blockerFor } from '../remoteCliInstall';
-import { interpretProbe } from '../remoteCliInstall';
-import { confirmationFor } from '../remoteCliInstall';
-import { installCommand } from '../remoteCliInstall';
-import { interpretInstall } from '../remoteCliInstall';
+import { withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
-import { remoteSocketPath } from '../sshBridge';
-import { bridgeId } from '../sshBridge';
-import { buildBridgeArgv } from '../sshBridge';
 import { isSafeSshTarget } from '../sshCommand';
-import { remoteInstructions } from '../sshBridge';
-import { aliasFor } from '../cliAliases';
-import { withoutAlias } from '../cliAliases';
-import { describeAliasProblem } from '../cliAliases';
 import { resolveKind } from '../entityKind';
 import { cliAliasNote, cliCommandFor } from '../cliCommandText';
-import { withAlias } from '../cliAliases';
 import { KeyRow, asElement, detailedNode, loadFailureWarnings } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
@@ -215,45 +198,47 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         return;
       }
       const credential = await resolveExecAuth(storage, accountId, entity, storageDir);
-      if (!credential.ok) {
-        return; // the bridge itself already reported this
-      }
-      const keyPath = credential.keyPath;
-      const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
-      if (argv === undefined) {
-        return;
-      }
-      // sshd does not unlink a `-R` socket when its session ends — measured on a real host —
-      // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
-      // new one is up: it is then live, and the sweep keeps anything still being listened on,
-      // which is what stops it removing another window's working bridge.
-      await sweepDeadSockets(entity, keyPath, entity.user ?? '', credential.auth, credential.env);
-      // A moment for sshd to bind before asking about the file.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const outcome = await runSshExec(argv, {
-        env: credential.env,
-        timeoutMs: 15_000,
-        signal: agentServer.signal,
+      await withWrittenKey(credential, async () => {
+        if (!credential.ok) {
+          return; // the bridge itself already reported this
+        }
+        const keyPath = credential.keyPath;
+        const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
+        if (argv === undefined) {
+          return;
+        }
+        // sshd does not unlink a `-R` socket when its session ends — measured on a real host —
+        // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
+        // new one is up: it is then live, and the sweep keeps anything still being listened on,
+        // which is what stops it removing another window's working bridge.
+        await sweepDeadSockets(entity, keyPath, entity.user ?? '', credential.auth, credential.env);
+        // A moment for sshd to bind before asking about the file.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const outcome = await runSshExec(argv, {
+          env: credential.env,
+          timeoutMs: 15_000,
+          signal: agentServer.signal,
+        });
+        const probe = interpretSocketProbe(outcome.stdout ?? '');
+        if (probe.kind === 'missing') {
+          // The bridge is NOT up. This used to share a branch with "no stat on this host" and go
+          // to an info log, so a dead bridge was announced as open and the only record of the
+          // failure was a line in a file nobody had a reason to open.
+          const text = describeMissingSocket(remote, entity.name ?? 'this entry');
+          log.info('bridge', text);
+          void vscode.window.showErrorMessage(text);
+          return;
+        }
+        if (probe.kind === 'unreadable') {
+          log.info('bridge', `${remote.path} is there, but its mode could not be read on that host`);
+          return;
+        }
+        const mode = probe.mode;
+        if (!isOwnerOnlyMode(mode)) {
+          log.warn('bridge', `${remote.path} is mode ${mode}, not 600`);
+          void vscode.window.showWarningMessage(describeWideSocket(mode, remote));
+        }
       });
-      const probe = interpretSocketProbe(outcome.stdout ?? '');
-      if (probe.kind === 'missing') {
-        // The bridge is NOT up. This used to share a branch with "no stat on this host" and go
-        // to an info log, so a dead bridge was announced as open and the only record of the
-        // failure was a line in a file nobody had a reason to open.
-        const text = describeMissingSocket(remote, entity.name ?? 'this entry');
-        log.info('bridge', text);
-        void vscode.window.showErrorMessage(text);
-        return;
-      }
-      if (probe.kind === 'unreadable') {
-        log.info('bridge', `${remote.path} is there, but its mode could not be read on that host`);
-        return;
-      }
-      const mode = probe.mode;
-      if (!isOwnerOnlyMode(mode)) {
-        log.warn('bridge', `${remote.path} is mode ${mode}, not 600`);
-        void vscode.window.showWarningMessage(describeWideSocket(mode, remote));
-      }
     } catch (error) {
       log.info('bridge', `socket check did not complete: ${describeError(error)}`);
     }
@@ -285,60 +270,62 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     }
 
     const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    if (credential.warning !== undefined) {
-      void vscode.window.showWarningMessage(credential.warning);
-    }
-    if (!credential.ok) {
-      void vscode.window.showErrorMessage(`Cannot reach "${node.name}": ${credential.message}`);
-      return;
-    }
+    await withWrittenKey(credential, async () => {
+      if (credential.warning !== undefined) {
+        void vscode.window.showWarningMessage(credential.warning);
+      }
+      if (!credential.ok) {
+        void vscode.window.showErrorMessage(`Cannot reach "${node.name}": ${credential.message}`);
+        return;
+      }
 
-    const facts = await runRemote(details, credential, probeCommand(), 20_000);
-    if (facts.timedOut) {
-      void vscode.window.showWarningMessage(
-        `"${node.name}" did not answer within 20 seconds — the host may be unreachable.`,
+      const facts = await runRemote(details, credential, probeCommand(), 20_000);
+      if (facts.timedOut) {
+        void vscode.window.showWarningMessage(
+          `"${node.name}" did not answer within 20 seconds — the host may be unreachable.`,
+        );
+        return;
+      }
+      const blocker = blockerFor(interpretProbe(facts.stdout));
+      if (blocker.length > 0) {
+        void vscode.window.showWarningMessage(`Cannot install on "${node.name}": ${blocker}`);
+        return;
+      }
+
+      // Asked BEFORE anything runs, and showing the command itself rather than a description of
+      // it: this downloads a binary onto a machine that is not this one.
+      const ask = confirmationFor(interpretProbe(facts.stdout), node.name);
+      const answer = await vscode.window.showInformationMessage(
+        ask.message,
+        { modal: true, detail: ask.detail },
+        ask.action,
       );
-      return;
-    }
-    const blocker = blockerFor(interpretProbe(facts.stdout));
-    if (blocker.length > 0) {
-      void vscode.window.showWarningMessage(`Cannot install on "${node.name}": ${blocker}`);
-      return;
-    }
+      if (answer !== ask.action) {
+        return;
+      }
 
-    // Asked BEFORE anything runs, and showing the command itself rather than a description of
-    // it: this downloads a binary onto a machine that is not this one.
-    const ask = confirmationFor(interpretProbe(facts.stdout), node.name);
-    const answer = await vscode.window.showInformationMessage(
-      ask.message,
-      { modal: true, detail: ask.detail },
-      ask.action,
-    );
-    if (answer !== ask.action) {
-      return;
-    }
-
-    const outcome = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `CredsForDevs: installing creds on "${node.name}"…`,
-        cancellable: false,
-      },
-      async () => {
-        const run = await runRemote(details, credential, installCommand(), 180_000);
-        return run.timedOut
-          ? ({ kind: 'failed', reason: 'the install did not finish within three minutes.' } as const)
-          : interpretInstall(run.stdout, run.stderr, run.exitCode);
-      },
-    );
-
-    if (outcome.kind === 'installed') {
-      void vscode.window.showInformationMessage(
-        `\`creds\` is installed on "${node.name}" at ${outcome.path}.`,
+      const outcome = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `CredsForDevs: installing creds on "${node.name}"…`,
+          cancellable: false,
+        },
+        async () => {
+          const run = await runRemote(details, credential, installCommand(), 180_000);
+          return run.timedOut
+            ? ({ kind: 'failed', reason: 'the install did not finish within three minutes.' } as const)
+            : interpretInstall(run.stdout, run.stderr, run.exitCode);
+        },
       );
-      return;
-    }
-    void vscode.window.showErrorMessage(`Could not install on "${node.name}": ${outcome.reason}`);
+
+      if (outcome.kind === 'installed') {
+        void vscode.window.showInformationMessage(
+          `\`creds\` is installed on "${node.name}" at ${outcome.path}.`,
+        );
+        return;
+      }
+      void vscode.window.showErrorMessage(`Could not install on "${node.name}": ${outcome.reason}`);
+    });
   });
 
   /** One non-interactive `ssh` with a resolved credential — the shape every caller here needs. */
@@ -435,32 +422,39 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    if (credential.warning !== undefined) {
-      void vscode.window.showWarningMessage(credential.warning);
-    }
-    if (!credential.ok) {
-      void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
-      return;
-    }
-    const keyPath = credential.keyPath;
+    // N16: the key file of this call is this command's to delete until the bridge's ssh holds it; then that ssh's end deletes it.
+    const bridge = withWrittenKeyUntilExit(credential, () => {
+      if (credential.warning !== undefined) {
+        void vscode.window.showWarningMessage(credential.warning);
+      }
+      if (!credential.ok) {
+        void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
+        return undefined;
+      }
+      const keyPath = credential.keyPath;
 
-    const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
-    const argv = buildBridgeArgv(
-      details,
-      { port: parsed.port, remote, keyPath, auth: credential.auth },
-      isSafeSshTarget,
-    );
-    if (argv === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
+      const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
+      const argv = buildBridgeArgv(
+        details,
+        { port: parsed.port, remote, keyPath, auth: credential.auth },
+        isSafeSshTarget,
       );
+      if (argv === undefined) {
+        void vscode.window.showWarningMessage(
+          `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
+        );
+        return undefined;
+      }
+
+      // The RESOLVED environment, not the parent’s: a password entity carries its answer in
+      // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
+      // connection authenticate at all.
+      return bridges.start(key, remote.path, 'ssh', argv, credential.env);
+    });
+    if (bridge === undefined) {
       return;
     }
-
-    // The RESOLVED environment, not the parent’s: a password entity carries its answer in
-    // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
-    // connection authenticate at all.
-    bridges.start(key, remote.path, 'ssh', argv, credential.env);
+    const remote = { path: bridge.remotePath };
     provider.refresh();
 
     // The socket's permissions are the boundary on that host, and we cannot set them: for a

@@ -2476,6 +2476,28 @@ writeKey }` and a call: S1, at the line of the import. The full suite after the 
 - The sentences of (a) and (b) off a bridge still hold the local path (G2, G3 of the plan). This is a decision, not a gap.
 - The person's roads. Since N17 every road of `prepareSshSession` (Connect, `creds_open_terminal`, the runs over SSH) writes `call-<uuid>.key`, so their key file names no longer hold the id of the key entry; only the pin `known_hosts-<id>` (`known_hosts-<id>-<uuid>` when isolated) still holds the id of the SSH entry itself; the askpass script has a fixed name. No test of this plan reads the person's terminal; `sshConnectKeyName.test.ts` (N17) does.
 
+## A bridge, its socket check and the install delete their key file (N16)
+
+The three roads of the person that write a key file through `resolveExecAuth` for a non-interactive `ssh` (the bridge socket check, *Install
+creds on host*, *Open Remote Bridge…*) delete the file they wrote: the first two when they finish, a bridge when its `ssh` has ended. The
+rule is written once, in `writtenKey.ts`: only a credential with `materialized` is deleted, never a key file of the person's own, a password
+or a refusal. The tests run the REAL `registerAgentCommands` and the REAL `SshBridgeManager`, with `ssh` pretended. Run them with
+`node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/<file>.test.js"`, after `npm run compile`.
+
+| File | Tests | What it holds |
+|---|---|---|
+| `personRoadsWorld.ts` (not a suite) | n/a | The world of the three roads: `registerAgentCommands` loaded under a stubbed `vscode`, a handler called as a click does. Stand-ins by request string: `../sshExecAuth` (what each resolve answers: `clicks` for a command, `checks` for the socket check), `../sshExecRunner` (no `ssh`; each run is recorded with how many key files were already deleted), `./keyInstaller` (the recorder of `forgetMaterializedKey`; `realForget` leaves the real one), and with `noExecArgv` `../sshExecCommand`. A `heldChild` is a bridge's `ssh` whose end the TEST decides. The host record is untyped on purpose (only the fields the roads read) |
+| `personRoadsForgetKey.test.ts` | 15 | C1 to C6, C3b: the socket check deletes its file after a normal check and not before its second run, when the socket is missing, when the mode cannot be read, when it is wider than 600 (the warning is shown), when the host gives no argv and when a run throws; it deletes nothing for a key file of the person (C6). I1 to I7: the install deletes its file after a success (and the install run still had it, and the question was open with the file still there), after a failed install, a timed-out probe, a host that cannot be installed to, a *no*, a question that throws (the same error reaches the caller); nothing for a key file of the person. R1: a real key file in an owned folder is on the disk for both runs of the check and gone when it ends. Every test asserts its road first (the run count, the message, the log line) |
+| `writtenKey.test.ts` | 9 | U1 to U8, U3b, of `withWrittenKey` and `withWrittenKeyUntilExit` alone: the value, a rejection and a synchronous throw (the same error); nothing deleted for a key file of the person, a password credential (`auth: 'askpass'`, no `materialized`) or a refusal; the file goes only when the process has ended; at once when nothing was started or the start throws; one delete when the attach itself throws (U6); an `exited` that rejects deletes too and leaves no unhandled rejection (U7) |
+| `bridgeKeyHandoff.test.ts` | 9 | B1 to B9: an open bridge keeps its file and it goes once when its `ssh` ends by itself; *Close* alone deletes nothing, the end of the `ssh` does; a second *Open* of an open bridge starts nothing; a bridge that replaces another (two overlapping *Opens*): the first file goes when the first `ssh` ends and the second stays; no argv, a throw while the argv is built and a start that throws delete at once (the same error); a key file of the person is never deleted; B9 with a real key file: on the disk while the `ssh` runs, gone when it has ended |
+| `bridgeSpawner.test.ts` | 12 | P1 to P12, of `bridgeProcessOf` and `bridgeSpawner` (`bridgeSpawner.ts`): `exited` settles with `null` on the `'error'` of a child that never started and with the code on `'exit'`, once, with the first; the `'error'` of a started child settles nothing; the child is started as before (argv copied, the given environment, hidden, no stdio); P6 and P7 with two REAL processes (a program that does not exist: the row goes and the cause is reported; a program that runs and ends: its code and no report); every `'error'` is reported, the same object, and a reporter that throws does not keep `exited` from settling; P8 reads `extension.ts` (it spawns with this spawner and reports to the log); P12 the log line is one sentence and the text of the error, never the argv |
+
+**What none of them proves.** A real `ssh` and a real host: the runner is a stand-in, so what is proven is WHEN the file is deleted relative to the runs,
+not that an `ssh` could read it (the only real `ssh` of the set is the missing program of P6). Windows, by reading only: whether `ssh.exe` has released
+the file when the delete runs was not measured. A delete that fails is silent, as everywhere, and the file stays until the purge (`purgeMaterializedKeys`,
+on the next activate or deactivate). A window killed in the middle of a road runs no `finally`: the purge retires the file. A started `ssh` whose
+`kill()` fails and that never exits keeps its key file until that purge; no test makes a kill fail for good.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
