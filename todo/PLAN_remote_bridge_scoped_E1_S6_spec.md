@@ -1018,6 +1018,24 @@ storage folder whose path holds a space, and **no environment edited**: every ca
 - **First contact.** A call whose legs are all pinned reads neither known-hosts file (the gate; W17).
 - **Not built, rejected at the gate with a reason:** serialising two concurrent first contacts to one unseen host (Q3's trust on first use).
 
+**As built for epoch 11 (§S6.15), 2026-11-17.** Probes PQ2 and PM1 first (d2326e07, 5e5221ed; recorded in the parent's §7 at c48d3f70), then Z1-Z7
+(51c8e4c3..7e9f25c5), then the review fixes (78a3bb86..a011f34a) from an Opus judge (nothing serious; the off-bridge builder matched `main` on
+1.6 million random inputs) and the coai code gate (`proceed`, eight of eight). Where the code goes past or beside the text:
+- The builder writes `passfile`, `sslcert` and `sslkey` at the absent file, last; it writes no `require_auth` or `sslcertmode` (Z2 and DP14 as
+  written; those are E1.7's, PA1, though PQ2 showed both hold on 18.6).
+- Order of the rules: the dialect and its settings, host, port, user, password, database. A malformed key-value part is DR2; an unreadable URI
+  is DR6 *connection*, but an empty host or a host list is DR5.
+- Refused besides §S6.15's list (the judge): a database name starting with `-` for every client and a sqlcmd host starting with `-` (it would
+  become the next flag); a key-value value starting with a quote; a sqlcmd host that is not one plain host name (`::1`, `[::1]`, `tcp:h`,
+  `h\inst` wait for E1.7's PS1). On a bridge a postgres entry that is not a plain URL answers `BRIDGE_USE_REFUSED`, its detail in the journal.
+- DR6 names the constraint (the port: a whole number from 1 to 65535), never the value. Refusals are values (the coding-style rule).
+- Leg (r) uses an entry that stores a password: the stored password arrives and no marker, and a *keyword alone* case (no `PGPASSWORD`,
+  no Y6 variables) shows the built string's own keywords keep the files closed; its control cuts them and leaks. PQ2's a, b, c, e are the
+  controls of (s), written as the old builder's shape.
+- PM1-b on MariaDB reached the fake by TCP without the flag (no socket on the runner): recorded as *socket control not shown*, not a stop.
+- Found off a bridge, not touched (`main's` behaviour, kept by the golden record): `Server=,1433` builds `-S undefined,1433`; a psql
+  `?password=` stays on the command line (the parent's §8).
+
 ## S6.14 — Amendment for epoch 10: the fix-forward on PR #365
 
 *Written 2026-11-15 by Fable, with the parent's whole revision for epoch 10 (step 4 of the full stop after 9.2 and 9.3). Nothing here is built
