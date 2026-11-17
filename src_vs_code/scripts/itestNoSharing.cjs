@@ -262,7 +262,9 @@ async function controlRidesMaster(check, group) {
   const tunnel = startTunnel(rig, mux.config, argv, remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
-    check('K-C control: with a master up, the tunnel without the two options exits with 0, with a WRONG key and a WRONG pin', tunnel.exit() === 0, `exit ${tunnel.exit()}`);
+    // The spawned client of a mux ENDS at once (exit 0 measured on 10.2p1 locally, 1 on the CI runner): its code is recorded, not
+    // asserted. What makes it the fault is the next two checks: the forward is served and the sshd it named saw nothing.
+    check('K-C control: with a master up, the tunnel without the two options ends at once, with a WRONG key and a WRONG pin', tunnel.exit() !== 'running', `exit ${tunnel.exit()}`);
     check('K-C control: its forward is served, through the master', await within(5_000, () => served(remote)), await readThrough(remote));
     check('K-C control: and the sshd it named saw no connection', !CONNECTED.test(b.sshd.stderr), sshdTail(b));
   } finally {

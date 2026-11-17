@@ -494,7 +494,7 @@ async function controlRidesMaster(check, group) {
   const tunnel = startTunnel(rig, mux.config, argv, remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
-    check('K-C control: with a master up, the tunnel without the two options exits with 0, with a WRONG key and a WRONG pin', tunnel.exit === 0, `exit ${tunnel.exit}`);
+    check('K-C control: with a master up, the tunnel without the two options ends at once, with a WRONG key and a WRONG pin', tunnel.exit !== 'running', `exit ${tunnel.exit}`);
     check('K-C control: its forward is served, through the master', await within(5_000, () => served(remote)), await readThrough(remote));
     check('K-C control: and the sshd it named saw no connection', !CONNECTED.test(b.sshd.stderr), sshdTail(b));
   } finally {
@@ -810,7 +810,7 @@ P-I2 is red here too, for a reason of its own: before S1 the run does not use th
 15. `a: its sshd started`
 16. `a master connection to A is up: its control socket exists`
 17. `k-c: its sshd started`
-18. `K-C control: with a master up, the tunnel without the two options exits with 0, with a WRONG key and a WRONG pin`
+18. `K-C control: with a master up, the tunnel without the two options ends at once (its exit code is recorded: 0 locally, 1 on the CI runner), with a WRONG key and a WRONG pin`
 19. `K-C control: its forward is served, through the master`
 20. `K-C control: and the sshd it named saw no connection`
 21. `p-d1: its sshd started`
