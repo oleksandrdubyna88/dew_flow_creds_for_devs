@@ -1,5 +1,6 @@
 import { DbType } from './types';
 import { parseDbConnectionString, withoutPassword } from './dbConnString';
+import { BridgedDbConnection, bridgedDbConnection, bridgedPsqlString } from './bridgedDbProfile';
 
 /**
  * Handing a query to a database CLI with the password never on a command line.
@@ -241,6 +242,59 @@ export interface DbQueryLaunch {
 }
 
 /**
+ * The launch of a BRIDGED query (the E1.6 spec §S6.15 Z2): built from the fields `bridgedDbConnection` checked, never from the stored string, which no bridged client is handed.
+ * The password rides the client's own variable, the person's files are closed by `closing` (Y6), and an entry the profile refuses answers `undefined`. `psql` gets one
+ * keyword string after `--`; `mysql` gets `--no-defaults` first and `--protocol=TCP` straight after it, then the connection flags and the three pins; `sqlcmd` gets today's arguments
+ * with its user always named.
+ */
+function bridgedLaunch(
+  cli: DbCli & { passwordEnv: string },
+  dbType: DbType,
+  stored: string,
+  query: string,
+  closing: Record<string, string>,
+  absentFile: string,
+): DbQueryLaunch | undefined {
+  const connection = bridgedDbConnection(dbType, stored, '');
+  const args = BRIDGED_ARGS[dbType];
+  if (!connection.ok || args === undefined) {
+    return undefined;
+  }
+  const userEnv = BRIDGED_USER_ENV[dbType];
+  const user = userEnv === undefined ? {} : { [userEnv]: connection.user };
+  return { exe: cli.exe, args: args(connection, query, absentFile), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
+}
+
+type BuiltConnection = Extract<BridgedDbConnection, { ok: true }>;
+
+/** The arguments of each client for a built connection. The ONE leading space on psql's -c is the first-character rule of `buildDbQueryLaunch`; `-X`: no `.psqlrc` of the person's (E1.6, parent §4.11). */
+const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string) => string[]>> = {
+  postgres: (connection, query, absentFile) => ['-X', '-c', ' ' + query, '--', bridgedPsqlString(connection, absentFile)],
+  mysql: (connection, query) => bridgedMysqlArgs(connection, query),
+  mssql: (connection, query) => bridgedMssqlArgs(connection, query),
+};
+
+/** The variable that carries the user, for the client that has no flag for it (`sqlcmd`): always set, since a user is required. */
+const BRIDGED_USER_ENV: Partial<Record<DbType, string>> = { mssql: 'SQLCMDUSER' };
+
+/** `--no-defaults` first and `--protocol=TCP` straight after it (PM1: both clients take it there); `-h` is always named, so `localhost` means TCP and never the socket file. */
+function bridgedMysqlArgs(connection: BuiltConnection, query: string): string[] {
+  const flags = [
+    ['-h', connection.host],
+    ...(connection.port === undefined ? [] : [['-P', connection.port]]),
+    ['-u', connection.user],
+    ...(connection.database === undefined ? [] : [['-D', connection.database]]),
+  ].flat();
+  return ['--no-defaults', '--protocol=TCP', ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
+}
+
+/** Today's `sqlcmd` arguments for the built fields: `-S host[,port]`, `-d`, `-Q`, `-b` and `-x` (scripting variables off: `$(SQLCMDPASSWORD)` is text). */
+function bridgedMssqlArgs(connection: BuiltConnection, query: string): string[] {
+  const server = connection.port === undefined ? connection.host : `${connection.host},${connection.port}`;
+  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x'];
+}
+
+/**
  * The command that runs one query — or `undefined` when this type cannot be served
  * safely.
  *
@@ -271,6 +325,9 @@ export function buildDbQueryLaunch(
   // launch may hand a client command to a process holding the password.
   if (refuseQuery(dbType, query) !== undefined) {
     return undefined;
+  }
+  if (bridged) {
+    return bridgedLaunch({ ...cli, passwordEnv: cli.passwordEnv }, dbType, connectionString, query, closing, options.absentFile ?? '');
   }
   const parts = parseDbConnectionString(connectionString);
   const env: Record<string, string> = {};

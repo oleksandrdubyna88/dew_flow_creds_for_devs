@@ -27,3 +27,64 @@ export function systemNameOf(platform: NodeJS.Platform): string {
 export function DR1(client: string, platform: NodeJS.Platform): string {
   return `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${systemNameOf(platform)} is not among them.`;
 }
+
+/**
+ * The names of the settings each dialect knows, in the spelling a person writes them: the only words a journal sentence may quote of a stored
+ * connection. libpq's connection keywords; the mysql client's own options (and a connector's names for the same things); the keys an ADO or an ODBC
+ * string uses. A key that is not on its list is named by the words `an unknown setting`, so no sentence holds a word the stored connection chose.
+ */
+const LIBPQ_KEYS = ['host', 'hostaddr', 'port', 'dbname', 'user', 'password', 'passfile', 'require_auth', 'channel_binding', 'connect_timeout', 'client_encoding', 'options',
+  'application_name', 'fallback_application_name', 'keepalives', 'keepalives_idle', 'keepalives_interval', 'keepalives_count', 'tcp_user_timeout', 'replication',
+  'gssencmode', 'sslmode', 'sslcompression', 'sslcert', 'sslkey', 'sslpassword', 'sslcertmode', 'sslrootcert', 'sslcrl', 'sslcrldir', 'sslsni', 'sslkeylogfile',
+  'requirepeer', 'ssl_min_protocol_version', 'ssl_max_protocol_version', 'min_protocol_version', 'max_protocol_version', 'krbsrvname', 'gsslib', 'gssdelegation',
+  'service', 'servicefile', 'target_session_attrs', 'load_balance_hosts'];
+const MYSQL_KEYS = ['ssl-mode', 'ssl-ca', 'ssl-capath', 'ssl-cert', 'ssl-key', 'ssl-cipher', 'ssl-crl', 'ssl-crlpath', 'ssl-fips-mode', 'tls-version', 'tls-ciphersuites',
+  'get-server-public-key', 'server-public-key-path', 'default-auth', 'plugin-dir', 'enable-cleartext-plugin', 'socket', 'protocol', 'compress', 'connect-timeout',
+  'local-infile', 'init-command', 'default-character-set', 'character-sets-dir', 'login-path', 'defaults-file', 'defaults-extra-file', 'usessl', 'requiressl',
+  'verifyservercertificate', 'allowpublickeyretrieval', 'sslmode'];
+const ADO_KEYS = ['server', 'data source', 'address', 'addr', 'network address', 'port', 'database', 'initial catalog', 'user id', 'uid', 'user', 'username', 'password', 'pwd',
+  'encrypt', 'trustservercertificate', 'trust server certificate', 'hostnameincertificate', 'host name in certificate', 'servercertificate', 'connection timeout',
+  'connect timeout', 'timeout', 'command timeout', 'integrated security', 'trusted_connection', 'trusted connection', 'authentication', 'application name', 'app',
+  'applicationintent', 'application intent', 'multisubnetfailover', 'multiple active result sets', 'multipleactiveresultsets', 'persist security info',
+  'persistsecurityinfo', 'packet size', 'pooling', 'attachdbfilename', 'language', 'current language', 'workstation id', 'wsid', 'failover partner', 'failoverpartnerspn',
+  'server spn', 'network library', 'network', 'net', 'driver', 'dsn', 'column encryption setting', 'enlist', 'replication', 'transaction binding', 'user instance',
+  'type system version', 'connect retry count', 'connect retry interval', 'ip address preference'];
+
+/** The list of names a dialect's keys are looked up in. */
+export type KeyDialect = 'libpq' | 'mysql' | 'ado';
+
+const KNOWN: Readonly<Record<KeyDialect, ReadonlySet<string>>> = {
+  libpq: new Set(LIBPQ_KEYS),
+  mysql: new Set([...MYSQL_KEYS, ...ADO_KEYS]),
+  ado: new Set([...ADO_KEYS, ...MYSQL_KEYS]),
+};
+
+/** `<key>` of DR2 and DR3: the key in quotes when it is on the dialect's list, otherwise the words `an unknown setting`. */
+export function settingWords(dialect: KeyDialect, key: string): string {
+  return KNOWN[dialect].has(key) ? `"${key}"` : 'an unknown setting';
+}
+
+/** DR2: a setting outside the profile. */
+export function DR2(entity: string, settingKey: string): string {
+  return `The connection stored in "${entity}" holds the setting ${settingKey}. Through a Remote Bridge the connection is built from the host, port, database, user and password of the entry, and that setting is not carried.`;
+}
+
+/** DR3: a setting given twice. */
+export function DR3(entity: string, settingKey: string): string {
+  return `The connection stored in "${entity}" holds the setting ${settingKey} more than once.`;
+}
+
+/** DR4: no user, or no password. */
+export function DR4(entity: string, what: 'user' | 'password'): string {
+  return `"${entity}" stores no ${what}. Through a Remote Bridge a database client may log in with the entry's own user and password and with nothing else.`;
+}
+
+/** DR5: the host. */
+export function DR5(entity: string): string {
+  return `The host of "${entity}" is missing, or is a socket folder or a list of hosts. Through a Remote Bridge a database is reached over the network by one host name or address.`;
+}
+
+/** DR6: a field outside its shape. `field` is the name of a field or of a profile setting, never a value. */
+export function DR6(entity: string, field: string, client: string): string {
+  return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge.`;
+}

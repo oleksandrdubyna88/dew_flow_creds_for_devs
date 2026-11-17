@@ -12,6 +12,7 @@ import { loadWithVscode } from './vscodeStub';
 import { statusForErrorCode } from '../brokerProtocol';
 import { allowListedNames } from './bridgeLinksRun';
 import { code, message } from './bridgeDoorHarness';
+import { DR5, dr2, dr4 } from './bridgedDbCases';
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
@@ -97,8 +98,8 @@ const query = (path: string): Ask => ({ path, body: { entry: 'e1', alias: 'one',
 const after = (args: string[], flag: string): string | undefined => args[args.indexOf(flag) + 1];
 
 /**
- * The three clients: the stored connection, the program, and what each puts where. The launcher's own places (`dbCliLauncher.ts`):
- * postgres takes the whole URI, user and database in it, minus its password, after `--`; mysql `-h`, `-P`, `-u`, `-D`; sqlcmd `-S host,port` and
+ * The three clients: the stored connection, the program, and what each puts where. The launcher's own places (`dbCliLauncher.ts`, on a bridge):
+ * postgres takes one keyword string this extension builds, after `--` (host, port, dbname, user, then three controls: never the stored URI); mysql `-h`, `-P`, `-u`, `-D`; sqlcmd `-S host,port` and
  * `-d`, with the USER in the environment (`SQLCMDUSER`); and every password in the client's own environment variable, never in an argument.
  */
 const CLIENTS: readonly {
@@ -116,7 +117,7 @@ const CLIENTS: readonly {
     command: 'psql',
     passwordEnv: 'PGPASSWORD',
     password: 'pw-one',
-    pointsAtTheEntry: ({ args }) => after(args, '--') === 'postgresql://app@db.example.test:5433/orders',
+    pointsAtTheEntry: ({ args }) => /^host='db\.example\.test' port='5433' dbname='orders' user='app' passfile='[^']*no-client-file' sslcert='[^']*no-client-file' sslkey='[^']*no-client-file'$/.test(args[args.length - 1]) && args[args.length - 2] === '--',
   },
   {
     dbType: 'mysql',
@@ -272,8 +273,15 @@ test('DG1 (§S6.15 Z1): through the production table a bridged query on each cli
   }
 });
 
-test('DG2 (§S6.15 Z1): through the main port the same three entries run, as they do today', async () => {
-  for (const client of CLIENTS) {
+/** Entries a bridge refuses and the main port has always served: no password, a service file, a query string, an encryption key (§S6.15 Z2, T53). */
+const TODAY_ONLY: readonly { readonly dbType: DbType; readonly connection: string }[] = [
+  { dbType: 'postgres', connection: 'postgresql://app@db.example.test/orders?service=s1' },
+  { dbType: 'mysql', connection: 'mysql://app@localhost/orders?ssl-mode=DISABLED' },
+  { dbType: 'mssql', connection: 'Server=db.example.test;Encrypt=True;User Id=app' },
+];
+
+test('DG2 (§S6.15 Z1, Z2): through the main port the same three entries run, as they do today, and so do entries a bridge refuses; the production table is not asked', async () => {
+  for (const client of [...CLIENTS, ...TODAY_ONLY.map((entry) => ({ ...entry, command: undefined }))]) {
     const qw = await queryWorld(client.dbType, client.connection);
     const ww = await wallWorld({ query: qw.action });
     try {
@@ -281,6 +289,52 @@ test('DG2 (§S6.15 Z1): through the main port the same three entries run, as the
       assert.equal(reply.status, 200, `${client.dbType}: ${reply.body}`);
       assert.equal(qw.spawns.length, 1, `${client.dbType}: spawned`);
       assert.deepEqual(qw.journal, [], `${client.dbType}: nothing in the journal`);
+      assert.equal(qw.spawns[0].args.includes('--protocol=TCP'), false, `${client.dbType}: off a bridge, no flag a bridge adds`);
+    } finally {
+      ww.dispose();
+    }
+  }
+});
+
+test('DG3 (§S6.15 Z1, Z2): under a table that serves the pair the bridged psql is handed the built string and never the stored URI; mysql is asked over TCP; sqlcmd names its user', async () => {
+  const seen: Record<string, Spawn> = {};
+  for (const client of CLIENTS) {
+    const qw = await queryWorld(client.dbType, client.connection, SERVED);
+    const ww = await wallWorld({ query: qw.action });
+    try {
+      assert.equal((await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'))).status, 200);
+      seen[client.dbType] = qw.spawns[0];
+    } finally {
+      ww.dispose();
+    }
+  }
+  const { postgres, mysql, mssql } = seen;
+  assert.equal(postgres.args.some((arg) => arg.includes('postgresql://')), false, 'the stored URI is no argument');
+  assert.deepEqual(postgres.args.slice(0, 4), ['-X', '-c', ' select 1', '--']);
+  assert.deepEqual(mysql.args.slice(0, 3), ['--no-defaults', '--protocol=TCP', '-h']);
+  assert.equal(mssql.env.SQLCMDUSER, 'app');
+});
+
+/** An entry the profile refuses, the journal sentence it earns, and the stored connection that earns it: DG4's cases, the sentences written out word for word. */
+const DG4_CASES: readonly { readonly what: string; readonly dbType: DbType; readonly connection: string; readonly sentence: string }[] = [
+  { what: 'a setting outside the profile', dbType: 'postgres', connection: 'postgresql://app:pw@db.example.test/orders?passfile=/x', sentence: dr2('"passfile"') },
+  { what: 'no user', dbType: 'mysql', connection: 'mysql://:pw@db.example.test/orders', sentence: dr4('user') },
+  { what: 'no password', dbType: 'mssql', connection: 'Server=db.example.test,1433;Database=orders;User Id=app', sentence: dr4('password') },
+  { what: 'a socket host', dbType: 'postgres', connection: 'postgresql://app:pw@%2Fvar%2Frun%2Fpostgresql/orders', sentence: DR5 },
+];
+
+test('DG4 (§S6.15 Z2): under a table that serves the pair, an entry the profile refuses answers the generic body, the journal has the rule\'s sentence, and nothing is spawned; the main port runs it', async () => {
+  for (const refused of DG4_CASES) {
+    const qw = await queryWorld(refused.dbType, refused.connection, SERVED);
+    const ww = await wallWorld({ query: qw.action });
+    try {
+      const reply = await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'));
+      assert.deepEqual([reply.status, code(reply), message(reply)], [statusForErrorCode('not_supported'), 'not_supported', BRIDGE_USE_REFUSED('prod')], `${refused.what}: the generic body`);
+      assert.deepEqual(qw.journal, [`prod: ${refused.sentence} (a Remote Bridge was told only that it could not be used)`], `${refused.what}: the journal`);
+      assert.deepEqual(qw.spawns, [], `${refused.what}: nothing was spawned`);
+      assert.equal(reply.body.includes('pw'), false, `${refused.what}: no value in the body`);
+      assert.equal((await send(viaMain(ww), query('/v1/alias/query'))).status, 200, `${refused.what}: control, the main port serves the entry as today`);
+      assert.equal(qw.spawns.length, 1, `${refused.what}: and spawns it`);
     } finally {
       ww.dispose();
     }

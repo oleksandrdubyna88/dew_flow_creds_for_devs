@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DbType } from '../types';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from '../dbCliLauncher';
+import { REFUSED, stored } from './bridgedDbCases';
+import { OFF_BRIDGE_TODAY } from './bridgedDbOffBridgeGolden';
 
 /**
  * Handing a query to a database CLI with the password never on the command line.
@@ -416,12 +418,19 @@ test('the over-refusal sentences say how to write the word as SQL, and that way 
  * E1.6 B8 (Q1-Q3): the flags a bridged query adds, so the person's own client configuration is not read
  * ------------------------------------------------------------------------------------------------------------- */
 
-test('Q1: a bridged postgres launch has -X first, then -c, the query with its one leading space, --, and the URI', () => {
+test('Q1 (§S6.15 Z4, T46): a bridged postgres launch has -X, -c, the query with its one leading space, --, and the string this extension builds; the stored URI is no argument', () => {
   const args = buildDbQueryLaunch('postgres', PG, 'select 1', { bridged: true, absentFile: ABSENT })?.args ?? [];
 
-  assert.deepEqual(args.slice(0, 4), ['-X', '-c', ' select 1', '--']);
-  assert.equal(args.length, 5);
-  assert.equal(args[4], buildDbQueryLaunch('postgres', PG, 'select 1')?.args[3], 'the URI is the same');
+  assert.deepEqual(args, ['-X', '-c', ' select 1', '--', `host='db' port='5432' dbname='orders' user='alice' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}'`]);
+  assert.equal(args.some((arg) => arg.includes('postgresql://') || arg.includes('hunter2')), false, 'neither the stored URI nor its password is an argument');
+  assert.notDeepEqual(args, ['-X', '-c', ' select 1', '--', PG], 'and the stored URI is not handed over');
+});
+
+test('Q1b: a bridged postgres launch with settings writes them before the three controls, in the builder\'s order', () => {
+  const stored = 'postgresql://alice:hunter2@db/orders?application_name=a&sslmode=disable';
+  const args = buildDbQueryLaunch('postgres', stored, 'select 1', { bridged: true, absentFile: ABSENT })?.args ?? [];
+
+  assert.equal(args[4], `host='db' dbname='orders' user='alice' sslmode='disable' application_name='a' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}'`);
 });
 
 /** What the production caller hands a bridged launch: a path from `materializedKeyPath`, in a folder nothing ever writes this name into (Y6). */
@@ -430,15 +439,24 @@ const ABSENT = '/k/keys/1/no-client-file';
 /** The argv of a launch that must exist. */
 const argvOf = (dbType: DbType, connection: string, bridged: boolean): string[] => (buildDbQueryLaunch(dbType, connection, 'select 2', { bridged, absentFile: ABSENT }) as { args: string[] }).args;
 
-test('Q2: a bridged mysql launch has --no-defaults first; the three pins stand after the connection flags and before -e', () => {
+test('Q2 (§S6.15 Z4, T52): a bridged mysql launch has --no-defaults first and --protocol=TCP straight after it; the three pins stand after the connection flags and before -e', () => {
   const args = argvOf('mysql', MY, true);
 
   assert.equal(args[0], '--no-defaults');
-  assert.equal(args[1], '-h');
+  assert.equal(args[1], '--protocol=TCP');
+  assert.equal(args[2], '-h');
   for (const flag of ['--skip-named-commands', '--delimiter=;', '--local-infile=0']) {
     assertBetween(args, flag, args.indexOf('-D'), args.indexOf('-e'));
   }
-  assert.deepEqual(args.slice(1), argvOf('mysql', MY, false), 'and the rest is today\'s, word for word');
+  assert.deepEqual(args.slice(2), argvOf('mysql', MY, false), 'and the rest is today\'s, word for word');
+  assert.equal(argvOf('mysql', MY, false).includes('--protocol=TCP'), false, 'off a bridge: no --protocol');
+});
+
+test('Q2b: a bridged mysql entry for localhost is asked for by name and over TCP, and an entry that names no host is refused where today\'s launch asks for localhost', () => {
+  const args = buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@localhost/orders', 'select 2', { bridged: true, absentFile: ABSENT })?.args ?? [];
+  assert.deepEqual(args.slice(0, 4), ['--no-defaults', '--protocol=TCP', '-h', 'localhost']);
+  assert.equal(buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@/orders', 'select 2', { bridged: true, absentFile: ABSENT }), undefined);
+  assert.deepEqual(buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@/orders', 'select 2')?.args.slice(0, 2), ['-h', 'localhost'], 'off a bridge today\'s default stays');
 });
 
 test('Q3: a bridged mssql launch has no new flag, and off a bridge all three launches are today\'s', () => {
@@ -469,10 +487,31 @@ test('Q6: a bridged postgres launch asks for PGPASSFILE, PGSSLCERT and PGSSLKEY 
   assert.equal(Object.keys(launch?.env ?? {}).includes('MYSQL_TEST_LOGIN_FILE'), false);
 });
 
-test('Q7: a bridged mssql launch asks for none of the four, and an entry that stores no password still gets the names (the file is what \'no password\' would fall back to)', () => {
+test('Q7 (§S6.15 Z4, T50): a bridged mssql launch asks for none of the four; an entry with no stored password, or no user, is refused for each client', () => {
   assert.deepEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { bridged: true, absentFile: ABSENT })?.env, { SQLCMDPASSWORD: 'hunter2', SQLCMDUSER: 'alice' });
-  assert.deepEqual(buildDbQueryLaunch('postgres', 'postgresql://alice@db:5432/orders', 'select 1', { bridged: true, absentFile: ABSENT })?.env, { PGPASSFILE: ABSENT, PGSSLCERT: ABSENT, PGSSLKEY: ABSENT });
-  assert.deepEqual(buildDbQueryLaunch('mysql', 'mysql://bob@h:3307/shop', 'select 2', { bridged: true, absentFile: ABSENT })?.env, { MYSQL_TEST_LOGIN_FILE: ABSENT });
+  const noPassword = { postgres: 'postgresql://alice@db:5432/orders', mysql: 'mysql://bob@h:3307/shop', mssql: 'Server=h,1433;Database=d;User Id=sa' } as const;
+  const noUser = { postgres: 'postgresql://:pw@db:5432/orders', mysql: 'mysql://:pw@h:3307/shop', mssql: 'Server=h,1433;Database=d;Password=pw' } as const;
+  for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
+    assert.equal(buildDbQueryLaunch(dbType, noPassword[dbType], 'select 1', { bridged: true, absentFile: ABSENT }), undefined, `${dbType}: no stored password`);
+    assert.equal(buildDbQueryLaunch(dbType, noUser[dbType], 'select 1', { bridged: true, absentFile: ABSENT }), undefined, `${dbType}: no user`);
+    assert.notEqual(buildDbQueryLaunch(dbType, noPassword[dbType], 'select 1'), undefined, `${dbType}: off a bridge the entry is served, as today`);
+  }
+});
+
+test('Q10 (§S6.15 Z4, T47, T51): a bridged launch of each refused connection of DP4-DP11 is refused, with a query that would pass', () => {
+  for (const refused of REFUSED) {
+    assert.equal(buildDbQueryLaunch(refused.dbType, stored(refused), 'select 1', { bridged: true, absentFile: ABSENT }), undefined, refused.id);
+  }
+});
+
+test('Q11 (§S6.15 Z4, T53): off a bridge each of those connections launches as \'main\' launched it, byte for byte, and Z2\'s refusals apply to no launch off a bridge', () => {
+  for (const refused of REFUSED) {
+    const today = OFF_BRIDGE_TODAY[refused.id];
+    assert.notEqual(today, undefined, `${refused.id}: a recorded answer`);
+    assert.deepEqual(buildDbQueryLaunch(refused.dbType, stored(refused), 'select 1') ?? null, today, refused.id);
+    assert.deepEqual(buildDbQueryLaunch(refused.dbType, stored(refused), 'select 1', { bridged: false, absentFile: ABSENT }) ?? null, today, `${refused.id}: bridged:false`);
+  }
+  assert.ok(Object.values(OFF_BRIDGE_TODAY).some((launch) => launch !== null), 'the record holds launches');
 });
 
 test('Q8: off a bridge the launch is byte for byte today\'s, whether or not an absent file is passed', () => {

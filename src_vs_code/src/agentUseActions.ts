@@ -29,7 +29,7 @@ import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
-import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbPair } from './bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbConnection, bridgedDbPair } from './bridgedDbProfile';
 import { BRIDGE_USE_REFUSED } from './bridgeScope';
 import { fieldReadingOf } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
@@ -564,6 +564,18 @@ function bridgedDbGate(deps: Pick<AgentUseDeps, 'note'> & { profiles?: readonly 
 }
 
 /**
+ * The connection of a bridged query, checked (the E1.6 spec §S6.15 Z2): a setting outside the profile, a missing user, password or host and a field outside its shape are
+ * refused here, with the rule's own sentence in the journal, before the query is looked at and before anything starts. `undefined` off a bridge and for a connection the profile builds.
+ */
+function bridgedDbConnectionRefusal(deps: Pick<AgentUseDeps, 'note'>, ctx: UseActionContext, dbType: DbType, stored: string): UseActionResult | undefined {
+  if (ctx.bridge === undefined) {
+    return undefined;
+  }
+  const connection = bridgedDbConnection(dbType, stored, ctx.entityName);
+  return connection.ok ? undefined : bridgedDbRefused(deps, ctx, connection.sentence);
+}
+
+/**
  * Query a DATABASE.
  *
  * <p>The one non-SSH kind where the agent's own text reaches a process — so it reaches it
@@ -627,6 +639,10 @@ export function dbQueryAction(
             'could carry command-line options. Fix the entry to a ' +
             'postgresql://user:pass@host:port/db URL, or query it yourself.',
         );
+      }
+      const unbuilt = bridgedDbConnectionRefusal(deps, ctx, dbType, connection);
+      if (unbuilt !== undefined) {
+        return unbuilt;
       }
       const query = String((body as { query: string }).query);
       // Client meta-commands (`\!`, `system`, `:!!`) are a shell escape, and that shell
