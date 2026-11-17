@@ -199,6 +199,9 @@ jobs:
       - name: Install PostgreSQL's psql
         run: sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client
 
+      # PQ2 (the E1.6 spec §S6.15 Z0) is in the same step: PQ1 completed through the real launch builder (a stored URI's certificate, service file and
+      # `passfile`; the shape the next fix-forward will write; the CA files). Record legs again; the log's `record (PQ2-…)` lines are the result, and
+      # a `STOP (PQ2-…)` line is an answer against the parent's row.
       - name: Integration test (bridged psql client, probes PD2 and PD3)
         run: npm run itest:bridged-psql
 
