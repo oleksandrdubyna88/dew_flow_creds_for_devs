@@ -26,17 +26,45 @@ export interface SshExecOptions {
 }
 
 /**
+ * The two options that ask `ssh` to share no connection, whatever `~/.ssh/config` says: to join no master and to become none.
+ * Every `ssh` the extension spawns non-interactively carries them, in this order: each run of {@link buildSshExecArgv}, and the tunnel
+ * of a Remote Bridge (`sshBridge.ts`). They are spelled here and in no other file (`noConnectionSharing.test.ts`).
+ *
+ * <p>Why. With `ControlMaster auto` and a `ControlPath` in the person's config, an `ssh` that says nothing about sharing hands
+ * its work to a master, which is another process. Measured 2026-11-17 with the tunnel's argv (OpenSSH 10.2p1 on both ends,
+ * loopback, one user, a config with `ControlMaster auto`, a `ControlPath` and `ControlPersist`): without the two options the
+ * spawned `ssh` exits with 0 after about half a second and a detached master holds the `-R` forward, so the kill of a closed
+ * bridge reaches nothing; and with a master already up, the call rides it, and neither its own `-i` key nor its own pinned
+ * host key is used. With the two options the spawned `ssh` is the connection: the kill ends the forward, a wrong key answers
+ * `Permission denied` and a wrong pin `Host key verification failed`.</p>
+ *
+ * <p>Each option alone, as section 9 of `scripts/ssh-agent-itest.cjs` saw it against real `sshd -d` runs (OpenSSH 10.2p1,
+ * loopback, a config with `ControlMaster auto`, a fixed `ControlPath` and `ControlPersist 60`): with `ControlPath=none` alone
+ * every leg passes. With `ControlMaster=no` alone this `ssh` does not BECOME a master, and that is all: with a master up it
+ * still joins it, with a wrong key and a wrong pin. So the first option is the protection and the second is belt and braces.
+ * Both stay. Section 9 runs in the `itest:ssh-agent` step of the CI runs of the extension workflow, with both.</p>
+ *
+ * <p>What is NOT covered: the nested `ssh` of a jump host. `-J` starts one per hop and hands it none of the outer's `-o`
+ * options, so a hop can still join a master or become one (H1 of the plan). Nor is `git` over SSH (`gitRemote.ts`, H2 of the plan):
+ * its `GIT_SSH_COMMAND` names a key and no sharing option. And the person's own terminal (`sshCommand.ts`) keeps sharing, on
+ * purpose.</p>
+ *
+ * <p>The cost: each call logs in by itself. A credential that needs a person (a key file with a passphrase that no agent holds,
+ * a typed second factor) no longer works on these calls through a master the person opened.</p>
+ */
+export const NO_CONNECTION_SHARING: readonly string[] = ['-o', 'ControlPath=none', '-o', 'ControlMaster=no'];
+
+/**
  * The options of a bridged call, in this order. `ForwardAgent=no` alone is not enough: a multiplexed session inherits the
- * master's forwarded agent and authenticates nothing itself, so connection sharing is off (`ControlPath=none` disables it;
- * `ControlMaster=no` is belt and braces). `ClearAllForwardings=yes` drops every port forwarding a config file names;
- * `ForwardX11=no` and `Tunnel=no` the two other channels a config can open. Checked with `ssh -G -F none` on OpenSSH 10.2:
- * controlmaster false, clearallforwardings yes, forwardx11 no, tunnel false, forwardagent no, and no localforward/remoteforward
- * line even with -L and -R on the command line.
+ * master's forwarded agent and authenticates nothing itself, so connection sharing is off: the two options of
+ * {@link NO_CONNECTION_SHARING}, which every other run carries too. `ClearAllForwardings=yes` drops every port forwarding a
+ * config file names; `ForwardX11=no` and `Tunnel=no` the two other channels a config can open. Checked with `ssh -G -F none`
+ * on OpenSSH 10.2: controlmaster false, clearallforwardings yes, forwardx11 no, tunnel false, forwardagent no, and no
+ * localforward/remoteforward line even with -L and -R on the command line.
  */
 export const BRIDGED_SSH_OPTIONS: readonly string[] = [
   '-o', 'ForwardAgent=no',
-  '-o', 'ControlPath=none',
-  '-o', 'ControlMaster=no',
+  ...NO_CONNECTION_SHARING,
   '-o', 'ClearAllForwardings=yes',
   '-o', 'ForwardX11=no',
   '-o', 'Tunnel=no',
@@ -195,9 +223,8 @@ export function buildSshExecArgv(
   // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
   // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.
   argv.push(...sshOptionArgv(composedEntity(entity, options), options.jump), ...ownAgentWords(entity, options));
-  if (bridged) {
-    argv.push(...bridgedWords(auth, options.configFile as string));
-  }
+  // Every run shares no connection (G2). A bridged call says the same two options among its six (BRIDGED_SSH_OPTIONS, first in its words), in the same place.
+  argv.push(...(bridged ? bridgedWords(auth, options.configFile as string) : NO_CONNECTION_SHARING));
   if (keyPath !== undefined && keyPath.length > 0) {
     argv.push('-i', keyPath);
   }

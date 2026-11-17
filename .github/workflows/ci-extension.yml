@@ -318,8 +318,8 @@ jobs:
       - name: Runner lifecycle (wrapper and runner scenarios)
         run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js out/test/leftoversRunnerHardening.test.js out/test/leftoversRunnerAudit.test.js out/test/leftoversRunnerSweep.test.js out/test/itestRunner.test.js
 
-      - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting)
-        run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js
+      - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting), and what ssh.exe resolves for the extension's argvs (G2)
+        run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js out/test/noConnectionSharing.test.js
 
       # PW1 (the E1.6 spec §S6.14 Y0; parent §7's probe table): what the bridged environment does on a real Windows image, in a step of its own.
       # `ssh.exe -V` under `bridgedSshEnv(process.env, 'win32')` (WN1), the same without PROGRAMDATA, recorded and not asserted (WN2), a child of

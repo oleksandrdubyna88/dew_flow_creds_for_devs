@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.2...extension-v1.22.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ssh:** G2 — the extension's own ssh calls share no connection (the bridge can be stopped; no call rides a master) ([#376](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/376)) ([07ed830](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/07ed8303ecfde06da92d66a6d95b3ddf476aa71f))
+
+## [1.22.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.1...extension-v1.22.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ssh:** N16 — the bridge, its socket check and Install creds on host delete the key file they wrote ([#373](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/373)) ([4020515](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/4020515e1ca6d8f062573c2ab8d95691cdc26a37))
+
 ## [1.22.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.0...extension-v1.22.1) (2026-11-15)
 
 

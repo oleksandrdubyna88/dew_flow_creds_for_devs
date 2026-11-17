@@ -6,6 +6,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: the extension's own `ssh` calls share no connection
+
+If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`
+calls no longer join a connection that is already open and no longer start one that stays behind. This covers the tunnel of *Open Remote
+Bridge…*, its socket check, *Install creds on host*, an agent's `ssh:exec` and its run over SSH, and *Run with Secrets* over SSH. Every one of
+them now asks `ssh` for no connection sharing, whatever your config says. Your own terminal, *Connect via SSH*, is unchanged and shares as
+before. With no such config nothing changes for you.
+
+Why, measured (OpenSSH 10.2p1 on the client and the server, loopback, one user, a config with `ControlMaster auto`, a `ControlPath` and
+`ControlPersist`):
+
+- A bridge could not be closed. The `ssh` the extension started handed its forward to a master, a separate process, and ended about half
+  a second later with exit code 0. *Close Remote Bridge* and closing the window then killed a process that no longer existed, the forward
+  stayed served on the remote host, and, read from the code, the extension took the bridge for ended while a forward was still up. Now the started `ssh` is the
+  connection that holds the forward: the forward is served while it runs, and after *Close Remote Bridge*, a newer bridge of the same entry
+  or the end of the window it is not served.
+- A call could ride a master that was already open. It then authenticated nothing: its own key and its pinned host key were not used, so a
+  wrong key or a wrong pinned host key went unnoticed. Now each call logs in with its own key and checks its own pin: a wrong key fails with
+  `Permission denied` and a wrong pin with `Host key verification failed`, both with exit code 255.
+
+What it costs you: each call logs in by itself and nobody is asked. A credential that needs a person used to work on these roads through a
+master you had opened by hand: a key file with a passphrase that no SSH agent holds, a typed second factor, a security-key PIN. It now fails
+authentication on these roads with `Permission denied`, also when your own terminal is connected to that host: a key file with a passphrase fails when
+no SSH agent holds it (for an agent's `creds_exec`) or when the extension does not serve it (for *Run with Secrets* and the run of an entry). A key without a passphrase and a
+stored password still work. A key that your SSH agent holds still works for an agent's `creds_exec` and for the bridge, which keep your environment; it is not
+used by *Run with Secrets* and by the agent's run of an entry over SSH, which do not pass on your `SSH_AUTH_SOCK` (so your own SSH agent is not used there unless your
+SSH configuration names one with `IdentityAgent`, which takes precedence over that variable; otherwise only a key the extension itself serves can be used
+there, when the entry forwards the agent). The help of *Remote Bridge*, *Secret references and masked runs* and *What an
+agent can and cannot do* says so, in all five languages. A host over a network is slower to reach by one login per call; that was not
+measured.
+
+Not covered: the nested `ssh` that a jump host starts for each hop does not get these options, so a hop can still join or start a master.
+The `git` over SSH of a vault remote is unchanged. Windows and macOS were not measured; on Windows `ssh.exe` was checked to resolve the two
+options as OpenSSH on Linux does, and nothing more.
+
+## [1.22.2] — 2026-11-17 — Security — a bridge, its socket check and Install creds on host delete their key file
+
+### Changed — security: a bridge, its socket check and Install creds on host delete their key file
+
+*Open Remote Bridge…*, the check of the bridge's socket and *Install creds on host* write the stored key of an entry to a
+`call-<uuid>.key` for their `ssh`. Before, none of them deleted it, so each start of a bridge left two files and each install one, until
+the window ended. Now the socket check and the install delete their file when they finish, on every way out: a check that finds the
+socket missing or wider than 600, an install that fails, one that the host cannot take, one that you answer *no*. The file of a bridge is
+deleted when its `ssh` has ended: by itself, by *Close Remote Bridge*, by a newer bridge of the same entry, or with the window. It stays
+while the bridge is open. A key file of your own (an entry that names a key file by its path) is never deleted. A started `ssh` that
+cannot be stopped keeps its file until the window's purge.
+
+A bridge whose `ssh` cannot start (`ssh` is not installed, for example) now ends, and its row goes back to *Open Remote Bridge…*. Before,
+it stayed *bridged* until the window ended. The diagnostic log says why it did not start.
+
 ## [1.22.1] — 2026-11-15 — Security — the key file of a terminal holds no id, and a terminal keeps one
 
 ### Changed — security: the key file of a terminal
