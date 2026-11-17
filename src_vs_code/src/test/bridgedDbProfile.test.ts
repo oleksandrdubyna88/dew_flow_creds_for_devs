@@ -216,3 +216,15 @@ test('DP14b: with no port, no database and no settings the string holds host and
     ['host', '::1'], ['user', 'u'], ['passfile', "/k/it's\\x"], ['sslcert', "/k/it's\\x"], ['sslkey', "/k/it's\\x"],
   ]);
 });
+
+test('DP15: a field refusal says the constraint the field did not meet, in fixed words, and never the stored value', () => {
+  const ends = (dbType: DbType, text: string, constraint: string): void => assert.ok(refusal(dbType, text).endsWith(`: ${constraint}.`), `${dbType} ${text}`);
+  ends('mysql', 'mysql://u:p@db.example:0/d', 'it must be a whole number from 1 to 65535');
+  ends('mssql', 'Server=db.example;Port=70000;User Id=u;Password=p', 'it must be a whole number from 1 to 65535');
+  ends('postgres', 'postgresql://u:p@db.example/d?sslmode=nope', 'it must be one of disable, allow, prefer, require, verify-ca or verify-full');
+  ends('postgres', 'postgresql://u:p@db.example/d?connect_timeout=x', 'it must be one to four digits');
+  ends('postgres', 'postgresql://u:p@db.example/a%0Ab', 'it must hold no control character, no "=", and must not begin with a postgres URL scheme');
+  ends('mysql', 'mysql://u:p@db.example/a%0Ab', 'it must hold no control character');
+  ends('postgres', 'postgresql://u:p%0A@db.example/d', 'it must hold no control character');
+  assert.equal(refusal('mysql', 'mysql://u:p@db.example:0/d').includes('0/d'), false, 'no part of the connection');
+});

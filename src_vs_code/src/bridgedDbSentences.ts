@@ -84,7 +84,31 @@ export function DR5(entity: string): string {
   return `The host of "${entity}" is missing, or is a socket folder or a list of hosts. Through a Remote Bridge a database is reached over the network by one host name or address.`;
 }
 
-/** DR6: a field outside its shape. `field` is the name of a field or of a profile setting, never a value. */
+/** The words every host constraint shares: what a host name may hold. */
+const HOST_WORDS = "one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character, or an IPv6 address in brackets";
+const DATABASE_WORDS = 'no control character';
+
+/** What a connection of each client must be, as DR6 says it: a connection is a URL (or, for `mysql` and `sqlcmd`, a key=value string); `mongosh` is never carried. */
+const CONNECTION_WORDS: Readonly<Record<string, string>> = {
+  psql: 'it must be one postgres:// or postgresql:// URL with no "#" and no control character',
+  mongosh: 'a MongoDB connection is not carried',
+};
+
+/** The constraint each field or profile setting must meet, in fixed words that hold no value of the connection. Only `psql` reads a database name as a connection string. */
+const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
+  connection: (client) => CONNECTION_WORDS[client] ?? 'it must be one URL with no "#", or one key=value string, with no control character',
+  host: (client) => (client === 'sqlcmd' ? 'it must hold no control character' : `it must be ${HOST_WORDS}`),
+  port: () => 'it must be a whole number from 1 to 65535',
+  user: () => 'it must hold no control character',
+  password: () => 'it must hold no control character',
+  database: (client) => (client === 'psql' ? `it must hold ${DATABASE_WORDS}, no "=", and must not begin with a postgres URL scheme` : `it must hold ${DATABASE_WORDS}`),
+  sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
+  connect_timeout: () => 'it must be one to four digits',
+  application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+};
+
+/** DR6: a field outside its shape, and the constraint it did not meet. `field` is the name of a field or of a profile setting, never a value; the constraint is fixed words, never the stored value. */
 export function DR6(entity: string, field: string, client: string): string {
-  return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge.`;
+  const constraint = CONSTRAINTS[field]?.(client) ?? 'it must be in the form the profile carries';
+  return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge: ${constraint}.`;
 }

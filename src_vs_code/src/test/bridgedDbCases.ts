@@ -15,7 +15,32 @@ export const dr2 = (key: string): string => `The connection stored in "${ENTRY}"
 export const dr3 = (key: string): string => `The connection stored in "${ENTRY}" holds the setting ${key} more than once.`;
 export const dr4 = (what: 'user' | 'password'): string => `"${ENTRY}" stores no ${what}. Through a Remote Bridge a database client may log in with the entry's own user and password and with nothing else.`;
 export const DR5 = `The host of "${ENTRY}" is missing, or is a socket folder or a list of hosts. Through a Remote Bridge a database is reached over the network by one host name or address.`;
-export const dr6 = (field: string, client: string): string => `The ${field} of "${ENTRY}" has a form that cannot be given to ${client} through a Remote Bridge.`;
+/**
+ * DR6's constraint, written out here word for word and not read from the module under test: what a field must be so that the client can be given it. The sentence
+ * says the constraint and never the value (DP13's sentinel). `host` and `database` differ by client: only `psql` reads a
+ * database name as a connection string.
+ */
+const HOST_WORDS = "one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character, or an IPv6 address in brackets";
+const DATABASE_WORDS = 'no control character';
+const CONNECTION_WORDS: Readonly<Record<string, string>> = {
+  psql: 'it must be one postgres:// or postgresql:// URL with no "#" and no control character',
+  mongosh: 'a MongoDB connection is not carried',
+};
+const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
+  connection: (client) => CONNECTION_WORDS[client] ?? 'it must be one URL with no "#", or one key=value string, with no control character',
+  host: (client) => (client === 'sqlcmd' ? 'it must hold no control character' : `it must be ${HOST_WORDS}`),
+  port: () => 'it must be a whole number from 1 to 65535',
+  user: () => 'it must hold no control character',
+  password: () => 'it must hold no control character',
+  database: (client) => (client === 'psql' ? `it must hold ${DATABASE_WORDS}, no "=", and must not begin with a postgres URL scheme` : `it must hold ${DATABASE_WORDS}`),
+  sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
+  connect_timeout: () => 'it must be one to four digits',
+  application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+};
+export const dr6 = (field: string, client: string): string => {
+  const constraint = CONSTRAINTS[field]?.(client) ?? 'it must be in the form the profile carries';
+  return `The ${field} of "${ENTRY}" has a form that cannot be given to ${client} through a Remote Bridge: ${constraint}.`;
+};
 export const UNKNOWN = 'an unknown setting';
 
 export interface Refused {
