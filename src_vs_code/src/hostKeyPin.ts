@@ -190,6 +190,40 @@ function oneFileWord(file: string): string {
   return /\s/.test(file) ? `"${file}"` : file;
 }
 
+/** The line that `ssh` ends with when the host's key did not pass its check. */
+const HOST_KEY_REFUSED_LINE = 'Host key verification failed.';
+
+/**
+ * Whether one run of a PINNED call ended because `ssh` refused the host's key (G1, sentence C). Two things must both hold: the call
+ * named a pin file, and `ssh` printed the line `Host key verification failed.` on its stderr, as a whole line.
+ *
+ * <p><b>Why "pinned" is half of it.</b> An unpinned call has no saved key to speak of: whatever its `ssh` printed, the person is
+ * shown the sentences of before. A caller hands in the `knownHostsFile` of its call, which is there only for a pinned entry.</p>
+ *
+ * <p><b>Measured 2026-11-17</b>, OpenSSH 10.2p1 against a real `sshd` on the loopback, with the words of {@link hostKeyWords}. A
+ * host with another key: exit code 255, 15 lines, the last one this line. A pin file that holds no key for the host: two lines, the
+ * last one this line. `ssh` ends its own lines with CR LF, also on Linux, so the text is split at both. A host that is down
+ * (`Connection refused`), a host that does not answer (`Connection timed out`) and a refused login (`Permission denied`) print no
+ * such line. Windows' `ssh.exe` was not measured.</p>
+ *
+ * <p><b>What it cannot tell apart</b> (measured the same day): a hop of the person's own `ProxyJump` whose key `ssh` refused prints
+ * the same line, and a host that passed the check can print it itself. Both read as a refused key of the entry. And it misses a
+ * refusal when the person's config says `LogLevel QUIET`: `ssh` then prints nothing. A miss shows the sentences of before; it never
+ * says that a host is the saved one.</p>
+ */
+export function hostKeyRefused(pinFile: string | undefined, stderr: string): boolean {
+  return pinFile !== undefined && stderr.split(/\r?\n/).includes(HOST_KEY_REFUSED_LINE);
+}
+
+/**
+ * Sentence C: `ssh` refused the host's key on a pinned entry. *Install creds on host* shows it as it is; the bridge socket check
+ * opens it with `The bridge to "<name>" is not open: `. Its advice cannot end in an unchecked connection: with a saved key that
+ * parses, Connect SSH keeps enforcing it, and asks before it replaces it.
+ */
+export function refusedHostKeySentence(name: string): string {
+  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.`;
+}
+
 export type PinVerdict = 'first-contact' | 'match' | 'mismatch' | 'unreachable';
 
 /**

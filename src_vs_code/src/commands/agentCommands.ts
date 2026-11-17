@@ -22,8 +22,9 @@ import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSo
 import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
-import { withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
 import { writePersonPin } from '../personPin';
+import { hostKeyRefused, refusedHostKeySentence } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
@@ -165,11 +166,12 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   async function sweepDeadSockets(
     entity: EntityMetadata,
     keyPath: string | undefined,
+    knownHostsFile: string | undefined,
     user: string,
     auth: SshExecAuth = 'key',
     sweepEnv: NodeJS.ProcessEnv = process.env,
   ): Promise<void> {
-    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user), auth);
+    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user), auth, { knownHostsFile });
     if (argv === undefined) {
       return;
     }
@@ -195,7 +197,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           return;
         }
         const keyPath = credential.keyPath;
-        const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
+        const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth, { knownHostsFile: credential.knownHostsFile });
         if (argv === undefined) {
           return;
         }
@@ -203,7 +205,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
         // new one is up: it is then live, and the sweep keeps anything still being listened on,
         // which is what stops it removing another window's working bridge.
-        await sweepDeadSockets(entity, keyPath, entity.user ?? '', credential.auth, credential.env);
+        await sweepDeadSockets(entity, keyPath, credential.knownHostsFile, entity.user ?? '', credential.auth, credential.env);
         // A moment for sshd to bind before asking about the file.
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const outcome = await runSshExec(argv, {
@@ -211,6 +213,13 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           timeoutMs: 15_000,
           signal: agentServer.signal,
         });
+        if (hostKeyRefused(credential.knownHostsFile, outcome.stderr)) {
+          // The ssh of the bridge has no stdio, so this check is the one place that can say why the bridge is not open (G1, P3).
+          const text = `The bridge to "${entity.name}" is not open: ${refusedHostKeySentence(entity.name)}`;
+          log.info('bridge', text);
+          void vscode.window.showErrorMessage(text);
+          return;
+        }
         const probe = interpretSocketProbe(outcome.stdout ?? '');
         if (probe.kind === 'missing') {
           // The bridge is NOT up. This used to share a branch with "no stat on this host" and go
@@ -271,6 +280,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       }
 
       const facts = await runRemote(details, credential, probeCommand(), 20_000);
+      if (hostKeyRefused(credential.knownHostsFile, facts.stderr)) {
+        void vscode.window.showErrorMessage(refusedHostKeySentence(node.name));
+        return;
+      }
       if (facts.timedOut) {
         void vscode.window.showWarningMessage(
           `"${node.name}" did not answer within 20 seconds — the host may be unreachable.`,
@@ -322,11 +335,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   /** One non-interactive `ssh` with a resolved credential — the shape every caller here needs. */
   async function runRemote(
     entity: EntityMetadata,
-    credential: Extract<Awaited<ReturnType<typeof resolveExecAuth>>, { ok: true }>,
+    credential: ReadyCall,
     command: string,
     timeoutMs: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-    const argv = buildSshExecArgv(entity, credential.keyPath, command, credential.auth);
+    const argv = buildSshExecArgv(entity, credential.keyPath, command, credential.auth, { knownHostsFile: credential.knownHostsFile });
     if (argv === undefined) {
       return { stdout: '', stderr: 'its host is not a shape ssh can be given safely.', exitCode: -1, timedOut: false };
     }
@@ -426,7 +439,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
       const argv = buildBridgeArgv(
         details,
-        { port: parsed.port, remote, keyPath, auth: credential.auth },
+        { port: parsed.port, remote, keyPath, auth: credential.auth, knownHostsFile: credential.knownHostsFile },
         isSafeSshTarget,
       );
       if (argv === undefined) {

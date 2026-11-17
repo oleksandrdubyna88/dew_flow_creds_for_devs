@@ -12,8 +12,8 @@ import { loadWithVscode } from './vscodeStub';
 /**
  * G1, E1.S2: the saved host key of one call on the three roads of the person. A pin that is there and can be used is written to a
  * file of that call alone and deleted with the call, whether or not a key file was written; a pin that is there and cannot be
- * used, and a pin file that cannot be written, start no `ssh`; an entry with no pin runs as before. The argv does not name the
- * file yet: that is E1.S3.
+ * used, and a pin file that cannot be written, start no `ssh`; an entry with no pin runs as before. That each `ssh` is handed the
+ * file is `personRoadsHostKey.test.ts` (E1.S3).
  *
  * <p>`materializeKnownHosts` and `forgetMaterializedKey` are the real ones (`realForget`), in a real storage folder that this file
  * owns, so every pin file here is a real file. The one exception is Q7a to Q7c, which stand in for `./hostKeyTrust` to make the
