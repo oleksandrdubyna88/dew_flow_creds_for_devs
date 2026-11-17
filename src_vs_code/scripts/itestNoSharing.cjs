@@ -142,18 +142,22 @@ function runArgv(rig, started, key) {
   return buildSshExecArgv(entityOn(started.port), key, 'printenv SSH_CONNECTION', 'key', { knownHostsFile: started.knownHosts });
 }
 
-/** A tunnel started as the product starts one: `SshBridgeManager.start` over `bridgeSpawner`. `exit` is `'running'` until `exited` settles. */
+/**
+ * A tunnel started as the product starts one: `SshBridgeManager.start` over `bridgeSpawner`. The fixture is built whole and
+ * never assigned to: `exit()` reads `'running'` until `exited` settles, `errors()` a copy of what the reporter was told.
+ */
 function startTunnel(rig, config, argv, remote) {
   const { SshBridgeManager } = require(path.join(rig.out, 'sshBridgeManager.js'));
   const { bridgeSpawner } = require(path.join(rig.out, 'bridgeSpawner.js'));
-  const tunnel = { exit: 'running', errors: [], remote };
-  tunnel.manager = new SshBridgeManager(bridgeSpawner({ report: (error) => tunnel.errors.push(String(error)) }));
-  rig.scope.after(() => tunnel.manager.dispose()); // a signal in the middle of a leg ends the tunnel too
-  const bridge = tunnel.manager.start('nsh', remote, 'ssh', ['-F', config, ...argv], rig.env);
-  tunnel.exited = bridge.process.exited.then((code) => {
-    tunnel.exit = code;
+  const reported = [];
+  let exitCode = 'running';
+  const manager = new SshBridgeManager(bridgeSpawner({ report: (error) => reported.push(String(error)) }));
+  rig.scope.after(() => manager.dispose()); // a signal in the middle of a leg ends the tunnel too
+  const bridge = manager.start('nsh', remote, 'ssh', ['-F', config, ...argv], rig.env);
+  const exited = bridge.process.exited.then((code) => {
+    exitCode = code;
   });
-  return tunnel;
+  return { remote, manager, exited, exit: () => exitCode, errors: () => [...reported] };
 }
 
 /** Resolves when `promise` has, or `ms` after this call — whichever is first; the timer does not outlive the race. */
@@ -188,7 +192,7 @@ async function controlDetachedMaster(check, rig) {
   const tunnel = startTunnel(rig, config, withoutTheTwo(tunnelArgv(rig, started, remote)), remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
-    check('K-A control: without the two options the spawned ssh exits with 0 while the bridge is wanted', tunnel.exit === 0, `exit ${tunnel.exit}\n${sshdTail(started)}`);
+    check('K-A control: without the two options the spawned ssh exits with 0 while the bridge is wanted', tunnel.exit() === 0, `exit ${tunnel.exit()}\n${sshdTail(started)}`);
     check('K-A control: and the forward is served after that exit, by a detached master', await within(5_000, () => served(remote)), await readThrough(remote));
     check('K-A control: the master left its control socket', fs.existsSync(control), control);
     tunnel.manager.stop('nsh');
@@ -209,15 +213,15 @@ async function controlDetachedMaster(check, rig) {
 async function tunnelLivesAndDies(check, rig, name, config, started, control) {
   const remote = path.join(rig.dir, `${name}.sock`);
   const tunnel = startTunnel(rig, config, tunnelArgv(rig, started, remote), remote);
-  const up = await within(10_000, () => tunnel.exit !== 'running' || served(remote));
-  check(`${name}: the production tunnel serves the forward while its ssh runs`, up && tunnel.exit === 'running' && (await served(remote)), `exit ${tunnel.exit}; read ${JSON.stringify(await readThrough(remote))}\n${sshdTail(started)}`);
+  const up = await within(10_000, () => tunnel.exit() !== 'running' || served(remote));
+  check(`${name}: the production tunnel serves the forward while its ssh runs`, up && tunnel.exit() === 'running' && (await served(remote)), `exit ${tunnel.exit()}; read ${JSON.stringify(await readThrough(remote))}\n${sshdTail(started)}`);
   check(`${name}: it logged in by itself: its sshd accepted the key`, ACCEPTED.test(started.sshd.stderr), sshdTail(started));
   if (control !== undefined) {
     check(`${name}: it became no master: the control path of its config is not made while it runs`, !fs.existsSync(control), control);
   }
   const stopped = tunnel.manager.stop('nsh');
   await settledAfter(tunnel.exited, 5_000);
-  check(`${name}: stop() ends the spawned ssh`, stopped && tunnel.exit !== 'running', `stop() answered ${stopped}; exit ${tunnel.exit}; ${tunnel.errors.join('; ')}`);
+  check(`${name}: stop() ends the spawned ssh`, stopped && tunnel.exit() !== 'running', `stop() answered ${stopped}; exit ${tunnel.exit()}; ${tunnel.errors().join('; ')}`);
   check(`${name}: and after stop() the forward is not served`, await within(3_000, async () => !(await served(remote))), await readThrough(remote));
 }
 
@@ -258,7 +262,7 @@ async function controlRidesMaster(check, group) {
   const tunnel = startTunnel(rig, mux.config, argv, remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
-    check('K-C control: with a master up, the tunnel without the two options exits with 0, with a WRONG key and a WRONG pin', tunnel.exit === 0, `exit ${tunnel.exit}`);
+    check('K-C control: with a master up, the tunnel without the two options exits with 0, with a WRONG key and a WRONG pin', tunnel.exit() === 0, `exit ${tunnel.exit()}`);
     check('K-C control: its forward is served, through the master', await within(5_000, () => served(remote)), await readThrough(remote));
     check('K-C control: and the sshd it named saw no connection', !CONNECTED.test(b.sshd.stderr), sshdTail(b));
   } finally {
