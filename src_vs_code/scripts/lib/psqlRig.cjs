@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const net = require('node:net');
 const tls = require('node:tls');
-const { execFileSync } = require('node:child_process');
+const childProcess = require('node:child_process');
+const { execFileSync } = childProcess;
 const { launch, endChild } = require('../itestSshd.cjs');
 
 const BOUND_MS = 20_000;
@@ -177,13 +178,32 @@ async function endedWithin(promise, ms) {
   }
 }
 
-/** How many `psql` runs this harness has started: (s) asserts that a refused entry starts none. */
-let started = 0;
-const startedCount = () => started;
+const SPAWNERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'];
+
+/**
+ * Runs `action` and answers how many processes ANYTHING in this node process asked `child_process` to start while it ran: the harness's own and the product's. The seven
+ * starters are replaced on the shared module object for the duration (the product reads them at call time), so a builder that launched anything would be counted;
+ * (s) asserts that a refused entry starts none, and proves the observer sees a start before it trusts a zero.
+ */
+function spawnsDuring(action) {
+  const original = Object.fromEntries(SPAWNERS.map((name) => [name, childProcess[name]]));
+  let count = 0;
+  for (const name of SPAWNERS) {
+    childProcess[name] = function counted(...args) {
+      count += 1;
+      return original[name].apply(this, args);
+    };
+  }
+  try {
+    action();
+  } finally {
+    Object.assign(childProcess, original);
+  }
+  return count;
+}
 
 /** One `psql` against one fake server; what the server saw and what the client said. `prepare(port)` writes the files the run needs. */
 async function psqlRun(scope, exe, { env, prepare, tlsMaterial, build, second }) {
-  started += 1;
   const { server, state } = fakeServer(tlsMaterial);
   // `second` (PQ2-h): another plain fake server, so a client that is sent to a host the first run did not name shows itself.
   const other = second === true ? fakeServer(undefined) : undefined;
@@ -298,5 +318,5 @@ function throwawayCa(folder) {
 
 module.exports = {
   PD2_PASSWORD_MARKER, PD3_MARKER_CN, PQ2_SECOND_CN, PQ2_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSFILE_MARKER, PQ2_STORED_PASSWORD,
-  holdsMarker, described, labelled, isMarker, said, shape, keywordString, versionOf, endedWithin, psqlRun, startedCount, throwawayCertificate, throwawayCa,
+  holdsMarker, described, labelled, isMarker, said, shape, keywordString, versionOf, endedWithin, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa,
 };

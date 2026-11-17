@@ -24,11 +24,30 @@ test('DP1: the table has a row for each client on linux, win32 and darwin, and n
   assert.equal(BRIDGED_DB_PROFILES.some((row) => row.served), false);
 });
 
-test('DP1b: the production table answers "not served" for every type of the product on every platform it names', () => {
-  for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
-    for (const platform of SYSTEMS) {
-      const answer = bridgedDbPair(BRIDGED_DB_PROFILES, dbType, platform);
-      assert.equal(answer.served, false, `${dbType} on ${platform}`);
+/** The production table with exactly one row served. */
+const withServed = (client: string, platform: string): typeof BRIDGED_DB_PROFILES => BRIDGED_DB_PROFILES.map((row) => ({ ...row, served: row.client === client && row.platform === platform }));
+
+/** The DR1 sentence of a pair that is not served, written out. */
+const DR1_OF = (client: string, platform: (typeof SYSTEMS)[number]): string =>
+  `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${{ linux: 'Linux', win32: 'Windows', darwin: 'macOS' }[platform]} is not among them.`;
+
+interface Pair {
+  readonly dbType: DbType;
+  readonly client: string;
+  readonly platform: (typeof SYSTEMS)[number];
+}
+
+const ALL_PAIRS: readonly Pair[] = (Object.entries(CLIENT_OF) as Array<[DbType, string]>).flatMap(([dbType, client]) => SYSTEMS.map((platform) => ({ dbType, client, platform })));
+
+/** What the table with only `turned` served must answer for `pair`: served for that pair, DR1 with the pair's own client and system for every other. */
+const answerFor = (turned: Pair, pair: Pair): ReturnType<typeof bridgedDbPair> =>
+  turned.dbType === pair.dbType && turned.platform === pair.platform ? { served: true } : { served: false, sentence: DR1_OF(pair.client, pair.platform) };
+
+test('DP1b: turning one row of the production table to served serves exactly its own pair, and every other pair answers DR1 with its client and system', () => {
+  for (const turned of ALL_PAIRS) {
+    const rows = withServed(turned.client, turned.platform);
+    for (const pair of ALL_PAIRS) {
+      assert.deepEqual(bridgedDbPair(rows, pair.dbType, pair.platform), answerFor(turned, pair), `${pair.dbType} on ${pair.platform} with only ${turned.dbType} on ${turned.platform} served`);
     }
   }
 });

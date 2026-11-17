@@ -7,10 +7,11 @@
 // the control and the production cases of (s) are assertions.
 const fs = require('fs');
 const path = require('path');
+const childProcess = require('node:child_process');
 const R = require('./psqlRig.cjs');
 const { check } = require('./psqlCheck.cjs');
 const { PD2_PASSWORD_MARKER, PD3_MARKER_CN, PQ2_SECOND_CN, PQ2_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSFILE_MARKER, PQ2_STORED_PASSWORD,
-  labelled, isMarker, said, shape, keywordString, psqlRun, startedCount, throwawayCertificate, throwawayCa } = R;
+  labelled, isMarker, said, shape, keywordString, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa } = R;
 
 /**
  * The rig of PQ2: a home that holds every file the person's libpq could read (a `.pgpass`, a `.pg_service.conf` with three sections, the
@@ -329,7 +330,7 @@ async function legPQ2gh(rig) {
  *   Control      the stored URI handed whole (legs a, b, c1 and c2 above, under Y6's variables): `?passfile=` and `?service=s1` each deliver the rig home's marker to PD2's
  *                server, and a certificate and key named in the URI are offered to PD3's server. The certificate is asserted when PQ2-a showed it and recorded when not.
  *   Production   `buildDbQueryLaunch` for each of those URIs, with a stored password put in so that only the setting is at fault, answers `undefined`; the same entry without
- *                the setting is built (so the refusal is the setting's); and the harness started no process for any of it.
+ *                the setting is built (so the refusal is the setting's); and no process was started, by the harness or the product, while the builder ran for any of it (observed on `child_process`, whose observer is first shown to see a start).
  *   Inside       an entry with a stored password and `sslmode=disable`, launched from the builder's answer under a rig home that holds every marker file: PD2's server receives
  *                the stored password and no marker; the same entry with `sslmode=require` against PD3's server offers no certificate.
  */
@@ -342,15 +343,18 @@ async function legS(rig) {
   } else {
     console.log('record (s) control: the certificate named in the stored URI was NOT offered on this client; recorded, not asserted');
   }
-  const before = startedCount();
-  for (const id of Object.keys(rig.uris)) {
-    const entry = rig.uris[id](1).replace('pdprobe@', `pdprobe:${PQ2_STORED_PASSWORD}@`);
-    const launchOf = rig.product.buildDbQueryLaunch('postgres', entry, 'select 1', { bridged: true, absentFile: rig.absentFile });
-    check(`(s) production: the entry of ${id} (a stored password and its setting) is refused: no launch`, launchOf === undefined, JSON.stringify(launchOf === undefined ? null : launchOf.args.length));
-  }
-  const clean = rig.product.buildDbQueryLaunch('postgres', entryUri(1), 'select 1', { bridged: true, absentFile: rig.absentFile });
+  check('(s) the observer of process starts sees one: a start of node itself is counted', spawnsDuring(() => childProcess.spawnSync(process.execPath, ['-e', ''])) === 1);
+  let clean;
+  const starts = spawnsDuring(() => {
+    for (const id of Object.keys(rig.uris)) {
+      const entry = rig.uris[id](1).replace('pdprobe@', `pdprobe:${PQ2_STORED_PASSWORD}@`);
+      const launchOf = rig.product.buildDbQueryLaunch('postgres', entry, 'select 1', { bridged: true, absentFile: rig.absentFile });
+      check(`(s) production: the entry of ${id} (a stored password and its setting) is refused: no launch`, launchOf === undefined, JSON.stringify(launchOf === undefined ? null : launchOf.args.length));
+    }
+    clean = rig.product.buildDbQueryLaunch('postgres', entryUri(1), 'select 1', { bridged: true, absentFile: rig.absentFile });
+  });
   check('(s) production: the same entry without a setting is built, so each refusal above is the setting\'s', clean !== undefined && clean.env.PGPASSWORD === PQ2_STORED_PASSWORD);
-  check('(s) production: the harness started no process for any of those entries', startedCount() === before, `${startedCount() - before} started`);
+  check('(s) production: no process was started while the builder ran for any of those entries', starts === 0, `${starts} started`);
 
   const password = await pq2Run(rig, { build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=disable')) });
   pq2Check('s inside the profile, password', password, 'plain');
