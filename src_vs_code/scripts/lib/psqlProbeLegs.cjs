@@ -190,10 +190,10 @@ const absentThree = (rig) => [['passfile', rig.absentFile], ['sslcert', rig.abse
 
 /** PQ2-d1: the keywords at the absent file against an environment that names the person's marker files. */
 async function legPQ2d1(rig) {
-  const password = await pq2Run(rig, { build: (port) => byHand(rig, zShape(port, [['sslmode', 'disable']], absentThree(rig)), { over: markerEnv(rig) }) });
-  pq2Check('PQ2-d1', password, 'plain');
-  recordPassword('PQ2-d1', 'a keyword string ending in passfile, sslcert and sslkey at the absent file; PGPASSFILE, PGSSLCERT and PGSSLKEY at the rig\'s marker files (password leg)', password);
-  if (isMarker(password.state.sent)) {
+  const clearTextLeg = await pq2Run(rig, { build: (port) => byHand(rig, zShape(port, [['sslmode', 'disable']], absentThree(rig)), { over: markerEnv(rig) }) });
+  pq2Check('PQ2-d1', clearTextLeg, 'plain');
+  recordPassword('PQ2-d1', 'a keyword string ending in passfile, sslcert and sslkey at the absent file; PGPASSFILE, PGSSLCERT and PGSSLKEY at the rig\'s marker files (password leg)', clearTextLeg);
+  if (isMarker(clearTextLeg.state.sent)) {
     stop('PQ2-d1', 'the .pgpass marker was sent although the keyword names the absent file: a keyword loses to the environment');
   }
   const certificate = await pq2Run(rig, { tlsMaterial: rig.selfSignedTls, build: (port) => byHand(rig, zShape(port, [['sslmode', 'require']], absentThree(rig)), { over: markerEnv(rig) }) });
@@ -356,10 +356,10 @@ async function legS(rig) {
   check('(s) production: the same entry without a setting is built, so each refusal above is the setting\'s', clean !== undefined && clean.env.PGPASSWORD === PQ2_STORED_PASSWORD);
   check('(s) production: no process was started while the builder ran for any of those entries', starts === 0, `${starts} started`);
 
-  const password = await pq2Run(rig, { build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=disable')) });
-  pq2Check('s inside the profile, password', password, 'plain');
-  recordPassword('s', 'an entry with a stored password and sslmode=disable, launched from the builder\'s answer; every marker file in the rig home', password);
-  check('(s) inside the profile: PD2\'s server receives the stored password and no marker', labelled(password.state.sent) === 'the stored password' && !isMarker(password.state.sent), labelled(password.state.sent));
+  const clearTextLeg = await pq2Run(rig, { build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=disable')) });
+  pq2Check('s inside the profile, password', clearTextLeg, 'plain');
+  recordPassword('s', 'an entry with a stored password and sslmode=disable, launched from the builder\'s answer; every marker file in the rig home', clearTextLeg);
+  check('(s) inside the profile: PD2\'s server receives the stored password and no marker', labelled(clearTextLeg.state.sent) === 'the stored password' && !isMarker(clearTextLeg.state.sent), labelled(clearTextLeg.state.sent));
   const certificate = await pq2Run(rig, { tlsMaterial: rig.selfSignedTls, build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=require')) });
   pq2Check('s inside the profile, certificate', certificate, 'tls');
   recordCertificate('s', 'the same entry with sslmode=require against PD3\'s server', certificate);
