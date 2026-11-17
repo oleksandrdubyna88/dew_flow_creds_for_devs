@@ -6,8 +6,8 @@
 > module for the pin of one call, their tests, one help article in five languages, the docs. Found as G1 of
 > [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5) by the lead's Opus review and a
 > Fable security pass on 2026-11-16, by reading.
-> **Depends on:** the G2 plan, `todo/PLAN_bridge_no_connection_sharing.md` (not written yet on 2026-11-17; a path, not a
-> link, until it exists). G2 goes first; this plan is built after G2 has merged (§4).
+> **Depends on:** the G2 plan, `todo/PLAN_bridge_no_connection_sharing.md` (written 2026-11-17 on its own branch
+> `fix/g2-no-connection-sharing`; a path, not a link, until it is on `main`). G2 goes first; this plan is built after G2 has merged (§4).
 
 ## 1. Symptom
 
@@ -273,14 +273,14 @@ today. A person sees three new sentences (§3.5).
 
 ## 4. The boundary with the G2 plan
 
-The G2 plan does not exist yet. When it is written it carries this table from its side
+The G2 plan (written 2026-11-17, its §6) carries this table from its side
 (`planning-docs.md`, *a boundary between two plans is named on both sides*), and its path above becomes a link. On
 N16's side, G1 of its §5 names this plan.
 
 | Item | Which plan builds it | The other plan's part |
 |---|---|---|
 | connection sharing turned off on the bridge's `ssh -N -R` (`sshBridge.ts:156-161` names no `ControlPath` or `ControlMaster`) | G2 | G1 is built after it |
-| connection sharing turned off on the four bounded runs (the socket check's two, the install's two): `buildSshExecArgv` adds `ControlPath=none` only for `bridged: true` (`sshExecCommand.ts:28-35`, `:154-158`), and the three calls of `agentCommands.ts` pass no options | **to be named by the G2 plan.** If G2 leaves these runs out, they are added to THIS plan before its plan round (it is not approved, so that is baseline, not a change) | G1's pin on these four runs is passed over wherever a master connection to that host exists |
+| connection sharing turned off on the four bounded runs (the socket check's two, the install's two): `buildSshExecArgv` adds `ControlPath=none` only for `bridged: true` (`sshExecCommand.ts:28-35`, `:154-158`), and the three calls of `agentCommands.ts` pass no options | **G2** (its decision 1, scope (b), consult `925f4f14`: the two options go into every argv of `buildSshExecArgv`, so these four runs, the agent's local exec and Run with Secrets) | G1's pin on these four runs is passed over wherever a master connection to that host exists |
 | the pin on all five `ssh` runs, the per-call pin file, the three sentences | G1 | none |
 | `commands/agentCommands.ts` and `test/personRoadsWorld.ts` | both plans edit them | G2 first; G1 measures §3.6 again and repairs its line references after G2 has merged |
 
