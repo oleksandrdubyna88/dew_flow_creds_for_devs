@@ -2596,7 +2596,7 @@ used (the text is no host key, or the host forms no known_hosts line) is a refus
 a key entry is sent to Connect SSH, a password entry is told that there is no safe repair yet. A pin file that cannot be
 written is a refusal too. On a refusal no `ssh` starts. The pin file is deleted where the key file is, by the same `finally`
 and the same one continuation, whether or not a key file was written, and only a path that the writer returned in this call
-is deleted. The argv of these roads does not name the file yet. The bound that stays: a
+is deleted. Each of the four argv calls of these roads names the file (E1.S3, the paragraph B10). The bound that stays: a
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
 activation; `stop()` drops the row before the kill, so nothing retries it.
 
@@ -5345,6 +5345,20 @@ holds a double quote is not written, and both options then name `/dev/null`, so 
 against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and the results are in the docblock of the
 function. The line of a Connect terminal (`sshCommand.ts`) is not among them yet: it names the pin as the person's file only.
 `KnownHostsCommand` and `VerifyHostKeyDNS` of a person's config are not switched off.
+
+**The three roads of the person (G1, E1.S3).** The bridge socket check, *Install creds on host* and *Open Remote Bridge…*
+(`commands/agentCommands.ts`) hand `ssh` the pin file of their call: each of their four argv calls names `knownHostsFile`,
+read from the ONE value that the guard hands the road (`CallAuth`, `writtenKey.ts`). An entry with no saved host key runs as
+on the agent's exec: `accept-new`, no file. An entry with one gets strict checking against a file of this call alone,
+`known_hosts-<entry id>-<uuid>`: both runs of the socket check read one file, the probe and the install run read one file,
+the tunnel reads its own until its `ssh` has ended. A host key that `ssh` refused is told to the person (sentence C,
+`refusedHostKeySentence`). The match is `hostKeyRefused` in `hostKeyPin.ts`: a pinned call whose `ssh` printed the whole line
+`Host key verification failed.`; `ssh` ends its lines with CR LF. The install shows the sentence for its probe, as an error
+in place of "the host did not answer the probe". The socket check shows it for the bridge, as an error message that opens
+with `The bridge to "<name>" is not open: `, and writes it to the log, because the tunnel's `ssh` has no stdio. A host that is
+down, a host that does not answer and a refused login keep the sentences of before. What the match cannot tell apart (a hop
+of the person's own `ProxyJump`, a host that prints the line itself) and what it misses (`LogLevel QUIET`) is in the docblock
+of the function, with the measurement. Windows' `ssh.exe` was not run.
 
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 

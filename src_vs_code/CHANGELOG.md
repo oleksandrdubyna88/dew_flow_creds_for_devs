@@ -8,8 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — security: a saved host key is the only key a call without a terminal accepts
 
+*Open Remote Bridge…*, the socket check that follows it, and *Install creds on host* now check an entry's saved host key.
+Before, these three started `ssh` with `StrictHostKeyChecking=accept-new` against your own `~/.ssh/known_hosts`, also for an
+entry with a saved host key. A machine at that address that `known_hosts` did not list yet was accepted on first contact: it
+got the forwarded socket of the bridge, it was the machine the installer was downloaded onto, and a password entry sent its
+password there. Now, for an entry with a saved host key, `ssh` connects only to a host that presents that key. A host that
+presents another key is refused, and a message says so. *Install creds on host* shows: `"<name>" did not present its saved
+host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and
+asks before it replaces the saved one. If it was not, do not connect.` After *Open Remote Bridge…* the socket check shows
+`The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no output to show. A host
+that is down and a login that is refused are told as before. Not covered: if your own `ssh` config says `LogLevel QUIET`,
+`ssh` prints nothing about the refusal, the connection is still refused, and the message is the one of before.
+
 An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). On every call that the extension
-starts for such an entry without a terminal (an agent's `ssh:exec` and its run over SSH, *Run with Secrets* over SSH), `ssh` now
+starts for such an entry without a terminal (the tunnel of *Open Remote Bridge…*, its socket check, *Install creds on host*, an
+agent's `ssh:exec` and its run over SSH, *Run with Secrets* over SSH), `ssh` now
 gets the saved key as its ONLY known-hosts file. Before, it got the saved key as your own known-hosts file, and still read the
 system-wide ones (`/etc/ssh/ssh_known_hosts`): a key that such a file listed for the host was accepted beside the saved one.
 Measured (OpenSSH 10.2p1 on both ends, loopback): with another key saved and the host's real key in a system-wide file, the
