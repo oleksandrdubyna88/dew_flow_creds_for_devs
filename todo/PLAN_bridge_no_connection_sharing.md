@@ -1,9 +1,17 @@
 # PLAN — the extension's own `ssh` calls share no connection (G2 of N16, widened)
 
-> Status: **approved 2026-11-17 (the coai plan gate, `proceed`), epoch 1 open, one change (1.1); nothing implemented
-> yet.** Split into three stories (`## Stories`), S2 the cornerstone; the two security specs by Fable, 2026-11-17:
+> Status: **built 2026-11-17 on the branch `fix/g2-no-connection-sharing` (S1, S2 and S3), unmerged: the coai code gate, the
+> head sha's CI run, the owner's word for the PR (over the cap) and the release are still ahead; approved 2026-11-17 (the coai
+> plan gate, `proceed`), epoch 1 open, one change (1.1).** Split into three stories (`## Stories`), S2 the cornerstone; the two
+> security specs by Fable, 2026-11-17:
 > [S1](PLAN_bridge_no_connection_sharing_S1_spec.md) and [S2](PLAN_bridge_no_connection_sharing_S2_spec.md) (the
-> cornerstone). The feasibility probe of S2's first step was run for its spec and passed (§2).
+> cornerstone). The feasibility probe of S2's first step was run for its spec and passed (§2). **What S3 recorded as built, for
+> the promotion's deviations:** S1 and S2 as the plan says, S2's legs green three runs in a
+> row on a scratch `sshd` of this PC and 16 of the 42 checks RED on the code before S1 (the first run on the runner's own `sshd`
+> is CI's); S3 added one test file the plan did not list, `src/test/sshRunsLoginHelp.test.ts` (the three help sentences exist in
+> five languages and name their conditions), and wrote the boundary line into the askpass plan only: N16's G2 line is next to
+> G1's, which G1's branch edits, and the scoped bridge plan is rewritten by PR #365, so a line in either would meet a merge conflict
+> that the second merge has to resolve (§6).
 > Scope: the extension only (`src_vs_code`): the argv of the Remote Bridge's tunnel (`src/sshBridge.ts`), the argv of every
 > non-interactive `ssh` run (`src/sshExecCommand.ts`), their tests, one new real-`sshd` test script, the docs. No change of
 > the person's interactive terminal, of the shared composer `src/sshOptions.ts`, or of any file on disk. Found as G2 of
@@ -18,7 +26,9 @@
   (The plan round's accepted finding 1 was folded in at its resolve, before approval, and is not an entry: items 2 and 5
   of §7.2 asked for results that exclude each other when `extra` itself names sharing. Now the fixed two options stand
   exactly once BEFORE every word of `extra`, a caller's own sharing words in `extra` are outside the prohibition of
-  item 5, and the `ssh -G` test of §7.3 checks the values in effect.)
+  item 5, and the `ssh -G` test of §7.3 checks the values in effect. Corrected by the lead's review of the build: only `-o` words
+  in `extra` come too late to change the two options; the flag spellings `-S` and `-M` would override them, so `extra` must
+  never carry them, and H4 of §9 records the guard.)
   (The round's rejected finding 0 is not an entry either: an extension host that is killed without `dispose` leaves the
   `ssh` it started holding the forward. This plan neither causes nor changes that; its follow-up is H3 in §9.)
 
@@ -93,7 +103,10 @@ connects to nothing), under a `-F` file with the three lines above:
   `controlpersist yes` still printed (it does nothing without a master);
 - order on the command line: with a second `-o ControlMaster=auto -o ControlPath=/tmp/zz` AFTER the two, the result is
   still `controlmaster false` and no path; with that pair BEFORE the two, it is `controlmaster auto` and
-  `controlpath /tmp/zz`. So the first value wins on the command line too, and a command-line value wins over the file.
+  `controlpath /tmp/zz`. So the first value of a `-o` keyword wins on the command line too, and a command-line value wins over
+  the file. **The flag spellings are not first-wins** (found by the lead's review, measured with `ssh -G`, OpenSSH 10.2p1): `-S /x`
+  sets the control path and `-M` the master mode at option-parsing time, where the LAST one wins and the `-o` values lose
+  (with the two options first and `-S /x -M` after them: `controlmaster true`, `controlpath /x`; with `-S /x -M -S /y`: `/y`).
 
 **Measured on 2026-11-17 for the two specs, after the approval** (their facts K9, K10 and L2 to L11; a copy of the repository in
 a scratch folder, OpenSSH 10.2p1 for the client and for an `sshd` unpacked from the distribution's package and run by the user,
@@ -160,7 +173,8 @@ reading above (§2; its fact L10); the coder's run decides the comment.
 
 `FIXED_OPTIONS` (`sshBridge.ts:156-161`) gains the constant. In `buildBridgeArgv` the fixed options stand after the
 authentication words and before the host-key words, `-N`, `-R`, `options.extra` (`:217`), `-i`, `-p` and `--`
-(`:210-225`), so the two options come before every word a caller can add, and the first value wins (§2). The docblock of
+(`:210-225`), so the two options come before every word a caller can add, and the first value of a `-o` keyword wins (§2); the
+flags `-S` and `-M` in `extra` would override them, so `extra` must never carry them (H4, §9). The docblock of
 `FIXED_OPTIONS` gains the measurement of §2 with its conditions. Nothing else of the argv changes.
 
 After this, on the measured conditions: the spawned `ssh` IS the connection that holds the forward, so `stop()` and
@@ -258,8 +272,12 @@ Only a person whose `ssh` config shares connections sees any change.
   `ssh:exec` and run over SSH build their argv with `BatchMode=yes` for a key entry (`remoteLaunch.ts:515`,
   `sshUseActions.ts:259`), so a key file with a passphrase that no agent holds can no longer be used there through a
   master the person opened. An identity that needs no interaction still works: a key without a passphrase, a stored
-  password, or a key that an agent in the call's environment holds (the leg P-I2 of §7.4 shows the last one). The help
-  of both roads says so (§8).
+  password, or a key that an agent in the call's environment holds. The last works only where the call keeps the host's
+  `SSH_AUTH_SOCK`: plain `ssh:exec` and the bridge's calls do; *Run with Secrets* and the agent's linked run
+  (`ownAgentOnly: true`) drop it (`E3_INHERITED_DROP`: `sshRoad.ts:86`, `maskedTerminal.ts:311`, `sshUseActions.ts:268`,
+  `agentUseActions.ts:431`), so there only a key the extension's own agent serves can be present, when the entry forwards
+  the agent. The leg P-I2 of §7.4 sets `SSH_AUTH_SOCK` itself: it shows what `ssh` does with an agent, not what those two
+  roads give it. The help of the roads says so (§8).
 - **Time.** Each call adds a TCP connect, a key exchange and an authentication where it had opened a session in a master.
   Not measured on a network host. An *Open Remote Bridge…* has three of them.
 - **An entry with port forwards**, run by the agent while the person's own terminal already holds the same forward: the
@@ -276,12 +294,19 @@ Only a person whose `ssh` config shares connections sees any change.
 | the hop legs of a bridged `exec` | the scoped bridge plan, E1.6 (the file reaches the nested `ssh` through `-F`) | none here |
 | the hop legs of every other road (H1, §9) | no plan yet; the natural owner is [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md), which weighs the same `-F` file for the roads off a bridge | this plan states the gap and builds nothing |
 | the pinned host key on the three roads of the person (G1) | `todo/PLAN_person_roads_pin_host_key.md` | this plan goes first (decision 3) and adds no pin |
+| the pin on all five `ssh` runs, the per-call pin file and the three sentences (G1) | G1 | none: this plan writes no pin file, no known-hosts option and no sentence about a host key |
+| the words of a pinned call in both argv builders: the pin file as both known-hosts files, its path as one file (G1's §3.9) | G1 | none; the two options of this plan are other words of the same two argvs. G1's §4 carries the same row from its side |
+| `commands/agentCommands.ts`, `test/personRoadsWorld.ts` and the two builders `sshBridge.ts` and `sshExecCommand.ts` | both plans edit them | this plan first; G1 measures its §3.6 again and repairs its line references after this plan has merged |
 | which agent a run forwards | [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) | none: this plan adds no `ForwardAgent` word, and a non-bridged run keeps its `-A`. With sharing off, the agent a run forwards is the one of its own environment, never a master's |
 | the key file of the three roads (N16, shipped) | [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) | not changed; §4.2 says what G2 does to the moment a bridge's key file is deleted |
 
-Disjoint from everything else in `todo/`. The same boundary is to be written into the older documents (N16's G2 line,
-§4.9 of the scoped bridge plan, the askpass plan) by S3. This commit does not edit them: PR #365's branch changes the scoped bridge plan, and the line beside N16's G2
-line is G1's, which the branch of G1's plan is expected to edit.
+Disjoint from everything else in `todo/`. The same boundary was to be written into the older documents (N16's G2 line,
+§4.9 of the scoped bridge plan, the askpass plan) by S3. S3 wrote it into the askpass plan (a *Boundary with* paragraph, the form
+that file uses). It did not edit the other two, for the reason the approval commit gave: PR #365's branch rewrites the scoped bridge
+plan (its *Multiplexing* row already says the two words, from its side), and the line beside N16's G2 line is G1's, which the branch
+of G1's plan edits (`research/PLAN_person_roads_forget_key.md`, the bullet above G2's). An edit of either on this branch would be a
+merge conflict for whichever PR merges second. At promotion the *Fixed in* text goes on N16's G2 line, which is the one edit that file
+needs from this plan.
 
 ## 7. Tests (RED first)
 
@@ -322,7 +347,7 @@ hand-written).
 5. **Nothing else names sharing:** in every argv of 2 and 4, no word that the BUILDER adds, other than the fixed two
    pairs, matches `ControlMaster`, `ControlPath` or `ControlPersist` in any letter case or in the `-oName=value`
    spelling, and none is `-S`, `-M` or `-O`. The words a caller passed in `extra` are outside this prohibition: they
-   are the caller's, they stand after the fixed two (item 2), and the first value wins (§2). The test takes them out
+   are the caller's, they stand after the fixed two (item 2), and the first value of a `-o` keyword wins (§2; the flags `-S` and `-M` would not be outranked, H4). The test takes them out
    of the argv by their position (the slice `extra` occupies) before it scans, and one case with an empty `extra`
    scans the whole argv. `buildSshExecArgv` has no `extra`, so for item 4 the prohibition covers every word.
 6. **The call sites are the six of §1:** a scan of `src/` (the pattern of `bridgeAuthParity.test.ts:47-65`, with its
@@ -438,7 +463,8 @@ names that binary, or the first run of the legs is CI's.
   and *What an agent can and cannot do* (`helpEn.ts:127-134`, where `creds_exec` is described). The sentence: a run over
   SSH logs in by itself and asks nobody, so a key file with a passphrase, a typed second factor or a security-key PIN
   fails there with `Permission denied`, also when your own terminal has a connection to that host open; a key without a
-  passphrase, a stored password or a key that your SSH agent holds works.
+  passphrase or a stored password works; a key that your SSH agent holds works for `creds_exec` only, and the help of *Run
+  with Secrets* and of the agent's run of an entry says it is not used there (correction by the lead's review of S3).
 - The comments of `FIXED_OPTIONS`, of the constant and of `sshBridgeManager.ts:8-12` say what was measured and on which
   conditions (S1 and S2, with the code).
 - The boundary lines of §6 in the older documents, and at promotion the *Fixed in* text on N16's G2 line.
@@ -459,6 +485,11 @@ names that binary, or the first run of the legs is CI's.
   changes it, and what G2 fixes is the kill that reaches nothing. Ending a tunnel when its owner dies needs a liveness
   link between the two processes, which is new process design. Read from the finding and the spawn options
   (`bridgeSpawner.ts:79`), not measured. No plan yet.
+- **H4, `extra` holding a flag spelling of sharing.** `buildBridgeArgv` passes `options.extra` on unchanged, after the two
+  options. A `-o` word in it comes too late (first value wins), but `-S <path>`, `-M` and `-O <cmd>` set the control path, the
+  master mode and a control command at option-parsing time and win over the `-o` values (measured with `ssh -G`). Production
+  passes no `extra` (`agentCommands.ts:437-441`), so nothing is reachable today. A follow-up: `buildBridgeArgv` could refuse
+  an `extra` that holds `-S`, `-M`, `-O` or a `control*` word. No product logic is changed here.
 - **G1**, the pin on the three roads: `todo/PLAN_person_roads_pin_host_key.md`.
 - **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md).
 - Turning sharing off for the person's terminal (decision 1), and ending a master that the person or an older version of
@@ -468,14 +499,14 @@ names that binary, or the first run of the legs is CI's.
 
 ## 10. Definition of Done
 
-- [ ] The tunnel's argv and every argv of `buildSshExecArgv` hold the two options once, first among anything that names
+- [x] The tunnel's argv and every argv of `buildSshExecArgv` hold the two options once, first among anything that names
       sharing; a bridged argv is unchanged; the two words are spelled in one place.
-- [ ] The tunnel has no `ClearAllForwardings` word and keeps its `-R`.
-- [ ] The three tests of §7.1 changed as the table says, and no other existing test changed.
+- [x] The tunnel has no `ClearAllForwardings` word and keeps its `-R`.
+- [x] The three tests of §7.1 changed as the table says, and no other existing test changed.
 - [ ] The tests of §7.2 and §7.3 RED first, then GREEN; the legs of §7.4 green on the head sha's CI run (the three legs
       of change 1.1 among them), their RED and the mutations of §7.5 recorded with what was seen.
-- [ ] A stranded master of the test rig ends by itself (§4.5), and the leftovers guard is green.
-- [ ] The docs of §8, the three help articles in five languages each included; every sentence about an effect names its
+- [x] A stranded master of the test rig ends by itself (§4.5), and the leftovers guard is green.
+- [x] The docs of §8, the three help articles in five languages each included; every sentence about an effect names its
       conditions.
 - [ ] The coai code gate at `proceed`; the lead's Opus review of each story; CI green on the head sha; CodeRabbit read.
 - [ ] Released as an extension patch with the owner's word; the plan promoted with its deviations; G1's plan told that
