@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { after, test } from 'node:test';
+import { after, mock, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { deadPidSubdirs } from '../keysPurge';
 import { EntityMetadata } from '../types';
@@ -375,4 +375,40 @@ test('a suffix reaches the REAL file name: <id>-<suffix>.key beside, never over,
   assert.notEqual(plain, isolated);
   assert.equal(fs.readFileSync(plain, 'utf8'), 'ONE\n', 'the isolated write did not touch the shared file');
   assert.equal(fs.readFileSync(isolated, 'utf8'), 'TWO\n');
+});
+
+test('E1.6: a key file whose write or chmod throws is removed by the writer itself, and the error is rethrown; a removal that also fails is said', () => {
+  const nodeFs = require('node:fs') as typeof fs;
+  for (const name of ['chmodSync', 'writeFileSync'] as const) {
+    const w = world();
+    const real = nodeFs[name] as (...args: unknown[]) => unknown;
+    // `writeFileSync` writes the whole key and then fails, as a full disk would after a partial write; `chmodSync` fails after the key is whole.
+    const failing = mock.method(nodeFs, name, (...args: unknown[]): unknown => {
+      const done = real(...args);
+      if (String(args[0]).endsWith('.key')) {
+        throw new Error(`EIO: ${name} failed`);
+      }
+      return done;
+    });
+    try {
+      assert.throws(() => w.mod.materializeCallKey(w.storage, 'PRIVATE KEY BODY'), new RegExp(`EIO: ${name} failed`));
+    } finally {
+      failing.mock.restore();
+    }
+    const dir = path.join(w.storage, 'keys', String(process.pid));
+    assert.deepEqual(fs.readdirSync(dir), [], `${name}: no whole or partial key is left on disk`);
+  }
+  const w = world();
+  const refused = mock.method(nodeFs, 'chmodSync', (): void => {
+    throw new Error('EIO: chmod failed');
+  });
+  const removal = mock.method(nodeFs, 'rmSync', (): void => {
+    throw new Error('EBUSY: cannot remove');
+  });
+  try {
+    assert.throws(() => w.mod.materializePrivateKey(w.storage, 'ent-1', 'BODY'), /EIO: chmod failed.*EBUSY: cannot remove/s);
+  } finally {
+    removal.mock.restore();
+    refused.mock.restore();
+  }
 });

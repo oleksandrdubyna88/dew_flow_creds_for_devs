@@ -86,6 +86,7 @@ const SITES: Record<'calls' | 'escapers' | 'templates' | 'batch', readonly Site[
   ],
   escapers: [
     { file: 'bridgeConsentText.ts', line: 'return cleanCallerField(name).replaceAll(\'"\', "\'");', parser: 'none', vault: 'text', because: 'a name shown in a dialog' },
+    { file: 'bridgedDbProfile.ts', line: 'const quoted = (value: string): string => `\'${value.replaceAll(/[\\\\\']/g, \'\\\\$&\')}\'`;', parser: 'none', vault: 'guarded', because: 'a libpq keyword value in the one string psql is given after `--` (an argument, never parsed by a shell): single quotes, a backslash before every backslash and quote; the entry data it holds is read back by libpq', proof: 'bridgedDbProfile.test.ts :: DP14' },
     { file: 'brokerCaller.ts', line: 'return tabTitle === \'\' ? sessionName : `"${tabTitle.replaceAll(\'"\', "\'").replaceAll(\'·\', \'-\')}"`;', parser: 'none', vault: 'text', because: 'a title shown in a dialog' },
     { file: 'commands/exportCommand.ts', line: 'const cleaned = name.replace(/[\\/:*?"<>|]/g, \'-\').replace(/^\\.+/, \'\').trim();', parser: 'none', vault: 'text', because: 'a file name, written by the extension' },
     { file: 'hostShell.ts', line: 'return "\'" + value.replace(/\'/g, `\'"\'"\'`) + "\'";', parser: 'posix', vault: 'definition', because: 'the POSIX quoter: a single quote closes, escapes and reopens' },

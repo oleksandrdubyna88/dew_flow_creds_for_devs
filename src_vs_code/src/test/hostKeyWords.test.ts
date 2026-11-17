@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { type TestContext, test } from 'node:test';
 import { ownedFile } from '../../scripts/lib/leftovers.cjs';
 import * as hostKeyPin from '../hostKeyPin';
+import { bridgedConfigText } from '../bridgedSshConfig';
 import { buildBridgeArgv } from '../sshBridge';
 import { type SshExecAuth, type SshExecOptions, buildSshExecArgv } from '../sshExecCommand';
 import { EntityMetadata } from '../types';
@@ -16,8 +17,11 @@ import { discoverSources } from './tempSiteScan';
 /**
  * G1, E1.S1 (`PLAN_person_roads_pin_host_key.md` §3.9 and §5, tests 13 and 14): the words of a pinned call come from one function.
  *
- * <p><b>Part 1 is what is SENT.</b> Both argv builders say `StrictHostKeyChecking=yes` and the pin file as `UserKnownHostsFile` AND as
- * `GlobalKnownHostsFile`; a path with white space is one quoted word; a path with a double quote is not named at all.</p>
+ * <p><b>Part 1 is what is SENT.</b> The tunnel of a bridge (`buildBridgeArgv`) and an exec call OFF a bridge (`buildSshExecArgv`) say
+ * `StrictHostKeyChecking=yes` and the pin file as `UserKnownHostsFile` AND as `GlobalKnownHostsFile`; a path with white space is one
+ * quoted word; a path with a double quote is not named at all. A BRIDGED exec call (E1.6, `bridgedSshConfig.ts`) is the other design: its
+ * argv names no known-hosts file, and the pin is the destination block of its `-F` file, whose `Host *` block says `GlobalKnownHostsFile
+ * none`. That closes P1 on that road already; the last tests of part 2 hold it, with the real client.</p>
  *
  * <p><b>Part 2 asks the real client.</b> The PATH's `ssh -G` resolves each argv under a config that names other known-hosts files and
  * prints what is IN EFFECT. `-G` connects to nothing. It shows what one client resolves. That a host with another key is then
@@ -33,6 +37,7 @@ const TABBED = fakePath('a\tb/known_hosts-e1');
 const QUOTED_TWICE = fakePath('a"b c"d/known_hosts-e1');
 const QUOTED_ONCE = fakePath('a"b/known_hosts-e1');
 const KEY = fakePath('k.key');
+const CONFIG_FILE = fakePath('bridges/call-1.ssh_config');
 
 const HOST: EntityMetadata = { id: 'e1', name: 'build box', host: 'build.example.com', user: 'dev', isSshEnabled: true };
 /** An entry that adds every word the shared composer can add: `-A`, a forward, a port. */
@@ -49,16 +54,21 @@ const run = (pin: string | undefined, auth: SshExecAuth, options: SshExecOptions
 const tunnel = (pin: string | undefined, auth: SshExecAuth, extra: readonly string[] = []): Argv =>
   buildBridgeArgv(HOST, { port: 51234, remote: { path: '/tmp/creds-dev-abc.sock' }, auth, extra, keyPath: KEY, knownHostsFile: pin }, () => true);
 
-/** Every kind of argv the extension starts an `ssh` with, for one pin file (or none). No kind has a caller's `extra`. */
+/** Every kind of argv that carries G1's words, for one pin file (or none): the tunnel and the exec calls OFF a bridge. No kind has a caller's `extra`. */
 const everyKind = (pin: string | undefined): readonly (readonly [string, Argv])[] => [
   ['the tunnel of a bridge, a key', tunnel(pin, 'key')],
   ['the tunnel of a bridge, a password', tunnel(pin, 'askpass')],
   ['a run off a bridge, a key', run(pin, 'key')],
   ['a run off a bridge, a password', run(pin, 'askpass')],
   ['a run off a bridge: a jump host, no pty, the agent taken away, a forward, a port', run(pin, 'key', { jump: 'hop@jump.example.com', noTty: true, ownAgent: false }, BUSY)],
-  ['a bridged run, a key', run(pin, 'key', { bridged: true })],
-  ['a bridged run, a password', run(pin, 'askpass', { bridged: true }, BUSY)],
 ];
+
+/** A bridged exec call: its trust is in its `-F` file, not on the command line. `pinned` says the file holds the entry's pin. */
+const bridgedRun = (isPinned: boolean, auth: SshExecAuth, entity: EntityMetadata = HOST): string[] => {
+  const argv = buildSshExecArgv(entity, KEY, 'id', auth, { bridged: true, configFile: CONFIG_FILE, pinned: isPinned });
+  assert.ok(argv !== undefined, 'expected a bridged argv');
+  return argv;
+};
 
 /** The argv of each kind; a kind whose builder answered none fails here, by its name. */
 function argvs(pin: string | undefined): (readonly [string, string[]])[] {
@@ -78,7 +88,7 @@ const NO_KEY_FILE = '/dev/null';
 
 /* --- part 1: what is sent --- */
 
-test('G1: a pinned argv of both builders names the pin file as BOTH known-hosts files, side by side, and no other host-key word', () => {
+test('G1: a pinned argv of the tunnel and of an exec call off a bridge names the pin file as BOTH known-hosts files, side by side, and no other host-key word', () => {
   for (const [name, argv] of argvs(PIN)) {
     const at = argv.indexOf('StrictHostKeyChecking=yes') - 1;
     assert.deepEqual(argv.slice(at, at + 6), pinned(PIN), `${name}: the three options do not stand side by side`);
@@ -124,7 +134,7 @@ test('G1: one function writes the words: its four answers', () => {
   assert.deepEqual(hostKeyWords(QUOTED_TWICE), pinned(NO_KEY_FILE));
 });
 
-test('G1: and both builders say exactly what it answers', () => {
+test('G1: and the tunnel and an exec call off a bridge say exactly what it answers', () => {
   const hostKeyWords = theFunction();
   for (const file of [undefined, PIN, SPACED, QUOTED_TWICE]) {
     for (const [name, argv] of argvs(file)) {
@@ -137,6 +147,17 @@ test('an unpinned argv says accept-new and names no known-hosts file', () => {
   for (const [name, argv] of argvs(undefined)) {
     assert.deepEqual(hostKeyWordsOf(argv), UNPINNED, name);
   }
+});
+
+test('G1 and E1.6: a bridged exec argv names no known-hosts file: only the strictness, and its `-F` file is the trust source', () => {
+  for (const [name, argv] of [['a key', bridgedRun(true, 'key')], ['a password, a busy entry', bridgedRun(true, 'askpass', BUSY)]] as const) {
+    assert.deepEqual(hostKeyWordsOf(argv), ['-o', 'StrictHostKeyChecking=yes'], name);
+    assert.deepEqual(valuesOf(argv, 'UserKnownHostsFile'), [], name);
+    assert.deepEqual(valuesOf(argv, 'GlobalKnownHostsFile'), [], name);
+    assert.equal(argv[argv.indexOf('-F') + 1], CONFIG_FILE, name);
+  }
+  assert.deepEqual(hostKeyWordsOf(bridgedRun(false, 'key')), ['-o', 'StrictHostKeyChecking=accept-new']);
+  assert.deepEqual(hostKeyWordsOf(buildSshExecArgv(HOST, KEY, 'id', 'key', { bridged: true, configFile: CONFIG_FILE, pinned: true, knownHostsFile: PIN }) ?? []), [], 'a known-hosts file on a bridged call is refused: no argv');
 });
 
 /** Copied from the output of `main` at ca99cd91 (after G2, before G1), for the pin file `PIN`. */
@@ -228,6 +249,43 @@ test('the control: the same path as a bare word is read as two files, so the tes
   assert.notDeepEqual(user, [`userknownhostsfile ${SPACE_THEN_TILDE}`], `the bare word was read as one file: ${answer.stderr}`);
 });
 
+/* --- the bridged road, with the real client (E1.6's file) --- */
+
+/** The file of a bridged call that is pinned (the destination block) or not (first contact): what the real writer makes, for the host of `HOST`. */
+function bridgedFileText(pinnedFile: string | undefined): string {
+  const made = bridgedConfigText({
+    hops: [],
+    destination: { host: HOST.host as string, ...(pinnedFile === undefined ? {} : { pinnedFile }) },
+    noDefaultIdentity: fakePath('keys/no-default-identity'),
+    firstContactFile: fakePath('bridges/known_hosts'),
+    personKnownHosts: fakePath('home/.ssh/known_hosts'),
+  });
+  assert.ok(made.ok, 'the writer refused the input');
+  return made.text;
+}
+
+/** What `ssh -G` prints about the check for a bridged argv: its own `-F` file is the one written by `bridgedConfigText`, under `text`. */
+function resolvedBridged(t: TestContext, argv: readonly string[], text: string): string[] {
+  const file = ownedFile(t, 'hkw', 'bridged_config');
+  fs.writeFileSync(file, text);
+  const own = argv.map((word) => (word === CONFIG_FILE ? file : word));
+  const answer = ssh(['-G', ...own]);
+  assert.equal(answer.status, 0, `ssh -G did not resolve the bridged argv: ${answer.error ?? answer.stderr}`);
+  return answer.stdout.split(/\r?\n/).filter((line) => /^(stricthostkeychecking|userknownhostsfile|globalknownhostsfile) /.test(line)).sort();
+}
+
+test('E1.6 closes G1\'s P1 on the bridged road: a pinned bridged call resolves to the pin file alone and NO system-wide file', NEEDS_SSH, (t) => {
+  const resolvedPinned = resolvedBridged(t, bridgedRun(true, 'key'), bridgedFileText(PIN));
+  assert.deepEqual(resolvedPinned, ['globalknownhostsfile none', 'stricthostkeychecking true', `userknownhostsfile ${PIN}`]);
+});
+
+test('E1.6: a bridged call with no pin trusts first contact in its own file and the person\'s, and no system-wide file', NEEDS_SSH, (t) => {
+  const resolvedFirst = resolvedBridged(t, bridgedRun(false, 'key'), bridgedFileText(undefined));
+  assert.ok(resolvedFirst.includes('globalknownhostsfile none'), resolvedFirst.join(' | '));
+  assert.ok(resolvedFirst.some((line) => line.startsWith('userknownhostsfile ') && line.includes('bridges/known_hosts') && line.includes('.ssh/known_hosts')), resolvedFirst.join(' | '));
+  assert.ok(resolvedFirst.includes('stricthostkeychecking accept-new'), resolvedFirst.join(' | ')); // the argv's word (first contact) is taken before the file's
+});
+
 /* --- part 3: the places --- */
 
 const SRC = path.resolve(__dirname, '..', '..', 'src');
@@ -256,6 +314,7 @@ test('G1: the known-hosts options and strict checking are spelled in one functio
   assert.deepEqual(filesWith(/GlobalKnownHostsFile\s*=/), ['hostKeyPin.ts'], HOW_TO_FIX);
 });
 
-test('G1: and that function is called by the two argv builders, and by nothing else', () => {
-  assert.deepEqual(usesOf('hostKeyWords', 'hostKeyPin'), ['sshBridge.ts#buildBridgeArgv', 'sshExecCommand.ts#buildSshExecArgv'], HOW_TO_FIX);
+test('G1: and that function is called by the tunnel\'s builder and by the exec words off a bridge, and by nothing else', () => {
+  // `execHostKeyWords` is called by `buildSshExecArgv` for every exec call; on a bridged call it answers #365's single word and never calls `hostKeyWords`.
+  assert.deepEqual(usesOf('hostKeyWords', 'hostKeyPin'), ['sshBridge.ts#buildBridgeArgv', 'sshExecCommand.ts#execHostKeyWords'], HOW_TO_FIX);
 });

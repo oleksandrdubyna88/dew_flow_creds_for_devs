@@ -521,7 +521,7 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
    | Story | Area | Spec and scenarios | Code and tests | Review | Security judgement |
    |---|---|---|---|---|---|
    | E1.5 | The consent lifecycle: the one place owned by the dialog until a person's act, never by a timer; the 504 sentence; the late-answer line; `Deny` first on a bridged modal; the ownership in its own module when a file would be squeezed | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S5_spec.md`, from the parent's §4.10, when the story starts | Sonnet | Opus | Fable, at review, outside the quota (authorisation: what frees the place) |
-   | E1.6 | SSH execution containment: the per-call `-F` file with per-hop blocks and the lock-down, per-leg identities and the hop refusals, the environment allow-list, the host-key rules, itest legs (a)-(g) of the parent's §7 | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`, from the parent's §4.9, when the story starts and **after M8 is recorded** | Sonnet | Opus | Fable, at review, outside the quota (authentication: what a leg offers and to whom) |
+   | E1.6 | SSH execution containment: the per-call `-F` file with per-hop blocks and the lock-down, per-leg identities and the hop refusals, the environment allow-list, the host-key rules, itest legs (a)-(g) of the parent's §7 (since the parent's revision for epoch 9: legs (a)-(i), and the bridged half of §4.11, the database clients' flags and environment; see the amendment for epoch 9 at the end) | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`, from the parent's §4.9, when the story starts and **after M8 is recorded** | Sonnet | Opus | Fable, at review, outside the quota (authentication: what a leg offers and to whom) |
 
    Each spec gets its own `todo/README.md` row in the commit that creates it. E1.6's spec may reuse Amendment 4's D.1 mechanics that
    still stand (the `-F` file, `-J`'s child inheriting it, the hop leg's `BatchMode yes` / `PasswordAuthentication no` /
@@ -685,3 +685,21 @@ differ. E1.4 is built on `feat/remote-bridge-e14` (PR #312, stacked on #307), wi
    place clause, since its dialog takes no place. (d) The conditional stored-text wording of item 4 is E2.2b's, where the pick first exists;
    nothing on #307 carries such a sentence. (e) Q11, the owner's decision of 2026-11-08: a bridged query to a database on the agent's own
    server is allowed with a warning at scope selection (the parent's §2.1 Q11, E2.2b, §7); it narrows the parent's §9 and is the owner's.
+
+## Amendment for epoch 9 (2026-11-13)
+
+The parent's revision for epoch 9 (`### Re-review for epoch 9`, PR #354) widened E1.6 and this document did not follow it at the time. E1.6 builds
+itest legs (a)-(i) of the parent's §7, not (a)-(g), and the bridged half of §4.11: the database clients' first flags (`-X` for psql,
+`--no-defaults` for mysql) and their environment allow-list. Its spec is `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`. This
+restates the parent; it adds no scope.
+
+## Amendment for epoch 11 (2026-11-17)
+
+The parent's revision for epoch 11 (step 4 of the full stop after its changes 10.1 and 10.2) adds a seventh story to E1, and this
+document did not follow it at the time; the sort for epoch 11 found the gap. **E1.7, the database execution profiles** (the parent's §4.11,
+§5 step 3f): per database client and platform, the probes PK1, PS1, PP1, PA1 and PE1, each beside its positive control; then the
+authentication controls they chose, the database client check with its floors, whether the gate's refusal can be said before the consent
+dialog, the keys Q15 lets it add, the parent's §7 legs (u)-(w), each served pair turned in the commit that records its runs, and M11. Its own
+PR, after E1.6 merges; it is not a cornerstone, and Fable writes its security spec when it starts. E1.6 gains a second fix-forward on PR #365,
+the E1.6 spec's §S6.15 (the gate with no pair served, the connection built from the entry's fields, the refusals of Q15-Q17), after the
+first (§S6.14, built). The parent's `## Epics` E1 is the authority; this restates it and adds no scope.

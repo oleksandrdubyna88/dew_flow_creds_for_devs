@@ -11,7 +11,6 @@ import {
 import { EntityMetadata } from '../types';
 import { KEY_FILE } from './fakePaths';
 import { TWO, saysNoSharingBefore, sharingWords } from './noSharingArgv';
-import { withoutGlobal } from './pinnedArgv';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -144,7 +143,7 @@ test('C.1: BRIDGED_SSH_OPTIONS is the six options, in this order, and nothing el
 });
 
 test('F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination', () => {
-  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true }, 'key', KEY_FILE);
+  const argv = argvWith(everything, { jump: 'hop@jump.example.com', bridged: true, configFile: 'c.conf' }, 'key', KEY_FILE);
   const joined = argv.join(' ');
   for (const forbidden of ['-A', '-L', '-R', '-D']) {
     assert.ok(!argv.includes(forbidden), `${forbidden} is not sent on a bridge: ${joined}`);
@@ -168,7 +167,7 @@ test('F1: off a bridge the same entry keeps -J -A -L … -R …, then says the t
 
 test('F1: the six options ride both authentication branches of a bridged call', () => {
   for (const auth of ['key', 'askpass'] as const) {
-    assert.notEqual(sixAt(argvWith(entity(), { bridged: true }, auth)), -1, auth);
+    assert.notEqual(sixAt(argvWith(entity(), { bridged: true, configFile: 'c.conf' }, auth)), -1, auth);
   }
 });
 
@@ -223,9 +222,85 @@ test('a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_
   const quiet = argvWith(entity(), { ownAgent: false });
   assert.ok(!quiet.includes('-A') && pairs(quiet) === 0 && !quiet.includes('ForwardAgent=no'), `an entry that does not forward gets neither word: ${quiet.join(' ')}`);
 
-  const bridged = argvWith(everything, { bridged: true, ownAgent: false });
+  const bridged = argvWith(everything, { bridged: true, configFile: 'c.conf', ownAgent: false });
   assert.equal(sixAt(bridged) !== -1 && pairs(bridged) === 1, true, `a bridged call keeps its six options, and no second pair: ${bridged.join(' ')}`);
-  assert.deepEqual(bridged, argvWith(everything, { bridged: true }), 'ownAgent changes nothing on a bridge');
+  assert.deepEqual(bridged, argvWith(everything, { bridged: true, configFile: 'c.conf' }), 'ownAgent changes nothing on a bridge');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.6 B6 (A1-A9) — what a bridged argv says: the file, the pin in the file, the password words, the Host word, and the rules a value must pass
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const BRIDGED = { bridged: true, configFile: 'c.conf' } as const;
+
+test('A1: a bridged key call with a jump and a port has the words of B6, in order', () => {
+  const argv = argvWith(entity({ port: 2222 }), { ...BRIDGED, jump: 'hop@jump.example.com' }, 'key', KEY_FILE);
+
+  assert.deepEqual(argv, [
+    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10',
+    '-J', 'hop@jump.example.com', ...SIX, '-F', 'c.conf', '-i', KEY_FILE, '-p', '2222', '--', 'deploy@example.com', 'id',
+  ]);
+});
+
+test('A2: a bridged call with no configFile is refused', () => {
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { bridged: true }), undefined);
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'askpass', { bridged: true }), undefined);
+});
+
+test('A3: a pinned bridged call says StrictHostKeyChecking=yes, no word starts with UserKnownHostsFile=, and -i is there', () => {
+  const argv = argvWith(entity(), { ...BRIDGED, pinned: true }, 'key', KEY_FILE);
+
+  assert.ok(argv.includes('StrictHostKeyChecking=yes'), argv.join(' '));
+  assert.ok(!argv.includes('StrictHostKeyChecking=accept-new'));
+  assert.deepEqual(argv.filter((word) => word.startsWith('UserKnownHostsFile=')), []);
+  assert.equal(argv[argv.indexOf('-i') + 1], KEY_FILE);
+});
+
+test('A4: a bridged call that is given a known-hosts file is refused', () => {
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { ...BRIDGED, knownHostsFile: '/p/known_hosts' }), undefined);
+});
+
+test('A5: a bridged password call has the three password words after the six and before -F, and no word names PubkeyAuthentication', () => {
+  const argv = argvWith(entity(), { ...BRIDGED, pinned: true }, 'askpass');
+
+  assert.deepEqual(argv.slice(0, 2), ['-o', 'NumberOfPasswordPrompts=1']);
+  const six = sixAt(argv);
+  assert.deepEqual(argv.slice(six + SIX.length, six + SIX.length + 8), ['-o', 'BatchMode=no', '-o', 'PasswordAuthentication=yes', '-o', 'KbdInteractiveAuthentication=yes', '-F', 'c.conf']);
+  assert.ok(!argv.some((word) => word.includes('PubkeyAuthentication')));
+  assert.ok(!argvWith(entity(), BRIDGED, 'key').includes('PasswordAuthentication=yes'), 'a key call has none of them');
+});
+
+test('A6: off a bridge a configFile or a pinned flag changes nothing: today\'s argv', () => {
+  const plain = argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts' }, 'key', KEY_FILE);
+
+  assert.deepEqual(argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts', configFile: 'c.conf', pinned: false }, 'key', KEY_FILE), plain);
+  // G1 (§3.9) changes today's pinned off-bridge argv on purpose: the pin file is ALSO the system-wide known-hosts file, so no
+  // `/etc/ssh/ssh_known_hosts` entry passes beside it. The six words are `hostKeyWords`'s; the test of that rule is `hostKeyWords.test.ts`.
+  assert.deepEqual(plain.slice(0, 10), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'GlobalKnownHostsFile=/p/known_hosts', '-o', 'ConnectTimeout=10']);
+  assert.ok(!plain.includes('-F'));
+});
+
+test('A7: a bridged destination [::1] and ::1, with a user, are the word u@::1; off a bridge each is as typed', () => {
+  for (const host of ['[::1]', '::1']) {
+    const argv = argvWith(entity({ host, user: 'u' }), BRIDGED, 'key');
+    assert.equal(argv.at(-2), 'u@::1', host);
+  }
+  assert.equal(argvWith(entity({ host: '[::1]', user: 'u' }), {}, 'key').at(-2), 'u@[::1]');
+  assert.equal(argvWith(entity({ host: '::1', user: 'u' }), {}, 'key').at(-2), 'u@::1');
+});
+
+test('A8: a bridged destination user with $ or a backslash is refused, a plain one is not; off a bridge CORP\\alice runs as today', () => {
+  const results = ['$BRIDGE_PROBE', 'CORP\\alice', 'alice', 'alice-name'].map((user) => buildSshExecArgv(entity({ user }), undefined, 'id', 'key', BRIDGED) !== undefined);
+
+  assert.deepEqual(results, [false, false, true, true]);
+  assert.equal(argvWith(entity({ user: 'CORP\\alice' }), {}, 'key').at(-2), 'CORP\\alice@example.com');
+});
+
+test('A9: a bridged key path with %, with ${ and a host with a port are refused', () => {
+  assert.equal(buildSshExecArgv(entity(), '/k/%u/id', 'id', 'key', BRIDGED), undefined);
+  assert.equal(buildSshExecArgv(entity(), '/k/${X}/id', 'id', 'key', BRIDGED), undefined);
+  assert.equal(buildSshExecArgv(entity({ host: 'gw:2201' }), KEY_FILE, 'id', 'key', BRIDGED), undefined);
+  assert.notEqual(buildSshExecArgv(entity(), '/k/~/id', 'id', 'key', BRIDGED), undefined, 'control: a plain path is an argv');
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -272,7 +347,9 @@ function runOf(n: number): Run {
     key: AXES.key[digit(n, 7)],
     port: AXES.port[digit(n, 8)],
   };
-  const options: SshExecOptions = { bridged: c.bridged, noTty: c.noTty, ownAgent: c.ownAgent, jump: c.jump, knownHostsFile: c.pin };
+  // A bridged call (E1.6) names its per-call file and carries its pin in it, so it takes no known-hosts file: `pinned` says which check it asks for.
+  const placed: SshExecOptions = c.bridged ? { configFile: 'c.conf', pinned: c.pin !== undefined } : { knownHostsFile: c.pin };
+  const options: SshExecOptions = { bridged: c.bridged, noTty: c.noTty, ownAgent: c.ownAgent, jump: c.jump, ...placed };
   const argv = buildSshExecArgv({ ...c.entry, port: c.port }, c.key, 'id', c.auth, options);
   assert.notEqual(argv, undefined);
   const label = JSON.stringify({ ...c, entry: c.entry === everything ? 'forwards' : 'plain' }, (_key, value: unknown) => value ?? null);
@@ -313,23 +390,25 @@ test('G2: the scan for sharing words finds each spelling, and leaves the two opt
   assert.equal(saysNoSharingBefore(planted, ['-M']), false, 'after a word of `before` is not before it');
 });
 
-/** Copied from the output of `main` at b84416aa (extension 1.22.2): G2 changes no bridged call. */
+/**
+ * The bridged argvs of E1.6 (the per-call `-F c.conf`, the pin in that file, no known-hosts option), as `main` at b84416aa
+ * (extension 1.22.2) had them before G2 save for E1.6's own changes: G2 changes no bridged call, which already said the two options.
+ */
 const BRIDGED_KEY_BEFORE_G2 = [
-  '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/keys/known_hosts', '-o', 'ConnectTimeout=10',
+  '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
   '-J', 'hop@jump.example.com',
   '-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no',
-  '-i', KEY_FILE, '-p', '2222', '--', 'deploy@example.com', 'id',
+  '-F', 'c.conf', '-i', KEY_FILE, '-p', '2222', '--', 'deploy@example.com', 'id',
 ];
 const BRIDGED_ASKPASS_BEFORE_G2 = [
   '-o', 'NumberOfPasswordPrompts=1', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10',
   '-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no',
+  '-o', 'BatchMode=no', '-o', 'PasswordAuthentication=yes', '-o', 'KbdInteractiveAuthentication=yes', '-F', 'c.conf',
   '--', 'deploy@example.com', 'id',
 ];
 
-test('G2: a bridged argv is byte for byte the one before G2 (the one pair that G1 added to a pinned call taken out)', () => {
-  const pinned = { jump: 'hop@jump.example.com', bridged: true, noTty: true, knownHostsFile: '/keys/known_hosts' };
-  // G1 (E1.S1) names the pin file as the system-wide known-hosts file too: one pair more on a pinned call, bridged or not.
-  // `hostKeyWords.test.ts` says where it stands. Without it the argv is the one before G2.
-  assert.deepEqual(withoutGlobal(argvWith({ ...everything, port: 2222 }, pinned, 'key', KEY_FILE)), BRIDGED_KEY_BEFORE_G2);
-  assert.deepEqual(argvWith(entity(), { bridged: true }, 'askpass'), BRIDGED_ASKPASS_BEFORE_G2);
+test('G2: a bridged argv is byte for byte the one before G2', () => {
+  const pinned = { jump: 'hop@jump.example.com', bridged: true, noTty: true, configFile: 'c.conf', pinned: true };
+  assert.deepEqual(argvWith({ ...everything, port: 2222 }, pinned, 'key', KEY_FILE), BRIDGED_KEY_BEFORE_G2);
+  assert.deepEqual(argvWith(entity(), { bridged: true, configFile: 'c.conf' }, 'askpass'), BRIDGED_ASKPASS_BEFORE_G2);
 });

@@ -85,18 +85,25 @@ function freePort() {
  * `{ sshd, port, knownHosts }`, or `{ sshd, failure }` naming what sshd said — never a skip,
  * because a masked failure here is exactly how a live section turns into a green that proves
  * nothing. `extraConfig` is more `sshd_config` lines — section 7's RSA leg adds `PubkeyAcceptedAlgorithms +ssh-rsa`.</p>
+ *
+ * <p>`options` (E1.6): `address` (default `127.0.0.1`; the bridged rig puts its destination on `127.0.0.2`, so two legs of one call have two hosts),
+ * `port` (a fixed one, for a leg that starts a SECOND sshd on the address of the first), and `first`: config lines that go BEFORE the defaults,
+ * because `sshd` keeps the first value of a keyword, so a rig that offers passwords says `PasswordAuthentication yes` there. `extraConfig` still
+ * goes after them, as it always did. The known-hosts line names the address.</p>
  */
-async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfig = []) {
-  const port = await freePort();
+async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfig = [], options = {}) {
+  const address = options.address ?? '127.0.0.1';
+  const port = options.port ?? (await freePort());
   const knownHosts = path.join(sshdDir, 'known_hosts');
   const hostPublic = fs.readFileSync(`${hostKeyPath}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
-  fs.writeFileSync(knownHosts, `[127.0.0.1]:${port} ${hostPublic}\n`);
+  fs.writeFileSync(knownHosts, `[${address}]:${port} ${hostPublic}\n`);
   const config = path.join(sshdDir, 'sshd_config');
   // Absolute paths only: sshd refuses to start from a relative one.
   fs.writeFileSync(
     config,
     [
-      `ListenAddress 127.0.0.1:${port}`,
+      `ListenAddress ${address}:${port}`,
+      ...(options.first ?? []),
       `HostKey ${hostKeyPath}`,
       `AuthorizedKeysFile ${authorizedKeys}`,
       `PidFile ${path.join(sshdDir, 'sshd.pid')}`,
@@ -109,9 +116,14 @@ async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfi
     ].join('\n'),
   );
   const sshd = launch(scope, SSHD, ['-d', '-e', '-f', config]);
-  const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
+  const listening = new RegExp(`Server listening on ${regexpLiteral(address)} port ${port}`);
   const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
   return failure === undefined ? { sshd, port, knownHosts } : { sshd, failure };
+}
+
+/** `text` as a regular expression that matches it literally: every metacharacter, the backslash included, is escaped. */
+function regexpLiteral(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
 /**

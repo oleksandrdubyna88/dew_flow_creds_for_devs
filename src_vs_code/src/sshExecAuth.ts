@@ -123,13 +123,18 @@ export async function resolveExecAuth(
   return source.kind === 'stopped' ? stoppedAuth(source, entity) : authFor(source, entity, storageDir);
 }
 
+/** The sentence for a value its opener would not hand over: the opener's own, or the PIN sentence naming the owner of the value. Shared with the writer of a bridged call's hop files. */
+export function stoppedSentence(source: SshCredentialStopped): string {
+  return source.reason !== '' ? source.reason : `"${source.ownerName}" is protected with its own PIN, and it was not opened.`;
+}
+
 /**
  * A value its opener would not hand over. A click has said why already; the sentence still names the OWNER of the value, which is the entry
  * that was asked for or another one (the key it borrows). `second` says the latter, whatever the sentence is, so that the one chooser of
  * `agentNaming.ts` can decide whether an agent may read it. The message does not change.
  */
 function stoppedAuth(source: SshCredentialStopped, entity: EntityMetadata): ExecAuth {
-  const message = source.reason !== '' ? source.reason : `"${source.ownerName}" is protected with its own PIN, and it was not opened.`;
+  const message = stoppedSentence(source);
   const second = source.ownerId === entity.id ? {} : { second: { id: source.ownerId, relation: 'linked key' as const } };
   return { ok: false, reason: 'no_credential', message, ...second, warning: source.warning };
 }
@@ -147,13 +152,18 @@ function authFor(source: SshCredentialSource, entity: EntityMetadata, storageDir
     : byStoredKey(source, entity, storageDir);
 }
 
+/** The sentence that refuses a stored key that is still SEALED (an envelope is not a key), or `''` when it is not. One check, used by the destination's key and by each hop's. */
+export function sealedKeyRefusal(content: string, entryName: string): string {
+  return isSealedText(content) ? pinRefusalFor(entryName) : '';
+}
+
 /**
  * A stored key, written out for this call. A value that is still SEALED is refused before anything
  * touches the disk — the opener already refuses one, and this is the line that makes "an envelope
  * written as an SSH key" impossible whatever opener a future caller passes.
  */
 function byStoredKey(source: Extract<SshCredentialSource, { kind: 'storedKey' }>, entity: EntityMetadata, storageDir: string): ExecAuth {
-  const locked = isSealedText(source.content) ? pinRefusalFor(entity.name) : '';
+  const locked = sealedKeyRefusal(source.content, entity.name);
   if (locked !== '') {
     return { ok: false, reason: 'no_credential', message: locked, warning: source.warning };
   }
