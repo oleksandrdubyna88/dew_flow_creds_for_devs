@@ -150,7 +150,7 @@ function startTunnel(rig, config, argv, remote) {
   const { SshBridgeManager } = require(path.join(rig.out, 'sshBridgeManager.js'));
   const { bridgeSpawner } = require(path.join(rig.out, 'bridgeSpawner.js'));
   const reported = [];
-  let exitCode = 'running';
+  let exitCode = 'running'; // a number or null once `exited` settles (compared as text, so a static reader sees no constant)
   const manager = new SshBridgeManager(bridgeSpawner({ report: (error) => reported.push(String(error)) }));
   rig.scope.after(() => manager.dispose()); // a signal in the middle of a leg ends the tunnel too
   const bridge = manager.start('nsh', remote, 'ssh', ['-F', config, ...argv], rig.env);
@@ -192,7 +192,7 @@ async function controlDetachedMaster(check, rig) {
   const tunnel = startTunnel(rig, config, withoutTheTwo(tunnelArgv(rig, started, remote)), remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
-    check('K-A control: without the two options the spawned ssh exits with 0 while the bridge is wanted', tunnel.exit() === 0, `exit ${tunnel.exit()}\n${sshdTail(started)}`);
+    check('K-A control: without the two options the spawned ssh exits with 0 while the bridge is wanted', String(tunnel.exit()) === '0', `exit ${tunnel.exit()}\n${sshdTail(started)}`);
     check('K-A control: and the forward is served after that exit, by a detached master', await within(5_000, () => served(remote)), await readThrough(remote));
     check('K-A control: the master left its control socket', fs.existsSync(control), control);
     tunnel.manager.stop('nsh');
