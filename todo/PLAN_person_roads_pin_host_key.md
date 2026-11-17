@@ -1,16 +1,19 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
 > Status: **plan only, nothing implemented yet, 2026-11-17.** Approved 2026-11-17 by the plan round (`proceed`; its four
-> findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1, no change. Split into two epics and a list of
-> candidates (`## Epics`); E1's stories document [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) is written (2026-11-17). Scope: the extension only (`src_vs_code/src`): the bridge
+> findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1, one change (1.1: the pass criteria of E2's rows M2 and M3). Split into two epics and a list of
+> candidates (`## Epics`); E1's stories document [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) is written (2026-11-17), and the spec of its first story,
+> [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and of its cornerstone,
+> [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both 2026-11-17, by Fable). Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, one small new module for the pin of one call, the words that both `ssh` argv builders write for a
 > pinned call (`sshBridge.ts`, `sshExecCommand.ts`: the agent's pinned exec and a pinned *Run with Secrets* get them too,
 > §3.9), their tests, the real runs against a real `sshd`, the docs. Found as G1 of
 > [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5) by the lead's Opus review and a
 > Fable security pass on 2026-11-16, by reading.
-> **Depends on:** the G2 plan, `todo/PLAN_bridge_no_connection_sharing.md` (written 2026-11-17 on its own branch
-> `fix/g2-no-connection-sharing`; a path, not a link, until it is on `main`). G2 goes first; this plan is built after G2 has merged (§4).
+> **Depends on:** the G2 plan, [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md): merged into `main` on
+> 2026-11-17 (#376, `07ed8303`). This plan is built on it (§4). Its line references, §3.6's count, §4 and test 12 of §5 were
+> revised against `main` at `ca99cd91` on 2026-11-17 (§9, step 1).
 
 ## Plan changes
 
@@ -25,13 +28,20 @@
   the baseline of epoch 1, not an entry: `## Epics`. The question consultants were asked about the split, consult
   `cbe21f00`: both answers agree on it.)
 
+- 1.1 · 2026-11-17 · reviewer · dod — E2's M2 and M3 demanded a host-key failure on all five runs, but the install returns after a failed probe (`installRemoteCli`, `agentCommands.ts`), so its second run never starts on a mismatch. Split: an ordinary mismatch proves the refusal and that the install run does not start; a separate scenario lets the probe pass and switches the counterpart's key before the install run, so the second connection is tested through the production control flow. Raised by the cadence consultant (`84b9c946`) before the build; checked by reading.
+  (The entry was handed over with the kind "acceptance". The ledger knows no such kind, and the check refuses the
+  line with it, so the kind is `dod`: what changed is the pass criteria of E2's rows M2 and M3, which are E2's
+  done-when and the Definition of Done's item on M1-M9. Nothing else of the entry was altered. Applied in `## Epics`,
+  E2: *The five runs* of the setup, the rows M2 and M3 (each now has two legs, *the mismatch*
+  and *the switch*), and the count of runs in M7 and M8.)
+
 ## 1. Symptom
 
 An SSH entry can hold a pinned host key (`hostKey`, `types.ts:90-96`: "Its presence is what turns
 `StrictHostKeyChecking` from `accept-new` … into `yes` against a known_hosts file built from exactly this line"). The
 edit form says of it: "Checked on every connection" (`entityFormPage.ts:352`). On three roads of the person that is not
 true. They pass no `knownHostsFile`, so every `ssh` they start runs with `StrictHostKeyChecking=accept-new` against the
-person's own `~/.ssh/known_hosts` (`sshBridge.ts:164-167`, `sshExecCommand.ts:146-148`), pinned entry or not:
+person's own `~/.ssh/known_hosts` (`sshBridge.ts:183-186`, `sshExecCommand.ts:174-176`), pinned entry or not:
 
 | Road | Where | Its `ssh` runs | The argv call with no `knownHostsFile` |
 |---|---|---|---|
@@ -39,7 +49,7 @@ person's own `~/.ssh/known_hosts` (`sshBridge.ts:164-167`, `sshExecCommand.ts:14
 | *Install creds on host* (`credSshManager.installRemoteCli`) | `:259-329`, `runRemote` `:332-350` | two: the probe (`:282`) and the install (`:314`) | `:338` |
 | *Open Remote Bridge…* (`credSshManager.openRemoteBridge`) | `:381-478` | one long-lived `ssh -N -R` (`:452`) | `:437-441` (`buildBridgeArgv`) |
 
-Both argv builders already take the option: `BridgeOptions.knownHostsFile` (`sshBridge.ts:82`, used at `:213`) and
+Both argv builders already take the option: `BridgeOptions.knownHostsFile` (`sshBridge.ts:82`, used at `:232`) and
 `SshExecOptions.knownHostsFile` (`sshExecCommand.ts:8`). The agent's exec road passes it: `connectionArgvOptions`
 (`sshUseActions.ts:218-225`) calls `materializeKnownHosts` (`hostKeyTrust.ts:80-98`), and its `ssh` gets
 `StrictHostKeyChecking=yes` and `UserKnownHostsFile=<the pin file>`. Connect does the same (`connectionOptions.ts:70`).
@@ -74,9 +84,10 @@ baseline of the plan, not open questions.
    does not change, because the agent's exec calls it too; that road's fail-open is a separate follow-up (§7, F1).
    (Consult `ddd73927`.)
 4. **Order: G2 first, then G1.** G2 is the bridge that does not turn off `ssh` connection sharing (`ControlMaster` /
-   `ControlPersist` from the person's own config; being measured on 2026-11-17). The reason (gemini, consult
+   `ControlPersist` from the person's own config; measured by the G2 plan and merged on 2026-11-17, #376). The reason (gemini, consult
    `9737729d`): a client that reuses an existing master connection does no new key exchange and no new login, so the
-   pin options of this plan would be passed over while connection sharing is on. Read, not measured here; §4.
+   pin options of this plan would be passed over while connection sharing is on. Read when this plan was written; the
+   G2 plan then measured it (§4).
 
 Two more were settled at the plan round on 2026-11-17, and are baseline too (`## Plan changes`):
 
@@ -210,7 +221,7 @@ tests of the registered commands (C1-C6, I1-I7, R1, B1-B9) run unchanged: their 
 `auth` that `resolveExecAuth` answered (`sshExecAuth.ts:35`), which comes from the same `resolveSshCredential` that
 Connect's route reads (`sshExecAuth.ts:122`, `sshSession.ts:278`).
 
-The key form (`auth: 'key'`: a stored key, the person's own key file, or no credential):
+The key form (`auth: 'key'`: a stored key, or the person's own key file):
 
 ```text
 The saved host key of "<name>" cannot be used, so nothing was sent to that host. Get the host's key fingerprint from the person who runs the server. Then use Connect SSH on this entry, and go on only if it shows that fingerprint: Trust and connect saves the key.
@@ -221,6 +232,11 @@ The password form (`auth: 'askpass'`):
 ```text
 The saved host key of "<name>" cannot be used, so nothing was sent to that host. Do not use Connect SSH to save it again: this entry signs in with a password, and when Connect SSH cannot read the host's key first, it sends the password without checking the host. There is no safe repair for such an entry yet; the bridge and the install stay refused for it.
 ```
+
+**An entry with no credential gets no form of sentence A.** `resolveExecAuth` answers not-ok for it
+(`sshExecAuth.ts:139-141`), and no pin is written for a credential that is not `ok` (§3.2, item 1). The road shows the
+credential's own refusal, as today, and nothing starts. (Corrected on 2026-11-17 from the spec of E1.S2: this section
+and test 6 of §5 listed "no credential" under the key form, a state that no road can reach.)
 
 **Why two forms (P2).** Connect SSH is the one road that can heal such a pin: `pinVerdict` reads a stored text that
 does not parse as a first contact (`hostKeyPin.ts:146-149`), the dialog shows the fingerprint
@@ -295,8 +311,10 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
 
 ### 3.6 The file size
 
-`commands/agentCommands.ts` has 794 lines; lint refuses more than 800 (`eslint.config.mjs:30`). The budget, against
-`b84416aa` and to be measured again on `main` after G2 has merged:
+`commands/agentCommands.ts` has 794 lines; lint refuses more than 800 (`eslint.config.mjs:30`). **Measured again on `main`
+after G2 had merged (2026-11-17, `ca99cd91`): 794 lines.** G2 did not change this file (`git diff b84416aa ca99cd91` of it
+is empty), so the budget below is the one of `b84416aa`, and it holds: 794 now, 785 after the grouping, and 784 after
+E1.S2 (counted in its spec, §4.3). What E1.S3 adds comes on top of 784, and its spec states the count.
 
 - **Freed, first, in a commit of its own:** the imports that still name one symbol per line from the same module are
   grouped, as N16 did (§2.3 there). Seven modules: `../installCommand` (three lines), `../credsInstall` (three),
@@ -308,8 +326,8 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
   one pure function, outside this file.
 - **Not taken: moving the socket check out of the file.** `test/launchRoadScan.test.ts:306-319` pins the three calls of
   `buildSshExecArgv` that name no `ownAgent` to this file by name; that list belongs to
-  [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md). If the budget does not hold after G2,
-  that is a question to the lead before the spec is written, not a silent move.
+  [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md). The budget holds after G2 (above). If a
+  later merge into `main` takes it away before E1.S2 is built, that is a question to the lead, not a silent move.
 
 ### 3.7 What grows, and who retires it
 
@@ -369,16 +387,22 @@ also when a config names other files; a command-line option wins over a config. 
 command line REPLACES the config's own `IgnoreUnknown`: a config that needs its own then ends with `Bad configuration
 option`, exit code 255. So an option that an older client does not know cannot be guarded that way.
 
+Rows 1, 2, 6 and 7 were measured again on 2026-11-17 against a real `sshd` on the loopback (OpenSSH 10.2p1 on both ends), with
+the words as the function of E1.S1 writes them, and gave the same; `ssh.exe -G` of OpenSSH_for_Windows 9.5p2 resolved the
+quoted word of row 7 to one file (the client alone). Both are in the spec of E1.S1 (its facts K6 and K7).
+
 **The fix: one function writes the words of a pinned call, and both builders call it.** A new pure function in
 `hostKeyPin.ts` (the spec names it) answers, for a pin file, `StrictHostKeyChecking=yes`, `UserKnownHostsFile=<file>`
 and `GlobalKnownHostsFile=<file>`: the same path twice, which needs no `/dev/null` against `NUL` on Windows. With no
-pin file it answers `accept-new`, as today. `hostKeyArgv` of the bridge (`sshBridge.ts:164-168`) and the expression of
-`buildSshExecArgv` (`sshExecCommand.ts:146-148`), which write the same words twice today, both call it.
+pin file it answers `accept-new`, as today. `hostKeyArgv` of the bridge (`sshBridge.ts:183-187`) and the expression of
+`buildSshExecArgv` (`sshExecCommand.ts:174-176`), which write the same words twice today, both call it.
 
 - **The path is written so that `ssh` reads ONE file** (rows 6-7): both options take a list of files, and the key in
   a file at a bare path with white space is not found (row 6). A path with no white space is written as today, byte
   for byte; a path with white space goes in double quotes (row 7). The spec fixes the exact rule from these rows,
-  and what a path that holds a double quote does: it must never reach `ssh` as two paths. A path with white space
+  and what a path that holds a double quote does: it must never reach `ssh` as two paths. (Fixed by the spec of E1.S1,
+  2026-11-17: such a path is not named at all. Both options then name a file that holds no key, and `ssh` refuses
+  every host.) A path with white space
   is not rare: the editor's storage folder, where `keys/<pid>/` lives (`extension.ts:170`), is under
   `Application Support` on macOS
   (`research/PLAN_mcp_server.md:207`; read, not run on macOS). By row 6 a pinned call of the agent's exec is refused
@@ -395,8 +419,8 @@ write these words:
 
 | The place | Its pinned callers | In this plan |
 |---|---|---|
-| `sshBridge.ts:167` | the bridge (`agentCommands.ts:437`), after this plan | changed |
-| `sshExecCommand.ts:148` | the agent's exec (`sshUseActions.ts:224`, `:259`); *Run with Secrets* over `ssh` (`remoteLaunch.ts:516-518`); after this plan the three calls of `agentCommands.ts` | changed: **the agent's pinned exec and a pinned *Run with Secrets* get the same words** |
+| `sshBridge.ts:186` | the bridge (`agentCommands.ts:437`), after this plan | changed |
+| `sshExecCommand.ts:176` | the agent's exec (`sshUseActions.ts:224`, `:259`); *Run with Secrets* over `ssh` (`remoteLaunch.ts:516-518`); after this plan the three calls of `agentCommands.ts` | changed: **the agent's pinned exec and a pinned *Run with Secrets* get the same words** |
 | `sshCommand.ts:313-330`, the line of a Connect terminal | Connect and every road that opens a terminal | NOT changed: candidate C4 |
 
 For the agent's pinned exec and a pinned *Run with Secrets* two things change. A host whose key is not the pin, but is
@@ -418,27 +442,34 @@ not measured). A pin is one plain key, so that is what "pinned" means. **Windows
 
 ## 4. The boundary with the G2 plan
 
-The G2 plan (written 2026-11-17, its §6) carries this table from its side
-(`planning-docs.md`, *a boundary between two plans is named on both sides*), and its path above becomes a link. On
-N16's side, G1 of its §5 names this plan.
+The G2 plan ([PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md); merged 2026-11-17, #376) carries
+this table from its side in its §6 (`planning-docs.md`, *a boundary between two plans is named on both sides*). On N16's
+side, G1 of its §5 names this plan. **Revised on 2026-11-17 against what G2 shipped** (`main` at `ca99cd91`): the first two
+rows say what is in the code now, and the rows below the builders' row were added from G2's follow-ups H1-H5 (its §9).
 
 | Item | Which plan builds it | The other plan's part |
 |---|---|---|
-| connection sharing turned off on the bridge's `ssh -N -R` (`sshBridge.ts:156-161` names no `ControlPath` or `ControlMaster`) | G2 | G1 is built after it |
-| connection sharing turned off on the four bounded runs (the socket check's two, the install's two): `buildSshExecArgv` adds `ControlPath=none` only for `bridged: true` (`sshExecCommand.ts:28-35`, `:154-158`), and the three calls of `agentCommands.ts` pass no options | **G2** (its decision 1, scope (b), consult `925f4f14`: the two options go into every argv of `buildSshExecArgv`, so these four runs, the agent's local exec and Run with Secrets) | G1's pin on these four runs is passed over wherever a master connection to that host exists |
+| connection sharing turned off on the bridge's `ssh -N -R`: `FIXED_OPTIONS` ends with the constant `NO_CONNECTION_SHARING`, the words `-o ControlPath=none -o ControlMaster=no` (`sshBridge.ts:174-180`) | G2, shipped | G1 is built on it |
+| connection sharing turned off on the four bounded runs (the socket check's two, the install's two): every argv of `buildSshExecArgv` carries the same constant (`sshExecCommand.ts:47`, pushed at `:185`; a bridged call has the two among its six, `:57-63`), so these four runs, the agent's exec and *Run with Secrets* have it, and no call site passes an option for it | **G2**, shipped (its decision 1, scope (b), consult `925f4f14`) | with the two options a pinned call makes a connection of its own, so its pin words are read. G2 measured both sides (the docblock of the constant, `sshExecCommand.ts:20-46`; section 9 of `scripts/ssh-agent-itest.cjs`): with a master up, a call without them used neither its own key nor its own pinned host key; with them a wrong pin ends with `Host key verification failed.`. E2's M3 measures it on the roads |
 | the pin on all five `ssh` runs, the per-call pin file, the three sentences | G1 | none |
 | the words of a pinned call in both argv builders: the pin file as both known-hosts files, its path as one file (§3.9) | G1 | none; G2's options are other words of the same two argvs |
-| `commands/agentCommands.ts`, `test/personRoadsWorld.ts`, and the two builders `sshBridge.ts` and `sshExecCommand.ts` | both plans edit them | G2 first; G1 measures §3.6 again and repairs its line references after G2 has merged |
+| `commands/agentCommands.ts`, `test/personRoadsWorld.ts`, and the two builders `sshBridge.ts` and `sshExecCommand.ts` | both plans edit them | G2 first; G1 measures §3.6 again and repairs its line references after G2 has merged. Done 2026-11-17: G2 changed the two builders, and neither `commands/agentCommands.ts` nor `test/personRoadsWorld.ts` |
+| the literal of a whole pinned bridged argv that G2's test holds (`test/sshExecCommand.test.ts:316-321`, used at `:328-332`: "a bridged argv is byte for byte the one before G2") | G2 wrote it | G1's §3.9 gives a pinned bridged call the third option too, so the argv of that test has one pair more than the literal, `-o GlobalKnownHostsFile=<file>`. E1.S1 changes that one test and names it (§5, test 12): the literal stays as G2 copied it, and the test takes G1's pair out before it compares. The six options of a bridged call and their place do not change |
+| the hop legs of a jump host (G2's H1): a nested `ssh` gets none of the outer's `-o` options | no plan yet (G2's §9) | the same holds for the pin words. The destination's key is checked by the outer `ssh`, which carries them; a hop's own key is checked by the nested `ssh`, from the person's files. The three roads pass no jump of the entry; a `ProxyJump` of the person's config is theirs. Read, not measured |
+| `git` over SSH (G2's H2: `GIT_SSH_COMMAND`, `gitRemote.ts:124`) | no plan yet | not a road of this plan: that string says `accept-new` and names no known-hosts file, and no builder writes it. Whether that road has a pin to enforce was not read |
+| a tunnel whose window was killed without `dispose` (G2's H3) | no plan yet | its pin file stays as its key file does, until the purge (§3.7) |
+| words in the `extra` of `buildBridgeArgv` (G2's H4: `-S`, `-M`, `-O` would win over G2's options) | a follow-up of G2 | for the pin words only `-o` spellings exist (read in the manual), and the builder's stand before `extra`, so a caller's come too late; E1.S1 tests it, also with the real `ssh -G`. Production passes no `extra` |
+| one launcher for every `ssh` without a terminal (G2's H5) | a follow-up of G2 | the words of §3.9 are in the same two builders, so an `ssh` that no builder shaped would have neither G2's options nor a pin. E1.S1's scan holds the list of places that write the words and of the callers of its function |
 
 **The order, and why:** G2, then G1 (§2, decision 4). With connection sharing on, a client that finds a master
 connection to the host does no key exchange, so `StrictHostKeyChecking` and `UserKnownHostsFile` are not read at all.
-The second row is this plan's own reading of the code, 2026-11-17: the reason of decision 4 holds for the four bounded
+The second row was this plan's own reading of the code, 2026-11-17: the reason of decision 4 holds for the four bounded
 runs as much as for the bridge. A bridge that became a master would even carry its own socket check 1.5 s later.
-Read, not measured; the G2 plan measures connection sharing.
+Read when this plan was written; G2 then measured it and shipped the two options in both builders (the first two rows).
 
 **Disjoint:** G2 writes no pin file, no known-hosts option and no sentence about a host key; G1 adds no option about
-connection sharing. The two rows about the builders were added at the plan round (P1); the G2 plan's table gets
-them from its side when its branch is next edited (this branch does not hold that file).
+connection sharing. The two rows about the builders were added at the plan round (P1); the G2 plan's §6 carries them
+from its side. The rows from H1-H5 name gaps that G2 found and that the pin words share; none is built here.
 
 ## 5. Tests (RED first)
 
@@ -466,9 +497,10 @@ stand-in that reads, at the moment of each run, the file that the argv names. `m
    is); a stored key with no pin (N16's tests, unchanged).
 6. **An unusable pin is refused:** a text that does not parse, and a parsed key on a host that cannot form a line. Per
    road: no `ssh` run at all, no bridge started and no *bridged* row, sentence A where §3.5 says, the key file of the
-   call deleted, nothing left in the folder. **The form follows the login (P2):** a stored key, the person's own key
-   file and no credential get the key form; a password entry gets the password form, word for word, and never the
-   key form's advice.
+   call deleted, nothing left in the folder. **The form follows the login (P2):** a stored key and the person's own key
+   file get the key form; a password entry gets the password form, word for word, and never the key form's advice.
+   An entry with no credential is refused by its credential before any pin is read: it shows that refusal and no
+   form of sentence A (§3.5).
 7. **A pin write that fails** (the stand-in of `./hostKeyTrust` throws, and separately a real folder that cannot be
    written): sentence B, no `ssh` run, the key file of the call deleted (a real file).
 8. **Two calls at once:** two installs of one entry that overlap, and a bridge with its socket check, hold distinct pin
@@ -490,7 +522,11 @@ stand-in that reads, at the moment of each run, the file that the argv names. `m
     and `test/sshBridge.test.ts` pass. Read on 2026-11-17, they build their expected argv with the builder itself or
     look for single words (`test/sshExecOver.test.ts:150`, `test/secretsLaunch.test.ts:83`, `:111`,
     `test/sshBridge.test.ts:139`), so no expectation is expected to change. One that does is changed in the commit
-    that changes the builder, and its body names it.
+    that changes the builder, and its body names it. **Read again after G2, and run on a scratch copy for the spec of
+    E1.S1 (2026-11-17): exactly one does.** G2 added the literal of a whole pinned bridged argv
+    (`test/sshExecCommand.test.ts:316-321`), and a pinned bridged argv now has the pair of `GlobalKnownHostsFile` more
+    (§4). The test that holds the literal takes that pair out before it compares; the literal itself stays. Every
+    other test of these six files passes unchanged.
 13. **The words of a pinned call (P1)**, on the pure function and through both builders: a pin file gives
     `StrictHostKeyChecking=yes` and the SAME path as `UserKnownHostsFile` and as `GlobalKnownHostsFile`; no pin file
     gives `accept-new` and neither option; a path with white space is written in the form that §3.9's row 7 measured,
@@ -502,7 +538,9 @@ stand-in that reads, at the moment of each run, the file that the argv names. `m
     change: its first run names today's three places.
 15. **Mutation checks** (by hand, recorded in the commit body): drop `knownHostsFile` from each of the four argv calls
     in turn → test 2, 3 or 4 and the scan are red; delete the pin only when a key file was written → test 5 is red;
-    write the pin before the guard → test 7's key file stays; read an unusable pin as unpinned → test 6 is red; drop
+    write the pin before the guard → "a writer that throws" of test 10 is red (measured for the spec of E1.S2, its N3:
+    test 7 stays green there, because its writer answers a refusal and does not throw); read an unusable pin as
+    unpinned → test 6 is red; drop
     the suffix → test 8 is red; write one file per run → "the same file" of tests 2 and 3 is red; delete the bridge's
     pin at once, or from `onEnded` → test 4 is red; refuse an absent pin → test 1 is red; drop "pinned" from the
     condition of sentence C → the guard of test 9 is red; show the check's sentence C in the log only → test 9 is red;
@@ -519,7 +557,8 @@ real `sshd` that the run starts for itself, through the commands as the extensio
 is missing counts as not passed. The suite keeps a real-`sshd` test from passing by being skipped, as it does for
 the guard tests (`CREDS_GUARD_TESTS_REQUIRED`, `.agents/PROJECT.md`, *Commands*): the stories document names the
 variable that CI sets. **Checked on 2026-11-17:** this machine has no `sshd` (`which sshd`); the CI image was not
-checked. Where the binary comes from is settled before E1's stories are written (§9, step 3). A public host stays
+checked. Where the binary comes from is settled before E1's stories are written (§9, step 3; settled in E1's stories
+document, item 1). A public host stays
 out of the suite (not hermetic); §3.5 and §3.9 used one by hand. Windows is read, not run (the suite runs on Ubuntu;
 N16, G3; C6).
 
@@ -535,14 +574,14 @@ The documents are inside the epics, with the change they describe: the first two
   without a terminal (these three, the agent's exec, *Run with Secrets*), a key that only a system-wide known-hosts
   file lists is no longer accepted, and a storage folder whose path holds a space no longer breaks the call. No
   version heading: the release writes it.
-- `research/module_extension.md`: the paragraph **B10 — the host key** (`:5157-5173`) names the three roads (an
+- `research/module_extension.md`: the paragraph **B10 — the host key** (`:5196-5213`) names the three roads (an
   unpinned entry as the agent's exec, a pin enforced from a per-call file), the words of a pinned call and the one
   function that writes them, and that Connect's line is not among them yet; the paragraph **The bridge's `ssh` and its
   key file (N16)** (`:2581-2591`) gets the pin file and the extended helpers; the table *Secrets at rest and in flight*
-  (`:6146`) gets the per-call pin file beside the row *SSH private key on disk*; the paragraph *Rule C* (`:6575`) names
+  (`:6185`) gets the per-call pin file beside the row *SSH private key on disk*; the paragraph *Rule C* (`:6613`) names
   the per-call pin name, which keeps the entry's id as `known_hosts-<id>` does.
 - `research/module_tests.md`: a new section after `## A bridge, its socket check and the install delete their key file
-  (N16)` (`:2479`): the test files with their counts (read from the runner), what each proves, the real pieces, and
+  (N16)` (`:2479`; G2's section follows it at `:2501`, and the new one stands behind G2's): the test files with their counts (read from the runner), what each proves, the real pieces, and
   what none of them proves (§5). E2 adds the real runs: where the counterpart lives, the exact command, M1-M9 marked
   as measured, and what they do not prove.
 - **Not in the epics: the help article** `remote-bridge`, *What can go wrong* (`helpEn.ts:205`). A change to it changes
@@ -583,7 +622,7 @@ that would justify it:
   it after §3.9: Connect's line (C4), the config's own sources (C2), Windows (C6).
 - **F4.** The socket check's log line for an empty answer says the socket "is there" (`agentCommands.ts:232-234`), also
   when `ssh` itself failed and nothing was observed (`interpretSocketProbe` reads an empty answer as `unreadable`,
-  `sshBridge.ts:298-304`).
+  `sshBridge.ts:317-323`).
 - **F5.** `commands/agentCommands.ts` holds doc comments with no function under them (`:76-93`, `:133-152`; the
   registrations were moved out of `extension.ts` word for word). A question for the lead, not a change of this plan:
   the comments whose function lives in another file could go, which would also widen §3.6's budget.
@@ -612,8 +651,9 @@ that would justify it:
 
 ## 9. Build order and merge conditions
 
-1. **G2 merges first** (§4). Then this plan is revised against `main`: the line references, §3.6's count, and §4's
-   rows about G2. A repaired reference is not a change.
+1. **Done, 2026-11-17:** G2 merged first (#376, `07ed8303`), and this plan was revised against `main` at `ca99cd91`: the
+   line references into `sshBridge.ts`, `sshExecCommand.ts` and `research/module_extension.md`; §3.6's count (794 lines,
+   as before: G2 did not change the file); §4's rows about G2; test 12 of §5. A repaired reference is not a change.
 2. **Done, 2026-11-17:** the coai plan gate (`review_plan` → `resolve`) answered `proceed`; P1-P4 were accepted and
    folded in; the split was ordered, and the question consultants were asked about it (`cbe21f00`). That approval
    opened the ledger.
@@ -680,7 +720,9 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
   a pinned call (§3.9) and the two forms of sentence A (§3.5) are security judgements (`subagent-models.md`, the row
   *Security judgement*).
 - **Stories.** [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (2026-11-17): four
-  stories, E1.S1-E1.S4; the cornerstone is E1.S2.
+  stories, E1.S1-E1.S4; the cornerstone is E1.S2. The specs, both 2026-11-17: E1.S1,
+  [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md); E1.S2,
+  [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md).
 
 ### E2 — The real runs: the plan's theory is tested against a real `sshd`
 
@@ -700,7 +742,12 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
     socket check runs through the bridge's command), with the REAL `ssh` client, `runSshExec`, the bridge spawner,
     `materializeKnownHosts` and `forgetMaterializedKey`. Only the `vscode` module is the suite's stand-in, as in
     every test of this repository.
-  - *The five runs:* the sweep, the mode check, the probe, the install run, the bridge.
+  - *The five runs:* the sweep, the mode check, the probe, the install run, the bridge. **On a refused host key four
+    of them start** (change 1.1): the install returns after a probe that failed (`installRemoteCli`,
+    `agentCommands.ts:282-292`), so its second run never starts. Where a row needs the install run on a host with
+    another key, it uses *the switch*: the counterpart presents the pinned key until the install's question is open
+    (the probe has passed), then the other counterpart takes the address, and only then the question is answered. So
+    the second connection goes through the production control flow.
   - *The evidence:* the counterpart's log (accepted logins, authentication attempts, forwards); a record of every
     start of the client with its argv and its pid (here: a logging shim first on `PATH` that then runs the real
     client; the stories document may choose another instrument that counts starts as surely); the messages that the
@@ -711,13 +758,13 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
 | # | The theory | The run | Passes when |
 |---|---|---|---|
 | M1 | A pinned entry whose host presents the pinned key works on all three roads | the entry pinned to K1, the counterpart K1; the install to its end, the bridge with its check | the counterpart logs exactly 5 accepted logins, one per run; each of the 5 recorded argvs holds `StrictHostKeyChecking=yes` and one path as both known-hosts files; the install's two runs name one path, the check's two runs one path, the bridge its own: 3 distinct paths; the forwarded socket exists while the bridge is open and the check reads its mode; no sentence of §3.5 is shown |
-| M2 | A key that another known-hosts file trusts does not satisfy a pinned call (P1) | the entry pinned to K1, the counterpart K2; K2 is listed (a) in the file that the client reads as the person's default one, (b) in the file that it reads as the system-wide one (the real file where the run may write it, else an owned file that the handed config names; the result says which) | for (a) and for (b), on each of the 5 runs: exit code 255 and `Host key verification failed.`; the counterpart logs 0 accepted logins, 0 authentication attempts and 0 forwards. Control, once, by hand, so that the row can fail: in setup (b) the real client with today's two words and no `GlobalKnownHostsFile` is accepted |
-| M3 | With G2 on `main`, a live master connection does not carry a pinned call past the key check | a master connection to the counterpart (K1) is alive through the handed config (`ControlMaster`, `ControlPath`, `ControlPersist`); the entry is pinned to K2 | each of the 5 runs: exit code 255 and the verification line; after the master was set up, the counterpart's log shows no new session, command or forward. Control, once, by hand: the real client with the same pin words and without G2's options is carried by the master |
+| M2 | A key that another known-hosts file trusts does not satisfy a pinned call (P1) | the entry pinned to K1; K2 is listed (a) in the file that the client reads as the person's default one, (b) in the file that it reads as the system-wide one (the real file where the run may write it, else an owned file that the handed config names; the result says which). Two legs, each for (a) and for (b). *The mismatch:* the counterpart is K2 from the start. *The switch:* the counterpart is K1 until the install's question is open, then K2 takes the address and the question is answered | *The mismatch,* for (a) and for (b): each of the four runs that start (the sweep, the mode check, the probe, the bridge) ends with exit code 255 and `Host key verification failed.`; the record of the client's starts holds no install run; the counterpart logs 0 accepted logins, 0 authentication attempts and 0 forwards. *The switch,* for (a) and for (b): K1 logged the probe as accepted; the install run starts once and ends with exit code 255 and the verification line; K2 logs 0 accepted logins and 0 authentication attempts; nothing was written into the login's home; what the install shows is recorded word for word. Control, once, by hand, so that the row can fail: in setup (b) the real client with today's two words and no `GlobalKnownHostsFile` is accepted |
+| M3 | With G2 on `main`, a live master connection does not carry a pinned call past the key check | a master connection to the counterpart (K1) is alive through the handed config (`ControlMaster`, `ControlPath`, `ControlPersist`). Two legs. *The mismatch:* the entry is pinned to K2. *The switch:* the entry is pinned to K1; when the install's question is open, K1's listener is ended, the master's session stays, K2 takes the address, and the question is answered | *The mismatch:* each of the four runs that start ends with exit code 255 and the verification line; the record of the client's starts holds no install run; after the master was set up, the counterpart's log shows no new session, command or forward. *The switch:* the install run starts once and ends with exit code 255 and the verification line; after the switch K1's log shows no new session or command (the run did not ride the master), and K2 logs 0 accepted logins. Control, once, by hand: the real client with the same pin words and without G2's options is carried by the master |
 | M4 | An absent pin connects as before; an unusable pin and a failed pin write start nothing | (a) no `hostKey`, an empty one, one of white space; (b) a text that does not parse; (c) a parsed key on a host that cannot form a line; (d) a pin write that fails | (a): the 5 runs carry `accept-new` and no known-hosts file, 5 accepted logins, 0 pin files written. (b), (c), (d), on each road: 0 starts of the client, 0 connections in the counterpart's log, no *bridged* row, 0 files left in `keys/<pid>/`; sentence A in the login's form for (b) and (c), sentence B for (d). Recorded for C9: whether the bridge's command minted a token before it refused |
 | M5 | A refused host key is told to the person as that, and nothing else is (P3) | pinned to K1 in all four: (a) the counterpart K2; (b) the counterpart stopped; (c) the counterpart K1, its login refused; (d) an address that does not answer inside the run's time limit | (a): the install shows sentence C once and not "did not answer the probe"; after *Open Remote Bridge…* no *bridged* row is left, and exactly one error MESSAGE holds the bridge's form of sentence C (a log line alone does not pass); the order of the messages is recorded. (b), (c), (d): sentence C is shown 0 times on both roads, and what is shown is recorded word for word |
 | M6 | Every call owns its files, calls do not disturb each other, nothing is left | two installs of one pinned entry that overlap; a bridge with its check; a bridge replaced by a second; each with a stored key, with a key that the person named by its path, and with a password; a file `known_hosts-<id>` is in the folder before | the pin paths of calls that overlap are distinct, as many as the calls; at each call's end its own file is gone and every other call's file is there with its bytes; `known_hosts-<id>` and the person's own key file are the same bytes after; after the last end: 0 files of these calls in `keys/<pid>/`, 0 client processes alive (by the recorded pids, not by name), no forwarded socket left. The password entry: with K1 the counterpart's log shows that the password attempt arrived (accepted, or `Failed password` where the counterpart cannot check one; the result says which); with K2 it shows 0 authentication attempts |
-| M7 | A pin file at a path with a space is read as one file (§3.9, rows 6-7) | the storage folder's path holds a space; the runs of M1 and of M2 (b) | as M1 and as M2 (b) |
-| M8 | The sources that only an `ssh` config turns on: measured for C2, either result passes | the entry pinned to K1, the counterpart K2; the handed config names a `KnownHostsCommand` that prints K2 | for each of the 5 runs it is recorded whether the login was accepted or refused, with the client's version. An accepted login is the result that C2 names; it does not fail E2 |
+| M7 | A pin file at a path with a space is read as one file (§3.9, rows 6-7) | the storage folder's path holds a space; the runs of M1 and of M2 (b), both legs | as M1 and as M2 (b), both legs |
+| M8 | The sources that only an `ssh` config turns on: measured for C2, either result passes | the entry pinned to K1, the counterpart K2; the handed config names a `KnownHostsCommand` that prints K2 | for each run that starts it is recorded whether the login was accepted or refused, with the client's version (the install run starts only after a probe that was accepted: five runs, or four). An accepted login is the result that C2 names; it does not fail E2 |
 | M9 | The advice of sentence A repairs the pin (the key form), and no password entry is given it (P2) | a key entry with a pin that does not parse: all three roads; then Connect's options (`connectionOptions`) with the real scan of the counterpart (K1) and *Trust and connect* answered; then the runs of M1. Beside it, for C1: a password entry in the same state, the scan given no answer | the three roads showed the key form and started nothing; the stored pin is K1's line after the answer, and M1 passes on that entry; the password entry was shown the password form by all three roads. Recorded for C1: whether Connect's options for it name no pin file |
 
 - **Done when.** Every row passes as its last column says, in one run of the whole set on the final code: a repair
@@ -743,7 +790,8 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
 - **C5 — The help article `remote-bridge` says it, in five languages together** (§6). Justified by M5: the sentences
   that were captured are the ones the article has to match.
 - **C6 — The real runs on Windows** (Win32-OpenSSH: the path form of §3.9, the system-wide file, the stderr that
-  sentence C reads). Justified by M1, M2, M5 and M7 passing on Linux: they are the list that Windows repeats.
+  sentence C reads). Justified by M1, M2, M5 and M7 passing on Linux: they are the list that Windows repeats. Measured
+  so far, the client alone (`ssh.exe -G`, 2026-11-17): the spec of E1.S1, its facts K7 and K8.
 - **C7 — The socket check's log line no longer says "is there" for an empty answer** (§7, F4). Justified by M5, (b)
   and (c): a host that is down and a refused login both reach that line.
 - **C8 — The edit form can clear a saved host key that does not parse** (§7, F2, its second half). Justified by M9:
@@ -751,6 +799,6 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
 - **C9 — The pin is checked before the token is minted and before the PIN question** (§3.4). Justified by M4, (b):
   a refused pin leaves a grant that nobody used.
 - **C10 — The doc comments of `agentCommands.ts` that have no function under them go** (§7, F5). No result of E2
-  bears on it; it is taken only if §3.6's count does not hold after G2.
+  bears on it; it is taken only if §3.6's count does not hold after G2. It holds (§3.6, measured 2026-11-17).
 
 Cornerstones: 1 of 1 — E1.S2
