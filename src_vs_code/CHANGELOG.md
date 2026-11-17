@@ -20,6 +20,13 @@ your own `ssh` config is still asked.
 And a storage folder whose path holds a space no longer breaks these calls. `ssh` read such a path as two file names, found the
 saved key in neither, and refused the host. This is the usual place of the editor's storage on macOS (`Application Support`).
 
+*Open Remote Bridge…* and *Install creds on host* now refuse an entry whose saved host key cannot be used: a stored text that is
+no host key, or a host that cannot be written as a known_hosts line. No `ssh` starts, nothing is sent to that host, and the
+message says what to do. An entry that signs in with a key is sent to *Connect SSH*, which shows the host's fingerprint and
+saves the key when you confirm it. An entry that signs in with a password is told that there is no safe repair yet: Connect SSH
+would send the password without a check of the host when it cannot read the host's key first. If the file of the saved host key
+cannot be written to disk, the message says that, and nothing is sent either. An entry with no saved host key is not affected.
+
 An entry with no saved host key connects as before.
 
 ### Changed — security: the extension's own `ssh` calls share no connection
