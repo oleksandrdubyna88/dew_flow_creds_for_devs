@@ -194,7 +194,8 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - **G1 (medium).** The three roads do not enforce the entry's pinned host key: they pass no `knownHostsFile`, so `ssh`
   runs with `StrictHostKeyChecking=accept-new` against `~/.ssh/known_hosts` (`sshBridge.ts:164-167`,
   `sshExecCommand.ts:146-148`), where the agent's exec uses the pin (`sshUseActions.ts:224`). Another machine at that
-  address is accepted on first contact.
+  address is accepted on first contact. Its plan, written 2026-11-17 and not built yet:
+  [PLAN_person_roads_pin_host_key.md](../todo/PLAN_person_roads_pin_host_key.md); it is built after G2's plan.
 - **G2 (medium if it holds, not measured).** The bridge's argv does not turn connection sharing off (`sshBridge.ts:156-161`
   has no `ControlPath=none`/`ControlMaster=no`); with `ControlMaster auto` + `ControlPersist` in the person's config the
   `-R` forward may live in a master that *Close* and the window's dispose do not kill. The key is not needed after login,
