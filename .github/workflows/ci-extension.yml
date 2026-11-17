@@ -233,5 +233,5 @@ jobs:
       - name: Runner lifecycle (wrapper and runner scenarios)
         run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js out/test/leftoversRunnerHardening.test.js out/test/leftoversRunnerAudit.test.js out/test/leftoversRunnerSweep.test.js out/test/itestRunner.test.js
 
-      - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting)
-        run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js
+      - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting), and what ssh.exe resolves for the extension's argvs (G2)
+        run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js out/test/noConnectionSharing.test.js

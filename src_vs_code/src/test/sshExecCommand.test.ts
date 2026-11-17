@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as execCommand from '../sshExecCommand';
 import {
   BRIDGED_SSH_OPTIONS,
   MAX_REMOTE_COMMAND_CHARS,
@@ -9,6 +10,7 @@ import {
 } from '../sshExecCommand';
 import { EntityMetadata } from '../types';
 import { KEY_FILE } from './fakePaths';
+import { TWO, saysNoSharingBefore, sharingWords } from './noSharingArgv';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -155,10 +157,10 @@ test('F1: a bridged argv keeps the jump, forwards nothing, then the six options,
   assert.ok(argv.indexOf('-i') < argv.indexOf('--'), 'and the destination last');
 });
 
-test('F1: off a bridge the same entry is byte for byte today\'s — -J -A -L … -R … and none of the six options', () => {
+test('F1: off a bridge the same entry keeps -J -A -L … -R …, then says the two no-sharing options, and none of the other four', () => {
   const argv = argvWith(everything, { jump: 'hop@jump.example.com' });
-  assert.deepEqual(argv.slice(argv.indexOf('-J'), argv.indexOf('--')), ['-J', 'hop@jump.example.com', '-A', '-L', '8080:db:5432', '-R', '9000:intranet.example:443']);
-  for (const word of ['ForwardAgent=no', 'ControlPath=none', 'ControlMaster=no', 'ClearAllForwardings=yes', 'ForwardX11=no', 'Tunnel=no']) {
+  assert.deepEqual(argv.slice(argv.indexOf('-J'), argv.indexOf('--')), ['-J', 'hop@jump.example.com', '-A', '-L', '8080:db:5432', '-R', '9000:intranet.example:443', ...TWO]);
+  for (const word of ['ForwardAgent=no', 'ClearAllForwardings=yes', 'ForwardX11=no', 'Tunnel=no']) {
     assert.ok(!argv.includes(word), `${word} is not sent off a bridge: ${argv.join(' ')}`);
   }
 });
@@ -169,10 +171,10 @@ test('F1: the six options ride both authentication branches of a bridged call', 
   }
 });
 
-test('F2: { bridged: false } and {} send none of the six, and an entry that forwards keeps its own -A', () => {
+test('F2: { bridged: false } and {} send the two no-sharing options and none of the other four, and an entry that forwards keeps its own -A', () => {
   for (const options of [{ jump: 'hop@jump.example.com', bridged: false }, {}]) {
     const argv = argvWith(entity({ agentForward: true }), options);
-    assert.deepEqual(SIX.filter((arg) => arg !== '-o' && argv.includes(arg)), [], `nothing of the six: ${argv.join(' ')}`);
+    assert.deepEqual(SIX.filter((arg) => arg !== '-o' && argv.includes(arg)), ['ControlPath=none', 'ControlMaster=no'], `of the six, the two and only they: ${argv.join(' ')}`);
     assert.ok(argv.includes('-A'), 'control: the entry\'s own flag still gives -A');
   }
 });
@@ -223,4 +225,108 @@ test('a_forwarding_entry_with_no_agent_of_ours_gets_no_dash_a_and_forward_agent_
   const bridged = argvWith(everything, { bridged: true, ownAgent: false });
   assert.equal(sixAt(bridged) !== -1 && pairs(bridged) === 1, true, `a bridged call keeps its six options, and no second pair: ${bridged.join(' ')}`);
   assert.deepEqual(bridged, argvWith(everything, { bridged: true }), 'ownAgent changes nothing on a bridge');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * G2 (`PLAN_bridge_no_connection_sharing.md` §4.3, §7.2) — every run shares no connection. These say what is SENT; what the
+ * two options do is asked of a real ssh (`noConnectionSharing.test.ts`) and of a real sshd (section 9 of the SSH agent itest).
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** What a caller can say, one list per thing. `entry` is a plain entry, and one with `-A` and two forwards. */
+const AXES = {
+  auth: ['key', 'askpass'],
+  bridged: [undefined, false, true],
+  noTty: [undefined, true],
+  ownAgent: [undefined, false, true],
+  jump: [undefined, 'hop@jump.example.com'],
+  entry: [entity(), everything],
+  pin: [undefined, '/keys/known_hosts'],
+  key: [undefined, KEY_FILE],
+  port: [undefined, 2222],
+} as const;
+
+const SIZES = Object.values(AXES).map((list) => list.length);
+
+/** How many argvs the lists make: every combination. */
+const COMBINATIONS = SIZES.reduce((count, size) => count * size, 1);
+
+/** Digit `i` of `n`, read as a number with one digit per list. */
+const digit = (n: number, i: number): number => Math.floor(n / SIZES.slice(0, i).reduce((count, size) => count * size, 1)) % SIZES[i];
+
+interface Run {
+  readonly label: string;
+  readonly argv: string[];
+}
+
+/** The argv of combination `n`, and a label that names it. */
+function runOf(n: number): Run {
+  const c = {
+    auth: AXES.auth[digit(n, 0)],
+    bridged: AXES.bridged[digit(n, 1)],
+    noTty: AXES.noTty[digit(n, 2)],
+    ownAgent: AXES.ownAgent[digit(n, 3)],
+    jump: AXES.jump[digit(n, 4)],
+    entry: AXES.entry[digit(n, 5)],
+    pin: AXES.pin[digit(n, 6)],
+    key: AXES.key[digit(n, 7)],
+    port: AXES.port[digit(n, 8)],
+  };
+  const options: SshExecOptions = { bridged: c.bridged, noTty: c.noTty, ownAgent: c.ownAgent, jump: c.jump, knownHostsFile: c.pin };
+  const argv = buildSshExecArgv({ ...c.entry, port: c.port }, c.key, 'id', c.auth, options);
+  assert.notEqual(argv, undefined);
+  const label = JSON.stringify({ ...c, entry: c.entry === everything ? 'forwards' : 'plain' }, (_key, value: unknown) => value ?? null);
+  return { label, argv: argv ?? [] };
+}
+
+const everyRun = (): Run[] => Array.from({ length: COMBINATIONS }, (_, n) => runOf(n));
+
+test('G2: NO_CONNECTION_SHARING is the two options, in this order, and nothing else', () => {
+  // Read through the module object, so this file compiles before the constant exists and the first failure is an assertion.
+  const exported: Record<string, unknown> = { ...execCommand };
+  assert.deepEqual(exported.NO_CONNECTION_SHARING, TWO);
+});
+
+test('G2: every run says ControlPath=none and ControlMaster=no exactly once, side by side, before -i, -p and --', () => {
+  const runs = everyRun();
+  assert.equal(runs.length, 1152, 'every combination of the nine lists');
+  assert.equal(new Set(runs.map((run) => run.label)).size, runs.length, 'no combination twice');
+  const offenders = runs.filter((run) => !saysNoSharingBefore(run.argv, ['-i', '-p', '--']));
+  assert.deepEqual(
+    offenders.slice(0, 1).map((run) => `${run.label}: ${run.argv.join(' ')}`),
+    [],
+    `${offenders.length} of ${runs.length} argvs do not say the two options once, before -i, -p and --`,
+  );
+});
+
+test('G2: no other word of a run names connection sharing', () => {
+  const offenders = everyRun().flatMap((run) => sharingWords(run.argv).map((word) => `${word} in ${run.label}`));
+  assert.deepEqual(offenders.slice(0, 3), [], `${offenders.length} words name sharing beside the two options`);
+});
+
+test('G2: the scan for sharing words finds each spelling, and leaves the two options alone', () => {
+  const planted = ['-o', 'controlmaster=auto', '-oControlPath=/x', '-o', 'ControlPersist=60', '-S', '/y', '-M', '-O', 'exit', ...TWO, '--', 'host', '-S'];
+  assert.deepEqual(sharingWords(planted), ['controlmaster=auto', '-oControlPath=/x', 'ControlPersist=60', '-S', '-M', '-O']);
+  assert.deepEqual(sharingWords(planted, [1, 2]), ['ControlPersist=60', '-S', '-M', '-O'], 'the indexes a caller owns are skipped');
+  assert.equal(saysNoSharingBefore(planted, ['--']), true, 'control: the two options of the planted argv are found');
+  assert.equal(saysNoSharingBefore([...TWO, ...planted], ['--']), false, 'twice is not once');
+  assert.equal(saysNoSharingBefore(planted, ['-M']), false, 'after a word of `before` is not before it');
+});
+
+/** Copied from the output of `main` at b84416aa (extension 1.22.2): G2 changes no bridged call. */
+const BRIDGED_KEY_BEFORE_G2 = [
+  '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/keys/known_hosts', '-o', 'ConnectTimeout=10',
+  '-J', 'hop@jump.example.com',
+  '-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no',
+  '-i', KEY_FILE, '-p', '2222', '--', 'deploy@example.com', 'id',
+];
+const BRIDGED_ASKPASS_BEFORE_G2 = [
+  '-o', 'NumberOfPasswordPrompts=1', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10',
+  '-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no',
+  '--', 'deploy@example.com', 'id',
+];
+
+test('G2: a bridged argv is byte for byte the one before G2', () => {
+  const pinned = { jump: 'hop@jump.example.com', bridged: true, noTty: true, knownHostsFile: '/keys/known_hosts' };
+  assert.deepEqual(argvWith({ ...everything, port: 2222 }, pinned, 'key', KEY_FILE), BRIDGED_KEY_BEFORE_G2);
+  assert.deepEqual(argvWith(entity(), { bridged: true }, 'askpass'), BRIDGED_ASKPASS_BEFORE_G2);
 });

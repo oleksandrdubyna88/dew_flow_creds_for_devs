@@ -11,6 +11,12 @@
  * is watching. So every child is killed on dispose, and the manager refuses to hold a second
  * bridge for the same entity rather than leaking the first one's handle.</p>
  *
+ * <p>That holds only while the spawned process IS the connection that carries the forward. With connection sharing in the
+ * person's `ssh` config it was not: the process exited at once, a master kept the forward, and `kill()` reached nothing. The
+ * tunnel's argv now asks for no sharing (`NO_CONNECTION_SHARING`, `sshBridge.ts`), and section 9 of
+ * `scripts/ssh-agent-itest.cjs` drives THIS class against a real `sshd`: after `stop()` the forward is not served. Not covered:
+ * an extension host that is killed runs no `dispose`, and the `ssh` it started lives on.</p>
+ *
  * <p>The spawner is injected, so the lifetime rules are a unit test instead of something you
  * find out by leaving a jump box connected overnight.</p>
  */
