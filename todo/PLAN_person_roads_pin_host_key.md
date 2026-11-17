@@ -679,7 +679,8 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
   reaches all three roads and reads as working. Not marked, and Fable's all the same, outside the quota: the words of
   a pinned call (§3.9) and the two forms of sentence A (§3.5) are security judgements (`subagent-models.md`, the row
   *Security judgement*).
-- **Stories.** `todo/PLAN_person_roads_pin_host_key_E1.md`: not written yet.
+- **Stories.** [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (2026-11-17): four
+  stories, E1.S1-E1.S4; the cornerstone is E1.S2.
 
 ### E2 — The real runs: the plan's theory is tested against a real `sshd`
 
@@ -752,4 +753,4 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
 - **C10 — The doc comments of `agentCommands.ts` that have no function under them go** (§7, F5). No result of E2
   bears on it; it is taken only if §3.6's count does not hold after G2.
 
-Cornerstones: 0 of 1 — none marked yet
+Cornerstones: 1 of 1 — E1.S2
