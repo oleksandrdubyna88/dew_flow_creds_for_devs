@@ -652,8 +652,9 @@ export function dbQueryAction(
       if (refusal !== undefined) {
         return fail('not_supported', refusal);
       }
-      // On a bridge the client is asked for the files it would read under the person's `HOME` (`.mylogin.cnf`, `.pgpass`, `.postgresql/`) at a path in the keys folder that nothing ever
-      // writes (E1.6 §S6.14 Y6), built by the one sanctioned builder as the call-free sentinel of `bridgedSshRefusals.ts` is.
+      // On a bridge the client is given a connection the builder writes from the entry's own fields (§S6.15 Z2), never the stored string, and is asked for the files it would read
+      // under the person's `HOME` (`.mylogin.cnf`, `.pgpass`, `.postgresql/`) at a path in the keys folder that nothing ever writes (E1.6 §S6.14 Y6), built by the one sanctioned
+      // builder as the call-free sentinel of `bridgedSshRefusals.ts` is. Those paths are a defence inside the profile; the lock is that no stored setting reaches the client.
       const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file') });
       if (launch === undefined) {
         return fail(

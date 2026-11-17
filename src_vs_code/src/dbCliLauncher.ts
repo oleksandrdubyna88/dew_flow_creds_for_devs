@@ -213,8 +213,9 @@ export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): 
 }
 
 /**
- * What a BRIDGED client is asked for so that it reads none of the person's own files under `HOME` (E1.6 §S6.14 Y6; probes PD1-PD3 saw each variable
- * close its file): `mysql` gets `MYSQL_TEST_LOGIN_FILE` (`.mylogin.cnf`, which `--no-defaults` still reads), `psql` gets `PGPASSFILE` (`.pgpass`)
+ * What a BRIDGED client is asked for so that, given a connection THIS EXTENSION BUILT, it reads none of the person's own files under `HOME` (E1.6 §S6.14 Y6; probes
+ * PD1-PD3 saw each variable close its file). That is a defence inside the profile and not the lock: PQ1 and PQ2 saw `?passfile=` and `?service=` in a stored URI outrank
+ * these variables, which is why a bridged client is never handed the stored string (§S6.15 Z2) and `psql` also gets the same three paths as keywords of its own. `mysql` gets `MYSQL_TEST_LOGIN_FILE` (`.mylogin.cnf`, which `--no-defaults` still reads), `psql` gets `PGPASSFILE` (`.pgpass`)
  * and `PGSSLCERT` and `PGSSLKEY` (`~/.postgresql`), each at `absentFile`, a path nothing ever writes. `mssql` has none of these. `undefined`
  * when a client that needs them has no `absentFile`: such a launch is refused, never made with the person's files readable.
  */
@@ -277,7 +278,10 @@ const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: 
 /** The variable that carries the user, for the client that has no flag for it (`sqlcmd`): always set, since a user is required. */
 const BRIDGED_USER_ENV: Partial<Record<DbType, string>> = { mssql: 'SQLCMDUSER' };
 
-/** `--no-defaults` first and `--protocol=TCP` straight after it (PM1: both clients take it there); `-h` is always named, so `localhost` means TCP and never the socket file. */
+/**
+ * No option file at all: `--no-defaults` first, because it is honoured only there and Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`. Then `--protocol=TCP`
+ * straight after it (PM1: both clients take it there); `-h` is always named, so `localhost` means TCP and never the socket file (Q17).
+ */
 function bridgedMysqlArgs(connection: BuiltConnection, query: string): string[] {
   const flags = [
     ['-h', connection.host],
@@ -353,13 +357,11 @@ export function buildDbQueryLaunch(
       // platform, whatever a later character folds to. Do not trim it.
       return {
         exe: cli.exe,
-        // A bridged call also reads none of the person's own `psqlrc` (`-X`, first): the agent's query would otherwise run after a startup file it cannot see (E1.6, parent §4.11).
-        args: [...(bridged ? ['-X'] : []), '-c', ' ' + query, '--', withoutPassword(connectionString)],
-        env: { ...env, ...closing },
+        args: ['-c', ' ' + query, '--', withoutPassword(connectionString)],
+        env,
       };
     case 'mysql': {
-      // A bridged call reads no option file at all (`--no-defaults`, first: it must come before any other option). Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`; this is the flag that closes it.
-      const args = [...(bridged ? ['--no-defaults'] : []), '-h', parts.host ?? 'localhost'];
+      const args = ['-h', parts.host ?? 'localhost'];
       if (parts.port !== undefined) {
         args.push('-P', parts.port);
       }
@@ -374,7 +376,7 @@ export function buildDbQueryLaunch(
       // only at a statement start, the split refuseQuery assumes, and no answer to a LOCAL INFILE
       // request. Known gap: Oracle's load-data-local-dir in an option file survives the last one.
       args.push('--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query);
-      return { exe: cli.exe, args, env: { ...env, ...closing } };
+      return { exe: cli.exe, args, env };
     }
     case 'mssql': {
       if (parts.user !== undefined) {

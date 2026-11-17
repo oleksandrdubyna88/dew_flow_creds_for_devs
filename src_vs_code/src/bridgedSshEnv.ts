@@ -10,7 +10,8 @@
  *
  * <p>What is NOT asked for matters as much: no `SSH_AUTH_SOCK` (the agent), no `CREDS_REF_*`, no `PGOPTIONS`, `PGSERVICE`, `MYSQL_HOME`, no
  * `LD_PRELOAD`. Anything the person's shell exported would otherwise ride into a process an agent's command shapes. `PGPASSFILE`,
- * `MYSQL_TEST_LOGIN_FILE`, `PGSSLCERT` and `PGSSLKEY` are asked for only as `extra`, and only as paths that never exist (§S6.14 Y6).</p>
+ * `MYSQL_TEST_LOGIN_FILE`, `PGSSLCERT` and `PGSSLKEY` are asked for only as `extra`, and only as paths that never exist (§S6.14 Y6), for a database connection this
+ * extension builds (§S6.15 Z2).</p>
  */
 
 export const BRIDGED_ENV_POSIX = ['PATH', 'HOME'] as const;
@@ -24,8 +25,8 @@ export const BRIDGED_ENV_BLANKED_WINDOWS = ['USERNAME', 'USERDOMAIN', 'LOGONSERV
 
 /**
  * The only names a caller may add as `extra`: the four of an askpass password (for a password destination only), the four database client
- * variables the launcher sets (`buildDbQueryLaunch`'s `env`), and the four it asks for as paths that never exist, so the clients read none of the
- * person's own files (§S6.14 Y6).
+ * variables the launcher sets (`buildDbQueryLaunch`'s `env`), and the four it asks for as paths that never exist (§S6.14 Y6): defences for a connection this
+ * extension builds, which then reads none of the person's own files. Not a lock: a stored URI handed whole outranks them (PQ1, PQ2), so a bridged client is never given one.
  */
 export const BRIDGED_ENV_EXTRA = ['SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'CREDS_SSH_PASSWORD', 'DISPLAY',
   'PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'MYSQL_TEST_LOGIN_FILE', 'PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'] as const;
