@@ -1,3 +1,4 @@
+import { hostKeyWords } from './hostKeyPin';
 import { NO_CONNECTION_SHARING, SshExecAuth } from './sshExecCommand';
 import { EntityMetadata } from './types';
 
@@ -179,13 +180,6 @@ const FIXED_OPTIONS: readonly string[] = [
   ...NO_CONNECTION_SHARING,
 ];
 
-/** A pinned host key when the entity has one; otherwise trust on first use, as the exec path does. */
-function hostKeyArgv(knownHostsFile: string | undefined): string[] {
-  return knownHostsFile === undefined
-    ? ['-o', 'StrictHostKeyChecking=accept-new']
-    : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${knownHostsFile}`];
-}
-
 function keyArgv(keyPath: string | undefined): string[] {
   return keyPath !== undefined && keyPath.length > 0 ? ['-i', keyPath] : [];
 }
@@ -229,7 +223,9 @@ export function buildBridgeArgv(
   return [
     ...authArgv(options.auth ?? 'key'),
     ...FIXED_OPTIONS,
-    ...hostKeyArgv(options.knownHostsFile),
+    // A pinned host key when the entity has one; otherwise trust on first use, as the exec path does. Before `-N`, `-R` and every
+    // word of `extra`: `ssh` takes the first value of an option, so a caller's host-key word comes too late.
+    ...hostKeyWords(options.knownHostsFile),
     // No shell, no command: this connection exists only to carry the forward.
     '-N',
     '-R', `${options.remote.path}:127.0.0.1:${options.port}`,

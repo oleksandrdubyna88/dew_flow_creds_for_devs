@@ -15,6 +15,10 @@ import { DEFAULT_SSH_PORT, isSafeSshHost } from './sshCommand';
  * enforced with `StrictHostKeyChecking=yes` against a known_hosts file built from it alone — so a
  * changed key fails the connection instead of printing a warning into a scrollback nobody reads.</p>
  *
+ * <p>"Built from it alone" is what the calls without a terminal ask of `ssh`: {@link hostKeyWords} names the pin file as BOTH
+ * known-hosts files. The line of a Connect terminal (`sshCommand.ts`) names it as the person's file only, so there `ssh` still
+ * reads the system-wide files beside it.</p>
+ *
  * <p>Pure and `vscode`-free. The fingerprint is `SHA256:…`, the same string `ssh-keygen -lf` and
  * the server's own logs print, because a fingerprint nobody can compare against anything is
  * decoration.</p>
@@ -127,6 +131,60 @@ export function knownHostsLine(host: string, port: number | undefined, key: Host
   }
   const target = port !== undefined && port !== DEFAULT_SSH_PORT ? `[${host}]:${port}` : host;
   return `${target} ${key.algorithm} ${key.base64}\n`;
+}
+
+/** A known-hosts file that holds no key. It stands in for a pin file whose path cannot be written as one word: see {@link oneFileWord}. */
+const NO_KEY_FILE = '/dev/null';
+
+/**
+ * The words that tell `ssh` how to check the host's key, on a call the extension starts with no terminal. The one place they are
+ * written: both argv builders call it (`buildSshExecArgv`, `buildBridgeArgv`), and `hostKeyWords.test.ts` holds the list.
+ *
+ * <p><b>No pin file:</b> `accept-new`, as before. <b>A pin file:</b> strict checking, and that file as the person's known-hosts
+ * file AND as the system-wide one. The second is the point (G1, P1). `UserKnownHostsFile` replaces only the person's own files:
+ * `ssh` still reads the system-wide ones (`/etc/ssh/ssh_known_hosts`), so a key that such a file lists for the host passed the
+ * check beside the pin. The same path twice needs no second name for "no file", which differs between the platforms.</p>
+ *
+ * <p><b>Measured 2026-11-17</b>, OpenSSH 10.2p1 against a real `sshd` on the loopback, by hand. The pin file held ANOTHER key and
+ * a config named a system-wide file with the host's real key: with the first two options the login was accepted; with all three,
+ * `Host key verification failed.`, exit code 255. What a client resolves from these words is asked of the PATH's `ssh -G` in
+ * `hostKeyWords.test.ts`; no test of the suite asks a real `sshd`.</p>
+ *
+ * <p><b>What these words do NOT switch off:</b> the sources that only an `ssh` config turns on, `KnownHostsCommand` and
+ * `VerifyHostKeyDNS` (candidate C2 of the plan). And the line of a Connect terminal (`sshCommand.ts`) writes its own words, the
+ * pin as the person's file only (candidate C4).</p>
+ *
+ * <p>It always answers words, and with a pin file always strict ones: there is no answer that a caller could read as "no pin".</p>
+ */
+export function hostKeyWords(pinFile: string | undefined): string[] {
+  if (pinFile === undefined) {
+    return ['-o', 'StrictHostKeyChecking=accept-new'];
+  }
+  const file = oneFileWord(pinFile);
+  return ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${file}`, '-o', `GlobalKnownHostsFile=${file}`];
+}
+
+/**
+ * A path as the value of an option that takes a LIST of files, so that `ssh` reads one file.
+ *
+ * <p>`ssh` splits the value of both known-hosts options at white space. Measured 2026-11-17 against a real `sshd` (OpenSSH
+ * 10.2p1, loopback): a pin file at a bare path with a space is two names, neither is the file, and the call ends with `Host key
+ * verification failed.`; in double quotes it is one file and the login is accepted. `ssh -G` of OpenSSH_for_Windows 9.5p2
+ * resolves the quoted word to one file too (the client alone; no login was made on Windows).</p>
+ *
+ * <p>A path with no white space is written as it is, byte for byte.</p>
+ *
+ * <p>A path that holds a double quote is not written at all. The quote would end the quoted word, two of them can split the path
+ * in two, and an `ssh` older than 8.7 knows no escape for it (read, not measured). The answer is {@link NO_KEY_FILE}: with strict
+ * checking and no key in either list `ssh` refuses every host (measured as above: `No ED25519 host key is known`, exit code
+ * 255, also under a config that trusts the host's key). The call fails; it never trusts a file the pin did not name. Windows
+ * allows no double quote in a path, so this is a POSIX case.</p>
+ */
+function oneFileWord(file: string): string {
+  if (file.includes('"')) {
+    return NO_KEY_FILE;
+  }
+  return /\s/.test(file) ? `"${file}"` : file;
 }
 
 export type PinVerdict = 'first-contact' | 'match' | 'mismatch' | 'unreachable';

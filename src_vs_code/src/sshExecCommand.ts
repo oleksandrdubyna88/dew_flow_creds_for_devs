@@ -1,3 +1,4 @@
+import { hostKeyWords } from './hostKeyPin';
 import { EntityMetadata } from './types';
 import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 import { sshOptionArgv } from './sshOptions';
@@ -169,13 +170,8 @@ export function buildSshExecArgv(
   ];
   // A pinned key is enforced here exactly as on the human path (audit B10): with a pin, a
   // changed host key fails the call instead of being accepted silently. An agent's exec is
-  // precisely where nobody is watching a warning scroll past.
-  argv.push(
-    ...(options.knownHostsFile === undefined
-      ? ['-o', 'StrictHostKeyChecking=accept-new']
-      : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`]),
-    '-o', 'ConnectTimeout=10',
-  );
+  // precisely where nobody is watching a warning scroll past. The words are `hostKeyWords`'s.
+  argv.push(...hostKeyWords(options.knownHostsFile), '-o', 'ConnectTimeout=10');
   // The same shared composer the human path uses — see `sshOptions.ts`. A bridged call is one fresh connection: the composer gets the
   // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
   // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.

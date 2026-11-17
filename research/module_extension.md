@@ -5212,6 +5212,16 @@ sitting there), while an agent's exec — which has nobody to ask — keeps `acc
 Forcing `accept-new` on the human path would have removed the very question B10 was about. A pin
 that already exists is enforced on both.
 
+**The words of a pinned call (G1, E1.S1).** A call that the extension starts with no terminal says its host-key check with words
+from ONE function, `hostKeyWords` in `hostKeyPin.ts`; both argv builders call it (`buildSshExecArgv`, `buildBridgeArgv`). With no
+pin file it answers `-o StrictHostKeyChecking=accept-new`. With a pin file it answers strict checking and that file as
+`UserKnownHostsFile` AND as `GlobalKnownHostsFile`, because the first replaces only the person's own files and `ssh` read the
+system-wide ones beside the pin. A path with white space goes in double quotes (both options take a list of files); a path that
+holds a double quote is not written, and both options then name `/dev/null`, so `ssh` refuses every host. Measured by hand
+against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and the results are in the docblock of the
+function. The line of a Connect terminal (`sshCommand.ts`) is not among them yet: it names the pin as the person's file only.
+`KnownHostsCommand` and `VerifyHostKeyDNS` of a person's config are not switched off.
+
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 
 ### Agent forwarding was a flag with nothing behind it (0.65.0)

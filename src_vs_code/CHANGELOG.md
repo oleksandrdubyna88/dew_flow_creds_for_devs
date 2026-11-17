@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: a saved host key is the only key a call without a terminal accepts
+
+An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). On every call that the extension
+starts for such an entry without a terminal (an agent's `ssh:exec` and its run over SSH, *Run with Secrets* over SSH), `ssh` now
+gets the saved key as its ONLY known-hosts file. Before, it got the saved key as your own known-hosts file, and still read the
+system-wide ones (`/etc/ssh/ssh_known_hosts`): a key that such a file listed for the host was accepted beside the saved one.
+Measured (OpenSSH 10.2p1 on both ends, loopback): with another key saved and the host's real key in a system-wide file, the
+login was accepted before and now ends with `Host key verification failed`. What is not covered yet: your own terminal,
+*Connect via SSH*, still reads the system-wide files beside the saved key; and a `KnownHostsCommand` or `VerifyHostKeyDNS` in
+your own `ssh` config is still asked.
+
+And a storage folder whose path holds a space no longer breaks these calls. `ssh` read such a path as two file names, found the
+saved key in neither, and refused the host. This is the usual place of the editor's storage on macOS (`Application Support`).
+
+An entry with no saved host key connects as before.
+
 ### Changed — security: the extension's own `ssh` calls share no connection
 
 If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`

@@ -11,6 +11,7 @@ import {
 import { EntityMetadata } from '../types';
 import { KEY_FILE } from './fakePaths';
 import { TWO, saysNoSharingBefore, sharingWords } from './noSharingArgv';
+import { withoutGlobal } from './pinnedArgv';
 
 const entity = (over: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'e1',
@@ -325,8 +326,10 @@ const BRIDGED_ASKPASS_BEFORE_G2 = [
   '--', 'deploy@example.com', 'id',
 ];
 
-test('G2: a bridged argv is byte for byte the one before G2', () => {
+test('G2: a bridged argv is byte for byte the one before G2 (the one pair that G1 added to a pinned call taken out)', () => {
   const pinned = { jump: 'hop@jump.example.com', bridged: true, noTty: true, knownHostsFile: '/keys/known_hosts' };
-  assert.deepEqual(argvWith({ ...everything, port: 2222 }, pinned, 'key', KEY_FILE), BRIDGED_KEY_BEFORE_G2);
+  // G1 (E1.S1) names the pin file as the system-wide known-hosts file too: one pair more on a pinned call, bridged or not.
+  // `hostKeyWords.test.ts` says where it stands. Without it the argv is the one before G2.
+  assert.deepEqual(withoutGlobal(argvWith({ ...everything, port: 2222 }, pinned, 'key', KEY_FILE)), BRIDGED_KEY_BEFORE_G2);
   assert.deepEqual(argvWith(entity(), { bridged: true }, 'askpass'), BRIDGED_ASKPASS_BEFORE_G2);
 });
