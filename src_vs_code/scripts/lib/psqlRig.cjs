@@ -12,9 +12,20 @@ const { launch, endChild } = require('../itestSshd.cjs');
 const BOUND_MS = 20_000;
 const PD2_PASSWORD_MARKER = 'pd2-marker-password';
 const PD3_MARKER_CN = 'pd3-marker-client';
-/** Whether a password message held the marker. Read through a function: the state is filled by a socket callback, after the run. */
-const holdsMarker = (sent) => typeof sent === 'string' && sent === PD2_PASSWORD_MARKER;
-/** What a password message was, for the log: never its text (it is the marker, but a log line is not the place for a password). */
+/**
+ * What a password message was, as the fake server read it: the server compares the text with the values these legs know AT THE MOMENT IT READS IT, and keeps only
+ * the words below (`state.sent`); the text itself is never stored, passed on or logged. Nothing derived from a password reaches a log line: a log line holds a
+ * fixed phrase of this list.
+ */
+const LABEL_PGPASS_MARKER = 'the .pgpass marker';
+const LABEL_SERVICE_PASSWORD_MARKER = 'the service-file password marker';
+const LABEL_SERVICE_PASSFILE_MARKER = 'the service-file passfile marker';
+const LABEL_STORED = 'the stored password';
+const LABEL_EMPTY = 'an empty password';
+const LABEL_OTHER = 'another value';
+/** Whether the message was the .pgpass marker (`sent` is the words of `state.sent`). Read through a function: the state is filled by a socket callback, after the run. */
+const holdsMarker = (sent) => sent === LABEL_PGPASS_MARKER;
+/** What a password message was, for the log (`sent` is the words of `state.sent`). */
 const described = (sent) => {
   if (sent === undefined) {
     return 'none';
@@ -40,14 +51,14 @@ const FATAL = withLength('E', Buffer.from('SFATAL\0C28P01\0Mthe fake server reco
 /**
  * The fake server: a first message with no type byte (length, code). An `SSLRequest` and a `GSSENCRequest` are answered `N` (this server has
  * neither); any other is the start-up message, answered with the clear-text request; the next message is the password, `p`, length and a
- * NUL-ended text. `state` records what arrived: the start-ups, the requests refused, the password text.
+ * NUL-ended text. `state` records what arrived: the start-ups, the requests refused, the words for the password message (never its text).
  *
  * With `tlsMaterial` (a throwaway `{ key, cert }`) an `SSLRequest` is answered `S` and the socket is handed to a TLS server that REQUESTS a client
  * certificate and accepts any (or none): `state.secured` counts the completed handshakes and `state.peer` holds what the client offered.
  */
 function fakeServer(tlsMaterial) {
   // `params` is the user and database of the last start-up message; `kinds` is what arrived, in order ('startup', then the type letter of each later message).
-  const state = { startups: 0, refused: 0, password: undefined, sslRequests: 0, secured: 0, peer: undefined, tlsError: undefined, params: undefined, kinds: [] };
+  const state = { startups: 0, refused: 0, sent: undefined, sslRequests: 0, secured: 0, peer: undefined, tlsError: undefined, params: undefined, kinds: [] };
   const tlsServer = tlsMaterial === undefined ? undefined : secureServer(tlsMaterial, state);
   const server = net.createServer((socket) => {
     let pending = Buffer.alloc(0);
@@ -132,7 +143,7 @@ function step(socket, phase, incoming, state, tlsServer) {
     // Only a password message ('p') is a password: a Terminate ('X') after a refused request is not.
     state.kinds.push(String.fromCharCode(incoming.type ?? 0));
     if (incoming.type === 0x70) {
-      state.password = incoming.body.toString('utf8').replace(/\0$/, '');
+      state.sent = classified(incoming.body.toString('utf8').replace(/\0$/, ''));
     }
     socket.end(FATAL);
     return 'done';
@@ -253,27 +264,31 @@ const PQ2_STORED_PASSWORD = 'pq2-stored-password';
 const PQ2_SECOND_CN = 'pq2-second-client';
 /** The values a password message may hold in these legs, with the words that name them: a log line names a value and never writes it. */
 const PQ2_VALUES = [
-  ['the .pgpass marker', PD2_PASSWORD_MARKER],
-  ['the service-file password marker', PQ2_SERVICE_PASSWORD_MARKER],
-  ['the service-file passfile marker', PQ2_SERVICE_PASSFILE_MARKER],
-  ['the stored password', PQ2_STORED_PASSWORD],
+  [LABEL_PGPASS_MARKER, PD2_PASSWORD_MARKER],
+  [LABEL_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSWORD_MARKER],
+  [LABEL_SERVICE_PASSFILE_MARKER, PQ2_SERVICE_PASSFILE_MARKER],
+  [LABEL_STORED, PQ2_STORED_PASSWORD],
 ];
-/** What a password message was, in words: no message, a value of the table above, or another value. Never the text. */
-function labelled(sent) {
-  if (sent === undefined) {
-    return 'no password message';
-  }
-  if (sent === '') {
-    return 'an empty password';
+/**
+ * The words for a password message, chosen by comparison with the values above: an empty message, one of the values (the words that name it), or another value.
+ * The fake server calls this once, when it reads the message, and keeps the answer only: the text goes no further than this comparison.
+ */
+function classified(text) {
+  if (text === '') {
+    return LABEL_EMPTY;
   }
   for (const [label, value] of PQ2_VALUES) {
-    if (sent === value) {
+    if (text === value) {
       return label;
     }
   }
-  return 'another value';
+  return LABEL_OTHER;
 }
-const isMarker = (sent) => sent !== undefined && PQ2_VALUES.some(([label, value]) => label !== 'the stored password' && sent === value);
+/** The words of `state.sent` for a log line: no message, or what `classified` said. */
+const labelled = (sent) => sent ?? 'no password message';
+const MARKER_LABELS = [LABEL_PGPASS_MARKER, LABEL_SERVICE_PASSWORD_MARKER, LABEL_SERVICE_PASSFILE_MARKER];
+/** Whether the message was one of the markers (any file of the person's), not the entry's own password. */
+const isMarker = (sent) => MARKER_LABELS.includes(sent);
 
 /** The client's message, on one line and clipped. */
 const said = (run) => JSON.stringify(run.said.replaceAll(/\s*\n\s*/g, ' | ').slice(0, 400));
@@ -318,5 +333,5 @@ function throwawayCa(folder) {
 
 module.exports = {
   PD2_PASSWORD_MARKER, PD3_MARKER_CN, PQ2_SECOND_CN, PQ2_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSFILE_MARKER, PQ2_STORED_PASSWORD,
-  holdsMarker, described, labelled, isMarker, said, shape, keywordString, versionOf, endedWithin, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa,
+  holdsMarker, described, labelled, isMarker, LABEL_STORED, said, shape, keywordString, versionOf, endedWithin, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa,
 };

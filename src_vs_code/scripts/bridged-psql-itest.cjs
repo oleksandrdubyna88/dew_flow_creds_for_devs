@@ -60,7 +60,7 @@ async function legPD2(scope, exe, dir, product) {
       prepare: writePgpass(home),
     });
     reached(`(PD2) psql ${label}`, run);
-    const sent = run.state.password;
+    const sent = run.state.sent;
     if (!withVariable) {
       check('(r) PD2 control: with no PGPASSFILE the person\'s .pgpass is used and its marker is sent (this rig can make the bad thing happen)', holdsMarker(sent), JSON.stringify({ sent: described(sent), stderr: run.stderr }));
     }
@@ -116,10 +116,10 @@ async function legR2(scope, exe, dir, home, product) {
   for (const [label, options] of cases) {
     const run = await psqlRun(scope, exe, { prepare: writePgpass(home), build: (port) => productionLaunch(product, entryUri(port), home, absentFile, options) });
     reached(`(r) PD2 ${label}`, run);
-    sent.push(run.state.password);
-    console.log(`record (r) PD2 ${label}: exit ${run.code}; the password message: ${R.labelled(run.state.password)}`);
+    sent.push(run.state.sent);
+    console.log(`record (r) PD2 ${label}: exit ${run.code}; the password message: ${R.labelled(run.state.sent)}`);
   }
-  check('(r) PD2 production: the stored password arrives and the marker from the person\'s .pgpass does not', sent[0] === R.PQ2_STORED_PASSWORD && !holdsMarker(sent[0]), JSON.stringify({ sent: R.labelled(sent[0]) }));
+  check('(r) PD2 production: the stored password arrives and the marker from the person\'s .pgpass does not', sent[0] === R.LABEL_STORED && !holdsMarker(sent[0]), JSON.stringify({ sent: R.labelled(sent[0]) }));
   check('(r) PD2 keyword alone: the passfile keyword at the absent file keeps the person\'s .pgpass closed with no variable to help it', !holdsMarker(sent[1]), JSON.stringify({ sent: R.labelled(sent[1]) }));
   check('(r) PD2 keyword alone, control: without the keyword the person\'s .pgpass is used and its marker is sent (this rig can make the bad thing happen)', holdsMarker(sent[2]), JSON.stringify({ sent: R.labelled(sent[2]) }));
 }

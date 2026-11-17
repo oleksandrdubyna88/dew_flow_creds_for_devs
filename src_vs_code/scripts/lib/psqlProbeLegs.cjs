@@ -11,7 +11,7 @@ const childProcess = require('node:child_process');
 const R = require('./psqlRig.cjs');
 const { check } = require('./psqlCheck.cjs');
 const { PD2_PASSWORD_MARKER, PD3_MARKER_CN, PQ2_SECOND_CN, PQ2_SERVICE_PASSWORD_MARKER, PQ2_SERVICE_PASSFILE_MARKER, PQ2_STORED_PASSWORD,
-  labelled, isMarker, said, shape, keywordString, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa } = R;
+  LABEL_STORED, labelled, isMarker, said, shape, keywordString, psqlRun, spawnsDuring, throwawayCertificate, throwawayCa } = R;
 
 /**
  * The rig of PQ2: a home that holds every file the person's libpq could read (a `.pgpass`, a `.pg_service.conf` with three sections, the
@@ -126,7 +126,7 @@ function pq2Check(id, run, reach) {
 /** The record of a password leg. */
 function recordPassword(id, label, run) {
   const reached = run.state.startups >= 1;
-  console.log(`record (${id}) ${label}: exit ${run.code}; the fake server ${reached ? 'was reached' : 'was NOT reached'}; the password message: ${labelled(run.state.password)}; psql said ${said(run)}`);
+  console.log(`record (${id}) ${label}: exit ${run.code}; the fake server ${reached ? 'was reached' : 'was NOT reached'}; the password message: ${labelled(run.state.sent)}; psql said ${said(run)}`);
 }
 
 /** What a client certificate was, in words. */
@@ -175,7 +175,7 @@ async function legPQ2c(rig) {
     rig.controls[id] = run;
     pq2Check(id, run, 'plain');
     recordPassword(id, `the stored URI whole, ${label}`, run);
-    if (labelled(run.state.password) !== expected) {
+    if (labelled(run.state.sent) !== expected) {
       stop(id, `the password message was not ${expected}; the parent expects this URI to leak it`);
     }
   }
@@ -193,7 +193,7 @@ async function legPQ2d1(rig) {
   const password = await pq2Run(rig, { build: (port) => byHand(rig, zShape(port, [['sslmode', 'disable']], absentThree(rig)), { over: markerEnv(rig) }) });
   pq2Check('PQ2-d1', password, 'plain');
   recordPassword('PQ2-d1', 'a keyword string ending in passfile, sslcert and sslkey at the absent file; PGPASSFILE, PGSSLCERT and PGSSLKEY at the rig\'s marker files (password leg)', password);
-  if (isMarker(password.state.password)) {
+  if (isMarker(password.state.sent)) {
     stop('PQ2-d1', 'the .pgpass marker was sent although the keyword names the absent file: a keyword loses to the environment');
   }
   const certificate = await pq2Run(rig, { tlsMaterial: rig.selfSignedTls, build: (port) => byHand(rig, zShape(port, [['sslmode', 'require']], absentThree(rig)), { over: markerEnv(rig) }) });
@@ -210,7 +210,7 @@ async function legPQ2d2(rig) {
   pq2Check('PQ2-d2', run, 'plain');
   check('(PQ2-d2) the rig home holds a .pg_service.conf', fs.existsSync(rig.serviceFile), rig.serviceFile);
   recordPassword('PQ2-d2', 'the same string under Y6\'s environment; the rig home\'s .pg_service.conf holds a section with a password (s1) and no service is named anywhere', run);
-  if (isMarker(run.state.password)) {
+  if (isMarker(run.state.sent)) {
     stop('PQ2-d2', 'a marker was sent with no service named: the client read the unnamed service file');
   }
 }
@@ -286,14 +286,14 @@ async function legPQ2f(rig) {
       const run = await pq2Run(rig, { tlsMaterial: rig.caTls, build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=verify-full')) });
       check(`(PQ2-f) the client ended in time and asked for TLS (${label})`, run.ended && run.state.sslRequests >= 1, shape(run));
       const connected = run.state.secured >= 1 && run.state.startups >= 1;
-      recordCertificate('PQ2-f', `sslmode=verify-full through buildDbQueryLaunch (an entry with a stored password), ${label}: the connection ${connected ? 'WAS made' : 'was NOT made'}`, run, ` the server read ${JSON.stringify(run.state.kinds)} after the handshake (\`p\` is a password message: ${labelled(run.state.password)});`);
+      recordCertificate('PQ2-f', `sslmode=verify-full through buildDbQueryLaunch (an entry with a stored password), ${label}: the connection ${connected ? 'WAS made' : 'was NOT made'}`, run, ` the server read ${JSON.stringify(run.state.kinds)} after the handshake (\`p\` is a password message: ${labelled(run.state.sent)});`);
       read.push({ connected, run });
     }
   } finally {
     fs.rmSync(root, { force: true });
     fs.rmSync(crl, { force: true });
   }
-  if (!read[0].connected || read.some(({ run }) => run.state.peer?.offered || run.state.kinds.some((kind) => kind !== 'startup' && kind !== 'p') || (run.state.password !== undefined && run.state.password !== PQ2_STORED_PASSWORD))) {
+  if (!read[0].connected || read.some(({ run }) => run.state.peer?.offered || run.state.kinds.some((kind) => kind !== 'startup' && kind !== 'p') || (run.state.sent !== undefined && run.state.sent !== LABEL_STORED))) {
     stop('PQ2-f', 'with the CA in root.crt the connection was not made, or a client certificate was offered, or the server read more than the handshake, the start-up message and the entry\'s own password');
   }
 }
@@ -303,14 +303,14 @@ async function legPQ2gh(rig) {
   const g = await pq2Run(rig, { build: (port) => byHand(rig, keywordString([['host', '127.0.0.1'], ['port', String(port)], ['dbname', 'pdprobe'], ['user', 'pdprobe'], ['sslmode', 'disable']]), { password: PQ2_STORED_PASSWORD }) });
   pq2Check('PQ2-g', g, 'plain');
   recordPassword('PQ2-g', 'host, port, dbname, user and sslmode in one keyword string after --; the stored password in PGPASSWORD; every marker file in the rig home', g);
-  if (labelled(g.state.password) !== 'the stored password') {
+  if (labelled(g.state.sent) !== 'the stored password') {
     stop('PQ2-g', 'the server did not receive the stored password and nothing else');
   }
   const named = await pq2Run(rig, { build: (port) => byHand(rig, keywordString([['host', '127.0.0.1'], ['port', String(port)], ['dbname', 'service=s1'], ['user', 'pdprobe'], ['sslmode', 'disable']]), { password: PQ2_STORED_PASSWORD }) });
   pq2Check('PQ2-h', named, 'plain');
   recordPassword('PQ2-h', 'PQ2-g with the database name service=s1', named);
   console.log(`record (PQ2-h) the database name the server read in the start-up message: ${JSON.stringify(named.state.params?.database ?? null)} (the leg wrote "service=s1")`);
-  if (named.state.params?.database !== 'service=s1' || labelled(named.state.password) !== 'the stored password') {
+  if (named.state.params?.database !== 'service=s1' || labelled(named.state.sent) !== 'the stored password') {
     stop('PQ2-h', 'a database name that looks like a connection string was read as one');
   }
   const uri = await pq2Run(rig, {
@@ -319,7 +319,7 @@ async function legPQ2gh(rig) {
   });
   check('(PQ2-h) the client ended in time and reached one of the two fake servers', uri.ended && uri.state.startups + uri.other.startups >= 1, shape(uri));
   const where = uri.other.startups > 0 ? 'the OTHER server (named inside the database name)' : 'the named host';
-  console.log(`record (PQ2-h) PQ2-g with a database name that begins postgresql:// and names another host: the client reached ${where}; the named host read the database name ${JSON.stringify(uri.state.params?.database ?? null)}; the other server read ${JSON.stringify(uri.other.params?.database ?? null)}; the password messages: named host ${labelled(uri.state.password)}, other server ${labelled(uri.other.password)}; psql said ${said(uri)}`);
+  console.log(`record (PQ2-h) PQ2-g with a database name that begins postgresql:// and names another host: the client reached ${where}; the named host read the database name ${JSON.stringify(uri.state.params?.database ?? null)}; the other server read ${JSON.stringify(uri.other.params?.database ?? null)}; the password messages: named host ${labelled(uri.state.sent)}, other server ${labelled(uri.other.sent)}; psql said ${said(uri)}`);
   if (uri.other.startups > 0) {
     stop('PQ2-h', 'a database name that begins postgresql:// sent the client to another host');
   }
@@ -335,7 +335,7 @@ async function legPQ2gh(rig) {
  *                the stored password and no marker; the same entry with `sslmode=require` against PD3's server offers no certificate.
  */
 async function legS(rig) {
-  const sent = (id) => labelled(rig.controls[id].state.password);
+  const sent = (id) => labelled(rig.controls[id].state.sent);
   check('(s) control: ?passfile= in the stored URI delivers the rig home\'s .pgpass marker (the leak the builder must not make)', sent('PQ2-c1') === 'the .pgpass marker', sent('PQ2-c1'));
   check('(s) control: ?service=s1 in the stored URI delivers the service file\'s password marker', sent('PQ2-c2') === 'the service-file password marker', sent('PQ2-c2'));
   if (rig.controls['PQ2-a'].state.peer?.commonName === PQ2_SECOND_CN) {
@@ -359,7 +359,7 @@ async function legS(rig) {
   const password = await pq2Run(rig, { build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=disable')) });
   pq2Check('s inside the profile, password', password, 'plain');
   recordPassword('s', 'an entry with a stored password and sslmode=disable, launched from the builder\'s answer; every marker file in the rig home', password);
-  check('(s) inside the profile: PD2\'s server receives the stored password and no marker', labelled(password.state.password) === 'the stored password' && !isMarker(password.state.password), labelled(password.state.password));
+  check('(s) inside the profile: PD2\'s server receives the stored password and no marker', labelled(password.state.sent) === 'the stored password' && !isMarker(password.state.sent), labelled(password.state.sent));
   const certificate = await pq2Run(rig, { tlsMaterial: rig.selfSignedTls, build: viaBuilder(rig, (port) => entryUri(port, '?sslmode=require')) });
   pq2Check('s inside the profile, certificate', certificate, 'tls');
   recordCertificate('s', 'the same entry with sslmode=require against PD3\'s server', certificate);

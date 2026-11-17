@@ -271,7 +271,7 @@ function profileSettings(ctx: Ctx, pairs: readonly Pair[]): Readonly<Record<stri
   return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair));
 }
 
-const SOCKET_HOST = /^[@/\\]|[,/\\]/;
+const SOCKET_HOST = /(?:^[@/\\])|(?:[,/\\])/;
 const IPV6_HOST = /^\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)\]$/;
 const NETWORK_HOST = /^[A-Za-z0-9_.][A-Za-z0-9_.-]*$/;
 
