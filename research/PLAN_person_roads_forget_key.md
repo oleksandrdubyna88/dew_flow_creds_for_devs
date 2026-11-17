@@ -1,12 +1,12 @@
 # PLAN — three roads of the person delete the key file they wrote (N16)
 
-> Status: **approved 2026-11-16 (coai plan gate, epoch 1 open); BUILT 2026-11-16 on the branch `fix/n16-forget-person-keys` (S1, S2 and
-> S3, the documents), unmerged: the coai code gate, the lead's review of the whole diff, the PR, CI and the release are open.** Split into three
-> stories (`## Stories`); the two security specs were written 2026-11-16. Scope: the extension only (`src_vs_code/src`): the bridge
+> Status: **IMPLEMENTED, 2026-11-17.** Extension 1.22.2 (#373, squash 4020515e; release PR #374). Epoch 1, one change (1.1).
+> Split into three stories (`## Stories`), S2 the cornerstone; the two security specs by Fable. Deviations: §8.
+> Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the bridge spawner of
 > `extension.ts` (its exported function lives in a module of its own, `bridgeSpawner.ts`), one small new helper module
 > (`writtenKey.ts`), their tests, the docs. Found as N16 of
-> [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus review
+> [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md) (§13) by the lead's Opus review
 > on 2026-11-12, by reading. The next plan after N17 in the order the question consultants advised on 2026-11-15
 > (`ad7ce1a5`).
 
@@ -178,7 +178,7 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - `research/module_extension.md:6134`, the row *SSH private key on disk*: the socket check and the install delete their
   file when they finish, a bridge when its `ssh` ends. The bridge's own section gets the spawner's `'error'` sentence.
 - `research/module_tests.md`: the new test file and what it holds.
-- At promotion: the N16 line of [PLAN_agent_refusal_key_file_path.md](../research/PLAN_agent_refusal_key_file_path.md)
+- At promotion: the N16 line of [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)
   gets its "Fixed in" text; the `todo/README.md` rows move to `research/README.md`.
 
 ## 5. Out of scope
@@ -186,7 +186,7 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - Deleting a bridge's key before the bridge ends (§2.2: no signal).
 - Moving the socket check or the install out of `agentCommands.ts` (§2.3).
 - The other open notes of N17: F1 (the `suffix` parameter, after #365), F3 (`keyEntityId` unread), F4, F5.
-- The forwarded own agent of the three clicks ([PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md)).
+- The forwarded own agent of the three clicks ([PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md)).
 
 **Found during the build, not built here** (the lead's Opus review of S2 and a Fable security pass of the whole diff,
 2026-11-16; each read in code unless it says run; all older than N16):
@@ -220,8 +220,31 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - [x] `agentCommands.ts` at most 800 lines, lint green.
 - [x] The tests of §3 RED first, then GREEN; the mutation checks recorded.
 - [x] The docs of §4.
-- [ ] The coai code gate at `proceed`; the lead's Opus review; CI green on the head sha; CodeRabbit read.
-- [ ] Released as an extension patch with the owner's word; the plan promoted.
+- [x] The coai code gate at `proceed`; the lead's Opus review; CI green on the head sha; CodeRabbit read.
+- [x] Released as an extension patch with the owner's word; the plan promoted.
+
+## 8. Deviations
+
+What shipped differently from the plan as approved (5d49cc9b):
+
+1. **Change 1.1** (the cadence consult `e7ead04b`, before the build): the spawner reports every `'error'` of its child to the
+   diagnostic log, and §2.4's bound was narrowed for a started child whose kill fails and that never exits (its key stays until the purge); a child that
+   exits later settles `exited`, and its key is deleted then.
+2. **A second new module.** The spawner lives in `bridgeSpawner.ts`, beside the helper `writtenKey.ts`; the question consultants
+   (`72e7e3c9`) both read it as placement of the approved move, not a change. `.size-baseline.json` went 981 → 975.
+3. **The reporter must not throw** (the lead's Opus review of S2): Node emits a failed kill's `'error'` inside `child.kill()`,
+   so a throwing reporter would leave `stop()`/`dispose()` halfway. Documented on `BridgeErrorReport`; latent, the product's
+   reporter is the log, which never throws.
+4. **Tests added after the S1 review:** C3 asserts its road, C3b (a wide socket mode), U3b (a password credential), R1 and B9
+   use `ownedFile`, and the test world builds its bridge manager without an `as never` cast.
+5. **Rejected in the code rounds, with reasons:** moving `forgetMaterializedKey` out of a module that imports `vscode`
+   (twice; out of scope, and #365 changes its natural home); a timeout on the bridge process (a bridge is long-lived by
+   design); reporting a rejected `exited` (it cannot reject); a person-facing message for a failed start (older
+   behaviour, a change of the command's sentences; G8).
+6. **Checked: Linux, with real processes (a missing program, a live child, a real `ssh` with no answer) and real files.
+   Not checked: Windows and an authenticated `ssh`** (no `sshd` here); the Windows facts are read from Node's contract (G3).
+7. **Open after this plan:** G1-G8 of §5 (G1 and G2 medium: the three roads do not enforce the pinned host key; the bridge
+   does not turn off connection sharing).
 
 ## 7. Build order and merge conditions
 

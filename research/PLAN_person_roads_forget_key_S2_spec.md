@@ -1,7 +1,6 @@
 # PLAN — S2 spec: a bridge's key file goes when its ssh ends, and a start that fails ends (SECURITY, CORNERSTONE)
 
-> Status: **built 2026-11-16 (`f4a0b4c1` the move, `5cbce789` the fix), in PR #373, unmerged; spec written and amended the same day for plan change 1.1 (the spawner reports every
-> `'error'` of its child).** The cornerstone spec of the plan, and a security spec, written by Fable
+> Status: **IMPLEMENTED, 2026-11-17** (`f4a0b4c1` the move, `5cbce789` the fix; the spec amended 2026-11-16 for plan change 1.1; extension 1.22.2, #373). The cornerstone spec of the plan, and a security spec, written by Fable
 > before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`). Story S2 of
 > [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (its §2.2, §2.4, §3 items 3, 4, 4a and 5, `## Stories` S2, and entry 1.1 of its `## Plan changes`).
 > This file is promoted together with the parent.
@@ -1044,21 +1043,21 @@ the whole error object" is N16. N5, N6, N7, N10 and N11 are this spec's own.
 
 ## 8. Done when (each item can be counted)
 
-- [ ] c3 changes `bridgeSpawner.ts` (new), `extension.ts` (975 lines) and `.size-baseline.json` (975) and nothing else; the suite is
+- [x] c3 changes `bridgeSpawner.ts` (new), `extension.ts` (975 lines) and `.size-baseline.json` (975) and nothing else; the suite is
       green at c3.
-- [ ] P1, P3, P4, P6, P8, P9, P10 and P11 were watched red on c3 and pass at c4; P2, P5 and P7 were green at both; P12 passes.
-- [ ] `extension.ts` has 975 lines at c3 and at c4; its one `new SshBridgeManager(` is handed
+- [x] P1, P3, P4, P6, P8, P9, P10 and P11 were watched red on c3 and pass at c4; P2, P5 and P7 were green at both; P12 passes.
+- [x] `extension.ts` has 975 lines at c3 and at c4; its one `new SshBridgeManager(` is handed
       `bridgeSpawner({ report: (error) => log.warn('bridge', describeBridgeError(error)) })`.
-- [ ] B1 to B7 and B9 were watched red on the product of step 3 and pass at c4; B8 was green at both.
-- [ ] `test/writtenKey.test.ts` has U1 to U8 and they pass.
-- [ ] N1 to N16 each turned red what §7 names, and the product was restored after each.
-- [ ] `commands/agentCommands.ts` has 794 lines; `git diff -w c2..c4` of it shows the seven added lines of §3.3, the import line, the
+- [x] B1 to B7 and B9 were watched red on the product of step 3 and pass at c4; B8 was green at both.
+- [x] `test/writtenKey.test.ts` has U1 to U8 and they pass.
+- [x] N1 to N16 each turned red what §7 names, and the product was restored after each.
+- [x] `commands/agentCommands.ts` has 794 lines; `git diff -w c2..c4` of it shows the seven added lines of §3.3, the import line, the
       two `return undefined;` and the returned `bridges.start(…)`, and nothing else.
-- [ ] `sshBridgeManager.ts` and `test/sshBridgeManager.test.ts` are unchanged.
-- [ ] `commands/agentCommands.ts` does not import `../keyInstaller`; `forgetMaterializedKey` is called for the three roads only in
+- [x] `sshBridgeManager.ts` and `test/sshBridgeManager.test.ts` are unchanged.
+- [x] `commands/agentCommands.ts` does not import `../keyInstaller`; `forgetMaterializedKey` is called for the three roads only in
       `writtenKey.ts`.
-- [ ] `extension.ts` does not name `node:child_process`.
-- [ ] `npm run typecheck`, `npm run lint`, `npm run ratchet` and `npm test` are green; the leftovers audit of `npm test` names no
+- [x] `extension.ts` does not name `node:child_process`.
+- [x] `npm run typecheck`, `npm run lint`, `npm run ratchet` and `npm test` are green; the leftovers audit of `npm test` names no
       folder of this run.
 
 ## 9. Break it — ways to make the tests pass while the defect stays, and the row that stops each one
