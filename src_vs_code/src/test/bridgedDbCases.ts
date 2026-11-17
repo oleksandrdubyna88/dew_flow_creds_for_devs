@@ -21,18 +21,18 @@ export const DR5 = `The host of "${ENTRY}" is missing, or is a socket folder or 
  * database name as a connection string.
  */
 const HOST_WORDS = "one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character, or an IPv6 address in brackets";
-const DATABASE_WORDS = 'no control character';
+const DATABASE_WORDS = "it must hold no control character and must not begin with '-'";
 const CONNECTION_WORDS: Readonly<Record<string, string>> = {
   psql: 'it must be one postgres:// or postgresql:// URL with no "#" and no control character',
   mongosh: 'a MongoDB connection is not carried',
 };
 const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   connection: (client) => CONNECTION_WORDS[client] ?? 'it must be one URL with no "#", or one key=value string, with no control character',
-  host: (client) => (client === 'sqlcmd' ? 'it must hold no control character' : `it must be ${HOST_WORDS}`),
+  host: (client) => (client === 'sqlcmd' ? "it must hold no control character and must not begin with '-'" : `it must be ${HOST_WORDS}`),
   port: () => 'it must be a whole number from 1 to 65535',
   user: () => 'it must hold no control character',
   password: () => 'it must hold no control character',
-  database: (client) => (client === 'psql' ? `it must hold ${DATABASE_WORDS}, no "=", and must not begin with a postgres URL scheme` : `it must hold ${DATABASE_WORDS}`),
+  database: (client) => (client === 'psql' ? `${DATABASE_WORDS}, must hold no "=" and must not begin with a postgres URL scheme` : DATABASE_WORDS),
   sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
   connect_timeout: () => 'it must be one to four digits',
   application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
@@ -143,6 +143,13 @@ const FIELDS: Refused[] = [
   { id: 'raw control character', dbType: 'mssql', stored: (v) => `Server=db.example;User Id=app;Password=pw${v}\u0007`, sentence: dr6('connection', 'sqlcmd') },
   { id: 'postgres key-value string', dbType: 'postgres', stored: (v) => `host=db.example user=app password=pw${v}`, sentence: dr6('connection', 'psql') },
   { id: 'a scheme-less string for a URI type', dbType: 'postgres', stored: (v) => `db.example/pw${v}`, sentence: dr6('connection', 'psql') },
+  { id: 'sqlcmd host begins with a dash', dbType: 'mssql', stored: (v) => `Server=-E;User Id=app;Password=pw${v}`, sentence: dr6('host', 'sqlcmd') },
+  { id: 'sqlcmd uri host begins with a dash', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@-E:1433/orders`, sentence: dr6('host', 'sqlcmd') },
+  { id: 'sqlcmd kv database begins with a dash', dbType: 'mssql', stored: (v) => `Server=db.example;Database=-E;User Id=app;Password=pw${v}`, sentence: dr6('database', 'sqlcmd') },
+  { id: 'sqlcmd uri database begins with a dash', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@db.example:1433/-E`, sentence: dr6('database', 'sqlcmd') },
+  { id: 'mysql uri database is an option', dbType: 'mysql', stored: (v) => `mysql://app:pw${v}@db.example/--init-command=x`, sentence: dr6('database', 'mysql') },
+  { id: 'mysql kv database begins with a dash', dbType: 'mysql', stored: (v) => `Server=db.example;Database=-D;User Id=app;Password=pw${v}`, sentence: dr6('database', 'mysql') },
+  { id: 'psql database begins with a dash', dbType: 'postgres', stored: (v) => `postgresql://app:pw${v}@db.example/-x${v}`, sentence: dr6('database', 'psql') },
   { id: 'mongodb', dbType: 'mongodb', stored: (v) => `mongodb://app:pw${v}@db.example/orders`, sentence: dr6('connection', 'mongosh') },
 ];
 

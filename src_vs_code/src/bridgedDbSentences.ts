@@ -86,7 +86,7 @@ export function DR5(entity: string): string {
 
 /** The words every host constraint shares: what a host name may hold. */
 const HOST_WORDS = "one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character, or an IPv6 address in brackets";
-const DATABASE_WORDS = 'no control character';
+const DATABASE_WORDS = "it must hold no control character and must not begin with '-'";
 
 /** What a connection of each client must be, as DR6 says it: a connection is a URL (or, for `mysql` and `sqlcmd`, a key=value string); `mongosh` is never carried. */
 const CONNECTION_WORDS: Readonly<Record<string, string>> = {
@@ -97,11 +97,11 @@ const CONNECTION_WORDS: Readonly<Record<string, string>> = {
 /** The constraint each field or profile setting must meet, in fixed words that hold no value of the connection. Only `psql` reads a database name as a connection string. */
 const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   connection: (client) => CONNECTION_WORDS[client] ?? 'it must be one URL with no "#", or one key=value string, with no control character',
-  host: (client) => (client === 'sqlcmd' ? 'it must hold no control character' : `it must be ${HOST_WORDS}`),
+  host: (client) => (client === 'sqlcmd' ? "it must hold no control character and must not begin with '-'" : `it must be ${HOST_WORDS}`),
   port: () => 'it must be a whole number from 1 to 65535',
   user: () => 'it must hold no control character',
   password: () => 'it must hold no control character',
-  database: (client) => (client === 'psql' ? `it must hold ${DATABASE_WORDS}, no "=", and must not begin with a postgres URL scheme` : `it must hold ${DATABASE_WORDS}`),
+  database: (client) => (client === 'psql' ? `${DATABASE_WORDS}, must hold no "=" and must not begin with a postgres URL scheme` : DATABASE_WORDS),
   sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
   connect_timeout: () => 'it must be one to four digits',
   application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',

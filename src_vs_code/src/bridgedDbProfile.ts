@@ -281,8 +281,11 @@ function networkHost(ctx: Ctx, host: string): string | Refusal {
   return NETWORK_HOST.test(host) ? host : refused(shapeOf(ctx, 'host'));
 }
 
-/** The host (Q17): required for every client; for `psql` and `mysql` one network host; for `sqlcmd` refused only when empty or holding a control character (E1.7 writes its shape with PS1). */
+/** The host (Q17): required for every client; for `psql` and `mysql` one network host; for `sqlcmd` refused only when empty, holding a control character or beginning with `-` (`-S -E` is another option; E1.7 writes its shape with PS1). */
 const presentHost = (ctx: Ctx, host: string | undefined): string | Refusal => (host === undefined || host === '' ? refused(DR5(ctx.entity)) : host);
+
+/** The host `sqlcmd` is given after `-S`: one that begins with `-` is read as the next option (`-S -E`). */
+const sqlcmdHost = (ctx: Ctx, host: string): string | Refusal => (host.startsWith('-') ? refused(shapeOf(ctx, 'host')) : host);
 
 function hostOf(ctx: Ctx, host: string | undefined): string | Refusal {
   const named = presentHost(ctx, host);
@@ -292,7 +295,7 @@ function hostOf(ctx: Ctx, host: string | undefined): string | Refusal {
   if (hasControl(named)) {
     return refused(shapeOf(ctx, 'host'));
   }
-  return ctx.dbType === 'mssql' ? named : networkHost(ctx, named);
+  return ctx.dbType === 'mssql' ? sqlcmdHost(ctx, named) : networkHost(ctx, named);
 }
 
 const portInRange = (port: string): boolean => /^\d{1,5}$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
@@ -315,7 +318,9 @@ function secretOf(ctx: Ctx, field: 'user' | 'password', value: string | undefine
 /** A name `psql` would read as a connection string: one that holds `=` or begins with a connection URI's scheme. */
 const LIBPQ_CONNECTION_STRING = /=|^\s*postgres(?:ql)?:\/\//i;
 
-const unfitDatabase = (ctx: Ctx, database: string): boolean => hasControl(database) || (ctx.dbType === 'postgres' && LIBPQ_CONNECTION_STRING.test(database));
+/** A name that holds a control character or begins with `-` (a client reads it as an option: `-d -E`, `-D --init-command=x`), for every client; for `psql` also one it would read as a connection string. */
+const unfitDatabase = (ctx: Ctx, database: string): boolean =>
+  hasControl(database) || database.startsWith('-') || (ctx.dbType === 'postgres' && LIBPQ_CONNECTION_STRING.test(database));
 
 function databaseOf(ctx: Ctx, database: string | undefined): string | undefined | Refusal {
   if (database === undefined || database === '') {

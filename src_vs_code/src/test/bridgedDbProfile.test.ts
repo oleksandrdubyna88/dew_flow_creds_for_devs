@@ -100,7 +100,7 @@ const GROUPS: ReadonlyArray<readonly [string, string, number]> = [
   ['DP8', 'no host, a socket folder and a list of hosts are refused', 13],
   ['DP10', 'a database name that psql would read as a connection string, or that holds a line break, is refused', 5],
   ['DP11', 'a key the profile does not carry in a mysql URI or a key-value string is refused, the known keys named', 15],
-  ['field', 'a port, a host, a user, a password or a text outside its shape is refused', 15],
+  ['field', 'a port, a host, a user, a password or a text outside its shape is refused', 22],
 ];
 
 for (const [group, what, count] of GROUPS) {
@@ -223,8 +223,8 @@ test('DP15: a field refusal says the constraint the field did not meet, in fixed
   ends('mssql', 'Server=db.example;Port=70000;User Id=u;Password=p', 'it must be a whole number from 1 to 65535');
   ends('postgres', 'postgresql://u:p@db.example/d?sslmode=nope', 'it must be one of disable, allow, prefer, require, verify-ca or verify-full');
   ends('postgres', 'postgresql://u:p@db.example/d?connect_timeout=x', 'it must be one to four digits');
-  ends('postgres', 'postgresql://u:p@db.example/a%0Ab', 'it must hold no control character, no "=", and must not begin with a postgres URL scheme');
-  ends('mysql', 'mysql://u:p@db.example/a%0Ab', 'it must hold no control character');
+  ends('postgres', 'postgresql://u:p@db.example/a%0Ab', "it must hold no control character and must not begin with '-', must hold no \"=\" and must not begin with a postgres URL scheme");
+  ends('mysql', 'mysql://u:p@db.example/a%0Ab', "it must hold no control character and must not begin with '-'");
   ends('postgres', 'postgresql://u:p%0A@db.example/d', 'it must hold no control character');
   assert.equal(refusal('mysql', 'mysql://u:p@db.example:0/d').includes('0/d'), false, 'no part of the connection');
 });

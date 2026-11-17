@@ -3,7 +3,7 @@ import type { DbQueryLaunch } from '../dbCliLauncher';
 /**
  * What `buildDbQueryLaunch(dbType, <the connection of the case>, 'select 1')` answered on `main` (and on this branch before §S6.15 Z2) for each refused connection of
  * `bridgedDbCases.ts`, off a bridge: Q11's reference. A bridge refuses these; a local agent has always been served them, and must still be, byte for byte.
- * `null` is the launch `undefined`. Generated once from the builder as it stood before Z2; it is a record of today, and nothing regenerates it.
+ * `null` is the launch `undefined`. Generated once from the builder as it stood before Z2; it is a record of today, and nothing regenerates it. The seven rows of the dash cases (a database or a `sqlcmd` host beginning with `-`) were added by §S6.15's review and recorded from the same off-bridge builder, which that review did not touch.
  */
 export const OFF_BRIDGE_TODAY: Readonly<Record<string, DbQueryLaunch | null>> = {
   "DP4 service": {"exe":"psql","args":["-c"," select 1","--","postgresql://app@db.example:5432/orders?service=zq9x7k2m"],"env":{"PGPASSWORD":"pwzq9x7k2m"}},
@@ -95,6 +95,13 @@ export const OFF_BRIDGE_TODAY: Readonly<Record<string, DbQueryLaunch | null>> = 
   "raw control character": {"exe":"sqlcmd","args":["-S","db.example","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m\u0007","SQLCMDUSER":"app"}},
   "postgres key-value string": null,
   "a scheme-less string for a URI type": null,
+  "sqlcmd host begins with a dash": {"exe":"sqlcmd","args":["-S","-E","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd uri host begins with a dash": {"exe":"sqlcmd","args":["-S","-E,1433","-d","orders","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd kv database begins with a dash": {"exe":"sqlcmd","args":["-S","db.example","-d","-E","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd uri database begins with a dash": {"exe":"sqlcmd","args":["-S","db.example,1433","-d","-E","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "mysql uri database is an option": {"exe":"mysql","args":["-h","db.example","-u","app","-D","--init-command=x","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
+  "mysql kv database begins with a dash": {"exe":"mysql","args":["-h","db.example","-u","app","-D","-D","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
+  "psql database begins with a dash": {"exe":"psql","args":["-c"," select 1","--","postgresql://app@db.example/-xzq9x7k2m"],"env":{"PGPASSWORD":"pwzq9x7k2m"}},
   "mongodb": null,
   "DP11 mysql ssl-mode": {"exe":"mysql","args":["-h","db.example","-P","3306","-u","app","-D","orders","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
   "DP11 mysql unknown key": {"exe":"mysql","args":["-h","db.example","-P","3306","-u","app","-D","orders","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
