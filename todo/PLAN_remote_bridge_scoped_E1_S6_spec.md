@@ -1,6 +1,6 @@
 # PLAN — E1.6 spec: SSH execution containment — what each leg of a bridged `ssh` offers, and to whom
 
-> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward. Epoch 10 opened on 2026-11-16; §S6.14 is built on this PR the same day (As built for epoch 10: §S6.13), M9 passed again on it. The parent stopped again on 2026-11-17 (its change 10.2: a bridged `psql` URI's libpq parameters read the person's files); not merged.**
+> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward. Epoch 10 opened on 2026-11-16; §S6.14 is built on this PR the same day (As built for epoch 10: §S6.13), M9 passed again on it. The parent stopped again on 2026-11-17 (its change 10.2: a bridged `psql` URI's libpq parameters read the person's files); not merged. Amended on 2026-11-17 for the parent's epoch 11: §S6.15 is the second fix-forward (the gate, the connection built from the entry's fields, the refusals); nothing of it is built before epoch 11 opens.**
 > **Revised the same day after two reviews of `a30faed7` (an Opus judge and a Fable security judge):** the user rule, the host rule and the
 > equal `Host` words, first contact that cannot be written, the `%` rule, the pin line's spelling, and the tests and mutations for them. The
 > decisions of that day are in §S6.10.
@@ -1228,3 +1228,268 @@ probe PU1 (E4.3); the two defects off a bridge, on `main` (parent §8).
   memory. Each probe prints what it met.
 - libuv's list is the one M9 saw under Electron 43.8.6. Another runtime may add other names: WN3 fails then, and the parent's row is
   corrected first.
+
+## S6.15 — Amendment for epoch 11: the second fix-forward on PR #365
+
+*Written 2026-11-17 by Fable, with the parent's whole revision for epoch 11 (step 4 of the full stop after 10.1 and 10.2). Nothing here is built
+before epoch 11 opens and the sort has marked E1.6.* The parent's text it builds from: §4.11 (the invariant, the execution profile, the gate,
+the table, *What E1.6's second fix-forward builds*), §4.9 (rows 7 and 9-13 of the table *What was owed to this review, disposed*; the cost
+list), §5 step 3e, §7 (PQ2, PM1, legs (s) and (t), *The database profile*), §8, §9, §2.1 Q15-Q18. **[C]** and **[S]** mean what they mean above.
+
+**Why.** B8 and Y6 controlled what a database client is handed and took that for control of what it can log in with. PQ1 (the lead,
+2026-11-17, `psql` 18.6 under Y6's environment) saw `?passfile=` and `?service=` in a stored URI send the person's own password. The code
+shows the same shape for `sqlcmd`: an entry with no user is launched with no `SQLCMDUSER` and no `-U` (`dbCliLauncher.ts:322-335`), which is
+trusted authentication. So this amendment does not close one more item. It turns the bridged launch round: a connection this extension builds
+from the entry's fields, a refusal for what it does not build from, and a gate that serves no client until its profile is measured.
+
+**The invariant. [C]** *A bridged query may use only the selected entry's own authentication material; ambient configuration and
+server-negotiated authentication cannot enlarge that authority.* Every step below is read against it.
+
+**What this amendment does not do.** It serves no pair: once it is built, production refuses every bridged `query`. It writes no
+authentication control (`require_auth`, `gssencmode`, a plugin rule, a `sqlcmd` flag), sets no client floor and builds no client check for a
+database client. Those need probes with rigs this PR does not have (the parent's PK1, PS1, PP1, PA1, PE1) and are story E1.7.
+
+**Scope.** `src_vs_code/src`: `bridgedDbProfile.ts` (new), `dbCliLauncher.ts`, `agentUseActions.ts` (the gate and its note);
+`test/bridgedDbProfile.test.ts` (new), `test/dbCliLauncher.test.ts`, `test/bridgeRunSites.test.ts`; `scripts/bridged-psql-itest.cjs` and
+`scripts/bridged-mysql-itest.cjs`; `research/module_extension.md`, `research/module_tests.md`. No UI, no command, no client, no CHANGELOG
+bullet (§S6.11).
+
+**The owner's answers.** Q15-Q18 are the revision's defaults and not the owner's. This amendment is built only after the owner has approved
+them or chosen their other answers. Another answer changes the step that names the question, and the lead says so before the work starts.
+
+**Supersedes, on a bridge only.** B8's *the URI* as `psql`'s last argument, and Q1's observation of it. Q7's second half (*an entry that
+stores no password still gets the names*): such an entry is refused. C22's row gains Z1-Z3. §S6.8's last row (*E1.6 adds the bridged flags
+only*): E1.6 also builds the connection and the gate. Q4, Q4a and Q4b keep their observations and run under a profile table the test names.
+Kept as built and as measured: Y0-Y6, every probe result of §S6.13, M9's second run, legs (m) and (r), the mutations T1-T42. Off a bridge
+nothing changes (§S6.11 stands).
+
+**The order. [C]** The probes first, each in a commit that adds only the probe and is watched on CI before the code that depends on it. Then
+the RED tests of Z1-Z4. Then the code. Then the mutations. A probe that answers against the parent's probe table stops the work and goes to
+the lead. No step is skipped because the gate would refuse the call anyway.
+
+**Z0 — The probes (parent §7: PQ2 and PM1).** Record legs: they print what the client did and assert nothing about the build. Their only
+failures are the rig's own.
+
+- **PQ2. [C]** In `scripts/bridged-psql-itest.cjs`, with the harness's two fake servers (PD2's, which asks for a clear-text password; PD3's,
+  which requests a client certificate), a rig home, and `bridgedSshEnv` for the environment. The leg prints `psql --version` first.
+  **Through the real launch builder:** every leg that hands over a stored URI (a, b, c, e) takes its arguments and variables from
+  `buildDbQueryLaunch('postgres', <the URI>, …, { bridged: true, absentFile })` as it stands before Z2, as leg (r)'s production launch
+  does. PQ1 wrote them by hand, outside the repository. The legs that try a shape Z2 will write (d1-d4, g, h) are written by hand, since
+  no builder writes it yet. After Z2 the builder refuses the URIs of a, b, c and e; leg (s) then keeps them as hand-written controls.
+
+  | # | What is handed to `psql` | What the leg records |
+  |---|---|---|
+  | PQ2-a | the stored URI whole, with `sslcert` and `sslkey` naming a second throwaway certificate in the rig, `sslmode=require`; Y6's variables at the absent file | whether PD3's server was offered that certificate |
+  | PQ2-b | the stored URI whole with `?service=s3`; the rig home's `.pg_service.conf` has a section `s3` with `sslcert`, `sslkey` and `sslmode=require` | the same |
+  | PQ2-c | PQ1's three legs on this client: `?passfile=<the rig's .pgpass>`; `?service=s1` (a password in the section); `?service=s2` (a `passfile` in the section) | which marker PD2's server received |
+  | PQ2-d1 | a keyword string written by hand, of the shape Z2 will write, ending in `passfile`, `sslcert`, `sslkey` at the absent file; in the environment, by hand, `PGPASSFILE`, `PGSSLCERT` and `PGSSLKEY` at the rig's marker files | password marker: none expected; certificate: none expected |
+  | PQ2-d2 | the same string; the rig home's `.pg_service.conf` present with a section that holds a password, and no `service` anywhere | no marker expected |
+  | PQ2-d3 | the same string with `passfile` written twice, once at the absent file and once at the rig's `.pgpass`, in both orders | which of the two the client used, per order |
+  | PQ2-d4 | the same string with `require_auth=scram-sha-256` and, apart, `sslcertmode=disable`, each against an environment that says the opposite (`PGREQUIREAUTH=password`; `PGSSLCERTMODE=allow` with the marker certificate) | whether the client knows the keyword (its own message if not), and which side won |
+  | PQ2-e | the stored URI whole with the key spelled `%70assfile`, `PASSFILE`, and `passfile` twice (absent file first, the rig's second, then the reverse) | the marker, or the client's own error, per spelling |
+  | PQ2-f | `sslmode=verify-full` against a TLS server whose certificate a marker CA signed: with the CA in the rig home's `.postgresql/root.crt`; without the file; with a `root.crl` that revokes the server's certificate | connected or not, per case; and that the server was offered no client certificate and received nothing but the handshake and the start-up message |
+  | PQ2-g | the shape Z2 will write, by hand: `host`, `port`, `dbname`, `user` and `sslmode='disable'` as one keyword string after `--`; the stored password in `PGPASSWORD`; the rig home holding every marker file | PD2's server received the stored password and no marker |
+  | PQ2-h | PQ2-g with a database name `service=s1`, and with one that begins `postgresql://` and names another host | whether the client read the name as a connection string (which server was reached, which password arrived) |
+
+  **Read against the parent's row.** Expected: (a), (b) and (c) leak; (d1), (d2) and (g) send nothing but what the string names; (f) reads
+  the CA and sends nothing. Back to the lead, with no code: a keyword of (d1) loses to the environment; (d2) reads the unnamed service file;
+  (h) reads a database name as a connection string. (d3) and (e) are recorded for Z2's duplicate rule, which refuses a doubled key whatever
+  the client would do with it. (d4) is recorded for E1.7's PA1; nothing here depends on it. [S] The second certificate, the CA and the
+  revocation list are made by `openssl` at run time in the owned folder, as PD3's are. [S] The images: `ubuntu-latest`; the two older images
+  of PV1 only if their install step carries over without a new job.
+- **PM1. [C]** In `scripts/bridged-mysql-itest.cjs`, on Oracle's client and on MariaDB's, against the harness's fake server on TCP:
+
+  | # | Arguments | What the leg records |
+  |---|---|---|
+  | PM1-a | `--no-defaults --protocol=TCP -h localhost -P <the fake's port> -u u`, the pins, `-e 'select 1'` | the fake was reached |
+  | PM1-b | the same without `--protocol=TCP` | the fake was not reached; the client's own message is printed |
+  | PM1-c | PM1-a without `-u` | the user name in the fake's handshake |
+  | PM1-d | PM1-a with `MYSQL_PWD` set, then unset | whether the handshake's authentication answer is empty |
+
+  Back to the lead for a client that rejects the flag or reaches the fake in (b) by TCP anyway: that client's row stays refused; the other
+  client goes on.
+
+**Z1 — The gate. [C]** New `bridgedDbProfile.ts`, pure, no `vscode`.
+
+```ts
+export type DbClient = 'psql' | 'mysql' | 'sqlcmd';
+export interface DbProfileRow { readonly client: DbClient; readonly platform: NodeJS.Platform; readonly served: boolean }
+/** Every pair this code knows. None is served: E1.7 turns a row in the commit that records its probe runs (parent §4.11). */
+export const BRIDGED_DB_PROFILES: readonly DbProfileRow[];
+export function bridgedDbPair(rows: readonly DbProfileRow[], dbType: DbType, platform: NodeJS.Platform): { served: true } | { served: false; sentence: string };
+```
+
+- The table has a row for each of the three clients on `linux`, `win32` and `darwin`, all `served: false`. A type or platform with no row
+  is not served.
+- **Where. [C]** In `dbQueryAction.run`, for a bridged call only, once the entry's `dbType` is known and **before the stored connection
+  is read** (`agentUseActions.ts:589`). Refused: `deps.note` gets DR1 in the form `bridgedRefusal` uses (`sshUseActions.ts:151-159`), the
+  body is `BRIDGE_USE_REFUSED(ctx.entityName)`, nothing is spawned.
+- [S] The table reaches the action as a dependency that defaults to `BRIDGED_DB_PROFILES`, so a test can name another table. [S] The names
+  and shapes above. [S] The error code is `not_supported`.
+- Whether the refusal can be said before the consent dialog is E1.7's (parent §4.11). Here it is said in `run`.
+
+**Z2 — The connection is built. [C]** In the same module:
+
+```ts
+export type BridgedDbConnection =
+  | { ok: true; host: string; port?: string; database?: string; user: string; password: string; settings: Readonly<Record<string, string>> }
+  | { ok: false; sentence: string };
+export function bridgedDbConnection(dbType: DbType, stored: string, entityName: string): BridgedDbConnection;
+```
+
+The rules. Each is a refusal before any spawn, and each has a case in Z4.
+
+- **The dialect.** `postgres`: a URI whose scheme is `postgres:` or `postgresql:` (`isSafePostgresUri`, as today, first). `mysql` and
+  `mssql`: a URI or a key-value string, as `parseDbConnectionString` tells them apart today.
+- **A URI's query.** Read from the raw text after `?`, not through `URLSearchParams`. Split at `&`; each part at its first `=`; key and
+  value percent-decoded once. Refused: a part with no `=`, an empty part, an empty key, a decoding that fails, a fragment (`#`), a key
+  given twice. Keys are compared after decoding, exactly, with no change of letter case.
+  - `postgres` takes three keys: `sslmode`, one of `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`; `connect_timeout`,
+    one to four digits; `application_name`, 1 to 63 characters from letters, digits, space, `_`, `.` and `-`. Every other key is refused.
+  - `mysql` and `mssql` take no key: any query string is refused.
+- **A key-value string.** Split at `;` as today. The keys the parser reads, in any letter case: `server`, `host`, `data source`; `port`;
+  `database`, `initial catalog`; `user id`, `uid`, `user`, `username`; `password`, `pwd`. Refused: any other key; a non-empty part with no
+  `=`; one field given by two keys. (A value that holds `;` is split wrongly today and is refused here by the second rule.)
+- **The user and the password (Q16).** Both must be stored and not empty, for every client.
+- **The host (Q17).** Required, for every client. For `postgres` and `mysql`, after one percent-decoding of a URI's host: letters, digits,
+  `.`, `-` and `_`, not beginning with `-`; or an IPv6 address in square brackets. So an empty host, a socket folder (`/…`, `@…`, in plain
+  or encoded form), a Windows path and a list of hosts are refused. For `mssql` the host is refused only when it is empty or holds a
+  control character: no pair of it is served here, and E1.7 writes its shape with PS1.
+- **The port.** Digits, 1 to 65535, when present.
+- **The database.** Optional. For a URI, percent-decoded once. Refused: a control character; for `postgres`, a name that holds `=` or
+  begins with `postgres://` or `postgresql://`.
+- **Every field.** No control character (code points below 0x20, and 0x7F).
+- **What `psql` gets. [C]** One keyword string, after `--`, in this order: `host`, `port`, `dbname`, `user`, the settings in the order
+  `sslmode`, `connect_timeout`, `application_name`, then `passfile`, `sslcert` and `sslkey`, each at `absentFile`. Each value stands in
+  single quotes, with a backslash before every `\` and `'` in it. An IPv6 host is written without its brackets. There is no `password`
+  keyword, ever. The arguments are `-X`, `-c`, the query with its one leading space, `--`, the string. The environment is `PGPASSWORD`
+  and Y6's three variables, as built.
+- **What `mysql` gets. [C]** `--no-defaults`, `--protocol=TCP`, then `-h`, `-P`, `-u`, `-D` from the fields, then the three pins and
+  `-e`, as built. The environment as built.
+- **What `sqlcmd` gets. [C]** The arguments as built. `SQLCMDUSER` is always there, since a user is required.
+- **Off a bridge. [C]** `buildDbQueryLaunch` without `bridged` answers byte for byte what it answers today, for every input, the refused
+  ones included.
+- [S] `buildDbQueryLaunch` with `bridged: true` calls `bridgedDbConnection` and answers `undefined` on a refusal; `dbQueryAction` calls it
+  first, for the sentence. [S] The order of the rules when two apply; a test pins whichever order is built.
+- **The order in `run`. [C]** The gate; the stored value's own refusals, as today; Z2's refusals; `refuseQuery`, whose sentence the agent
+  still reads, as today; the launch.
+
+**Z3 — The sentences (journal only; on a bridge the agent reads `BRIDGE_USE_REFUSED`). [C]**
+
+| # | When | Sentence |
+|---|---|---|
+| DR1 | the pair is not served | `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. <client> on <system> is not among them.` |
+| DR2 | a setting outside the profile | `The connection stored in "E" holds the setting <key>. Through a Remote Bridge the connection is built from the host, port, database, user and password of the entry, and that setting is not carried.` |
+| DR3 | a setting given twice | `The connection stored in "E" holds the setting <key> more than once.` |
+| DR4 | no user, or no password | `"E" stores no <user or password>. Through a Remote Bridge a database client may log in with the entry's own user and password and with nothing else.` |
+| DR5 | the host | `The host of "E" is missing, or is a socket folder or a list of hosts. Through a Remote Bridge a database is reached over the network by one host name or address.` |
+| DR6 | a field outside its shape | `The <field> of "E" has a form that cannot be given to <client> through a Remote Bridge.` |
+
+`<key>` is the key in quotes when it is on a fixed list of the client's own setting names kept in the module (libpq's keywords; the
+key-value keys an ADO or ODBC string uses); otherwise it is the words `an unknown setting`. No sentence holds a value, or any other text of
+the stored connection. `<system>` is `Linux`, `Windows` or `macOS`, or the platform's own name. Each sentence says what was just checked and
+nothing about what comes next.
+
+**Z4 — The tests, RED first. [C]**
+
+New `test/bridgedDbProfile.test.ts`:
+
+| # | Scenario | Observation |
+|---|---|---|
+| DP1 | `BRIDGED_DB_PROFILES` | a row for each client on `linux`, `win32` and `darwin`; none served |
+| DP2 | `bridgedDbPair` for `freebsd`, and for `mongodb` | not served; DR1 |
+| DP3 | `postgresql://u:p@db.example:5432/app?sslmode=require&connect_timeout=5&application_name=x` | ok; the five fields; exactly those three settings |
+| DP4 | one URI per key: `service`, `servicefile`, `passfile`, `sslcert`, `sslkey`, `sslrootcert`, `sslcrl`, `sslcrldir`, `sslpassword`, `sslkeylogfile`, `sslcertmode`, `host`, `hostaddr`, `user`, `password`, `options`, `gssencmode`, `krbsrvname`, `gsslib`, `require_auth`, `requirepeer`, `target_session_attrs` | DR2 with that key in quotes |
+| DP5 | `?%73ervice=s1`; `?SERVICE=s1`; `?sslmode=require&sslmode=disable`; `?sslmode`; `?=x`; `?sslmode=require&`; `?sslmode=%zz`; a fragment | DR2 naming `service`; DR2 with `an unknown setting`; DR3; refused, each of the rest |
+| DP6 | `sslmode=VERIFY-FULL`; `connect_timeout=1e3`; an `application_name` with a quote | DR6 |
+| DP7 | for each type and dialect: no user; an empty user; a user and no password; an empty password | DR4, naming which |
+| DP8 | `postgresql:///db`; a host `%2Fvar%2Frun%2Fpostgresql`; `%40sock`; `h1,h2`; a mysql key-value string with no server | DR5 |
+| DP9 | a mysql entry for `localhost`; an IPv6 host in brackets | ok |
+| DP10 | a database `service%3Ds1`; `postgresql%3A%2F%2Fx`; one that decodes to a line break | DR6 |
+| DP11 | a mysql URI with `?ssl-mode=DISABLED`; a key-value string with `Encrypt=True`, with `TrustServerCertificate=True`, with `Integrated Security=SSPI`, with `Trusted_Connection=yes`; a part with no `=` | DR2, the known keys in quotes |
+| DP12 | `Server=h,1433;Database=d;User Id=u;Password=p`, and the `Data Source`, `Initial Catalog`, `UID`, `PWD` spellings; `User Id=u;UID=v` | ok, the same fields; DR3 |
+| DP13 | a sentinel as every value of every refused case above | no sentence holds the sentinel |
+| DP14 | the `psql` string for fields that hold `'`, `\` and a space | a reader in the test gets the same fields back; no `password` keyword; the last three keywords are `passfile`, `sslcert`, `sslkey` at the absent file |
+
+`test/dbCliLauncher.test.ts`:
+
+| # | Scenario | Observation |
+|---|---|---|
+| Q1, rewritten | `postgres`, bridged | `-X`, `-c`, the query with its one leading space, `--`, DP14's string; the stored URI is no argument |
+| Q2, extended | `mysql`, bridged | `--no-defaults` first, `--protocol=TCP` second; the pins after the connection flags and before `-e` |
+| Q3, kept | `mssql`, bridged, an entry with a user and a password; all three off a bridge | the arguments equal today's |
+| Q7, rewritten | bridged, an entry with no stored password, each type | `undefined` |
+| Q10 | bridged, each refused connection of DP4-DP11 | `undefined` |
+| Q11 | off a bridge, the same connections | the launch `main` gives today, byte for byte |
+
+`test/bridgeRunSites.test.ts`, through the doors:
+
+| # | Scenario | Observation |
+|---|---|---|
+| DG1 | the production table; a bridged `query` on a `postgres`, a `mysql` and an `mssql` entry inside the profile | the body is `BRIDGE_USE_REFUSED`; the journal has DR1; `runs` is empty; the storage stub counts no read of the stored connection |
+| DG2 | the same three through the main port | 200, as today |
+| DG3 | a table that serves the pair: Q4, Q4a, Q4b and the `query` sentence cases | their observations as before; the recorded `psql` arguments end with the built string |
+| DG4 | a table that serves the pair; a refused setting, no user, no password, a socket host | the generic body; DR2, DR4, DR4, DR5 in the journal; `runs` empty |
+
+**Z5 — The itest legs (parent §7 (s) and (t)). [C]**
+
+- **(s)**, in `scripts/bridged-psql-itest.cjs`. *Control*, the stored URI handed whole under Y6's environment, as built until now:
+  `?passfile=` and `?service=s1` each deliver the rig home's marker to PD2's server; a certificate and key named in the URI are offered to
+  PD3's server, when PQ2-a showed that they are (otherwise recorded, not asserted). *Production*:
+  `buildDbQueryLaunch('postgres', <each of those URIs>, …, { bridged: true, absentFile })` answers `undefined`, and the harness starts
+  no process. *Inside the profile*: an entry with a stored password and `sslmode=disable`, launched from the builder's answer under a rig
+  home that holds every marker file: PD2's server receives the stored password and no marker; the same entry with `sslmode=require`
+  against PD3's server offers no certificate.
+- **(t)**, in `scripts/bridged-mysql-itest.cjs`, on both clients. The builder's arguments for an entry whose host is `localhost` reach the
+  TCP fake; the control without `--protocol=TCP` does not; with the entry's password the handshake's authentication answer is not empty.
+  [S] Whether the harness recomputes the answer from the password.
+
+**Z6 — Mutations, added to §S6.6.**
+
+| # | Mutation | Must fail |
+|---|---|---|
+| T43 | Mark one row of `BRIDGED_DB_PROFILES` served | DP1; DG1 for that type |
+| T44 | Serve a platform the table does not name | DP2 |
+| T45 | Ask the gate after the stored connection is read | DG1 (the read count) |
+| T46 | Hand the stored URI to `psql` on a bridge again | Q1; (s) |
+| T47 | Take one more key (`passfile`) | DP4; Q10; (s) |
+| T48 | Compare keys before decoding | DP5 |
+| T49 | Let the last of a doubled key win | DP5, DP12 |
+| T50 | Drop the user rule; then the password rule | DP7; Q7; DG4 |
+| T51 | Let an empty host through; then a socket folder | DP8; DG4 |
+| T52 | Drop `--protocol=TCP` | Q2; (t) |
+| T53 | Apply Z2's refusals off a bridge | Q11; DG2 |
+| T54 | Put a value into a journal sentence | DP13 |
+| T55 | Drop the three keywords at the absent file from the `psql` string | DP14 |
+
+**Z7 — Documents, and before the merge. [C]**
+
+- `research/module_extension.md`: the database road on a bridge, from the code as built: the gate and its table, the built connection, the
+  refusals, and that no pair is served. `research/module_tests.md`: legs (s) and (t), PQ2 and PM1 as record legs, what each does not prove
+  (Linux only; fake servers; no login that a real server checked).
+- No CHANGELOG bullet, as §S6.11 says: no door reaches any of it.
+- The parent and the stories document are not edited by the coder. PQ2's and PM1's results go to the lead, for the parent's probe table
+  and for §S6.13 (*As built for epoch 11*), before the code that depends on them is merged into the branch.
+- The PR body says: the gate serves no pair; which rows of the parent's §4.9 table this closes (11, 12, 13) and which it leaves to E1.7
+  (10, and every profile's measurement); and that Q15-Q18 were the owner's answers on the date they were given.
+
+**Which items land here, and which later.** Here: the parent's rows 11 (the stored URI's parameters), 12 (an entry with no user) and 13
+(a socket host), as refusals; the built connection; the gate. Later, in E1.7, before E4.1: row 10 (GSSAPI, SSPI, the plugins); what a
+`sqlcmd` does when it is given a user (PS1); the positive control for the socket class (PP1); the floors and the database client check
+(PA1); the login with the entry's own credential against a real server (PE1); the keys Q15 lets E1.7 add; every pair's row turned to
+served; M11. Why the split is safe is the parent's §4.11: the gate refuses every bridged query in code, and no production door reaches a
+bridge (R1 until E2.2b, then the switch until E4.1's flip).
+
+**Not verified by this amendment.**
+- No database client was run for it. PQ1 is the lead's run of 2026-11-17 on one client, `psql` 18.6. PQ2 and PM1 are the observations.
+- That `psql` reads a keyword string after `--` as its connection, and does not read a `dbname` inside it as a second connection string:
+  psql's and libpq's documentation, from memory. PQ2-g and PQ2-h.
+- libpq's order (a keyword, then a service file, then the environment), and that a service file is read only when a service is named:
+  its documentation, and PQ1's four legs for the first half. PQ2-d1 and PQ2-d2.
+- That a host beginning with `/` or `@`, and on Windows an absolute path, is a socket to libpq: its documentation, from memory. Z2
+  refuses by a positive shape, so the rule does not rest on that list being complete.
+- That `--protocol=TCP` makes both `mysql` clients use TCP for `localhost`: their documentation, from memory. PM1.
+- What `new URL` answers for a host under a scheme it does not know: run here on 2026-11-17 on one Node (26.12.1): an encoded host stays
+  encoded (`%2Fvar…`, `%40sock`), `h1,h2` is one host, an empty host parses, and `h1:1,h2:2` throws. DP8 runs it on the Node the tests use.
+- That a `sqlcmd` with no user signs in with the person's identity: the documented default of both clients, not run. PS1, in E1.7. The
+  refusal here does not rest on it: it refuses on the entry's fields.
