@@ -5335,7 +5335,9 @@ Forcing `accept-new` on the human path would have removed the very question B10 
 that already exists is enforced on both.
 
 **The words of a pinned call (G1, E1.S1).** A call that the extension starts with no terminal says its host-key check with words
-from ONE function, `hostKeyWords` in `hostKeyPin.ts`; both argv builders call it (`buildSshExecArgv`, `buildBridgeArgv`). With no
+from ONE function, `hostKeyWords` in `hostKeyPin.ts`, off a bridge; both argv builders call it (`buildSshExecArgv` for a call that
+is not bridged, `buildBridgeArgv`). A bridged exec call (E1.6) is the other design: its argv carries one word of strictness, and its
+`-F` file holds the pin and `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`). With no
 pin file it answers `-o StrictHostKeyChecking=accept-new`. With a pin file it answers strict checking and that file as
 `UserKnownHostsFile` AND as `GlobalKnownHostsFile`, because the first replaces only the person's own files and `ssh` read the
 system-wide ones beside the pin. A path with white space goes in double quotes (both options take a list of files); a path that

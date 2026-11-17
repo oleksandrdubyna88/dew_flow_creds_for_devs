@@ -4,7 +4,9 @@
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1, one change (1.1: the pass criteria of E2's rows M2 and M3). Split into two epics and a list of
 > candidates (`## Epics`); E1's stories document [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) is written (2026-11-17), and the spec of its first story,
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and of its cornerstone,
-> [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both 2026-11-17, by Fable). Scope: the extension only (`src_vs_code/src`): the bridge
+> [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both 2026-11-17, by Fable), and the specs of E1.S3,
+> [PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md) (by Fable), and of E1.S4,
+> [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md) (by Opus; both 2026-11-17). Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, one small new module for the pin of one call, the words that both `ssh` argv builders write for a
 > pinned call (`sshBridge.ts`, `sshExecCommand.ts`: the agent's pinned exec and a pinned *Run with Secrets* get them too,
@@ -307,6 +309,18 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
   key is known for <host> and you have requested strict checking.` (§3.9, row 6). **Not measured:** Windows'
   `ssh.exe` (C6); a host that offers no key of the pinned type; a refusal through the roads themselves, which E1's
   smoke and E2 measure (M5).
+- **Measured for the E1.S3 spec, by hand, 2026-11-17, the same OpenSSH 10.2p1 against a real `sshd` on the loopback** (a repaired
+  description of the match, not a change of it; the spec's facts L9):
+  - `ssh` ends its own lines with CR LF, also on Linux (one of the 15 lines of a refused key ends with LF alone), so the match
+    splits the text at both.
+  - `LogLevel QUIET` in a person's config prints NOTHING for a refused key (exit code 255, stderr empty): the match then misses,
+    and the sentence of today is shown. `FATAL` prints the verification line alone; `ERROR`, `INFO`, `VERBOSE` and `DEBUG` print it
+    as a whole line.
+  - A refused key of a hop of the person's own `ProxyJump` prints the same 15 lines (from the nested `ssh`) and one more line after
+    them, `Connection closed by UNKNOWN port 65535`. The match reads it as a refused key of the entry, so sentence C can name the
+    wrong host.
+  - A host that passed the check can print the line itself: a remote command that writes `Host key verification failed.` to its
+    stderr is matched too (the match is a whole line of the stderr).
 - A miss of the match shows today's sentence. It never shows a wrong claim of safety.
 
 ### 3.6 The file size
@@ -320,9 +334,11 @@ E1.S2 (counted in its spec, §4.3). What E1.S3 adds comes on top of 784, and its
   grouped, as N16 did (§2.3 there). Seven modules: `../installCommand` (three lines), `../credsInstall` (three),
   `../sshExecCommand`, `../sshCommand`, `../agentShareSnippet`, `../secretClipboard`, `../gitSigningConfig` (two each).
   794 → 785. The import request strings do not change, so no module mock of a test changes.
-- **Added, about 12:** no road gains a branch for a refused pin (§3.2, item 2); the four argv calls gain the option on
-  lines that exist; `sweepDeadSockets` gains one parameter; sentence C is one branch of four lines on each of the two
-  bounded roads; one import. The spec states the exact counts per story. §3.9's change is in the two builders and
+- **Added, 13 (measured in the E1.S3 spec, 2026-11-17; the first count said "about 12"):** no road gains a branch for a
+  refused pin (§3.2, item 2); the four argv calls gain the option on lines that exist; `sweepDeadSockets` gains one
+  parameter; sentence C is one branch of 4 lines on the install and of 7 on the socket check (it builds the text once for
+  the log and the message, and has one comment line); one import. `agentCommands.ts` is 784 after E1.S2 and **797** after
+  E1.S3. The spec states the exact counts per story. §3.9's change is in the two builders and
   one pure function, outside this file.
 - **Not taken: moving the socket check out of the file.** `test/launchRoadScan.test.ts:306-319` pins the three calls of
   `buildSshExecArgv` that name no `ownAgent` to this file by name; that list belongs to
@@ -720,9 +736,11 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
   a pinned call (§3.9) and the two forms of sentence A (§3.5) are security judgements (`subagent-models.md`, the row
   *Security judgement*).
 - **Stories.** [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (2026-11-17): four
-  stories, E1.S1-E1.S4; the cornerstone is E1.S2. The specs, both 2026-11-17: E1.S1,
+  stories, E1.S1-E1.S4; the cornerstone is E1.S2. The specs, all 2026-11-17: E1.S1,
   [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md); E1.S2,
-  [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md).
+  [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md); E1.S3,
+  [PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md); E1.S4,
+  [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md).
 
 ### E2 — The real runs: the plan's theory is tested against a real `sshd`
 
@@ -800,5 +818,26 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
   a refused pin leaves a grant that nobody used.
 - **C10 — The doc comments of `agentCommands.ts` that have no function under them go** (§7, F5). No result of E2
   bears on it; it is taken only if §3.6's count does not hold after G2. It holds (§3.6, measured 2026-11-17).
+- **C11 — An apostrophe in the storage path is quoted** (§3.9). `oneFileWord` (`hostKeyPin.ts`) quotes a path only on white
+  space. Measured (the E1.S1 spec, K8 a, b): one apostrophe and no white space, bare, is `invalid quotes`, so every pinned call of
+  such a storage folder fails; a PAIR of apostrophes is taken out and resolves to another path, which after E1.S3 shows a false
+  sentence C. Both fail closed, and neither is a regression of this plan. The fix is to quote on `/[\s']/`: measured that double
+  quotes heal it (K8 a). Justified by M7 (a path with a space is read as one file): a storage folder with an apostrophe is the
+  row to add to it; M5, (a), then shows whether the false sentence C is reachable.
+- **C12 — The match asks for the LAST line of the stderr** (§3.5, the E1.S3 spec, *Notes for the lead*). For a refused key of
+  the destination the verification line is the last line; for a hop of the person's `ProxyJump` it is the last but one, followed by
+  `Connection closed by UNKNOWN port 65535`. One changed line in `hostKeyRefused` would stop sentence C from naming the wrong host,
+  and also from matching a remote command that prints the line in the middle of its output. Justified by M5: a hop row, and a row
+  of a quiet config, measured on the roads.
+- **C13 — A pinned call states its own `LogLevel`** (§3.9; the E1.S3 spec, L9 g). With `LogLevel QUIET` in the person's config a
+  refusal is silent and the match misses. One more word from `hostKeyWords` (`-o LogLevel=ERROR`) would bring the line back. NOT
+  measured, and a change of the words of E1.S1. Justified by M5 with a config that says `QUIET`: sentence C is not shown there.
+- **C14 — A partly written pin file is removed when its write fails** (§3.1; the E1.S2 spec, §2.3). `materializeKnownHosts`
+  (`hostKeyTrust.ts`) writes the file and then calls `lockToOwner`; a write that fails half way leaves the file until the purge
+  of the next activation (the parent's §3.7). The key file has its own cure: PR #365's `withoutPartialKey` (`keyInstaller.ts`)
+  removes a partial key. Note the two readings of `lockToOwner`: the E1.S2 spec, §2.3, says it "does not throw"
+  (`materializedKeys.ts:28-38`: it is best-effort and swallows its error), while #365 guards the call all the same, inside its
+  `try`. Both hold today; the guard is the safer reading. Justified by M4, (d) (a pin write that fails): a pin file in
+  `keys/<pid>/` afterwards, where the run counts 0 files left.
 
 Cornerstones: 1 of 1 — E1.S2

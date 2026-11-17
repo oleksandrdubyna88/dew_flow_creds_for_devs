@@ -8,7 +8,8 @@
 > merged on 2026-11-17 (#376; the parent's §4, §9). The spec of E1.S1 is written:
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and the spec of the
 > cornerstone E1.S2: [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both
-> 2026-11-17, by Fable). The feasibility probe of E1.S4 was run early and passed (2026-11-17; E1.S4, *The feasibility probe*).
+> 2026-11-17, by Fable); the specs of E1.S3 ([PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md), by Fable)
+> and of E1.S4 ([PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md), by Opus) are written too (2026-11-17). The feasibility probe of E1.S4 was run early and passed (2026-11-17; E1.S4, *The feasibility probe*).
 
 The goal, scope, dependencies and done-when of the epic are in the parent's `## Epics`, E1; the sections named below
 (§3.1 and so on) are the parent's. This document splits the epic into four stories, in the order in which what each
@@ -171,6 +172,7 @@ a test harness and is no security judgement: Opus writes its spec.
 ## E1.S3 · The three roads name the pin file, and a refused host key is told (§3.3, §3.4, §3.5 sentence C, P3)
 
 - **Model.** A security judgement outside the quota: Fable writes the spec, Sonnet codes, Opus reviews.
+- **Spec.** [PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md) (2026-11-17).
 - **Why here.** It needs E1.S1's words in the argv and E1.S2's ready value. It is the step that makes the pin take
   effect on the five runs.
 - **Scope.**
@@ -188,7 +190,8 @@ a test harness and is no security judgement: Opus writes its spec.
     named as `/dev/null` by E1.S1 (its spec, §1), and E1.S1's `test/pinnedArgv.ts` has `valuesOf(argv, name)` for both
     known-hosts options, so "the same file as both" can be asked with it.
   - **Sentence C.** `hostKeyPin.ts` gets a new pure function, the match: the call is pinned AND the run's stderr
-    holds `Host key verification failed.`. Each bounded road gets one branch of about four lines:
+    holds `Host key verification failed.`. Each bounded road gets one branch: 4 lines on the install and 7 on the socket check (13 lines added in the story;
+    `agentCommands.ts` 784 after E1.S2, 797 after this story; the spec, §3.3):
     - *The install's probe* (`:282`; `runRemote` returns its stderr): sentence C in place of "the host did not
       answer the probe" (`remoteCliInstall.ts:84`). The install's second run keeps today's sentence.
     - *The socket check's mode check* (`:217`): `The bridge to "<name>" is not open: ` and sentence C, shown with
@@ -222,6 +225,7 @@ a test harness and is no security judgement: Opus writes its spec.
 ## E1.S4 · The smoke on real input (the parent's E1 done-when; §5, P4; §3.7, its last row)
 
 - **Model.** A test harness, not a security judgement: Opus writes the spec, Sonnet codes, Opus reviews.
+- **Spec.** [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md) (2026-11-17).
 - **Why last.** It runs everything above on real input, with the real `ssh` client against a real `sshd`, through the
   commands as the extension registers them.
 - **Scope.**

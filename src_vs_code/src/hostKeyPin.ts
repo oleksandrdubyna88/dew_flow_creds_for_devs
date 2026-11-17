@@ -15,8 +15,9 @@ import { DEFAULT_SSH_PORT, isSafeSshHost } from './sshCommand';
  * enforced with `StrictHostKeyChecking=yes` against a known_hosts file built from it alone — so a
  * changed key fails the connection instead of printing a warning into a scrollback nobody reads.</p>
  *
- * <p>"Built from it alone" is what the calls without a terminal ask of `ssh`: {@link hostKeyWords} names the pin file as BOTH
- * known-hosts files. The line of a Connect terminal (`sshCommand.ts`) names it as the person's file only, so there `ssh` still
+ * <p>"Built from it alone" is what the calls without a terminal ask of `ssh`, off a bridge: {@link hostKeyWords} names the pin file as
+ * BOTH known-hosts files. A bridged exec says it in its `-F` file instead: the pin as its known-hosts file and `GlobalKnownHostsFile none`
+ * (`bridgedSshConfig.ts`). The line of a Connect terminal (`sshCommand.ts`) names it as the person's file only, so there `ssh` still
  * reads the system-wide files beside it.</p>
  *
  * <p>Pure and `vscode`-free. The fingerprint is `SHA256:…`, the same string `ssh-keygen -lf` and
@@ -137,8 +138,10 @@ export function knownHostsLine(host: string, port: number | undefined, key: Host
 const NO_KEY_FILE = '/dev/null';
 
 /**
- * The words that tell `ssh` how to check the host's key, on a call the extension starts with no terminal. The one place they are
- * written: both argv builders call it (`buildSshExecArgv`, `buildBridgeArgv`), and `hostKeyWords.test.ts` holds the list.
+ * The words that tell `ssh` how to check the host's key, on a call the extension starts with no terminal, OFF a bridge. The one place
+ * they are written on the command line: both argv builders call it (`buildSshExecArgv` for an exec call that is not bridged,
+ * `buildBridgeArgv`), and `hostKeyWords.test.ts` holds the list. A bridged exec call does not ask it: its `-F` file holds the pin and
+ * says `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`), and its argv carries the one word of strictness (`execHostKeyWords`).
  *
  * <p><b>No pin file:</b> `accept-new`, as before. <b>A pin file:</b> strict checking, and that file as the person's known-hosts
  * file AND as the system-wide one. The second is the point (G1, P1). `UserKnownHostsFile` replaces only the person's own files:

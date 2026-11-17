@@ -305,13 +305,37 @@ const usesOf = (name: string, from: string): string[] =>
 const HOW_TO_FIX =
   'a place that writes a known-hosts option, or strict checking, was added, moved or renamed. The words of a pinned call come from hostKeyWords (hostKeyPin.ts). Then edit this list in the same commit';
 
-test('G1: the known-hosts options and strict checking are spelled in one function, and at the reviewed place of Connect\'s line', () => {
+/**
+ * The shipped files that name strict checking as `StrictHostKeyChecking=` with ANY value, also a template (`StrictHostKeyChecking=${…}`), each with the reason it is
+ * no second writer of the words of a pinned call. Prose that quotes the option matches too, so a comment is listed with the code beside it.
+ */
+const STRICT_PLACES = new Map<string, string>([
+  ['hostKeyPin.ts', 'hostKeyWords: the one writer of the six words'],
+  ['sshCommand.ts', "the line of a Connect terminal, shell words per platform: the pin as the person's file only, until candidate C4 of the plan"],
+  ['sshExecCommand.ts', 'execHostKeyWords: the one word of a BRIDGED exec (accept-new, or yes with a pin); the pin and GlobalKnownHostsFile none are in its -F file (E1.6)'],
+  ['gitRemote.ts', 'GIT_SSH_COMMAND of a git remote: accept-new, no pin'],
+  ['remoteLaunch.ts', 'a comment on the password branch without a pin: accept-new'],
+  ['sshAskpass.ts', 'a comment on the askpass helper: accept-new'],
+  ['sshSession.ts', 'a comment on the password branch without a pin: accept-new'],
+]);
+const STRICT_WORD = /StrictHostKeyChecking\s*=/;
+/** The same words as the keyword tuples of an `ssh` config file: `['UserKnownHostsFile', …]`, `keyword('GlobalKnownHostsFile', …)`. */
+const KEYWORD_TUPLE = /['"](?:User|Global)KnownHostsFile['"]|['"]StrictHostKeyChecking['"]/;
+
+test('G1: the known-hosts options and strict checking are spelled in one function, and at the reviewed places of Connect\'s line, the bridged exec word and the bridge\'s -F file', () => {
   assert.ok(SOURCES.length > 100, `the discovery found only ${SOURCES.length} files`);
   // `Name=value` only: prose may name an option (`UserKnownHostsFile`). `sshCommand.ts` is the line of a Connect terminal, shell words
   // per platform: it says the pin as the person's file only, until candidate C4 of the plan gives it these words.
   assert.deepEqual(filesWith(/UserKnownHostsFile\s*=/), ['hostKeyPin.ts', 'sshCommand.ts'], HOW_TO_FIX);
-  assert.deepEqual(filesWith(/StrictHostKeyChecking\s*=\s*yes/), ['hostKeyPin.ts', 'sshCommand.ts'], HOW_TO_FIX);
+  assert.deepEqual(filesWith(STRICT_WORD), [...STRICT_PLACES.keys()].sort(), HOW_TO_FIX);
   assert.deepEqual(filesWith(/GlobalKnownHostsFile\s*=/), ['hostKeyPin.ts'], HOW_TO_FIX);
+  // The keyword tuples: only the -F file of a bridged exec (E1.6, `bridgedSshConfig.ts`) writes them, and its `Host *` block says `GlobalKnownHostsFile none`.
+  assert.deepEqual(filesWith(KEYWORD_TUPLE), ['bridgedSshConfig.ts'], HOW_TO_FIX);
+  // The scan still finds what it was widened for: a template with a value of its own, and a keyword tuple. A scan that matches nothing proves nothing.
+  assert.match('-o StrictHostKeyChecking=${options.pinned === true ? "yes" : "accept-new"}', STRICT_WORD);
+  assert.match("['UserKnownHostsFile', pinned]", KEYWORD_TUPLE);
+  assert.ok(filesWith(STRICT_WORD).includes('sshExecCommand.ts'), 'the widened scan does not find the template of sshExecCommand.ts');
+  assert.ok(filesWith(KEYWORD_TUPLE).includes('bridgedSshConfig.ts'), 'the widened scan does not find the keyword tuples of bridgedSshConfig.ts');
 });
 
 test('G1: and that function is called by the tunnel\'s builder and by the exec words off a bridge, and by nothing else', () => {

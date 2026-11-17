@@ -25,7 +25,7 @@ no host key, or a host that cannot be written as a known_hosts line. No `ssh` st
 message says what to do. An entry that signs in with a key is sent to *Connect SSH*, which shows the host's fingerprint and
 saves the key when you confirm it. An entry that signs in with a password is told that there is no safe repair yet: Connect SSH
 would send the password without a check of the host when it cannot read the host's key first. If the file of the saved host key
-cannot be written to disk, the message says that, and nothing is sent either. An entry with no saved host key is not affected.
+cannot be written to disk, the message says that, and nothing is sent either.
 
 An entry with no saved host key connects as before.
 
