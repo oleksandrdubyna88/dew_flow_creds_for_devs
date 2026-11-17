@@ -34,6 +34,10 @@
 // `ssh` with `Host * / ForwardAgent yes` in its config and a live agent reaches a real `sshd -d`, and the remote has an
 // SSH_AUTH_SOCK without the options and none with them; and a mux pair (`ControlMaster auto` on a fixed `ControlPath`, a
 // master to one sshd) shows that a second ssh JOINS the master unless the bridged options say otherwise.
+//
+// Section 9 (POSIX only, `itestNoSharing.cjs`) is the measurement behind `NO_CONNECTION_SHARING` (G2): under a config that shares
+// connections, the tunnel of a Remote Bridge and a run off a bridge each make a connection of their own, a closed bridge serves
+// nothing, and a wrong key or a wrong pin fails; the control legs show the fault without the two options.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -41,6 +45,7 @@ const path = require('path');
 const { execFile } = require('node:child_process');
 const { SSHD, setChildTemp, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
 const { liveNoAgentForward } = require('./itestForwardAgent.cjs');
+const { liveNoSharing } = require('./itestNoSharing.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -217,6 +222,8 @@ async function main(scope) {
     await liveLoginWindow(pem, dir);
     // ---- 8. a bridged call forwards no agent, whatever ~/.ssh/config says (Amendment 2, B.3) ------------
     await liveNoAgentForward(check, OUT);
+    // ---- 9. the extension's own ssh calls share no connection, whatever ~/.ssh/config says (G2) ---------------------
+    await liveNoSharing(check, OUT);
   });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
