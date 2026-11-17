@@ -198,7 +198,7 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - **G2 (medium if it holds, not measured).** The bridge's argv does not turn connection sharing off (`sshBridge.ts:156-161`
   has no `ControlPath=none`/`ControlMaster=no`); with `ControlMaster auto` + `ControlPersist` in the person's config the
   `-R` forward may live in a master that *Close* and the window's dispose do not kill. The key is not needed after login,
-  so N16 is not affected. **Fixed in extension 1.22.3** (#376, 2026-11-17), widened to every non-interactive `ssh`, by
+  so N16 is not affected. **Fixed in extension 1.22.3** (#376, 2026-11-17), widened to the bridge tunnel and every argv of `buildSshExecArgv` (not `git` over SSH, its H2), by
   [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md).
 - **G3.** The Windows facts of the spawner (ENOENT with no `pid`, the delete after exit) are read, not run: the extension
   suite runs on Ubuntu; `bridgeSpawner.test.ts` could join a windows-latest step.
