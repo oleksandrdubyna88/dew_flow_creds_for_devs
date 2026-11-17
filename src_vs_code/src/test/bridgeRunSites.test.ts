@@ -12,7 +12,7 @@ import { loadWithVscode } from './vscodeStub';
 import { statusForErrorCode } from '../brokerProtocol';
 import { allowListedNames } from './bridgeLinksRun';
 import { code, message } from './bridgeDoorHarness';
-import { DR5, dr2, dr4 } from './bridgedDbCases';
+import { DR5, dr2, dr4, dr6 } from './bridgedDbCases';
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
@@ -313,6 +313,23 @@ test('DG3 (§S6.15 Z1, Z2): under a table that serves the pair the bridged psql 
   assert.deepEqual(postgres.args.slice(0, 4), ['-X', '-c', ' select 1', '--']);
   assert.deepEqual(mysql.args.slice(0, 3), ['--no-defaults', '--protocol=TCP', '-h']);
   assert.equal(mssql.env.SQLCMDUSER, 'app');
+});
+
+test('DG4b (§S6.15 Z2): a postgres entry that is not a plain URL is refused on a bridge with the generic body and the profile\'s sentence in the journal; the main port still tells the agent why', async () => {
+  const conninfo = 'host=db.example.test user=app password=pw';
+  const qw = await queryWorld('postgres', conninfo, SERVED);
+  const ww = await wallWorld({ query: qw.action });
+  try {
+    const reply = await send(viaBridge(ww.bridge), query('/v1/mcp/use/query'));
+    assert.deepEqual([reply.status, code(reply), message(reply)], [statusForErrorCode('not_supported'), 'not_supported', BRIDGE_USE_REFUSED('prod')], 'the generic body, not the detailed sentence');
+    assert.deepEqual(qw.journal, [`prod: ${dr6('connection', 'psql')} (a Remote Bridge was told only that it could not be used)`], 'the detail is in the journal');
+    assert.deepEqual(qw.spawns, [], 'nothing was spawned');
+    const main = await send(viaMain(ww), query('/v1/alias/query'));
+    assert.equal(code(main), 'not_supported', 'off a bridge the same entry is refused');
+    assert.ok(message(main).includes('is not a plain postgres:// URL'), `off a bridge the agent is told why: ${message(main)}`);
+  } finally {
+    ww.dispose();
+  }
 });
 
 /** An entry the profile refuses, the journal sentence it earns, and the stored connection that earns it: DG4's cases, the sentences written out word for word. */

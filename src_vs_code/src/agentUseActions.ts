@@ -631,6 +631,12 @@ export function dbQueryAction(
         return fail('no_credential', stored.kind === 'withheld' ? stored.reason : `"${ctx.entityName}" has no stored connection string.`);
       }
       const connection = stored.value;
+      // On a bridge the profile is asked first: an entry it cannot build from, a postgres one that is not a plain URL included, earns the generic body and the detail goes to the
+      // journal, where the detailed sentence below would tell the agent on the server what the entry holds (§S6.15 Z2). Off a bridge the line below is unchanged.
+      const unbuilt = bridgedDbConnectionRefusal(deps, ctx, dbType, connection);
+      if (unbuilt !== undefined) {
+        return unbuilt;
+      }
       if (dbType === 'postgres' && !isSafePostgresUri(connection)) {
         return fail(
           'not_supported',
@@ -639,10 +645,6 @@ export function dbQueryAction(
             'could carry command-line options. Fix the entry to a ' +
             'postgresql://user:pass@host:port/db URL, or query it yourself.',
         );
-      }
-      const unbuilt = bridgedDbConnectionRefusal(deps, ctx, dbType, connection);
-      if (unbuilt !== undefined) {
-        return unbuilt;
       }
       const query = String((body as { query: string }).query);
       // Client meta-commands (`\!`, `system`, `:!!`) are a shell escape, and that shell
