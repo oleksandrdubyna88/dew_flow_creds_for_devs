@@ -1,6 +1,6 @@
 # PLAN — S1 spec: the bridge socket check and Install creds on host delete their key file (SECURITY)
 
-> Status: **built 2026-11-16 (`cd9bb49d`, `b045f2c9`, the review's nits `92ac846e`), in PR #373, unmerged.** Security spec, written by Fable before its code (the row *Security
+> Status: **IMPLEMENTED, 2026-11-17** (`cd9bb49d`, `b045f2c9`, the review's nits `92ac846e`; extension 1.22.2, #373). Security spec, written by Fable before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: S2 holds it). Story S1 of
 > [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (its §2.1, §2.3, §3 items 1, 2, 4a and 5, `## Stories` S1).
 > This file is promoted together with the parent.
@@ -797,16 +797,16 @@ M7 are this spec's own. When S2 is built, M3 also turns B8 and U8 red (measured 
 
 ## 7. Done when (each item can be counted)
 
-- [ ] c1 changes only import lines of `commands/agentCommands.ts`; the file has 782 lines at c1 and 787 at c2.
-- [ ] `git diff -w c1..c2 -- src/commands/agentCommands.ts` shows five added lines and no removed line.
-- [ ] The 12 RED tests of §4 were watched failing with the texts of §4 on the product of c1, and pass at c2; C6 and I7 were green at
+- [x] c1 changes only import lines of `commands/agentCommands.ts`; the file has 782 lines at c1 and 787 at c2.
+- [x] `git diff -w c1..c2 -- src/commands/agentCommands.ts` shows five added lines and no removed line.
+- [x] The 12 RED tests of §4 were watched failing with the texts of §4 on the product of c1, and pass at c2; C6 and I7 were green at
       both.
-- [ ] `test/writtenKey.test.ts` has U1 to U3 and they pass.
-- [ ] M1 to M7 each turned red what §6 names, and the product was restored after each (the suite is green at c2).
-- [ ] `writtenKey.ts` is the only file that calls `forgetMaterializedKey` for these two roads; `commands/agentCommands.ts` does not
+- [x] `test/writtenKey.test.ts` has U1 to U3 and they pass.
+- [x] M1 to M7 each turned red what §6 names, and the product was restored after each (the suite is green at c2).
+- [x] `writtenKey.ts` is the only file that calls `forgetMaterializedKey` for these two roads; `commands/agentCommands.ts` does not
       import `../keyInstaller`.
-- [ ] No file of the list *Files with no change* changed.
-- [ ] `npm run typecheck`, `npm run lint` and `npm test` are green; the leftovers audit of `npm test` names no folder of this run.
+- [x] No file of the list *Files with no change* changed.
+- [x] `npm run typecheck`, `npm run lint` and `npm test` are green; the leftovers audit of `npm test` names no folder of this run.
 
 ## 8. Break it — ways to make the tests pass while the defect stays, and the row that stops each one
 

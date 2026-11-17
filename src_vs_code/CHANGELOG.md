@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.2] — 2026-11-17 — Security — a bridge, its socket check and Install creds on host delete their key file
+
 ### Changed — security: a bridge, its socket check and Install creds on host delete their key file
 
 *Open Remote Bridge…*, the check of the bridge's socket and *Install creds on host* write the stored key of an entry to a
