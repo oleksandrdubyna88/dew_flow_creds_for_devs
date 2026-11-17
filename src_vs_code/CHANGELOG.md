@@ -28,7 +28,8 @@ Why, measured (OpenSSH 10.2p1 on the client and the server, loopback, one user, 
 
 What it costs you: each call logs in by itself and nobody is asked. A credential that needs a person used to work on these roads through a
 master you had opened by hand: a key file with a passphrase that no SSH agent holds, a typed second factor, a security-key PIN. It now fails
-authentication on these roads with `Permission denied`, also when your own terminal is connected to that host. A key without a passphrase and a
+authentication on these roads with `Permission denied`, also when your own terminal is connected to that host: a key file with a passphrase fails when
+no SSH agent holds it (for an agent's `creds_exec`) or when the extension does not serve it (for *Run with Secrets* and the run of an entry). A key without a passphrase and a
 stored password still work. A key that your SSH agent holds still works for an agent's `creds_exec` and for the bridge, which keep your environment; it is not
 used by *Run with Secrets* and by the agent's run of an entry over SSH, which drop your SSH agent (only a key the extension itself serves can be used
 there, when the entry forwards the agent). The help of *Remote Bridge*, *Secret references and masked runs* and *What an

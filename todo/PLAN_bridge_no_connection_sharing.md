@@ -490,6 +490,13 @@ names that binary, or the first run of the legs is CI's.
   master mode and a control command at option-parsing time and win over the `-o` values (measured with `ssh -G`). Production
   passes no `extra` (`agentCommands.ts:437-441`), so nothing is reachable today. A follow-up: `buildBridgeArgv` could refuse
   an `extra` that holds `-S`, `-M`, `-O` or a `control*` word. No product logic is changed here.
+- **H5, one launcher for every non-interactive `ssh`.** The two options are applied by the argv builders (`buildBridgeArgv`,
+  `buildSshExecArgv`), and the scan of S1 holds the list of places that call them. The generic `runBounded`
+  (`sshExecRunner.ts`) takes any program and any argv, so a call that exists today and is changed to run `ssh` would start an
+  `ssh` that no builder shaped, and the list of uses would stay identical. Found by the code gate of G2 and rejected for G2's
+  scope: the roads of G2 are the ones the list names, and moving them is a change of its own. A follow-up: route every
+  non-interactive `ssh` through one launcher that applies the options, and make the generic `runBounded` refuse `ssh`
+  (by its program name, whatever the path). No product logic is changed here.
 - **G1**, the pin on the three roads: `todo/PLAN_person_roads_pin_host_key.md`.
 - **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md).
 - Turning sharing off for the person's terminal (decision 1), and ending a master that the person or an older version of

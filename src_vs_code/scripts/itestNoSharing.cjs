@@ -418,13 +418,13 @@ async function liveNoSharing(check, out) {
   const dir = ownedDir(section, 'nsh', { parent: shortSocketRoot() });
   const { SSH_AUTH_SOCK: _own, ...env } = process.env; // no agent of the person's: every leg says which agent it has, and only P-I2 has one
   try {
-    const rig = {
+    const keyed = {
       dir, scope: section, out, env, hostKey: path.join(dir, 'host_key'), userKey: path.join(dir, 'user_key'), wrongKey: path.join(dir, 'wrong_key'),
       passKey: path.join(dir, 'pass_key'), passKeyOpen: path.join(dir, 'pass_key_open'), authorizedKeys: path.join(dir, 'authorized_keys'),
       agentSocket: path.join(dir, 'a.sock'),
     };
-    await makeKeys(check, rig);
-    rig.listenerPort = await startListener(rig);
+    await makeKeys(check, keyed);
+    const rig = { ...keyed, listenerPort: await startListener(keyed) }; // a new object: the first one is not changed once it is handed on
 
     await controlDetachedMaster(check, rig);
     await productionTunnel(check, rig);
