@@ -48,16 +48,17 @@ export type BridgedDbConnection =
 type Built = Extract<BridgedDbConnection, { ok: true }>;
 type Pair = readonly [string, string];
 
-/** A refusal, thrown inside this module and answered as `{ ok: false }` at its one door: every rule below is one line that says what it refused. */
-class Refused extends Error {
-  constructor(readonly sentence: string) {
-    super('refused');
-  }
+/**
+ * A refusal as a value (`common/coding-style.md`: expected failures are values, not exceptions): the journal sentence of the rule a stored connection broke. Every rule
+ * below answers its result or one of these, and the first one in the rules' order is what the one door, `bridgedDbConnection`, answers as `{ ok: false }`.
+ */
+interface Refusal {
+  readonly refusal: string;
 }
 
-function refuse(sentence: string): never {
-  throw new Refused(sentence);
-}
+const refused = (sentence: string): Refusal => ({ refusal: sentence });
+const isRefusal = (value: unknown): value is Refusal => typeof value === 'object' && value !== null && 'refusal' in value;
+const isPair = (value: unknown): value is Pair => Array.isArray(value);
 
 interface Ctx {
   readonly dbType: DbType;
@@ -67,11 +68,11 @@ interface Ctx {
 
 /** The fields as the stored text gives them, before any rule. */
 interface Fields {
-  host?: string;
-  port?: string;
-  database?: string;
-  user?: string;
-  password?: string;
+  readonly host?: string;
+  readonly port?: string;
+  readonly database?: string;
+  readonly user?: string;
+  readonly password?: string;
 }
 
 /** Whether `text` holds a code point below 0x20 or 0x7F. */
@@ -84,6 +85,9 @@ const decoded = (value: string): string | undefined => {
     return undefined;
   }
 };
+
+const emptyAsAbsent = (value: string | undefined): string | undefined => (value === '' ? undefined : value);
+const optional = <K extends string>(key: K, value: string | undefined): { [P in K]?: string } => (value === undefined ? {} : ({ [key]: value } as { [P in K]?: string }));
 
 const URI_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 const anyDialect = (text: string): 'uri' | 'kv' => (URI_SCHEME.test(text) ? 'uri' : 'kv');
@@ -122,12 +126,12 @@ function authorityHost(base: string): string {
 }
 
 /** A URI `new URL` refuses: no host after credentials, or a list of hosts with ports, is the host rule's; anything else is a form that cannot be given. */
-function unreadableUri(ctx: Ctx, base: string): never {
+function unreadableUri(ctx: Ctx, base: string): Refusal {
   const host = authorityHost(base);
-  return refuse(host === '' || host.includes(',') ? DR5(ctx.entity) : shapeOf(ctx, 'connection'));
+  return refused(host === '' || host.includes(',') ? DR5(ctx.entity) : shapeOf(ctx, 'connection'));
 }
 
-function parseUrl(ctx: Ctx, base: string): URL {
+function parseUrl(ctx: Ctx, base: string): URL | Refusal {
   try {
     return new URL(base);
   } catch {
@@ -142,40 +146,53 @@ const URL_FIELDS: ReadonlyArray<readonly ['host' | 'user' | 'password' | 'databa
   ['database', (url) => url.pathname.replace(/^\//, '')],
 ];
 
-/** The fields of a URI, each percent-decoded once; a decoding that fails refuses the field. */
-function urlFields(ctx: Ctx, url: URL): Fields {
-  const fields: Fields = url.port === '' ? {} : { port: url.port };
-  for (const [name, read] of URL_FIELDS) {
-    const value = decoded(read(url));
-    fields[name] = value ?? refuse(shapeOf(ctx, name));
-  }
-  return fields;
+/** The fields of a URI, each percent-decoded once; a decoding that fails refuses the first field it fails on. */
+function urlFields(ctx: Ctx, url: URL): Fields | Refusal {
+  const read = URL_FIELDS.map(([name, field]) => ({ name, value: decoded(field(url)) }));
+  const failed = read.find(({ value }) => value === undefined);
+  return failed === undefined ? { ...optional('port', emptyAsAbsent(url.port)), ...Object.fromEntries(read.map(({ name, value }) => [name, value])) } : refused(shapeOf(ctx, failed.name));
 }
 
 /** A part of a URI's query, as `[key, value]`, both percent-decoded once; a part with no `=`, an empty key or a decoding that fails refuses the connection. */
-function queryPair(ctx: Ctx, part: string): Pair {
+function queryPair(ctx: Ctx, part: string): Pair | Refusal {
   const at = part.indexOf('=');
   const key = at > 0 ? decoded(part.slice(0, at)) : undefined;
   const value = decoded(part.slice(at + 1));
-  return key === undefined || value === undefined ? refuse(unknownSetting(ctx, '')) : [key, value];
+  return key === undefined || value === undefined ? refused(unknownSetting(ctx, '')) : [key, value];
+}
+
+/** The parts of a raw query read as pairs, or the refusal of the first that cannot be. */
+function readPairs(ctx: Ctx, query: string | undefined): readonly Pair[] | Refusal {
+  const parsed = query === undefined ? [] : query.split('&').map((part) => queryPair(ctx, part));
+  return parsed.find(isRefusal) ?? parsed.filter(isPair);
 }
 
 /** The pairs of a raw query, in order. A key given twice is refused, whatever its value: keys are compared after decoding, exactly. */
-function queryPairs(ctx: Ctx, query: string | undefined): readonly Pair[] {
-  const pairs = query === undefined ? [] : query.split('&').map((part) => queryPair(ctx, part));
-  const seen = new Set<string>();
-  for (const [key] of pairs) {
-    seen.has(key) ? refuse(doubledSetting(ctx, key)) : seen.add(key);
+function queryPairs(ctx: Ctx, query: string | undefined): readonly Pair[] | Refusal {
+  const pairs = readPairs(ctx, query);
+  if (isRefusal(pairs)) {
+    return pairs;
   }
-  return pairs;
+  const doubled = pairs.find(([key], at) => pairs.findIndex(([given]) => given === key) !== at);
+  return doubled === undefined ? pairs : refused(doubledSetting(ctx, doubled[0]));
 }
 
-function uriDraft(ctx: Ctx, text: string): Draft {
+function draftOfUrl(ctx: Ctx, url: URL, query: string | undefined): Draft | Refusal {
+  const fields = urlFields(ctx, url);
+  if (isRefusal(fields)) {
+    return fields;
+  }
+  const pairs = queryPairs(ctx, query);
+  return isRefusal(pairs) ? pairs : { fields, pairs };
+}
+
+function uriDraft(ctx: Ctx, text: string): Draft | Refusal {
   if (text.includes('#')) {
-    refuse(shapeOf(ctx, 'connection'));
+    return refused(shapeOf(ctx, 'connection'));
   }
   const { base, query } = cutAtQuery(text);
-  return { fields: urlFields(ctx, parseUrl(ctx, base)), pairs: queryPairs(ctx, query) };
+  const url = parseUrl(ctx, base);
+  return isRefusal(url) ? url : draftOfUrl(ctx, url, query);
 }
 
 /** The field each key of a key-value string names, in any letter case. */
@@ -184,21 +201,19 @@ const KV_FIELDS: ReadonlyMap<string, keyof Fields> = new Map<string, keyof Field
   ['user id', 'user'], ['uid', 'user'], ['user', 'user'], ['username', 'user'], ['password', 'password'], ['pwd', 'password'],
 ]);
 
-/** One non-empty part of a key-value string, written into `fields`: an unknown key, a part with no `=` and a field given by two keys are refused. */
-function kvPart(ctx: Ctx, fields: Fields, part: string): void {
+/** One non-empty part of a key-value string added to `fields`, which stay as they were: the new fields, or a refusal for an unknown key, a part with no `=` or a field given by two keys. */
+function kvPart(ctx: Ctx, fields: Fields, part: string): Fields | Refusal {
   const at = part.indexOf('=');
   const key = at > 0 ? part.slice(0, at).trim().toLowerCase() : '';
   const name = KV_FIELDS.get(key);
   if (name === undefined) {
-    refuse(unknownSetting(ctx, key));
+    return refused(unknownSetting(ctx, key));
   }
   if (fields[name] !== undefined) {
-    refuse(doubledSetting(ctx, key));
+    return refused(doubledSetting(ctx, key));
   }
-  fields[name] = part.slice(at + 1).trim();
+  return { ...fields, [name]: part.slice(at + 1).trim() };
 }
-
-const emptyAsAbsent = (value: string | undefined): string | undefined => (value === '' ? undefined : value);
 
 /** The host and port of a key-value string as the parser reads them: `host,port` or `host:port`, the `Port` key winning, a pasted scheme and path dropped. */
 function kvHostAndPort(raw: Fields): Fields {
@@ -207,21 +222,19 @@ function kvHostAndPort(raw: Fields): Fields {
   return { ...raw, host: cleanHost(host), port: emptyAsAbsent(raw.port) ?? suffix };
 }
 
-function kvDraft(ctx: Ctx, text: string): Draft {
-  const fields: Fields = {};
-  for (const part of text.split(';').map((raw) => raw.trim())) {
-    if (part !== '') {
-      kvPart(ctx, fields, part);
-    }
-  }
-  return { fields: kvHostAndPort(fields), pairs: [] };
+const withPart = (ctx: Ctx) => (fields: Fields | Refusal, part: string): Fields | Refusal => (isRefusal(fields) ? fields : kvPart(ctx, fields, part));
+
+function kvDraft(ctx: Ctx, text: string): Draft | Refusal {
+  const parts = text.split(';').map((raw) => raw.trim()).filter((part) => part !== '');
+  const fields = parts.reduce<Fields | Refusal>(withPart(ctx), {});
+  return isRefusal(fields) ? fields : { fields: kvHostAndPort(fields), pairs: [] };
 }
 
-function draftOf(ctx: Ctx, stored: string): Draft {
+function draftOf(ctx: Ctx, stored: string): Draft | Refusal {
   const text = stored.trim();
   const dialect = DIALECTS[ctx.dbType](text);
   if (dialect === undefined || hasControl(text)) {
-    refuse(shapeOf(ctx, 'connection'));
+    return refused(shapeOf(ctx, 'connection'));
   }
   return dialect === 'uri' ? uriDraft(ctx, text) : kvDraft(ctx, text);
 }
@@ -233,18 +246,23 @@ const POSTGRES_SETTINGS: ReadonlyMap<string, RegExp> = new Map([
   ['application_name', /^[A-Za-z0-9 _.-]{1,63}$/],
 ]);
 
-/** The profile's settings, in the order the builder writes them whatever order the connection gave. A key outside the profile is refused first, then each value's shape. */
-function profileSettings(ctx: Ctx, pairs: readonly Pair[]): Readonly<Record<string, string>> {
-  for (const [key] of pairs) {
-    if (ctx.dbType !== 'postgres' || !POSTGRES_SETTINGS.has(key)) {
-      refuse(unknownSetting(ctx, key));
-    }
+/** The pair a setting of the profile gives, `undefined` when the connection does not hold it, or the refusal of a value of the wrong shape. */
+function settingPair(ctx: Ctx, pairs: readonly Pair[], key: string, shape: RegExp): Pair | undefined | Refusal {
+  const value = pairs.find(([given]) => given === key)?.[1];
+  if (value === undefined) {
+    return undefined;
   }
-  const taken = [...POSTGRES_SETTINGS].flatMap(([key, shape]): Pair[] => {
-    const value = pairs.find(([given]) => given === key)?.[1];
-    return value === undefined ? [] : [shape.test(value) ? [key, value] : refuse(shapeOf(ctx, key))];
-  });
-  return Object.fromEntries(taken);
+  return shape.test(value) ? [key, value] : refused(shapeOf(ctx, key));
+}
+
+/** The profile's settings, in the order the builder writes them whatever order the connection gave. A key outside the profile is refused first, then each value's shape. */
+function profileSettings(ctx: Ctx, pairs: readonly Pair[]): Readonly<Record<string, string>> | Refusal {
+  const outside = pairs.find(([key]) => ctx.dbType !== 'postgres' || !POSTGRES_SETTINGS.has(key));
+  if (outside !== undefined) {
+    return refused(unknownSetting(ctx, outside[0]));
+  }
+  const taken = [...POSTGRES_SETTINGS].map(([key, shape]) => settingPair(ctx, pairs, key, shape));
+  return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair));
 }
 
 const SOCKET_HOST = /^[@/\\]|[,/\\]/;
@@ -252,43 +270,46 @@ const IPV6_HOST = /^\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)\]$/;
 const NETWORK_HOST = /^[A-Za-z0-9_.][A-Za-z0-9_.-]*$/;
 
 /** A host `psql` or `mysql` is asked to reach over the network: letters, digits, `.`, `-` and `_` not beginning with `-`, or an IPv6 address in brackets (answered without them). */
-function networkHost(ctx: Ctx, host: string): string {
+function networkHost(ctx: Ctx, host: string): string | Refusal {
   if (SOCKET_HOST.test(host)) {
-    refuse(DR5(ctx.entity));
+    return refused(DR5(ctx.entity));
   }
   const address = IPV6_HOST.exec(host);
   if (address !== null) {
     return address[1];
   }
-  return NETWORK_HOST.test(host) ? host : refuse(shapeOf(ctx, 'host'));
+  return NETWORK_HOST.test(host) ? host : refused(shapeOf(ctx, 'host'));
 }
 
 /** The host (Q17): required for every client; for `psql` and `mysql` one network host; for `sqlcmd` refused only when empty or holding a control character (E1.7 writes its shape with PS1). */
-const presentHost = (ctx: Ctx, host: string | undefined): string => (host === undefined || host === '' ? refuse(DR5(ctx.entity)) : host);
+const presentHost = (ctx: Ctx, host: string | undefined): string | Refusal => (host === undefined || host === '' ? refused(DR5(ctx.entity)) : host);
 
-function hostOf(ctx: Ctx, host: string | undefined): string {
+function hostOf(ctx: Ctx, host: string | undefined): string | Refusal {
   const named = presentHost(ctx, host);
+  if (isRefusal(named)) {
+    return named;
+  }
   if (hasControl(named)) {
-    refuse(shapeOf(ctx, 'host'));
+    return refused(shapeOf(ctx, 'host'));
   }
   return ctx.dbType === 'mssql' ? named : networkHost(ctx, named);
 }
 
 const portInRange = (port: string): boolean => /^\d{1,5}$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
 
-function portOf(ctx: Ctx, port: string | undefined): string | undefined {
+function portOf(ctx: Ctx, port: string | undefined): string | undefined | Refusal {
   if (port === undefined || port === '') {
     return undefined;
   }
-  return portInRange(port) ? port : refuse(shapeOf(ctx, 'port'));
+  return portInRange(port) ? port : refused(shapeOf(ctx, 'port'));
 }
 
 /** The user and the password (Q16): each stored and not empty, for every client, and holding no control character. */
-function secretOf(ctx: Ctx, field: 'user' | 'password', value: string | undefined): string {
+function secretOf(ctx: Ctx, field: 'user' | 'password', value: string | undefined): string | Refusal {
   if (value === undefined || value === '') {
-    refuse(DR4(ctx.entity, field));
+    return refused(DR4(ctx.entity, field));
   }
-  return hasControl(value) ? refuse(shapeOf(ctx, field)) : value;
+  return hasControl(value) ? refused(shapeOf(ctx, field)) : value;
 }
 
 /** A name `psql` would read as a connection string: one that holds `=` or begins with a connection URI's scheme. */
@@ -296,14 +317,45 @@ const LIBPQ_CONNECTION_STRING = /=|^\s*postgres(?:ql)?:\/\//i;
 
 const unfitDatabase = (ctx: Ctx, database: string): boolean => hasControl(database) || (ctx.dbType === 'postgres' && LIBPQ_CONNECTION_STRING.test(database));
 
-function databaseOf(ctx: Ctx, database: string | undefined): string | undefined {
+function databaseOf(ctx: Ctx, database: string | undefined): string | undefined | Refusal {
   if (database === undefined || database === '') {
     return undefined;
   }
-  return unfitDatabase(ctx, database) ? refuse(shapeOf(ctx, 'database')) : database;
+  return unfitDatabase(ctx, database) ? refused(shapeOf(ctx, 'database')) : database;
 }
 
-const optional = <K extends string>(key: K, value: string | undefined): { [P in K]?: string } => (value === undefined ? {} : ({ [key]: value } as { [P in K]?: string }));
+type Endpoint = Pick<Built, 'host' | 'port' | 'settings'>;
+type Login = Pick<Built, 'user' | 'password' | 'database'>;
+
+/** The settings, the host and the port, in that order: the first rule broken is the answer. */
+function endpointOf(ctx: Ctx, draft: Draft): Endpoint | Refusal {
+  const settings = profileSettings(ctx, draft.pairs);
+  if (isRefusal(settings)) {
+    return settings;
+  }
+  const host = hostOf(ctx, draft.fields.host);
+  if (isRefusal(host)) {
+    return host;
+  }
+  const port = portOf(ctx, draft.fields.port);
+  return isRefusal(port) ? port : { host, ...optional('port', port), settings };
+}
+
+/** The user, the password and the database, in that order: the first rule broken is the answer. */
+function loginOf(ctx: Ctx, fields: Fields): Login | Refusal {
+  const user = secretOf(ctx, 'user', fields.user);
+  if (isRefusal(user)) {
+    return user;
+  }
+  const password = secretOf(ctx, 'password', fields.password);
+  if (isRefusal(password)) {
+    return password;
+  }
+  const database = databaseOf(ctx, fields.database);
+  return isRefusal(database) ? database : { user, password, ...optional('database', database) };
+}
+
+const failed = (refusal: Refusal): BridgedDbConnection => ({ ok: false, sentence: refusal.refusal });
 
 /**
  * What `psql`, `mysql` or `sqlcmd` is to be given for the stored connection `stored` of the entry named `entityName`, or the journal sentence of the first rule it
@@ -312,21 +364,16 @@ const optional = <K extends string>(key: K, value: string | undefined): { [P in 
  */
 export function bridgedDbConnection(dbType: DbType, stored: string, entityName: string): BridgedDbConnection {
   const ctx: Ctx = { dbType, entity: entityName, client: clientNameOf(dbType) };
-  try {
-    const { fields, pairs } = draftOf(ctx, stored);
-    const settings = profileSettings(ctx, pairs);
-    const host = hostOf(ctx, fields.host);
-    const port = portOf(ctx, fields.port);
-    const user = secretOf(ctx, 'user', fields.user);
-    const password = secretOf(ctx, 'password', fields.password);
-    const database = databaseOf(ctx, fields.database);
-    return { ok: true, host, ...optional('port', port), ...optional('database', database), user, password, settings };
-  } catch (error) {
-    if (error instanceof Refused) {
-      return { ok: false, sentence: error.sentence };
-    }
-    throw error;
+  const draft = draftOf(ctx, stored);
+  if (isRefusal(draft)) {
+    return failed(draft);
   }
+  const endpoint = endpointOf(ctx, draft);
+  if (isRefusal(endpoint)) {
+    return failed(endpoint);
+  }
+  const login = loginOf(ctx, draft.fields);
+  return isRefusal(login) ? failed(login) : { ok: true, ...endpoint, ...login };
 }
 
 /** A value of a libpq keyword string: in single quotes, a backslash before every backslash and every quote. */
