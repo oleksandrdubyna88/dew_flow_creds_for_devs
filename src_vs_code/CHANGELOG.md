@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security: the extension's own `ssh` calls share no connection
+
+If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`
+calls no longer join a connection that is already open and no longer start one that stays behind. This covers the tunnel of *Open Remote
+Bridge…*, its socket check, *Install creds on host*, an agent's `ssh:exec` and its run over SSH, and *Run with Secrets* over SSH. Every one of
+them now asks `ssh` for no connection sharing, whatever your config says. Your own terminal, *Connect via SSH*, is unchanged and shares as
+before. With no such config nothing changes for you.
+
+Why, measured (OpenSSH 10.2p1 on the client and the server, loopback, one user, a config with `ControlMaster auto`, a `ControlPath` and
+`ControlPersist`):
+
+- A bridge could not be closed. The `ssh` the extension started handed its forward to a master, a separate process, and ended about half
+  a second later with exit code 0. *Close Remote Bridge* and closing the window then killed a process that no longer existed, the forward
+  stayed served on the remote host, and, read from the code, the extension took the bridge for ended while a forward was still up. Now the started `ssh` is the
+  connection that holds the forward: the forward is served while it runs, and after *Close Remote Bridge*, a newer bridge of the same entry
+  or the end of the window it is not served.
+- A call could ride a master that was already open. It then authenticated nothing: its own key and its pinned host key were not used, so a
+  wrong key or a wrong pinned host key went unnoticed. Now each call logs in with its own key and checks its own pin: a wrong key fails with
+  `Permission denied` and a wrong pin with `Host key verification failed`, both with exit code 255.
+
+What it costs you: each call logs in by itself and nobody is asked. A credential that needs a person used to work on these roads through a
+master you had opened by hand: a key file with a passphrase that no SSH agent holds, a typed second factor, a security-key PIN. It now fails
+authentication on these roads with `Permission denied`, also when your own terminal is connected to that host. A key without a passphrase, a
+stored password and a key that your SSH agent holds still work. The help of *Remote Bridge*, *Secret references and masked runs* and *What an
+agent can and cannot do* says so, in all five languages. A host over a network is slower to reach by one login per call; that was not
+measured.
+
+Not covered: the nested `ssh` that a jump host starts for each hop does not get these options, so a hop can still join or start a master.
+The `git` over SSH of a vault remote is unchanged. Windows and macOS were not measured; on Windows `ssh.exe` was checked to resolve the two
+options as OpenSSH on Linux does, and nothing more.
+
 ## [1.22.2] — 2026-11-17 — Security — a bridge, its socket check and Install creds on host delete their key file
 
 ### Changed — security: a bridge, its socket check and Install creds on host delete their key file
