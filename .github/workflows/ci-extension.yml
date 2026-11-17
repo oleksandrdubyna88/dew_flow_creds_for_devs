@@ -167,6 +167,46 @@ jobs:
       - name: Integration test (SSH agent against a real ssh-add)
         run: npm run itest:ssh-agent
 
+      # The bridged `ssh:exec` (E1.6, parent §4.9 and §7): a REAL `ssh` and a REAL `sshd -d` under the per-call file the product writes. It needs
+      # the `sshd` installed above, and on this runner it also writes /etc/ssh/ssh_config (leg (i), put back by hash) and the account's default
+      # key (leg (n), removed), which is why those two legs run on CI only. A missing `sshd` FAILS here. Catalogued in research/module_tests.md.
+      - name: Integration test (bridged ssh)
+        run: npm run itest:bridged-ssh
+
+      # The bridged database client (E1.6, parent §4.11, leg (m)): Oracle's `mysql` and MariaDB's client against a fake server that asks for a local
+      # file. Both clients are named by an absolute path; a missing one FAILS here.
+      # Ubuntu's `mariadb-client` Conflicts with `mysql-client-core`, so the two cannot be installed together (and `/usr/bin/mysql` would be MariaDB's).
+      # Oracle's client is installed with apt; MariaDB's is only DOWNLOADED and unpacked into a folder of the runner's home, and the harness is told
+      # its absolute path. Its `--version` is printed by the harness, which fails when either client is missing.
+      # `libmariadb3` (the unpacked client's shared library) has no conflict with the mysql packages, so apt installs it beside Oracle's client.
+      - name: Install Oracle's mysql client, and unpack MariaDB's beside it
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mysql-client libmariadb3
+          mkdir -p "$HOME/mariadb-client/deb"
+          (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download mariadb-client-core && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
+          echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql" >> "$GITHUB_ENV"
+          echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
+
+      # PM1 (the E1.6 spec §S6.15 Z0) is in the same step: `--protocol=TCP` with `-h localhost` on both clients, a login with no `-u`, and the
+      # authentication answer with and without `MYSQL_PWD`. Record legs; the log's `record (PM1-…)` lines are the result.
+      - name: Integration test (bridged mysql client)
+        run: npm run itest:bridged-mysql
+
+      # PD2 and PD3 (the E1.6 spec §S6.14 Y0; parent §7's probe table): RECORD legs of `psql` against a fake PostgreSQL server: does libpq read the
+      # person's `.pgpass` (PD2) and offer the person's client certificate (PD3) from the rig home, and does a variable naming a path that never
+      # exists close either? The legs assert nothing about the build and print what the client did; the harness fails only for the rig's own faults
+      # (no `psql`, a fake server the client never reached). The client comes from `postgresql-client`, named by an absolute path; `openssl`,
+      # which the runner carries, makes the throwaway certificates at run time.
+      - name: Install PostgreSQL's psql
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client
+
+      # PQ2 (the E1.6 spec §S6.15 Z0) is in the same step: PQ1 completed through the real launch builder (a stored URI's certificate, service file and
+      # `passfile`; the shape the next fix-forward will write; the CA files). Record legs again; the log's `record (PQ2-…)` lines are the result, and
+      # a `STOP (PQ2-…)` line is an answer against the parent's row.
+      - name: Integration test (bridged psql client, probes PD2 and PD3)
+        run: npm run itest:bridged-psql
+
       # A masked run through a real pty: the value reaches the child's environment and every
       # appearance of it in the child's OUTPUT becomes a placeholder. Both platform branches are
       # written, so the Linux one is what CI exercises.
@@ -192,6 +232,51 @@ jobs:
           name: extension-vsix
           path: src_vs_code/creds-for-devs-ci.vsix
           retention-days: 14
+
+  # PV1 (the E1.6 spec §S6.14 Y0; parent §7's probe table): the bridged `ssh:exec` harness on the two OLDER Ubuntu images beside `ubuntu-latest`
+  # (OpenSSH 8.9 and 9.6 by those images' package lists, from memory: the harness prints `ssh -V` as its first line, so the log says what each
+  # image met). It decides the floor's constant (8.9). A leg that is red here for a cause the fix-forward cannot remove goes back to the lead.
+  # Same `sshd` install step as `build-test`; legs (i) and (n) run here as they do there (the images have passwordless `sudo`).
+  bridged-ssh-images:
+    name: bridged ssh · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      - name: Install sshd for the live OpenSSH login
+        run: |
+          test -x /usr/sbin/sshd || (sudo apt-get -o Acquire::Retries=3 update && sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends openssh-server)
+          sudo mkdir -p /run/sshd
+
+      - name: Integration test (bridged ssh)
+        run: npm run itest:bridged-ssh
 
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
@@ -235,3 +320,10 @@ jobs:
 
       - name: Windows parsers (cmd.exe askpass, PowerShell 5.1 and 7 quoting), and what ssh.exe resolves for the extension's argvs (G2)
         run: node --test out/test/windowsParsers.test.js out/test/sshAskpass.test.js out/test/hostShell.test.js out/test/noConnectionSharing.test.js
+
+      # PW1 (the E1.6 spec §S6.14 Y0; parent §7's probe table): what the bridged environment does on a real Windows image, in a step of its own.
+      # `ssh.exe -V` under `bridgedSshEnv(process.env, 'win32')` (WN1), the same without PROGRAMDATA, recorded and not asserted (WN2), a child of
+      # node that prints the NAMES of its environment beside two names the parent holds (WN3), and `--version` of each database client the image
+      # carries (WN4; a client that is not there is a case skipped as "not measured", never a pass). Every case prints a `PW1 <case>` line first.
+      - name: Bridged environment on Windows (ssh.exe -V, the child's names, the database clients)
+        run: node --test out/test/bridgedEnvWindows.test.js

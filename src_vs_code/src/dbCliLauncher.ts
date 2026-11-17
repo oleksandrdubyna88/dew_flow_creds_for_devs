@@ -1,5 +1,6 @@
 import { DbType } from './types';
 import { parseDbConnectionString, withoutPassword } from './dbConnString';
+import { BridgedDbConnection, bridgedDbConnection, bridgedPsqlString } from './bridgedDbProfile';
 
 /**
  * Handing a query to a database CLI with the password never on a command line.
@@ -211,11 +212,90 @@ export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): 
   return onPath(cli.exe) ? cli : undefined;
 }
 
+/**
+ * What a BRIDGED client is asked for so that, given a connection THIS EXTENSION BUILT, it reads none of the person's own files under `HOME` (E1.6 §S6.14 Y6; probes
+ * PD1-PD3 saw each variable close its file). That is a defence inside the profile and not the lock: PQ1 and PQ2 saw `?passfile=` and `?service=` in a stored URI outrank
+ * these variables, which is why a bridged client is never handed the stored string (§S6.15 Z2) and `psql` also gets the same three paths as keywords of its own. `mysql` gets `MYSQL_TEST_LOGIN_FILE` (`.mylogin.cnf`, which `--no-defaults` still reads), `psql` gets `PGPASSFILE` (`.pgpass`)
+ * and `PGSSLCERT` and `PGSSLKEY` (`~/.postgresql`), each at `absentFile`, a path nothing ever writes. `mssql` has none of these. `undefined`
+ * when a client that needs them has no `absentFile`: such a launch is refused, never made with the person's files readable.
+ */
+function clientFileNames(dbType: DbType, absentFile: string | undefined): Record<string, string> | undefined {
+  const names = CLIENT_FILE_NAMES[dbType] ?? [];
+  if (names.length === 0) {
+    return {};
+  }
+  return isPath(absentFile) ? Object.fromEntries(names.map((name) => [name, absentFile])) : undefined;
+}
+
+/** The variables of each client that close the person's own files: the client's own documentation names them (PD1-PD3). */
+const CLIENT_FILE_NAMES: Partial<Record<DbType, readonly string[]>> = {
+  mysql: ['MYSQL_TEST_LOGIN_FILE'],
+  postgres: ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'],
+};
+
+const isPath = (value: string | undefined): value is string => value !== undefined && value !== '';
+
 export interface DbQueryLaunch {
   exe: string;
   args: string[];
   /** Merged over the parent environment by the caller. */
   env: Record<string, string>;
+}
+
+/**
+ * The launch of a BRIDGED query (the E1.6 spec §S6.15 Z2): built from the fields `bridgedDbConnection` checked, never from the stored string, which no bridged client is handed.
+ * The password rides the client's own variable, the person's files are closed by `closing` (Y6), and an entry the profile refuses answers `undefined`. `psql` gets one
+ * keyword string after `--`; `mysql` gets `--no-defaults` first and `--protocol=TCP` straight after it, then the connection flags and the three pins; `sqlcmd` gets today's arguments
+ * with its user always named.
+ */
+function bridgedLaunch(
+  cli: DbCli & { passwordEnv: string },
+  dbType: DbType,
+  stored: string,
+  query: string,
+  closing: Record<string, string>,
+  absentFile: string,
+): DbQueryLaunch | undefined {
+  const connection = bridgedDbConnection(dbType, stored, '');
+  const args = BRIDGED_ARGS[dbType];
+  if (!connection.ok || args === undefined) {
+    return undefined;
+  }
+  const userEnv = BRIDGED_USER_ENV[dbType];
+  const user = userEnv === undefined ? {} : { [userEnv]: connection.user };
+  return { exe: cli.exe, args: args(connection, query, absentFile), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
+}
+
+type BuiltConnection = Extract<BridgedDbConnection, { ok: true }>;
+
+/** The arguments of each client for a built connection. The ONE leading space on psql's -c is the first-character rule of `buildDbQueryLaunch`; `-X`: no `.psqlrc` of the person's (E1.6, parent §4.11). */
+const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string) => string[]>> = {
+  postgres: (connection, query, absentFile) => ['-X', '-c', ' ' + query, '--', bridgedPsqlString(connection, absentFile)],
+  mysql: (connection, query) => bridgedMysqlArgs(connection, query),
+  mssql: (connection, query) => bridgedMssqlArgs(connection, query),
+};
+
+/** The variable that carries the user, for the client that has no flag for it (`sqlcmd`): always set, since a user is required. */
+const BRIDGED_USER_ENV: Partial<Record<DbType, string>> = { mssql: 'SQLCMDUSER' };
+
+/**
+ * No option file at all: `--no-defaults` first, because it is honoured only there and Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`. Then `--protocol=TCP`
+ * straight after it (PM1: both clients take it there); `-h` is always named, so `localhost` means TCP and never the socket file (Q17).
+ */
+function bridgedMysqlArgs(connection: BuiltConnection, query: string): string[] {
+  const flags = [
+    ['-h', connection.host],
+    ...(connection.port === undefined ? [] : [['-P', connection.port]]),
+    ['-u', connection.user],
+    ...(connection.database === undefined ? [] : [['-D', connection.database]]),
+  ].flat();
+  return ['--no-defaults', '--protocol=TCP', ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
+}
+
+/** Today's `sqlcmd` arguments for the built fields: `-S host[,port]`, `-d`, `-Q`, `-b` and `-x` (scripting variables off: `$(SQLCMDPASSWORD)` is text). */
+function bridgedMssqlArgs(connection: BuiltConnection, query: string): string[] {
+  const server = connection.port === undefined ? connection.host : `${connection.host},${connection.port}`;
+  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x'];
 }
 
 /**
@@ -234,7 +314,13 @@ export function buildDbQueryLaunch(
   dbType: DbType,
   connectionString: string,
   query: string,
+  options: { readonly bridged?: boolean; readonly absentFile?: string } = {},
 ): DbQueryLaunch | undefined {
+  const bridged = options.bridged === true;
+  const closing = bridged ? clientFileNames(dbType, options.absentFile) : {};
+  if (closing === undefined) {
+    return undefined;
+  }
   const cli = CLIS[dbType];
   if (cli === undefined || cli.passwordEnv === undefined) {
     return undefined;
@@ -243,6 +329,9 @@ export function buildDbQueryLaunch(
   // launch may hand a client command to a process holding the password.
   if (refuseQuery(dbType, query) !== undefined) {
     return undefined;
+  }
+  if (bridged) {
+    return bridgedLaunch({ ...cli, passwordEnv: cli.passwordEnv }, dbType, connectionString, query, closing, options.absentFile ?? '');
   }
   const parts = parseDbConnectionString(connectionString);
   const env: Record<string, string> = {};
