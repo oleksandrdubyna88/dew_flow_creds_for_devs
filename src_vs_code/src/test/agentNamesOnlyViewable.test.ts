@@ -395,6 +395,27 @@ test('A, on a Remote Bridge: an entry in scope that the agent may not view answe
   }
 });
 
+test('V1 (change 8.2, owed): an entry in scope that the agent may view and whose use is switched off answers with the switch sentence through exec and query, not as an absent id; no dialog, nothing runs', async () => {
+  const ww = await wallWorld({ x: 'closed', scope: ['e1', 'x'] });
+  try {
+    const door = viaBridge(ww.bridge);
+    const absent = await send(door, { path: '/v1/mcp/use/exec', body: { entry: 'xx', command: 'id' } });
+    assert.equal(absent.status, 404, absent.body);
+    for (const ask of [{ path: '/v1/mcp/use/exec', body: { entry: 'x', command: 'id' } }, { path: '/v1/mcp/use/query', body: { entry: 'x', query: 'select 1' } }]) {
+      const reply = await send(door, ask);
+      assert.equal(reply.status, 403, `${ask.path}: ${reply.body}`);
+      const error = (JSON.parse(reply.body) as { error: { code: string; message: string } }).error;
+      assert.equal(error.code, 'denied');
+      assert.ok(error.message.includes('Usable by agents') && error.message.includes('is not open to agents for that'), error.message);
+      assert.notDeepEqual(normalised(reply), normalised(absent), 'it differs from the 404 of an absent id');
+    }
+    assert.deepEqual(ww.w.dialogs, [], 'nobody was asked');
+    assert.deepEqual(ww.w.ran, [], 'and nothing ran');
+  } finally {
+    ww.dispose();
+  }
+});
+
 /*
  * ---- Part B: a SECOND entry in a refusal (`research/PLAN_agent_refusal_names_unlisted_entry_E2.md` section 3; the parent's rule B) -------------------
  *

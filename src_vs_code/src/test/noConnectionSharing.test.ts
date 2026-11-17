@@ -45,7 +45,9 @@ const NEEDS_SSH = { skip: HAS_SSH || process.env.CI === 'true' ? false : 'no ssh
 function resolved(t: TestContext, argv: readonly string[]): string[] {
   const config = ownedFile(t, 'nsh', 'ssh_config');
   fs.writeFileSync(config, SHARING_CONFIG);
-  const run = ssh(['-G', '-F', config, ...argv]);
+  // A bridged argv carries its own `-F c.conf`: the sharing config stands in that file's place, so the two options are asked to win over it.
+  const placed = argv.map((word, i) => (argv[i - 1] === '-F' ? config : word));
+  const run = ssh(['-G', '-F', config, ...placed]);
   assert.equal(run.status, 0, `ssh -G did not resolve the argv: ${run.error ?? run.stderr}`);
   return run.stdout.split(/\r?\n/);
 }
@@ -68,7 +70,8 @@ function tunnelArgv(auth: SshExecAuth, extra: readonly string[] = []): string[] 
 }
 
 function runArgv(auth: SshExecAuth, bridged: boolean): string[] {
-  const argv = buildSshExecArgv(HOST, undefined, 'id', auth, { bridged });
+  // A bridged call (E1.6) names its per-call file; `resolved` puts the sharing config in that file's place.
+  const argv = buildSshExecArgv(HOST, undefined, 'id', auth, bridged ? { bridged, configFile: 'c.conf' } : { bridged });
   assert.ok(argv !== undefined, 'expected an argv');
   return argv;
 }
@@ -139,7 +142,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
   assert.ok(SOURCES.length > 100, `the discovery found only ${SOURCES.length} files`);
   assert.deepEqual(
     usesOf('runSshExec', 'sshExecRunner'),
-    ['commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'sshUseActions.ts#execOverSsh'],
+    // E1.6: execOverSsh's run is runCall (its options from runOptions); the client check (bridgedSshClientCheck) runs `ssh -V` alone, no connection.
+    ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
     HOW_TO_FIX,
   );
   assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['commands/agentCommands.ts'], HOW_TO_FIX);
@@ -149,7 +153,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
 test('G2: and each of them takes its argv from one of the two builders', () => {
   assert.deepEqual(
     usesOf('buildSshExecArgv', 'sshExecCommand'),
-    ['commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'remoteLaunch.ts#secretsArgv', 'sshUseActions.ts#execArgv'],
+    // E1.6: a bridged call's argv is built in bridgedSpawn, by buildSshExecArgv with the bridged options (BRIDGED_SSH_OPTIONS hold the two).
+    ['bridgedSshCall.ts#bridgedSpawn', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'remoteLaunch.ts#secretsArgv', 'sshUseActions.ts#execArgv'],
     HOW_TO_FIX,
   );
   assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['commands/agentCommands.ts#registerAgentCommands'], HOW_TO_FIX);
@@ -171,7 +176,7 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
     HOW_TO_FIX,
   );
   // The two ways to name the program of a spawned ssh. `openSshBinary` is called by `sshSpawnLaunch` only (and `openSshProgram` is a string for a terminal).
-  assert.deepEqual(usesOf('sshSpawnLaunch', 'sshProgram'), ['sshRoad.ts#spawnLaunchOf', 'sshUseActions.ts#agentAwareLaunch'], HOW_TO_FIX);
+  assert.deepEqual(usesOf('sshSpawnLaunch', 'sshProgram'), ['bridgedSshRoad.ts#programOf', 'sshRoad.ts#spawnLaunchOf', 'sshUseActions.ts#agentAwareLaunch'], HOW_TO_FIX); // E1.6: programOf names the program the client check asks
   assert.deepEqual(usesOf('openSshBinary', 'sshProgram'), [], HOW_TO_FIX);
   // A second bridge manager would start tunnels beside the one that `extension.ts` builds, with a spawner of its own.
   assert.deepEqual(matchesOf(/\bnew\s+SshBridgeManager\s*\(/g), ['extension.ts'], HOW_TO_FIX);
@@ -179,7 +184,8 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   // the module at all is listed.
   assert.deepEqual(
     [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
-    ['agentUseActions.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    // E1.6: bridgedSshClient.ts names the runner for the client check, whose one argv is `-V` (no connection).
+    ['agentUseActions.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
     HOW_TO_FIX,
   );
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.
