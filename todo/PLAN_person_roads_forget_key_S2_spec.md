@@ -1,6 +1,6 @@
 # PLAN — S2 spec: a bridge's key file goes when its ssh ends, and a start that fails ends (SECURITY, CORNERSTONE)
 
-> Status: **spec only, nothing implemented yet, 2026-11-16; amended the same day for plan change 1.1 (the spawner reports every
+> Status: **built 2026-11-16 (`f4a0b4c1` the move, `5cbce789` the fix), in PR #373, unmerged; spec written and amended the same day for plan change 1.1 (the spawner reports every
 > `'error'` of its child).** The cornerstone spec of the plan, and a security spec, written by Fable
 > before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`). Story S2 of
 > [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (its §2.2, §2.4, §3 items 3, 4, 4a and 5, `## Stories` S2, and entry 1.1 of its `## Plan changes`).

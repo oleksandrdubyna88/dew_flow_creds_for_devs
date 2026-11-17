@@ -1,6 +1,6 @@
 # PLAN — S1 spec: the bridge socket check and Install creds on host delete their key file (SECURITY)
 
-> Status: **spec only, nothing implemented yet, 2026-11-16.** Security spec, written by Fable before its code (the row *Security
+> Status: **built 2026-11-16 (`cd9bb49d`, `b045f2c9`, the review's nits `92ac846e`), in PR #373, unmerged.** Security spec, written by Fable before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: S2 holds it). Story S1 of
 > [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (its §2.1, §2.3, §3 items 1, 2, 4a and 5, `## Stories` S1).
 > This file is promoted together with the parent.
