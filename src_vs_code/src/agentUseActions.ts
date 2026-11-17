@@ -18,7 +18,7 @@ import { describeSshTarget } from './sshCommand';
 import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
-import { EntityMetadata, TreeNode } from './types';
+import { DbType, EntityMetadata, TreeNode } from './types';
 import { runBounded } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
@@ -29,6 +29,8 @@ import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
+import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbPair } from './bridgedDbProfile';
+import { BRIDGE_USE_REFUSED } from './bridgeScope';
 import { fieldReadingOf } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
 
@@ -541,6 +543,27 @@ export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: str
 }
 
 /**
+ * A bridged database call that is refused: the generic sentence for the agent, the real one in the journal, in the form `bridgedRefusal` of
+ * `sshUseActions.ts` writes it. `not_supported`, as every refusal of this road.
+ */
+function bridgedDbRefused(deps: Pick<AgentUseDeps, 'note'>, ctx: UseActionContext, sentence: string): UseActionResult {
+  deps.note(`${ctx.entityName}: ${sentence} (a Remote Bridge was told only that it could not be used)`);
+  return fail('not_supported', BRIDGE_USE_REFUSED(ctx.entityName));
+}
+
+/**
+ * The gate of a bridged query (the E1.6 spec §S6.15 Z1): the pair of this entry's client and this system must be served by `profiles`. Asked before the
+ * stored connection is read, so a refused pair touches nothing of the entry. `undefined` off a bridge and for a served pair.
+ */
+function bridgedDbGate(deps: Pick<AgentUseDeps, 'note'> & { profiles?: readonly DbProfileRow[] }, ctx: UseActionContext, dbType: DbType): UseActionResult | undefined {
+  if (ctx.bridge === undefined) {
+    return undefined;
+  }
+  const pair = bridgedDbPair(deps.profiles ?? BRIDGED_DB_PROFILES, dbType, process.platform);
+  return pair.served ? undefined : bridgedDbRefused(deps, ctx, pair.sentence);
+}
+
+/**
  * Query a DATABASE.
  *
  * <p>The one non-SSH kind where the agent's own text reaches a process — so it reaches it
@@ -551,7 +574,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: str
  */
 // eslint-disable-next-line max-lines-per-function
 export function dbQueryAction(
-  deps: AgentUseDeps & { onPath: (exe: string) => boolean },
+  deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[] },
 ): UseAction {
   return {
     kind: 'db',
@@ -581,6 +604,11 @@ export function dbQueryAction(
       const dbType = entity.dbType;
       if (dbType === undefined) {
         return fail('no_credential', `"${ctx.entityName}" has no database type set.`);
+      }
+      // The gate (§S6.15 Z1, Q18): a bridged call for a client and system that are not served stops here, before the stored connection is read.
+      const gated = bridgedDbGate(deps, ctx, dbType);
+      if (gated !== undefined) {
+        return gated;
       }
       // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is
       // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost — and a
