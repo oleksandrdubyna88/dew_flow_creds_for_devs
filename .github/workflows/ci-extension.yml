@@ -188,6 +188,8 @@ jobs:
           echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql" >> "$GITHUB_ENV"
           echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
 
+      # PM1 (the E1.6 spec §S6.15 Z0) is in the same step: `--protocol=TCP` with `-h localhost` on both clients, a login with no `-u`, and the
+      # authentication answer with and without `MYSQL_PWD`. Record legs; the log's `record (PM1-…)` lines are the result.
       - name: Integration test (bridged mysql client)
         run: npm run itest:bridged-mysql
 
