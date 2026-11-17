@@ -90,7 +90,7 @@ authentication and a pinned host key; the remote end of the forward a unix socke
 |---|---|---|
 | A | the tunnel's argv as it is today, no master before | the spawned `ssh` exits with 0 after about 0.5 s; a detached master (another PID) holds the `-R` forward; the kill of `SshBridgeManager.stop` hits a PID that is gone; the forward is served until `ssh -O exit`. The extension sees the bridge end (code 0) right after its start |
 | B | the same with `-o ControlMaster=no -o ControlPath=none` | the process stays; the kill ends the forward; no master is left |
-| C | a master opened before by a plain command; then a tunnel without the two options, with a WRONG `-i` key and a `known_hosts` file that holds a DIFFERENT host key under `StrictHostKeyChecking=yes` | the tunnel comes up as a client of the master: exit 0, the forward is served, and the `sshd` log shows no new authentication. The call's own key and pin are ignored |
+| C | a master opened before by a plain command; then a tunnel without the two options, with a WRONG `-i` key and a `known_hosts` file that holds a DIFFERENT host key under `StrictHostKeyChecking=yes` | the tunnel comes up as a client of the master (it ends at once; its exit code is recorded, not asserted: 0 locally, 1 on the CI runner), the forward is served through the master, and the `sshd` log shows no new authentication. The call's own key and pin are ignored |
 | D | the master still up; the tunnel with the two options | a fresh `Accepted publickey` in the `sshd` log; with the wrong pin: `REMOTE HOST IDENTIFICATION HAS CHANGED … Host key verification failed`, exit 255; with the wrong key: `Permission denied`, exit 255 |
 | E | as A, with `ControlPersist 10s` | the forward outlives `stop` by 10 s |
 
@@ -274,8 +274,9 @@ Only a person whose `ssh` config shares connections sees any change.
   master the person opened. An identity that needs no interaction still works: a key without a passphrase, a stored
   password, or a key that an agent in the call's environment holds. The last works only where the call keeps the host's
   `SSH_AUTH_SOCK`: plain `ssh:exec` and the bridge's calls do; *Run with Secrets* and the agent's linked run
-  (`ownAgentOnly: true`) drop it (`E3_INHERITED_DROP`: `sshRoad.ts:86`, `maskedTerminal.ts:311`, `sshUseActions.ts:268`,
-  `agentUseActions.ts:431`), so there only a key the extension's own agent serves can be present, when the entry forwards
+  (`ownAgentOnly: true`) remove the variable (`E3_INHERITED_DROP`: `sshRoad.ts:86`, `maskedTerminal.ts:311`, `sshUseActions.ts:268`,
+  `agentUseActions.ts:431`), so unless the person's `ssh` configuration names an agent with `IdentityAgent` (which takes precedence over
+  `SSH_AUTH_SOCK`, ssh_config(5)), only a key the extension's own agent serves can be present there, when the entry forwards
   the agent. The leg P-I2 of §7.4 sets `SSH_AUTH_SOCK` itself: it shows what `ssh` does with an agent, not what those two
   roads give it. The help of the roads says so (§8).
 - **Time.** Each call adds a TCP connect, a key exchange and an authentication where it had opened a session in a master.
@@ -392,7 +393,7 @@ of the test that answers one known line; *served* means that line was read throu
 |---|---|---|
 | K-A, the control of A | the tunnel's argv with the four words taken out; no master before | `exited` settles with 0; after that the forward is served; a control socket exists; `stop()` changes nothing |
 | P-B | the production tunnel argv | the forward is served while `exited` has not settled; no control socket is made; after `stop()`, `exited` settles and the forward is not served |
-| K-C, the control of C | master on A; the tunnel's argv with the four words taken out, for B, with a wrong key and a wrong pin | exit 0, the forward is served, `sshd` B saw no connection |
+| K-C, the control of C | master on A; the tunnel's argv with the four words taken out, for B, with a wrong key and a wrong pin | the mux client ends at once (its exit code is recorded, not asserted: 0 locally, 1 on the CI runner), the forward is served through the master, `sshd` B saw no connection |
 | P-D1 | master on A; the production tunnel argv for B, the right key and pin | `Accepted publickey` in B's log; the forward is served; `stop()` ends it |
 | P-D2 | as P-D1 with the wrong pin | exit 255, `Host key verification failed` |
 | P-D3 | as P-D1 with the wrong key | exit 255, `Permission denied` |

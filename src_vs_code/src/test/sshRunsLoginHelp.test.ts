@@ -22,6 +22,14 @@ function whatCanGoWrong(id: string, language: HelpLanguage): string {
   return shown.body.whatCanGoWrong ?? '';
 }
 
+/** Both articles name the variable the run does not pass on and the ssh option that can still name an agent, in every language. */
+function assertNamesVariableAndConfig(language: HelpLanguage): void {
+  for (const id of ['secret-references', 'agent-surface']) {
+    const text = whatCanGoWrong(id, language);
+    assert.ok(text.includes('SSH_AUTH_SOCK') && text.includes('IdentityAgent'), `${language}: ${id} does not name SSH_AUTH_SOCK and IdentityAgent`);
+  }
+}
+
 /** The start of the sentence each language got in the Remote Bridge article. */
 const BRIDGE_OPENING: Readonly<Record<HelpLanguage, string>> = {
   en: 'The bridge is an SSH connection of its own',
@@ -43,6 +51,7 @@ test('G2: the articles of Run with Secrets and of the agent surface say what a r
       assert.ok(whatCanGoWrong(id, language).includes('`Permission denied`'), `${language}: ${id} does not say what the failure looks like`);
     }
     assert.ok(whatCanGoWrong('agent-surface', language).includes('creds_exec'), `${language}: the agent surface does not name creds_exec`);
+    assertNamesVariableAndConfig(language);
   }
 });
 
@@ -84,8 +93,11 @@ test('G2: the English sentences name their conditions', () => {
       assert.ok(text.includes(needle), `${name}: lacks "${needle}"`);
     }
     assert.ok(text.includes('also when your own terminal already has a connection to that host open'), `${name}: does not say a terminal of yours does not help`);
-    // The host's SSH agent is dropped on Run with Secrets and on the agent's linked run (E3_INHERITED_DROP); only creds_exec keeps it.
-    assert.ok(text.includes('drops your SSH agent'), `${name}: does not say these runs drop your SSH agent`);
+    // These runs do not pass on the inherited SSH_AUTH_SOCK (E3_INHERITED_DROP); only creds_exec keeps it. An IdentityAgent in the person's
+    // ssh configuration takes precedence over that variable (ssh_config(5)), so the help must not promise that no agent is used.
+    assert.ok(text.includes('does not pass on your SSH_AUTH_SOCK'), `${name}: does not say these runs do not pass on SSH_AUTH_SOCK`);
+    assert.ok(text.includes('unless your SSH configuration names one with IdentityAgent'), `${name}: does not say an IdentityAgent can still apply`);
+    assert.ok(!text.includes('drops your SSH agent'), `${name}: still promises that the run drops your SSH agent`);
     assert.ok(!/a key that your SSH agent holds works\./.test(text), `${name}: says an agent-held key works without saying where`);
   }
   assert.ok(bridge.includes('it joins no connection that your SSH configuration shares'), 'remote-bridge: lacks the condition');

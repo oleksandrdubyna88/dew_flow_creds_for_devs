@@ -31,7 +31,8 @@ master you had opened by hand: a key file with a passphrase that no SSH agent ho
 authentication on these roads with `Permission denied`, also when your own terminal is connected to that host: a key file with a passphrase fails when
 no SSH agent holds it (for an agent's `creds_exec`) or when the extension does not serve it (for *Run with Secrets* and the run of an entry). A key without a passphrase and a
 stored password still work. A key that your SSH agent holds still works for an agent's `creds_exec` and for the bridge, which keep your environment; it is not
-used by *Run with Secrets* and by the agent's run of an entry over SSH, which drop your SSH agent (only a key the extension itself serves can be used
+used by *Run with Secrets* and by the agent's run of an entry over SSH, which do not pass on your `SSH_AUTH_SOCK` (so your own SSH agent is not used there unless your
+SSH configuration names one with `IdentityAgent`, which takes precedence over that variable; otherwise only a key the extension itself serves can be used
 there, when the entry forwards the agent). The help of *Remote Bridge*, *Secret references and masked runs* and *What an
 agent can and cannot do* says so, in all five languages. A host over a network is slower to reach by one login per call; that was not
 measured.

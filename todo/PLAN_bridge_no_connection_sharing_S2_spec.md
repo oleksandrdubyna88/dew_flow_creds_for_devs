@@ -1,6 +1,6 @@
 # PLAN — S2 spec: a real ssh and real sshd runs show what the two options do (SECURITY, CORNERSTONE)
 
-> Status: **spec, 2026-11-17, by Fable; nothing built yet.** The feasibility probe of its step 1 was run for this spec and passed
+> Status: **built 2026-11-17 on `fix/g2-no-connection-sharing` (f8ef08f3 the probe, 1a66f228 the legs), in PR #376, unmerged; later review and gate fixes are on the branch. Spec written 2026-11-17, by Fable.** The feasibility probe of its step 1 was run for this spec and passed
 > (L2). The cornerstone spec of the plan, and a security spec, written before its code (the rows *Cornerstone spec* and *Security
 > judgement* of `subagent-models.md`). Story S2 of
 > [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md) (its §7.4, the real-leg half of §7.5, §4.5,
@@ -214,7 +214,7 @@ argv names, a client that shares joins the master that holds that file, which is
 | K-A, control | the tunnel's argv with the two options taken out; its own config; no master before | the spawned `ssh` exits with 0 (4); the forward is served after that (5); the control socket exists (6); `stop()` changes nothing (7); `ssh -O exit` ends the master (8) |
 | P-B | the production tunnel; its own config; no master before | the forward is served WHILE `exited` is not settled (10); its `sshd` accepted the key (11); the control path is not made while it runs (12); `stop()` ends it (13); after that the forward is not served (14) |
 | the master | a plain `ssh … 'sleep 120'` to `sshd` A under the group's config, as a person opens one | its control socket exists (16) |
-| K-C, control | the tunnel's argv with the two options taken out, for B, with `wrong_key` and the wrong pin | exit 0 (18); the forward is served (19); B saw no connection (20) |
+| K-C, control | the tunnel's argv with the two options taken out, for B, with `wrong_key` and the wrong pin | the mux client ends at once, its exit code recorded, not asserted: 0 locally, 1 on the CI runner (18); the forward is served through the master (19); B saw no connection (20) |
 | P-D1 | the production tunnel for B | served while it runs (22); B accepted the key (23); `stop()` ends it (24); not served after (25) |
 | P-D2 | the production tunnel for B with the wrong pin, by `launch` | exit 255 and `Host key verification failed` (27); it reached B (28) |
 | P-D3 | the production tunnel for B with `wrong_key`, by `launch` | exit 255 and `Permission denied` (30); it reached B (31) |
@@ -251,8 +251,8 @@ its last output; a tunnel's exit 10 s (a control) or 5 s (after `stop()`); the m
 //        master holds the forward, and the product's `stop()` changes nothing;
 //   P-B  the production tunnel: it serves the forward while it runs, makes no control socket, and `stop()` ends the forward;
 //   then a master on sshd A, opened as a person would (a plain `ssh`), and for each leg below an sshd B of its own:
-//   K-C  (control) the tunnel without the two options, for B, with a WRONG key and a WRONG pin: it rides the master, exit 0, the
-//        forward is served and B sees no connection;
+//   K-C  (control) the tunnel without the two options, for B, with a WRONG key and a WRONG pin: it rides the master and ends at once (exit code
+//        recorded, not asserted: 0 locally, 1 on the CI runner), the forward is served and B sees no connection;
 //   P-D1 the production tunnel for B: B accepts the key, the forward is served, `stop()` ends it;
 //   P-D2 the same with the wrong pin: exit 255, `Host key verification failed`;
 //   P-D3 the same with the wrong key: exit 255, `Permission denied`;

@@ -1,6 +1,6 @@
 # PLAN — S1 spec: the tunnel of a bridge and every run say no connection sharing (SECURITY)
 
-> Status: **spec, 2026-11-17, by Fable; nothing built yet.** Security spec, written before its code (the row *Security judgement*
+> Status: **built 2026-11-17 on `fix/g2-no-connection-sharing` (b51b60d4), in PR #376, unmerged; later review and gate fixes are on the branch. Spec written 2026-11-17, by Fable.** Security spec, written before its code (the row *Security judgement*
 > of `subagent-models.md`; not the cornerstone: S2 holds it). Story S1 of
 > [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md) (its §4.1 to §4.3, §7.1 to §7.3, the unit half of
 > §7.5, `## Stories` S1, and the note on finding 1 in its `## Plan changes`). This file is promoted together with the parent.

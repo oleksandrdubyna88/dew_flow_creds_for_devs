@@ -2618,8 +2618,8 @@ and no master is left behind by the extension. Each call logs in by itself, so a
 bridge: a key file with a passphrase that no SSH agent holds, a typed second factor and a security-key PIN used to work through a master the person opened, and now
 fail with `Permission denied` (`BatchMode=yes` for a key entry; a stored password is still answered by the askpass script); a key without a passphrase and a stored
 password work on every road (leg P-I1 and the control of 1.1). A key that an agent holds works only where the call keeps the host's `SSH_AUTH_SOCK`: plain `ssh:exec`
-(`creds_exec`) and the bridge's own calls do, *Run with Secrets* over SSH and the agent's linked run (`ownAgentOnly: true`) do not: both drop it (`E3_INHERITED_DROP`, `sshProgram.ts`, applied at
-`sshRoad.ts`/`maskedTerminal.ts` and at `childEnv` of `sshUseActions.ts`), and there only the extension's own agent can be present, and only when the entry forwards the agent.
+(`creds_exec`) and the bridge's own calls do, *Run with Secrets* over SSH and the agent's linked run (`ownAgentOnly: true`) do not: both remove the inherited variable from the child environment (`E3_INHERITED_DROP`, `sshProgram.ts`, applied at
+`sshRoad.ts`/`maskedTerminal.ts` and at `childEnv` of `sshUseActions.ts`), so the host's agent is not passed on, and the extension's own agent can be present only when the entry forwards the agent. This is the variable, not a wall: an `IdentityAgent` in the person's `ssh` configuration takes precedence over `SSH_AUTH_SOCK` (ssh_config(5); `ssh -G` shows `identityagent` with the variable unset or set), so that agent can still be used, and the help says "unless your SSH configuration names one with IdentityAgent".
 Leg P-I2 sets `SSH_AUTH_SOCK` in the run's environment itself, so it shows what `ssh` does with an agent, not what these roads give it. The help of *Remote Bridge*, *Secret references and masked
 runs* and *What an agent can and cannot do* says so in five languages. A bridge that cannot log in now ends at once (exit 255) where it used to ride a master.
 
