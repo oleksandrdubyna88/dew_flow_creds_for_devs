@@ -10,7 +10,7 @@
 //        master holds the forward, and the product's `stop()` changes nothing;
 //   P-B  the production tunnel: it serves the forward while it runs, makes no control socket, and `stop()` ends the forward;
 //   then a master on sshd A, opened as a person would (a plain `ssh`), and for each leg below an sshd B of its own:
-//   K-C  (control) the tunnel without the two options, for B, with a WRONG key and a WRONG pin: it rides the master, exit 0, the
+//   K-C  (control) the tunnel without the two options, for B, with a WRONG key and a WRONG pin: it rides the master, its client ends at once (code recorded), the
 //        forward is served and B sees no connection;
 //   P-D1 the production tunnel for B: B accepts the key, the forward is served, `stop()` ends it;
 //   P-D2 the same with the wrong pin: exit 255, `Host key verification failed`;
