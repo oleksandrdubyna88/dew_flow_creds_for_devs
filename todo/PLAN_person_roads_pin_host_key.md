@@ -2,7 +2,7 @@
 
 > Status: **plan only, nothing implemented yet, 2026-11-17.** Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1, no change. Split into two epics and a list of
-> candidates (`## Epics`); no stories document is written yet. Scope: the extension only (`src_vs_code/src`): the bridge
+> candidates (`## Epics`); E1's stories document [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) is written (2026-11-17). Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, one small new module for the pin of one call, the words that both `ssh` argv builders write for a
 > pinned call (`sshBridge.ts`, `sshExecCommand.ts`: the agent's pinned exec and a pinned *Run with Secrets* get them too,
