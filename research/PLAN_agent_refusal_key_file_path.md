@@ -557,7 +557,8 @@ keys folder: the folder of the window when it starts and ends, and the folder of
   ends. An old defect, not caused by this plan; no agent reads these paths. It needs its own small plan. Found by the
   lead's Opus review on 2026-11-12, by reading. **Fixed in extension 1.22.2** (#373, 2026-11-17) by
   [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md): the check and the install delete their key when they
-  finish, a bridge when its `ssh` ends.
+  finish, a bridge when its `ssh` ends. The delete is best effort: a delete that the file system refuses leaves the key
+  until the purge (G6 of that plan).
 - **N17. `creds_open_terminal` types a key path with the id of the key entry into a terminal.** The agent's terminal
   action calls `connectEntity` (`sshUseActions.ts:377`), which writes `<keyEntityId>.key` (`sshSession.ts:472`) and
   types `ssh -i "<path>"` into a VS Code terminal (`sshCommand.ts:232-233`). The answer to the agent is `opened` or one

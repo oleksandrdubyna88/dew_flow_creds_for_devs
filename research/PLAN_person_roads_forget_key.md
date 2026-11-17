@@ -228,7 +228,8 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 What shipped differently from the plan as approved (5d49cc9b):
 
 1. **Change 1.1** (the cadence consult `e7ead04b`, before the build): the spawner reports every `'error'` of its child to the
-   diagnostic log, and §2.4's bound was narrowed for a started child whose kill fails (its key stays until the purge).
+   diagnostic log, and §2.4's bound was narrowed for a started child whose kill fails and that never exits (its key stays until the purge); a child that
+   exits later settles `exited`, and its key is deleted then.
 2. **A second new module.** The spawner lives in `bridgeSpawner.ts`, beside the helper `writtenKey.ts`; the question consultants
    (`72e7e3c9`) both read it as placement of the approved move, not a change. `.size-baseline.json` went 981 → 975.
 3. **The reporter must not throw** (the lead's Opus review of S2): Node emits a failed kill's `'error'` inside `child.kill()`,
