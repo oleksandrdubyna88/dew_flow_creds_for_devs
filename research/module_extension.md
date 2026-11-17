@@ -3945,18 +3945,46 @@ flips it). The pieces, in the order a call meets them:
   one `\`, so a first contact would not be recorded, measured with `-G` on 10.2p1, not yet on Windows). It is refused before the spawn now: the keys folder and `bridges/known_hosts`
   are values of the file, so R14 is said, and so it is for a profile folder with `%` and a stored key. The person's own `known_hosts` on a UNC path is refused with R6's known-hosts
   sentence. What is pinned is the refusal, in unit tests; nothing here claims how a Windows `ssh` reads such a path. Lifting the refusal is a todo (E4.3).
-- *The database client on a bridge* (`dbCliLauncher.ts`, `agentUseActions.ts`). `buildDbQueryLaunch(..., { bridged: true })` puts `-X` first on `psql` and `--no-defaults` first on `mysql` (an option
-  file's `load-data-local-dir` survives `--local-infile=0`); `mssql` gets nothing (`-X1` drops the credential on go-sqlcmd). A bridged client's environment is `bridgedSshEnv`: `PATH`, `HOME`, its own
-  password variable and, since §S6.14 Y6, the names that close the files it would read under `HOME`: `buildDbQueryLaunch(..., { bridged, absentFile })` gives `mysql` `MYSQL_TEST_LOGIN_FILE` (`--no-defaults` still reads `.mylogin.cnf`; probe PD1)
-  and `psql` `PGPASSFILE` (`.pgpass`; PD2) and `PGSSLCERT` and `PGSSLKEY` (`~/.postgresql`; PD3), each at `absentFile`: a path from `materializedKeyPath(storageDir, 'no-client-file')`, a name nothing ever writes, so they are
-  asked for as paths that never exist. The probes saw each variable close its file, and MariaDB's client read none. A bridged `psql` or `mysql` launch with no `absentFile` is refused (`undefined`); `mssql` is given none of the four. Off a bridge the launch is byte for byte today's.
+- *The database client on a bridge* (`bridgedDbProfile.ts`, `bridgedDbSentences.ts`, `dbCliLauncher.ts`, `agentUseActions.ts`; the E1.6 spec §S6.15, Z1-Z3). A bridged `query` is a local
+  subprocess under agent-written input, and what the client can log in as is what it is handed, so a bridged client is **never handed the stored connection**: it is handed one this extension builds from the entry's own
+  fields, and only for a client and system whose behaviour was measured. In the order `dbQueryAction.run` asks:
+  1. *The gate.* `BRIDGED_DB_PROFILES` (`bridgedDbProfile.ts`) has a row for each of `psql`, `mysql` and `sqlcmd` on `linux`, `win32` and `darwin`, and **no row is served**: until E1.7 turns one to served in the
+     commit that records its probe runs, every bridged `query` is refused. It is asked once the entry's `dbType` is known and **before the stored connection is read**; a pair with no row (another platform, `mongodb`)
+     is not served either. The refusal writes DR1 to the agent journal in the form of `bridgedRefusal` (`<entry>: <sentence> (a Remote Bridge was told only that it could not be used)`), answers
+     `not_supported` with `BRIDGE_USE_REFUSED`, and nothing is spawned. The table is a dependency of `dbQueryAction` that defaults to the production one, so a test names another. A call through the main port is
+     not asked: its launch is byte for byte what it was.
+  2. *The stored value's own refusals*, as before (no connection, a withheld one, a postgres value that is not a postgres URL).
+  3. *The connection is built* (`bridgedDbConnection(dbType, stored, entryName)`). A postgres entry is a URI whose scheme is `postgres:` or `postgresql:`; a mysql or mssql entry a URI or a key-value string, as
+     `parseDbConnectionString` tells them apart. A URI's query is read from the raw text, split at `&` and at each first `=`, key and value percent-decoded once; a part with no `=`, an empty part or key, a
+     decoding that fails, a fragment and a key given twice are refused, and keys are compared after decoding, exactly (PQ2 saw `%70assfile` leak and libpq take the last of a keyword written twice). A postgres URI takes three
+     keys: `sslmode` (one of libpq's six words, in lower case), `connect_timeout` (one to four digits) and `application_name` (1 to 63 of letters, digits, space, `_`, `.`, `-`); every other key is refused, `passfile`,
+     `service`, `sslcert`, `host` and `options` among them; a mysql or mssql URI takes none, and a key-value string only the spellings the parser reads (`server`, `host`, `data source`; `port`; `database`, `initial catalog`;
+     `user id`, `uid`, `user`, `username`; `password`, `pwd`), one key to a field. Then: the host (required for every client; for `psql` and `mysql` one network host name or address, so an empty host, a socket
+     folder, a Windows path and a list of hosts are refused; for `sqlcmd` refused only when empty or holding a control character), the port (digits, 1 to 65535), the user and the password (both stored and not empty,
+     for every client: an entry with none is refused, since a client then logs in with something that is not the entry's), the database (for `psql` not a name libpq would read as a connection string: one holding `=` or
+     beginning `postgres://` or `postgresql://`), and no control character in any field. The rules are asked in that order, and a test pins it.
+  4. *The sentences* (DR2-DR6) are for the journal only; the agent reads `BRIDGE_USE_REFUSED`. They name the entry and, for a setting, a key from a fixed list of the client's own setting names kept in
+     `bridgedDbSentences.ts` (otherwise the words `an unknown setting`); none holds a value or any other text of the stored connection, and a test puts a sentinel in every value of every refused case.
+  5. *The query*, `refuseQuery`, as before.
+  6. *The launch* (`buildDbQueryLaunch(..., { bridged: true, absentFile })`, which calls the same builder and answers `undefined` on a refusal). `psql` gets `-X`, `-c`, the query with its one leading space, `--`
+     and one libpq keyword string: `host`, `port`, `dbname`, `user`, the settings, then `passfile`, `sslcert` and `sslkey` at `absentFile`, written last because libpq takes the last value of a keyword written twice;
+     each value in single quotes, a backslash before every backslash and quote, an IPv6 host without its brackets, and **no password keyword**. `mysql` gets `--no-defaults` first (an option file's
+     `load-data-local-dir` survives `--local-infile=0`) and `--protocol=TCP` straight after it (both clients take it there, PM1), `-h` always named so that `localhost` means TCP and never the socket file, `-P`,
+     `-u`, `-D`, the three pins and `-e`. `sqlcmd` gets today's arguments, `SQLCMDUSER` always. The password rides the client's own variable. The environment is `bridgedSshEnv`: `PATH`, `HOME`, the password
+     variable and, since §S6.14 Y6, the names that close the files the client would read under `HOME` (`MYSQL_TEST_LOGIN_FILE`; `PGPASSFILE`, `PGSSLCERT`, `PGSSLKEY`), each at `absentFile`, a path from
+     `materializedKeyPath(storageDir, 'no-client-file')` that nothing ever writes. A bridged `psql` or `mysql` launch with no `absentFile` is refused (`undefined`).
+  Those variables, `-X` and `--no-defaults` are **defences inside the profile, not the lock**: PQ1 and PQ2 saw a stored URI's `?passfile=` and `?service=` outrank the variables and send the person's own password, and a URI-named
+  certificate offered, which is why the stored string is never handed over. Off a bridge nothing changes: `buildDbQueryLaunch` without `bridged` answers byte for byte what it answered before, for every input, the refused ones
+  included, and a unit test compares 105 connections with a record of that. **What this does not do:** it serves no pair, so no bridged query runs anywhere; it writes no authentication control (`require_auth`,
+  `gssencmode`, a plugin rule, a `sqlcmd` flag), sets no client floor and checks no client's version, and a client that logs in with something other than the entry's password (GSSAPI, SSPI, a plugin) is E1.7's, with
+  its probes. No door reaches a bridge in production (R1, then the switch of parent §4.5).
 
 *What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
 alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
 names in its environment for a password destination; `PubkeyAcceptedAlgorithms -sk-*` is asked for in `Host *` so that no security key is offered, and leg (o) of the itest is what observes whether a client then asks for none); the Windows list was shortened by M9 and PW2 to the seven (`TMP` and `COMSPEC` are not asked for). Tests: `bridgedSshConfig.test.ts` (F1-F11, and the Y5 cases of the host word and the file's value rule),
 `bridgedSshEnv.test.ts` (N1-N6a, N2a, N3a), `bridgedSshCall.test.ts` (W1-W16 and the Y5 cases: `none`, R11 and its order, the doubled backslash, R14, real files), `bridgedSshClient.test.ts` (CV1-CV7 and the check), `sshExecCommand.test.ts` (A1-A9), `sshOptions.test.ts` (J1, J2), `materializedKeys.test.ts` (P1), `bridgeLinks.test.ts` (L1-L14, G1, G2 and the Y5 cases, over the
-real writer and a real broker) and `bridgeLinksClient.test.ts` (L15-L18, G3), `dbCliLauncher.test.ts` (Q1-Q3, Q5-Q9) and `bridgeRunSites.test.ts` (Q4a, Q4b), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
-`scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`) and `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`), catalogued in `module_tests.md`.
+real writer and a real broker) and `bridgeLinksClient.test.ts` (L15-L18, G3), `dbCliLauncher.test.ts` (Q1-Q3, Q5-Q11), `bridgedDbProfile.test.ts` (DP1-DP14) with its cases in `bridgedDbCases.ts` and the record of today's launches in `bridgedDbOffBridgeGolden.ts`, and `bridgeRunSites.test.ts` (Q4a, Q4b, DG1-DG4), `sshExecAuth.test.ts` (K1), `agentNamesOnlyViewable.test.ts` (V1); the live legs are
+`scripts/bridged-ssh-itest.cjs` (`npm run itest:bridged-ssh`), `scripts/bridged-mysql-itest.cjs` (`npm run itest:bridged-mysql`) and `scripts/bridged-psql-itest.cjs` (`npm run itest:bridged-psql`), catalogued in `module_tests.md`.
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts
 (`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
