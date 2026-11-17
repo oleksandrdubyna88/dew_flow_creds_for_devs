@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BRIDGED_DB_PROFILES, BridgedDbConnection, bridgedDbConnection, bridgedDbPair, bridgedPsqlString } from '../bridgedDbProfile';
 import type { DbType } from '../types';
-import { DR5, ENTRY, REFUSED, SENTINEL, dr2, dr4, dr6, stored } from './bridgedDbCases';
+import { DR5, ENTRY, REFUSED, SENTINEL, dr2, dr4, dr6, dr6q, stored } from './bridgedDbCases';
 
 /**
  * E1.6 §S6.15 Z1 (parent §4.11, Q18): the gate. A bridged `query` is served only for a client and system whose profile was measured, and while E1.6
@@ -100,7 +100,7 @@ const GROUPS: ReadonlyArray<readonly [string, string, number]> = [
   ['DP8', 'no host, a socket folder and a list of hosts are refused', 13],
   ['DP10', 'a database name that psql would read as a connection string, or that holds a line break, is refused', 5],
   ['DP11', 'a key the profile does not carry in a mysql URI or a key-value string is refused, the known keys named', 15],
-  ['field', 'a port, a host, a user, a password or a text outside its shape is refused', 22],
+  ['field', 'a port, a host, a user, a password or a text outside its shape is refused', 32],
 ];
 
 for (const [group, what, count] of GROUPS) {
@@ -128,6 +128,20 @@ test('DP7b: the host is asked before the user and the password, and the settings
   assert.equal(refusal('postgres', 'postgresql:///orders?service=s1'), dr2('"service"'), 'a setting and no host: the setting');
   assert.equal(refusal('postgres', 'postgresql://app@db.example/orders?service=s1'), dr2('"service"'), 'a setting and no password: the setting');
   assert.equal(refusal('postgres', 'postgresql://app:p@db.example:0/o%0A'), dr6('port', 'psql'), 'the port before the database');
+});
+
+test('DP16: a key=value value that begins with a quote is refused, whatever the field; a quote inside a value, and a quoted value of a URI, are carried as they are', () => {
+  assert.equal(refusal('mssql', 'Server=db.example;User Id=u;Password="a"'), dr6q('password', 'sqlcmd'));
+  assert.equal(refusal('mssql', "Server=db.example;User Id=u;Password='a'"), dr6q('password', 'sqlcmd'));
+  assert.equal(built('mssql', 'Server=db.example;User Id=u;Password=a"b').password, 'a"b', 'a quote inside is the password\'s');
+  assert.equal(built('mssql', 'mssql://u:%22a%22@db.example/d').password, '"a"', 'a URI\'s percent-decoded value is what it says');
+});
+
+test('DP17: the host of a key=value mssql string is one host name after the split: an IPv6 address is not read as host and port, and an empty one is the host rule', () => {
+  assert.equal(refusal('mssql', 'Server=::1;User Id=u;Password=p'), dr6('host', 'sqlcmd'));
+  assert.equal(refusal('mssql', 'Server=::1,1433;User Id=u;Password=p'), dr6('host', 'sqlcmd'));
+  assert.equal(refusal('mssql', 'Server=,1433;User Id=u;Password=p'), DR5);
+  assert.deepEqual(built('mssql', 'Server=db-1.example_x,1433;User Id=u;Password=p'), { ok: true, host: 'db-1.example_x', port: '1433', user: 'u', password: 'p', settings: {} });
 });
 
 test('DP9: a mysql entry for localhost and one for an IPv6 address in brackets are built; the brackets are the URI\'s and not the client\'s', () => {

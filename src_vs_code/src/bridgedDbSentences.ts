@@ -85,7 +85,7 @@ export function DR5(entity: string): string {
 }
 
 /** The words every host constraint shares: what a host name may hold. */
-const HOST_WORDS = "one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character, or an IPv6 address in brackets";
+const HOST_WORDS = "it must be one host name of letters, digits, '.', '-' and '_', not beginning with '-', with no control character";
 const DATABASE_WORDS = "it must hold no control character and must not begin with '-'";
 
 /** What a connection of each client must be, as DR6 says it: a connection is a URL (or, for `mysql` and `sqlcmd`, a key=value string); `mongosh` is never carried. */
@@ -94,10 +94,10 @@ const CONNECTION_WORDS: Readonly<Record<string, string>> = {
   mongosh: 'a MongoDB connection is not carried',
 };
 
-/** The constraint each field or profile setting must meet, in fixed words that hold no value of the connection. Only `psql` reads a database name as a connection string. */
+/** The constraint each field or profile setting must meet, in fixed words that hold no value of the connection. `sqlcmd` takes no IPv6 address yet (E1.7 measures how its `-S` reads one), and so no `host\\instance` either. Only `psql` reads a database name as a connection string. */
 const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   connection: (client) => CONNECTION_WORDS[client] ?? 'it must be one URL with no "#", or one key=value string, with no control character',
-  host: (client) => (client === 'sqlcmd' ? "it must hold no control character and must not begin with '-'" : `it must be ${HOST_WORDS}`),
+  host: (client) => (client === 'sqlcmd' ? HOST_WORDS : `${HOST_WORDS}, or an IPv6 address in brackets`),
   port: () => 'it must be a whole number from 1 to 65535',
   user: () => 'it must hold no control character',
   password: () => 'it must hold no control character',
@@ -111,4 +111,9 @@ const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
 export function DR6(entity: string, field: string, client: string): string {
   const constraint = CONSTRAINTS[field]?.(client) ?? 'it must be in the form the profile carries';
   return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge: ${constraint}.`;
+}
+
+/** DR6 for a value of a key=value string that begins with a quote, as an ADO string writes one (`Password="a"`): the profile builds from the value as written and does not read that form. */
+export function DR6Quoted(entity: string, field: string, client: string): string {
+  return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge: in a key=value string it must not begin with a quote.`;
 }

@@ -3,7 +3,7 @@ import type { DbQueryLaunch } from '../dbCliLauncher';
 /**
  * What `buildDbQueryLaunch(dbType, <the connection of the case>, 'select 1')` answered on `main` (and on this branch before §S6.15 Z2) for each refused connection of
  * `bridgedDbCases.ts`, off a bridge: Q11's reference. A bridge refuses these; a local agent has always been served them, and must still be, byte for byte.
- * `null` is the launch `undefined`. Generated once from the builder as it stood before Z2; it is a record of today, and nothing regenerates it. The seven rows of the dash cases (a database or a `sqlcmd` host beginning with `-`) were added by §S6.15's review and recorded from the same off-bridge builder, which that review did not touch.
+ * `null` is the launch `undefined`. Generated once from the builder as it stood before Z2; it is a record of today, and nothing regenerates it. The rows of the dash cases (a database or a `sqlcmd` host beginning with `-`) and of the key-value host and quote cases were added by §S6.15's review and recorded from the same off-bridge builder, which that review did not touch.
  */
 export const OFF_BRIDGE_TODAY: Readonly<Record<string, DbQueryLaunch | null>> = {
   "DP4 service": {"exe":"psql","args":["-c"," select 1","--","postgresql://app@db.example:5432/orders?service=zq9x7k2m"],"env":{"PGPASSWORD":"pwzq9x7k2m"}},
@@ -102,6 +102,16 @@ export const OFF_BRIDGE_TODAY: Readonly<Record<string, DbQueryLaunch | null>> = 
   "mysql uri database is an option": {"exe":"mysql","args":["-h","db.example","-u","app","-D","--init-command=x","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
   "mysql kv database begins with a dash": {"exe":"mysql","args":["-h","db.example","-u","app","-D","-D","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
   "psql database begins with a dash": {"exe":"psql","args":["-c"," select 1","--","postgresql://app@db.example/-xzq9x7k2m"],"env":{"PGPASSWORD":"pwzq9x7k2m"}},
+  "sqlcmd kv host is an IPv6 address": {"exe":"sqlcmd","args":["-S",":,1","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd kv host is an IPv6 address in brackets": {"exe":"sqlcmd","args":["-S","[::1],1433","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd kv host holds a colon": {"exe":"sqlcmd","args":["-S","tcp:db.example,1433","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd kv host is only a port": {"exe":"sqlcmd","args":["-S","undefined,1433","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "sqlcmd kv host holds a backslash": {"exe":"sqlcmd","args":["-S","db.example\\inst","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pwzq9x7k2m","SQLCMDUSER":"app"}},
+  "kv password in double quotes": {"exe":"sqlcmd","args":["-S","db.example","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"\"pwzq9x7k2m\"","SQLCMDUSER":"app"}},
+  "kv user in single quotes": {"exe":"sqlcmd","args":["-S","db.example","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pw","SQLCMDUSER":"'appzq9x7k2m'"}},
+  "kv host in quotes": {"exe":"sqlcmd","args":["-S","\"db.examplezq9x7k2m\"","-Q","select 1","-b","-x"],"env":{"SQLCMDPASSWORD":"pw","SQLCMDUSER":"app"}},
+  "kv database in quotes": {"exe":"mysql","args":["-h","db.example","-u","app","-D","\"orderszq9x7k2m\"","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pw"}},
+  "kv port in quotes": {"exe":"mysql","args":["-h","db.example","-P","\"3306\"","-u","app","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
   "mongodb": null,
   "DP11 mysql ssl-mode": {"exe":"mysql","args":["-h","db.example","-P","3306","-u","app","-D","orders","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},
   "DP11 mysql unknown key": {"exe":"mysql","args":["-h","db.example","-P","3306","-u","app","-D","orders","--skip-named-commands","--delimiter=;","--local-infile=0","-e","select 1"],"env":{"MYSQL_PWD":"pwzq9x7k2m"}},

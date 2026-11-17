@@ -1,5 +1,5 @@
 import type { DbType } from './types';
-import { DR1, DR2, DR3, DR4, DR5, DR6, KeyDialect, clientNameOf, settingWords } from './bridgedDbSentences';
+import { DR1, DR2, DR3, DR4, DR5, DR6, DR6Quoted, KeyDialect, clientNameOf, settingWords } from './bridgedDbSentences';
 import { cleanHost } from './dbConnString';
 
 /**
@@ -201,6 +201,12 @@ const KV_FIELDS: ReadonlyMap<string, keyof Fields> = new Map<string, keyof Field
   ['user id', 'user'], ['uid', 'user'], ['user', 'user'], ['username', 'user'], ['password', 'password'], ['pwd', 'password'],
 ]);
 
+/** A value that begins with a quote, as an ADO string writes one (`Password="a"`): the profile does not read that form, and a quote kept in the value would be the password's first character. */
+const QUOTED_VALUE = /^["']/;
+
+const withValue = (ctx: Ctx, fields: Fields, name: keyof Fields, value: string): Fields | Refusal =>
+  QUOTED_VALUE.test(value) ? refused(DR6Quoted(ctx.entity, name, ctx.client)) : { ...fields, [name]: value };
+
 /** One non-empty part of a key-value string added to `fields`, which stay as they were: the new fields, or a refusal for an unknown key, a part with no `=` or a field given by two keys. */
 function kvPart(ctx: Ctx, fields: Fields, part: string): Fields | Refusal {
   const at = part.indexOf('=');
@@ -212,7 +218,7 @@ function kvPart(ctx: Ctx, fields: Fields, part: string): Fields | Refusal {
   if (fields[name] !== undefined) {
     return refused(doubledSetting(ctx, key));
   }
-  return { ...fields, [name]: part.slice(at + 1).trim() };
+  return withValue(ctx, fields, name, part.slice(at + 1).trim());
 }
 
 /** The host and port of a key-value string as the parser reads them: `host,port` or `host:port`, the `Port` key winning, a pasted scheme and path dropped. */
@@ -281,11 +287,11 @@ function networkHost(ctx: Ctx, host: string): string | Refusal {
   return NETWORK_HOST.test(host) ? host : refused(shapeOf(ctx, 'host'));
 }
 
-/** The host (Q17): required for every client; for `psql` and `mysql` one network host; for `sqlcmd` refused only when empty, holding a control character or beginning with `-` (`-S -E` is another option; E1.7 writes its shape with PS1). */
+/** The host (Q17): required for every client; for `psql` and `mysql` one network host; for `sqlcmd` one host name (E1.7 writes its shape with PS1). */
 const presentHost = (ctx: Ctx, host: string | undefined): string | Refusal => (host === undefined || host === '' ? refused(DR5(ctx.entity)) : host);
 
-/** The host `sqlcmd` is given after `-S`: one that begins with `-` is read as the next option (`-S -E`). */
-const sqlcmdHost = (ctx: Ctx, host: string): string | Refusal => (host.startsWith('-') ? refused(shapeOf(ctx, 'host')) : host);
+/** The host `sqlcmd` is given after `-S`: one host name of the network-host alphabet. One that begins with `-` is read as the next option (`-S -E`), and one with a colon, a comma or a bracket is no host once the key-value split has taken its port (`Server=::1` is host `:` and port `1`). */
+const sqlcmdHost = (ctx: Ctx, host: string): string | Refusal => (NETWORK_HOST.test(host) ? host : refused(shapeOf(ctx, 'host')));
 
 function hostOf(ctx: Ctx, host: string | undefined): string | Refusal {
   const named = presentHost(ctx, host);
