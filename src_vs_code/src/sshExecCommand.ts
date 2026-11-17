@@ -19,7 +19,7 @@ export interface SshExecOptions {
 
 /**
  * The two options that ask `ssh` to share no connection, whatever `~/.ssh/config` says: to join no master and to become none.
- * EVERY argv the extension starts an `ssh` with carries them, in this order: each run of {@link buildSshExecArgv}, and the tunnel
+ * Every `ssh` the extension spawns non-interactively carries them, in this order: each run of {@link buildSshExecArgv}, and the tunnel
  * of a Remote Bridge (`sshBridge.ts`). They are spelled here and in no other file (`noConnectionSharing.test.ts`).
  *
  * <p>Why. With `ControlMaster auto` and a `ControlPath` in the person's config, an `ssh` that says nothing about sharing hands
@@ -34,10 +34,11 @@ export interface SshExecOptions {
  * loopback, a config with `ControlMaster auto`, a fixed `ControlPath` and `ControlPersist 60`): with `ControlPath=none` alone
  * every leg passes. With `ControlMaster=no` alone this `ssh` does not BECOME a master, and that is all: with a master up it
  * still joins it, with a wrong key and a wrong pin. So the first option is the protection and the second is belt and braces.
- * Both stay. Section 9 runs on every CI run, with both.</p>
+ * Both stay. Section 9 runs in the `itest:ssh-agent` step of the CI runs of the extension workflow, with both.</p>
  *
  * <p>What is NOT covered: the nested `ssh` of a jump host. `-J` starts one per hop and hands it none of the outer's `-o`
- * options, so a hop can still join a master or become one. And the person's own terminal (`sshCommand.ts`) keeps sharing, on
+ * options, so a hop can still join a master or become one (H1 of the plan). Nor is `git` over SSH (`gitRemote.ts`, H2 of the plan):
+ * its `GIT_SSH_COMMAND` names a key and no sharing option. And the person's own terminal (`sshCommand.ts`) keeps sharing, on
  * purpose.</p>
  *
  * <p>The cost: each call logs in by itself. A credential that needs a person (a key file with a passphrase that no agent holds,

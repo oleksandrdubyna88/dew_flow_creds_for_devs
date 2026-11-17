@@ -19,7 +19,8 @@
 //   K-I  (control) that run without the two options, with a key file that has a passphrase and is in no agent: it rides the master;
 //   P-I1 the production run with that key: exit 255, `Permission denied` (a credential that needs a person fails; plan change 1.1);
 //   P-I2 the same with the key in an `ssh-agent` of the run's environment: the command ran on B (what needs nobody still works).
-//        The agent lives for that leg only.
+//        The agent lives for that leg only. The leg sets `SSH_AUTH_SOCK` itself, so it shows what `ssh` does with an agent, not what
+//        Run with Secrets or the agent's linked run give it: both drop the host's `SSH_AUTH_SOCK` (`E3_INHERITED_DROP`).
 //
 // POSIX only, like sections 5, 7 and 8; with `CI=true` a missing sshd FAILS. `sshd -d` serves one connection, so every leg that
 // connects has an sshd of its own. A tunnel is started by the product's own `SshBridgeManager` and `bridgeSpawner`, so `stop()` is
@@ -234,10 +235,14 @@ async function productionTunnel(check, rig) {
   }
 }
 
-/** The master: a plain ssh to A under the sharing config, as a person opens one, held open until the group is over. */
+/**
+ * The master: a plain ssh to A under the sharing config, as a person opens one, held open until the group is over. Its remote command is
+ * `cat` and its stdin is a pipe that this process holds: the command ends when that pipe or the connection ends, so no remote process of the
+ * rig outlives the leg (a `sleep` would be reparented when its sshd goes, and live on for its whole time).
+ */
 async function startMaster(rig, a, mux) {
-  const argv = ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${a.knownHosts}`, '-i', rig.userKey, '-p', String(a.port), destination, 'sleep 120'];
-  const master = launch(rig.scope, 'ssh', ['-F', mux.config, ...argv], { env: rig.env });
+  const argv = ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${a.knownHosts}`, '-i', rig.userKey, '-p', String(a.port), destination, 'cat'];
+  const master = launch(rig.scope, 'ssh', ['-F', mux.config, ...argv], { env: rig.env, stdio: ['pipe', 'pipe', 'pipe'] });
   return { master, up: await within(15_000, () => fs.existsSync(mux.control)) };
 }
 

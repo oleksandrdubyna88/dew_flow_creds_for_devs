@@ -728,7 +728,7 @@ Written LAST, after the mutation runs of §10, and only what they showed (the co
  * loopback, a config with `ControlMaster auto`, a fixed `ControlPath` and `ControlPersist 60`): with `ControlPath=none` alone
  * every leg passes. With `ControlMaster=no` alone this `ssh` does not BECOME a master, and that is all: with a master up it
  * still joins it, with a wrong key and a wrong pin. So the first option is the protection and the second is belt and braces.
- * Both stay. Section 9 runs on every CI run, with both.</p>
+ * Both stay. Section 9 runs in the `itest:ssh-agent` step of the CI runs of the extension workflow, with both.</p>
 ```
 
 **6.2 `src/sshBridge.ts`**, in the docblock of `FIXED_OPTIONS`: the sentence `The measurement and its conditions are beside the

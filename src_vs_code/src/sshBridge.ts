@@ -160,12 +160,14 @@ function isUsablePort(port: number): boolean {
  * and a `ControlPath` in the person's config it was not. Measured 2026-11-17 with this argv (OpenSSH 10.2p1 on both ends,
  * loopback, one user, `ControlPersist` on): the spawned `ssh` exited with 0 after about half a second, a detached master held
  * the forward, and the kill hit a pid that was gone; with the two options the process stays and the kill ends the forward. The
- * measurement and its conditions are beside the constant. Section 9 of `scripts/ssh-agent-itest.cjs` asks a real `sshd` on every
- * CI run: this argv serves the forward while its `ssh` runs and makes no control socket, it logs in by itself while a master is
+ * measurement and its conditions are beside the constant. Section 9 of `scripts/ssh-agent-itest.cjs` asks a real `sshd` in the
+ * `itest:ssh-agent` step of the CI runs of the extension workflow: this argv serves the forward while its `ssh` runs and makes no control socket, it logs in by itself while a master is
  * up, and after `stop()` the forward is not served.</p>
  *
- * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for an option:
- * a caller's own sharing word in `extra` comes too late to change them. Only these two are shared with a bridged run. Its
+ * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for a `-o` keyword:
+ * the `-o` words in `extra` come too late to change them. The flag spellings do not: `-S` sets the control path and `-M` the master
+ * mode at option-parsing time, where the LAST one wins and the `-o` values lose (measured with `ssh -G`), so `extra` must never carry
+ * `-S`, `-M` or `-O` (production passes no `extra`). Only these two are shared with a bridged run. Its
  * `ClearAllForwardings=yes` must never come here: it clears the forwards of the command line too, and the tunnel would lose
  * its own `-R`.</p>
  */

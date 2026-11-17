@@ -58,6 +58,7 @@ const controlPaths = (lines: readonly string[]): string[] => lines.filter((line)
 
 const HOST: EntityMetadata = { id: 'e1', name: 'build box', host: 'build.example.com', user: 'dev', isSshEnabled: true };
 
+/** `-o` words only: the first `-o` value wins. The flags `-S` and `-M` would override the two options, so `extra` must never carry them (H4 of the plan). */
 const HOSTILE_EXTRA = ['-o', 'ControlMaster=auto', '-o', 'ControlPath=/x'];
 
 function tunnelArgv(auth: SshExecAuth, extra: readonly string[] = []): string[] {
@@ -158,4 +159,33 @@ test('G2: the two options are spelled in one file', () => {
   // `Name=value` only: prose may name the options (`ControlMaster`) and a config line (`ControlMaster auto`).
   const spelled = [...new Set(matchesOf(/control(master|path|persist)\s*=/gi))];
   assert.deepEqual(spelled, ['sshExecCommand.ts'], 'an option that names connection sharing is spelled outside sshExecCommand.ts: use NO_CONNECTION_SHARING');
+});
+
+test('G2: no other door to a spawned ssh: the generic runner, the spawn launches, the manager and the process modules are listed whole', () => {
+  // `runBounded` starts ANY program with ANY argv: `runBounded('ssh', …)` would be an ssh that never met a builder. Every use is listed,
+  // so a new one is red until somebody has looked at what it starts. The programs of today are git, ssh-keyscan, a script's own
+  // interpreter, a saved terminal command and a database client: none is `ssh`.
+  assert.deepEqual(
+    usesOf('runBounded', 'sshExecRunner'),
+    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'configWrite.ts#boundedGit', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
+    HOW_TO_FIX,
+  );
+  // The two ways to name the program of a spawned ssh. `openSshBinary` is called by `sshSpawnLaunch` only (and `openSshProgram` is a string for a terminal).
+  assert.deepEqual(usesOf('sshSpawnLaunch', 'sshProgram'), ['sshRoad.ts#spawnLaunchOf', 'sshUseActions.ts#agentAwareLaunch'], HOW_TO_FIX);
+  assert.deepEqual(usesOf('openSshBinary', 'sshProgram'), [], HOW_TO_FIX);
+  // A second bridge manager would start tunnels beside the one that `extension.ts` builds, with a spawner of its own.
+  assert.deepEqual(matchesOf(/\bnew\s+SshBridgeManager\s*\(/g), ['extension.ts'], HOW_TO_FIX);
+  // A namespace import or a `require` of the runner is invisible to `usesOf`, which follows named bindings: so every file that names
+  // the module at all is listed.
+  assert.deepEqual(
+    [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
+    ['agentUseActions.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    HOW_TO_FIX,
+  );
+  // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.
+  assert.deepEqual(
+    [...new Set(matchesOf(/^\s*(?:import\b[^\n]*\bfrom|(?:const|let|var)\b[^\n]*=\s*require\()\s*['"](?:node:)?child_process['"]/gm))],
+    ['binaryInstaller.ts', 'bridgeSpawner.ts', 'childKill.ts', 'helpLookup.ts', 'installFlow.ts', 'maskedTerminal.ts', 'materializedKeys.ts', 'sshExecRunner.ts', 'wslProcess.ts', 'wslRelayManager.ts'],
+    HOW_TO_FIX,
+  );
 });

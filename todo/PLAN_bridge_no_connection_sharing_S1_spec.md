@@ -79,7 +79,7 @@ test asks the real `ssh -G` what is IN EFFECT under a config that shares connect
 | K2 | `buildSshExecArgv` (`:128-174`) builds: `-T` when asked (`:139`), the authentication option (`:140`), the host-key options and `ConnectTimeout=10` (`:145-150`), the composer's words and `ForwardAgent=no` of `ownAgentWords` (`:155`), the six options ONLY when `options.bridged === true` (`:154`, `:156-158`), `-i` (`:159-161`), `-p` (`:162-164`), `--` (`:169`), the destination and the command (`:171-172`). It has no parameter through which a caller can add an option word | `sshExecCommand.ts` |
 | K3 | `FIXED_OPTIONS` (`:156-161`) is four `-o` pairs: `ServerAliveInterval=30`, `ServerAliveCountMax=3`, `ExitOnForwardFailure=yes`, `ConnectTimeout=10`. `buildBridgeArgv` (`:201-226`) returns: the authentication option (`:211`), `FIXED_OPTIONS` (`:212`), the host-key options (`:213`), `-N` (`:215`), `-R` and its value (`:216`), `options.extra` (`:217`), `-i` (`:218`), `-p` (`:219`), `--` and the destination (`:223-224`). So a word in `FIXED_OPTIONS` stands before every word a caller can add. The file imports `SshExecAuth` from `./sshExecCommand` (`:1`), and both modules import no `vscode` | `sshBridge.ts` |
 | K4 | Production passes no `extra` to `buildBridgeArgv` (`commands/agentCommands.ts:437-441`). The field is in `BridgeOptions` (`sshBridge.ts:90-91`), so a later caller can | the call site |
-| K5 | `ssh` takes the FIRST value it is given for an option, on the command line too, and a command-line value wins over the file. `ssh -G` under a `-F` file resolves and connects to nothing. With the two options it prints `controlmaster false` and NO `controlpath` line (the parent's §2, OpenSSH 10.2p1) | the parent |
+| K5 | `ssh` takes the FIRST value it is given for a `-o` keyword, on the command line too, and a command-line value wins over the file. `ssh -G` under a `-F` file resolves and connects to nothing. With the two options it prints `controlmaster false` and NO `controlpath` line (the parent's §2, OpenSSH 10.2p1) | the parent |
 | K6 | The tests that assert a run off a bridge OMITS the two options: `test/sshExecCommand.test.ts:158-164` and `:172-178`; `test/bridgeLinks.test.ts:222-246`, the loop at `:229-231`. `SIX` (`sshExecCommand.test.ts:126`), `sixAt` (`:129`), `everything` (`:131-137`) and `argvWith` (`:119-123`) are the fixtures of that file. `test/bridgeLinks.test.ts` drives the real action through a world (`both`, `lw.runs[n].argv`) | the tests |
 | K7 | How a scan of the shipped source is written here: `discoverSources(root, excluded)` lists every `.ts` under a folder, as `/` paths, sorted (`test/tempSiteScan.ts:62-76`); `importedUses(file, text, name, module)` finds every reference to a binding imported from a module, with the function it stands in as `within` (`test/funnelScan.ts:160-162`, `:277-288`). A list that is compared whole is red when a site is added and when one goes (`test/launchRoadScan.test.ts`) | the tests |
 | K8 | A temp file of a test: `ownedFile(scope, what, name)` makes an owned folder and returns a path in it; a `node:test` context is a scope (`scripts/lib/leftovers.cjs:54-59`, `scripts/lib/leftovers.d.cts:7-9`). A tool that may be missing: a test is skipped with a reason locally (`test/commandNameShell.test.ts:49`) | the helpers |
@@ -191,8 +191,10 @@ lines are the old ones (`:151-154`); the heading, the two paragraphs under it an
  * the forward, and the kill hit a pid that was gone; with the two options the process stays and the kill ends the forward. The
  * measurement and its conditions are beside the constant.</p>
  *
- * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for an option:
- * a caller's own sharing word in `extra` comes too late to change them. Only these two are shared with a bridged run. Its
+ * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for a `-o` keyword:
+ * the `-o` words in `extra` come too late to change them. The flag spellings do not: `-S` sets the control path and `-M` the master
+ * mode at option-parsing time, where the LAST one wins and the `-o` values lose (measured with `ssh -G`), so `extra` must never carry
+ * `-S`, `-M` or `-O` (production passes no `extra`). Only these two are shared with a bridged run. Its
  * `ClearAllForwardings=yes` must never come here: it clears the forwards of the command line too, and the tunnel would lose
  * its own `-R`.</p>
  */
@@ -840,7 +842,7 @@ tests pin BOTH words; which of the two carries the effect is S2's to show.
 
 | # | The way | What stops it |
 |---|---|---|
-| X1 | The options are in the argv but too late: after `extra`, or after `--` | R4 and R5 (before `-N`, `-R` and the first word of `extra`), R9 (before `-i`, `-p`, `--`), and R3: the real `ssh` resolves the hostile `extra` (M3, M11) |
+| X1 | The options are in the argv but too late: after `extra`, or after `--`. (`-o` words in `extra` come too late; the flag spellings `-S` and `-M` would override the options, so `extra` must never carry them: follow-up H4 of the plan) | R4 and R5 (before `-N`, `-R` and the first word of `extra`), R9 (before `-i`, `-p`, `--`), and R3: the real `ssh` resolves the hostile `extra` (M3, M11) |
 | X2 | The options are sent, and `ssh` does not do what their names say | R2 and R3 ask the real client what is in effect. What the server then sees is S2. This spec claims no more than "sent" and "resolved" |
 | X3 | The `ssh -G` test passes because its config file shares nothing (a typo in the file, a client that ignores `-F`) | G2: the same argvs with the two options taken out must print `controlmaster auto` and the file's `controlpath`. Check by hand once: empty `SHARING_CONFIG`, and G2 is red |
 | X4 | A caller's own `ControlMaster=auto` is counted as the fixed option, so "exactly once" passes with the fixed one missing | `pairAt` compares the value whole; R5's second assertion counts `ControlMaster=no` alone (M1 makes it `0 !== 1`) |
