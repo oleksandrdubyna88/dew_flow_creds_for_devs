@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.3] — 2026-11-17 — Security — the extension's own `ssh` calls share no connection
+
 ### Changed — security: the extension's own `ssh` calls share no connection
 
 If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`

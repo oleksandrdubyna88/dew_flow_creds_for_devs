@@ -2590,7 +2590,7 @@ at once when nothing was started or the start throws. `writtenKey.ts` is the one
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
 activation; `stop()` drops the row before the kill, so nothing retries it.
 
-**The bridge's `ssh` and no connection sharing (G2).** Written 2026-11-17 (`todo/PLAN_bridge_no_connection_sharing.md`, S1 and S2; S3 is this text). A bridge is closed by killing the process
+**The bridge's `ssh` and no connection sharing (G2).** Written 2026-11-17 (`research/PLAN_bridge_no_connection_sharing.md`, S1 and S2; S3 is this text). A bridge is closed by killing the process
 that was spawned (`SshBridgeManager.stop` and `dispose`), so that process must BE the connection that holds the `-R` forward. On a laptop whose
 `~/.ssh/config` has `ControlMaster auto` and a `ControlPath` it was not: the spawned `ssh` handed the forward to a master, a detached process, and exited
 with 0 about half a second after its start; the kill hit a pid that was gone, the forward went on being served, and `onEnded` ran at once, so the row went back

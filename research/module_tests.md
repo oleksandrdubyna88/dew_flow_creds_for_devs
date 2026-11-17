@@ -2502,7 +2502,7 @@ on the next activate or deactivate). A window killed in the middle of a road run
 
 The tunnel of a Remote Bridge and every run of `buildSshExecArgv` (the five bounded roads: the bridge's socket sweep and mode check, *Install creds on host*, an
 agent's `ssh:exec` and run over SSH, *Run with Secrets* over SSH) say `-o ControlPath=none -o ControlMaster=no` (`NO_CONNECTION_SHARING`,
-`sshExecCommand.ts`), whatever the person's `~/.ssh/config` says (`todo/PLAN_bridge_no_connection_sharing.md`, S1 to S3; `module_extension.md`, *The bridge's `ssh` and
+`sshExecCommand.ts`), whatever the person's `~/.ssh/config` says (`research/PLAN_bridge_no_connection_sharing.md`, S1 to S3; `module_extension.md`, *The bridge's `ssh` and
 no connection sharing (G2)*). Three layers, each asking a different question: the unit tests ask what is SENT; one real `ssh -G` asks what a client RESOLVES; a real
 `ssh` against real `sshd -d` runs asks what the options DO. Run the first two with
 `node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/noConnectionSharing.test.js" "out/test/sshBridge.test.js" "out/test/sshExecCommand.test.js" "out/test/bridgeLinks.test.js" "out/test/sshRunsLoginHelp.test.js"`
