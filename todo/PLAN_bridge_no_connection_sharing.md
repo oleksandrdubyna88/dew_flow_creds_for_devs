@@ -1,7 +1,9 @@
 # PLAN — the extension's own `ssh` calls share no connection (G2 of N16, widened)
 
 > Status: **approved 2026-11-17 (the coai plan gate, `proceed`), epoch 1 open, one change (1.1); nothing implemented
-> yet.** Split into three stories (`## Stories`), S2 the cornerstone.
+> yet.** Split into three stories (`## Stories`), S2 the cornerstone; the two security specs by Fable, 2026-11-17:
+> [S1](PLAN_bridge_no_connection_sharing_S1_spec.md) and [S2](PLAN_bridge_no_connection_sharing_S2_spec.md) (the
+> cornerstone). The feasibility probe of S2's first step was run for its spec and passed (§2).
 > Scope: the extension only (`src_vs_code`): the argv of the Remote Bridge's tunnel (`src/sshBridge.ts`), the argv of every
 > non-interactive `ssh` run (`src/sshExecCommand.ts`), their tests, one new real-`sshd` test script, the docs. No change of
 > the person's interactive terminal, of the shared composer `src/sshOptions.ts`, or of any file on disk. Found as G2 of
@@ -93,6 +95,18 @@ connects to nothing), under a `-F` file with the three lines above:
   still `controlmaster false` and no path; with that pair BEFORE the two, it is `controlmaster auto` and
   `controlpath /tmp/zz`. So the first value wins on the command line too, and a command-line value wins over the file.
 
+**Measured on 2026-11-17 for the two specs, after the approval** (their facts K9, K10 and L2 to L11; a copy of the repository in
+a scratch folder, OpenSSH 10.2p1 for the client and for an `sshd` unpacked from the distribution's package and run by the user,
+loopback, one user):
+
+- the feasibility probe of §7.4 passed: `sshd -d` serves a unix-socket `-R`, a connect from `node` reads through it, and the
+  product's `stop()` ends it;
+- the ten legs of §7.4 with the product of S1: 42 checks pass, in about 2 s; on the product as it is today 16 of them fail, and
+  every control passes;
+- each option alone: with `ControlPath=none` alone every leg passes; with `ControlMaster=no` alone the tunnel does not become
+  a master (P-B passes) and every call still joins a master that is up;
+- `ssh.exe -G` of OpenSSH_for_Windows_9.5p2 resolves the two options as the Linux client does (the client alone, by hand).
+
 **Not measured:** a host over a network; Windows (Win32-OpenSSH is recorded as *believed to have no `ControlMaster`*,
 unverified: `PLAN_remote_bridge_scoped_E1_S3_spec.md:1772`) and macOS; a password entry; a jump host; the bounded runs
 of `buildSshExecArgv` themselves (C and D were run with the tunnel's argv; that a non-bridged run joins a master is what
@@ -139,7 +153,8 @@ not reach a non-bridged run either: such a run keeps the entry's own `-L`/`-R`/`
 What each option does alone was not measured (§2). Read from ssh_config(5): `ControlPath=none` turns sharing off in both
 roles; `ControlMaster=no` alone stops this `ssh` from becoming a master (A, E) and does not stop it from joining one (C).
 `BRIDGED_SSH_OPTIONS` calls the second one *belt and braces* (`sshExecCommand.ts:22-23`). S2 measures each alone (§7.5)
-and the comment of the constant says what was seen, not what the names promise.
+and the comment of the constant says what was seen, not what the names promise. The S2 spec's own run agrees with the
+reading above (§2; its fact L10); the coder's run decides the comment.
 
 ### 4.2 The tunnel
 
@@ -205,8 +220,8 @@ below the `MaxStartups` start of 10 that sshd_config(5) gives as the default (re
 **The test rig of S2** (§7.4) creates, per run of the script: 1 owned folder under the short socket root with about 50
 small files (four key pairs; per `sshd` run a config, a `known_hosts` and a pid file; the client's configs; sockets;
 under 100 kB), at most 11 `sshd -d` runs (one per leg that connects, §7.4; at most 2 alive at once), at most 2
-masters, 1 `ssh-agent` (P-I2), 1 loopback listener. Projected time: under 60 s on top of the script (not
-measured). Who retires it: the section scope's `finally`, as section 8 does (`scripts/itestForwardAgent.cjs:178-204`).
+masters, 1 `ssh-agent` (P-I2), 1 loopback listener. Projected time: under 60 s on top of the script. Measured for
+the S2 spec (its L7, L8): 52 entries and 11.8 kB in the folder, 11 `sshd -d` runs, about 2 s. Who retires it: the section scope's `finally`, as section 8 does (`scripts/itestForwardAgent.cjs:178-204`).
 **When it is interrupted:** a master of a control leg is detached, so it is not a child the scope can end by its pid. Three things
 end it: `ssh -O exit` in the leg's own `finally`; a FINITE `ControlPersist` in the rig's config (60 s at most, the spec
 picks), so a stranded master ends by itself; and the end of its `sshd`, which closes its connection. The folder is the
@@ -374,6 +389,8 @@ the first step of S2's spec and no change of the order S1 → S2 → S3): one pr
 is enough for a unix-socket `-R`: the tunnel's one connection carries the reverse-forward channel, and a probe of the
 socket from `node` is no second `ssh` connection (the scout used `sshd -D -e`). If the probe says otherwise,
 `startSshd` gets a mode that does not use `-d`, in a way that does not collide with PR #365's edit of that file.
+The probe was run for the S2 spec on 2026-11-17 and passed (its fact L2), so the spec changes no line of `startSshd`;
+the coder repeats it as step 1, and the first run on the runner's `sshd` is CI's.
 
 **Where it can run.** CI has an `sshd`. This PC has none at `/usr/sbin/sshd`; the scout ran one as a user. S2's brief
 names that binary, or the first run of the legs is CI's.
@@ -381,15 +398,16 @@ names that binary, or the first run of the legs is CI's.
 ### 7.5 Mutation checks (by hand, recorded in the commit body)
 
 - Take the constant out of `FIXED_OPTIONS` → tests 2 and 7.3 (tunnel) red; P-B and P-D1 to P-D3 red.
-- Take it out of the non-bridged branch of `buildSshExecArgv` → test 4 and 7.3 (run) red; P-X and P-I1 red (P-I1 then
-  rides the master and exits 0).
+- Take it out of the non-bridged branch of `buildSshExecArgv` → test 4 and 7.3 (run) red; P-X, P-I1 and P-I2 red (each
+  then rides the master and exits 0).
 - Move it behind `extra` in the tunnel → test 2 red, and 7.3's hostile `extra` red.
 - Add `ClearAllForwardings=yes` to the tunnel → test 3 red; P-B red (no forward).
 - Keep `ControlMaster=no` and drop `ControlPath=none` → test 1 red; expected from ssh_config(5): P-B green, P-D1 to P-D3
   and P-X red. Keep `ControlPath=none` and drop `ControlMaster=no` → test 1 red; expected: every real leg green. What is
   seen is recorded as it is, and decides the comment of §4.1.
 - Run the P legs with the two source files as they are on `origin/main` (checked out for that run, then restored) → P-B,
-  P-D1 to P-D3, P-X and P-I1 red. This is S2's RED. P-I2 is green on both: it is the leg that shows what still works.
+  P-D1 to P-D3, P-X, P-I1 and P-I2 red. This is S2's RED. P-I2 is red there for a reason of its own: before S1 the run
+  rides the master and never reaches the `sshd` it names (measured for the S2 spec, its §7).
 
 ### 7.6 The whole suite
 
@@ -483,8 +501,9 @@ Three stories, no epics, one cornerstone; one branch, one PR, one code round ove
 document. S1 and S2 are security work (what a call authenticates with, and what a closed bridge still reaches), so each
 has a spec that Fable writes before its code (the row *Security judgement* of `subagent-models.md`, outside the quota);
 S2 is also the one cornerstone. Per story: the spec or brief first, then a Sonnet coder (tests RED first, then the code),
-then the lead's Opus review. The specs are not written yet. They keep no change ledger: a change of one is an entry in
-this plan.
+then the lead's Opus review. The specs are written (2026-11-17):
+[S1](PLAN_bridge_no_connection_sharing_S1_spec.md) and [S2](PLAN_bridge_no_connection_sharing_S2_spec.md). They keep no
+change ledger: a change of one is an entry in this plan.
 
 ### S1 — Both argv builders turn connection sharing off
 
@@ -493,7 +512,8 @@ this plan.
 - **Scope.** `src/sshExecCommand.ts` (the constant, `BRIDGED_SSH_OPTIONS` built from it, the non-bridged branch),
   `src/sshBridge.ts` (`FIXED_OPTIONS` and its docblock). Tests: `sshExecCommand.test.ts` and `bridgeLinks.test.ts`
   (the three changes of §7.1), `sshBridge.test.ts` and `sshExecCommand.test.ts` (§7.2), one new test file for §7.3 and the
-  scan of §7.2 item 6, and its line in the Windows job of `ci-extension.yml`. No call site, no document (S3).
+  scan of §7.2 item 6 (with a small helper module that the three test files share: the S1 spec, §3), and its line in the
+  Windows job of `ci-extension.yml`. No call site, no document (S3).
 - **Depends on.** Nothing unmerged.
 - **Done when.** The assertions of §7.1 to §7.3 were watched failing on the unchanged code and pass; the first four
   mutations of §7.5 each turned red what the list names, on the unit and `-G` tests, and were restored; a bridged argv
@@ -517,7 +537,7 @@ this plan.
   probe of §7.4, before any leg is built.
 - **Done when.** The three control legs (K-A, K-C, K-I) show the fault in this rig and the seven production legs (P-B,
   P-D1 to P-D3, P-X, P-I1, P-I2) pass, on the head sha's CI run; the P legs were watched RED against `origin/main`'s two
-  files (P-I2 is green on both); every mutation of §7.5 is recorded with what the
+  files (all seven: before S1, P-I2 rides the master too); every mutation of §7.5 is recorded with what the
   legs showed, each option alone included; no process and no file of the rig is left after a run and after a killed run (§4.5).
 - **model:** fable writes the spec (the cornerstone, and security judgement); sonnet codes; opus reviews.
 
