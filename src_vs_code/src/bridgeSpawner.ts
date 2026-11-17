@@ -28,7 +28,13 @@ export interface BridgeChild {
 /** How a child is started: `child_process.spawn`, or a test's stand-in. */
 export type ChildSpawn = (command: string, args: string[], options: childProcess.SpawnOptions) => BridgeChild;
 
-/** Told every `'error'` of a bridge's child: one that never started, and one that started (a kill that failed). */
+/**
+ * Told every `'error'` of a bridge's child: one that never started, and one that started (a kill that failed).
+ *
+ * <p>It must not throw. Node emits a failed kill's `'error'` synchronously inside `child.kill()`, so a throw here leaves the
+ * manager's `stop()` or `dispose()` halfway, with the other bridges not killed. The product's reporter writes the diagnostic log,
+ * which never throws.</p>
+ */
 export type BridgeErrorReport = (error: Error) => void;
 
 /** What a spawner is made of. */

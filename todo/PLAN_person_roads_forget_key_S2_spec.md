@@ -421,7 +421,7 @@ and the first argument of `new SshBridgeManager(`, on one line:
 | emits `'error'` and then `'exit'`, or `'exit'` and then `'error'` | settled once, with the first; the second changes nothing and throws nothing | called once per `'error'` |
 | STARTED (it has a `pid`) and emits `'error'`, once or more often | not settled: its `ssh` may still run. Its `'exit'` settles `exited` later | called with each error, in order |
 | `spawn` itself throws | no child: `bridges.start` throws, and §3.4 deletes the key file at once | not called: the command's caller gets the error, as before |
-| the reporter throws | settled all the same: the settle is the statement before the report | its error comes out of the child's emit, as any listener's does |
+| the reporter throws | settled all the same: the settle is the statement before the report | its error comes out of the child's emit, as any listener's does; for a STARTED child that emit is inside `child.kill()`, so the throw leaves `stop()`/`dispose()` halfway — the reporter must not throw (documented on `BridgeErrorReport`, the lead's Opus review of S2) |
 
 **Why the reporter is required, and why the parts are one object.** An optional reporter with a silent default is the dropped
 error again, one forgotten argument away; with a required one, a spawner that reports to nobody does not compile, and the one

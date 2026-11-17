@@ -188,6 +188,31 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - The other open notes of N17: F1 (the `suffix` parameter, after #365), F3 (`keyEntityId` unread), F4, F5.
 - The forwarded own agent of the three clicks ([PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md)).
 
+**Found during the build, not built here** (the lead's Opus review of S2 and a Fable security pass of the whole diff,
+2026-11-16; each read in code unless it says run; all older than N16):
+
+- **G1 (medium).** The three roads do not enforce the entry's pinned host key: they pass no `knownHostsFile`, so `ssh`
+  runs with `StrictHostKeyChecking=accept-new` against `~/.ssh/known_hosts` (`sshBridge.ts:164-167`,
+  `sshExecCommand.ts:146-148`), where the agent's exec uses the pin (`sshUseActions.ts:224`). Another machine at that
+  address is accepted on first contact.
+- **G2 (medium if it holds, not measured).** The bridge's argv does not turn connection sharing off (`sshBridge.ts:156-161`
+  has no `ControlPath=none`/`ControlMaster=no`); with `ControlMaster auto` + `ControlPersist` in the person's config the
+  `-R` forward may live in a master that *Close* and the window's dispose do not kill. The key is not needed after login,
+  so N16 is not affected.
+- **G3.** The Windows facts of the spawner (ENOENT with no `pid`, the delete after exit) are read, not run: the extension
+  suite runs on Ubuntu; `bridgeSpawner.test.ts` could join a windows-latest step.
+- **G4.** A password with a NUL byte makes the spawn throw a message that quotes the environment value; on the agent's
+  exec `describeError` puts it into the refusal the agent reads (`sshUseActions.ts:295-296`; run with the compiled
+  modules). Fix in `byPassword` (`sshExecAuth.ts`).
+- **G5.** `materializePrivateKey` leaves a partial or un-chmodded key when the write or `chmodSync` throws (no
+  `materialized` is returned, so no guard deletes it; F4 of N17, fixed by #365's `withoutPartialKey`).
+- **G6.** A failed delete is silent (`forgetMaterializedKey`); and `removeKeyFile` (`sshUseActions.ts:232-243`) logs
+  `describeError`, which holds the key file's path, though its comment says it does not.
+- **G7.** The socket check resolves with no opener, so for a PIN-protected entry it is skipped without a word.
+- **G8.** When `ssh` never starts, the person still sees *Bridge open to …* (the error arrives a tick after `start`); only
+  the log and the row say otherwise. The reporter is handed the raw `Error`, whose `spawnargs` hold the argv; the
+  product writes only its message (P12), a later reporter could print more.
+
 ## 6. Definition of Done
 
 - [x] The three roads forget the key they wrote, on every exit path of §2.1 and §2.2, and only a key they wrote.
