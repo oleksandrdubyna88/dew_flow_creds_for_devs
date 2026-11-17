@@ -23,6 +23,7 @@ import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
 import { withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { writePersonPin } from '../personPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
@@ -188,10 +189,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       if (storageDir === undefined) {
         return;
       }
-      const credential = await resolveExecAuth(storage, accountId, entity, storageDir);
-      await withWrittenKey(credential, async () => {
+      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), (auth) => writePersonPin(storageDir, entity, auth), async (credential) => {
         if (!credential.ok) {
-          return; // the bridge itself already reported this
+          log.info('bridge', `socket check did not run: ${credential.message}`);
+          return;
         }
         const keyPath = credential.keyPath;
         const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
@@ -260,8 +261,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    await withWrittenKey(credential, async () => {
+    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), async (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }
@@ -412,9 +412,8 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     if (storageDir === undefined) {
       return;
     }
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    // N16: the key file of this call is this command's to delete until the bridge's ssh holds it; then that ssh's end deletes it.
-    const bridge = withWrittenKeyUntilExit(credential, () => {
+    // N16, G1: the key file and the pin file of this call are this command's to delete until the bridge's ssh holds them; then that ssh's end deletes them.
+    const bridge = withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }

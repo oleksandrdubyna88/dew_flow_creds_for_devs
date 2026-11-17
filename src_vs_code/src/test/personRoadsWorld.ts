@@ -1,4 +1,6 @@
+import * as fs from 'node:fs';
 import { formatToken } from '../grantToken';
+import { materializedKeysDir } from '../materializedKeys';
 import { BridgeProcess, BridgeSpawner, SshBridgeManager } from '../sshBridgeManager';
 import type { ExecAuth } from '../sshExecAuth';
 import type { SshExecOutcome } from '../sshExecRunner';
@@ -12,6 +14,10 @@ import { loadWithVscode } from './vscodeStub';
  * <p>Stand-ins, by the request string that `commands/agentCommands.ts` (or the module it imports) writes: `../sshExecAuth` (what a
  * resolve answers), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
  * `realForget`), and with `noExecArgv` `../sshExecCommand`.</p>
+ *
+ * <p>The saved host key of the entry (G1): `hostKey` puts one on the entry, and `storageDir` is the window's storage folder. A pin
+ * test gives a REAL folder and `realForget`, so `materializeKnownHosts` and `forgetMaterializedKey` are the real ones and the
+ * pin files are real files; `pinFiles` lists them, and `knownHostsOf` reads the file that an argv names.</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
@@ -45,6 +51,9 @@ export const writtenKey = (keyPath: string): ExecAuth => ({ ok: true, keyPath, e
 /** A resolved credential whose key is the person's own file: nothing was written, so nothing may be deleted. */
 export const ownKeyFile = (keyPath: string): ExecAuth => ({ ok: true, keyPath, env: {}, auth: 'key' });
 
+/** A resolved credential that signs in with a password: no key file is written for it. */
+export const passwordLogin = (): ExecAuth => ({ ok: true, env: {}, auth: 'askpass' });
+
 export const NO_CREDENTIAL: ExecAuth = { ok: false, reason: 'no_credential', message: 'nothing stored' };
 
 /** What one `ssh` run answers. */
@@ -70,10 +79,14 @@ export interface Parts {
   /** The n-th `ssh` run (0-based) of the window. It may throw. */
   run?: (index: number, argv: readonly string[]) => SshExecOutcome;
   host?: string;
-  /** The spawner of the bridges. Default: every bridge is a `heldChild`, kept in `children`. */
+  /** The saved host key of the entry (`hostKey`), as it is stored: a pin, or a text that is none. Left out: the entry has no `hostKey`. */
+  hostKey?: string;
+  /** The storage folder of the window. A pin test gives a real, owned folder. Default: `/storage`, which no test writes. */
+  storageDir?: string;
+  /** The spawner of the bridges. Default: every bridge is a `heldChild`, kept in `children`, and its argv in `bridgeArgvs`. */
   spawn?: BridgeSpawner;
-  /** What a modal question and the quick pick answer. Default: dismissed. */
-  answer?: (message: string, rest: readonly unknown[]) => string | undefined;
+  /** What a modal question and the quick pick answer. Default: dismissed. A promise holds the question open until the test settles it. */
+  answer?: (message: string, rest: readonly unknown[]) => string | undefined | Promise<string | undefined>;
   /** The real `forgetMaterializedKey` deletes; `forgotten` stays empty. */
   realForget?: boolean;
   /** `buildSshExecArgv` answers no argv. */
@@ -86,10 +99,12 @@ export interface World {
   handlers: Map<string, Handler>;
   bridges: SshBridgeManager;
   children: HeldChild[];
+  /** The argv of every bridge that the default spawner started, in order. */
+  bridgeArgvs: (readonly string[])[];
   /** Every path `forgetMaterializedKey` was given, in order. */
   forgotten: string[];
-  /** Every `ssh` run: its argv and how many paths were forgotten when it started. */
-  runs: { argv: readonly string[]; forgottenBefore: number }[];
+  /** Every `ssh` run: its argv, how many paths were forgotten when it started, and the known-hosts file its argv names, read at that moment. */
+  runs: { argv: readonly string[]; forgottenBefore: number; knownHosts: NamedKnownHosts | undefined }[];
   /** Every modal question and quick pick: its text and how many paths were forgotten when it was shown. */
   asked: { message: string; forgottenBefore: number }[];
   /** `onEnded` of the manager: a bridge that ended by itself. */
@@ -100,19 +115,45 @@ export interface World {
   logs: string[];
 }
 
+/** The known-hosts file that an argv names, and its text at the moment of the read (`undefined`: the file is not on the disk). */
+export interface NamedKnownHosts {
+  file: string;
+  text: string | undefined;
+}
+
+const KNOWN_HOSTS_WORD = 'UserKnownHostsFile=';
+
+/** What `-o UserKnownHostsFile=<path>` of an argv names, the path bare or in double quotes. `undefined`: the argv names no such file. */
+export function knownHostsOf(argv: readonly string[]): NamedKnownHosts | undefined {
+  const word = argv.find((one) => one.startsWith(KNOWN_HOSTS_WORD));
+  if (word === undefined) {
+    return undefined;
+  }
+  const file = word.slice(KNOWN_HOSTS_WORD.length).replace(/^"(.*)"$/, '$1');
+  return { file, text: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined };
+}
+
+/** The names of the known-hosts files in this window's key folder of `storageDir`, sorted. The folder is the one `materializedKeysDir` names. */
+export function pinFiles(storageDir: string): string[] {
+  const dir = materializedKeysDir(storageDir);
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => name.startsWith('known_hosts-')).sort() : [];
+}
+
 export const ROW = { accountId: 'a1', node: { id: 'e1', name: 'box' } };
 export const KEY = 'a1:e1';
 
 function emptyWorld(parts: Parts): World {
   const children: HeldChild[] = [];
+  const bridgeArgvs: (readonly string[])[] = [];
   const ended: string[] = [];
-  const held: BridgeSpawner = () => {
+  const held: BridgeSpawner = (_command, argv) => {
     const child = heldChild();
     children.push(child);
+    bridgeArgvs.push(argv);
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, forgotten: [], runs: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
+  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
@@ -161,7 +202,7 @@ function runnerOf(w: World, parts: Parts): Record<string, unknown> {
   const answer = parts.run ?? ((): SshExecOutcome => ran('600'));
   return {
     runSshExec: (argv: readonly string[]): Promise<SshExecOutcome> => {
-      w.runs.push({ argv, forgottenBefore: w.forgotten.length });
+      w.runs.push({ argv, forgottenBefore: w.forgotten.length, knownHosts: knownHostsOf(argv) });
       const index = w.runs.length - 1;
       return Promise.resolve().then(() => answer(index, argv));
     },
@@ -180,10 +221,16 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   };
 }
 
+/** The snapshot of the entry that the storage answers: with `hostKey` only when the test gave one. */
+function detailsOf(parts: Parts): Record<string, unknown> {
+  const pin = parts.hostKey === undefined ? {} : { hostKey: parts.hostKey };
+  return { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: 'dev', ...pin };
+}
+
 /** Register the real agent commands over the stand-ins, and hand back what they registered and what they did. */
 export function world(parts: Parts = {}): World {
   const w = emptyWorld(parts);
-  const details = { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: 'dev' };
+  const details = detailsOf(parts);
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', vscodeStub(w, parts), mocksOf(w, parts));
   const say = (_area: string, text: string): void => void w.logs.push(text);
   // The host is an untyped record on purpose, as in forgetAgentConsents.test.ts: only the fields these three roads read are
@@ -202,7 +249,7 @@ export function world(parts: Parts = {}): World {
     sshAgent: {},
     state: {},
     storage: { getAccounts: () => [], getNodes: () => [], getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details }) },
-    storageDir: '/storage',
+    storageDir: parts.storageDir ?? '/storage',
     vaultKeys: {},
   });
   return w;
