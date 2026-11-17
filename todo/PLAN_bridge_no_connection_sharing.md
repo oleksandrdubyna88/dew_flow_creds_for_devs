@@ -1,13 +1,33 @@
 # PLAN — the extension's own `ssh` calls share no connection (G2 of N16, widened)
 
-> Status: **plan only, nothing implemented yet, 2026-11-17.** Not approved yet: the change ledger opens at the first
-> approval.
+> Status: **approved 2026-11-17 (the coai plan gate, `proceed`), epoch 1 open, one change (1.1); nothing implemented
+> yet.** Split into three stories (`## Stories`), S2 the cornerstone.
 > Scope: the extension only (`src_vs_code`): the argv of the Remote Bridge's tunnel (`src/sshBridge.ts`), the argv of every
 > non-interactive `ssh` run (`src/sshExecCommand.ts`), their tests, one new real-`sshd` test script, the docs. No change of
 > the person's interactive terminal, of the shared composer `src/sshOptions.ts`, or of any file on disk. Found as G2 of
 > [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5, `:198`), by reading; measured on
 > 2026-11-17 (§2). The plan `todo/PLAN_person_roads_pin_host_key.md` (G1 of the same list; written on another branch, not
 > on this one) depends on this plan (§3, decision 3).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-17 · by reviewers · state: open
+
+  (The plan round's accepted finding 1 was folded in at its resolve, before approval, and is not an entry: items 2 and 5
+  of §7.2 asked for results that exclude each other when `extra` itself names sharing. Now the fixed two options stand
+  exactly once BEFORE every word of `extra`, a caller's own sharing words in `extra` are outside the prohibition of
+  item 5, and the `ssh -G` test of §7.3 checks the values in effect.)
+  (The round's rejected finding 0 is not an entry either: an extension host that is killed without `dispose` leaves the
+  `ssh` it started holding the forward. This plan neither causes nor changes that; its follow-up is H3 in §9.)
+
+- 1.1 · 2026-11-17 · reviewer · scope — the cost of decision 1 reaches Run with Secrets and the agent's exec, not only
+  the bridge: a credential that needs interaction (a passphrase key not in any agent, a typed second factor, a
+  security-key PIN) used to work through a master the person had opened; with `BatchMode=yes` and sharing off it now
+  fails authentication. Added: an acceptance leg in S2 for valid credentials that require interaction (it fails after
+  S1, and an identity usable without interaction, e.g. from an agent, still works), and one sentence in the help
+  of *Run with Secrets* and of the agent's SSH use (five languages each, as the *Remote Bridge* article) in S3.
+  Raised by the cadence consultant (`59aa353c`) before the build; checked by reading `remoteLaunch.ts:515` and
+  `sshUseActions.ts:259`.
 
 ## 1. Symptom
 
@@ -182,9 +202,10 @@ created.
 The last row is what every machine without a sharing config does today, so it is no new load class. 8 logins at once stay
 below the `MaxStartups` start of 10 that sshd_config(5) gives as the default (read, not measured).
 
-**The test rig of S2** (§7.4) creates, per run of the script: 1 owned folder under the short socket root with about 15
-small files (two key pairs, two host keys, config and `known_hosts` files, sockets; under 20 kB), at most 7 `sshd -d`
-runs one after another, at most 2 masters, 1 loopback listener. Projected time: under 60 s on top of the script (not
+**The test rig of S2** (§7.4) creates, per run of the script: 1 owned folder under the short socket root with about 50
+small files (four key pairs; per `sshd` run a config, a `known_hosts` and a pid file; the client's configs; sockets;
+under 100 kB), at most 11 `sshd -d` runs (one per leg that connects, §7.4; at most 2 alive at once), at most 2
+masters, 1 `ssh-agent` (P-I2), 1 loopback listener. Projected time: under 60 s on top of the script (not
 measured). Who retires it: the section scope's `finally`, as section 8 does (`scripts/itestForwardAgent.cjs:178-204`).
 **When it is interrupted:** a master of a control leg is detached, so it is not a child the scope can end by its pid. Three things
 end it: `ssh -O exit` in the leg's own `finally`; a FINITE `ControlPersist` in the rig's config (60 s at most, the spec
@@ -218,6 +239,12 @@ Only a person whose `ssh` config shares connections sees any change.
   when the person had opened a master by hand, and it then ran as whoever that master had logged in as. A security key
   that needs a touch: the touch is still possible, within the call's timeout, and nothing on the screen asks for it (read
   from ssh(1) and the spawn options, not measured). The person's own *Connect via SSH* is not affected.
+  **This reaches every road of §1, not only the bridge** (change 1.1): *Run with Secrets* over SSH and an agent's
+  `ssh:exec` and run over SSH build their argv with `BatchMode=yes` for a key entry (`remoteLaunch.ts:515`,
+  `sshUseActions.ts:259`), so a key file with a passphrase that no agent holds can no longer be used there through a
+  master the person opened. An identity that needs no interaction still works: a key without a passphrase, a stored
+  password, or a key that an agent in the call's environment holds (the leg P-I2 of §7.4 shows the last one). The help
+  of both roads says so (§8).
 - **Time.** Each call adds a TCP connect, a key exchange and an authentication where it had opened a session in a master.
   Not measured on a network host. An *Open Remote Bridge…* has three of them.
 - **An entry with port forwards**, run by the agent while the person's own terminal already holds the same forward: the
@@ -267,14 +294,22 @@ hand-written).
 
 1. The constant is the four words, spelled once more in the test, as `SIX` is (`sshExecCommand.test.ts:125-126`).
 2. **The tunnel:** for key and password authentication, with and without a pin, a key, a port and words in `extra`: each
-   of the two options exactly once, before `-N`, `-R`, every word of `extra`, `-i`, `-p` and `--`. An `extra` that itself
-   holds `-o ControlMaster=auto -o ControlPath=/x` stands after them.
+   of the two FIXED pairs (`-o ControlPath=none` and `-o ControlMaster=no`, the exact words of the constant) exactly
+   once, before `-N`, `-R`, every word of `extra`, `-i`, `-p` and `--`. With an `extra` that itself holds
+   `-o ControlMaster=auto -o ControlPath=/x`: the argv still holds the fixed two pairs exactly once, counted by their
+   exact words (the caller's `ControlMaster=auto` is no second one), both BEFORE the first word of `extra`; the
+   caller's four words stand where `extra` stands, unchanged and not filtered. What is then in effect is §7.3's to
+   say, from the real client.
 3. **The tunnel keeps its forward:** no word of the argv names `ClearAllForwardings`, and `-R` is still there.
 4. **Every run:** over the combinations of `auth`, `bridged` (absent, `false`, `true`), `noTty`, `ownAgent`, a jump, an
    entry with `-A` and forwards, a pin, a key and a port: each of the two options exactly once, before `-i`, `-p` and
    `--`. A bridged argv equals a literal copied from `main`'s output.
-5. **Nothing else names sharing:** in every argv of 2 and 4, no other word matches `ControlMaster`, `ControlPath` or
-   `ControlPersist` in any letter case or in the `-oName=value` spelling, and none is `-S`, `-M` or `-O`.
+5. **Nothing else names sharing:** in every argv of 2 and 4, no word that the BUILDER adds, other than the fixed two
+   pairs, matches `ControlMaster`, `ControlPath` or `ControlPersist` in any letter case or in the `-oName=value`
+   spelling, and none is `-S`, `-M` or `-O`. The words a caller passed in `extra` are outside this prohibition: they
+   are the caller's, they stand after the fixed two (item 2), and the first value wins (§2). The test takes them out
+   of the argv by their position (the slice `extra` occupies) before it scans, and one case with an empty `extra`
+   scans the whole argv. `buildSshExecArgv` has no `extra`, so for item 4 the prohibition covers every word.
 6. **The call sites are the six of §1:** a scan of `src/` (the pattern of `bridgeAuthParity.test.ts:47-65`, with its
    second assertion that the pattern still matches real code): every place that starts an `ssh` from an argv
    (`runSshExec(`, `bridges.start(`, the spawn of *Run with Secrets*; the spec lists the shapes) takes that argv from one
@@ -291,7 +326,9 @@ A unit test that runs the PATH's `ssh -G -F <file>` with the built argv, where t
   too). For the tunnel: the `remoteforward` line is there.
 - The control: the same argv with the four words taken out prints `controlmaster auto` and the file's `controlpath`. So the
   file can show the fault, and the test cannot pass by matching nothing.
-- The tunnel with the hostile `extra` of test 2: still `controlmaster false`.
+- The tunnel with the hostile `extra` of test 2: the values IN EFFECT are still `controlmaster false` and no
+  `controlpath` line that names `/x` or the file's path. This is the check that the exempt words of item 5 change
+  nothing; the argv test of item 2 only shows where they stand.
 - No `ssh` on the PATH: a skip with the reason locally, a failure where `CI=true` (the rule of section 8,
   `scripts/itestForwardAgent.cjs:170-176`).
 - The same file also runs in the Windows job (`ci-extension.yml:236-237`, beside `sshAskpass.test.js`): it shows that
@@ -320,11 +357,23 @@ of the test that answers one known line; *served* means that line was read throu
 | P-D2 | as P-D1 with the wrong pin | exit 255, `Host key verification failed` |
 | P-D3 | as P-D1 with the wrong key | exit 255, `Permission denied` |
 | P-X | master on A; the production NON-bridged argv of `buildSshExecArgv` for B, with B's pin | the command ran on B: `SSH_CONNECTION` ends in B's port. Its control is section 8's leg 3 (`:120-126`) |
+| K-I, the control of 1.1 | master on A; the production non-bridged argv of a key entry (`BatchMode=yes`) with the four words taken out, for B; its `-i` names an authorized key file WITH a passphrase that no agent holds | exit 0 and the command ran through the master (`SSH_CONNECTION` ends in A's port): the credential that needs a person "worked" before |
+| P-I1 (change 1.1) | master on A; the production argv of K-I, for B, no agent | exit 255, `Permission denied`; B saw the connection and accepted no key. The valid credential that needs interaction fails after S1 |
+| P-I2 (change 1.1) | as P-I1, with that key loaded into an `ssh-agent` whose socket is in the run's environment | exit 0, the command ran on B, `Accepted publickey` in B's log: an identity usable without interaction still works |
 
 P-D2 and P-D3 are started with `launch`, not the spawner, because they read `ssh`'s stderr. E has no leg of its own: K-A
 with the rig's finite `ControlPersist` is the same fault, and a leg that waits out the time adds seconds for a control.
-Open for the spec: whether `sshd -d` serves a unix-socket `-R` (the scout used `sshd -D -e`); if not, `startSshd` gets a
-mode that does not use `-d`, in a way that does not collide with PR #365's edit of that file.
+
+**One `sshd -d` per authentication attempt.** `sshd -d` serves one connection, so every leg that makes a production
+connection to B, pass or fail, gets a B of its own (P-B, P-D1, P-D2, P-D3, P-X, P-I1, P-I2, and one B for each control,
+which must see no connection); the master's A is one run for the whole master group.
+
+**The first step of S2 is a feasibility probe, before any leg is built** (the cadence consultant, `59aa353c`; this is
+the first step of S2's spec and no change of the order S1 → S2 → S3): one production tunnel against the existing
+`startSshd`, then a round trip through the forwarded socket made by `node`. The consultant's reading is that `sshd -d`
+is enough for a unix-socket `-R`: the tunnel's one connection carries the reverse-forward channel, and a probe of the
+socket from `node` is no second `ssh` connection (the scout used `sshd -D -e`). If the probe says otherwise,
+`startSshd` gets a mode that does not use `-d`, in a way that does not collide with PR #365's edit of that file.
 
 **Where it can run.** CI has an `sshd`. This PC has none at `/usr/sbin/sshd`; the scout ran one as a user. S2's brief
 names that binary, or the first run of the legs is CI's.
@@ -332,14 +381,15 @@ names that binary, or the first run of the legs is CI's.
 ### 7.5 Mutation checks (by hand, recorded in the commit body)
 
 - Take the constant out of `FIXED_OPTIONS` → tests 2 and 7.3 (tunnel) red; P-B and P-D1 to P-D3 red.
-- Take it out of the non-bridged branch of `buildSshExecArgv` → test 4 and 7.3 (run) red; P-X red.
+- Take it out of the non-bridged branch of `buildSshExecArgv` → test 4 and 7.3 (run) red; P-X and P-I1 red (P-I1 then
+  rides the master and exits 0).
 - Move it behind `extra` in the tunnel → test 2 red, and 7.3's hostile `extra` red.
 - Add `ClearAllForwardings=yes` to the tunnel → test 3 red; P-B red (no forward).
 - Keep `ControlMaster=no` and drop `ControlPath=none` → test 1 red; expected from ssh_config(5): P-B green, P-D1 to P-D3
   and P-X red. Keep `ControlPath=none` and drop `ControlMaster=no` → test 1 red; expected: every real leg green. What is
   seen is recorded as it is, and decides the comment of §4.1.
 - Run the P legs with the two source files as they are on `origin/main` (checked out for that run, then restored) → P-B,
-  P-D1 to P-D3 and P-X red. This is S2's RED.
+  P-D1 to P-D3, P-X and P-I1 red. This is S2's RED. P-I2 is green on both: it is the leg that shows what still works.
 
 ### 7.6 The whole suite
 
@@ -365,6 +415,12 @@ names that binary, or the first run of the legs is CI's.
 - The help article *Remote Bridge* (`helpEn.ts:199-206` and the four other languages, the repository's rule 7): one
   sentence in *What can go wrong*: a bridge is a connection of its own and logs in by itself, so a host that needs a typed
   code cannot be bridged.
+- The help of the two other roads (change 1.1), one sentence each in *What can go wrong*, in all five languages as the
+  *Remote Bridge* article: *Secret references and masked runs* (`helpEn.ts:175-182`, the article of *Run with Secrets*)
+  and *What an agent can and cannot do* (`helpEn.ts:127-134`, where `creds_exec` is described). The sentence: a run over
+  SSH logs in by itself and asks nobody, so a key file with a passphrase, a typed second factor or a security-key PIN
+  fails there with `Permission denied`, also when your own terminal has a connection to that host open; a key without a
+  passphrase, a stored password or a key that your SSH agent holds works.
 - The comments of `FIXED_OPTIONS`, of the constant and of `sshBridgeManager.ts:8-12` say what was measured and on which
   conditions (S1 and S2, with the code).
 - The boundary lines of §6 in the older documents, and at promotion the *Fixed in* text on N16's G2 line.
@@ -379,6 +435,12 @@ names that binary, or the first run of the legs is CI's.
 - **H2, `git` over SSH.** `GIT_SSH_COMMAND` (`gitRemote.ts:124`) names a key and `IdentitiesOnly=yes` and no sharing
   option. Found by the `grep` of §4.4 and read; not measured. Whether a vault sync can ride a master and so use another
   identity than the chosen key is a question for a plan of its own.
+- **H3, a tunnel whose owner died without `dispose`.** An extension host that is killed (not closed) runs no `dispose`,
+  so the `ssh` it started for a bridge is not killed and goes on holding the forward. Raised as finding 0 of the plan
+  round and rejected for this plan: it is the same with and without a sharing config, so this plan neither causes nor
+  changes it, and what G2 fixes is the kill that reaches nothing. Ending a tunnel when its owner dies needs a liveness
+  link between the two processes, which is new process design. Read from the finding and the spawn options
+  (`bridgeSpawner.ts:79`), not measured. No plan yet.
 - **G1**, the pin on the three roads: `todo/PLAN_person_roads_pin_host_key.md`.
 - **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md).
 - Turning sharing off for the person's terminal (decision 1), and ending a master that the person or an older version of
@@ -392,10 +454,11 @@ names that binary, or the first run of the legs is CI's.
       sharing; a bridged argv is unchanged; the two words are spelled in one place.
 - [ ] The tunnel has no `ClearAllForwardings` word and keeps its `-R`.
 - [ ] The three tests of §7.1 changed as the table says, and no other existing test changed.
-- [ ] The tests of §7.2 and §7.3 RED first, then GREEN; the legs of §7.4 green on the head sha's CI run, their RED and the
-      mutations of §7.5 recorded with what was seen.
+- [ ] The tests of §7.2 and §7.3 RED first, then GREEN; the legs of §7.4 green on the head sha's CI run (the three legs
+      of change 1.1 among them), their RED and the mutations of §7.5 recorded with what was seen.
 - [ ] A stranded master of the test rig ends by itself (§4.5), and the leftovers guard is green.
-- [ ] The docs of §8, the five help languages included; every sentence about an effect names its conditions.
+- [ ] The docs of §8, the three help articles in five languages each included; every sentence about an effect names its
+      conditions.
 - [ ] The coai code gate at `proceed`; the lead's Opus review of each story; CI green on the head sha; CodeRabbit read.
 - [ ] Released as an extension patch with the owner's word; the plan promoted with its deviations; G1's plan told that
       its condition is met.
@@ -403,7 +466,8 @@ names that binary, or the first run of the legs is CI's.
 ## 11. Build order and merge conditions
 
 1. This plan through the coai plan gate (`review_plan` → `resolve` until `proceed`); the approval commit opens the ledger.
-2. The two security specs by Fable (S1, S2); the cadence consult the gate orders, before the build.
+2. The two security specs by Fable (S1, S2); the cadence consult the gate orders, before the build (taken 2026-11-17,
+   `59aa353c`: change 1.1, and the feasibility probe as the first step of S2).
 3. S1, then S2 (the cornerstone), each from its spec, by a Sonnet coder, RED → GREEN; the lead's Opus review of each. Then
    S3, the documents, from its brief below.
 4. `review_code` over the whole diff → `resolve` until `proceed`.
@@ -439,28 +503,32 @@ this plan.
 ### S2 — The effect, seen on a real `ssh` and a real `sshd` (CORNERSTONE)
 
 - **Goal.** What S1 sends is observed to work: a closed bridge serves nothing, the extension leaves no master, and a call
-  that could join a master logs in by itself and fails on a wrong key or a wrong pin (§7.4).
+  that could join a master logs in by itself and fails on a wrong key or a wrong pin (§7.4). And the cost of that is
+  shown as it is (change 1.1): a valid credential that needs a person fails on these roads, and one that needs nobody
+  still works.
 - **Why the cornerstone.** Everything the plan claims rests on this proof. An option in an argv is a request: the unit
   tests of S1 show that it is sent, and only a real client and server show what it does. A rig whose control legs do not
   share, whose probe reads a stale socket, or that leaves a master behind would turn the claim into a comment, and nothing
   else in the plan would notice.
-- **Scope.** New `scripts/itestNoSharing.cjs` (the rig, the seven legs, their teardown); the call from
+- **Scope.** New `scripts/itestNoSharing.cjs` (the rig, the ten legs of §7.4, their teardown); the call from
   `scripts/ssh-agent-itest.cjs`; if the spec needs it, a second mode of `startSshd` in `scripts/itestSshd.cjs`. The
   comments of the constant and of `FIXED_OPTIONS` get what the legs showed. No product logic.
-- **Depends on.** S1; an `sshd` the coder can run, or CI for the first run (§7.4).
-- **Done when.** The two control legs show the fault in this rig and the five production legs pass, on the head sha's CI
-  run; the P legs were watched RED against `origin/main`'s two files; every mutation of §7.5 is recorded with what the
+- **Depends on.** S1; an `sshd` the coder can run, or CI for the first run (§7.4). Its first step is the feasibility
+  probe of §7.4, before any leg is built.
+- **Done when.** The three control legs (K-A, K-C, K-I) show the fault in this rig and the seven production legs (P-B,
+  P-D1 to P-D3, P-X, P-I1, P-I2) pass, on the head sha's CI run; the P legs were watched RED against `origin/main`'s two
+  files (P-I2 is green on both); every mutation of §7.5 is recorded with what the
   legs showed, each option alone included; no process and no file of the rig is left after a run and after a killed run (§4.5).
 - **model:** fable writes the spec (the cornerstone, and security judgement); sonnet codes; opus reviews.
 
 ### S3 — The documents
 
 - **Goal.** The documents say what S1 and S2 built and measured (§8), and the older plans carry the boundary of §6.
-- **Scope, which is also the brief** (no spec; no code): the six items of §8, in that order; then this plan: tick §10 and
-  record in the status paragraph what was built.
+- **Scope, which is also the brief** (no spec; no code): the seven items of §8, in that order; then this plan: tick §10
+  and record in the status paragraph what was built.
 - **Depends on.** S1 and S2 (their final names, counts and what the legs showed).
 - **Done when.** Every sentence describes code that is on the branch (each name found with `grep`); every sentence about
-  an effect names the conditions of §2 or of S2's run; the help article changed in all five languages;
+  an effect names the conditions of §2 or of S2's run; each of the three help articles changed in all five languages;
   `node .agents/conventions/tools/plan-lifecycle.mjs .` is clean; no sentence names a version, a sha or a count that the
   next commit moves, except the test counts.
 - **model:** the brief is the list above (written with the split); sonnet writes the documents; opus reviews them.
