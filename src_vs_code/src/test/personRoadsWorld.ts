@@ -19,6 +19,9 @@ import { loadWithVscode } from './vscodeStub';
  * test gives a REAL folder and `realForget`, so `materializeKnownHosts` and `forgetMaterializedKey` are the real ones and the
  * pin files are real files; `pinFiles` lists them, and `knownHostsOf` reads the file that an argv names.</p>
  *
+ * <p>The entry's `user` and `port` (E1.S4): the smoke of section 10 of `scripts/ssh-agent-itest.cjs` loads this world with a real runner
+ * and a real spawner, and names the user that runs it and the port of its own `sshd`. Every suite leaves them out.</p>
+ *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
 
@@ -81,6 +84,10 @@ export interface Parts {
   host?: string;
   /** The saved host key of the entry (`hostKey`), as it is stored: a pin, or a text that is none. Left out: the entry has no `hostKey`. */
   hostKey?: string;
+  /** The login of the entry (`user`). Default: `dev`. */
+  user?: string;
+  /** The port of the entry (`port`). Left out: the entry has no `port`, as before. */
+  port?: number;
   /** The storage folder of the window. A pin test gives a real, owned folder. Default: `/storage`, which no test writes. */
   storageDir?: string;
   /** The spawner of the bridges. Default: every bridge is a `heldChild`, kept in `children`, and its argv in `bridgeArgvs`. */
@@ -221,10 +228,15 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   };
 }
 
-/** The snapshot of the entry that the storage answers: with `hostKey` only when the test gave one. */
+/** The fields of the entry that a test chose and that have no default: a field left out is not in the snapshot. */
+function chosenFields(parts: Parts): Record<string, unknown> {
+  const fields: Record<string, unknown> = { hostKey: parts.hostKey, port: parts.port };
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+}
+
+/** The snapshot of the entry that the storage answers. */
 function detailsOf(parts: Parts): Record<string, unknown> {
-  const pin = parts.hostKey === undefined ? {} : { hostKey: parts.hostKey };
-  return { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: 'dev', ...pin };
+  return { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: parts.user ?? 'dev', ...chosenFields(parts) };
 }
 
 /** Register the real agent commands over the stand-ins, and hand back what they registered and what they did. */

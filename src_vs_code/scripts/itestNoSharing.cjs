@@ -440,4 +440,4 @@ async function liveNoSharing(check, out) {
   }
 }
 
-module.exports = { liveNoSharing };
+module.exports = { liveNoSharing, tool, within, settledAfter };
