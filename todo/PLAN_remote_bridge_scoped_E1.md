@@ -692,3 +692,14 @@ The parent's revision for epoch 9 (`### Re-review for epoch 9`, PR #354) widened
 itest legs (a)-(i) of the parent's §7, not (a)-(g), and the bridged half of §4.11: the database clients' first flags (`-X` for psql,
 `--no-defaults` for mysql) and their environment allow-list. Its spec is `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`. This
 restates the parent; it adds no scope.
+
+## Amendment for epoch 11 (2026-11-17)
+
+The parent's revision for epoch 11 (step 4 of the full stop after its changes 10.1 and 10.2) adds a seventh story to E1, and this
+document did not follow it at the time; the sort for epoch 11 found the gap. **E1.7, the database execution profiles** (the parent's §4.11,
+§5 step 3f): per database client and platform, the probes PK1, PS1, PP1, PA1 and PE1, each beside its positive control; then the
+authentication controls they chose, the database client check with its floors, whether the gate's refusal can be said before the consent
+dialog, the keys Q15 lets it add, the parent's §7 legs (u)-(w), each served pair turned in the commit that records its runs, and M11. Its own
+PR, after E1.6 merges; it is not a cornerstone, and Fable writes its security spec when it starts. E1.6 gains a second fix-forward on PR #365,
+the E1.6 spec's §S6.15 (the gate with no pair served, the connection built from the entry's fields, the refusals of Q15-Q17), after the
+first (§S6.14, built). The parent's `## Epics` E1 is the authority; this restates it and adds no scope.

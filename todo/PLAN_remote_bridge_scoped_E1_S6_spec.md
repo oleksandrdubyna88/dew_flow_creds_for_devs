@@ -1263,6 +1263,12 @@ only*): E1.6 also builds the connection and the gate. Q4, Q4a and Q4b keep their
 Kept as built and as measured: Y0-Y6, every probe result of §S6.13, M9's second run, legs (m) and (r), the mutations T1-T42. Off a bridge
 nothing changes (§S6.11 stands).
 
+**Leg (r) after Z2 (the sort for epoch 11, open for the lead before Z4).** Its two production launches (`legR2`, `legR3`) name
+`postgresql://pdprobe@127.0.0.1:<port>/pdprobe`, an entry that stores no password. Z2 refuses it (Q16), so the builder answers `undefined`
+and the leg as written cannot launch. Giving the entry a password keeps PD3's case, but not PD2's: `psql` uses `PGPASSWORD` before any
+password file, so that case can no longer observe `PGPASSFILE`, and T40's (r) half then has no leg (Q4b keeps its other half, and DP14 with
+T55 pins the `passfile` keyword that now stands before the variable). Which of these (r) becomes is the lead's choice, said in the PR.
+
 **The order. [C]** The probes first, each in a commit that adds only the probe and is watched on CI before the code that depends on it. Then
 the RED tests of Z1-Z4. Then the code. Then the mutations. A probe that answers against the parent's probe table stops the work and goes to
 the lead. No step is skipped because the gate would refuse the call anyway.
@@ -1320,7 +1326,8 @@ export function bridgedDbPair(rows: readonly DbProfileRow[], dbType: DbType, pla
 ```
 
 - The table has a row for each of the three clients on `linux`, `win32` and `darwin`, all `served: false`. A type or platform with no row
-  is not served.
+  is not served. A row names no vendor and no version range yet, which the parent's table needs (§4.11, *the gate*): E1.7 adds both with
+  the database client check, and with no pair served there is nothing for them to decide here.
 - **Where. [C]** In `dbQueryAction.run`, for a bridged call only, once the entry's `dbType` is known and **before the stored connection
   is read** (`agentUseActions.ts:589`). Refused: `deps.note` gets DR1 in the form `bridgedRefusal` uses (`sshUseActions.ts:151-159`), the
   body is `BRIDGE_USE_REFUSED(ctx.entityName)`, nothing is spawned.
