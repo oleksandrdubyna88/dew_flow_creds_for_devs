@@ -30,6 +30,12 @@ export interface SshExecOptions {
  * host key is used. With the two options the spawned `ssh` is the connection: the kill ends the forward, a wrong key answers
  * `Permission denied` and a wrong pin `Host key verification failed`.</p>
  *
+ * <p>Each option alone, as section 9 of `scripts/ssh-agent-itest.cjs` saw it against real `sshd -d` runs (OpenSSH 10.2p1,
+ * loopback, a config with `ControlMaster auto`, a fixed `ControlPath` and `ControlPersist 60`): with `ControlPath=none` alone
+ * every leg passes. With `ControlMaster=no` alone this `ssh` does not BECOME a master, and that is all: with a master up it
+ * still joins it, with a wrong key and a wrong pin. So the first option is the protection and the second is belt and braces.
+ * Both stay. Section 9 runs on every CI run, with both.</p>
+ *
  * <p>What is NOT covered: the nested `ssh` of a jump host. `-J` starts one per hop and hands it none of the outer's `-o`
  * options, so a hop can still join a master or become one. And the person's own terminal (`sshCommand.ts`) keeps sharing, on
  * purpose.</p>

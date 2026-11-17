@@ -160,7 +160,9 @@ function isUsablePort(port: number): boolean {
  * and a `ControlPath` in the person's config it was not. Measured 2026-11-17 with this argv (OpenSSH 10.2p1 on both ends,
  * loopback, one user, `ControlPersist` on): the spawned `ssh` exited with 0 after about half a second, a detached master held
  * the forward, and the kill hit a pid that was gone; with the two options the process stays and the kill ends the forward. The
- * measurement and its conditions are beside the constant.</p>
+ * measurement and its conditions are beside the constant. Section 9 of `scripts/ssh-agent-itest.cjs` asks a real `sshd` on every
+ * CI run: this argv serves the forward while its `ssh` runs and makes no control socket, it logs in by itself while a master is
+ * up, and after `stop()` the forward is not served.</p>
  *
  * <p>They stand before `-N`, `-R` and every word of `extra`, because `ssh` takes the FIRST value it is given for an option:
  * a caller's own sharing word in `extra` comes too late to change them. Only these two are shared with a bridged run. Its
