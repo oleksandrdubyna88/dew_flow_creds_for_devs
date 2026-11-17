@@ -18,7 +18,9 @@ host key, so CredsForDevs did not connect. If this server was rebuilt, use Conne
 asks before it replaces the saved one. If it was not, do not connect.` After *Open Remote Bridge…* the socket check shows
 `The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no output to show. A host
 that is down and a login that is refused are told as before. Not covered: if your own `ssh` config says `LogLevel QUIET`,
-`ssh` prints nothing about the refusal, the connection is still refused, and the message is the one of before.
+`ssh` prints nothing about the refusal, the connection is still refused, and the message is the one of before: for
+*Open Remote Bridge…* that is *Bridge open to …*, and only the tree row going back shows that the bridge is not open. A host key
+that a jump host of your own `ProxyJump` refuses is told with the same sentence.
 
 An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). On every call that the extension
 starts for such an entry without a terminal (the tunnel of *Open Remote Bridge…*, its socket check, *Install creds on host*, an

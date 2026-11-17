@@ -321,7 +321,7 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
     wrong host.
   - A host that passed the check can print the line itself: a remote command that writes `Host key verification failed.` to its
     stderr is matched too (the match is a whole line of the stderr).
-- A miss of the match shows today's sentence. It never shows a wrong claim of safety.
+- A miss of the match shows today's sentence. The connection is still refused, but for *Open Remote Bridge…* today's message is *Bridge open to …* (shown at once, before its socket check runs), so under `LogLevel QUIET` that success message is the only one and the tree row going back is the only sign (as it already was before G1 for a host that is down or a refused login). C13 is the remedy.
 
 ### 3.6 The file size
 
@@ -809,7 +809,9 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
   that were captured are the ones the article has to match.
 - **C6 — The real runs on Windows** (Win32-OpenSSH: the path form of §3.9, the system-wide file, the stderr that
   sentence C reads). Justified by M1, M2, M5 and M7 passing on Linux: they are the list that Windows repeats. Measured
-  so far, the client alone (`ssh.exe -G`, 2026-11-17): the spec of E1.S1, its facts K7 and K8.
+  so far, the client alone (`ssh.exe -G`, 2026-11-17): the spec of E1.S1, its facts K7 and K8. A storage folder on a
+  UNC path (a roaming profile) is read as another path (`\\` becomes one `\`, K8 c), so every pinned call is refused and
+  sentence C names a local cause as a changed host; fail closed, recorded here.
 - **C7 — The socket check's log line no longer says "is there" for an empty answer** (§7, F4). Justified by M5, (b)
   and (c): a host that is down and a refused login both reach that line.
 - **C8 — The edit form can clear a saved host key that does not parse** (§7, F2, its second half). Justified by M9:
@@ -822,16 +824,17 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
   space. Measured (the E1.S1 spec, K8 a, b): one apostrophe and no white space, bare, is `invalid quotes`, so every pinned call of
   such a storage folder fails; a PAIR of apostrophes is taken out and resolves to another path, which after E1.S3 shows a false
   sentence C. Both fail closed, and neither is a regression of this plan. The fix is to quote on `/[\s']/`: measured that double
-  quotes heal it (K8 a). Justified by M7 (a path with a space is read as one file): a storage folder with an apostrophe is the
-  row to add to it; M5, (a), then shows whether the false sentence C is reachable.
+  quotes heal it (K8 a). Would be justified by a row that E2 does not run as written (a storage folder with an apostrophe, beside M7);
+  adding that row is a recorded plan change, not an edit.
 - **C12 — The match asks for the LAST line of the stderr** (§3.5, the E1.S3 spec, *Notes for the lead*). For a refused key of
   the destination the verification line is the last line; for a hop of the person's `ProxyJump` it is the last but one, followed by
   `Connection closed by UNKNOWN port 65535`. One changed line in `hostKeyRefused` would stop sentence C from naming the wrong host,
-  and also from matching a remote command that prints the line in the middle of its output. Justified by M5: a hop row, and a row
-  of a quiet config, measured on the roads.
+  and also from matching a remote command that prints the line in the middle of its output. Would be justified by rows that E2 does not run as
+  written (a hop of the person's `ProxyJump`, a quiet config, beside M5); adding them is a recorded plan change.
 - **C13 — A pinned call states its own `LogLevel`** (§3.9; the E1.S3 spec, L9 g). With `LogLevel QUIET` in the person's config a
   refusal is silent and the match misses. One more word from `hostKeyWords` (`-o LogLevel=ERROR`) would bring the line back. NOT
-  measured, and a change of the words of E1.S1. Justified by M5 with a config that says `QUIET`: sentence C is not shown there.
+  measured, and a change of the words of E1.S1. Would be justified by a row E2 does not run as written (a config that says `QUIET`,
+  beside M5); adding it is a recorded plan change. Under `QUIET` the bridge shows only *Bridge open to …* (§3.5).
 - **C14 — A partly written pin file is removed when its write fails** (§3.1; the E1.S2 spec, §2.3). `materializeKnownHosts`
   (`hostKeyTrust.ts`) writes the file and then calls `lockToOwner`; a write that fails half way leaves the file until the purge
   of the next activation (the parent's §3.7). The key file has its own cure: PR #365's `withoutPartialKey` (`keyInstaller.ts`)
