@@ -216,19 +216,18 @@ test('K6: the key path that ssh prints is a call name, on a bridge too — the l
 /** Where `-o ForwardAgent=no` stands in an argv, or -1. */
 const forwardAgentNoAt = (argv: readonly string[]): number => argv.findIndex((arg, i) => arg === '-o' && argv[i + 1] === 'ForwardAgent=no');
 
-/** Where the other five options stand: every word that must be present on a bridge and absent off it. */
+/** The other five of the six, in order. The first two are in EVERY argv since G2 (no connection sharing); the last three are sent on a bridge only. */
 const OTHER_FIVE = ['ControlPath=none', 'ControlMaster=no', 'ClearAllForwardings=yes', 'ForwardX11=no', 'Tunnel=no'];
 
-test('F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six', async () => {
+test('F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards, the two no-sharing options and none of the other four', async () => {
   await both({ jump: 'valid', agentForward: true, forwards: true }, { agentForward: true }, async ({ lw, ww }) => {
     // The wall refuses an entry that forwards the agent on a bridge, so the bridged call here is the world's own: only
     // the port forwards remain, and the action is also reached once with the agent off.
     assert.equal((await body(viaMain(ww), ww)).status, 200);
     const local = lw.runs[0].argv;
     assert.ok(local.includes('-A') && local.includes('-L') && local.includes('-R'), `off a bridge today's argv: ${local.join(' ')}`);
-    for (const word of ['ForwardAgent=no', ...OTHER_FIVE]) {
-      assert.ok(!local.includes(word), `${word} is not sent off a bridge`);
-    }
+    const sent = ['ForwardAgent=no', ...OTHER_FIVE].filter((word) => local.includes(word));
+    assert.deepEqual(sent, OTHER_FIVE.slice(0, 2), `off a bridge, of the six: the two no-sharing options and no other (G2): ${local.join(' ')}`);
   });
   await both({ jump: 'valid', forwards: true }, {}, async ({ lw, ww }) => {
     assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
