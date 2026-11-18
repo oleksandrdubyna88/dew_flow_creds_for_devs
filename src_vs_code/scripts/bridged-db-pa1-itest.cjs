@@ -27,14 +27,15 @@ const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const rig = require('./lib/dbProbeRig.cjs');
-const { discover, REQUIRED_ON_CI_LINUX } = require('./lib/dbProbeClients.cjs');
+const { discover, versionOf, REQUIRED_ON_CI_LINUX } = require('./lib/dbProbeClients.cjs');
 const clients = require('./lib/dbPa1Clients.cjs');
 const psql = require('./lib/dbPa1Psql.cjs');
 const wrapper = require('./lib/dbPa1Wrapper.cjs');
 
-/** The legs one client family has, in order: its version line first (R1), then its own. */
+/** The legs one client family has, in order: its version line first (R1), then PA1-a, then its own. */
 async function legsOf(scope, client, shared) {
-  rig.announce(client.family, `${client.exe} (found by ${client.via})`, clients.legA(client, shared));
+  rig.announce(client.family, `${client.exe} (found by ${client.via})`, versionOf(client.exe).line); // R1: the line comes first
+  clients.legA(client, shared);
   if (client.family === 'psql') {
     psql.libpqLegs();
     await psql.legB(scope, client, shared);

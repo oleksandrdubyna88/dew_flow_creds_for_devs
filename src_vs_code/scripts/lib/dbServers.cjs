@@ -8,28 +8,15 @@
 // sends. No log line holds one, and no variable here is named for what it holds.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { launch } = require('../itestSshd.cjs');
+const { launch, freePort } = require('../itestSshd.cjs');
 const { ownedDir, ownedName } = require('./leftovers.cjs');
 const { runSync, pause, resolveProgram, mayWriteSystem } = require('./dbProbeRig.cjs');
 
 /** A value made at run time for a rig account: hex, so it needs no quoting in SQL or in a connection string. */
 const throwaway = () => crypto.randomBytes(12).toString('hex');
-
-/** A free loopback port: bind 0, read it, let go. */
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-}
 
 /** Polls `ready()` every 200 ms for `ms`; resolves with whether it held. */
 async function until(ready, ms) {

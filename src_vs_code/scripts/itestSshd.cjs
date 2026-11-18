@@ -214,4 +214,4 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login };
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort };
