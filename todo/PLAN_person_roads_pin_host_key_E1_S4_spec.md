@@ -82,7 +82,7 @@ leg 2 red.
 | F7 | The test world (`src/test/personRoadsWorld.ts`, 225 lines at `47b8579b`; E1.S2's spec §5.1 takes it to 272) registers the REAL `registerAgentCommands` under a `vscode` stub through `loadWithVscode` (`test/vscodeStub.ts`), and `Parts.mocks` is spread LAST over its stand-ins (`mocksOf`), so a script can put the real runner back. The entry's snapshot has `user: 'dev'` and no `port` (`world`, `:184`; E1.S2's `detailsOf`). `realForget`, `spawn`, `storageDir`, `hostKey`, `clicks` and `checks` exist after E1.S2. `loadWithVscode` evicts every compiled module of `out/` from the require cache before it loads | read |
 | F8 | The commands spawn the PATH's `ssh` with the resolved credential's environment: `runSshExec(argv, { env: credential.env, … })` (`commands/agentCommands.ts:185`, `:217`, `:343`) runs `options.program ?? 'ssh'` (`sshExecRunner.ts:95`), and the bridge `bridges.start(key, remote.path, 'ssh', argv, credential.env)` (`:452`) with `spawn(command, args, { env, … })` (`bridgeSpawner.ts:79`). Node looks the program up on the `PATH` of that environment. `todo/PLAN_ssh_exec_absolute_program.md` is about `ssh:exec` on Windows and changes none of these | read |
 | F9 | PR #365 is OPEN (`gh pr view 365`, 2026-11-17): it gives `startSshd` a sixth parameter `options` (`address`, `port`, `first`) and edits its doc comment, its signature, the port, the known-hosts line, `ListenAddress` and the listening pattern. It does not touch `module.exports` | `gh pr diff 365` |
-| F10 | **The runner's `sshd` is older.** `ubuntu-latest` is Ubuntu 24.04, whose `openssh-server` is 9.6p1 (read, not run). `PerSourcePenalties` came in 9.8, so a 9.6 `sshd` refuses the config line and does not start. 9.6 has no penalties to turn off. The CI step installs the package only when `/usr/sbin/sshd` is missing (`.github/workflows/ci-extension.yml:162-165`) | read |
+| F10 | **The runner's `sshd` is older.** `ubuntu-latest` is Ubuntu 24.04, whose `openssh-server` is 9.6p1 (read; measured later by the reviewer: 40/40, three runs). `PerSourcePenalties` came in 9.8, so a 9.6 `sshd` refuses the config line and does not start. 9.6 has no penalties to turn off. The CI step installs the package only when `/usr/sbin/sshd` is missing (`.github/workflows/ci-extension.yml:162-165`) | read |
 | F11 | **The forwarded socket is not in the owned folder.** `openRemoteBridge` names it `remoteSocketPath(details.user, bridgeId(…))` (`agentCommands.ts:436`), which is `/tmp/creds-<user>-<id>.sock` (`sshBridge.ts:63-70`). Here the "remote" host is this machine, so `sshd` makes that socket in this machine's `/tmp`, and does not unlink it when the session ends (`sshBridge.ts:356-359`). The socket check's sweep (`sweepCommand`, `sshBridge.ts:373-382`) removes this user's `creds-<user>-*.sock` in that `/tmp` that nothing listens on | read |
 | F12 | The install's question: `confirmationFor(interpretProbe(facts.stdout), node.name)` shown with `showInformationMessage(message, { modal: true, … }, action)` (`agentCommands.ts:297-302`); the world records a dialog that offers a button as `asked`. The bridge's own *Bridge open to …* offers a button too (`:471-473`) | read |
 
@@ -342,12 +342,12 @@ async function startOnce(rig, dir, hostKey, port, penalties) {
  * One `sshd -D -e` that serves EVERY connection to 127.0.0.1:`port` (a free port when none is given), in a folder `name` of its own: the
  * multi-connection mode of the stories document, a starter of this section because PR #365 edits `startSshd` (`itestSshd.cjs`), whose `sshd -d`
  * serves one connection. Once more without `PerSourcePenalties no` when this sshd does not know the word, and once more after 300 ms when the
- * port is still held (K2 on K1's port). `launch` registers the listener's end with the scope; `endServer` is the leg's own, first.
+ * port is still held (K2 on K1's port: the same port; a free port this starter took itself: a fresh one). `launch` registers the listener's end with the scope; `endServer` is the leg's own, first.
  */
 async function startServingSshd(rig, name, hostKey, port) {
   const dir = path.join(rig.dir, name);
   fs.mkdirSync(dir);
-  const chosen = port ?? (await freePort());
+  let chosen = port ?? (await freePort());
   let penalties = true;
   let started = await startOnce(rig, dir, hostKey, chosen, penalties);
   if (started.failure !== undefined && /PerSourcePenalties/.test(started.sshd.stderr)) {
@@ -359,6 +359,7 @@ async function startServingSshd(rig, name, hostKey, port) {
   if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
     await endChild(started.sshd);
     await new Promise((resolve) => setTimeout(resolve, 300));
+    chosen = port ?? (await freePort()); // K2 waits for K1's port; K1 takes a fresh one, as `startOneSshd` does
     started = await startOnce(rig, dir, hostKey, chosen, penalties);
   }
   return started;
@@ -382,18 +383,24 @@ function startOf(pid) {
 /** Whether `one` (`{ pid, start }`) still runs as the SAME process: a reused pid has another start time. */
 const alive = (one) => one.start !== undefined && startOf(one.pid) === one.start;
 
-/** Every process below `root` now, with its start time: `ps -e -o pid=,ppid=`, walked from `root`. */
+/**
+ * Every process below `root` now, with its start time: `ps -e -o pid=,ppid=`, walked from `root`. Answers `{ list, error }`: a `ps` that
+ * failed is an `error` (the list is then empty and proves nothing), never a quiet empty list.
+ */
 async function descendantsOf(root) {
   const table = await new Promise((resolve) => {
     // The PATH lookup is on purpose, as `tool` does: `ps` of the machine the run is on.
-    execFile('ps', ['-e', '-o', 'pid=,ppid='], { timeout: 5_000 }, (error, stdout) => resolve(error ? '' : String(stdout))); // NOSONAR: a CI rig
+    execFile('ps', ['-e', '-o', 'pid=,ppid='], { timeout: 5_000 }, (error, stdout) => resolve(error ? { error: String(error) } : { text: String(stdout) })); // NOSONAR: a CI rig
   });
+  if (table.error !== undefined) {
+    return { list: [], error: `ps failed: ${table.error}` };
+  }
   const children = new Map();
-  for (const line of table.trim().split('\n')) {
+  for (const line of table.text.trim().split('\n')) {
     const [pid, ppid] = line.trim().split(/\s+/).map(Number);
     children.set(ppid, [...(children.get(ppid) ?? []), pid]);
   }
-  return below(children, root).map((pid) => ({ pid, start: startOf(pid) })).filter((one) => one.start !== undefined);
+  return { list: below(children, root).map((pid) => ({ pid, start: startOf(pid) })).filter((one) => one.start !== undefined), error: undefined };
 }
 
 /** Every pid below `pid` in the table `children` (parent → its children), each once. */
@@ -418,10 +425,13 @@ const noneAlive = (ms, list) => within(ms, () => !list.some(alive));
  * Ends a serving sshd and everything it forked, bounded: (a) its descendants are listed now, beside `taken` (a list made earlier, before a
  * client was ended: afterwards a remote command is no descendant any more); (b) the clients still running are ended by their recorded pids;
  * (c) at most 3 s for the rest to go with them; (d) TERM to what is left, at most 2 s, then KILL, at most 2 s, each only to a pid whose start
- * time is still the recorded one; (e) the listener, by `endChild`. Answers the list, for T21 and T39. Never throws.
+ * time is still the recorded one; (e) the listener, by `endChild`. `taken` is `{ list, error }` of an earlier `descendantsOf`. Answers
+ * `{ list, error }`, for T21 and T39: an `error` of either listing makes the check fail. Never throws.
  */
 async function endServer(server, clients, taken) {
-  const list = [...taken, ...(await descendantsOf(server.sshd.child.pid))];
+  const now = await descendantsOf(server.sshd.child.pid);
+  const list = [...taken.list, ...now.list];
+  const error = taken.error ?? now.error;
   signalAll(clients, 'SIGTERM');
   if (!(await noneAlive(3_000, list))) {
     signalAll(list, 'SIGTERM');
@@ -431,7 +441,18 @@ async function endServer(server, clients, taken) {
     }
   }
   await endChild(server.sshd);
-  return list;
+  return { list, error };
+}
+
+/**
+ * Registers a leg's teardown with the section's scope, so a signal or an uncaught error in the middle of a leg ends its processes too (the
+ * leg's `finally` does not run when `harnessScope.finish` exits the process): the bridges first (the scope ends the later registration
+ * first), then the server and what it forked. `exited` guards a second `endServer` after the leg's own, on a pid that may be reused.
+ * SIGKILL cannot be handled: it still leaves them.
+ */
+function endLegWithScope(rig, leg, server) {
+  rig.scope.after(() => (server.sshd.exited ? undefined : endServer(server, startsOf(rig, leg), { list: [], error: undefined })));
+  rig.scope.after(() => leg.w.bridges.dispose());
 }
 ```
 
@@ -494,8 +515,8 @@ function realSsh(shimDir) {
 }
 
 /**
- * Writes `<shim>/ssh`: it records each start as `<records>/<pid>.argv` (its pid, its start time, how many words, then each word on a line
- * of its own), then becomes the real client by `exec` (so the recorded pid IS the client's), with the rig's config before the product's
+ * Writes `<shim>/ssh`: it records each start as `<records>/<pid>.argv` (its pid, its start time, how many words, then each word, every one ended
+ * by a NUL byte: the probe's command holds newlines), then becomes the real client by `exec` (so the recorded pid IS the client's), with the rig's config before the product's
  * argv. `set -C`: a record that exists already is never overwritten, and that start fails with 97. Answers the real path, or `undefined`.
  */
 function installShim(rig) {
@@ -506,7 +527,7 @@ function installShim(rig) {
       '#!/bin/sh',
       '# The ssh of section 10 of ssh-agent-itest.cjs: it records this start, then becomes the real client. Written once, at install.',
       'set -C',
-      `{ printf '%s\\n' "$$" "$(cut -d' ' -f22 /proc/$$/stat)" "$#"; printf '%s\\n' "$@"; } > ${record} || exit 97`,
+      `{ printf '%s\\0' "$$" "$(cut -d' ' -f22 /proc/$$/stat)" "$#"; printf '%s\\0' "$@"; } > ${record} || exit 97`,
       `exec ${shQuote(real)} -F ${shQuote(rig.clientConfig)} "$@"`,
       '',
     ];
@@ -527,7 +548,7 @@ function writeClientConfig(rig) {
 /** Every start the shim recorded: `{ file, pid, start, argv, whole }`; `whole` is false when the count of words does not match. */
 function recordedStarts(rig) {
   return fs.readdirSync(rig.records).filter((name) => name.endsWith('.argv')).sort().map((file) => {
-    const [pid, start, size, ...argv] = fs.readFileSync(path.join(rig.records, file), 'utf8').split('\n').slice(0, -1);
+    const [pid, start, size, ...argv] = fs.readFileSync(path.join(rig.records, file), 'utf8').split('\0').slice(0, -1);
     return { file, pid: Number(pid), start, argv, whole: argv.length === Number(size) };
   });
 }
@@ -579,8 +600,12 @@ function openLeg(rig, port) {
 /** The starts of this leg so far. */
 const startsOf = (rig, leg) => recordedStarts(rig).filter((one) => !leg.before.has(one.file));
 
-/** Resolves true when `promise` settles within `ms`, false after. */
-const finishes = (promise, ms) => settledAfter(promise.then(() => true, () => true), ms).then((done) => done === true);
+/**
+ * Resolves `{ ended, error }`: `ended` is true when `promise` FULFILLS within `ms`; a rejection is kept as `error` (its text), not an end,
+ * and a click that is still running after `ms` has neither. The checks that read it put `error` into their detail (T5, T8, T23, T26).
+ */
+const finishes = (promise, ms) =>
+  settledAfter(promise.then(() => ({ ended: true }), (error) => ({ ended: false, error: String(error?.stack ?? error) })), ms).then((result) => ({ ended: result?.ended === true, error: result?.error }));
 
 /** The recorded outcome of the run whose last word is `command`, or `undefined`. */
 const runOf = (leg, command) => leg.outcomes.find((one) => one.argv.at(-1) === command);
@@ -646,7 +671,8 @@ space, so here every value is bare.
 async function installAsks(check, rig, leg) {
   const { product, w } = { product: rig.product, w: leg.w };
   const asked = w.asked.length;
-  check('leg 1: Install creds on host ended within 30 s', await finishes(product.world.click(w, 'installRemoteCli'), 30_000));
+  const click = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
+  check('leg 1: Install creds on host ended within 30 s', click.ended, click.error);
   const probe = runOf(leg, product.probeCommand());
   const facts = product.interpretProbe(probe?.outcome?.stdout ?? '');
   check('leg 1: the install\'s probe was answered: exit 0, and no blocker', probe?.outcome?.exitCode === 0 && product.blockerFor(facts) === '', JSON.stringify({ probe, blocker: product.blockerFor(facts) }));
@@ -658,13 +684,15 @@ async function installAsks(check, rig, leg) {
 /** Leg 1, the bridge and its socket check (T8 to T12). Answers the remote path. */
 async function bridgeIsChecked(check, rig, leg) {
   const { product, w } = { product: rig.product, w: leg.w };
-  const done = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
-  check('leg 1: Open Remote Bridge… ended within 30 s, and the bridge is open', done && w.bridges.isOpen(product.world.KEY));
+  const click = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
+  check('leg 1: Open Remote Bridge… ended within 30 s, and the bridge is open', click.ended && w.bridges.isOpen(product.world.KEY), click.error);
   const remote = w.bridges.remotePathFor(product.world.KEY);
   if (remote !== undefined) {
     rig.scope.after(() => removeSocket(remote)); // at once, before anything can fail
   }
-  check('leg 1: the forwarded socket exists while the bridge is open', remote !== undefined && isSocket(remote), String(remote));
+  // `sshd` binds the socket once the login is through, which the click does not wait for: a bounded wait (5 s) while the bridge is open.
+  const bound = remote !== undefined && (await within(5_000, () => isSocket(remote)));
+  check('leg 1: the forwarded socket exists while the bridge is open', bound && w.bridges.isOpen(product.world.KEY), String(remote));
   const mode = () => runOf(leg, product.modeCheckCommand({ path: remote ?? '' }));
   const ran = await within(40_000, () => mode() !== undefined);
   const sweep = runOf(leg, product.sweepCommand(me));
@@ -694,7 +722,8 @@ async function legOne(check, rig) {
     return undefined;
   }
   const leg = openLeg(rig, server.port);
-  let taken = [];
+  endLegWithScope(rig, leg, server);
+  let taken = { list: [], error: undefined };
   try {
     await installAsks(check, rig, leg);
     await bridgeIsChecked(check, rig, leg);
@@ -706,8 +735,9 @@ async function legOne(check, rig) {
     check('leg 1: K1 logged one accepted login per start: 4', accepted === 4 && starts.length === 4, `${accepted} accepted\n${server.sshd.stderr.trim().split('\n').slice(-20).join('\n')}`);
   } finally {
     leg.w.bridges.dispose();
-    const list = await endServer(server, startsOf(rig, leg), taken);
-    check('K1 and every process it forked are gone', server.sshd.exited && !list.some(alive), JSON.stringify(list.filter(alive)));
+    const { list, error } = await endServer(server, startsOf(rig, leg), taken);
+    // The bridge's session was alive when `taken` was made, so an empty list means the listing saw nothing: it proves nothing.
+    check('K1 and every process it forked are gone', server.sshd.exited && error === undefined && list.length > 0 && !list.some(alive), error ?? JSON.stringify({ forked: list.length, alive: list.filter(alive) }));
   }
   return server.port;
 }
@@ -720,8 +750,8 @@ async function legOne(check, rig) {
 async function installRefused(check, rig, leg) {
   const { product, w } = { product: rig.product, w: leg.w };
   const [asked, warned, failed] = [w.asked.length, w.warnings.length, w.errors.length];
-  const done = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
-  check('leg 2: Install creds on host ended within 30 s, and asked no question', done && w.asked.length === asked, JSON.stringify(since(w.asked, asked)));
+  const click = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
+  check('leg 2: Install creds on host ended within 30 s, and asked no question', click.ended && w.asked.length === asked, click.error ?? JSON.stringify(since(w.asked, asked)));
   const probe = runOf(leg, product.probeCommand());
   check('leg 2: the install\'s probe was refused: exit 255 and "Host key verification failed."', probe?.outcome?.exitCode === 255 && probe.outcome.stderr.includes(VERIFY_FAILED), JSON.stringify(probe));
   const shown = [...since(w.warnings, warned), ...since(w.errors, failed)];
@@ -734,9 +764,12 @@ async function installRefused(check, rig, leg) {
 async function bridgeRefused(check, rig, leg) {
   const { product, w } = { product: rig.product, w: leg.w };
   const failed = w.errors.length;
-  check('leg 2: Open Remote Bridge… ended within 30 s', await finishes(product.world.click(w, 'openRemoteBridge'), 30_000));
-  const bridge = startsOf(rig, leg).find((one) => one.argv.includes('-N'));
-  const remote = remoteOf(bridge?.argv ?? []);
+  const click = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
+  check('leg 2: Open Remote Bridge… ended within 30 s', click.ended, click.error);
+  // The click returns when the bridge's `ssh` is spawned; its shim writes the record a moment later: a bounded wait (5 s) for it.
+  const recorded = () => startsOf(rig, leg).find((one) => one.whole && one.argv.includes('-N'));
+  await within(5_000, () => recorded() !== undefined);
+  const remote = remoteOf(recorded()?.argv ?? []);
   if (remote !== undefined) {
     rig.scope.after(() => removeSocket(remote)); // a control run (MC1) makes one
   }
@@ -762,7 +795,8 @@ async function legTwo(check, rig, port) {
     return;
   }
   const leg = openLeg(rig, port);
-  let taken = [];
+  endLegWithScope(rig, leg, server);
+  let taken = { list: [], error: undefined };
   try {
     await installRefused(check, rig, leg);
     await bridgeRefused(check, rig, leg);
@@ -775,8 +809,8 @@ async function legTwo(check, rig, port) {
     check('leg 2: K2 logged no accepted login and no authentication attempt', !AUTH_ATTEMPT.test(log), log.trim().split('\n').filter((line) => AUTH_ATTEMPT.test(line)).join('\n'));
   } finally {
     leg.w.bridges.dispose();
-    const list = await endServer(server, startsOf(rig, leg), taken);
-    check('K2 and every process it forked are gone', server.sshd.exited && !list.some(alive), JSON.stringify(list.filter(alive)));
+    const { list, error } = await endServer(server, startsOf(rig, leg), taken);
+    check('K2 and every process it forked are gone', server.sshd.exited && error === undefined && !list.some(alive), error ?? JSON.stringify(list.filter(alive)));
   }
 }
 ```
@@ -862,15 +896,15 @@ an absent pin, so every pin check is red too. That is the intended loud failure;
 **Bounds, all named:** a click 30 s (the probe's own limit is 20 s, `agentCommands.ts:282`); the socket check 40 s (the sweep's 15 s, the
 1.5 s pause and the mode check's 15 s, `:185`, `:216`, `:217`); a bridge that ends by itself 15 s (`ConnectTimeout=10` of the argv); a
 close 5 s; the pin files 5 s; a listener 10 s to listen; a server's end 3 + 2 + 2 s plus `endChild`'s at most 10 s; `ps` 5 s; `ssh-keygen`
-15 s. A run of the section on the loopback takes about 10 s (expected: leg 1 about 3 s, leg 2 about 3 s, two server ends).
+15 s. A run of the section on the loopback takes about 4 s (measured: three runs, 3.9 s each).
 
 ### 4.12 What grows (`planning-docs.md`)
 
 | What | How much | Who retires it | When the run is killed |
 |---|---|---|---|
-| the owned folder `testsToDelete-u<uid>-creds-pin-<id>` | three key pairs, two `sshd_config`, the client config, the shim, eight records, the storage folder (pin files deleted by the product): a few kB on disk; the two `sshd` logs live in this process's memory (about 30 lines per connection at `VERBOSE`) | the section's scope, in its `finally`, pass or fail | the janitor of the `creds` token, by the owner record beside the folder |
-| the two listeners and what they forked | at most one listener at a time, plus four connections of a leg | `endServer` per leg, then `launch`'s `endChild` at the scope's close | they stay (the stories document, *Not measured*); the runner's next start does not see them |
-| one forwarded socket per leg that opened a bridge: `/tmp/creds-<user>-<id>.sock` (F11) | one inert socket of 0 bytes per run (two under MC1) | `removeSocket` by its exact path, registered with the scope the moment the path is known | it stays. The product's own sweep removes it: the next run's leg 1 runs that sweep against this machine and removes this user's sockets nothing listens on |
+| the owned folder `testsToDelete-u<uid>-creds-pin-<id>` | three key pairs, two `sshd_config`, the client config, the shim, eight records, the storage folder (pin files deleted by the product): a few kB on disk; the two `sshd` logs live in this process's memory (about 30 lines per connection at `VERBOSE`) | the section's scope, in its `finally`, pass or fail; on SIGTERM, SIGHUP, SIGINT or an uncaught error the scope too (§4.4's `endLegWithScope`) | on SIGKILL: the janitor of the `creds` token, by the owner record beside the folder |
+| the two listeners and what they forked | at most one listener at a time, plus four connections of a leg | `endServer` per leg, then `launch`'s `endChild` at the scope's close; a signal or an uncaught error in the middle of a leg: the same through the scope (`endLegWithScope`: the bridges' `dispose`, then `endServer`) | SIGTERM, SIGHUP, SIGINT: they are ended (measured: SIGTERM once the socket appeared in leg 1, every pid the run had started gone afterwards). SIGKILL: they stay (the stories document, *Not measured*); the runner's next start does not see them |
+| one forwarded socket per leg that opened a bridge: `/tmp/creds-<user>-<id>.sock` (F11) | one inert socket of 0 bytes per run (two under MC1) | `removeSocket` by its exact path, registered with the scope the moment the path is known | removed on SIGTERM, SIGHUP, SIGINT. On SIGKILL it stays. The product's own sweep removes it: the next run's leg 1 runs that sweep against this machine and removes this user's sockets nothing listens on |
 
 ## 5. `scripts/ssh-agent-itest.cjs`: the call
 
@@ -937,8 +971,10 @@ runner printed them, and their count. If T38 is not among them, the smoke cannot
 
    And in the section's **What none of them proves**, these sentences: "The smoke runs one user on the loopback of one Linux machine, with
    a key named by its path: not the real resolve, a password entry, a stored key, the install's second run (E2's M1), the system-wide
-   known-hosts file of P1 (E2's M2), a live master (M3), or Windows and macOS. A run killed with SIGKILL leaves its listener, what it
-   forked, and one forwarded socket in `/tmp` (the product names it there)."
+   known-hosts file of P1 (E2's M2), a live master (M3), or Windows and macOS. A run ended by SIGTERM, SIGHUP, SIGINT or an uncaught
+   error in the middle of a leg ends its bridge `ssh`, its listener and what it forked, and removes the forwarded socket, through the section's
+   scope; a run killed with SIGKILL still leaves its listener, what it forked, the bridge's `ssh` and one forwarded socket in `/tmp` (the
+   product names it there)."
 
 2. **The folders table, the row of `scripts/ssh-agent-itest.cjs`** (`:274`), at its end, one sentence:
 
@@ -1057,10 +1093,10 @@ test(itest): G1 E1.S4 — section 10, the smoke on real input: a pinned entry's 
 
 - **The code itself.** Written, not run (Binding constraints). F1 to F4 were measured by the stories document's probe with a script of
   that session; the first run of THIS script is step 3 of §8.1.
-- **The runner's `sshd`.** 9.6p1 on `ubuntu-latest` (read): the fallback without `PerSourcePenalties` (§4.3) runs there and was not run
-  here; the process model of 9.6 (no `sshd-session`) is read to be the same for the recipe (a child per connection, its own session); its
-  `VERBOSE` line `Connection from …` is read to be the same. The first run is CI's.
-- **A run killed with SIGKILL.** No cleanup runs: the listener, what it forked, the clients and the forwarded socket stay (§4.12).
+- **The runner's `sshd`.** Measured by the reviewer (2026-11-18): the OpenSSH 9.6p1 client and `sshd`, section 10 40/40 in three runs, the
+  fallback without `PerSourcePenalties` (§4.3) exercised, T37's `Connection from …` lines present. The run of the head sha on the runner is CI's.
+- **A run killed with SIGKILL.** No cleanup runs: the listener, what it forked, the bridge's `ssh`, the clients and the forwarded socket stay
+  (§4.12). SIGTERM, SIGHUP, SIGINT and an uncaught error are handled: the scope ends the leg's processes (`endLegWithScope`, §4.4).
 - **macOS and Windows.** The section skips there. On Windows the roads are read, not run (the parent's C6).
 - **What the smoke leaves to E2:** the install's second run (M1), the system-wide known-hosts file (M2: leg 2 here has no file that lists
   K2 for the host, so it does not show that `GlobalKnownHostsFile` matters), a live master (M3), an unusable pin and a failed write (M4),
@@ -1078,11 +1114,11 @@ test(itest): G1 E1.S4 — section 10, the smoke on real input: a pinned entry's 
    that is a later change, not this story's.
 2. **The CI runner's `sshd` is 9.6, which does not know `PerSourcePenalties`** (F10, read). The starter starts once more without the line
    when the `sshd` refuses it, and prints an `info` line. The stories document's recipe names the line as required; on 9.6 there are no
-   penalties to turn off. Not run here.
+   penalties to turn off. Measured by the reviewer (2026-11-18) on 9.6p1: the fallback was exercised.
 3. **The forwarded socket is NOT in the owned folder** (F11). The stories document gives the short socket root as the reason for the
    folder's place ("the forwarded socket's path has a length limit"); the product names the socket `/tmp/creds-<user>-<id>.sock`, and on
    this rig the remote host is this machine, so it lands in this machine's `/tmp`. This spec keeps the short root (as G2's) and removes
-   the socket by its exact path; a killed run leaves one inert socket that the next run's sweep removes. A correction of a fact in the
+   the socket by its exact path; a run killed with SIGKILL leaves one inert socket that the next run's sweep removes (SIGTERM and SIGHUP are handled through the scope). A correction of a fact in the
    stories document, for the lead to write; and a question for the lead whether the sweep's reach into this machine's `/tmp` (only this
    user's sockets of the product's own name that nothing listens on) is accepted for a local run.
 4. **`LogLevel VERBOSE`** in the server config, where the stories document says "`LogLevel` stays the default": it gives T37, the
@@ -1094,3 +1130,5 @@ test(itest): G1 E1.S4 — section 10, the smoke on real input: a pinned entry's 
    T25 and T29 are written against the parent's §3.5; if E1.S3 shows the install's sentence C through another window function than a
    warning or an error, T25's reading has to follow it (a fact, reported).
 7. **The links to this spec** from the stories document (`## E1.S4`) and from the parent's E1 *Stories* line are the lead's to add.
+8. **The forwarded socket lies outside the owned folder** (the product names it `/tmp/creds-<user>-<id>.sock`); accepted by the lead
+   2026-11-18: the product's own sweep removes only this user's dead `creds` sockets there, and the run removes its own by its exact path.

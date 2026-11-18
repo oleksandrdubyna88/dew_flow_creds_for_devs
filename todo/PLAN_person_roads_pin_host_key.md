@@ -791,6 +791,8 @@ written now. The code gate runs once per epic, on that epic's branch. Two epics:
   "if no real host can be had". The code gate is at `proceed` and E2's PR is merged.
 - **Cornerstone areas.** None.
 - **Stories.** `todo/PLAN_person_roads_pin_host_key_E2.md`: not written yet.
+- **Info for M5 (a), the bridge.** In leg 2 of the smoke (E1.S4) the person also sees *Bridge open to …* before the check's error (§3.5 says so):
+  the click shows it at once, and the check's message follows when its `ssh` is refused. E2's reading of the screen counts both lines.
 
 ### Candidates
 
@@ -842,5 +844,14 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
   (`materializedKeys.ts:28-38`: it is best-effort and swallows its error), while #365 guards the call all the same, inside its
   `try`. Both hold today; the guard is the safer reading. Justified by M4, (d) (a pin write that fails): a pin file in
   `keys/<pid>/` afterwards, where the run counts 0 files left.
+- **C15 — The socket check's own pin-write failure is more than logged** (§3.3, by design; the code gate on #379, finding 4). When the
+  pin file of the socket check cannot be written, the check starts no `ssh` and the failure is only written to the log: the person sees no
+  sentence for it (the bridge is open by then, §3.5). Would be justified by a row E2 does not run as written (M4, (d), beside the
+  socket check's own write, with the person's screen read, not only the log); adding it is a recorded plan change.
+- **C16 — A storage path that holds a double quote is refused before `ssh` starts** (§3.9; the code gate, finding 5; with C11). A path
+  with a double quote names `/dev/null` in both known-hosts words (the E1.S1 tests), so every pinned call of such a storage folder is
+  refused and sentence C shows a false cause (a changed host). The fix is to refuse before `ssh` starts, with a sentence that names the
+  storage path. Would be justified by a row E2 does not run as written (a storage folder with a double quote, beside M7 and C11's
+  apostrophe row); adding it is a recorded plan change.
 
 Cornerstones: 1 of 1 — E1.S2
