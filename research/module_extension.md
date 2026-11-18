@@ -5403,14 +5403,21 @@ an `ssh` that cannot be read, is now refused where it ran unchecked. Connect's t
 read from the ONE value that the guard hands the road (`CallAuth`, `writtenKey.ts`). An entry with no saved host key runs as
 on the agent's exec: `accept-new`, no file. An entry with one gets strict checking against a file of this call alone,
 `known_hosts-<entry id>-<uuid>`: both runs of the socket check read one file, the probe and the install run read one file,
-the tunnel reads its own until its `ssh` has ended. A host key that `ssh` refused is told to the person (sentence C,
-`refusedHostKeySentence`). The match is `hostKeyRefused` in `hostKeyPin.ts`: a pinned call whose `ssh` printed the whole line
-`Host key verification failed.`; `ssh` ends its lines with CR LF. The install shows the sentence for its probe, as an error
-in place of "the host did not answer the probe". The socket check shows it for the bridge, as an error message that opens
-with `The bridge to "<name>" is not open: `, and writes it to the log, because the tunnel's `ssh` has no stdio. A host that is
-down, a host that does not answer and a refused login keep the sentences of before. What the match cannot tell apart (a hop
-of the person's own `ProxyJump`, a host that prints the line itself) and what it misses (`LogLevel QUIET`) is in the docblock
-of the function, with the measurement. Windows' `ssh.exe` was not run.
+the tunnel reads its own until its `ssh` has ended. What a person is told when a pinned call ended with `ssh`'s line `Host key verification failed.` is decided by one function,
+`hostKeyTold` in `hostKeyPin.ts` (G1, E2.S3). **Sentence C** (`refusedHostKeySentence`: the entry's host did not present its
+saved key) is shown only on evidence: `ssh`'s own line `Offending <type> key in <file>:<n>`, with the pin file of THIS call as
+the whole name. Only the `ssh` that was handed that file reads it, and its name ends with a uuid of this call alone; the nested
+`ssh` of a jump host names the files of the person's own config, and a remote command never learns the name. `ssh` prints a
+name otherwise than it is (a path in double quotes with none, a backslash as two, a byte outside printable ASCII as a backslash
+and three octal digits), so the function is handed the path, not the word, and reads the printed name back. **Sentence D**
+(`unnamedHostKeySentence`) is shown for the verification line without that evidence: a jump host's refused key, an `ssh` config
+that gives the host another name or port, a remote text. It names no host as the cause and tells the person not to replace a
+saved key. The install shows either sentence for its probe, as an error in place of "the host did not answer the probe". The
+socket check shows it for the bridge, as an error message, and writes it to the log, because the tunnel's `ssh` has no stdio:
+`The bridge to "<name>" is not open: ` with sentence C, `The bridge to "<name>" could not be checked: ` with sentence D (the
+tunnel can be up). A host that is down, a host that does not answer, a refused login, a run with no text and every run of an
+entry with no saved host key keep the sentences of before. What was measured, and what the function cannot tell, is in its
+docblock. The text of `ssh.exe` was measured for the client alone; no login was made on Windows.
 
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 

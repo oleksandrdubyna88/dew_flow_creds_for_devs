@@ -27,8 +27,16 @@ asks before it replaces the saved one. If it was not, do not connect.` After *Op
 `The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no output to show. A host
 that is down and a login that is refused are told as before. Such a call states its own log level (`LogLevel=ERROR`), so a refused
 host key is printed under a quiet config (`LogLevel QUIET`) too. What that may cost: on these calls `ssh` may no longer print what it
-prints only at its `INFO` level, for example a server's banner before the login (read in the manual, not measured). A host key
-that a jump host of your own `ProxyJump` refuses is told with the same sentence.
+prints only at its `INFO` level, for example a server's banner before the login (read in the manual, not measured). The sentence about the saved host key is shown only when `ssh` itself names the saved key
+of this entry as the key that does not fit. When `ssh` ends with `Host key verification failed` and does not name it, the message is another one: `The connection
+to "<name>" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It
+can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this
+host another name or port than this entry does. Do not replace a saved key because of this message. Connect SSH on this entry
+checks this host's key again and asks before it changes anything.` A host key that a jump host of your own `ProxyJump` refuses
+is told so, and so is a remote command that prints that line. After *Open Remote Bridge…* the socket check opens this message
+with `The bridge to "<name>" could not be checked: `, because the bridge itself can be up. Measured by hand (OpenSSH 10.2p1):
+when your own `ssh` config gives the entry's host another name or port (`HostName`, `Port`), `ssh` looks for the saved key
+under that name, does not find it, and the call is refused with this message.
 
 An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). On every call that the extension
 starts for such an entry without a terminal (the tunnel of *Open Remote Bridge…*, its socket check, *Install creds on host*, an
