@@ -264,7 +264,7 @@ export const DE_BODIES: Readonly<Record<string, HelpBody>> = {
     title: "Der Filter, und Filter nach Fähigkeiten",
     whatItIs: "Die Suchzeile filtert den Baum live nach dem, was eine Zeile zeigt — Name, Host, Benutzer, Befehl — und mit den Prädikaten `has:` / `mcp:` zusätzlich danach, was ein Eintrag KANN.",
     why: "„Welche Einträge können Agenten rotieren?\" und „was hat einen Einmalcode?\" sind Fragen, die eine Namenssuche nicht beantwortet.",
-    setup: "Nichts. Klicken Sie die Suchzeile an oder führen Sie Filter Credentials… aus.",
+    setup: "Nichts. Klicken Sie die Suchzeile oder die grüne Lupe in der Titelleiste an oder führen Sie Filter Credentials… aus.",
     usage: "`aws has:totp mcp:usable` — freier Text und Prädikate werden mit UND verknüpft. Verfügbar: has:totp, has:cli, has:env, has:code-access, has:deps, has:attachment, has:image, is:ephemeral, mcp:visible/usable/rotate/create/delete-own/delete-any. Klicken Sie ein Ergebnis an und arbeiten Sie weiter — beim Schließen des Filters wird die zuvor gewählte Zeile aufgedeckt und kurz getönt.\n\nDer Filter verengt, was ANGEZEIGT wird; **Go to Credential…** (Strg+Alt+P) beantwortet die andere Frage — ich kenne den Namen, öffne ihn — als eine Liste über alle Konten. Es trifft genau das, was der Filter trifft, und aus demselben Grund: keines von beiden durchsucht je ein Geheimnis.",
     whatCanGoWrong: "Geheimnisse werden nie durchsucht — ein Filter über Passwörter würde eines pro Tastendruck bestätigen. Ein unbekanntes Prädikat wird in der Zeile benannt, statt still als Text gesucht zu werden.",
   },

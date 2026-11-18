@@ -2615,6 +2615,13 @@ Named rather than implied, because the rule asks for exactly this.
   such release existed yet), and the real editor's dialogs and a real `wsl.exe` under them are unexercised. The automated leg belongs in
   `creds-mcp-wsl-itest.cjs`, which E5.S1 rewrote with run-unique directories on 2026-10-11 — the stale-install leg
   itself is still not in it (open tail).
+- **The pinned search (2026-11-18).** The title-bar magnifier, *Clear Filter* gated on
+  `credSshManager.searchActive`, and the `TreeView.message` banner are UI-only; no harness drives a
+  real workbench, so none shows a title-bar button appearing, the banner line above the tree, or the
+  green icon. What stands in: the stub suites `searchPinned.test.ts` (what is sent to the context key
+  and the banner, and when) and `searchBox.test.ts` (the box's Escape, Enter, reuse and
+  outside-change rules). **The limit is exact**: the rendered look — placement, green, banner text in
+  a real window — is an owner hand check.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is
