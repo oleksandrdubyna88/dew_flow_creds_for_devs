@@ -383,6 +383,17 @@ jobs:
           BRIDGED_DB_SYSTEM_RIG: '1'
         run: npm run itest:bridged-db-pp1
 
+      # PE1: the MariaDB server of the probe is a container of a pinned image (by digest, R7), pulled here; the harness starts and removes it.
+      - name: Pull the MariaDB server image, by digest
+        if: runner.os == 'Linux'
+        run: docker pull mariadb@sha256:7d829180b5b2a9ba74f6242876ab401a0d7dd338a807e522ef92bc9698760f20
+
+      - name: Probe PE1 (the entry's own login under the profile)
+        if: runner.os == 'Linux'
+        env:
+          PE1_MARIADB_IMAGE: mariadb@sha256:7d829180b5b2a9ba74f6242876ab401a0d7dd338a807e522ef92bc9698760f20
+        run: npm run itest:bridged-db-pe1
+
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below

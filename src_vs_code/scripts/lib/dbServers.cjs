@@ -57,7 +57,7 @@ const serverEnv = () => ({ ...process.env });
 
 /**
  * A PostgreSQL cluster in an owned folder, run by this user: `initdb`, then `postgres` as a child of the harness on a free loopback port and a socket folder of its own,
- * with `log_connections` on. `hba` is the whole `pg_hba.conf`. `admin(sql)` runs a statement as the superuser (the OS user's name) over the socket. `log()` (a promise) is what the
+ * with `log_connections` on. `hba` is the whole `pg_hba.conf`. `admin(...sql)` runs each statement as the superuser (the OS user's name) over the socket, in one session. `log()` (a promise) is what the
  * server wrote to its error stream. `undefined` with a reason when the binaries are not there.
  */
 async function startPostgres(scope, label, hba) {
@@ -83,7 +83,7 @@ async function startPostgres(scope, label, hba) {
     throw new Error(`postgres did not come up: ${server.stderr.slice(-400)}`);
   }
   const superuser = os.userInfo().username;
-  const admin = (sql) => runSync(path.join(bin, 'psql'), ['-X', '-q', '-h', socketDir, '-p', String(port), '-U', superuser, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql], serverEnv(), 60_000);
+  const admin = (...sqls) => runSync(path.join(bin, 'psql'), ['-X', '-q', '-h', socketDir, '-p', String(port), '-U', superuser, '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', ...sqls.flatMap((sql) => ['-c', sql])], serverEnv(), 60_000);
   return { bin, port, socketDir, superuser, admin, log: async () => {
     await pause(300); // a blocking run of a client leaves the server's pipe unread until the loop turns
     return server.stderr;
