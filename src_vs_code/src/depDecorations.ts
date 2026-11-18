@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ArrivalHighlights } from './arrivalHighlight';
 import { DepColorKey, depColorThemeId } from './depColors';
 import { RelationLabel } from './depGraph';
+import { searchRowDecoration } from './searchAccent';
 
 /**
  * Painting a tree ROW, which a `TreeItem` cannot do.
@@ -83,8 +84,15 @@ export class DepDecorationProvider implements vscode.FileDecorationProvider, vsc
    * one view, so VS Code asks this object about every file in the person's actual workspace on
    * every repaint. Anything more than a string comparison here is paid for by an editor that is
    * not this extension's.</p>
+   *
+   * <p>The green Search row (`searchAccent.ts`) is answered here too, first, by the same cheap
+   * scheme comparison — one provider widened rather than a second one registered.</p>
    */
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    const search = searchRowDecoration(uri);
+    if (search !== undefined) {
+      return search;
+    }
     const ref = parseDepUri(uri);
     if (ref === undefined) {
       return undefined;

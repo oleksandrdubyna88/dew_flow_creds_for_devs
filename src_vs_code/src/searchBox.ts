@@ -30,16 +30,20 @@ export interface SearchWiring {
   readonly before: string;
   /** Applies a term to the tree, live, as typed. */
   readonly apply: (term: string) => void;
+  /** The tree's filter right now — read on hide, to tell whether anything but this box changed it. */
+  readonly current: () => string;
 }
 
 /**
  * Attach the filter behaviour to a box and show it.
  *
- * <p>Escape restores `before` — a cancelled search is not a lost one. Enter keeps what was
- * typed. Focus moving to the tree does NEITHER: the box stays open and the filter stays
+ * <p>Escape restores `before` — a cancelled search is not a lost one — unless the tree's filter
+ * is no longer the term this box applied last: the box stays open (`ignoreFocusOut`), so the filter
+ * can be changed from outside (title-bar Clear Filter, goToOriginalFolder, revealById), and Escape
+ * must not bring back the filter the person just cleared. Enter keeps what was typed. Focus moving to the tree does NEITHER: the box stays open and the filter stays
  * applied, which is what lets a person actually use what they found.</p>
  */
-export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring): void {
+export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed: () => void = () => {}): void {
   // The whole fix is this line; everything below it was always right.
   box.ignoreFocusOut = true;
   box.title = 'Filter credentials';
@@ -48,16 +52,46 @@ export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring): void {
   box.prompt = 'Filters as you type. Secrets are never searched.';
 
   let accepted = false;
-  box.onDidChangeValue((value) => wiring.apply(value));
+  let lastApplied = wiring.before; // the term the tree holds because of THIS box
+  box.onDidChangeValue((value) => {
+    wiring.apply(value);
+    lastApplied = value;
+  });
   box.onDidAccept(() => {
     accepted = true;
     box.hide();
   });
   box.onDidHide(() => {
-    if (!accepted) {
+    // Escape puts `before` back only over the box's own term: a Clear Filter (or a jump that
+    // clears it) done while the box was open is a newer decision, and restoring would undo it.
+    if (!accepted && wiring.current() === lastApplied) {
       wiring.apply(wiring.before);
     }
+    onClosed();
     box.dispose();
   });
   box.show();
+}
+
+/**
+ * Make "Search": a second run while the box is open shows THAT box again, it does not make another.
+ *
+ * <p>A second `InputBox` hides the first, and the first one's `onDidHide` cannot tell that from
+ * Escape — it would put `before` back, so the live filter is reverted under the term still typed
+ * in the new box. The open box is held privately by the returned function and forgotten when the
+ * box hides (Enter or Escape), so the next run starts a fresh one.</p>
+ */
+export function searchBoxOpener(create: () => SearchBoxLike): (wiring: SearchWiring) => void {
+  let open: SearchBoxLike | undefined;
+  return (wiring) => {
+    if (open !== undefined) {
+      open.show();
+      return;
+    }
+    const box = create();
+    open = box;
+    wireSearchBox(box, wiring, () => {
+      open = undefined;
+    });
+  };
 }
