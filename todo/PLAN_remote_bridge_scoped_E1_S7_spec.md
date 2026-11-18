@@ -388,8 +388,8 @@ out of the list for that pair, and the PR says so.
 itself with a later libpq: a method is added only by a commit that records its PE1 leg. Why `none` is out: a server that asks for nothing
 has decided the login by something that is not the entry's password, and with `ident` that something is the person's own system login (N4;
 PE1-4). Why the three password methods are in: each is an answer made from the entry's stored password, which is what part 2 of the parent's
-profile allows. §S7.15 says what those three methods leave to whoever answers at the entry's host, and §S7.16 L9 puts the clear-text one to
-the owner.
+profile allows. §S7.15 says what those three methods leave to whoever answers at the entry's host; the owner kept the clear-text one
+(§S7.16 L9, 2026-11-18).
 
 **The absent path. [C]** `--plugin-dir` names the same path as Y6's variables, `keys/<pid>/no-client-file`, which nothing writes. PK1 runs it
 in that form.
@@ -866,7 +866,7 @@ by a weaker reading.
 - None of the three is an identity that is not the entry's, so the invariant holds. It is what Q11 warns of at scope selection (the entry's
   host receives the entry's login), and it is so off a bridge today.
 - **The two families are not treated alike.** For a `mysql` client the parent counts a clear-text request among the plugins that must send
-  nothing. For `psql` it allows any answer made from the stored password, and `password` is one. §S7.16 L9 puts that to the owner.
+  nothing. For `psql` it allows any answer made from the stored password, and `password` is one; the owner kept it (§S7.16 L9, 2026-11-18).
 
 **Documents (V10). [C]**
 
@@ -934,12 +934,12 @@ become contracts only by their probes, as §4.11 says; the gate before the dialo
 
 **Open points for the lead.** None blocks the probes.
 
-- **L9. `password` in `psql`'s list, beside MariaDB's clear text. The owner's.** `require_auth` lists `password`, because the parent allows
+- **L9. `password` in `psql`'s list, beside MariaDB's clear text. Decided by the owner, 2026-11-18: no narrowing; `password` stays.** `require_auth` lists `password`, because the parent allows
   an answer made from the entry's own password; §S7.15 says what that leaves. For a `mysql` client the parent counts a clear-text request
   among the plugins that must send nothing, and where MariaDB's client has clear text linked in, that keeps the pair refused (§S7.4). So the
   same act, the entry's password sent in the clear to whoever answers, is allowed for one family and refuses a pair of the other. Taking
   `password` out of `psql`'s list would make the two alike and would refuse servers that ask for it: a narrowing, so a plan change, and the
-  owner's to decide. This spec builds the parent as written.
+  owner's to decide. The owner decided on 2026-11-18 not to narrow it, so this spec builds the parent as written, with the asymmetry recorded here.
 - **L10. A `psql` that is a launcher (N10, PA1-i).** From memory, and for the Ubuntu images the expected case. §S7.6 keeps no verdict for a
   launcher, and §S7.4 sends the row to the lead if a file under the home folder can make the version spawn and the query spawn start different
   programs. If the lead wants more (the check to follow the launcher to the program it starts), that is a new step.
