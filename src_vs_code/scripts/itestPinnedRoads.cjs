@@ -87,12 +87,12 @@ async function startOnce(rig, dir, hostKey, port, penalties) {
  * One `sshd -D -e` that serves EVERY connection to 127.0.0.1:`port` (a free port when none is given), in a folder `name` of its own: the
  * multi-connection mode of the stories document, a starter of this section because `startSshd` (`itestSshd.cjs`) runs `sshd -d`, which
  * serves one connection. Once more without `PerSourcePenalties no` when this sshd does not know the word, and once more after 300 ms when the
- * port is still held (K2 on K1's port). `launch` registers the listener's end with the scope; `endServer` is the leg's own, first.
+ * port is still held (K2 on K1's port: the same port; a free port taken here: a fresh one). `launch` registers the listener's end with the scope; `endServer` is the leg's own, first.
  */
 async function startServingSshd(rig, name, hostKey, port) {
   const dir = path.join(rig.dir, name);
   fs.mkdirSync(dir);
-  const chosen = port ?? (await freePort());
+  let chosen = port ?? (await freePort());
   let penalties = true;
   let started = await startOnce(rig, dir, hostKey, chosen, penalties);
   if (started.failure !== undefined && /PerSourcePenalties/.test(started.sshd.stderr)) {
@@ -104,6 +104,7 @@ async function startServingSshd(rig, name, hostKey, port) {
   if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
     await endChild(started.sshd);
     await new Promise((resolve) => setTimeout(resolve, 300));
+    chosen = port ?? (await freePort());
     started = await startOnce(rig, dir, hostKey, chosen, penalties);
   }
   return started;
@@ -128,18 +129,24 @@ function below(children, pid) {
   return (children.get(pid) ?? []).flatMap((child) => [child, ...below(children, child)]);
 }
 
-/** Every process below `root` now, with its start time: `ps -e -o pid=,ppid=`, walked from `root`. */
+/**
+ * Every process below `root` now, with its start time: `ps -e -o pid=,ppid=`, walked from `root`. Answers `{ list, error }`: a `ps` that
+ * failed is an `error` (the list is then empty and proves nothing), never a quiet empty list.
+ */
 async function descendantsOf(root) {
   const table = await new Promise((resolve) => {
     // The PATH lookup is on purpose, as `tool` does: `ps` of the machine the run is on.
-    execFile('ps', ['-e', '-o', 'pid=,ppid='], { timeout: 5_000 }, (error, stdout) => resolve(error ? '' : String(stdout))); // NOSONAR: a CI rig
+    execFile('ps', ['-e', '-o', 'pid=,ppid='], { timeout: 5_000 }, (error, stdout) => resolve(error ? { error: String(error) } : { text: String(stdout) })); // NOSONAR: a CI rig
   });
+  if (table.error !== undefined) {
+    return { list: [], error: `ps failed: ${table.error}` };
+  }
   const children = new Map();
-  for (const line of table.trim().split('\n')) {
+  for (const line of table.text.trim().split('\n')) {
     const [pid, ppid] = line.trim().split(/\s+/).map(Number);
     children.set(ppid, [...(children.get(ppid) ?? []), pid]);
   }
-  return below(children, root).map((pid) => ({ pid, start: startOf(pid) })).filter((one) => one.start !== undefined);
+  return { list: below(children, root).map((pid) => ({ pid, start: startOf(pid) })).filter((one) => one.start !== undefined), error: undefined };
 }
 
 /** A signal to every one of `list` that still runs as the same process. */
@@ -159,10 +166,13 @@ const noneAlive = (ms, list) => within(ms, () => !list.some(alive));
  * Ends a serving sshd and everything it forked, bounded: (a) its descendants are listed now, beside `taken` (a list made earlier, before a
  * client was ended: afterwards a remote command is no descendant any more); (b) the clients still running are ended by their recorded pids;
  * (c) at most 3 s for the rest to go with them; (d) TERM to what is left, at most 2 s, then KILL, at most 2 s, each only to a pid whose start
- * time is still the recorded one; (e) the listener, by `endChild`. Answers the list, for T21 and T39. Never throws.
+ * time is still the recorded one; (e) the listener, by `endChild`. `taken` is `{ list, error }` of an earlier `descendantsOf`. Answers
+ * `{ list, error }`, for T21 and T39: an `error` of either listing makes the check fail. Never throws.
  */
 async function endServer(server, clients, taken) {
-  const list = [...taken, ...(await descendantsOf(server.sshd.child.pid))];
+  const now = await descendantsOf(server.sshd.child.pid);
+  const list = [...taken.list, ...now.list];
+  const error = taken.error ?? now.error;
   signalAll(clients, 'SIGTERM');
   if (!(await noneAlive(3_000, list))) {
     signalAll(list, 'SIGTERM');
@@ -172,7 +182,7 @@ async function endServer(server, clients, taken) {
     }
   }
   await endChild(server.sshd);
-  return list;
+  return { list, error };
 }
 
 /**
@@ -308,8 +318,23 @@ function openLeg(rig, port) {
 /** The starts of this leg so far. */
 const startsOf = (rig, leg) => recordedStarts(rig).filter((one) => !leg.before.has(one.file));
 
-/** Resolves true when `promise` settles within `ms`, false after. */
-const finishes = (promise, ms) => settledAfter(promise.then(() => true, () => true), ms).then((done) => done === true);
+/**
+ * Registers a leg's teardown with the section's scope, so a signal or an uncaught error in the middle of the leg ends its processes too (the
+ * leg's `finally` does not run when `harnessScope.finish` exits the process): the bridges first (the scope ends the later registration
+ * first), then the server and what it forked. `exited` guards a second `endServer` after the leg's own, on a pid that may be reused.
+ * SIGKILL cannot be handled: it still leaves them.
+ */
+function endLegWithScope(rig, leg, server) {
+  rig.scope.after(() => (server.sshd.exited ? undefined : endServer(server, startsOf(rig, leg), { list: [], error: undefined })));
+  rig.scope.after(() => leg.w.bridges.dispose());
+}
+
+/**
+ * Resolves `{ ended, error }`: `ended` is true when `promise` FULFILLS within `ms`; a rejection is kept as `error` (its text), not an end,
+ * and a click that is still running after `ms` has neither. The checks that read it put `error` into their detail.
+ */
+const finishes = (promise, ms) =>
+  settledAfter(promise.then(() => ({ ended: true }), (error) => ({ ended: false, error: String(error?.stack ?? error) })), ms).then((result) => ({ ended: result?.ended === true, error: result?.error }));
 
 /** The recorded outcome of the run whose last word is `command`, or `undefined`. */
 const runOf = (leg, command) => leg.outcomes.find((one) => one.argv.at(-1) === command);
@@ -365,7 +390,8 @@ async function installAsks(check, rig, leg) {
   const { product } = rig;
   const w = leg.w;
   const asked = w.asked.length;
-  check('leg 1: Install creds on host ended within 30 s', await finishes(product.world.click(w, 'installRemoteCli'), 30_000));
+  const click = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
+  check('leg 1: Install creds on host ended within 30 s', click.ended, click.error);
   const probe = runOf(leg, product.probeCommand());
   const facts = product.interpretProbe(probe?.outcome?.stdout ?? '');
   check('leg 1: the install\'s probe was answered: exit 0, and no blocker', probe?.outcome?.exitCode === 0 && product.blockerFor(facts) === '', JSON.stringify({ probe, blocker: product.blockerFor(facts) }));
@@ -378,8 +404,8 @@ async function installAsks(check, rig, leg) {
 async function bridgeIsChecked(check, rig, leg) {
   const { product } = rig;
   const w = leg.w;
-  const done = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
-  check('leg 1: Open Remote Bridge… ended within 30 s, and the bridge is open', done && w.bridges.isOpen(product.world.KEY));
+  const click = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
+  check('leg 1: Open Remote Bridge… ended within 30 s, and the bridge is open', click.ended && w.bridges.isOpen(product.world.KEY), click.error);
   const remote = w.bridges.remotePathFor(product.world.KEY);
   if (remote !== undefined) {
     rig.scope.after(() => removeSocket(remote)); // at once, before anything can fail
@@ -416,7 +442,8 @@ async function legOne(check, rig) {
     return undefined;
   }
   const leg = openLeg(rig, server.port);
-  let taken = [];
+  endLegWithScope(rig, leg, server);
+  let taken = { list: [], error: undefined };
   try {
     await installAsks(check, rig, leg);
     await bridgeIsChecked(check, rig, leg);
@@ -428,8 +455,9 @@ async function legOne(check, rig) {
     check('leg 1: K1 logged one accepted login per start: 4', accepted === 4 && starts.length === 4, `${accepted} accepted\n${server.sshd.stderr.trim().split('\n').slice(-20).join('\n')}`);
   } finally {
     leg.w.bridges.dispose();
-    const list = await endServer(server, startsOf(rig, leg), taken);
-    check('K1 and every process it forked are gone', server.sshd.exited && !list.some(alive), JSON.stringify(list.filter(alive)));
+    const { list, error } = await endServer(server, startsOf(rig, leg), taken);
+    // The bridge's session was alive when `taken` was made, so an empty list means the listing saw nothing: it proves nothing.
+    check('K1 and every process it forked are gone', server.sshd.exited && error === undefined && list.length > 0 && !list.some(alive), error ?? JSON.stringify({ forked: list.length, alive: list.filter(alive) }));
   }
   return server.port;
 }
@@ -439,8 +467,8 @@ async function installRefused(check, rig, leg) {
   const { product } = rig;
   const w = leg.w;
   const [asked, warned, failed] = [w.asked.length, w.warnings.length, w.errors.length];
-  const done = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
-  check('leg 2: Install creds on host ended within 30 s, and asked no question', done && w.asked.length === asked, JSON.stringify(since(w.asked, asked)));
+  const click = await finishes(product.world.click(w, 'installRemoteCli'), 30_000);
+  check('leg 2: Install creds on host ended within 30 s, and asked no question', click.ended && w.asked.length === asked, click.error ?? JSON.stringify(since(w.asked, asked)));
   const probe = runOf(leg, product.probeCommand());
   check('leg 2: the install\'s probe was refused: exit 255 and "Host key verification failed."', probe?.outcome?.exitCode === 255 && probe.outcome.stderr.includes(VERIFY_FAILED), JSON.stringify(probe));
   const shown = [...since(w.warnings, warned), ...since(w.errors, failed)];
@@ -454,7 +482,8 @@ async function bridgeRefused(check, rig, leg) {
   const { product } = rig;
   const w = leg.w;
   const failed = w.errors.length;
-  check('leg 2: Open Remote Bridge… ended within 30 s', await finishes(product.world.click(w, 'openRemoteBridge'), 30_000));
+  const click = await finishes(product.world.click(w, 'openRemoteBridge'), 30_000);
+  check('leg 2: Open Remote Bridge… ended within 30 s', click.ended, click.error);
   // The click returns when the bridge's `ssh` is spawned; its shim writes the record a moment later: a bounded wait (5 s) for it.
   const recorded = () => startsOf(rig, leg).find((one) => one.whole && one.argv.includes('-N'));
   await within(5_000, () => recorded() !== undefined);
@@ -484,7 +513,8 @@ async function legTwo(check, rig, port) {
     return;
   }
   const leg = openLeg(rig, port);
-  let taken = [];
+  endLegWithScope(rig, leg, server);
+  let taken = { list: [], error: undefined };
   try {
     await installRefused(check, rig, leg);
     await bridgeRefused(check, rig, leg);
@@ -497,8 +527,8 @@ async function legTwo(check, rig, port) {
     check('leg 2: K2 logged no accepted login and no authentication attempt', !AUTH_ATTEMPT.test(log), log.trim().split('\n').filter((line) => AUTH_ATTEMPT.test(line)).join('\n'));
   } finally {
     leg.w.bridges.dispose();
-    const list = await endServer(server, startsOf(rig, leg), taken);
-    check('K2 and every process it forked are gone', server.sshd.exited && !list.some(alive), JSON.stringify(list.filter(alive)));
+    const { list, error } = await endServer(server, startsOf(rig, leg), taken);
+    check('K2 and every process it forked are gone', server.sshd.exited && error === undefined && !list.some(alive), error ?? JSON.stringify(list.filter(alive)));
   }
 }
 
