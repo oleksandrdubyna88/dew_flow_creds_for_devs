@@ -8,7 +8,8 @@
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md),
 > [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (the cornerstone),
 > [PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md) (the three by Fable) and
-> [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md) (by Opus). The stories documents of E2 and E3 are not written.
+> [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md) (by Opus). E2's stories document is
+> [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18; its cornerstone is E2.S2). The stories document of E3 is not written.
 > Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, the module for the pin of one call (`personPin.ts`), the words that both `ssh` argv builders write for a
@@ -1245,8 +1246,8 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
   that stays on for one kind of client, a refusal that a road reads as "no pin". Not marked, and Fable's all the same,
   outside the quota: the rule of evidence for sentence C and the words of sentences D, E and F (§3.12) are security
   judgements (`subagent-models.md`, the row *Security judgement*).
-- **Stories.** `todo/PLAN_person_roads_pin_host_key_E2.md`: not written yet. Opus writes it when E2 starts and marks the
-  cornerstone story.
+- **Stories.** [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18): four stories,
+  E2.S1-E2.S4; the cornerstone is E2.S2. The specs are written when each story starts.
 
 ### E3 — The release gate: every claim is measured on the roads, against a real `sshd`
 
@@ -1394,4 +1395,4 @@ of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1.
 - **C16 — A storage path that holds a double quote is refused before `ssh` starts.** **Taken into E2** (R3, §3.11).
 - **C17 — `VerifyHostKeyDNS=no` on a pinned call.** **Taken into E2** (R1, §3.10).
 
-Cornerstones: 1 of 2 — E1.S2
+Cornerstones: 2 of 2 — E1.S2, E2.S2
