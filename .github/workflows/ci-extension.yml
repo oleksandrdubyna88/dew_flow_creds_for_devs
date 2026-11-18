@@ -366,6 +366,23 @@ jobs:
           PA1_OLD_PSQL_IMAGES: postgres@sha256:2f2a8c2a7d10862e7fba2602e304523554f9df8244c632dafe2628ccb398fb5c,postgres@sha256:496f07cd16dff6406cee521a66b37080be917ea063f017336affdfcb1c61f90e
         run: npm run itest:bridged-db-pa1
 
+      # PP1 (the socket class) and PE1 (the entry's own login) start real servers made by this user in owned folders: a PostgreSQL cluster, a MySQL server (the image's `mysqld`,
+      # started by the harness, never by the image's service) and, for PE1, a MariaDB container. The one system-wide change is the default socket folder of `mysqld`, made by the
+      # harness with `sudo install -d` because this step says `BRIDGED_DB_SYSTEM_RIG=1` (R3). The image's own MySQL service is stopped first so that it cannot hold the socket.
+      - name: Make sure a MySQL server is installed and not running
+        if: runner.os == 'Linux'
+        run: |
+          test -x /usr/sbin/mysqld || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mysql-server-core-8.0
+          sudo systemctl stop mysql.service 2>/dev/null || true
+          ls /usr/lib/postgresql/*/bin/initdb > /dev/null 2>&1 || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql
+          sudo systemctl stop postgresql.service 2>/dev/null || true
+
+      - name: Probe PP1 (the socket class)
+        if: runner.os == 'Linux'
+        env:
+          BRIDGED_DB_SYSTEM_RIG: '1'
+        run: npm run itest:bridged-db-pp1
+
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
