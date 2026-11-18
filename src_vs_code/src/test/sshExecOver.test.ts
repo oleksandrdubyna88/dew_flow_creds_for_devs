@@ -365,8 +365,8 @@ test('an_empty_agent_socket_is_no_agent_for_the_argv_as_it_is_for_the_environmen
 
 /* --- G1, E2.S2: the pin of a call off a bridge is decided before its file is written (the plan's §3.10, §3.11; test 22) --- */
 
-const SENTENCE_F = 'CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "prod box". Nothing was sent to that host. The reason is the ssh program here, not the host.';
-const SENTENCE_E = 'The saved host key of "prod box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.';
+const SENTENCE_F = 'CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "prod box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.';
+const SENTENCE_E = 'The saved host key of "prod box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.';
 
 test('g1_a_pinned_call_asks_the_program_it_will_start_once_before_the_pin_file_is_written', async () => {
   const w = await world({ source: KEY });

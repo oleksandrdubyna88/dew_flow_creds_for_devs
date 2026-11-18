@@ -288,15 +288,15 @@ test('P5: sentences E and F, word for word: no path, no part of the program\'s o
   const pinClientSentence = exported<(name: string, exitCode: number | null) => string>('pinClientSentence');
   assert.equal(
     pinPathSentence('box', 'percent'),
-    'The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.',
+    'The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.',
   );
   assert.equal(
     pinClientSentence('box', 255),
-    'CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host.',
+    'CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.',
   );
   assert.equal(
     pinClientSentence('box', null),
-    'CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host.',
+    'CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.',
   );
   assert.match(pinClientSentence('box', 0), /\(exit code 0\)/);
 });

@@ -313,6 +313,31 @@ test('T4d (guard): a pinned bridge that gets no argv, or whose argv cannot be bu
   assert.deepEqual(pinFiles(dir), [], 'T4d: no bridge was started and a pin file stays');
 });
 
+test('T4e (guard): a window that is gone when the decision settles: the pinned bridge spawns NO ssh, and the key file and the pin file are deleted at once', async () => {
+  // Spec E2.S2, exit table row 4 (changed by the code gate: the manager no longer spawns and kills; it answers undefined before it spawns).
+  const dir = storage('t4e');
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const spawned: string[][] = [];
+  const spawn = (_command: string, argv: readonly string[]): never => {
+    spawned.push([...argv]);
+    throw new Error('T4e: an ssh was spawned after the window was gone');
+  };
+  const w = world(pinned(dir, { checks: [], resolveGate: gate, spawn }));
+  const clicked = click(w, 'openRemoteBridge');
+  await settled();
+  w.bridges.dispose();
+  release();
+  await clicked;
+  await settled();
+
+  assert.deepEqual(spawned, [], 'T4e: an ssh was spawned although the manager was disposed');
+  assert.equal(w.bridges.isOpen(KEY), false);
+  assert.deepEqual(pinFiles(dir), [], 'T4e: no bridge started and the pin file stays');
+});
+
 /* --- part 3: sentence C --- */
 
 test('T9a: the install on a pinned entry whose host presents another key shows sentence C, and not that the host did not answer the probe', async () => {

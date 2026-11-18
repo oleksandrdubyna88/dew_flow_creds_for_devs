@@ -189,8 +189,8 @@ test('P9: the writer hands materializeKnownHosts the storage folder, the snapsho
 
 /* --- E2.S2: the two refusals that stand before the write (the plan's §3.10, §3.11), and the checked value --- */
 
-const SENTENCE_E = 'The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.';
-const SENTENCE_F = 'CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host.';
+const SENTENCE_E = 'The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.';
+const SENTENCE_F = 'CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.';
 
 test('P10: a path that ssh would not read as one file is refused with sentence E before the client is asked and before anything is written', async () => {
   const dir = path.join(ownedDir(scope, 'p10'), '100%');

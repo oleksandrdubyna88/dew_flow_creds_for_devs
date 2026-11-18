@@ -509,7 +509,7 @@ test('g1_a_client_that_cannot_be_read_spawns_nothing_says_sentence_f_and_cleans_
   const { aw, road, vault } = setup({ trusted: [['e1', BARE]] });
   road.client = { kind: 'unreadable', exitCode: 1 };
   await aw.runWithSecrets(LINKED);
-  assert.deepEqual(aw.warnings, ['CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "' + PLAN.sshName + '". Nothing was sent to that host. The reason is the ssh program here, not the host.']);
+  assert.deepEqual(aw.warnings, ['CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "' + PLAN.sshName + '". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.']);
   assert.deepEqual(aw.masked, [], 'no masked run was made');
   assert.deepEqual(vault.calls, [], 'nobody was asked and no value was read');
   assert.deepEqual(road.cleanupCalls, ['s1#1'], 'the session, and with it the pin file that Connect\'s options wrote, is cleaned by its owner');

@@ -198,7 +198,7 @@ is pinned or refused (§5.2).
 **Sentence E** (`pinPathSentence(name, kind)`), final words:
 
 ```text
-The saved host key of "<name>" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with <kind>, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.
+The saved host key of "<name>" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with <kind>, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.
 ```
 
 `<kind>` is one of: `a control character`, `a double quote`, `two backslashes in a row (a network path)`, `a backslash before an
@@ -211,8 +211,8 @@ the host and not the saved key". It echoes no path.
 **Sentence F** (`pinClientSentence(name, exitCode)`), final words, with a number and with none:
 
 ```text
-CredsForDevs could not read the version of the ssh program on this computer (exit code <n>), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh program here, not the host.
-CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh program here, not the host.
+CredsForDevs could not read the version of the ssh program on this computer (exit code <n>), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.
+CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.
 ```
 
 It holds the exit code and no other part of the program's output (an exit code of 0 with no version at the start of stderr reads
@@ -845,7 +845,7 @@ parts as one object (a test names its own asker), and gets the environment of th
 | 1 | before the decision | the credential is not `ok` | none to delete | none written | `start(refused)`'s answer (the roads answer `undefined`) |
 | 2 | at the `await` | the writer answers a refusal (A, B, E, F) | deleted by the `finally`, after `start` answered `undefined` | none written (E, F, A), or a part of one (B: C14) | `undefined` |
 | 3 | at the `await` | the writer rejects or throws (it must not) | deleted by the `finally` | not known to the guard | the same error, as a rejection |
-| 4 | at the `await` | the window goes away while the decision waits | when the writer settles: as rows 2 or 3 if it refused or failed; otherwise the guard goes on to `start`, the already disposed manager kills what `start` spawned at once and keeps it out of its map, and the one continuation on `exited` deletes the file, as row 8 (corrected 2026-11-18 after the Opus review: the `finally` does not run for the window's sake). The runner's time limit bounds the wait (10 s) | as rows 2, 3 or 8 | as those rows |
+| 4 | at the `await` | the window goes away while the decision waits | when the writer settles: as rows 2 or 3 if it refused or failed; otherwise the guard goes on to `start`, and the already disposed manager spawns NOTHING and answers `undefined`, so both files are deleted at once, as row 5 (changed by the code gate on G1 Epic 2: the manager used to spawn and kill at once, and an `ssh` killed right after its spawn could still connect in between; the check now stands before the spawn. Corrected 2026-11-18 after the Opus review: the `finally` does not run for the window's sake). The runner's time limit bounds the wait (10 s) | as rows 2, 3 or 5 | as those rows |
 | 5 | after the `await`, in `start` | `start` answers `undefined` (no argv, a refused value) | deleted at once | deleted at once | `undefined` |
 | 6 | in `start` | `start` throws | deleted at once | deleted at once | the same error, as a rejection |
 | 7 | after `start` | the attach throws (a process with no `exited`) | deleted at once (`handed` is false) | deleted at once | the same error |

@@ -198,8 +198,8 @@ test('G1: a pinned session whose ssh cannot be read, or was not asked, is refuse
   const ready = await readyOf();
   const plan = planOf();
   const NAME = plan.sshName;
-  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, { kind: 'unreadable', exitCode: 255 }), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host.` });
-  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, undefined), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host.` });
+  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, { kind: 'unreadable', exitCode: 255 }), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` });
+  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, undefined), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` });
 });
 
 test('G1: a pinned session whose pin file has a path that ssh would not read as one file is refused with sentence E, which echoes no path; the path is asked before the client', async () => {
@@ -207,7 +207,7 @@ test('G1: a pinned session whose pin file has a path that ssh would not read as 
   const plan = planOf();
   const NAME = plan.sshName;
   const launch = secretsLaunch(plan, pinnedAt(ready, '/keys/100%/kh-s1'), false, NONCE, { kind: 'unreadable', exitCode: 1 });
-  assert.deepEqual(launch, { kind: 'refused', reason: `The saved host key of "${NAME}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.` });
+  assert.deepEqual(launch, { kind: 'refused', reason: `The saved host key of "${NAME}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.` });
   assert.equal(launch.kind === 'refused' && launch.reason.includes('/keys'), false);
   const quoted = spawnArgv(plan, pinnedAt(ready, "/keys/it's here/kh-s1"));
   assert.ok(quoted.includes(`UserKnownHostsFile="/keys/it's here/kh-s1"`) && quoted.includes(`GlobalKnownHostsFile="/keys/it's here/kh-s1"`));

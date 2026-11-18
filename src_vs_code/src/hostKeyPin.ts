@@ -246,8 +246,14 @@ export function checkedPin(file: string, client: ReadablePinClient): PinCheck {
  * ended with `Host key verification failed.`, exit code 255. 2026-11-18, `ssh -G` of the same client, under a config that says
  * `KnownHostsCommand /bin/echo x`, `VerifyHostKeyDNS yes` and `LogLevel QUIET`: with these words it resolves `verifyhostkeydns false`,
  * `loglevel ERROR` and no `knownhostscommand` line; without the `KnownHostsCommand` word that line stays. What a client resolves is
- * asked of the PATH's `ssh -G` in the tests. No test of the suite asks a real `sshd`, and that a login is refused with DNS on was not
- * measured (the plan's E3).</p>
+ * asked of the PATH's `ssh -G` in the tests. No test of `npm test` asks a real `sshd`. Section 10 of `scripts/ssh-agent-itest.cjs`
+ * (`itestPinnedRoads.cjs`, 48 checks, E2.S4) does, on Linux: it runs the registered *Install creds on host* and *Open Remote Bridge…* (and the
+ * bridge's socket check) with the real `ssh` against a real `sshd` on the loopback. Pinned to that server's key, every connection carries these
+ * words and logs in; with ANOTHER key answering at the same address, every connection ends with `Host key verification failed.` and the server
+ * logs no login. <b>Limits of that smoke:</b> it is a loopback `sshd`, one OpenSSH client (the one first on the PATH, 8.5 or newer), and a client
+ * config that only empties the two known-hosts files; no config there names a `KnownHostsCommand` or a `VerifyHostKeyDNS yes`, so it does NOT
+ * show that a command or a signed DNS record is shut out on a login, and it does not run an agent's `ssh:exec`, *Run with Secrets* or a client
+ * older than 8.5. That a login is refused with DNS on, or with a command that lists the key, is the plan's E3 (M10, M8).</p>
  *
  * <p><b>What these words do NOT reach:</b> the nested `ssh` of a jump host, which gets none of them; and the line of a Connect
  * terminal (`sshCommand.ts`), which writes its own words, the pin as the person's file only (candidate C4 of the plan).</p>
@@ -266,21 +272,22 @@ export function hostKeyWords(pin: CheckedPin | undefined): string[] {
 }
 
 /**
- * Sentence E: the path of the pin file cannot be written for `ssh`, so the call did not start. It names the kind and echoes no path.
+ * Sentence E: the path of the pin file cannot be written for `ssh`, so the call did not start. It names the kind and echoes no path, and it names one remedy: a storage (user data) folder
+ * of the editor at a path without that character (gate of G1 E2).
  * The three roads of the person open it with `Cannot reach "<name>": ` or `Cannot bridge to "<name>": `; the agent's exec and Run
  * with Secrets say it as it is.
  */
 export function pinPathSentence(name: string, kind: PinPathKind): string {
-  return `The saved host key of "${name}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with ${PIN_PATH_KINDS[kind]}, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.`;
+  return `The saved host key of "${name}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with ${PIN_PATH_KINDS[kind]}, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.`;
 }
 
 /**
  * Sentence F: the `ssh` program could not be asked for its version, so the pinned call did not start. It holds the exit code and no
- * other part of the program's output.
+ * other part of the program's output, and it names one remedy: look at which `ssh` is first on the PATH and that `ssh -V` answers (gate of G1 E2).
  */
 export function pinClientSentence(name: string, exitCode: number | null): string {
   const how = exitCode === null ? 'it did not start, or did not end in time' : `exit code ${exitCode}`;
-  return `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "${name}". Nothing was sent to that host. The reason is the ssh program here, not the host.`;
+  return `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "${name}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.`;
 }
 
 /** The pin of a call whose file was written BEFORE (Run with Secrets: Connect's options made it): the checked value, or sentence E or F. */

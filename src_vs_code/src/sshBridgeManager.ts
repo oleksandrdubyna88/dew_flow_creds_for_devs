@@ -42,7 +42,7 @@ export interface OpenBridge {
 
 export class SshBridgeManager {
   private readonly open = new Map<string, OpenBridge>();
-  /** Set by `dispose()`: a start that comes after the window is gone must not leave a process nothing stops. */
+  /** Set by `dispose()`: a start that comes after the window is gone spawns nothing (it answers `undefined`). */
   private disposed = false;
 
   constructor(
@@ -70,17 +70,17 @@ export class SshBridgeManager {
    * died and the person cannot tell. Refusing would leave them with a bridge that looks open
    * and is not, which is worse than a moment's churn.</p>
    *
-   * <p>After `dispose()` the child is killed at once and is never put in the map: the bridge guard awaits the pin question before
-   * it starts, and a window that closed meanwhile has already run `dispose`. The bridge is still returned, so the continuation
-   * the caller attaches to its `exited` (the key and the pin file) still runs.</p>
+   * <p>After `dispose()` NOTHING is spawned and `undefined` is returned: the bridge guard awaits the pin question before it starts, and
+   * a window that closed meanwhile has already run `dispose`. The check stands BEFORE the spawn, not after it: an `ssh` that is spawned
+   * and killed at once can still connect in between, and a bridge may not connect after its owner is gone. The caller reads `undefined`
+   * as "nothing started" and deletes the key file and the pin file of the call at once (`withWrittenKeyUntilExit`, `writtenKey.ts`).</p>
    */
-  start(key: string, remotePath: string, command: string, argv: readonly string[], env: NodeJS.ProcessEnv): OpenBridge {
+  start(key: string, remotePath: string, command: string, argv: readonly string[], env: NodeJS.ProcessEnv): OpenBridge | undefined {
+    if (this.disposed) {
+      return undefined;
+    }
     this.stop(key);
     const bridge: OpenBridge = { key, remotePath, process: this.spawn(command, argv, env) };
-    if (this.disposed) {
-      bridge.process.kill();
-      return bridge;
-    }
     this.open.set(key, bridge);
     void bridge.process.exited.then((code) => {
       // Only forget it if this is still the bridge we are holding: a restart may already have

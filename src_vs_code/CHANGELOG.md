@@ -6,10 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed — security: a saved host key that can be used is the only key a call without a terminal accepts
+### Changed — security: a call without a terminal asks ssh to trust only a saved host key that can be used
 
 An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). Every call that the extension
-starts for such an entry without a terminal now checks the host against that key and nothing else: the tunnel of *Open Remote
+starts for such an entry without a terminal now asks `ssh` to trust that key alone (the words are `StrictHostKeyChecking=yes`, one file
+that holds the saved key, `VerifyHostKeyDNS=no` and, for OpenSSH 8.5 or newer, `KnownHostsCommand=none`): the tunnel of *Open Remote
 Bridge…*, the socket check that follows it, *Install creds on host*, an agent's `ssh:exec` and its run over SSH, and *Run with
 Secrets* over SSH. This holds for a saved host key that can be used. One that cannot be used (a stored text that is no host key, or
 a host that cannot be written as a known_hosts line) is refused by *Open Remote Bridge…* and *Install creds on host*, as below; the
@@ -43,7 +44,7 @@ calls state their own log level (`LogLevel=ERROR`), so `ssh` prints a refused ho
 (measured by hand). What that may cost: on these calls `ssh` may no longer print what it prints only at its `INFO` level, for
 example a server's banner before the login (read in the manual, not measured).
 
-The saved key is the only source of trust of these calls. Before, `ssh` got it as your own known-hosts file and still read the
+These calls ask `ssh` to trust the saved key alone. What is measured and what is asked only is said below. Before, `ssh` got it as your own known-hosts file and still read the
 system-wide ones (`/etc/ssh/ssh_known_hosts`): a key that such a file listed for the host was accepted beside the saved one.
 Measured by hand (OpenSSH 10.2p1 on both ends, loopback): with another key saved and the host's real key in a system-wide file, the
 login was accepted before and now ends with `Host key verification failed`. Two more sources can be switched on by your own `ssh`
@@ -51,13 +52,15 @@ config (the manual, `ssh_config(5)`): with `VerifyHostKeyDNS yes`, `ssh` also tr
 DNS, which may not be the saved key; and a `KnownHostsCommand` is asked in addition to the files. These calls now say
 `VerifyHostKeyDNS=no`, and `KnownHostsCommand=none` when the `ssh` program on this computer is OpenSSH 8.5 or newer, the first
 version with that option. An older `ssh` gets no such word: it has no such option, so no config can switch that source on there
-(read, not run: no `ssh` older than 8.5 was tried). `ssh -G` resolves both sources to off under a config that switches them on.
+(read, not run: no `ssh` older than 8.5 was tried). `ssh -G` shows that `ssh` takes both words, and resolves both sources to off under a config that switches them on: that is what was asked
+and what `ssh` reads, not yet what a login does.
 Measured by hand against a public `sshd`: a host key that only a `KnownHostsCommand` listed passed the check with the words of
-before and fails with `KnownHostsCommand=none`. Not measured: a login against a signed DNS zone. To know which words to send, the
+before and fails with `KnownHostsCommand=none`. Not measured here: a login against a signed DNS zone (an SSHFP record), and a `KnownHostsCommand` on these calls' own roads; the real-road
+runs before the release measure both. To know which words to send, the
 extension asks the `ssh` program for its version (`ssh -V`) before such a call. When the version cannot be read, the call is not
 started, and the message says so: `CredsForDevs could not read the version of the ssh program on this computer (exit code <n>), so
 it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh
-program here, not the host.` When `ssh -V` did not start or did not end in time, the parenthesis says that in place of an exit
+program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` When `ssh -V` did not start or did not end in time, the parenthesis says that in place of an exit
 code.
 
 A storage folder whose path holds a space no longer breaks these calls. `ssh` read such a path as two file names, found the saved
@@ -66,7 +69,8 @@ an apostrophe works too. A folder whose path holds a control character, a double
 a backslash before an apostrophe, a backslash at its end, a percent sign, the characters `${` or a tilde at its start is refused
 before anything connects, and nothing is sent: `ssh` would read another file, two files or none from such a path. The message says
 that the folder where the editor keeps the files of CredsForDevs has a path with that character, and that this is about this
-computer, not about the host or the saved key.
+computer, not about the host or the saved key. It also says what to do: move the storage (user data) folder of the editor to a path
+without that character, or point the editor at another user-data folder.
 
 *Open Remote Bridge…* and *Install creds on host* now refuse an entry whose saved host key cannot be used: a stored text that is
 no host key, or a host that cannot be written as a known_hosts line. No `ssh` starts, nothing is sent to that host, and the

@@ -88,10 +88,11 @@ release writes it). The lines around it (`## [Unreleased]` and `## [1.22.3] — 
 sentence to its row.
 
 ```markdown
-### Changed — security: a saved host key that can be used is the only key a call without a terminal accepts
+### Changed — security: a call without a terminal asks ssh to trust only a saved host key that can be used
 
 An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). Every call that the extension
-starts for such an entry without a terminal now checks the host against that key and nothing else: the tunnel of *Open Remote
+starts for such an entry without a terminal now asks `ssh` to trust that key alone (the words are `StrictHostKeyChecking=yes`, one file
+that holds the saved key, `VerifyHostKeyDNS=no` and, for OpenSSH 8.5 or newer, `KnownHostsCommand=none`): the tunnel of *Open Remote
 Bridge…*, the socket check that follows it, *Install creds on host*, an agent's `ssh:exec` and its run over SSH, and *Run with
 Secrets* over SSH. This holds for a saved host key that can be used. One that cannot be used (a stored text that is no host key, or
 a host that cannot be written as a known_hosts line) is refused by *Open Remote Bridge…* and *Install creds on host*, as below; the
@@ -125,7 +126,7 @@ calls state their own log level (`LogLevel=ERROR`), so `ssh` prints a refused ho
 (measured by hand). What that may cost: on these calls `ssh` may no longer print what it prints only at its `INFO` level, for
 example a server's banner before the login (read in the manual, not measured).
 
-The saved key is the only source of trust of these calls. Before, `ssh` got it as your own known-hosts file and still read the
+These calls ask `ssh` to trust the saved key alone. What is measured and what is asked only is said below. Before, `ssh` got it as your own known-hosts file and still read the
 system-wide ones (`/etc/ssh/ssh_known_hosts`): a key that such a file listed for the host was accepted beside the saved one.
 Measured by hand (OpenSSH 10.2p1 on both ends, loopback): with another key saved and the host's real key in a system-wide file, the
 login was accepted before and now ends with `Host key verification failed`. Two more sources can be switched on by your own `ssh`
@@ -133,13 +134,15 @@ config (the manual, `ssh_config(5)`): with `VerifyHostKeyDNS yes`, `ssh` also tr
 DNS, which may not be the saved key; and a `KnownHostsCommand` is asked in addition to the files. These calls now say
 `VerifyHostKeyDNS=no`, and `KnownHostsCommand=none` when the `ssh` program on this computer is OpenSSH 8.5 or newer, the first
 version with that option. An older `ssh` gets no such word: it has no such option, so no config can switch that source on there
-(read, not run: no `ssh` older than 8.5 was tried). `ssh -G` resolves both sources to off under a config that switches them on.
+(read, not run: no `ssh` older than 8.5 was tried). `ssh -G` shows that `ssh` takes both words, and resolves both sources to off under a config that switches them on: that is what was asked
+and what `ssh` reads, not yet what a login does.
 Measured by hand against a public `sshd`: a host key that only a `KnownHostsCommand` listed passed the check with the words of
-before and fails with `KnownHostsCommand=none`. Not measured: a login against a signed DNS zone. To know which words to send, the
+before and fails with `KnownHostsCommand=none`. Not measured here: a login against a signed DNS zone (an SSHFP record), and a `KnownHostsCommand` on these calls' own roads; the real-road
+runs before the release measure both. To know which words to send, the
 extension asks the `ssh` program for its version (`ssh -V`) before such a call. When the version cannot be read, the call is not
 started, and the message says so: `CredsForDevs could not read the version of the ssh program on this computer (exit code <n>), so
 it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh
-program here, not the host.` When `ssh -V` did not start or did not end in time, the parenthesis says that in place of an exit
+program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` When `ssh -V` did not start or did not end in time, the parenthesis says that in place of an exit
 code.
 
 A storage folder whose path holds a space no longer breaks these calls. `ssh` read such a path as two file names, found the saved
@@ -148,7 +151,8 @@ an apostrophe works too. A folder whose path holds a control character, a double
 a backslash before an apostrophe, a backslash at its end, a percent sign, the characters `${` or a tilde at its start is refused
 before anything connects, and nothing is sent: `ssh` would read another file, two files or none from such a path. The message says
 that the folder where the editor keeps the files of CredsForDevs has a path with that character, and that this is about this
-computer, not about the host or the saved key.
+computer, not about the host or the saved key. It also says what to do: move the storage (user data) folder of the editor to a path
+without that character, or point the editor at another user-data folder.
 
 *Open Remote Bridge…* and *Install creds on host* now refuse an entry whose saved host key cannot be used: a stored text that is
 no host key, or a host that cannot be written as a known_hosts line. No `ssh` starts, nothing is sent to that host, and the
@@ -196,7 +200,7 @@ it writes §10's table.
 
 | # | The claim (the entry's words, shortened) | The suite | The smoke | By hand / read | E3 |
 |---|---|---|---|---|---|
-| CL1 | every call without a terminal for a saved key checks the host against that key: the tunnel, its socket check, the install | `personRoadsHostKey.test.ts` T1 (all five runs), T2, T3, T4a | leg 1 (the 4 connections carry the words), leg 2 (refused) | — | M1, M2 |
+| CL1 | every call without a terminal for a saved key asks `ssh` to trust that key alone (the words are named): the tunnel, its socket check, the install (reworded by the code gate: "checks the host against that key and nothing else" claimed an effect) | `personRoadsHostKey.test.ts` T1 (all five runs), T2, T3, T4a | leg 1 (the 4 connections carry the words), leg 2 (refused) | — | M1, M2 |
 | CL2 | … and an agent's `ssh:exec` and its run over SSH | `sshExecOver.test.ts` `the_argv_is_buildSshExecArgv_with_the_snapshots_jump_and_pin`, `g1_a_pinned_call_asks_the_program_it_will_start_once_before_the_pin_file_is_written`; `agentKeyPath.test.ts` G5 (both doors); `pinWords.test.ts` W6 (one function, both builders) | — | read: one call for both doors (`sshUseActions.ts:322`) | M14 (exec only) |
 | CL3 | … and *Run with Secrets* over SSH | `secretsLaunch.test.ts` `a_pinned_host_is_enforced`, `G1: a pinned session gets the six pairs …` | — | — | none (M14 says it does not take it: it needs a terminal's launch) |
 | CL4 | this holds for a saved key that can be used; one that cannot is refused by the bridge and the install | `personRoadsPin.test.ts` Q6 (both roads, both logins, both kinds of unusable pin) | — | — | M4 (b), (c) |
@@ -218,8 +222,8 @@ it writes §10's table.
 | CL20 | these calls state `LogLevel=ERROR`, so `ssh` prints a refused key under `LogLevel QUIET` too | `pinWords.test.ts` W1, G1 (`ssh -G` resolves `loglevel ERROR` under a quiet config); `personRoadsPinRefusals.test.ts` W1 | N5 (every connection says it) | by hand: the parent's §3.12 part 1 (a public `sshd`, 15 lines again); E2.S3 spec J13 | M5 (e) |
 | CL21 | may cost lines printed only at `INFO`, a banner (not measured) | — | — | read: `ssh_config(5)`; E2.S2 spec K13 | none (said as not measured) |
 | CL22 | a key in a system-wide file is no longer accepted beside the saved one | `hostKeyWords.test.ts` "under a config that names other known-hosts files, the real ssh resolves every pinned argv to the pin file alone" | — | by hand: E1.S1 spec K6 (loopback); the parent's §3.9 rows 1, 2 (a public `sshd`) | M2 (b) |
-| CL23 | these calls say `VerifyHostKeyDNS=no`; `ssh -G` resolves it to off | `pinWords.test.ts` W1, W2, G1, G2 (the control) | N5 | read: `ssh_config(5)`; a login: not measured (said so) | M10 |
-| CL24 | `KnownHostsCommand=none` for OpenSSH 8.5 or newer; a command-listed key fails the check | `pinWords.test.ts` W1, G1, G3; `pinClient.test.ts` V1, V2; `personRoadsPinRefusals.test.ts` W1 | N5 (`none`, the client being 8.5 or newer: N1) | by hand: the parent's §3.9 rows 3, 4 (a public `sshd`) | M8 |
+| CL23 | these calls say `VerifyHostKeyDNS=no`; `ssh -G` shows `ssh` takes the word and resolves it to off; a login against a signed DNS zone is NOT measured here (reworded by the code gate) | `pinWords.test.ts` W1, W2, G1, G2 (the control) | N5 | read: `ssh_config(5)`; a login: not measured (said so) | M10 |
+| CL24 | `KnownHostsCommand=none` for OpenSSH 8.5 or newer; `ssh -G` shows `ssh` takes it; a command-listed key failed the check once, by hand, on a public `sshd`, not on these calls' roads (reworded by the code gate) | `pinWords.test.ts` W1, G1, G3; `pinClient.test.ts` V1, V2; `personRoadsPinRefusals.test.ts` W1 | N5 (`none`, the client being 8.5 or newer: N1) | by hand: the parent's §3.9 rows 3, 4 (a public `sshd`) | M8 |
 | CL25 | an older `ssh` gets no such word, and no config can switch the source on there | `pinWords.test.ts` W2, G3; `pinClient.test.ts` V2, A3; `sshExecOver.test.ts` `g1_an_older_client_runs_without_the_knownhostscommand_word`; `secretsLaunch.test.ts` "… no KnownHostsCommand word for an older one" | — | read, not run: OpenSSH's release notes and the parent's §3.10 table | M11 |
 | CL26 | the extension asks `ssh -V` before such a call; a version that cannot be read starts nothing and shows sentence F (both forms) | `pinClient.test.ts` V4, V5, A1, A4, A6, R1; `personRoadsPinRefusals.test.ts` F1-F4, A1; `pinWords.test.ts` P5 (the words) | N2, N3 (the question is one start of its own, before the first connection) | — | M11 (a) |
 | CL27 | a space in the storage path no longer breaks these calls; an apostrophe works too | `personRoadsPinRefusals.test.ts` W2; `pinWords.test.ts` P1, P2, G4; `hostKeyWords.test.ts` "the real ssh reads a pin file whose path holds white space as ONE file" and its control | — | by hand: E1.S1 spec K6 (a space, a login on the loopback); E2.S3 spec J5 (a quoted path read as one file at a real key exchange); macOS's folder: read (`research/PLAN_mcp_server.md:207`), not run | M7 |

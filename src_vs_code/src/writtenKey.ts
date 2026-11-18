@@ -125,8 +125,9 @@ interface Started {
  *
  * <p><b>The one `await` of this guard</b> (E2) is the decision, BEFORE `start`: the pin writer asks the `ssh` program for its version.
  * It stands inside the `try`, so while it waits both files are this guard's: a decision that rejects ends in the `finally`, which
- * deletes what was written. A window that goes away while it waits does not end here: the guard goes on to `start` when the writer settles, and the manager, already disposed, kills what `start` spawned at once and
- * keeps it out of its map (`SshBridgeManager`); the continuation on the process's `exited` then deletes both files. From `start` to the flag the
+ * deletes what was written. A window that goes away while it waits does not end here: the guard goes on to `start` when the writer settles, and the manager, already disposed,
+ * spawns nothing and answers `undefined` (`SshBridgeManager.start`: the check stands BEFORE the spawn, so no `ssh` can connect after its owner is gone). `undefined` is the
+ * second case of the list above: `handed` stays false and the `finally` deletes both files at once. From `start` to the flag the
  * guard is synchronous, as before.</p>
  */
 export async function withWrittenKeyUntilExit<T extends Started>(

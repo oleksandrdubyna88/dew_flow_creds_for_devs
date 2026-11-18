@@ -28,9 +28,9 @@ const INSTALLED = 'creds-install: installed /home/dev/.local/bin/creds\n';
 const yes = (_message: string, rest: readonly unknown[]): string | undefined => rest.find((one): one is string => typeof one === 'string');
 
 const sentenceE = (kind: string): string =>
-  `The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with ${kind}, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key.`;
+  `The saved host key of "box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with ${kind}, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.`;
 const sentenceF = (how: string): string =>
-  `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host.`;
+  `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.`;
 
 /**
  * A FILE of this test. A storage folder "inside" it can never be made, by any user and on any platform: so a product that does not
