@@ -554,7 +554,7 @@ async function spawnOverSsh(host: RunCommandsHost, job: SecretsJob, plan: Remote
  * the trust is given. From `prepare` on, the run reads the prepared snapshot only (`ready`): never storage, never `plan.ssh`.
  */
 async function trustedThenSpawned(run: SecretsOverSsh, sessions: OwnedSessions): Promise<void> {
-  const launches = launchesOf(run);
+  const launches = await launchesOf(run);
   if (launches === undefined || !(await trustedOnItsLine(run))) {
     return;
   }
@@ -564,14 +564,19 @@ async function trustedThenSpawned(run: SecretsOverSsh, sessions: OwnedSessions):
   }
 }
 
-/** `spawnLaunch` first (its `ownAgent` goes into the argv) and `secretsLaunch`, or `undefined` having said why: nothing is read and nobody is asked yet. A warning of the launch is the banner's. */
-function launchesOf(run: SecretsOverSsh): SshLaunches | undefined {
+/**
+ * `spawnLaunch` first (its `ownAgent` goes into the argv) and `secretsLaunch`, or `undefined` having said why: nothing is read and nobody is asked yet. A warning of the launch is the banner's.
+ * A PINNED session asks the program of the spawn for its version first (G1, §3.10), started as the run will be: the same program, the same folder, this process's `PATH`.
+ */
+async function launchesOf(run: SecretsOverSsh): Promise<SshLaunches | undefined> {
   const spawn = run.host.sshRoad.spawnLaunch(run.ready.snapshot, run.ready.env);
   if (spawn.kind === 'refused') {
     return void warn(spawn.reason);
   }
   const nonce = newSecretsNonce();
-  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent, nonce);
+  const pinned = run.ready.options.knownHostsFile !== undefined;
+  const client = pinned ? await run.host.sshRoad.pinClient({ program: spawn.program, cwd: spawn.cwd, env: process.env }) : undefined;
+  const launch = secretsLaunch(run.plan, run.ready, spawn.ownAgent, nonce, client);
   return launch.kind === 'refused' ? void warn(launch.reason) : { launch, spawn, nonce };
 }
 

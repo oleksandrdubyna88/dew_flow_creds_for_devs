@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import type { PinClient } from '../pinClient';
 import { isLinkTarget } from '../remoteLaunch';
 import { resolveJumpChain } from '../sshOptions';
 import { E3_INHERITED_DROP } from '../sshProgram';
@@ -30,6 +31,9 @@ export type RoadAnswer = 'stopped' | 'refused' | { readonly password?: true };
 
 export type RoadScript = (ssh: EntityMetadata, n: number) => RoadAnswer;
 
+/** The answer of a client that knows `KnownHostsCommand` (OpenSSH 8.5 or newer): the default of every fake road. */
+export const KNOWS: PinClient = { kind: 'knows', token: 'OpenSSH_test' };
+
 export interface FakeRoad extends SshRoad {
   /** Each `prepare`, with the SSH entry exactly as the road handed it, and the entry's own count from 1. */
   readonly calls: { readonly ssh: EntityMetadata; readonly n: number }[];
@@ -45,6 +49,10 @@ export interface FakeRoad extends SshRoad {
   readonly uses: string[];
   /** Every answer of `spawnLaunch`, in order. */
   readonly launches: SpawnLaunch[];
+  /** Every question about the client of a pinned session (G1, §3.10), in order: the program and the folder it was asked of. */
+  readonly clientAsks: { readonly program: string; readonly cwd: string | undefined }[];
+  /** What the client answers. A test sets it; the default knows `KnownHostsCommand`. */
+  client: PinClient;
   /** One `'<sshId>#<n>'` per call of a ready's `cleanup`, repeats INCLUDED (`cleaned` keeps only the call that did something). */
   readonly cleanupCalls: string[];
 }
@@ -101,6 +109,8 @@ export function fakeRoad(
     events,
     uses: [],
     launches: [],
+    clientAsks: [],
+    client: KNOWS,
     cleanupCalls: [],
     prepare: (_accountId, ssh, use): Promise<PreparedSsh> => {
       const n = (counts.get(ssh.id) ?? 0) + 1;
@@ -113,6 +123,10 @@ export function fakeRoad(
     sayRefused: (): Promise<void> => {
       road.refusedShown += 1;
       return Promise.resolve();
+    },
+    pinClient: (call): Promise<PinClient> => {
+      road.clientAsks.push({ program: call.program, cwd: call.cwd });
+      return Promise.resolve(road.client);
     },
     spawnLaunch: (ssh, env): SpawnLaunch => {
       const launch = launchAnswer(ssh, env, spawnWarning, spawnRefused);

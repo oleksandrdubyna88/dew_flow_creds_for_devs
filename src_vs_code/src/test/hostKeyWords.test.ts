@@ -11,7 +11,7 @@ import { type SshExecAuth, type SshExecOptions, buildSshExecArgv } from '../sshE
 import { EntityMetadata } from '../types';
 import { fakePath } from './fakePaths';
 import { importedUses } from './funnelScan';
-import { hostKeyWordsOf, lastHostKeyWordAt, valuesOf, withoutGlobal } from './pinnedArgv';
+import { hostKeyWordsOf, lastHostKeyWordAt, sourceWordsOf, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
 import { discoverSources } from './tempSiteScan';
 
 /**
@@ -33,9 +33,6 @@ import { discoverSources } from './tempSiteScan';
 const PIN = fakePath('keys/4242/known_hosts-e1-0b6f3c1e');
 /** As on macOS, where the editor's storage folder is under `Application Support`. */
 const SPACED = fakePath('Application Support/Code/keys/4242/known_hosts-e1-0b6f3c1e');
-const TABBED = fakePath('a\tb/known_hosts-e1');
-const QUOTED_TWICE = fakePath('a"b c"d/known_hosts-e1');
-const QUOTED_ONCE = fakePath('a"b/known_hosts-e1');
 const KEY = fakePath('k.key');
 const CONFIG_FILE = fakePath('bridges/call-1.ssh_config');
 
@@ -49,10 +46,10 @@ const HOSTILE_EXTRA = ['-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFi
 type Argv = string[] | undefined;
 
 const run = (pin: string | undefined, auth: SshExecAuth, options: SshExecOptions = {}, entity: EntityMetadata = HOST): Argv =>
-  buildSshExecArgv(entity, KEY, 'id', auth, { ...options, knownHostsFile: pin });
+  buildSshExecArgv(entity, KEY, 'id', auth, { ...options, knownHostsFile: testPin(pin) });
 
 const tunnel = (pin: string | undefined, auth: SshExecAuth, extra: readonly string[] = []): Argv =>
-  buildBridgeArgv(HOST, { port: 51234, remote: { path: '/tmp/creds-dev-abc.sock' }, auth, extra, keyPath: KEY, knownHostsFile: pin }, () => true);
+  buildBridgeArgv(HOST, { port: 51234, remote: { path: '/tmp/creds-dev-abc.sock' }, auth, extra, keyPath: KEY, knownHostsFile: testPin(pin) }, () => true);
 
 /** Every kind of argv that carries G1's words, for one pin file (or none): the tunnel and the exec calls OFF a bridge. No kind has a caller's `extra`. */
 const everyKind = (pin: string | undefined): readonly (readonly [string, Argv])[] => [
@@ -83,8 +80,8 @@ const pinned = (file: string): string[] => ['-o', 'StrictHostKeyChecking=yes', '
 
 const UNPINNED = ['-o', 'StrictHostKeyChecking=accept-new'];
 
-/** What stands in for a pin file that cannot be named: it holds no key, so `ssh` refuses every host. */
-const NO_KEY_FILE = '/dev/null';
+/** The pairs that E2 adds for a client that knows `KnownHostsCommand` (the plan's §3.10, §3.12): the tests of them are `pinWords.test.ts`. */
+const PIN_SOURCES = ['-o', 'VerifyHostKeyDNS=no', '-o', 'KnownHostsCommand=none', '-o', 'LogLevel=ERROR'];
 
 /* --- part 1: what is sent --- */
 
@@ -97,18 +94,8 @@ test('G1: a pinned argv of the tunnel and of an exec call off a bridge names the
 });
 
 test('G1: a pin file whose path holds white space is ONE quoted word, the same in both options', () => {
-  for (const file of [SPACED, TABBED]) {
-    for (const [name, argv] of argvs(file)) {
-      assert.deepEqual(hostKeyWordsOf(argv), pinned(`"${file}"`), `${name}: ssh would read this path as two files`);
-    }
-  }
-});
-
-test('G1: a pin file whose path holds a double quote is not named at all: both options name a file that holds no key, and the check stays strict', () => {
-  for (const file of [QUOTED_TWICE, QUOTED_ONCE]) {
-    for (const [name, argv] of argvs(file)) {
-      assert.deepEqual(hostKeyWordsOf(argv), pinned(NO_KEY_FILE), `${name}: ${file} reached ssh`);
-    }
+  for (const [name, argv] of argvs(SPACED)) {
+    assert.deepEqual(hostKeyWordsOf(argv), pinned(`"${SPACED}"`), `${name}: ssh would read this path as two files`);
   }
 });
 
@@ -120,25 +107,27 @@ test('G1: a caller\'s own host-key words in extra come too late: the builder\'s 
 });
 
 /** The function, read through the module object: this file compiles before the function exists, so its absence is a failed assertion. */
-function theFunction(): (pinFile: string | undefined) => string[] {
+function theFunction(): (pin: ReturnType<typeof testPin> | undefined) => string[] {
   const found = (hostKeyPin as Record<string, unknown>).hostKeyWords;
   assert.equal(typeof found, 'function', 'hostKeyPin.ts exports no hostKeyWords');
-  return found as (pinFile: string | undefined) => string[];
+  return found as (pin: ReturnType<typeof testPin> | undefined) => string[];
 }
 
-test('G1: one function writes the words: its four answers', () => {
+test('G1: one function writes the words: its three answers', () => {
   const hostKeyWords = theFunction();
   assert.deepEqual(hostKeyWords(undefined), UNPINNED);
-  assert.deepEqual(hostKeyWords(PIN), pinned(PIN));
-  assert.deepEqual(hostKeyWords(SPACED), pinned(`"${SPACED}"`));
-  assert.deepEqual(hostKeyWords(QUOTED_TWICE), pinned(NO_KEY_FILE));
+  assert.deepEqual(hostKeyWords(testPin(PIN)), [...pinned(PIN), ...PIN_SOURCES]);
+  assert.deepEqual(hostKeyWords(testPin(SPACED)), [...pinned(`"${SPACED}"`), ...PIN_SOURCES]);
 });
 
 test('G1: and the tunnel and an exec call off a bridge say exactly what it answers', () => {
   const hostKeyWords = theFunction();
-  for (const file of [undefined, PIN, SPACED, QUOTED_TWICE]) {
+  for (const file of [undefined, PIN, SPACED]) {
+    const words = hostKeyWords(testPin(file));
     for (const [name, argv] of argvs(file)) {
-      assert.deepEqual(hostKeyWordsOf(argv), hostKeyWords(file), `${name}, ${file ?? 'no pin'}`);
+      const at = argv.indexOf(words[1]) - 1;
+      assert.deepEqual(argv.slice(at, at + words.length), words, `${name}, ${String(file)}`);
+      assert.deepEqual([...hostKeyWordsOf(argv), ...sourceWordsOf(argv)], words, `${name}, ${String(file)}: another word names one of the six options`);
     }
   }
 });
@@ -157,7 +146,7 @@ test('G1 and E1.6: a bridged exec argv names no known-hosts file: only the stric
     assert.equal(argv[argv.indexOf('-F') + 1], CONFIG_FILE, name);
   }
   assert.deepEqual(hostKeyWordsOf(bridgedRun(false, 'key')), ['-o', 'StrictHostKeyChecking=accept-new']);
-  assert.deepEqual(hostKeyWordsOf(buildSshExecArgv(HOST, KEY, 'id', 'key', { bridged: true, configFile: CONFIG_FILE, pinned: true, knownHostsFile: PIN }) ?? []), [], 'a known-hosts file on a bridged call is refused: no argv');
+  assert.deepEqual(hostKeyWordsOf(buildSshExecArgv(HOST, KEY, 'id', 'key', { bridged: true, configFile: CONFIG_FILE, pinned: true, knownHostsFile: testPin(PIN) }) ?? []), [], 'a known-hosts file on a bridged call is refused: no argv');
 });
 
 /** Copied from the output of `main` at ca99cd91 (after G2, before G1), for the pin file `PIN`. */
@@ -171,9 +160,9 @@ const TUNNEL_BEFORE_G1 = [
   '-N', '-R', '/tmp/creds-dev-abc.sock:127.0.0.1:51234', '-i', KEY, '--', 'dev@build.example.com',
 ];
 
-test('a pin file whose path holds no white space is the word of before G1, byte for byte: only the third option is new', () => {
-  assert.deepEqual(withoutGlobal(run(PIN, 'key') ?? []), RUN_BEFORE_G1);
-  assert.deepEqual(withoutGlobal(tunnel(PIN, 'key') ?? []), TUNNEL_BEFORE_G1);
+test('a pin file whose path holds no white space is the word of before G1, byte for byte: only the third option and E2\'s three pairs are new', () => {
+  assert.deepEqual(withoutSources(withoutGlobal(run(PIN, 'key') ?? [])), RUN_BEFORE_G1);
+  assert.deepEqual(withoutSources(withoutGlobal(tunnel(PIN, 'key') ?? [])), TUNNEL_BEFORE_G1);
 });
 
 /** The words behind which a host-key option would come too late, or would be the entry's or a caller's. */
@@ -232,12 +221,6 @@ test('G1: under a config that names other known-hosts files, the real ssh resolv
 test('G1: the real ssh reads a pin file whose path holds white space as ONE file', NEEDS_SSH, (t) => {
   for (const [name, argv] of argvs(SPACE_THEN_TILDE)) {
     assert.deepEqual(resolved(t, argv), onlyFile(SPACE_THEN_TILDE), name);
-  }
-});
-
-test('G1: for a pin file whose path holds a double quote the real ssh resolves a strict check against the file that holds no key', NEEDS_SSH, (t) => {
-  for (const [name, argv] of argvs(QUOTED_TWICE)) {
-    assert.deepEqual(resolved(t, argv), onlyFile(NO_KEY_FILE), name);
   }
 });
 

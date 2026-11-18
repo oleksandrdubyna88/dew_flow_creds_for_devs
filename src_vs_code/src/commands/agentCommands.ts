@@ -23,7 +23,7 @@ import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
 import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
-import { writePersonPin } from '../personPin';
+import { personPinWriter } from '../personPin';
 import { hostKeyRefused, refusedHostKeySentence } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
@@ -166,7 +166,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   async function sweepDeadSockets(
     entity: EntityMetadata,
     keyPath: string | undefined,
-    knownHostsFile: string | undefined,
+    knownHostsFile: ReadyCall['knownHostsFile'],
     user: string,
     auth: SshExecAuth = 'key',
     sweepEnv: NodeJS.ProcessEnv = process.env,
@@ -191,7 +191,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       if (storageDir === undefined) {
         return;
       }
-      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), (auth) => writePersonPin(storageDir, entity, auth), async (credential) => {
+      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), personPinWriter(storageDir, entity), async (credential) => {
         if (!credential.ok) {
           log.info('bridge', `socket check did not run: ${credential.message}`);
           return;
@@ -270,7 +270,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), async (credential) => {
+    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), personPinWriter(storageDir, details), async (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }
@@ -426,7 +426,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     // N16, G1: the key file and the pin file of this call are this command's to delete until the bridge's ssh holds them; then that ssh's end deletes them.
-    const bridge = withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), (credential) => {
+    const bridge = await withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), personPinWriter(storageDir, details), (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }

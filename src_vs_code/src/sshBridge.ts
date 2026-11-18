@@ -1,4 +1,4 @@
-import { hostKeyWords } from './hostKeyPin';
+import { CheckedPin, hostKeyWords } from './hostKeyPin';
 import { NO_CONNECTION_SHARING, SshExecAuth } from './sshExecCommand';
 import { EntityMetadata } from './types';
 
@@ -80,7 +80,8 @@ export interface BridgeOptions {
   readonly remote: RemoteSocket;
   /** Materialized private key, when the entity authenticates with one. */
   readonly keyPath?: string;
-  readonly knownHostsFile?: string;
+  /** The pin file of the bridge, CHECKED (`checkedPin`, G1 §3.10-§3.11): absent for an unpinned entry. A raw path is not taken. */
+  readonly knownHostsFile?: CheckedPin;
   /**
    * How this entity authenticates — the same two modes an agent exec has.
    *

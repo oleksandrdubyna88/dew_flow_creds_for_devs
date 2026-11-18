@@ -284,6 +284,8 @@ export async function secondEntryWorld(options: SecondOptions = {}): Promise<Sec
       notes.push(message);
     },
     agentSocket: () => undefined,
+    // The asker of a pinned call (G1, §3.10): a client that knows `KnownHostsCommand`. With none named, a pinned call of this world is refused.
+    pinClient: () => Promise.resolve({ kind: 'knows', token: 'OpenSSH_test' }),
   };
   const agentDeps: AgentUseDeps & { onPath: () => boolean; overSsh: OverSsh } = {
     ...sshDeps,
