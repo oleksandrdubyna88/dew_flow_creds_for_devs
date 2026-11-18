@@ -5340,11 +5340,63 @@ is not bridged, `buildBridgeArgv`). A bridged exec call (E1.6) is the other desi
 `-F` file holds the pin and `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`). With no
 pin file it answers `-o StrictHostKeyChecking=accept-new`. With a pin file it answers strict checking and that file as
 `UserKnownHostsFile` AND as `GlobalKnownHostsFile`, because the first replaces only the person's own files and `ssh` read the
-system-wide ones beside the pin. A path with white space goes in double quotes (both options take a list of files); a path that
-holds a double quote is not written, and both options then name `/dev/null`, so `ssh` refuses every host. Measured by hand
-against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and the results are in the docblock of the
-function. The line of a Connect terminal (`sshCommand.ts`) is not among them yet: it names the pin as the person's file only.
-`KnownHostsCommand` and `VerifyHostKeyDNS` of a person's config are not switched off.
+system-wide ones beside the pin. Measured by hand against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and
+the results are in the docblock of the function. The line of a Connect terminal (`sshCommand.ts`) is not among them: it names the pin
+as the person's file only (candidate C4 of the plan), and keeps asking a `KnownHostsCommand` and a `VerifyHostKeyDNS` of the config.
+E2 completes the words, and changes how the path is written: the next paragraph.
+
+**The complete words of a pinned call (G1, E2.S1 and E2.S2).** `hostKeyWords` takes one CHECKED value, `CheckedPin`
+(`hostKeyPin.ts`; the brand is not exported, so only `checkedPin(file, client)` makes one, and a raw path, a refused path or an
+unread client cannot reach the words). Its words: strict checking and the pin file as `UserKnownHostsFile` and `GlobalKnownHostsFile`
+(E1), then `VerifyHostKeyDNS=no`, `KnownHostsCommand=none` and `LogLevel=ERROR`: six pairs, or five for a client below OpenSSH 8.5,
+which has no `KnownHostsCommand` and ends at the word. They stand before every word of the entry and of a caller's `extra`, and
+`ssh` takes the FIRST value of an option, so a caller cannot turn one back on. Measured 2026-11-18, OpenSSH 10.2p1, `ssh -G`, the client
+alone (tests G1 to G3 of `pinWords.test.ts` ask it on every run): under a config with `KnownHostsCommand /bin/echo x`,
+`VerifyHostKeyDNS yes` and `LogLevel QUIET` these words resolve to `verifyhostkeydns false`, `loglevel ERROR` and no
+`knownhostscommand` line; without the `KnownHostsCommand` word that line stays. Asked, not observed against a server: that a login with
+another key is refused under them, that a config's command is not run and that no DNS record is trusted (the plan's E3). The sources of
+host keys in the manual (`man ssh_config`, read for E2): `UserKnownHostsFile`, `GlobalKnownHostsFile`, `KnownHostsCommand`,
+`VerifyHostKeyDNS`; `UpdateHostKeys`, `CheckHostIP` and `HostKeyAlias` are no source of trust. `LogLevel=ERROR` keeps the refusal
+line the roads read and drops what `ssh` prints only at `INFO` (a server's banner before the login: read, not measured).
+
+*The client.* `pinClient.ts` asks the `ssh` program that the call will start for its version (`ssh -V`, exit code 0, the token at the very
+start of stderr, read by the bridged road's one parser `versionTokenOf`) and reads one of three answers: `knows` (8.5 or newer),
+`older` (below 8.5, a success of its own) and `unreadable` (no version). It is asked of the same program word, folder and `PATH` as the
+call: the three roads of the person ask the bare `ssh` with the credential's environment, the agent's exec the program and environment of
+its launch, *Run with Secrets* the program and folder of `spawnLaunch` with `process.env`. Only the newer answer is kept (per program
+word, folder and `PATH`); an `older` and an `unreadable` answer are asked again by the next call, so a client replaced by a newer one is
+read as newer and never left without the word.
+
+*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space or
+an apostrophe, or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
+OpenSSH 10.2p1): a control character (a tab splits a bare word; every control character is refused, as the bridged file's rule does),
+a double quote (`invalid quotes`), two backslashes in a row (read as one: a network path names another path), a backslash before an
+apostrophe (dropped), a backslash at its end (`invalid quotes` in double quotes), a percent sign (`%h` names two files, `%Z` ends the
+client), the characters `${` (expanded in the person's list only), a tilde at its start (expanded in the person's list only). The kinds are
+asked in this order and the first is the answer. No file stands in for a refused path any more (E1's `/dev/null` and `oneFileWord` are gone).
+A client older than 8.7 reads a value with another tokenizer, and Windows' `ssh.exe` was not run: not measured.
+
+*Sentences.* E: `The saved host key of "<name>" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor
+keeps the files of CredsForDevs has a path with <kind>, and ssh does not read a file under such a path as the one file it is. This is
+about this computer, not about the host or the saved key.` F: `CredsForDevs could not read the version of the ssh program on this computer
+(exit code <n>), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The
+reason is the ssh program here, not the host.` (with `it did not start, or did not end in time` in the brackets when there is no exit code).
+Neither echoes a path or any output of the program but the exit code. On the three roads they stand behind the opening a road already
+writes (`Cannot reach "<name>": `, `Cannot bridge to "<name>": `, `socket check did not run: `); the agent's exec answers them as
+`409 no_credential`; *Run with Secrets* shows them as its warning.
+
+*The order of one decision* (`decidePinOfCall`, `pinOfCall.ts`): no saved host key, nothing is asked and the call is unpinned (`accept-new`,
+today's argv); then the rule of the WHOLE planned path (`knownHostsPath`, exported from `hostKeyTrust.ts`); then the client; and only then the
+write by `materializeKnownHosts`, unchanged, with the value made from the path that was written. So an entry whose saved key cannot be
+used and whose `ssh` cannot be read gets sentence F first, and sentence A (unusable) when the client can be read: both refuse, nothing is
+sent. Where it stands: the three roads (`writePersonPin`, asynchronous, in `writtenKey.ts`'s two guards: ONE `await` each, inside the `try`,
+before `run` and `start`; the bridge's handoff from `start` to `handed = true` has no `await`) and the agent's exec (`localPin` in
+`sshUseActions.ts`, before the pin file; the optional `SshUseDeps.pinClient`, and deps that name none refuse a pinned call as one whose
+client cannot be read) refuse BEFORE a pin file is written. *Run with Secrets* does not: Connect's options write its pin file before
+`secretsLaunch`, so there the file exists when the call is refused, no `ssh` starts, and the owner's cleanup deletes the file
+(`checkExistingPin`; a pinned session whose client was not asked is refused as unreadable). The agent's exec still reads an unusable saved
+key as no pin and runs with `accept-new` (candidate C3), with one corner: such an entry in a storage folder that the rule refuses, or with
+an `ssh` that cannot be read, is now refused where it ran unchecked. Connect's terminal line has none of this (C4).
 
 **The three roads of the person (G1, E1.S3).** The bridge socket check, *Install creds on host* and *Open Remote Bridge…*
 (`commands/agentCommands.ts`) hand `ssh` the pin file of their call: each of their four argv calls names `knownHostsFile`,
