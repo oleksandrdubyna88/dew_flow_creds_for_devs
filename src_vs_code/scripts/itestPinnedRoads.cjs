@@ -79,8 +79,10 @@ async function startOnce(rig, dir, hostKey, port, penalties) {
   const config = path.join(dir, 'sshd_config');
   fs.writeFileSync(config, servingConfig(rig, dir, hostKey, port, penalties));
   const sshd = launch(rig.scope, SSHD, ['-D', '-e', '-f', config]);
+  // The listener's identity, taken at once: the pid and the start time it has from the fork on. Once `sshd.exited` its pid may be another process's.
+  const identity = { pid: sshd.child.pid, start: startOf(sshd.child.pid) };
   const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
-  return { sshd, port, failure: await listeningFailure(sshd, listening, Date.now() + 10_000) };
+  return { sshd, identity, port, failure: await listeningFailure(sshd, listening, Date.now() + 10_000) };
 }
 
 /**
@@ -163,14 +165,29 @@ function signalAll(list, signal) {
 const noneAlive = (ms, list) => within(ms, () => !list.some(alive));
 
 /**
- * Ends a serving sshd and everything it forked, bounded: (a) its descendants are listed now, beside `taken` (a list made earlier, before a
- * client was ended: afterwards a remote command is no descendant any more); (b) the clients still running are ended by their recorded pids;
+ * What the listener of `server` forked, now, as `descendantsOf` answers: `{ list, error }`. Only while it is still the SAME listener: once its
+ * `sshd` exited (its pid may be reused) nothing is listed, and a listener that was gone by the end of the `ps` snapshot (the table may then
+ * be a foreign process's) gives an empty list too; the processes the leg recorded while it ran are the caller's `taken`.
+ */
+async function descendantsOfListener(server) {
+  const same = () => !server.sshd.exited && alive(server.identity);
+  if (!same()) {
+    return { list: [], error: undefined };
+  }
+  const seen = await descendantsOf(server.identity.pid);
+  return same() ? seen : { list: [], error: undefined };
+}
+
+/**
+ * Ends a serving sshd and everything it forked, bounded: (a) its descendants are listed now (`descendantsOfListener`: never the descendants
+ * of a pid that sshd no longer has), beside `taken` (a list made earlier, before a client was ended: afterwards a remote command is no
+ * descendant any more); (b) the clients still running are ended by their recorded pids;
  * (c) at most 3 s for the rest to go with them; (d) TERM to what is left, at most 2 s, then KILL, at most 2 s, each only to a pid whose start
  * time is still the recorded one; (e) the listener, by `endChild`. `taken` is `{ list, error }` of an earlier `descendantsOf`. Answers
  * `{ list, error }`, for T21 and T39: an `error` of either listing makes the check fail. Never throws.
  */
 async function endServer(server, clients, taken) {
-  const now = await descendantsOf(server.sshd.child.pid);
+  const now = await descendantsOfListener(server);
   const list = [...taken.list, ...now.list];
   const error = taken.error ?? now.error;
   signalAll(clients, 'SIGTERM');
@@ -320,13 +337,18 @@ const startsOf = (rig, leg) => recordedStarts(rig).filter((one) => !leg.before.h
 
 /**
  * Registers a leg's teardown with the section's scope, so a signal or an uncaught error in the middle of the leg ends its processes too (the
- * leg's `finally` does not run when `harnessScope.finish` exits the process): the bridges first (the scope ends the later registration
- * first), then the server and what it forked. `exited` guards a second `endServer` after the leg's own, on a pid that may be reused.
- * SIGKILL cannot be handled: it still leaves them.
+ * leg's `finally` does not run when `harnessScope.finish` exits the process). ONE callback, in this order: what the listener forked is listed
+ * FIRST (the scope runs its callbacks in reverse registration order, so two callbacks would close the bridges before the listing, and a remote
+ * command that left the tree by then would be missed), then the bridges are closed, then `endServer` with that list. After the leg's own end
+ * the listener has `exited`, nothing is listed (`descendantsOfListener`) and the second `endServer` signals no foreign pid. SIGKILL cannot be
+ * handled: it still leaves them.
  */
 function endLegWithScope(rig, leg, server) {
-  rig.scope.after(() => (server.sshd.exited ? undefined : endServer(server, startsOf(rig, leg), { list: [], error: undefined })));
-  rig.scope.after(() => leg.w.bridges.dispose());
+  rig.scope.after(async () => {
+    const taken = await descendantsOfListener(server);
+    await leg.w.bridges.dispose();
+    await endServer(server, startsOf(rig, leg), taken);
+  });
 }
 
 /**
@@ -447,7 +469,7 @@ async function legOne(check, rig) {
   try {
     await installAsks(check, rig, leg);
     await bridgeIsChecked(check, rig, leg);
-    taken = await descendantsOf(server.sshd.child.pid); // before the close: afterwards a remote command is no descendant any more
+    taken = await descendantsOfListener(server); // before the close: afterwards a remote command is no descendant any more
     await closeEnds(check, rig, leg);
     const starts = await startsHoldThePin(check, rig, leg, 'leg 1');
     await nothingLeft(check, rig, leg, 'leg 1');
@@ -518,7 +540,7 @@ async function legTwo(check, rig, port) {
   try {
     await installRefused(check, rig, leg);
     await bridgeRefused(check, rig, leg);
-    taken = await descendantsOf(server.sshd.child.pid);
+    taken = await descendantsOfListener(server);
     await startsHoldThePin(check, rig, leg, 'leg 2');
     await nothingLeft(check, rig, leg, 'leg 2');
     const log = server.sshd.stderr;
