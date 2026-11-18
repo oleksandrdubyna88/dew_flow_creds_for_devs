@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **Epic 1 built, 2026-11-18, in PR #379 (E1.S1-E1.S4), unmerged; E2 and the candidates are open.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **stopped for re-review, 2026-11-18, at entry 1.2 (E2's rows cannot decide the candidates; M1's install is unsafe). Epic 1 merged (#379, f3e9887d), not released; E2 and the candidates wait for epoch 2.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1, one change (1.1: the pass criteria of E2's rows M2 and M3). Split into two epics and a list of
 > candidates (`## Epics`); E1's stories document [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) is written (2026-11-17), and the spec of its first story,
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and of its cornerstone,
@@ -19,7 +19,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-17 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-17 · by reviewers · state: stopped
 
   (The plan round's four accepted findings were folded in at its resolve, the one that approved the plan. They are
   the baseline of epoch 1, not entries. This plan names them P1-P4, because §7 has its own F1-F5: P1, the pin file
@@ -36,6 +36,8 @@
   done-when and the Definition of Done's item on M1-M9. Nothing else of the entry was altered. Applied in `## Epics`,
   E2: *The five runs* of the setup, the rows M2 and M3 (each now has two legs, *the mismatch*
   and *the switch*), and the count of runs in M7 and M8.)
+- 1.2 · 2026-11-18 · reviewer · dod — E2 cannot decide the candidates it is meant to decide, and one row is unsafe as written. The cadence consultant (`594a6709`, before E2's build; checked by reading): M5 lacks a wrong destination key under `LogLevel QUIET`, a wrong jump-host key with a right destination, and remote output that ends with the verification line (C12, C13); M7 lacks one apostrophe, a pair, a double quote and a UNC path (C11, C16; Linux cannot stand for UNC); M8 joins `KnownHostsCommand` and a secure SSHFP record, so it cannot tell which source admitted K2, and has no control with the disabling option (C2, C17); M3 needs a listener-only stop, or a killed master passes as "no bypass"; and M1's install run would write `/usr/local/bin` of this machine, the counterpart being this machine (`installCommand` passes no prefix; `install.sh:21`). Also: the candidates must be decided before any release (§9).
+  (This second change stopped the plan for re-review, 2026-11-18.)
 
 ## 1. Symptom
 
