@@ -90,6 +90,8 @@ Narrowed: no — the scope grows: the known repairs become a build epic (E2), an
 
 > Epoch 2 · approved 2026-11-18 · by reviewers · state: open
 
+- 2.1 · 2026-11-18 · reviewer · scope — §3.11's refused kinds of a storage path grow from six to eight: a tilde at the start and a backslash at the end are refused too (measured by the E2.S2 spec author with `ssh -G` on OpenSSH 10.2p1: a leading tilde is expanded and a trailing backslash escapes the closing quote, so neither names the intended file). Recorded in the E2.S2 spec; tests hold them as pure cases. Also from the spec work, not changes: the kept answer of `ssh -V` is the newer-client answer only (consult 85d3babf, both: a kept older answer goes stale in the unsafe direction), which is §3.7's "only a good answer is kept"; and for *Run with Secrets* the refusal stands in its launch after Connect's options made the pin file, as §3.10 lets the spec name the place.
+
 ## 1. Symptom
 
 An SSH entry can hold a pinned host key (`hostKey`, `types.ts:90-96`: "Its presence is what turns
