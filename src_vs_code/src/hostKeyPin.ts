@@ -365,7 +365,10 @@ export interface HostKeyTold {
  *
  * <p><b>What it cannot tell.</b> A run whose `ssh` printed nothing (a client that does not keep `LogLevel=ERROR`; a nested `ssh`
  * under a config that says `LogLevel QUIET`, measured: exit code 255, no text) is told nothing. A remote command that wrote the
- * verification line reads as sentence D whatever the run's exit code was. A miss is sentence D or nothing; it is never sentence C.</p>
+ * verification line reads as sentence D whatever the run's exit code was. `ssh` cuts its own log line at 1024 bytes, and a byte outside
+ * printable ASCII is printed as four characters, so a pin path of about 250 such bytes or more loses the `:<n>` that ends its `Offending`
+ * line: the line then names no file, and a real key change shows sentence D (reported by the review of E2.S3; not run). A miss is
+ * sentence D or nothing; it is never sentence C.</p>
  */
 export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: string): HostKeyTold | undefined {
   const lines = stderr.split(/\r?\n/);

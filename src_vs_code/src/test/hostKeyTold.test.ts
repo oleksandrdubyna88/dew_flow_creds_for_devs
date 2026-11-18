@@ -17,8 +17,9 @@ import { testPin } from './pinnedArgv';
  * <p>The texts are those of OpenSSH 10.2p1 with the words of a pinned call and `LogLevel=ERROR`, measured by hand on 2026-11-18
  * against public `sshd`s (the pin file held another key; no login was attempted). The file that a text names is always handed in:
  * a road test reads it back from the argv of the run, it is never guessed. No test of this file starts a process: that a real `ssh`
- * prints the line with the pin file of a call through these roads is shown by the smoke (section 10 of `scripts/ssh-agent-itest.cjs`).
- * One text is that of `ssh.exe` (OpenSSH_for_Windows 9.5p2, the same day): 13 lines, with every backslash of the path as two.</p>
+ * prints the line with the pin file of a call through these roads is shown by leg 2 of the smoke (section 10 of `scripts/ssh-agent-itest.cjs`),
+ * which E2.S4 ran on 2026-11-19: 48 ok, locally, on OpenSSH 10.2p1 (CI is its second run). One text is that of `ssh.exe`
+ * (OpenSSH_for_Windows 9.5p2, the same day, measured by hand): 13 lines, with every backslash of the path as two. No login was made on Windows.</p>
  */
 
 const scope = cleanupScope();
@@ -108,6 +109,7 @@ const EVIDENCE: readonly { label: string; pinFile: string; stderr: string }[] = 
   { label: 'a path with a pair of apostrophes', pinFile: "/home/dev/a'b'c/keys/4242/known_hosts-e1-3f2b8c1e", stderr: refusedKey("/home/dev/a'b'c/keys/4242/known_hosts-e1-3f2b8c1e") },
   { label: 'a path with a colon and digits in it', pinFile: '/home/dev/v:2/keys/4242/known_hosts-e1-3f2b8c1e', stderr: refusedKey('/home/dev/v:2/keys/4242/known_hosts-e1-3f2b8c1e') },
   { label: 'a path with a backslash, which ssh prints as two', pinFile: '/home/dev/a\\b/keys/4242/known_hosts-e1-3f2b8c1e', stderr: refusedKey('/home/dev/a\\\\b/keys/4242/known_hosts-e1-3f2b8c1e') },
+  { label: 'a path with a literal backslash and then three octal digits, which ssh prints as two backslashes and the digits', pinFile: '/home/dev/a\\303b/keys/4242/known_hosts-e1-3f2b8c1e', stderr: refusedKey('/home/dev/a\\\\303b/keys/4242/known_hosts-e1-3f2b8c1e') },
   { label: 'a path with letters outside ASCII, which ssh prints byte by byte as a backslash and three octal digits', pinFile: '/home/dev/Jörg Пётр/keys/4242/known_hosts-e1-3f2b8c1e', stderr: refusedKey('/home/dev/J\\303\\266rg \\320\\237\\321\\221\\321\\202\\321\\200/keys/4242/known_hosts-e1-3f2b8c1e') },
   { label: 'the same path printed as it is', pinFile: '/home/dev/Jörg Пётр/keys/4242/known_hosts-e1-3f2b8c1e', stderr: refusedKey('/home/dev/Jörg Пётр/keys/4242/known_hosts-e1-3f2b8c1e') },
   { label: 'a path of Windows, as ssh.exe prints it: every backslash as two (a path with a drive letter was not run)', pinFile: 'C:\\Users\\dev\\keys\\4242\\known_hosts-e1-3f2b8c1e', stderr: refusedKeyOnWindows('C:\\\\Users\\\\dev\\\\keys\\\\4242\\\\known_hosts-e1-3f2b8c1e') },

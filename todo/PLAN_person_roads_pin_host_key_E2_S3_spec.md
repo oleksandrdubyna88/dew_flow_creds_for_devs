@@ -1243,6 +1243,7 @@ is Y3. Y4 to Y28 are this spec's own. T9a to T9e and H5 are E1.S3's tests in `pe
   ended with" is then not true. Not tested, not built (*Notes for the lead*).
 - **A stderr cut at the byte limit** (J3). The 15 lines are about 1 kB with a long path; a remote command that writes more than
   the limit before the lines could cut them. Then nothing or sentence D is shown, never sentence C without the line.
+- **A very long pin path with letters outside ASCII.** `ssh` cuts its own log line at 1024 bytes, and a byte outside printable ASCII is printed as four characters, so a pin path of about 250 such bytes or more loses the `:<n>` that ends its `Offending` line: the line then names no file, and a real key change shows sentence D, not C (a miss only; reported by the review of E2.S3, not run). `hostKeyTold` says it in its docblock, *What it cannot tell*.
 - **The order of the messages** after *Open Remote Bridge…* (*Bridge open to …*, then the check's error): E3's M5 records it.
 - **"Is not open" when the tunnel IS open** (E1.S3, §12): unchanged for sentence C.
 - **That a person understands sentence D.** Its words were checked against the contract of §3.12 and against the measured
