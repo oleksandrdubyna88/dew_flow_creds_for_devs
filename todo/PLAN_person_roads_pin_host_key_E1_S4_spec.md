@@ -471,8 +471,8 @@ async function endServer(server, clients, taken) {
  */
 function endLegWithScope(rig, leg, server, saved) {
   rig.scope.after(async () => {
-    const earlier = saved(); // the leg's own snapshot, made before its bridges closed
     const fresh = await descendantsOfListener(server);
+    const earlier = saved(); // read after the await: the leg may have taken a later snapshot meanwhile
     await leg.w.bridges.dispose();
     await endServer(server, startsOf(rig, leg), { list: [...earlier.list, ...fresh.list], error: earlier.error ?? fresh.error });
   });

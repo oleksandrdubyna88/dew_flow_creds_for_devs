@@ -347,8 +347,8 @@ function endLegWithScope(rig, leg, server, saved) {
   rig.scope.after(async () => {
     // The leg's own snapshot (made before its bridges closed) joins a fresh one: a remote command that left the listener's tree after
     // the close is in the first only. Every pid in either is signalled only while its start time is the recorded one.
-    const earlier = saved();
     const fresh = await descendantsOfListener(server);
+    const earlier = saved(); // read after the await: the leg may have taken a later snapshot meanwhile
     await leg.w.bridges.dispose();
     await endServer(server, startsOf(rig, leg), { list: [...earlier.list, ...fresh.list], error: earlier.error ?? fresh.error });
   });
