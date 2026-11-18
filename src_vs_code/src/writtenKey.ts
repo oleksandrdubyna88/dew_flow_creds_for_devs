@@ -1,13 +1,44 @@
 import { forgetMaterializedKey } from './keyInstaller';
 import type { ExecAuth } from './sshExecAuth';
+import type { SshExecAuth } from './sshExecCommand';
 
 /**
- * The key file that `resolveExecAuth` WROTE for one call, and the one rule about it (N16): the caller that got `materialized` deletes
- * the file when no `ssh` of its own will read the path again. A credential with no `materialized` (the person's own key file, a
- * password, a refusal) deletes nothing: the extension did not write it.
+ * The two files that the extension WROTE for one call of a road of the person, and the rules about them (N16, G1). The KEY file is
+ * the one `resolveExecAuth` wrote (`materialized`). The PIN file is the one the pin writer of the call wrote (the saved host key,
+ * `personPin.ts`). The caller that got them deletes each when no `ssh` of its own will read the path again.
  *
- * <p>Both functions take what `resolveExecAuth` answered, as it is, so that no statement stands between the resolve and the guard.</p>
+ * <ul>
+ * <li>A credential with no `materialized` (the person's own key file, a password, a refusal) has no key file to delete.</li>
+ * <li>A call with no pin (an unpinned entry, a refusal) has no pin file to delete.</li>
+ * <li>The two deletes do not depend on each other.</li>
+ * <li>Only a path that the pin writer returned in THIS call is deleted as a pin file. No caller hands a guard a pin path.</li>
+ * </ul>
+ *
+ * <p>Both guards take what `resolveExecAuth` answered, as it is, so that no statement stands between the resolve and the guard. Both
+ * call the pin writer themselves, inside their guarded span, and hand the road ONE value: the credential and the pin, decided
+ * together ({@link CallAuth}). A road cannot hold a credential that is ready without a pin decision.</p>
  */
+
+/** What the pin writer of one call answers: no pin, a pin file written now, or a refusal with its sentence. It never throws. */
+export type PinOfCall =
+  | { readonly ok: true; readonly knownHostsFile?: string }
+  | { readonly ok: false; readonly message: string };
+
+/** The pin writer of one call, bound to the call's storage folder and to its snapshot of the entry. `auth` is the login of the credential. */
+export type PinWriter = (auth: SshExecAuth) => PinOfCall;
+
+/** The call may start `ssh`: the credential, and `knownHostsFile` when the entry is pinned. */
+export type ReadyCall = Extract<ExecAuth, { ok: true }> & { readonly knownHostsFile?: string };
+
+/** The call starts nothing: the refusal of the credential as it is, or the refusal of the pin in the same shape. */
+export interface RefusedCall {
+  readonly ok: false;
+  readonly message: string;
+  readonly warning?: string;
+}
+
+/** The ONE value a road reads. */
+export type CallAuth = ReadyCall | RefusedCall;
 
 /** Delete the key file written for this credential, when one was. Never throws (`forgetMaterializedKey` is best effort). */
 export function forgetWrittenKey(credential: ExecAuth): void {
@@ -16,15 +47,50 @@ export function forgetWrittenKey(credential: ExecAuth): void {
   }
 }
 
+/** Delete both files of one call: the key file when one was written, and the pin file when one was written. Never throws. */
+function forgetBoth(credential: ExecAuth, pinFile: string | undefined): void {
+  forgetWrittenKey(credential);
+  if (pinFile !== undefined) {
+    forgetMaterializedKey(pinFile);
+  }
+}
+
+/** What one call decided: the value for the road, and the path of the pin file that the writer wrote for it. */
+interface Decided {
+  readonly call: CallAuth;
+  readonly pinFile?: string;
+}
+
 /**
- * Run `run` and delete the key file of `credential` when it has ended: after its value, after its rejection and after a synchronous
- * throw alike. The value or the SAME error goes on to the caller.
+ * Decide the credential and the pin of one call together. The pin writer is called only for a credential that is `ok`. A refused
+ * credential goes on as it is; a refused pin goes on as a refusal with the pin's sentence and the credential's warning.
  */
-export async function withWrittenKey<T>(credential: ExecAuth, run: () => Promise<T>): Promise<T> {
+function decide(credential: ExecAuth, writePin: PinWriter): Decided {
+  if (!credential.ok) {
+    return { call: credential };
+  }
+  const pin = writePin(credential.auth);
+  if (!pin.ok) {
+    return { call: { ok: false, message: pin.message, warning: credential.warning } };
+  }
+  const pinFile = pin.knownHostsFile;
+  return pinFile === undefined ? { call: credential } : { call: { ...credential, knownHostsFile: pinFile }, pinFile };
+}
+
+/**
+ * Decide the call (the pin is written here, inside the guarded span), run `run` with the decided value, and delete both files of
+ * the call when `run` has ended: after its value, after its rejection and after a synchronous throw alike. The value or the SAME
+ * error goes on to the caller. A pin writer that throws (it must not) is inside the span too: the key file is deleted and its
+ * error goes on.
+ */
+export async function withWrittenKey<T>(credential: ExecAuth, writePin: PinWriter, run: (call: CallAuth) => Promise<T>): Promise<T> {
+  let pinFile: string | undefined;
   try {
-    return await run();
+    const decided = decide(credential, writePin);
+    pinFile = decided.pinFile;
+    return await run(decided.call);
   } finally {
-    forgetWrittenKey(credential);
+    forgetBoth(credential, pinFile);
   }
 }
 
@@ -34,33 +100,41 @@ interface Started {
 }
 
 /**
- * Run `start` while the key file of `credential` is the caller's to delete, and hand the file to the process that `start` started.
+ * Decide the call (the pin is written here, inside the guarded span), run `start` with the decided value while both files of the
+ * call are the caller's to delete, and hand both files to the process that `start` started.
  *
  * <ul>
- * <li>`start` returns a started thing: ONE continuation on its process's `exited` deletes the file when that process has ended,
+ * <li>`start` returns a started thing: ONE continuation on its process's `exited` deletes both files when that process has ended,
  *     whatever ended it; nothing is deleted now.</li>
- * <li>`start` returns `undefined` (nothing was started): the file is deleted at once.</li>
- * <li>`start` throws: the file is deleted at once and the SAME error goes on to the caller.</li>
+ * <li>`start` returns `undefined` (nothing was started): both files are deleted at once.</li>
+ * <li>`start` or the pin writer throws: what was written is deleted at once and the SAME error goes on to the caller.</li>
  * </ul>
  *
  * <p>`handed` is set by the statement directly after the one that attaches the continuation, with nothing between them: an attach
  * that throws leaves it false and the `finally` deletes; an attach that worked cannot be followed by a throw before the flag. So
- * exactly one of the two deletes runs, on every path. `start` is synchronous on purpose: no `await` stands between the start and
- * the attach.</p>
+ * exactly one of the two deletes runs, on every path, and it deletes both files. `start` is synchronous on purpose: no `await`
+ * stands between the start and the attach.</p>
  */
-export function withWrittenKeyUntilExit<T extends Started>(credential: ExecAuth, start: () => T | undefined): T | undefined {
+export function withWrittenKeyUntilExit<T extends Started>(
+  credential: ExecAuth,
+  writePin: PinWriter,
+  start: (call: CallAuth) => T | undefined,
+): T | undefined {
+  let pinFile: string | undefined;
   let handed = false;
+  const forget = (): void => forgetBoth(credential, pinFile);
   try {
-    const started = start();
+    const decided = decide(credential, writePin);
+    pinFile = decided.pinFile;
+    const started = start(decided.call);
     if (started !== undefined) {
-      const forget = (): void => forgetWrittenKey(credential);
       void started.process.exited.then(forget, forget);
       handed = true;
     }
     return started;
   } finally {
     if (!handed) {
-      forgetWrittenKey(credential);
+      forget();
     }
   }
 }

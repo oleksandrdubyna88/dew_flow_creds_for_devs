@@ -1,7 +1,7 @@
 /* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
    (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
-import { Machine } from '../installCommand';
+import { Machine, installScript, InstallTarget } from '../installCommand';
 import { anyAgentAccess } from '../mcpAccess';
 import { ConsentStampStore, consentStampsFor } from '../mcpConsentPolicy';
 import { folderHooks } from '../mcpFolderHooks';
@@ -9,45 +9,38 @@ import { CredsAgentServer } from '../credsAgentServer';
 import { AliasMap, aliasFor, withoutAlias, describeAliasProblem, withAlias } from '../cliAliases';
 import { SshBridgeManager } from '../sshBridgeManager';
 import { createDiagnosticLog } from '../diagnosticLog';
-import { CredsProduct } from '../credsInstall';
+import { CredsProduct, CREDS_MCP, CREDS_CLI } from '../credsInstall';
 import { CredTreeDataProvider } from '../treeDataProvider';
 import { SshAgentManager } from '../sshAgentManager';
 import { AGENT_SERVED_NOTE } from '../sshAgentTexts';
 import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import * as vscode from 'vscode';
-import { installScript } from '../installCommand';
-import { InstallTarget } from '../installCommand';
 import { EntityMetadata } from '../types';
-import { SshExecAuth } from '../sshExecCommand';
-import { buildSshExecArgv } from '../sshExecCommand';
+import { SshExecAuth, buildSshExecArgv } from '../sshExecCommand';
 import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSocket, isOwnerOnlyMode, describeWideSocket, remoteSocketPath, bridgeId, buildBridgeArgv, remoteInstructions } from '../sshBridge';
 import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
-import { withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { writePersonPin } from '../personPin';
+import { hostKeyRefused, refusedHostKeySentence } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
-import { isSafeSshTarget } from '../sshCommand';
+import { isSafeSshTarget, describeSshTarget } from '../sshCommand';
 import { resolveKind } from '../entityKind';
 import { cliAliasNote, cliCommandFor } from '../cliCommandText';
 import { KeyRow, asElement, detailedNode, loadFailureWarnings } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
-import { describeSshTarget } from '../sshCommand';
-import { buildAgentSnippet } from '../agentShareSnippet';
-import { buildKindSnippet } from '../agentShareSnippet';
-import { copySecret } from '../secretClipboard';
-import { copiedMessage } from '../secretClipboard';
+import { buildAgentSnippet, buildKindSnippet } from '../agentShareSnippet';
+import { copySecret, copiedMessage } from '../secretClipboard';
 import { signingPublicLine } from '../gitSigningKey';
 import { clickOpener } from '../pinClick';
-import { gitSigningConfig } from '../gitSigningConfig';
-import { gitSigningClipboardText } from '../gitSigningConfig';
+import { gitSigningConfig, gitSigningClipboardText } from '../gitSigningConfig';
 import { showMcpLog } from '../mcpLogPanel';
 import { registerWslMcpCheck } from '../mcpInstallTarget';
-import { CREDS_MCP } from '../credsInstall';
-import { CREDS_CLI } from '../credsInstall';
 import { WslRelayManager } from '../wslRelayManager';
 import { remedyRunner, remoteWindowDeps } from '../remoteConnectHost';
 export interface AgentCommandsHost {
@@ -173,11 +166,12 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   async function sweepDeadSockets(
     entity: EntityMetadata,
     keyPath: string | undefined,
+    knownHostsFile: string | undefined,
     user: string,
     auth: SshExecAuth = 'key',
     sweepEnv: NodeJS.ProcessEnv = process.env,
   ): Promise<void> {
-    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user), auth);
+    const argv = buildSshExecArgv(entity, keyPath, sweepCommand(user), auth, { knownHostsFile });
     if (argv === undefined) {
       return;
     }
@@ -197,13 +191,13 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       if (storageDir === undefined) {
         return;
       }
-      const credential = await resolveExecAuth(storage, accountId, entity, storageDir);
-      await withWrittenKey(credential, async () => {
+      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), (auth) => writePersonPin(storageDir, entity, auth), async (credential) => {
         if (!credential.ok) {
-          return; // the bridge itself already reported this
+          log.info('bridge', `socket check did not run: ${credential.message}`);
+          return;
         }
         const keyPath = credential.keyPath;
-        const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth);
+        const argv = buildSshExecArgv(entity, keyPath, modeCheckCommand(remote), credential.auth, { knownHostsFile: credential.knownHostsFile });
         if (argv === undefined) {
           return;
         }
@@ -211,7 +205,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         // and nothing else does, so every dropped bridge leaves one behind. Swept here, AFTER the
         // new one is up: it is then live, and the sweep keeps anything still being listened on,
         // which is what stops it removing another window's working bridge.
-        await sweepDeadSockets(entity, keyPath, entity.user ?? '', credential.auth, credential.env);
+        await sweepDeadSockets(entity, keyPath, credential.knownHostsFile, entity.user ?? '', credential.auth, credential.env);
         // A moment for sshd to bind before asking about the file.
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const outcome = await runSshExec(argv, {
@@ -219,6 +213,13 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           timeoutMs: 15_000,
           signal: agentServer.signal,
         });
+        if (hostKeyRefused(credential.knownHostsFile, outcome.stderr)) {
+          // The ssh of the bridge has no stdio, so this check is the one place that can say why the bridge is not open (G1, P3).
+          const text = `The bridge to "${entity.name}" is not open: ${refusedHostKeySentence(entity.name)}`;
+          log.info('bridge', text);
+          void vscode.window.showErrorMessage(text);
+          return;
+        }
         const probe = interpretSocketProbe(outcome.stdout ?? '');
         if (probe.kind === 'missing') {
           // The bridge is NOT up. This used to share a branch with "no stat on this host" and go
@@ -269,8 +270,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    await withWrittenKey(credential, async () => {
+    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), async (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }
@@ -280,6 +280,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       }
 
       const facts = await runRemote(details, credential, probeCommand(), 20_000);
+      if (hostKeyRefused(credential.knownHostsFile, facts.stderr)) {
+        void vscode.window.showErrorMessage(refusedHostKeySentence(node.name));
+        return;
+      }
       if (facts.timedOut) {
         void vscode.window.showWarningMessage(
           `"${node.name}" did not answer within 20 seconds — the host may be unreachable.`,
@@ -331,11 +335,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   /** One non-interactive `ssh` with a resolved credential — the shape every caller here needs. */
   async function runRemote(
     entity: EntityMetadata,
-    credential: Extract<Awaited<ReturnType<typeof resolveExecAuth>>, { ok: true }>,
+    credential: ReadyCall,
     command: string,
     timeoutMs: number,
   ): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-    const argv = buildSshExecArgv(entity, credential.keyPath, command, credential.auth);
+    const argv = buildSshExecArgv(entity, credential.keyPath, command, credential.auth, { knownHostsFile: credential.knownHostsFile });
     if (argv === undefined) {
       return { stdout: '', stderr: 'its host is not a shape ssh can be given safely.', exitCode: -1, timedOut: false };
     }
@@ -421,9 +425,8 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     if (storageDir === undefined) {
       return;
     }
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
-    // N16: the key file of this call is this command's to delete until the bridge's ssh holds it; then that ssh's end deletes it.
-    const bridge = withWrittenKeyUntilExit(credential, () => {
+    // N16, G1: the key file and the pin file of this call are this command's to delete until the bridge's ssh holds them; then that ssh's end deletes them.
+    const bridge = withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }
@@ -436,7 +439,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
       const argv = buildBridgeArgv(
         details,
-        { port: parsed.port, remote, keyPath, auth: credential.auth },
+        { port: parsed.port, remote, keyPath, auth: credential.auth, knownHostsFile: credential.knownHostsFile },
         isSafeSshTarget,
       );
       if (argv === undefined) {

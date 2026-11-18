@@ -1,3 +1,4 @@
+import { hostKeyWords } from './hostKeyPin';
 import { EntityMetadata } from './types';
 import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 import { sshOptionArgv } from './sshOptions';
@@ -21,7 +22,7 @@ export interface SshExecOptions {
    * call with no file is refused (`undefined`), like an unsafe host.
    */
   configFile?: string;
-  /** A bridged call only: the destination's host key is pinned in the file's destination block (`StrictHostKeyChecking=yes`), or not (`accept-new`). */
+  /** A bridged call only: the destination's host key is pinned in the file's destination block (strict checking), or not (`accept-new`). */
   pinned?: boolean;
 }
 
@@ -138,14 +139,12 @@ function ownAgentWords(entity: EntityMetadata, options: SshExecOptions): string[
   return options.bridged !== true && agentForwardTakenAway(entity, options) ? ['-o', 'ForwardAgent=no'] : [];
 }
 
-/** The two words that say how the host's key is trusted. On a bridge the pin is in the file's destination block, so no word names `UserKnownHostsFile`. */
-function hostKeyWords(options: SshExecOptions): string[] {
+/** The words that say how the host's key is trusted. On a bridge the pin is in the file's destination block, so no word names `UserKnownHostsFile`; off a bridge they are `hostKeyWords`'s (G1, §3.9). */
+function execHostKeyWords(options: SshExecOptions): string[] {
   if (options.bridged === true) {
     return ['-o', `StrictHostKeyChecking=${options.pinned === true ? 'yes' : 'accept-new'}`];
   }
-  return options.knownHostsFile === undefined
-    ? ['-o', 'StrictHostKeyChecking=accept-new']
-    : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`];
+  return hostKeyWords(options.knownHostsFile);
 }
 
 /** What a bridged call adds after the six options: the password words for a password destination, then the one file `ssh` may read. */
@@ -217,8 +216,9 @@ export function buildSshExecArgv(
   ];
   // A pinned key is enforced here exactly as on the human path (audit B10): with a pin, a
   // changed host key fails the call instead of being accepted silently. An agent's exec is
-  // precisely where nobody is watching a warning scroll past.
-  argv.push(...hostKeyWords(options), '-o', 'ConnectTimeout=10');
+  // precisely where nobody is watching a warning scroll past. Off a bridge the words are `hostKeyWords`'s (G1, §3.9); a bridged
+  // call's pin and both known-hosts files stand in its `-F` file (`bridgedSshConfig.ts`, `GlobalKnownHostsFile none`).
+  argv.push(...execHostKeyWords(options), '-o', 'ConnectTimeout=10');
   // The same shared composer the human path uses — see `sshOptions.ts`. A bridged call is one fresh connection: the composer gets the
   // entry with its forwards and `-A` off, and BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds.
   // `-A` would win over `-o ForwardAgent=no` in either order (S3.14 item 3), so the entry's own flag is taken away, not out-voted.
