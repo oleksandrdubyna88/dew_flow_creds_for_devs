@@ -443,3 +443,151 @@ jobs:
         run: |
           $env:PATH = "$env:PATH;C:\Program Files\Git\usr\bin"
           node scripts/bridged-pk1-itest.cjs
+
+  # PS1 (the E1.7 spec §S7.4; parent §7's probe table): what a bridged `sqlcmd` signs in with. A job of its own, so that the receiver it needs (Microsoft's SQL Server container on the
+  # runner's docker, a throwaway CA that the harness puts in the runner's trust store with `sudo` and takes out again, rule R3; and PK1's throwaway Kerberos realm, for the control that
+  # needs a ticket) never touches `build-test`. Both clients are downloaded by an exact version and checked against a checksum written here (rule R7): go-sqlcmd as the release's own
+  # asset, the ODBC client as the two Microsoft packages. The SQL Server image is pinned by tag and by digest. A RECORD: it fails only for the rig's own faults.
+  bridged-ps1-linux:
+    name: bridged PS1 (what sqlcmd signs in with) · linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Install the Kerberos tools, go-sqlcmd and the ODBC sqlcmd (pinned, checked)
+        run: |
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
+          sudo chmod +x /usr/sbin/policy-rc.d
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user openssl unixodbc
+          sudo rm -f /usr/sbin/policy-rc.d
+          mkdir -p "$HOME/go-sqlcmd" "$HOME/mssql-debs"
+          curl -fsSL -o "$HOME/go-sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd.tar.bz2" | sha256sum -c -
+          tar -xjf "$HOME/go-sqlcmd.tar.bz2" -C "$HOME/go-sqlcmd"
+          base=https://packages.microsoft.com/ubuntu/24.04/prod/pool/main/m
+          curl -fsSL -o "$HOME/mssql-debs/msodbcsql18.deb" "$base/msodbcsql18/msodbcsql18_18.6.1.1-1_amd64.deb"
+          curl -fsSL -o "$HOME/mssql-debs/mssql-tools18.deb" "$base/mssql-tools18/mssql-tools18_18.6.1.1-1_amd64.deb"
+          echo "cd217d3bf471d521dac6886456e6c758c21d4f84f88f7adf48ef672c70e57cb0  $HOME/mssql-debs/msodbcsql18.deb" | sha256sum -c -
+          echo "c90c16188a533576d0c3b0f4af82cb679edccd369e2626b928998918840c7787  $HOME/mssql-debs/mssql-tools18.deb" | sha256sum -c -
+          sudo ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "$HOME/mssql-debs/msodbcsql18.deb" "$HOME/mssql-debs/mssql-tools18.deb"
+          echo "BRIDGED_SQLCMD_GO=$HOME/go-sqlcmd/sqlcmd" >> "$GITHUB_ENV"
+          echo "BRIDGED_SQLCMD_ODBC=/opt/mssql-tools18/bin/sqlcmd" >> "$GITHUB_ENV"
+
+      - name: Pull the SQL Server image (pinned by tag and digest)
+        run: |
+          image='mcr.microsoft.com/mssql/server:2022-CU24-ubuntu-22.04@sha256:9ac8dc248935975f856cc1170ef062b991c4e1ebb3f2d7d7b2f75babf114cea6'
+          docker pull "$image"
+          echo "BRIDGED_MSSQL_IMAGE=$image" >> "$GITHUB_ENV"
+
+      - name: Probe PS1 (record legs)
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+        run: node scripts/bridged-ps1-itest.cjs
+
+  # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
+  # Microsoft's installer against its own SHA-256; the package file itself is checked here against a SHA-512 written in this workflow), mixed mode so that a SQL login exists. The control is the
+  # runner's own logon (a sysadmin through BUILTIN\Administrators). If the install or the TCP switch does not hold, every `sqlcmd` pair on Windows is unmeasured: the harness says so.
+  bridged-ps1-windows:
+    name: bridged PS1 (what sqlcmd signs in with) · windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      - name: Compile
+        run: npm run compile
+
+      # The image's own `sqlcmd` (15.0, PW1) is named BEFORE go-sqlcmd is unpacked, so the two cannot be confused. go-sqlcmd is the release asset, checked against its SHA-256.
+      - name: Name the ODBC sqlcmd, unpack go-sqlcmd (pinned, checked)
+        run: |
+          $odbc = Get-Command sqlcmd -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -ne $odbc) { "BRIDGED_SQLCMD_ODBC=$($odbc.Source)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8 } else { Write-Host 'no sqlcmd on PATH on this image: the ODBC legs are missing, named' }
+          $zip = Join-Path $env:RUNNER_TEMP 'go-sqlcmd.zip'
+          Invoke-WebRequest 'https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-windows-amd64.zip' -OutFile $zip
+          $sum = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($sum -ne 'a4c28332fcc6e497d655e53ac8f4939f4ab170f9cfd32d0fa5081b60f4d9d691') { throw "go-sqlcmd checksum mismatch: $sum" }
+          $dest = Join-Path $env:RUNNER_TEMP 'go-sqlcmd'
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          "BRIDGED_SQLCMD_GO=$dest\sqlcmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install SQL Server Express (pinned) and switch TCP on at a fixed loopback port
+        run: |
+          $version = '2022.16.0.20260305'
+          $expected = 'PIJEEtBBDViBFbKo5oV8/N5eUbaaPQP9hzqXDXHXskbB0O6ajDQO7bqWXdaOex97cDng0iKiyeAOJoHLXzS5Cg=='
+          $port = '14331'
+          $feed = Join-Path $env:RUNNER_TEMP 'choco-sql'
+          New-Item -ItemType Directory -Force $feed | Out-Null
+          $nupkg = Join-Path $feed "sql-server-express.$version.nupkg"
+          Invoke-WebRequest "https://community.chocolatey.org/api/v2/package/sql-server-express/$version" -OutFile $nupkg
+          $hash = [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash([IO.File]::ReadAllBytes($nupkg)))
+          if ($hash -ne $expected) { throw "sql-server-express checksum mismatch: $hash" }
+          $saWord = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+          Write-Host "::add-mask::$saWord"
+          $ini = Join-Path $env:RUNNER_TEMP 'sqlexpress.ini'
+          @('[OPTIONS]', 'ACTION="Install"', 'FEATURES=SQLENGINE', 'INSTANCENAME="SQLEXPRESS"', 'INSTANCEID="SQLEXPRESS"', 'SECURITYMODE="SQL"', "SAPWD=`"$saWord`"",
+            'SQLSYSADMINACCOUNTS="BUILTIN\Administrators"', 'TCPENABLED="1"', 'UPDATEENABLED="False"') | Set-Content -Path $ini -Encoding ascii
+          if ($null -eq (Get-Service 'MSSQL$SQLEXPRESS' -ErrorAction SilentlyContinue)) {
+            choco install sql-server-express --source $feed --version $version -y --no-progress --params "'/ConfigurationFile:$ini'"
+            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { throw "choco install failed: $LASTEXITCODE" }
+          } else { Write-Host 'an SQLEXPRESS instance is already on this image: it is used as it is' }
+          $key = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IPAll'
+          Set-ItemProperty -Path $key -Name TcpPort -Value $port
+          Set-ItemProperty -Path $key -Name TcpDynamicPorts -Value ''
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name LoginMode -Value 2
+          Restart-Service 'MSSQL$SQLEXPRESS' -Force
+          "BRIDGED_MSSQL_PORT=$port" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BRIDGED_MSSQL_ERRORLOG=C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Log\ERRORLOG" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Probe PS1 (record legs)
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+        run: node scripts/bridged-ps1-itest.cjs

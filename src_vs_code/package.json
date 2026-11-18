@@ -62,6 +62,7 @@
     "itest:bridged-mysql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-itest.cjs",
     "itest:bridged-psql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-psql-itest.cjs",
     "itest:masked-run": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/masked-run-itest.cjs",
+    "itest:bridged-ps1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-ps1-itest.cjs",
     "itest:bridged-pk1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-pk1-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",
