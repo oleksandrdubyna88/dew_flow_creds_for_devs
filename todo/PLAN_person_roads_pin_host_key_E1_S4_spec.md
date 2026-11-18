@@ -434,7 +434,7 @@ async function descendantsOfListener(server) {
     return { list: [], error: undefined };
   }
   const seen = await descendantsOf(server.identity.pid);
-  return same() ? seen : { list: [], error: undefined };
+  return same() ? seen : { list: [], error: seen.error }; // a changed listener lists nothing, but a failed `ps` stays a failure
 }
 
 /**
@@ -469,14 +469,18 @@ async function endServer(server, clients, taken) {
  * the listener has `exited`, nothing is listed (`descendantsOfListener`) and the second `endServer` signals no foreign pid. SIGKILL cannot be
  * handled: it still leaves them.
  */
-function endLegWithScope(rig, leg, server) {
+function endLegWithScope(rig, leg, server, saved) {
   rig.scope.after(async () => {
-    const taken = await descendantsOfListener(server);
+    const earlier = saved(); // the leg's own snapshot, made before its bridges closed
+    const fresh = await descendantsOfListener(server);
     await leg.w.bridges.dispose();
-    await endServer(server, startsOf(rig, leg), taken);
+    await endServer(server, startsOf(rig, leg), { list: [...earlier.list, ...fresh.list], error: earlier.error ?? fresh.error });
   });
 }
 ```
+
+Each leg declares `let taken` first and passes `() => taken`, so a signal after the leg took its snapshot still ends a remote
+command that has left the listener's tree (CodeRabbit on #379). A failed `ps` stays a failure in both lists.
 
 ### 4.5 The forwarded socket (F11)
 

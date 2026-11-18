@@ -175,7 +175,7 @@ async function descendantsOfListener(server) {
     return { list: [], error: undefined };
   }
   const seen = await descendantsOf(server.identity.pid);
-  return same() ? seen : { list: [], error: undefined };
+  return same() ? seen : { list: [], error: seen.error }; // a changed listener lists nothing, but a failed `ps` stays a failure
 }
 
 /**
@@ -343,11 +343,14 @@ const startsOf = (rig, leg) => recordedStarts(rig).filter((one) => !leg.before.h
  * the listener has `exited`, nothing is listed (`descendantsOfListener`) and the second `endServer` signals no foreign pid. SIGKILL cannot be
  * handled: it still leaves them.
  */
-function endLegWithScope(rig, leg, server) {
+function endLegWithScope(rig, leg, server, saved) {
   rig.scope.after(async () => {
-    const taken = await descendantsOfListener(server);
+    // The leg's own snapshot (made before its bridges closed) joins a fresh one: a remote command that left the listener's tree after
+    // the close is in the first only. Every pid in either is signalled only while its start time is the recorded one.
+    const earlier = saved();
+    const fresh = await descendantsOfListener(server);
     await leg.w.bridges.dispose();
-    await endServer(server, startsOf(rig, leg), taken);
+    await endServer(server, startsOf(rig, leg), { list: [...earlier.list, ...fresh.list], error: earlier.error ?? fresh.error });
   });
 }
 
@@ -464,8 +467,8 @@ async function legOne(check, rig) {
     return undefined;
   }
   const leg = openLeg(rig, server.port);
-  endLegWithScope(rig, leg, server);
   let taken = { list: [], error: undefined };
+  endLegWithScope(rig, leg, server, () => taken);
   try {
     await installAsks(check, rig, leg);
     await bridgeIsChecked(check, rig, leg);
@@ -535,8 +538,8 @@ async function legTwo(check, rig, port) {
     return;
   }
   const leg = openLeg(rig, port);
-  endLegWithScope(rig, leg, server);
   let taken = { list: [], error: undefined };
+  endLegWithScope(rig, leg, server, () => taken);
   try {
     await installRefused(check, rig, leg);
     await bridgeRefused(check, rig, leg);
