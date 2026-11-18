@@ -3078,6 +3078,10 @@ one. The box stays open (`ignoreFocusOut`), so the filter can be changed from ou
 up — Clear Filter in the title bar, `goToOriginalFolder`, `revealById`; on a hide that is not Enter
 the box puts `before` back only if the tree's filter is still the term the box itself applied last
 (`SearchWiring.current`), so Escape does not bring back a filter the person just cleared.
+`wireSearchBox` returns a handle, and running Search again over a box whose term is no longer the
+tree's filter resyncs that box in place (`reshow`: its text and its Escape baseline become the
+current filter, same instance), while Enter applies the box's text when the tree does not hold it —
+so what the box shows is always what Enter confirms.
 
 ### One notification for locked vaults (0.55.0)
 

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The search is pinned in the title bar: a green magnifier opens *Filter Credentials…* from anywhere in the tree, and *Clear Filter* sits beside it while a filter is on.
 - The active filter shows in a line above the tree that does not scroll, so it is visible however far down the list you are.
 - Running *Filter Credentials…* again while its box is open brings that box back instead of opening a second one, which used to put the filter you were typing back to what it was before.
-- Clearing the filter from outside while its box is still open (*Clear Filter* in the title bar, or a jump that clears it) and then pressing Escape in the box no longer brings the old filter back.
+- Clearing the filter from outside while its box is still open (*Clear Filter* in the title bar, or a jump that clears it) and then pressing Escape in the box no longer brings the old filter back. Running *Filter Credentials…* again then shows the cleared filter in that box, and Enter always applies what the box shows.
 
 ### Changed — security: a saved host key is the only key a call without a terminal accepts
 

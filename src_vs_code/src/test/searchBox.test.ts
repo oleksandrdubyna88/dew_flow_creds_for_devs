@@ -172,3 +172,62 @@ test('Escape still restores when the tree filter is the one the box itself appli
   box.pressEscape();
   assert.equal(log.current(), 'prod');
 });
+
+test('after a Clear Filter, running Search again shows the cleared filter, and Enter applies what the box shows', () => {
+  const screen = new FakeScreen();
+  const openSearch = searchBoxOpener(screen.create);
+  const log = applied();
+  openSearch({ before: '', apply: log.apply, current: log.current });
+  screen.boxes[0].type('aws');
+  log.setFromOutside(''); // title-bar Clear Filter
+
+  openSearch({ before: log.current(), apply: log.apply, current: log.current });
+
+  assert.equal(screen.boxes.length, 1, 'the open box is reused, not duplicated');
+  assert.equal(screen.boxes[0].value, '', 'the box still showed the cleared term, so Enter would confirm a filter the tree does not hold');
+  screen.boxes[0].type('aws');
+  screen.boxes[0].pressEnter();
+  assert.equal(log.current(), 'aws');
+});
+
+test("Enter applies the box's text even when the tree's filter was changed from outside", () => {
+  const screen = new FakeScreen();
+  const openSearch = searchBoxOpener(screen.create);
+  const log = applied();
+  openSearch({ before: '', apply: log.apply, current: log.current });
+  screen.boxes[0].type('aws');
+  log.setFromOutside('');
+
+  screen.boxes[0].pressEnter();
+
+  assert.equal(log.current(), 'aws', 'the person confirmed `aws` in the box, but the tree stayed unfiltered');
+});
+
+test('a reopened box after an outside change takes the current filter as its Escape baseline', () => {
+  const screen = new FakeScreen();
+  const openSearch = searchBoxOpener(screen.create);
+  const log = applied('prod');
+  openSearch({ before: 'prod', apply: log.apply, current: log.current });
+  screen.boxes[0].type('aws');
+  log.setFromOutside('db'); // the filter moved on while the box stayed open
+
+  openSearch({ before: 'db', apply: log.apply, current: log.current });
+  assert.equal(screen.boxes[0].value, 'db');
+  screen.boxes[0].type('db-1');
+  screen.boxes[0].pressEscape();
+
+  assert.equal(log.current(), 'db', 'Escape went back to the stale `prod` instead of the filter the box was reopened over');
+});
+
+test('running Search again with no outside change keeps what was typed in the same box', () => {
+  const screen = new FakeScreen();
+  const openSearch = searchBoxOpener(screen.create);
+  const log = applied();
+  openSearch({ before: '', apply: log.apply, current: log.current });
+  screen.boxes[0].type('aws');
+
+  openSearch({ before: 'aws', apply: log.apply, current: log.current });
+
+  assert.equal(screen.boxes[0].value, 'aws');
+  assert.equal(screen.boxes.length, 1);
+});

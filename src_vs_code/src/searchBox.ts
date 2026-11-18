@@ -34,16 +34,29 @@ export interface SearchWiring {
   readonly current: () => string;
 }
 
+/** What a wired box lets its opener do while it is open. */
+export interface SearchBoxHandle {
+  /**
+   * Bring the open box back to the front, given the tree's filter right now. When that is not the
+   * term this box applied last, the filter was changed from outside (title-bar Clear Filter,
+   * goToOriginalFolder, revealById) while the box stayed open: the box is resynced in place — it
+   * shows the filter and Escape returns to it. Otherwise what was typed stays, in the same box.
+   */
+  reshow(current: string): void;
+}
+
 /**
  * Attach the filter behaviour to a box and show it.
  *
  * <p>Escape restores `before` — a cancelled search is not a lost one — unless the tree's filter
  * is no longer the term this box applied last: the box stays open (`ignoreFocusOut`), so the filter
  * can be changed from outside (title-bar Clear Filter, goToOriginalFolder, revealById), and Escape
- * must not bring back the filter the person just cleared. Enter keeps what was typed. Focus moving to the tree does NEITHER: the box stays open and the filter stays
+ * must not bring back the filter the person just cleared. Enter keeps what was typed, and applies
+ * it if the tree no longer holds it: whatever led there, Enter leaves the tree's filter equal to
+ * the box's text. Focus moving to the tree does NEITHER: the box stays open and the filter stays
  * applied, which is what lets a person actually use what they found.</p>
  */
-export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed: () => void = () => {}): void {
+export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed: () => void = () => {}): SearchBoxHandle {
   // The whole fix is this line; everything below it was always right.
   box.ignoreFocusOut = true;
   box.title = 'Filter credentials';
@@ -52,6 +65,7 @@ export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed
   box.prompt = 'Filters as you type. Secrets are never searched.';
 
   let accepted = false;
+  let before = wiring.before; // what Escape puts back; moves when the box is reopened over a changed filter
   let lastApplied = wiring.before; // the term the tree holds because of THIS box
   box.onDidChangeValue((value) => {
     wiring.apply(value);
@@ -59,18 +73,32 @@ export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed
   });
   box.onDidAccept(() => {
     accepted = true;
+    if (box.value !== wiring.current()) {
+      wiring.apply(box.value);
+      lastApplied = box.value;
+    }
     box.hide();
   });
   box.onDidHide(() => {
     // Escape puts `before` back only over the box's own term: a Clear Filter (or a jump that
     // clears it) done while the box was open is a newer decision, and restoring would undo it.
     if (!accepted && wiring.current() === lastApplied) {
-      wiring.apply(wiring.before);
+      wiring.apply(before);
     }
     onClosed();
     box.dispose();
   });
   box.show();
+  return {
+    reshow(current) {
+      if (current !== lastApplied) {
+        box.value = current;
+        lastApplied = current;
+        before = current;
+      }
+      box.show();
+    },
+  };
 }
 
 /**
@@ -79,18 +107,18 @@ export function wireSearchBox(box: SearchBoxLike, wiring: SearchWiring, onClosed
  * <p>A second `InputBox` hides the first, and the first one's `onDidHide` cannot tell that from
  * Escape — it would put `before` back, so the live filter is reverted under the term still typed
  * in the new box. The open box is held privately by the returned function and forgotten when the
- * box hides (Enter or Escape), so the next run starts a fresh one.</p>
+ * box hides (Enter or Escape), so the next run starts a fresh one. If the tree's filter changed
+ * from outside while the box was open, the box is resynced to it (see `SearchBoxHandle.reshow`),
+ * so what it shows is what Enter confirms.</p>
  */
 export function searchBoxOpener(create: () => SearchBoxLike): (wiring: SearchWiring) => void {
-  let open: SearchBoxLike | undefined;
+  let open: SearchBoxHandle | undefined;
   return (wiring) => {
     if (open !== undefined) {
-      open.show();
+      open.reshow(wiring.current());
       return;
     }
-    const box = create();
-    open = box;
-    wireSearchBox(box, wiring, () => {
+    open = wireSearchBox(create(), wiring, () => {
       open = undefined;
     });
   };
