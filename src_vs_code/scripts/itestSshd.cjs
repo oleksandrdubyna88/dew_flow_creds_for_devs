@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const net = require('node:net');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const SSHD = '/usr/sbin/sshd';
 
@@ -214,4 +214,25 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure };
+/**
+ * The pin file of a rig's sshd as the argv builders take it: a CHECKED pin, made as the product makes one. The real client says what it is
+ * (`ssh -V`, read by `pinClientOf`), and `checkedPin` of `out/hostKeyPin.js` applies the rule of the path. A client that cannot be read, or a path
+ * that the rule refuses, throws: a rig must not build words that the product would not. A plain string is no pin, and the builders refuse it
+ * (`CheckedPin`); `itestCallers.test.ts` scans every script that calls them.
+ */
+function checkedPinOf(out, file) {
+  const { pinClientOf } = require(path.join(out, 'pinClient.js'));
+  const { checkedPin } = require(path.join(out, 'hostKeyPin.js'));
+  const asked = spawnSync('ssh', ['-V'], { encoding: 'utf8', timeout: 5_000 }); // NOSONAR: a CI rig, the PATH's own client, as the product asks it
+  const client = pinClientOf(asked.status, String(asked.stderr));
+  if (client.kind === 'unreadable') {
+    throw new Error(`the rig could not read the version of ssh (exit code ${asked.status})`);
+  }
+  const checked = checkedPin(file, client);
+  if (!checked.ok) {
+    throw new Error(`the rule of the path refuses the pin file of the rig: ${checked.kind}`);
+  }
+  return checked.pin;
+}
+
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure, checkedPinOf };

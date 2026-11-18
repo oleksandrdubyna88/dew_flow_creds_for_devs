@@ -31,7 +31,7 @@ const net = require('node:net');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, launch, startSshd, endChild } = require('./itestSshd.cjs');
+const { SSHD, launch, startSshd, endChild, checkedPinOf } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -132,14 +132,14 @@ function wrongPin(rig, started, name) {
 function tunnelArgv(rig, started, remote, parts = {}) {
   const { buildBridgeArgv } = require(path.join(rig.out, 'sshBridge.js'));
   const { isSafeSshTarget } = require(path.join(rig.out, 'sshCommand.js'));
-  const options = { port: rig.listenerPort, remote: { path: remote }, keyPath: parts.key ?? rig.userKey, knownHostsFile: parts.pin ?? started.knownHosts, auth: 'key' };
+  const options = { port: rig.listenerPort, remote: { path: remote }, keyPath: parts.key ?? rig.userKey, knownHostsFile: checkedPinOf(rig.out, parts.pin ?? started.knownHosts), auth: 'key' };
   return buildBridgeArgv(entityOn(started.port), options, isSafeSshTarget);
 }
 
 /** The production argv of a run off a bridge on `started`: a key entry, as *Run with Secrets* and an agent's `ssh:exec` build it. */
 function runArgv(rig, started, key) {
   const { buildSshExecArgv } = require(path.join(rig.out, 'sshExecCommand.js'));
-  return buildSshExecArgv(entityOn(started.port), key, 'printenv SSH_CONNECTION', 'key', { knownHostsFile: started.knownHosts });
+  return buildSshExecArgv(entityOn(started.port), key, 'printenv SSH_CONNECTION', 'key', { knownHostsFile: checkedPinOf(rig.out, started.knownHosts) });
 }
 
 /**
