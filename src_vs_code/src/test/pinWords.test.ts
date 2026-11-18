@@ -197,8 +197,10 @@ const ROWS: readonly Row[] = [
   ['a plain POSIX path', '/home/me/.config/Code/keys/42/known_hosts-e1-0b6f', bare('/home/me/.config/Code/keys/42/known_hosts-e1-0b6f')],
   ['a plain Windows path: single backslashes, a drive letter', 'C:\\Users\\me\\AppData\\keys\\42\\known_hosts-e1', bare('C:\\Users\\me\\AppData\\keys\\42\\known_hosts-e1')],
   ['characters that ssh keeps in a bare word', '/tmp/a#b=c,d;e&f(g)[h]{i}~j$k/kh', bare('/tmp/a#b=c,d;e&f(g)[h]{i}~j$k/kh')],
-  ['a space (macOS: Application Support)', '/Users/me/Library/Application Support/Code/keys/42/kh', quoted('/Users/me/Library/Application Support/Code/keys/42/kh')],
-  ['a space on Windows', 'C:\\Users\\me\\App Data\\keys\\42\\kh', quoted('C:\\Users\\me\\App Data\\keys\\42\\kh')],
+  // A space is followed by a `~` in the rows that hold only a space: `ssh -G` joins the files with spaces, so a word that was split in two
+  // shows (`ssh` expands a `~` only at the start of a file name), as in hostKeyWords.test.ts (SPACE_THEN_TILDE).
+  ['a space (macOS: Application Support)', '/Users/me/Library/Application ~/Support/Code/keys/42/kh', quoted('/Users/me/Library/Application ~/Support/Code/keys/42/kh')],
+  ['a space on Windows', 'C:\\Users\\me\\App ~/Data\\keys\\42\\kh', quoted('C:\\Users\\me\\App ~/Data\\keys\\42\\kh')],
   ['a pair of apostrophes (row a: bare, ssh reads ANOTHER path)', "/tmp/creds-a'b'/kh", quoted("/tmp/creds-a'b'/kh")],
   ['one apostrophe (row c: bare, invalid quotes)', "/tmp/creds-a'b/kh", quoted("/tmp/creds-a'b/kh")],
   ['a space and an apostrophe together (row k)', "/tmp/it's here/kh", quoted("/tmp/it's here/kh")],

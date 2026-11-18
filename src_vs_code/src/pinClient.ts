@@ -111,5 +111,5 @@ async function asked(parts: Required<PinClientParts>, call: PinClientCall, env: 
   }
 }
 
-/** The asker of this window: one per extension host, so a version that was read is asked once for the window's life. */
+/** The asker of this window: one per extension host, and a version that was read is kept in it (an older answer is asked again on every call). */
 export const windowPinClient: PinClientAsk = pinClientAsker();

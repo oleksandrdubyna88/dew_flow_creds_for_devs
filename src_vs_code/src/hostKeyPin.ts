@@ -283,11 +283,8 @@ export function pinClientSentence(name: string, exitCode: number | null): string
   return `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "${name}". Nothing was sent to that host. The reason is the ssh program here, not the host.`;
 }
 
-/** Which thing a refusal of sentence E or F is about: the path of the pin file, or the `ssh` program of this computer. Never a value. */
-export type PinRefusalField = 'known-hosts-file' | 'ssh-program';
-
 /** The pin of a call whose file was written BEFORE (Run with Secrets: Connect's options made it): the checked value, or sentence E or F. */
-export type ExistingPin = { readonly ok: true; readonly pin?: CheckedPin } | { readonly ok: false; readonly field: PinRefusalField; readonly message: string };
+export type ExistingPin = { readonly ok: true; readonly pin?: CheckedPin } | { readonly ok: false; readonly message: string };
 
 /** A pinned call whose client was not asked is refused as one that cannot be read. */
 const NOT_ASKED: PinClient = { kind: 'unreadable', exitCode: null };
@@ -302,15 +299,15 @@ export function checkExistingPin(name: string, file: string | undefined, client:
     return { ok: true };
   }
   const kind = pinPathRefusal(file);
-  return kind === undefined ? withClient(name, file, client ?? NOT_ASKED) : { ok: false, field: 'known-hosts-file', message: pinPathSentence(name, kind) };
+  return kind === undefined ? withClient(name, file, client ?? NOT_ASKED) : { ok: false, message: pinPathSentence(name, kind) };
 }
 
 function withClient(name: string, file: string, client: PinClient): ExistingPin {
   if (client.kind === 'unreadable') {
-    return { ok: false, field: 'ssh-program', message: pinClientSentence(name, client.exitCode) };
+    return { ok: false, message: pinClientSentence(name, client.exitCode) };
   }
   const checked = checkedPin(file, client);
-  return checked.ok ? { ok: true, pin: checked.pin } : { ok: false, field: 'known-hosts-file', message: pinPathSentence(name, checked.kind) };
+  return checked.ok ? { ok: true, pin: checked.pin } : { ok: false, message: pinPathSentence(name, checked.kind) };
 }
 
 /** The line that `ssh` ends with when a host's key did not pass its check. */

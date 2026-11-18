@@ -84,6 +84,22 @@ test('disposing takes every bridge with it — a socket must not outlive the win
   assert.deepEqual(spawned.map((p) => p.killed), [1, 1]);
 });
 
+test('a start after dispose kills the child at once and holds nothing — a window that closed while the pin question waited', async () => {
+  // G1 E2: the bridge guard awaits the pin writer (the `ssh -V` question) BEFORE it starts. A window that goes away meanwhile has
+  // already disposed the manager, so a start that came later must not leave an `ssh -N -R` that nothing stops.
+  const { m, spawned } = manager();
+  m.dispose();
+
+  const bridge = m.start('a1:e1', '/tmp/creds-dev-a1:e1.sock', 'ssh', ['-N', '-R', 'x'], {});
+
+  assert.equal(spawned.length, 1);
+  assert.equal(spawned[0].killed, 1, 'the child was killed at once, not left running');
+  assert.equal(m.isOpen('a1:e1'), false, 'the bridge is not in the map');
+  assert.deepEqual(m.keys(), []);
+  // The caller still gets the bridge back: the key and pin files are handed to its `exited`, which has settled.
+  assert.equal(await bridge.process.exited, null);
+});
+
 test('starting twice replaces rather than leaking the first handle', () => {
   // The usual reason to ask twice is that the first one died invisibly. Refusing would leave
   // a bridge that looks open and is not, which is worse than a moment of churn.

@@ -592,7 +592,7 @@ export function sshDepsFor(parts: {
     bridgedSshConfig: bridgedSshConfigWriter({ storage: parts.storage, storageDir: parts.storageDir, home: os.homedir(), note: parts.agentServer.note }),
     // The client check of a bridged call (§S6.14 Y3): one per window, so a good answer is asked once for the window's life.
     bridgedClient: bridgedSshClientCheck({ storageDir: parts.storageDir, note: parts.agentServer.note }),
-    // The asker of a pinned call off a bridge (G1, §3.10): the window's one, so a version that was read is asked once.
+    // The asker of a pinned call off a bridge (G1, §3.10): the window's one; a version that was read is kept, an older answer is asked again on every call.
     pinClient: windowPinClient,
   };
   return { ...deps, overSsh: execOverSsh(deps) };

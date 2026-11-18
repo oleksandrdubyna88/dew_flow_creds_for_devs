@@ -1,4 +1,4 @@
-import { CheckedPin, PinPathKind, PinRefusalField, checkedPin, pinClientSentence, pinPathRefusal, pinPathSentence } from './hostKeyPin';
+import { CheckedPin, PinPathKind, checkedPin, pinClientSentence, pinPathRefusal, pinPathSentence } from './hostKeyPin';
 import { knownHostsPath, materializeKnownHosts } from './hostKeyTrust';
 import { forgetMaterializedKey } from './keyInstaller';
 import type { PinClientAsk, PinClientCall, ReadablePinClient } from './pinClient';
@@ -28,7 +28,7 @@ export type PinDecision =
   /** The write threw. */
   | { readonly kind: 'unwritten'; readonly error: unknown }
   /** Sentence E or F: nothing may start. */
-  | { readonly kind: 'refused'; readonly field: PinRefusalField; readonly message: string };
+  | { readonly kind: 'refused'; readonly message: string };
 
 export interface PinOfCallParts {
   readonly storageDir: string;
@@ -44,8 +44,8 @@ export function pinAbsent(hostKey: string | undefined): boolean {
   return (hostKey ?? '').trim() === '';
 }
 
-const refusedPath = (name: string, kind: PinPathKind): PinDecision => ({ kind: 'refused', field: 'known-hosts-file', message: pinPathSentence(name, kind) });
-const refusedClient = (name: string, exitCode: number | null): PinDecision => ({ kind: 'refused', field: 'ssh-program', message: pinClientSentence(name, exitCode) });
+const refusedPath = (name: string, kind: PinPathKind): PinDecision => ({ kind: 'refused', message: pinPathSentence(name, kind) });
+const refusedClient = (name: string, exitCode: number | null): PinDecision => ({ kind: 'refused', message: pinClientSentence(name, exitCode) });
 
 /** Decide the pin of one call. `call` says how the call's `ssh` will be started: its program word, its folder, its environment. It never throws. */
 export async function decidePinOfCall(parts: PinOfCallParts, call: PinClientCall): Promise<PinDecision> {

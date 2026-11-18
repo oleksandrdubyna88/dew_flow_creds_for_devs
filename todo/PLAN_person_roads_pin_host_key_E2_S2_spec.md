@@ -845,7 +845,7 @@ parts as one object (a test names its own asker), and gets the environment of th
 | 1 | before the decision | the credential is not `ok` | none to delete | none written | `start(refused)`'s answer (the roads answer `undefined`) |
 | 2 | at the `await` | the writer answers a refusal (A, B, E, F) | deleted by the `finally`, after `start` answered `undefined` | none written (E, F, A), or a part of one (B: C14) | `undefined` |
 | 3 | at the `await` | the writer rejects or throws (it must not) | deleted by the `finally` | not known to the guard | the same error, as a rejection |
-| 4 | at the `await` | the window goes away while the decision waits | deleted by the `finally` when the writer settles; the runner's time limit bounds that wait (10 s) | as rows 2, 3 or 5 | as those rows |
+| 4 | at the `await` | the window goes away while the decision waits | when the writer settles: as rows 2 or 3 if it refused or failed; otherwise the guard goes on to `start`, the already disposed manager kills what `start` spawned at once and keeps it out of its map, and the one continuation on `exited` deletes the file, as row 8 (corrected 2026-11-18 after the Opus review: the `finally` does not run for the window's sake). The runner's time limit bounds the wait (10 s) | as rows 2, 3 or 8 | as those rows |
 | 5 | after the `await`, in `start` | `start` answers `undefined` (no argv, a refused value) | deleted at once | deleted at once | `undefined` |
 | 6 | in `start` | `start` throws | deleted at once | deleted at once | the same error, as a rejection |
 | 7 | after `start` | the attach throws (a process with no `exited`) | deleted at once (`handed` is false) | deleted at once | the same error |

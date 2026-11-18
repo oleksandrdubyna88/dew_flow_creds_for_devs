@@ -124,8 +124,10 @@ interface Started {
  * stands between the start and the attach.</p>
  *
  * <p><b>The one `await` of this guard</b> (E2) is the decision, BEFORE `start`: the pin writer asks the `ssh` program for its version.
- * It stands inside the `try`, so while it waits both files are this guard's: a decision that rejects, and a window that goes away
- * while it waits, end in the `finally`, which deletes what was written. From `start` to the flag the guard is synchronous, as before.</p>
+ * It stands inside the `try`, so while it waits both files are this guard's: a decision that rejects ends in the `finally`, which
+ * deletes what was written. A window that goes away while it waits does not end here: the guard goes on to `start` when the writer settles, and the manager, already disposed, kills what `start` spawned at once and
+ * keeps it out of its map (`SshBridgeManager`); the continuation on the process's `exited` then deletes both files. From `start` to the flag the
+ * guard is synchronous, as before.</p>
  */
 export async function withWrittenKeyUntilExit<T extends Started>(
   credential: ExecAuth,
