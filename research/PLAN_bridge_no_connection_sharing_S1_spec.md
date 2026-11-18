@@ -1,6 +1,6 @@
 # PLAN — S1 spec: the tunnel of a bridge and every run say no connection sharing (SECURITY)
 
-> Status: **built 2026-11-17 on `fix/g2-no-connection-sharing` (b51b60d4), in PR #376, unmerged; later review and gate fixes are on the branch. Spec written 2026-11-17, by Fable.** Security spec, written before its code (the row *Security judgement*
+> Status: **IMPLEMENTED, 2026-11-17** (b51b60d4; later review and gate fixes; extension 1.22.3, #376). Spec written 2026-11-17, by Fable. Security spec, written before its code (the row *Security judgement*
 > of `subagent-models.md`; not the cornerstone: S2 holds it). Story S1 of
 > [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md) (its §4.1 to §4.3, §7.1 to §7.3, the unit half of
 > §7.5, `## Stories` S1, and the note on finding 1 in its `## Plan changes`). This file is promoted together with the parent.
@@ -828,15 +828,15 @@ tests pin BOTH words; which of the two carries the effect is S2's to show.
 
 ## 12. Done when (each item can be counted)
 
-- [ ] The nine RED tests of §9 were watched failing with the texts of §9 on the unchanged product, and pass at c1; the eleven
+- [x] The nine RED tests of §9 were watched failing with the texts of §9 on the unchanged product, and pass at c1; the eleven
       guards were green before and are green at c1 (G1 skipped where `CI` is not `true`).
-- [ ] At c1 the four files have 106 tests: 105 pass, 1 skipped.
-- [ ] M1 to M14 each turned red what §11 names, and the product was restored after each.
-- [ ] `sshExecCommand.ts` has 194 lines and `sshBridge.ts` 382; the product diff is §1 and §2 and nothing else.
-- [ ] No existing test changed except the three of §4.2, §4.3 and §6; no call site changed; `git diff --stat` names eight files.
-- [ ] `grep -rn "ControlPath=\|ControlMaster=" src --include=*.ts` outside `src/test` names `sshExecCommand.ts` only.
-- [ ] `npm run typecheck`, `npm run lint` and `npm test` are green; the leftovers audit of `npm test` names no folder of this run.
-- [ ] The commit body has the nine RED texts and the fourteen mutation results.
+- [x] At c1 the four files have 106 tests: 105 pass, 1 skipped.
+- [x] M1 to M14 each turned red what §11 names, and the product was restored after each.
+- [x] `sshExecCommand.ts` has 194 lines and `sshBridge.ts` 382; the product diff is §1 and §2 and nothing else.
+- [x] No existing test changed except the three of §4.2, §4.3 and §6; no call site changed; `git diff --stat` names eight files.
+- [x] `grep -rn "ControlPath=\|ControlMaster=" src --include=*.ts` outside `src/test` names `sshExecCommand.ts` only.
+- [x] `npm run typecheck`, `npm run lint` and `npm test` are green; the leftovers audit of `npm test` names no folder of this run.
+- [x] The commit body has the nine RED texts and the fourteen mutation results.
 
 ## 13. Break it — ways to make the tests pass while the defect stays, and the row that stops each one
 
