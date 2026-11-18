@@ -13,7 +13,7 @@
 > §3.9), their tests, the real runs against a real `sshd`, the docs. Found as G1 of
 > [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5) by the lead's Opus review and a
 > Fable security pass on 2026-11-16, by reading.
-> **Depends on:** the G2 plan, [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md): merged into `main` on
+> **Depends on:** the G2 plan, [PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md): merged into `main` on
 > 2026-11-17 (#376, `07ed8303`). This plan is built on it (§4). Its line references, §3.6's count, §4 and test 12 of §5 were
 > revised against `main` at `ca99cd91` on 2026-11-17 (§9, step 1).
 
@@ -458,7 +458,7 @@ not measured). A pin is one plain key, so that is what "pinned" means. **Windows
 
 ## 4. The boundary with the G2 plan
 
-The G2 plan ([PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md); merged 2026-11-17, #376) carries
+The G2 plan ([PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md); merged 2026-11-17, #376) carries
 this table from its side in its §6 (`planning-docs.md`, *a boundary between two plans is named on both sides*). On N16's
 side, G1 of its §5 names this plan. **Revised on 2026-11-17 against what G2 shipped** (`main` at `ca99cd91`): the first two
 rows say what is in the code now, and the rows below the builders' row were added from G2's follow-ups H1-H5 (its §9).

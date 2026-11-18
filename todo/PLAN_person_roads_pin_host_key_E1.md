@@ -4,7 +4,7 @@
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E1). It is the epic's baseline,
 > written when E1 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It keeps no
 > change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E1.S2). Built on its own
-> branch on top of the G2 plan ([PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md)), which
+> branch on top of the G2 plan ([PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md)), which
 > merged on 2026-11-17 (#376; the parent's §4, §9). The spec of E1.S1 is written:
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and the spec of the
 > cornerstone E1.S2: [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both
