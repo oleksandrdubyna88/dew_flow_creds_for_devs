@@ -24,7 +24,7 @@ import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
 import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
 import { personPinWriter } from '../personPin';
-import { hostKeyRefused, refusedHostKeySentence } from '../hostKeyPin';
+import { hostKeyTold } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
@@ -213,11 +213,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           timeoutMs: 15_000,
           signal: agentServer.signal,
         });
-        if (hostKeyRefused(credential.knownHostsFile, outcome.stderr)) {
-          // The ssh of the bridge has no stdio, so this check is the one place that can say why the bridge is not open (G1, P3).
-          const text = `The bridge to "${entity.name}" is not open: ${refusedHostKeySentence(entity.name)}`;
-          log.info('bridge', text);
-          void vscode.window.showErrorMessage(text);
+        const told = hostKeyTold(credential.knownHostsFile, outcome.stderr, entity.name);
+        if (told !== undefined) {
+          // The ssh of the bridge has no stdio, so this check is the one place that can say what the host key check of the bridge came to (G1, P3).
+          log.info('bridge', told.bridge);
+          void vscode.window.showErrorMessage(told.bridge);
           return;
         }
         const probe = interpretSocketProbe(outcome.stdout ?? '');
@@ -280,9 +280,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       }
 
       const facts = await runRemote(details, credential, probeCommand(), 20_000);
-      if (hostKeyRefused(credential.knownHostsFile, facts.stderr)) {
-        void vscode.window.showErrorMessage(refusedHostKeySentence(node.name));
-        return;
+      const told = hostKeyTold(credential.knownHostsFile, facts.stderr, node.name);
+      if (told !== undefined) {
+        return void vscode.window.showErrorMessage(told.install);
       }
       if (facts.timedOut) {
         void vscode.window.showWarningMessage(
