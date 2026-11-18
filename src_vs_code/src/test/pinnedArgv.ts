@@ -1,3 +1,5 @@
+import * as hostKeyPin from '../hostKeyPin';
+
 /**
  * What the tests of G1 ask of an `ssh` argv about the host's key (`PLAN_person_roads_pin_host_key.md` §3.9 and §5, test 13): which
  * words say how the key is checked, and which file they name. Shared by `hostKeyWords.test.ts` and `sshExecCommand.test.ts`, so
@@ -8,6 +10,31 @@
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
+
+/** The pairs that E2 adds to a pinned call (the plan's §3.10 and §3.12, part 1), in the order the words say them. */
+export const PIN_SOURCE_OPTIONS: readonly string[] = ['VerifyHostKeyDNS', 'KnownHostsCommand', 'LogLevel'];
+
+/**
+ * The pin of a test, as the two builders take it: `checkedPin`'s value for a client that knows `KnownHostsCommand`, or for an older
+ * one. `undefined` stays `undefined`. A path that the rule refuses throws here, so no test builds words that the product would not.
+ *
+ * <p>The function is read through the module object, and the answer is typed `never`, so a test file compiles BEFORE `checkedPin`
+ * exists (E2.S2's RED run): there the pin is the raw path, as E1's builders took it.</p>
+ */
+export function testPin(file: string | undefined, client: 'knows' | 'older' = 'knows'): never {
+  const make = (hostKeyPin as unknown as Record<string, MakePin | undefined>).checkedPin;
+  return (file === undefined || make === undefined ? file : madeBy(make, file, client)) as never;
+}
+
+type MakePin = (path: string, read: unknown) => { ok: boolean; pin?: unknown; kind?: string };
+
+function madeBy(make: MakePin, file: string, client: string): unknown {
+  const checked = make(file, { kind: client, token: 'OpenSSH_test' });
+  if (!checked.ok) {
+    throw new Error(`the rule of the path refuses this pin file: ${String(checked.kind)}`);
+  }
+  return checked.pin;
+}
 
 /** The three options of a host-key check, in the order a pinned call says them. */
 export const HOST_KEY_OPTIONS: readonly string[] = ['StrictHostKeyChecking', 'UserKnownHostsFile', 'GlobalKnownHostsFile'];
@@ -53,3 +80,13 @@ export function withoutGlobal(argv: readonly string[]): string[] {
   const gone = new Set(optionWords(argv).filter((option) => names(option.text, 'GlobalKnownHostsFile')).flatMap((option) => option.words.map((_, i) => option.at + i)));
   return argv.filter((_, i) => !gone.has(i));
 }
+
+/** The argv with every word of E2's three options taken out: what a builder sent before E2. */
+export function withoutSources(argv: readonly string[]): string[] {
+  const gone = new Set(optionWords(argv).filter((option) => PIN_SOURCE_OPTIONS.some((name) => names(option.text, name))).flatMap((option) => option.words.map((_, i) => option.at + i)));
+  return argv.filter((_, i) => !gone.has(i));
+}
+
+/** The words of the argv that name one of E2's three options, in the order of the argv. */
+export const sourceWordsOf = (argv: readonly string[]): string[] =>
+  optionWords(argv).filter((option) => PIN_SOURCE_OPTIONS.some((name) => names(option.text, name))).flatMap((option) => [...option.words]);
