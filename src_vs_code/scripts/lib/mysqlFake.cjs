@@ -1,5 +1,5 @@
 'use strict';
-// The fake MySQL server of the bridged `mysql` harnesses (E1.6, parent §4.11, legs (m), PM1 and (t)), moved out of `bridged-mysql-itest.cjs` unchanged so that the
+// The fake MySQL server of the bridged `mysql` harnesses (E1.6, parent §4.11, legs (m), PM1 and (t)), moved out of `bridged-mysql-itest.cjs` so that the
 // database probes of E1.7 (`bridged-db-pa1-itest.cjs`) read the same server: it speaks just enough of the protocol to greet a client, answer any login with an OK and,
 // when it is given a marker path, answer the first query with a LOCAL INFILE request for it. It records the user name and the LENGTH of the authentication answer of each
 // login, never the answer.
@@ -8,18 +8,21 @@ const net = require('node:net');
 /** One MySQL packet: three bytes of length, the sequence number, the payload. */
 const packet = (sequence, payload) => Buffer.concat([Buffer.from([payload.length & 0xff, (payload.length >> 8) & 0xff, (payload.length >> 16) & 0xff, sequence]), payload]);
 
-const GREETING = Buffer.concat([
+/** The greeting, naming `plugin` as the server's default authentication plugin. */
+const greetingOf = (plugin) => Buffer.concat([
   Buffer.from([0x0a]), Buffer.from('8.0.99-fake\0'), Buffer.from([1, 0, 0, 0]), Buffer.from('abcdefgh'), Buffer.from([0]),
   Buffer.from([0x8d, 0xa2]), Buffer.from([0x21]), Buffer.from([0x02, 0x00]), Buffer.from([0x08, 0x00]), Buffer.from([21]), Buffer.alloc(10),
-  Buffer.from('ijklmnopqrst\0'), Buffer.from('mysql_native_password\0'),
+  Buffer.from('ijklmnopqrst\0'), Buffer.from(`${plugin}\0`),
 ]);
+const GREETING = greetingOf('mysql_native_password');
 const OK = Buffer.from([0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
 
 /**
  * A server that speaks just enough of the protocol: the greeting, an OK for any login, and for the first query a LOCAL INFILE request for
- * `markerPath`; it collects what the client sends back (the packets after the request, up to the empty one) in `received`.
+ * `markerPath`; it collects what the client sends back (the packets after the request, up to the empty one) in `received`. With `options.switchTo` (a plugin name) it answers
+ * the login with an authentication switch to that plugin instead (E1.7, PA1-e): a client that does not have the plugin says where it looked.
  */
-function fakeServer(markerPath) {
+function fakeServer(markerPath, options = {}) {
   // `logins`: the user name and the length of the authentication answer of each login (PM1). With no `markerPath` a query is just answered with an OK.
   const state = { received: [], requested: false, logins: [] };
   const open = new Set();
@@ -29,12 +32,12 @@ function fakeServer(markerPath) {
     let pending = Buffer.alloc(0);
     let phase = 'login';
     socket.on('error', () => undefined);
-    socket.write(packet(0, GREETING));
+    socket.write(packet(0, options.greetingPlugin === undefined ? GREETING : greetingOf(options.greetingPlugin)));
     socket.on('data', (chunk) => {
       pending = Buffer.concat([pending, chunk]);
       for (let at = parsePacket(pending); at !== undefined; at = parsePacket(pending)) {
         pending = pending.subarray(at.size);
-        phase = step(socket, phase, at, markerPath, state);
+        phase = step(socket, phase, at, markerPath, state, options);
       }
     });
   });
@@ -79,9 +82,18 @@ function loginOf(payload) {
 }
 
 /** One packet of the client; the next phase. */
-function step(socket, phase, incoming, markerPath, state) {
+function step(socket, phase, incoming, markerPath, state, options) {
+  if (phase === 'switched') {
+    socket.write(packet(incoming.sequence + 1, OK));
+    return 'command';
+  }
   if (phase === 'login') {
     state.logins.push(loginOf(incoming.payload));
+    if (options.switchTo !== undefined) {
+      // E1.7 PA1-e: an authentication switch to a plugin the client may not have: the client's own words name the folder it looked in.
+      socket.write(packet(incoming.sequence + 1, Buffer.concat([Buffer.from([0xfe]), Buffer.from(`${options.switchTo}\0`), Buffer.from('abcdefghijklmnopqrst\0')])));
+      return 'switched';
+    }
     socket.write(packet(incoming.sequence + 1, OK));
     return 'command';
   }

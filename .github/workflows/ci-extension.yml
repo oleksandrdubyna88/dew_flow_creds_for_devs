@@ -278,6 +278,94 @@ jobs:
       - name: Integration test (bridged ssh)
         run: npm run itest:bridged-ssh
 
+  # PA1 (the E1.7 spec §S7.4; parent §7's probe table): what each database client is, which controls it knows, and what an older one does with a control it does not
+  # know, on the three Ubuntu images and on `windows-latest`. A RECORD harness (`scripts/bridged-db-pa1-itest.cjs`): the log's `record (PA1-…)` lines are the result, an
+  # `UNMEASURED` line says that a positive control could not be produced, and a `STOP (PA1-…)` line is an answer against the spec's decision. It fails only for the rig's
+  # own faults (a client the runner must carry and does not). Every client the image lacks is added by a step, pinned (R7): go-sqlcmd by version and checksum, the ODBC
+  # `sqlcmd` by Microsoft's repository under a key checked against a checksum (a step that may fail, and then that client is `UNMEASURED`), the older `psql` clients by the
+  # digest of the PostgreSQL image of an older release, a second and a third `psql` version by apt (the wrapper of PA1-i). Only this job writes to the runner system-wide
+  # (apt, `/usr/share/keyrings`), and only on CI.
+  bridged-db-clients:
+    name: database clients · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      # `psql` (the wrapper of the packaging, and three versions beside each other for PA1-i), Oracle's `mysql`, and MariaDB's client unpacked as `build-test` does.
+      - name: Install the PostgreSQL and MySQL clients, and unpack MariaDB's
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client postgresql-client-14 postgresql-client-16 mysql-client libmariadb3
+          mkdir -p "$HOME/mariadb-client/deb"
+          (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download mariadb-client-core && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
+          echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql" >> "$GITHUB_ENV"
+          echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
+
+      # go-sqlcmd, by version and by the checksum of the archive (R7): one static file.
+      - name: Install go-sqlcmd 1.10.0
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          mkdir -p "$HOME/go-sqlcmd"
+          curl -fsSL -o "$HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" | sha256sum -c -
+          tar -xjf "$HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" -C "$HOME/go-sqlcmd"
+          echo "BRIDGED_SQLCMD_GO=$HOME/go-sqlcmd/sqlcmd" >> "$GITHUB_ENV"
+
+      # The ODBC `sqlcmd` (mssql-tools18) comes from Microsoft's own apt repository; its signing key is checked against a checksum first. A repository that does not
+      # answer, or a rotated key, does not stop the probe: the harness then says `UNMEASURED` for that client, with its name.
+      - name: Install the ODBC sqlcmd (mssql-tools18)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          set -eu
+          curl -fsSL -o "$RUNNER_TEMP/microsoft.asc" https://packages.microsoft.com/keys/microsoft.asc
+          echo "2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6  $RUNNER_TEMP/microsoft.asc" | sha256sum -c -
+          sudo gpg --dearmor --yes -o /usr/share/keyrings/microsoft-prod.gpg "$RUNNER_TEMP/microsoft.asc"
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mssql-tools18 unixodbc
+
+      # PA1-g: the older `psql` clients are the ones of the PostgreSQL 12 and 15 images, by digest (R7). `docker run` of the harness never pulls: a missing image is `UNMEASURED`.
+      - name: Pull the older psql clients, by digest
+        if: runner.os == 'Linux'
+        run: |
+          docker pull postgres@sha256:2f2a8c2a7d10862e7fba2602e304523554f9df8244c632dafe2628ccb398fb5c
+          docker pull postgres@sha256:496f07cd16dff6406cee521a66b37080be917ea063f017336affdfcb1c61f90e
+
+      - name: Probe PA1 (database client versions, controls and the floor)
+        env:
+          PA1_OLD_PSQL_IMAGES: postgres@sha256:2f2a8c2a7d10862e7fba2602e304523554f9df8244c632dafe2628ccb398fb5c,postgres@sha256:496f07cd16dff6406cee521a66b37080be917ea063f017336affdfcb1c61f90e
+        run: npm run itest:bridged-db-pa1
+
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
