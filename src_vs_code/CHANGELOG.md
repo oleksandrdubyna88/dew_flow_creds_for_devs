@@ -44,6 +44,8 @@ cannot be written to disk, the message says that, and nothing is sent either.
 
 An entry with no saved host key connects as before.
 
+## [1.22.3] — 2026-11-17 — Security — the extension's own `ssh` calls share no connection
+
 ### Changed — security: the extension's own `ssh` calls share no connection
 
 If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`
