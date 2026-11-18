@@ -38,6 +38,11 @@
 // Section 9 (POSIX only, `itestNoSharing.cjs`) is the measurement behind `NO_CONNECTION_SHARING` (G2): under a config that shares
 // connections, the tunnel of a Remote Bridge and a run off a bridge each make a connection of their own, a closed bridge serves
 // nothing, and a wrong key or a wrong pin fails; the control legs show the fault without the two options.
+//
+// Section 10 (Linux only, `itestPinnedRoads.cjs`) is G1's smoke on real input: *Install creds on host* and *Open Remote Bridge…*, run as the
+// extension registers them, with the real `ssh` against one `sshd -D -e` that serves every connection. Pinned to that server's key, every
+// start carries the pin words and logs in; when another key answers at the same address, every start is refused, the server logs no login,
+// and the person is told so.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -46,6 +51,7 @@ const { execFile } = require('node:child_process');
 const { SSHD, setChildTemp, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
 const { liveNoAgentForward } = require('./itestForwardAgent.cjs');
 const { liveNoSharing } = require('./itestNoSharing.cjs');
+const { livePinnedRoads } = require('./itestPinnedRoads.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -224,6 +230,8 @@ async function main(scope) {
     await liveNoAgentForward(check, OUT);
     // ---- 9. the extension's own ssh calls share no connection, whatever ~/.ssh/config says (G2) ---------------------
     await liveNoSharing(check, OUT);
+    // ---- 10. a pinned entry's roads connect only to its saved host key (G1, E1.S4) ---------------------------------------------------
+    await livePinnedRoads(check, OUT);
   });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------

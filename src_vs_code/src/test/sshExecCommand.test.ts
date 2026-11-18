@@ -274,7 +274,9 @@ test('A6: off a bridge a configFile or a pinned flag changes nothing: today\'s a
   const plain = argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts' }, 'key', KEY_FILE);
 
   assert.deepEqual(argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts', configFile: 'c.conf', pinned: false }, 'key', KEY_FILE), plain);
-  assert.deepEqual(plain.slice(0, 8), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'ConnectTimeout=10']);
+  // G1 (§3.9) changes today's pinned off-bridge argv on purpose: the pin file is ALSO the system-wide known-hosts file, so no
+  // `/etc/ssh/ssh_known_hosts` entry passes beside it. The six words are `hostKeyWords`'s; the test of that rule is `hostKeyWords.test.ts`.
+  assert.deepEqual(plain.slice(0, 10), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'GlobalKnownHostsFile=/p/known_hosts', '-o', 'ConnectTimeout=10']);
   assert.ok(!plain.includes('-F'));
 });
 

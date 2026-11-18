@@ -2586,7 +2586,17 @@ fails) settles nothing. Every `'error'` is handed to a reporter that `extension.
 one sentence and the text of the error, never the argv, which names the key file). `openRemoteBridge` hands the key file it wrote to the
 bridge: `withWrittenKeyUntilExit` (`writtenKey.ts`) attaches one continuation to the process's `exited` that deletes it, and deletes it
 at once when nothing was started or the start throws. `writtenKey.ts` is the one place where the rule "the caller that got
-`materialized` deletes it when no `ssh` of its own will read the path again" is written for these three roads. The bound that stays: a
+`materialized` deletes it when no `ssh` of its own will read the path again" is written for these three roads. The same two guards own a second file of the call, the pin file (G1): the saved host key of the entry, written by
+`writePersonPin` (`personPin.ts`) as `known_hosts-<entry id>-<uuid>` through `materializeKnownHosts` with a suffix. Each guard
+takes the pin writer as a required parameter, calls it inside its guarded span and only for a credential that is `ok`, and
+hands the road ONE value (`CallAuth`): ready, with `knownHostsFile` when the entry has a saved host key, or refused. On the
+three roads the answer of `resolveExecAuth` has no name: it is the first argument of the guard. An entry with no saved host
+key (none, an empty one, one of white space) writes nothing and runs as before. A saved host key that is there and cannot be
+used (the text is no host key, or the host forms no known_hosts line) is a refusal with a sentence in the form of the login:
+a key entry is sent to Connect SSH, a password entry is told that there is no safe repair yet. A pin file that cannot be
+written is a refusal too. On a refusal no `ssh` starts. The pin file is deleted where the key file is, by the same `finally`
+and the same one continuation, whether or not a key file was written, and only a path that the writer returned in this call
+is deleted. Each of the four argv calls of these roads names the file (E1.S3, the paragraph B10). The bound that stays: a
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
 activation; `stop()` drops the row before the kill, so nothing retries it.
 
@@ -5324,6 +5334,32 @@ sitting there), while an agent's exec — which has nobody to ask — keeps `acc
 Forcing `accept-new` on the human path would have removed the very question B10 was about. A pin
 that already exists is enforced on both.
 
+**The words of a pinned call (G1, E1.S1).** A call that the extension starts with no terminal says its host-key check with words
+from ONE function, `hostKeyWords` in `hostKeyPin.ts`, off a bridge; both argv builders call it (`buildSshExecArgv` for a call that
+is not bridged, `buildBridgeArgv`). A bridged exec call (E1.6) is the other design: its argv carries one word of strictness, and its
+`-F` file holds the pin and `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`). With no
+pin file it answers `-o StrictHostKeyChecking=accept-new`. With a pin file it answers strict checking and that file as
+`UserKnownHostsFile` AND as `GlobalKnownHostsFile`, because the first replaces only the person's own files and `ssh` read the
+system-wide ones beside the pin. A path with white space goes in double quotes (both options take a list of files); a path that
+holds a double quote is not written, and both options then name `/dev/null`, so `ssh` refuses every host. Measured by hand
+against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and the results are in the docblock of the
+function. The line of a Connect terminal (`sshCommand.ts`) is not among them yet: it names the pin as the person's file only.
+`KnownHostsCommand` and `VerifyHostKeyDNS` of a person's config are not switched off.
+
+**The three roads of the person (G1, E1.S3).** The bridge socket check, *Install creds on host* and *Open Remote Bridge…*
+(`commands/agentCommands.ts`) hand `ssh` the pin file of their call: each of their four argv calls names `knownHostsFile`,
+read from the ONE value that the guard hands the road (`CallAuth`, `writtenKey.ts`). An entry with no saved host key runs as
+on the agent's exec: `accept-new`, no file. An entry with one gets strict checking against a file of this call alone,
+`known_hosts-<entry id>-<uuid>`: both runs of the socket check read one file, the probe and the install run read one file,
+the tunnel reads its own until its `ssh` has ended. A host key that `ssh` refused is told to the person (sentence C,
+`refusedHostKeySentence`). The match is `hostKeyRefused` in `hostKeyPin.ts`: a pinned call whose `ssh` printed the whole line
+`Host key verification failed.`; `ssh` ends its lines with CR LF. The install shows the sentence for its probe, as an error
+in place of "the host did not answer the probe". The socket check shows it for the bridge, as an error message that opens
+with `The bridge to "<name>" is not open: `, and writes it to the log, because the tunnel's `ssh` has no stdio. A host that is
+down, a host that does not answer and a refused login keep the sentences of before. What the match cannot tell apart (a hop
+of the person's own `ProxyJump`, a host that prints the line itself) and what it misses (`LogLevel QUIET`) is in the docblock
+of the function, with the measurement. Windows' `ssh.exe` was not run.
+
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 
 ### Agent forwarding was a flag with nothing behind it (0.65.0)
@@ -6295,6 +6331,7 @@ a clean install used to show one "Search" row and nothing else.
 |---|---|
 | Clipboard | Every secret copy expires after **45 s**, and only if the clipboard still holds exactly what was copied (`secretClipboard.ts`), and a copy cancels the wipe it supersedes. A generated share PIN is copied again when the share lands, so the window starts when the person actually goes to paste |
 | SSH private key on disk | Materialised only when `ssh -i` needs a path; `0600` in a `0700` directory under the extension's own storage — never the OS temp dir — and purged on activate, on deactivate, and when the terminal closes; a Connect that reuses an open terminal, or whose terminal fails to open (the open throws), deletes its file at once. The three roads of the person that write a key for a non-interactive `ssh` delete it too (N16): the bridge socket check and *Install creds on host* when they finish, on every way out (`writtenKey.ts`, `withWrittenKey`), and a bridge's file when its `ssh` has ended, whatever ended it (`withWrittenKeyUntilExit`); a started `ssh` whose stop fails keeps its file until the purge. A key file that the person named by its path is never deleted: only a credential with `materialized` is. **A key served by the SSH agent is never written at all** |
+| Saved host key on disk (a pin file) | Not a secret: one known_hosts line. It matters because a stale one would speak for a host. The three roads of the person write it per call, `known_hosts-<entry id>-<uuid>`, `0600` in the window's `0700` key folder, and delete it with the call: the bridge socket check and *Install creds on host* when they finish, a bridge when its `ssh` has ended (`writtenKey.ts`, the same guards as the key file). The agent's exec and a Connect terminal write `known_hosts-<entry id>` (with a uuid when a session is isolated). All of them are purged with the key folder |
 | TOTP seed | `SecretStorage`, as the canonical `otpauth://` URI. The viewer receives the derived code, never the seed |
 | Terminal | `buildSshCommand` composes host/user/port/key-*path* only. No password ever reaches a command line |
 | Webviews | `default-src 'none'`, nonce-based scripts, `localResourceRoots: []`, everything escaped. The read-only viewer never receives secret values at all — copy actions round-trip through the extension host |
@@ -6724,7 +6761,7 @@ class test and by `agentNaming.test.ts` (see `module_tests.md`).
 
 *Rule C: the name of a call file* ([PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md)). The name
 of the key file that the extension writes for one call of an agent holds nothing of the vault (the host-key pin `known_hosts-<id>`
-and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view): `materializeCallKey` (`keyInstaller.ts`)
+and the script `agent-script-<id>` of a call keep the id of an entry that the agent may view; the pin file of one call of the person's three roads, `known_hosts-<id>-<uuid>`, keeps the entry's id in the same way: it is written for the person's own click, not for an agent): `materializeCallKey` (`keyInstaller.ts`)
 names the key file of a call `call-<uuid>.key` with `callKeyName()` (`materializedKeys.ts`), which takes no argument, and every
 writer of a stored SSH key for a call or for a session uses it: the callers of `resolveExecAuth` (the agent's calls and three commands of
 the person) and `prepareSshSession` (`sshSession.ts`: Connect, `creds_open_terminal` and the runs over SSH; N17, plan `PLAN_open_terminal_key_file_name.md`).
