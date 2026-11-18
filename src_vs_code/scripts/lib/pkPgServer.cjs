@@ -1,0 +1,99 @@
+'use strict';
+// Rig G of the E1.7 spec §S7.3: a REAL PostgreSQL server, the image's own binaries, a cluster made by `initdb` in an owned folder and run by the runner's user (the
+// restricted token of PostgreSQL on Windows lets `initdb` run there too). Its `pg_hba.conf` is rewritten and reloaded per leg: one line per leg (`hostgssenc ... gss`,
+// `hostnogssenc ... gss`, `sspi`, ...). With `log_connections` its log names the identity and the method of each login, and that line is what a leg reads: a login that
+// was made names `identity="..."` and `method=...`.
+//
+// The server listens on a loopback port and on no unix socket; its log is a file of the owned folder. Nothing of the image is changed (no service is started or stopped).
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { check, freePort, rigRun, waitFor } = require('./dbProbe.cjs');
+
+/** The newest `bin` folder of an installed PostgreSQL that holds `initdb`, or `undefined`. */
+function binFolder() {
+  const named = process.env.BRIDGED_PG_BIN;
+  const roots = process.platform === 'win32' ? ['C:\\Program Files\\PostgreSQL'] : ['/usr/lib/postgresql'];
+  const exe = process.platform === 'win32' ? 'initdb.exe' : 'initdb';
+  if (named !== undefined && named !== '' && fs.existsSync(path.join(named, exe))) {
+    return named;
+  }
+  const found = roots.filter((root) => fs.existsSync(root)).flatMap((root) => fs.readdirSync(root).map((version) => path.join(root, version, 'bin')));
+  return found.filter((folder) => fs.existsSync(path.join(folder, exe))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
+}
+
+/** The server's identity lines of `text`: `[{ identity, method }]`, in order. */
+function identitiesOf(text) {
+  return [...text.matchAll(/connection authenticated: identity="([^"]*)" method=(\w+)/g)].map((match) => ({ identity: match[1], method: match[2] }));
+}
+
+/**
+ * Starts the server. `{ ok: true, ... }` or `{ ok: false, why }`; a missing PostgreSQL FAILS the rig's check on CI and is a printed skip off it. `roles` are made with `login`; `keytab` is the
+ * service key for a `gss` line (a file of the owned folder).
+ */
+async function startPgServer(scope, dir, { roles, keytab }) {
+  const bin = binFolder();
+  const win = process.platform === 'win32';
+  const exe = (name) => path.join(bin ?? '', win ? `${name}.exe` : name);
+  check('rig G: a PostgreSQL server (initdb, pg_ctl, psql) is installed', bin !== undefined || process.env.CI !== 'true', 'no initdb in BRIDGED_PG_BIN, /usr/lib/postgresql/*/bin or C:\\Program Files\\PostgreSQL\\*\\bin (the postgresql package)');
+  if (bin === undefined) {
+    return { ok: false, why: 'no PostgreSQL server binaries on this machine' };
+  }
+  const data = path.join(dir, 'data');
+  const logFile = path.join(dir, 'server.log');
+  const port = await freePort();
+  const owner = os.userInfo().username;
+  rigRun(exe('initdb'), ['-D', data, '-U', owner, '-A', 'trust', '--no-sync']);
+  const settings = [
+    "listen_addresses = '127.0.0.1'", `port = ${port}`, 'log_connections = on', 'fsync = off', 'max_connections = 20',
+    ...(win ? [] : ["unix_socket_directories = ''"]),
+    ...(keytab === undefined ? [] : [`krb_server_keyfile = '${keytab.replaceAll('\\', '/')}'`]),
+  ];
+  fs.appendFileSync(path.join(data, 'postgresql.conf'), `\n${settings.join('\n')}\n`);
+  const hbaFile = path.join(data, 'pg_hba.conf');
+  /** Rewrites `pg_hba.conf` and reloads it; the reload is a signal, so the caller waits a moment before the next connection. */
+  const setHba = async (lines) => {
+    fs.writeFileSync(hbaFile, `${lines.join('\n')}\n`);
+    rigRun(exe('pg_ctl'), ['-D', data, 'reload']);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  };
+  fs.writeFileSync(hbaFile, 'host all all 127.0.0.1/32 trust\n');
+  try {
+    rigRun(exe('pg_ctl'), ['-D', data, '-l', logFile, '-w', '-t', '60', 'start']);
+  } catch (error) {
+    check('rig G: the server started', false, `${error.message}\n${fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').slice(-600) : 'no log'}`);
+    return { ok: false, why: 'the PostgreSQL server did not start' };
+  }
+  scope.after(() => {
+    try {
+      execFileSync(exe('pg_ctl'), ['-D', data, '-m', 'immediate', 'stop'], { stdio: 'pipe', timeout: 60_000 }); // NOSONAR: the rig's own binary
+    } catch (error) {
+      console.log(`rig: the PostgreSQL server did not stop cleanly (${error.message.slice(0, 120)})`);
+    }
+  });
+  for (const role of roles) {
+    rigRun(exe('psql'), ['-X', '-h', '127.0.0.1', '-p', String(port), '-U', owner, '-d', 'postgres', '-c', `create role "${role}" login`]);
+  }
+  const logText = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
+  return {
+    ok: true, bin, port, owner, exe, setHba, logText,
+    /** A mark of the log now: what a leg reads is what comes after it. */
+    mark: () => logText().length,
+    /** The identity lines the server wrote since `mark`, after the log has had a moment to settle. */
+    async identitiesSince(mark) {
+      let last = -1;
+      await waitFor(async () => {
+        const length = logText().length;
+        const settled = length === last;
+        last = length;
+        return settled;
+      }, 3000, 250);
+      return identitiesOf(logText().slice(mark));
+    },
+    /** The server's own words since `mark` about a refused connection, one line each, clipped. */
+    refusedSince: (mark) => logText().slice(mark).split(/\r?\n/).filter((line) => /FATAL|rejected|no pg_hba/.test(line)).map((line) => line.trim().slice(0, 160)),
+  };
+}
+
+module.exports = { startPgServer, identitiesOf };

@@ -65,6 +65,8 @@
     "itest:bridged-db-pp1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-db-pp1-itest.cjs",
     "itest:bridged-db-pe1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-db-pe1-itest.cjs",
     "itest:masked-run": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/masked-run-itest.cjs",
+    "itest:bridged-ps1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-ps1-itest.cjs",
+    "itest:bridged-pk1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-pk1-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",
     "icons:brands": "npm run compile && node scripts/generate-brand-icons.mjs",
