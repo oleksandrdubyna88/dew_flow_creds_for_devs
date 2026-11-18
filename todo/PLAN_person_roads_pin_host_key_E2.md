@@ -4,8 +4,11 @@
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E2; epoch 2, approved 2026-11-18). It is
 > the epic's baseline, written when E2 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E2.S2). To be built on its own branch
-> from `main` after E1 (#379, `f3e9887d`). No spec of E2 is written yet: each is written when its story starts,
-> `todo/PLAN_person_roads_pin_host_key_E2_S<n>_spec.md`.
+> from `main` after E1 (#379, `f3e9887d`). Each spec is written when its story starts,
+> `todo/PLAN_person_roads_pin_host_key_E2_S<n>_spec.md`: E2.S1,
+> [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md); E2.S2,
+> [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md); E2.S3,
+> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md) (all 2026-11-18). The spec of E2.S4 is not written.
 
 The goal, scope, dependencies and done-when of the epic are in the parent's `## Epics`, E2, with the table of the repairs R1-R5;
 the sections named below (§3.10 and so on) and the tests (17-27) are the parent's. This document splits the epic into four stories,
@@ -54,6 +57,8 @@ harness and a reading of the CHANGELOG against the tests: Opus writes its brief.
 
 ## E2.S1 · The client's answer: what `ssh -V` says, read as one of three (§3.10, R1)
 
+Spec: [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md).
+
 - **Model.** A security judgement outside the quota (which client gets which words decides whether a source of trust stays on):
   Fable writes the spec, Sonnet codes, Opus reviews.
 - **Why first.** The words of a pinned call (E2.S2) cannot be written without this answer: §3.10 makes it a required input of the
@@ -93,6 +98,8 @@ harness and a reading of the CHANGELOG against the tests: Opus writes its brief.
   commit body; `bridgedSshClient.ts` is unchanged (`git diff` of it is empty); typecheck, lint and the whole suite are green.
 
 ## E2.S2 · The complete words of one pinned call, and the two refusals that stand before them (§3.10, §3.11, §3.12 part 1; R1, R2, R3) — CORNERSTONE
+
+Spec: [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md).
 
 - **Model.** `model: fable`. The cornerstone (security): Fable writes the spec, Sonnet codes, Opus reviews. Sentences E and F are
   in this story, and their words are the spec's (the contracts: §3.10, §3.11).
@@ -184,6 +191,8 @@ harness and a reading of the CHANGELOG against the tests: Opus writes its brief.
 
 ## E2.S3 · Sentence C only on the evidence of the call's own pin file, sentence D otherwise (§3.12 parts 2 and 3; R4)
 
+Spec: [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md).
+
 - **Model.** A security judgement outside the quota (the rule of evidence, and the words of sentence D, which must never send a
   person to replace a saved key): Fable writes the spec, Sonnet codes, Opus reviews.
 - **Why here.** It reads what E2.S2 makes `ssh` print: `LogLevel=ERROR` keeps the lines under a quiet config, and the checked value
@@ -209,7 +218,8 @@ harness and a reading of the CHANGELOG against the tests: Opus writes its brief.
       gives nothing; CR LF and LF alone both split;
     - 25: the roads show it; the guard of test 9 holds for both sentences (an unpinned entry; on a pinned entry a host that is down
       and a refused login show the sentences of before);
-    - E1's test 9 changes where its stderr fixture lacks the `Offending` line: the commit names it.
+    - E1's test 9 changes where its stderr fixture lacks the `Offending` line: the commit names it. E2.S3 also removes H1-H4 of
+      `personRoadsHostKey.test.ts` (they asked `hostKeyRefused`, which goes; their cases are rows of 24), not only test 9's fixtures.
   - **Mutation checks of test 26** that belong here: drop the `Offending` line from the condition of sentence C → the hop and the
     remote text of 24 are red; match the pin file's folder in place of its whole path → "another call" of 24 is red; show sentence D in
     the log only → 25 is red.

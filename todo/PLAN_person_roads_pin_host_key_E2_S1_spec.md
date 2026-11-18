@@ -42,7 +42,7 @@ until E2.S2.
 |---|---|---|
 | `bridgedSshClient.ts` | the private `tokenOf` (`:49`) becomes the exported `versionTokenOf`; its one caller (`:69`) names it. 2 lines changed, 0 added. No other export, constant or behaviour of the file changes | §1 |
 | `pinClient.ts` (new, 111 lines) | `PinClient`, `ReadablePinClient`, `KNOWN_HOSTS_COMMAND_SINCE`, `pinClientOf(exitCode, stderr)`, `PinClientCall`, `PinClientAsk`, `PinClientParts`, `pinClientAsker(parts?)`, `windowPinClient` | §2 |
-| `test/pinClient.test.ts` (new, 241 lines) | 16 tests: V1 to V6 (the reading), A1 to A8 (the asking), R1 and R2 (the real runner) | §3 |
+| `test/pinClient.test.ts` (new, 252 lines as built) | 17 tests: V1 to V6 (the reading), A1 to A9 (the asking), R1 and R2 (the real runner) | §3 |
 | `test/noConnectionSharing.test.ts` | the two lists of G2 that name every place that starts an `ssh` each gain `pinClient.ts`: 2 comment lines added, 2 lines changed | §3.4 |
 | `research/module_tests.md` | one row in the table of the G1 section | §5 |
 
@@ -62,8 +62,8 @@ Each was settled by the lead on 2026-11-18, before this spec was written; D1 to 
 - **D3. `older` is a success of its own.** The type keeps it apart from `unreadable`, so that no reader can fold the two into one
   "not ok". (The bridged check's `ClientVerdict` folds "no version" and "below the floor" into `ok: false`,
   `bridgedSshClient.ts:30`: that is why it cannot be reused whole, K3.)
-- **D4. What is kept.** One answer per program, and BOTH readable answers are kept (`knows` and `older`). `unreadable` is never
-  kept, so the next pinned call asks again (test 19: "a good answer is asked once per program, a bad one again"; "good" is "a
+- **D4. What is kept.** One answer per program, and ONLY the newer one is kept (`knows`; the amendment above). An `older` answer is used for its own call
+  and is not kept, and `unreadable` is never kept, so the next pinned call asks again (test 19: "a good answer is asked once per program, a bad one again"; "good" is "a
   version was read").
 - **D5. ONE parser, shared by ONE additive export.** The parent says "no second reading of a version is written". The private
   `tokenOf` of `bridgedSshClient.ts` is exported as `versionTokenOf(stderr)`, answering `{ text, version, windowsBuild } | undefined`,
@@ -112,7 +112,7 @@ of the window (§2.2); that the floor's comparison of two numbers is written her
 | K6 | So the question finds the program that the call will find only when it is started with the same three things: the program word, the folder (or none), and the `PATH` of the call's environment. The bridged check's empty folder would ask ANOTHER program than a call that starts a bare word in the window's own folder on Windows. A wrong answer there is not harmless in one direction: "knows" for a client that is older ends the call (`Bad configuration option`), but "older" for a client that knows the option leaves a config's `KnownHostsCommand` on | reasoned from K5; measured for the last part with `ssh -G`, K8 |
 | K7 | `bridgedSshEnv(source, platform)` (`bridgedSshEnv.ts`) answers a NEW object with the names that decide the lookup and that `ssh -V` needs: `PATH`, `HOME` off Windows; seven names on Windows, among them `PROGRAMDATA`, without which Win32-OpenSSH answers 255 and prints nothing (its docblock, M9 there). It takes no askpass variable and no agent socket unless a caller names them as `extra`. The question names none | read |
 | K8 | Measured 2026-11-18, OpenSSH 10.2p1, `ssh -G`, the client alone: under a config that says `KnownHostsCommand /bin/echo x`, a command line WITHOUT `-o KnownHostsCommand=none` resolves `knownhostscommand /bin/echo x`; with the word it prints no such line. And `ssh -V` of this client prints `OpenSSH_10.2p1 Ubuntu-…, OpenSSL …` on stderr, exit code 0, nothing on stdout | measured |
-| K9 | The code of §2 and §3 as it stands here: `tsc` exit 0; `eslint` clean on `pinClient.ts`, `bridgedSshClient.ts` and `test/pinClient.test.ts`; the 16 tests pass; the 19 tests of `test/bridgedSshClient.test.ts` pass with §1 applied | measured on a scratch copy of `cbeae5b8`, Node 26, Linux |
+| K9 | The code of §2 and §3 as it stands here: `tsc` exit 0; `eslint` clean on `pinClient.ts`, `bridgedSshClient.ts` and `test/pinClient.test.ts`; the 17 tests pass (16 when it was measured, before the amendment's A9); the 19 tests of `test/bridgedSshClient.test.ts` pass with §1 applied | measured on a scratch copy of `cbeae5b8`, Node 26, Linux |
 | K10 | **A scan knows every place that starts an `ssh`.** `test/noConnectionSharing.test.ts` holds two lists (G2): the functions that call `runSshExec` (`:146`) and the modules that import the runner (`:188`). A new module that names the runner turns both red until it is listed: measured, the whole suite on the scratch copy had exactly these two failures of its own after §2 (`G2: an ssh is started from an argv only at the listed places`, `G2: no other door to a spawned ssh…`). `bridgedSshClient.ts` is listed there for the same `-V` | measured |
 
 **Not measured:** a client older than 8.5 (what it prints for `-V`, and that it ends at the unknown word: E3's M11); Windows'
@@ -200,6 +200,9 @@ export type PinClient =
 /** A client whose version was read, on either side of 8.5: the only kind the words of a pinned call can be written for. */
 export type ReadablePinClient = Exclude<PinClient, { kind: 'unreadable' }>;
 
+/** The one answer that is kept: a client that knows the option cannot become a client that does not, short of being replaced by an older one. */
+type KnowsPinClient = Extract<PinClient, { kind: 'knows' }>;
+
 /** Whether `version` is at or above `since`: major and minor compared as numbers. */
 function atOrAbove(version: Version, since: Version): boolean {
   return version[0] > since[0] || (version[0] === since[0] && version[1] >= since[1]);
@@ -237,19 +240,19 @@ export interface PinClientParts {
  * the same folder, and the names of the call's environment that decide which program a bare word finds (`bridgedSshEnv`: `PATH` and
  * `HOME`, or the Windows names). Nothing else of that environment goes to the child: no askpass password, no agent socket.
  *
- * <p>A version that was read, on either side of 8.5, is kept for this asker's life, per program word, folder and `PATH`.
- * `unreadable` is never kept, so the next pinned call asks again. It never throws: a runner that fails is `unreadable` with no exit
+ * <p>Only the newer answer (`knows`, 8.5 or newer) is kept for this asker's life, per program word, folder and `PATH`. An `older`
+ * answer is used for its own call and not kept, and `unreadable` is never kept, so the next pinned call asks again. It never throws: a runner that fails is `unreadable` with no exit
  * code. It is given no signal of a request or of the window: the time limit ends the child, and the call's own run refuses a request
  * that has gone, as before.</p>
  */
 export function pinClientAsker(given: PinClientParts = {}): PinClientAsk {
   const parts = { run: runSshExec, platform: process.platform, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, ...given };
-  const kept = new Map<string, ReadablePinClient>();
+  const kept = new Map<string, KnowsPinClient>();
   return async (call) => {
     const env = bridgedSshEnv(call.env, parts.platform);
     const key = keptUnder(call, env);
     const read = kept.get(key) ?? (await asked(parts, call, env));
-    if (read.kind !== 'unreadable') {
+    if (read.kind === 'knows') {
       kept.set(key, read);
     }
     return read;
@@ -302,7 +305,7 @@ export const windowPinClient: PinClientAsk = pinClientAsker();
 |---|---|---|---|
 | 1 | an answer is kept for this program word, folder and `PATH` | that answer; no child starts | it stays |
 | 2 | exit code 0, stderr starts with a token at or above 8.5 | `{ kind: 'knows', token }` | yes |
-| 3 | exit code 0, stderr starts with a token below 8.5 | `{ kind: 'older', token }` | yes |
+| 3 | exit code 0, stderr starts with a token below 8.5 | `{ kind: 'older', token }` | no (the amendment above) |
 | 4 | exit code 0, stderr starts with no token (empty; a banner first; the token on stdout only) | `{ kind: 'unreadable', exitCode: 0 }` | no |
 | 5 | an exit code that is not 0, whatever stderr holds | `{ kind: 'unreadable', exitCode: <n> }` | no |
 | 6 | the time limit ended the child, or a signal did (`exitCode` is `null`) | `{ kind: 'unreadable', exitCode: null }` | no |
@@ -442,26 +445,26 @@ test('A2: a call that names no folder is asked in none (the runner then starts i
   assert.equal(Object.keys(seen[0].options.env).every((name) => [...BRIDGED_ENV_WINDOWS, 'USERNAME', 'USERDOMAIN', 'LOGONSERVER'].includes(name)), true);
 });
 
-test('A3: BOTH readable answers are kept: a new client and an older one are each asked once, however many calls follow', async () => {
+test('A3: only the NEWER answer is kept: a new client is asked once however many calls follow, an older one is asked again by each call', async () => {
   const fresh = recordingRunner([NEW]);
   const askNew = pinClientAsker({ run: fresh.run, platform: 'linux' });
   assert.deepEqual([await askNew(call()), await askNew(call()), await askNew(call())], [knows('OpenSSH_10.2'), knows('OpenSSH_10.2'), knows('OpenSSH_10.2')]);
   assert.equal(fresh.seen.length, 1);
 
-  const aged = recordingRunner([OLD, NEW]);
+  const aged = recordingRunner([OLD]);
   const askOld = pinClientAsker({ run: aged.run, platform: 'linux' });
-  assert.deepEqual([await askOld(call()), await askOld(call())], [older('OpenSSH_8.4'), older('OpenSSH_8.4')]);
-  assert.equal(aged.seen.length, 1, 'the older answer is a good answer: it is not asked again');
+  assert.deepEqual([await askOld(call()), await askOld(call()), await askOld(call())], [older('OpenSSH_8.4'), older('OpenSSH_8.4'), older('OpenSSH_8.4')]);
+  assert.equal(aged.seen.length, 3, 'the older answer is used for its call and NOT kept: the next pinned call asks again');
 });
 
 test('A4: "unreadable" is never kept: the next call asks again, and takes the answer it then gets', async () => {
-  const { run, seen } = recordingRunner([NONE, NONE, OLD]);
+  const { run, seen } = recordingRunner([NONE, NONE, NEW]);
   const ask = pinClientAsker({ run, platform: 'linux' });
 
   assert.deepEqual(await ask(call()), unreadable(1));
   assert.deepEqual(await ask(call()), unreadable(1));
-  assert.deepEqual(await ask(call()), older('OpenSSH_8.4'));
-  assert.deepEqual(await ask(call()), older('OpenSSH_8.4'));
+  assert.deepEqual(await ask(call()), knows('OpenSSH_10.2'));
+  assert.deepEqual(await ask(call()), knows('OpenSSH_10.2'));
   assert.equal(seen.length, 3);
 });
 
@@ -568,7 +571,7 @@ src/test/pinClient.test.ts(6,64): error TS2305: Module '"../bridgedSshClient"' h
 src/test/pinClient.test.ts(8,98): error TS2307: Cannot find module '../pinClient' or its corresponding type declarations.
 ```
 
-After §1 alone the first error goes and the second stays. After §2: `tsc` exit 0, and the file's 16 tests pass (R1 takes about
+After §1 alone the first error goes and the second stays. After §2: `tsc` exit 0, and the file's 17 tests pass (R1 takes about
 2.3 s: it waits for the time limit of one stand-in). On a machine with no `ssh` on its `PATH`, R2 is skipped and says so. R1 is skipped on
 Windows, where a shell script cannot stand in for `ssh` (as the real-runner test of `test/bridgedSshClient.test.ts` is).
 
@@ -583,7 +586,7 @@ Windows, where a shell script cannot stand in for `ssh` (as the real-runner test
 | V5 | an exit code that is not 0 is unreadable | D6 |
 | V6 | the token is `versionTokenOf`'s | D5: one parser |
 | A1, A2 | the question is `ssh -V` of the call's program, folder and lookup names | K5 to K7; no secret of the environment goes to the child |
-| A3 | BOTH readable answers are kept | D4 |
+| A3 | only the NEWER answer is kept; an older one is asked again by each call | D4, the amendment |
 | A4 | `unreadable` is never kept | D4 |
 | A5 | kept per program word, folder and `PATH` | §2.2 |
 | A6 | a runner that fails is `unreadable`; the asker never throws | §2.3, row 7 |
@@ -623,7 +626,7 @@ The file keeps its 9 tests (8 pass, 1 skipped, as before).
 
 ## 4. The mutation checks
 
-Each one must turn the named tests red; restore after each one and watch the 16 pass again. Measured 2026-11-18 on the compiled
+Each one must turn the named tests red; restore after each one and watch the 17 pass again. Measured 2026-11-18 on the compiled
 module of the scratch copy; the coder repeats them on the source and records each in the commit body.
 
 | # | The mutation | Red |
@@ -631,7 +634,7 @@ module of the scratch copy; the coder repeats them on the source and records eac
 | M1 | `pinClientOf` answers `older` where it answers `unreadable` (the parent's test 26: read "cannot be read" as "below 8.5") | V4, V5, A4, A7, R1 |
 | M2 | drop `exitCode === 0 ?` (read the token whatever the exit code) | V5 |
 | M3 | keep every answer (drop the `if` before `kept.set`) | A4, A6 |
-| M4 | keep only `knows` | A3, A4 |
+| M4 | keep `older` too (the amendment) | A3, A9 |
 | M5 | `>` in place of `>=` for the minor number | V1 |
 | M6 | hand the child the call's whole environment (drop `bridgedSshEnv`) | A1, A2 |
 | M7 | keep an answer under the program word alone | A5 |
@@ -645,7 +648,7 @@ module of the scratch copy; the coder repeats them on the source and records eac
 new row, after the row of `hostKeyWords.test.ts`. The count is read from the runner's output, not copied from here.
 
 ```markdown
-| `pinClient.test.ts` | 16 | E2.S1 (the plan's §3.10): what the `ssh` program says of itself, read for a pinned call as one of three. V1 to V6, the reading alone: a version at or above 8.5 `knows` `KnownHostsCommand` (8.5 itself, `8.10` as numbers); one below is `older`, a success of its own; any OpenSSH token counts on every platform (the control: the bridged reading refuses the portable build on `win32`); no token at the very start of stderr, a token on stdout, and an exit code that is not 0 are `unreadable`; the token is `versionTokenOf`'s, the bridged road's one parser. A1 to A8, the asking through a recording runner: `ssh -V` of the call's program, in the call's folder, with the lookup names of the call's environment and no secret of it, under the 10 s bound; both readable answers are kept per program word, folder and `PATH`, `unreadable` never; a runner that fails is `unreadable`, and the asker never throws. R1, the real runner with stand-in scripts (not on Windows): the exit code is kept, and a child that never answers is killed at the bound. R2, the real client of the machine's `PATH` (skipped where there is none). What it does not prove: what a client older than 8.5 prints, and that such a client ends at the unknown word (the plan's E3, M11); nothing about a road: the first caller is E2.S2. |
+| `pinClient.test.ts` | 17 | E2.S1 (the plan's §3.10): what the `ssh` program says of itself, read for a pinned call as one of three. V1 to V6, the reading alone: a version at or above 8.5 `knows` `KnownHostsCommand` (8.5 itself, `8.10` as numbers); one below is `older`, a success of its own; any OpenSSH token counts on every platform (the control: the bridged reading refuses the portable build on `win32`); no token at the very start of stderr, a token on stdout, and an exit code that is not 0 are `unreadable`; the token is `versionTokenOf`'s, the bridged road's one parser. A1 to A9, the asking through a recording runner: `ssh -V` of the call's program, in the call's folder, with the lookup names of the call's environment and no secret of it, under the 10 s bound; only the newer answer is kept per program word, folder and `PATH`, an older one and `unreadable` never (A9: older, then newer, then the cache); a runner that fails is `unreadable`, and the asker never throws. R1, the real runner with stand-in scripts (not on Windows): the exit code is kept, and a child that never answers is killed at the bound. R2, the real client of the machine's `PATH` (skipped where there is none). What it does not prove: what a client older than 8.5 prints, and that such a client ends at the unknown word (the plan's E3, M11); nothing about a road: the first caller is E2.S2. |
 ```
 
 The docblock of `pinClient.ts` (§2.1) says where the reading comes from and what it does not decide. `research/module_extension.md`
@@ -655,7 +658,7 @@ and the CHANGELOG wait for E2.S2, where the answer takes effect (the stories doc
 
 1. Read `git status --short`. Write `test/pinClient.test.ts` (§3.1). Run the typecheck: the two errors of §3.2. Save the output.
 2. Apply §1. Run the typecheck: one error left. Run `out/test/bridgedSshClient.test.js` only after step 3 (it needs `tsc` to pass).
-3. Write `pinClient.ts` (§2.1) and apply §3.4. Typecheck, lint, compile; run `pinClient.test.js` (16 pass),
+3. Write `pinClient.ts` (§2.1) and apply §3.4. Typecheck, lint, compile; run `pinClient.test.js` (17 pass),
    `bridgedSshClient.test.js` (19 pass, as before) and `noConnectionSharing.test.js` (9 tests: 8 pass, 1 skipped, as before).
 4. The ten mutations of §4, one at a time, each restored.
 5. `npm test`, the whole suite, and `npm run lint`.
@@ -667,8 +670,8 @@ and the CHANGELOG wait for E2.S2, where the answer takes effect (the stories doc
 ## 7. Done when (each item can be counted)
 
 1. `git diff cbeae5b8 -- src_vs_code/src/bridgedSshClient.ts` is the two lines of §1: 2 removed, 2 added.
-2. `test/pinClient.test.ts` has 16 tests; the typecheck was watched failing with the two errors of §3.2 before §1 and §2 existed,
-   and all 16 pass after (R2 skipped only where `PATH` has no `ssh`).
+2. `test/pinClient.test.ts` has 17 tests; the typecheck was watched failing with the two errors of §3.2 before §1 and §2 existed,
+   and all 17 pass after (R2 skipped only where `PATH` has no `ssh`).
 3. `test/bridgedSshClient.test.ts`: 19 tests, 19 pass, the file unchanged (`git diff` of it is empty). CV1 to CV7 are among them.
 4. Each mutation M1 to M10 turned red what §4 names and was restored.
 5. `pinClient.ts` imports no `vscode`, and no file of `src/` outside `src/test/` imports `pinClient.ts` yet. The two lists of
@@ -693,7 +696,7 @@ and the CHANGELOG wait for E2.S2, where the answer takes effect (the stories doc
 2. `pinClient.ts` imports `versionTokenOf`, `Version`, `ClientRunner` and `CLIENT_CHECK_TIMEOUT_MS` from `./bridgedSshClient`,
    `bridgedSshEnv` and `runSshExec`; it holds no pattern of its own and imports no `vscode`.
 3. The type has three kinds, and `older` cannot be read as a failure: no `ok` field, no boolean that folds two kinds.
-4. `unreadable` is never written into the map; both readable kinds are.
+4. `unreadable` and `older` are never written into the map; `knows` is (the amendment above).
 5. The child gets `['-V']`, the call's program word, the call's folder or none, the reduced environment and the time limit; no
    signal. Nothing of stdout is read.
 6. The asker cannot throw: the one `await` of the runner stands inside the `try`.
@@ -709,7 +712,7 @@ and the CHANGELOG wait for E2.S2, where the answer takes effect (the stories doc
   program word, folder and `PATH`. A `PATH` that changes between the two, or an `ssh` that is replaced, is not seen.
 - **A kept `older` can go stale, and in the unsafe direction.** An `ssh` that is replaced by a newer one while the window is open
   keeps its `older` answer until the window is reloaded: its pinned calls then get no `KnownHostsCommand=none`, and a config's
-  command is asked (K8). D4 keeps both readable answers; the cost is this. It is in *Notes for the lead*.
+  command is asked (K8). D4 as amended keeps only the newer answer, which closes this; the cost is one `ssh -V` per pinned call on a client below 8.5.
 
 ## Notes for the lead
 
@@ -723,10 +726,10 @@ and the CHANGELOG wait for E2.S2, where the answer takes effect (the stories doc
    given no signal, so it never throws, and the call's own run refuses a request that has gone. If the lead wants the question
    itself ended with the request, the asker needs the guards of `launchGuards` and one more way out; say so before the build.
 3. **For the parent's §3.7** (*Added by epoch 2*, first row): "one value in memory per program" is, exactly, one per program
-   word, folder and `PATH` (§2.2), and both readable answers are kept (D4), not "only a good answer … as `bridgedSshClientCheck`
+   word, folder and `PATH` (§2.2), and only the newer answer is kept (D4 as amended), not "only a good answer … as `bridgedSshClientCheck`
    keeps its own". Wording, no change of what grows: at most a handful of small values per window.
-4. **A stale `older`** (§10, last item): a decision of D4 that the lead may want to revisit before the release. Keeping only
-   `knows` costs one `ssh -V` (a few milliseconds) per pinned call on a client below 8.5, and closes it. Not changed here.
+4. **A stale `older`** (§10, last item): closed by the amendment above (consult 85d3babf): only `knows` is kept, at the cost of one
+   `ssh -V` (a few milliseconds) per pinned call on a client below 8.5.
 5. **The comparison of two version numbers** is written in `pinClient.ts` (K4), because `atLeast` is private and D5 allows one
    export. If the lead prefers none, the remote-bridge session would have to export `atLeast` too.
 6. **The line of §1 is a rename** (2 lines changed). An alias in one new line (`export const versionTokenOf = tokenOf;`) would be

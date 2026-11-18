@@ -9,7 +9,10 @@
 > [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (the cornerstone),
 > [PLAN_person_roads_pin_host_key_E1_S3_spec.md](PLAN_person_roads_pin_host_key_E1_S3_spec.md) (the three by Fable) and
 > [PLAN_person_roads_pin_host_key_E1_S4_spec.md](PLAN_person_roads_pin_host_key_E1_S4_spec.md) (by Opus). E2's stories document is
-> [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18; its cornerstone is E2.S2). The stories document of E3 is not written.
+> [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18; its cornerstone is E2.S2), with the specs of its first three stories:
+> [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md),
+> [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md) (the cornerstone) and
+> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md). The stories document of E3 is not written.
 > Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, the module for the pin of one call (`personPin.ts`), the words that both `ssh` argv builders write for a
@@ -328,7 +331,7 @@ tests of the registered commands (C1-C6, I1-I7, R1, B1-B9) run unchanged: their 
 | the pin is present and unusable | `Cannot reach "<name>": ` + sentence A in the form of the entry's login; no `ssh` | `Cannot bridge to "<name>": ` + the same; no `ssh`, no bridge |
 | the pin file cannot be written | the same with sentence B | the same with sentence B |
 | pinned, the host presents ANOTHER key: `ssh` refuses, and names the pin file of this call as the place of the key that does not fit (§3.12) | sentence C, in place of today's "the host did not answer the probe" | the bridge's `ssh` ends (255), the row goes back to *Open Remote Bridge…*; the socket check shows an error message: `The bridge to "<name>" is not open: ` + sentence C (P3) |
-| pinned, the run's stderr holds the verification line and does NOT name the pin file of this call (a jump host of the person's config, a host with no key of the saved type, a remote text): epoch 2, §3.12 | sentence D | the socket check shows an error message: `The bridge to "<name>" could not be checked: ` + sentence D. It does not say "is not open": without the evidence the check does not know that |
+| pinned, the run's stderr holds the verification line and does NOT name the pin file of this call (a jump host of the person's config, a config whose `HostName` alias or `Port` renames the lookup, a remote text): epoch 2, §3.12 | sentence D | the socket check shows an error message: `The bridge to "<name>" could not be checked: ` + sentence D. It does not say "is not open": without the evidence the check does not know that |
 | pinned, the pin file's path cannot be written for `ssh` as one file: epoch 2, §3.11 | `Cannot reach "<name>": ` + sentence E; no `ssh`, no pin file | `Cannot bridge to "<name>": ` + sentence E; no `ssh`, no bridge |
 | pinned, the `ssh` program cannot be asked what it is: epoch 2, §3.10 | the same with sentence F; no connection is started | the same with sentence F; no connection is started, no bridge |
 
@@ -422,7 +425,7 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
   for <host> has changed and you have requested strict checking.` and `Host key verification failed.`; stderr names the
   pin file's path twice. A pin file that `ssh` does not find ends with the same last line, after `No ED25519 host
   key is known for <host> and you have requested strict checking.` (§3.9, row 6). **Not measured:** Windows'
-  `ssh.exe` (C6); a host that offers no key of the pinned type; a refusal through the roads themselves, which E1's
+  `ssh.exe` (C6); a host that offers no key of the pinned type (measured since, by the E2.S3 spec: the 15 lines with `Offending <the saved type> key in <the pin file>:1`, §3.12 part 3); a refusal through the roads themselves, which E1's
   smoke and E3 measure (M5).
 - **Measured for the E1.S3 spec, by hand, 2026-11-17, the same OpenSSH 10.2p1 against a real `sshd` on the loopback** (a repaired
   description of the match, not a change of it; the spec's facts L9):
@@ -764,12 +767,19 @@ line, is not built: it tells a hop apart, but a remote text can END with the lin
    - a remote command never learns the path: it is a word of the local argv.
    **Measured 2026-11-18** (the run of part 1): the line holds the whole path (115 characters there), ends with `:1`, and
    stands before the verification line. The line `Add correct host key in …` is cut at 100 characters, so it is not the
-   evidence. **Not measured:** how the line prints a path that was written in double quotes; a hop on the roads; Windows'
-   `ssh.exe`. The spec measures the first, and E3 measures the first two (M7, M5 f). Windows stays not measured, because E3
-   makes no login there (C6). A miss shows sentence D: it never shows a false sentence C.
+   evidence. **Measured by the E2.S3 spec, 2026-11-18** (OpenSSH 10.2p1; `ssh.exe` of OpenSSH_for_Windows 9.5p2 for the last item):
+   a path in double quotes is printed with no quotes; a backslash is printed as two; a byte outside printable ASCII is printed
+   as a backslash and three octal digits (`\ooo`); `ssh.exe` 9.5p2 prints the same `Offending` line (13 lines) with every
+   backslash doubled. The match reads the printed name back before it compares. **Not measured:** a hop on the roads (E3's M5 f),
+   and a login on Windows (C6, because E3 makes no login there). E3 measures the quoted path again on the roads (M7). A miss
+   shows sentence D: it never shows a false sentence C.
 3. **The verification line without that evidence gets sentence D,** on a pinned call. It covers a hop's refused key, a
-   host that offers no key of the saved type (`No <type> host key is known for …`, §3.5), and a text that only looks like
-   `ssh`'s. It says what was seen and names no host as the cause.
+   config that renames the lookup (`No <type> host key is known for …`, below), and a text that only looks like `ssh`'s. It
+   says what was seen and names no host as the cause. **A host that offers no key of the saved type is not among them**
+   (measured by the E2.S3 spec, 2026-11-18): `ssh` prints the 15 lines with `Offending <the saved type> key in <the pin file>:1`,
+   so it gets sentence C with its evidence, and that is true for it. The line `No <type> host key is known for <name>` comes
+   when `ssh` finds no key under the name it looks up: a config's `HostName` alias or `Port` renames the lookup (measured), or the
+   pin file is empty.
 
 | A pinned call's run ended, and its stderr holds | The person is shown |
 |---|---|
@@ -798,7 +808,10 @@ function of `hostKeyPin.ts` answers the sentence or nothing, so the two branches
 **What stays open, and is said.** A pinned call that ends with 255 and prints nothing although it states its level (a
 client that does not keep the word) shows the sentence of before. E3's M5 (e) fails if that happens on the client it
 runs; on another client it is not known. The log line of the socket check that says the socket "is there" for an empty
-answer is C7. The install's second run keeps today's sentence (§3.5); E3's M2 records it word for word.
+answer is C7. The install's second run keeps today's sentence (§3.5); E3's M2 records it word for word. **A hop under a quiet config** (measured by the
+E2.S3 spec, 2026-11-18): a jump host whose key the nested `ssh` refuses, under a config that says `LogLevel QUIET`, ends with
+exit code 255 and an empty stderr, because `LogLevel=ERROR` is a word of the outer command line and does not reach the nested
+`ssh`. The roads show the sentences of before. E3's M5 has a quiet config (e) and a hop (f), and no row with both.
 
 ## 4. The boundary with the G2 plan
 
@@ -1249,7 +1262,10 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
   outside the quota: the rule of evidence for sentence C and the words of sentences D, E and F (§3.12) are security
   judgements (`subagent-models.md`, the row *Security judgement*).
 - **Stories.** [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18): four stories,
-  E2.S1-E2.S4; the cornerstone is E2.S2. The specs are written when each story starts.
+  E2.S1-E2.S4; the cornerstone is E2.S2. The specs are written when each story starts: E2.S1,
+  [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md); E2.S2,
+  [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md); E2.S3,
+  [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md) (all 2026-11-18). The spec of E2.S4 is not written.
 
 ### E3 — The release gate: every claim is measured on the roads, against a real `sshd`
 
@@ -1351,7 +1367,7 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
 
 None is built in E1, E2 or E3. Each has its disposition here, as decision 12 asks before the release; the lead reads the list
 again at the release. "Taken" means that E2 builds it and the candidate is closed. A candidate that becomes work gets a plan
-of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1.
+of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1, C18 and C19 during E2.
 
 - **C1 — Connect refuses to go on when its scan answers nothing and no usable pin stands in** (§3.5; §7, F2).
   **Disposition: not built; a plan of its own, with C8** (the repair of a saved host key that cannot be used). Does not block
@@ -1385,7 +1401,10 @@ of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1.
   stays a question for the lead, outside this plan.
 - **C11 — An apostrophe in the storage path is quoted.** **Taken into E2** (R2, §3.11).
 - **C12 — The match asks for the LAST line of the stderr.** **Closed, not built:** it does not tell a remote text that
-  ends with the line (`97eb6bb5`). §3.12 replaces it with the evidence of the call's own pin file (R4).
+  ends with the line (`97eb6bb5`). §3.12 replaces it with the evidence of the call's own pin file (R4). **And no longer a remedy
+  for a hop** (measured by the E2.S3 spec, 2026-11-18): under `LogLevel=ERROR` the line `Connection closed by UNKNOWN port 65535`
+  no longer follows a hop's verification line, so the verification line is the last line of a hop's refusal too, and "the last
+  line" does not separate a hop from the entry's own refusal.
 - **C13 — A pinned call states its own `LogLevel`.** **Taken into E2** (R4, §3.12, part 1).
 - **C14 — A partly written pin file is removed when its write fails** (§3.1; the E1.S2 spec, §2.3; PR #365's
   `withoutPartialKey` is the cure for a key file). **Disposition: not built; one small follow-up with its test** (no test of
@@ -1396,5 +1415,17 @@ of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1.
   folder and asks the same program, so the check alone still meets only a write that failed.
 - **C16 — A storage path that holds a double quote is refused before `ssh` starts.** **Taken into E2** (R3, §3.11).
 - **C17 — `VerifyHostKeyDNS=no` on a pinned call.** **Taken into E2** (R1, §3.10).
+- **C18 — A person's ssh config that renames the entry's host or port makes every pinned call fail closed with sentence D.**
+  A `HostName` alias or a `Port` in the person's `ssh` config (measured by the E2.S3 spec, 2026-11-18: the alias once, the port on two hosts; a
+  `HostKeyAlias` read, not measured) makes `ssh` look the key up under the resolved name and port, while the pin file holds the
+  line under the entry's own host and port; the call is refused with `No <type> host key is known for <that name>` and the
+  verification line, which is sentence D. **Disposition: not built; a plan of its own (§9, step 10), not blocking: it fails
+  closed.** No test of this plan and no row of E3 holds it. Whether a pinned call should state `HostKeyAlias` itself is the
+  question of that plan.
+- **C19 — Show sentence D only when the run did not end with 0.** A remote profile that prints the verification line while the
+  command succeeds gets sentence D today, and the install stops (the rule of §3.12 asks the text only). **Disposition: not
+  built; it would be a recorded plan change** (a second condition and one more parameter, `exitCode`, in the function of
+  §3.12), and a second entry of epoch 2. Not blocking: the person is told a true thing about the line, and nothing is
+  connected.
 
 Cornerstones: 2 of 2 — E1.S2, E2.S2
