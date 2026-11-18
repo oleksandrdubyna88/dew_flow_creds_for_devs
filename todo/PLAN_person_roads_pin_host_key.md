@@ -845,7 +845,10 @@ Not built in E1 or E2 (§9, step 7). Each names the result of E2 that would just
   removes a partial key. Note the two readings of `lockToOwner`: the E1.S2 spec, §2.3, says it "does not throw"
   (`materializedKeys.ts:28-38`: it is best-effort and swallows its error), while #365 guards the call all the same, inside its
   `try`. Both hold today; the guard is the safer reading. Justified by M4, (d) (a pin write that fails): a pin file in
-  `keys/<pid>/` afterwards, where the run counts 0 files left.
+  `keys/<pid>/` afterwards, which is the one named exception to M4's "0 files left" (M4 says the run names such a file when it finds
+  one). Note too that the tests Q7a to Q7c of the E1.S2 spec do not model a failure AFTER the pin write began (they make
+  `materializeKnownHosts` throw before it writes, or make the folder impossible): no test of E1 leaves a partly written pin file, so C14
+  would add that test with its fix.
 - **C15 — The socket check's own pin-write failure is more than logged** (§3.3, by design; the code gate on #379, finding 4). When the
   pin file of the socket check cannot be written, the check starts no `ssh` and the failure is only written to the log: the person sees no
   sentence for it (the bridge is open by then, §3.5). Would be justified by a row E2 does not run as written (M4, (d), beside the

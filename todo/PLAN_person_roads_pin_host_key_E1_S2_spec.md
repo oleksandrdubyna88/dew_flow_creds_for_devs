@@ -1,6 +1,6 @@
 # PLAN — E1.S2 spec: the pin of one call, and the guard that owns two files (SECURITY, CORNERSTONE)
 
-> Status: **spec, 2026-11-17, by Fable; nothing built yet.** The cornerstone spec of the G1 plan, and a security spec, written
+> Status: **built 2026-11-17/18 (7f061190 the import lines, aad8b8ba the product and the tests, 08d65f5d the documents) on `fix/g1-person-roads-pin`, in PR #379, unmerged. Spec written 2026-11-17, by Fable.** The cornerstone spec of the G1 plan, and a security spec, written
 > before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`). Story E1.S2 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.1, §3.2, sentences A and B of §3.5, §3.6, and the
 > tests 1, 5, 6, 7, 8 and 10 of its §5) and of its stories document
