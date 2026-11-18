@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **stopped for re-review, 2026-11-18, at entry 1.2 (E2's rows cannot decide the candidates; M1's install is unsafe). The revision for epoch 2 is written (2026-11-18, by Fable) and waits for the Opus judge and the re-review; nothing of epoch 2 is approved, and nothing of it is built. Epic 1 merged (#379, `f3e9887d`), not released.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **stopped for re-review, 2026-11-18, at entry 1.2 (E2's rows cannot decide the candidates; M1's install is unsafe). The revision for epoch 2 is written (2026-11-18, by Fable), and the Opus judge has sorted the done work (2026-11-18: three merged parts cut, each corrected by E2's pull request, none reverted; the rest fits; no extension release from `main` until E3); it waits for the re-review; nothing of epoch 2 is approved, and nothing of it is built. Epic 1 merged (#379, `f3e9887d`), not released.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). The revision replaces the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Every other candidate has a written disposition. E1's stories document is
@@ -50,19 +50,33 @@ Narrowed: no — the scope grows: the known repairs become a build epic (E2), an
 
 | Work | Where | Verdict | Action |
 |---|---|---|---|
-| the plan documents inside PR #379 (the plan as first written, the boundary with G2, the approval with P1-P4 and the split, the revision after G2 with change 1.1, the review repairs, the candidates C11-C17), squash f3e9887d | main | TBD | proposed: kept; the plan's text is rewritten forward by this revision |
-| E1's stories document and the four specs E1.S1-E1.S4, in PR #379, squash f3e9887d | main | TBD | proposed: kept; superseded in part by the specs of E2 (the path rule of E1.S1, the condition of sentence C of E1.S3) |
-| E1.S1 code and tests: `hostKeyWords` and `oneFileWord` in `hostKeyPin.ts`, both argv builders, `hostKeyWords.test.ts`, `pinnedArgv.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; corrected forward by E2 in a new pull request (the path rule and its refusal, the words about other sources of trust and about the log level) |
-| the grouped import lines of `agentCommands.ts` (E1.S2, §3.6), in PR #379, squash f3e9887d | main | TBD | proposed: kept |
-| E1.S2 code and tests, the cornerstone: `personPin.ts`, the two guards of `writtenKey.ts`, sentences A and B, `personPin.test.ts`, `personRoadsPin.test.ts`, `writtenKey.test.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2 hands two more refusals through the same value |
-| E1.S3 code and tests: the four argv calls name the pin file, `hostKeyRefused`, `refusedHostKeySentence`, `personRoadsHostKey.test.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; corrected forward by E2 in a new pull request (sentence C only on evidence, sentence D) |
-| E1.S4 the smoke on real input: `itestPinnedRoads.cjs` (section 10 of `ssh-agent-itest.cjs`) with its four repairs, the exports line of `itestSshd.cjs`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E3 extends the rig |
-| E1's documents: the entry of `src_vs_code/CHANGELOG.md` under Unreleased, `research/module_extension.md`, `research/module_tests.md`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2 rewrites the CHANGELOG entry (its opening guarantee, the two sources that E2 turns off, the quiet case) |
-| the other side of the boundaries: G1 of N16's §5 (`research/PLAN_person_roads_forget_key.md`), the pointer in §8 of `todo/PLAN_remote_bridge_scoped.md`, the rows of `todo/README.md`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; this revision updates the plan's own row |
-| change 1.2 and the stop, bcaafce2 | pushed, unmerged | TBD | proposed: kept; entry 1.2 and the stop stay |
+| the plan documents inside PR #379 (the plan as first written, the boundary with G2, the approval with P1-P4 and the split, the revision after G2 with change 1.1, the review repairs, the candidates C11-C17), squash f3e9887d | main | fits | kept: the record of epoch 1; their text is rewritten forward by this revision (5e775a7c), which goes to `main` with the re-review's pull request |
+| E1's stories document and the four specs E1.S1-E1.S4, in PR #379, squash f3e9887d | main | fits | kept as the record of what E1 built; their status lines say "merged, not released" and name the two rules that epoch 2 replaces (E1.S1's rule of the path: §3.11; E1.S3's condition of sentence C: §3.12), so nothing is built from those rules again; E2's stories document and specs carry the new ones |
+| E1.S1, the one function: `hostKeyWords` in `hostKeyPin.ts`, called by both argv builders (`sshBridge.ts`, `execHostKeyWords` of `sshExecCommand.ts`), its three pairs, white space in double quotes, `hostKeyWords.test.ts`, `pinnedArgv.ts`, the one changed expectation of `sshExecCommand.test.ts`, in PR #379, squash f3e9887d | main | fits | kept: it is the one road in that §3.9 asks for and that §3.10-§3.12 extend; E2 adds its pairs and changes its parameter in E2's pull request (R1, R2, R4 part 1) |
+| E1.S1, the rule of the path inside `oneFileWord` (`hostKeyPin.ts:186-191`): an apostrophe written bare, a double quote answered with `NO_KEY_FILE`, `/dev/null` (`:138`), and its docblock "it never trusts a file the pin did not name", in PR #379, squash f3e9887d | main | cut | corrected in a new pull request, and that pull request is E2's (R2, R3; tests 20-23), before any release; not reverted. It contradicts decision 9 (no stand-in file) and §3.11 (V2, V3). Why no revert and no earlier pull request: a revert of #379 puts the three roads back on `accept-new` and refuses a storage path with a space again, so `main` would be worse; and on no road does this rule connect where E1's base refused (a double quote: `ssh` starts and refuses every host; one apostrophe: `invalid quotes`, the call ends; a pair: the bare word names another file, which E1's base also named as the person's file on the agent's exec, beside the system-wide files). What is false on `main` meanwhile is a sentence (C for the double quote) and the docblock; nothing of it is released |
+| the grouped import lines of `agentCommands.ts` (E1.S2, §3.6), in PR #379, squash f3e9887d | main | fits | kept |
+| E1.S2 code and tests, the cornerstone: `personPin.ts`, the two guards of `writtenKey.ts`, sentences A and B, `personPin.test.ts`, `personRoadsPin.test.ts`, `writtenKey.test.ts`, in PR #379, squash f3e9887d | main | fits | kept: the one value, ready or refused, is where E2's two refusals (the path, §3.11; the client, §3.10) arrive, from the same pin writer and before it writes, so no road gains a branch (§3.6) |
+| E1.S3, the roads: the four argv calls name `knownHostsFile` (`sweepDeadSockets` with its parameter), `refusedHostKeySentence` (the words of sentence C), the two branches with the bridge's message, `personRoadsHostKey.test.ts`, in PR #379, squash f3e9887d | main | fits | kept: the words of sentence C and the bridge's message stay (§3.5, §3.12); in E2's pull request the two branches ask E2's one pure function in place of `hostKeyRefused` and keep their size |
+| E1.S3, the condition of sentence C: `hostKeyRefused` (`hostKeyPin.ts:214-216`), the verification line anywhere in the stderr of a pinned call, and its docblock, in PR #379, squash f3e9887d | main | cut | corrected in a new pull request, and that pull request is E2's (R4; tests 24, 25), before any release; not reverted. It contradicts decision 10 and §3.12 (V4): sentence C then names a cause that the call did not see (a hop's refused key, a remote text, the `/dev/null` of the row above). Why no revert: without it a refused key is told as "did not answer the probe" on the install and as nothing on the bridge, which P3 forbids; and sentence C's advice cannot end in an unchecked connection (§3.5, *Sentence C against P2*), so the wrong cause does not weaken the pin meanwhile. The quiet case (V5) is a miss, not a contradiction: E2's `LogLevel=ERROR` closes it |
+| E1.S4 the smoke on real input: `itestPinnedRoads.cjs` (section 10 of `ssh-agent-itest.cjs`) with its four repairs, the exports lines of `itestSshd.cjs` and of `itestNoSharing.cjs`, in PR #379, squash f3e9887d | main | fits | kept: it passed in CI on the merge commit (`ci · extension`, run 44362280657, both legs); E2 runs it again on the changed words (test 27), and its leg 2 then needs the `Offending` line of the real client; E3 extends the rig |
+| E1's module documents: `research/module_extension.md` (B10, the bridge's key file, the table of secrets, Rule C) and `research/module_tests.md`, in PR #379, squash f3e9887d | main | fits | kept: they describe `main` as it is, the `/dev/null` and the match included (`module_extension.md`, B10); E2's pull request updates them with the code (§6) |
+| E1's entry of `src_vs_code/CHANGELOG.md` under `[Unreleased]`, in PR #379, squash f3e9887d | main | cut | corrected in a new pull request, and that pull request is E2's (R5), before any release. It contradicts decision 11 (V6): the heading, "a saved host key is the only key a call without a terminal accepts", and "gets the saved key as its ONLY known-hosts file" claim more than `main` holds (C3, the two sources that a config turns on, the path rule of the rows above). It is published by the first extension release from `main`, not by a merge, so it can wait for E2 only while no such release is cut: see the note below the table |
+| the other side of the boundaries: G1 of N16's §5 (`research/PLAN_person_roads_forget_key.md`), the pointer in §8 of `todo/PLAN_remote_bridge_scoped.md`, the rows of `todo/README.md`, in PR #379, squash f3e9887d | main | fits | kept; this revision updated the plan's own row, and the judge's commit the five rows of E1 |
+| change 1.2 and the stop, bcaafce2 | pushed, unmerged | fits | kept: entry 1.2 and the stop stay (the ledger is append only); it goes to `main` with the re-review's pull request |
+| the revision of the whole plan for epoch 2, 5e775a7c | local, never pushed | fits | kept: it is step 4 of the re-review, the baseline of epoch 2 and no entry; pushed with this branch for the re-review |
 
-  (The re-review, 2026-11-18. The verdicts are the Opus judge's: `TBD` stands until the judge has filled them, and the
-  check of the ledger reads `TBD` as a finding until then. The actions are proposals for the judge.)
+  (The verdicts are the Opus judge's, 2026-11-18, read against this revision and the code at `f3e9887d`. Three merged
+  parts contradict the revised plan and are cut: the rule of the path with its `/dev/null` (decision 9), the condition of
+  sentence C (decision 10) and the CHANGELOG's guarantee (decision 11). Each is corrected in a new pull request, and that
+  pull request is E2's (R2-R5); none is reverted, because a revert of #379 makes `main` worse than E1 does, and none of
+  the three makes a pinned call connect where E1's base refused. Everything else fits and is kept. No other pull request
+  is owed before E2.)
+  (What this needs meanwhile is a hold on releases, decision 12 applied to `main`: no extension release from `main` until
+  E3 has passed. A release from `main` ships E1 with the three cut parts and this CHANGELOG entry. Read 2026-11-18: the
+  release pull request that release-please keeps open for the extension (#383, 1.23.0) lists #379, so merging it is such
+  a release, and under the stop it is also a merge that carries this plan's work. If an extension release is wanted
+  before E3, E1 is first taken out of `main` by a revert in its own pull request, with the owner's word; that would be a
+  plan change.)
   (The consult for the re-review is `97eb6bb5`: keep the measurements as evidence, but put the known violations of the
   plan's own contract into a small build epic before the final measurements and the release. The cadence consult
   `594a6709` is the list of rows that the old measurements lacked. The question consultants, `274c6e9d`, both
@@ -1047,7 +1061,7 @@ F3 was taken into the plan at the plan round. The dispositions of the others are
 ## 8. Definition of Done
 
 Revised for epoch 2. The first group is E1's, as approved in epoch 1; its work is merged, and the judge of the re-review
-sorts it (`## Plan changes`). The boxes are ticked by the commit that proves each.
+sorted it (`## Plan changes`). The boxes are ticked by the commit that proves each.
 
 **E1 (merged, #379):**
 
@@ -1150,7 +1164,8 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
 ### E1 — The three roads enforce the saved pin of one call
 
 - **State.** Done: merged on 2026-11-18, PR #379, squash `f3e9887d`. Not released. The text below is E1 as it was approved
-  and built; the Opus judge of the re-review sorts its work (`## Plan changes`). What E2 corrects forward is in §1.1.
+  and built; the Opus judge of the re-review sorted its work (`## Plan changes`): it fits, except three parts that E2's pull
+  request corrects (the rule of the path, the condition of sentence C, the CHANGELOG's guarantee). What E2 corrects is in §1.1.
 - **Goal.** On the bridge socket check, *Install creds on host* and *Open Remote Bridge…*, an entry with a pin starts
   `ssh` only against that pin, from one file of this call that goes with this call; a pin that cannot be used starts
   nothing; a person who meets a host with another key is told so. It is the smallest core that runs end to end on
