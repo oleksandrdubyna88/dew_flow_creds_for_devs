@@ -12,7 +12,7 @@
 > [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (2026-11-18; its cornerstone is E2.S2), with the specs of its first three stories:
 > [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md),
 > [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md) (the cornerstone) and
-> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md). The stories document of E3 is not written.
+> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md), [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_key_E2_S4_spec.md). The stories document of E3 is not written.
 > Scope: the extension only (`src_vs_code/src`): the bridge
 > socket check, *Install creds on host* and *Open Remote Bridge…* in `commands/agentCommands.ts`, the helpers of
 > `writtenKey.ts`, the module for the pin of one call (`personPin.ts`), the words that both `ssh` argv builders write for a
@@ -1265,7 +1265,7 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
   E2.S1-E2.S4; the cornerstone is E2.S2. The specs are written when each story starts: E2.S1,
   [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md); E2.S2,
   [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md); E2.S3,
-  [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md) (all 2026-11-18). The spec of E2.S4 is not written.
+  [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md), [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_key_E2_S4_spec.md) (all 2026-11-18).
 
 ### E3 — The release gate: every claim is measured on the roads, against a real `sshd`
 

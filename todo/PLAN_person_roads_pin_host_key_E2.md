@@ -8,7 +8,7 @@
 > `todo/PLAN_person_roads_pin_host_key_E2_S<n>_spec.md`: E2.S1,
 > [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md); E2.S2,
 > [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md); E2.S3,
-> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md) (all 2026-11-18). The spec of E2.S4 is not written.
+> [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md), [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_key_E2_S4_spec.md) (all 2026-11-18).
 
 The goal, scope, dependencies and done-when of the epic are in the parent's `## Epics`, E2, with the table of the repairs R1-R5;
 the sections named below (§3.10 and so on) and the tests (17-27) are the parent's. This document splits the epic into four stories,
@@ -236,6 +236,8 @@ Spec: [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_
   green.
 
 ## E2.S4 · The entry claims only what holds, and E1's smoke runs on the changed words (R5, §6; test 27)
+
+Spec: [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_key_E2_S4_spec.md).
 
 - **Model.** A test harness and a reading of the entry against the tests, not a security judgement: Opus writes the brief, Sonnet
   codes, Opus reviews. R5 is "read by the Opus review of E2" (the parent's E2, the table).
