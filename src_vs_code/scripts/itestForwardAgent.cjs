@@ -124,7 +124,7 @@ async function oneLeg(rig, bridged) {
     if (bridged) {
       return await productionLeg(rig, started, 'printenv SSH_AUTH_SOCK');
     }
-    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: checkedPinOf(rig.out, started.knownHosts) });
+    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: await checkedPinOf(rig.out, started.knownHosts) });
     return await runClient(rig, rig.config, argv, started);
   } finally {
     await endChild(started.sshd);
