@@ -17,6 +17,16 @@ named §3.10 and so on is the parent's, and "§2 of this spec" is this document'
 the facts K1 to K10, the tests V1 to V6, A1 to A8, R1 and R2, the mutations M1 to M10, the break-its Y1 to Y6. This document keeps no
 change ledger: a change of it is an entry in the parent (`plan-change-control.md`).
 
+> **Amendment, 2026-11-18 (consult 85d3babf, both consultants; the parent's ledger 2.1): the cache keeps ONLY the newer-client answer
+> (`knows`, 8.5 or newer).** An `older` answer is used for its own call and is NOT kept: the next pinned call asks again. `unreadable` is
+> never kept, as before. Why: a kept `older` goes stale in the unsafe direction (§10, last item): a client replaced by a newer one would run
+> with no `KnownHostsCommand=none` until the window is reloaded. This replaces D4's "BOTH readable answers are kept", the `kept` map's
+> type and test (`KnowsPinClient`, `read.kind === 'knows'`), row 3 of §2.3 (Kept: no), the tests A3 and A4 (A3: an older client is asked by
+> every call; A4: its third answer is a newer one), mutation M4 (now: keep `older` too, red A3 and A9) and Notes 3 and 4 of the lead. **One test is
+> added, A9, the regression scenario older, then newer, then the cache:** the second call asks again and reads the newer client (so its words
+> gain `KnownHostsCommand=none`), and the third is served from the cache. The file therefore has 17 tests, not 16; each "16" below reads 17.
+> The module is a cost of one `ssh -V` (a few milliseconds) per pinned call on a client below 8.5, and nothing else.
+
 ## What E2.S1 builds, in one paragraph
 
 A pinned call that the extension starts with no terminal, off a bridge, must ask no source of host keys but its pin file (§3.10).
@@ -579,6 +589,7 @@ Windows, where a shell script cannot stand in for `ssh` (as the real-runner test
 | A6 | a runner that fails is `unreadable`; the asker never throws | §2.3, row 7 |
 | A7 | a version on stdout only is `unreadable` | D2 |
 | A8 | two calls at once | §2.2 |
+| A9 | older, then newer, then the cache (the amendment above) | the second call asks again and says `knows`; the third is served from the cache; two questions in all |
 | R1 | the real runner, with stand-ins | the time limit kills the child; the exit code is kept |
 | R2 | the real client of this machine | the token of a real `ssh -V` is read |
 

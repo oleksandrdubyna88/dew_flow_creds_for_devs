@@ -143,7 +143,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
   assert.deepEqual(
     usesOf('runSshExec', 'sshExecRunner'),
     // E1.6: execOverSsh's run is runCall (its options from runOptions); the client check (bridgedSshClientCheck) runs `ssh -V` alone, no connection.
-    ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
+    // G1, E2.S1: the asker of a pinned call (pinClientAsker) runs `ssh -V` alone too, no connection.
+    ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'pinClient.ts#pinClientAsker', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
     HOW_TO_FIX,
   );
   assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['commands/agentCommands.ts'], HOW_TO_FIX);
@@ -185,7 +186,8 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
     // E1.6: bridgedSshClient.ts names the runner for the client check, whose one argv is `-V` (no connection).
-    ['agentUseActions.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    // G1, E2.S1: pinClient.ts names it for the same question of a pinned call off a bridge, with the same one argv.
+    ['agentUseActions.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'pinClient.ts', 'sshUseActions.ts', 'transportFactory.ts'],
     HOW_TO_FIX,
   );
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.
