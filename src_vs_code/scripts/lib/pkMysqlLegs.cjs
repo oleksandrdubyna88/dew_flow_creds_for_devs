@@ -13,6 +13,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { check, record, unmeasured, notThisClients, stop, bridgedEnv, runClient, oneLine, throwawayWord, rigRun, systemRig } = require('./dbProbe.cjs');
+const { installPluginFolder } = require('./dbProbeRig.cjs');
 const { withFakeMysql } = require('./pkMysqlFake.cjs');
 const { MYSQL_SPN: SPN } = require('./pkKrbRig.cjs');
 const candidates = require('./dbCandidates.cjs');
@@ -62,7 +63,9 @@ function pluginFolder(client) {
   const usual = family === 'oracle'
     ? ['/usr/lib/x86_64-linux-gnu/mysql/plugin', '/usr/lib/mysql/plugin', '/usr/lib64/mysql/plugin', '/usr/lib/aarch64-linux-gnu/mysql/plugin']
     : ['/usr/lib/x86_64-linux-gnu/libmariadb3/plugin', '/usr/lib/aarch64-linux-gnu/libmariadb3/plugin', '/usr/lib/mariadb/plugin', '/usr/lib/mysql/plugin'];
-  return [named, ...usual].find((folder) => folder !== undefined && folder !== '' && fs.existsSync(folder));
+  // Windows: the client names no folder in its words, and the plugin folder is the one beside its bin folder (`<install>\lib\plugin`).
+  const byLayout = process.platform === 'win32' ? installPluginFolder(client.exe).folder : undefined;
+  return [named, ...usual, byLayout].find((folder) => folder !== undefined && folder !== '' && fs.existsSync(folder));
 }
 
 const listPlugins = (folder) => (folder === undefined ? [] : fs.readdirSync(folder).filter((file) => /\.(so|dll)$/.test(file)).map((file) => file.replace(/\.(so|dll)$/, '')).sort((a, b) => a.localeCompare(b)));
@@ -92,7 +95,7 @@ async function observe(ctx, client, plugin, pluginName, options) {
   });
   const state = fake.state;
   const first = state.replies[0];
-  const said = oneLine(fake.result.stderr, 260);
+  const said = oneLine(fake.result.stderr, 420);
   const refusedFlag = !state.switched && UNKNOWN_FLAG.test(fake.result.stderr);
   return {
     state, said, refusedFlag, ended: fake.result.ended, switched: state.switched, answered: first !== undefined,
@@ -113,7 +116,7 @@ function knowsFlag(client, flag, env) {
 }
 
 /** The candidates of one client: `--plugin-dir` at the absent file, and the flag only one vendor knows when the client knows it. */
-function candidatesOf(ctx, client) {
+function candidatesOf(ctx, client, plugin) {
   const absent = ctx.product.materializedKeyPath(ctx.dir, 'no-client-file');
   const env = bridgedEnv(ctx.product, ctx.home);
   const list = [{ what: '--plugin-dir at the absent file', flags: [`--plugin-dir=${absent}`] }];
@@ -128,8 +131,8 @@ function candidatesOf(ctx, client) {
       list.push({ what: 'restricted-auth with the password plugins only', flags: [flag] });
     }
   }
-  if (process.platform === 'win32' && familyOf(client) === 'oracle') {
-    return []; // no candidate is known for the built-in Windows authentication plugin (spec §S7.5)
+  if (process.platform === 'win32' && familyOf(client) === 'oracle' && plugin.kind === 'ntlm') {
+    return []; // no candidate is known for the built-in Windows authentication plugin (spec §S7.5): it is linked into the client, no file for --plugin-dir to name
   }
   return list;
 }
@@ -150,9 +153,23 @@ async function diagnoseTicket(ctx, client, plugin, pluginName) {
   console.log(`  the KDC's log:\n    ${ctx.realm.kdcLogTail(10).split('\n').join('\n    ')}`);
 }
 
+/**
+ * Where Cyrus SASL looks for the mechanisms of the LDAP SASL plugin's GSSAPI step, and which of them are GSSAPI modules (`libsasl2-modules-gssapi-mit` puts `libgssapiv2.so` in the first): the third run's control answered
+ * nothing and nothing said whether the module was there at all.
+ */
+function saslGssapiModules() {
+  const folders = ['/usr/lib/x86_64-linux-gnu/sasl2', '/usr/lib/sasl2', '/usr/lib64/sasl2', '/usr/local/mysql/lib/private/sasl2', '/usr/local/mysql/lib/sasl2'].filter((folder) => fs.existsSync(folder));
+  return folders.length === 0 ? 'no SASL plugin folder exists' : folders.map((folder) => `${folder}: ${fs.readdirSync(folder).filter((name) => /gssapi/i.test(name)).join(' ') || 'no GSSAPI module'}`).join('; ');
+}
+
 /** The control of a plugin kind: the launch with no candidate, and the half that takes the identity away. `{ shown, text }`. */
 async function control(ctx, client, plugin, pluginName, controlFlags) {
-  const base = { control: true, add: controlFlags };
+  // The LDAP SASL plugin says what it did only when asked (`AUTHENTICATION_LDAP_CLIENT_LOG=3`, the error level: a variable that changes what the plugin says and nothing it does): the control runs with it, so that a
+  // control that offered nothing carries the plugin's own lines in its words, from the FIRST run (the third run asked only in a second run, after the first had left no ticket in the cache).
+  const ldap = /ldap/i.test(pluginName);
+  const base = { control: true, add: controlFlags, ...(ldap ? { envSet: { AUTHENTICATION_LDAP_CLIENT_LOG: '3' } } : {}) };
+  const ticketKind = plugin.kind === 'ticket' && ctx.realm?.ok === true;
+  const before = ticketKind ? ctx.realm.ticketInReach() : undefined;
   const withIdentity = await observe(ctx, client, plugin, pluginName, base);
   check(`(${plugin.leg}) ${client.name} control: the client ended in time`, withIdentity.ended, withIdentity.words);
   if (!withIdentity.switched) {
@@ -165,10 +182,16 @@ async function control(ctx, client, plugin, pluginName, controlFlags) {
     return { shown: false, text: `a security key needs a device and an answer made with it (spec L1): none can be made on this runner; the client with the plugin: ${withIdentity.words}` };
   }
   if (!withIdentity.offered) {
-    if (plugin.kind === 'ticket' && ctx.realm?.ok === true) {
+    let extra = '';
+    if (ticketKind) {
+      const after = ctx.realm.ticketInReach();
+      extra = ` (the ticket was in reach before the run: ${before ? 'yes' : 'NO'}; after it: ${after ? 'yes' : 'NO, the run left none, and the rig made it again for the diagnosis'}${ldap ? `; SASL GSSAPI modules: ${saslGssapiModules()}` : ''})`;
+      if (!after) {
+        ctx.realm.renew();
+      }
       await diagnoseTicket(ctx, client, plugin, pluginName);
     }
-    return { shown: false, text: `the client offered nothing with the identity in reach: ${withIdentity.words}` };
+    return { shown: false, text: `the client offered nothing with the identity in reach: ${withIdentity.words}${extra}` };
   }
   if (plugin.kind === 'ticket' || plugin.kind === 'file') {
     ctx.takeAway(plugin.kind);
@@ -215,7 +238,7 @@ async function pluginLeg(ctx, client, plugin) {
     return;
   }
   record(`${tag}-control`, 'shown', `positive control, ${plugin.label} (${pluginName}), entry A, no control of the profile: ${ready.text}`);
-  const candidates = candidatesOf(ctx, client);
+  const candidates = candidatesOf(ctx, client, plugin);
   const offeredUnder = [];
   for (const entry of ['A', 'B']) {
     const asBuilt = await observe(ctx, client, plugin, pluginName, { entry });
@@ -232,7 +255,7 @@ async function pluginLeg(ctx, client, plugin) {
   const unknown = candidates.filter((candidate) => !known.includes(candidate)).map((candidate) => candidate.what);
   const stoppers = known.filter((candidate) => offeredUnder.filter((row) => row.what === candidate.what).every((row) => !row.offered)).map((candidate) => candidate.what);
   if (known.length === 0) {
-    record(`${tag}-decision`, 'shown', `no candidate control is known for this plugin on this client (spec §S7.5)${unknown.length === 0 ? '' : `; the client does not know: ${unknown.join('; ')}`}: the pair stays refused`);
+    record(`${tag}-decision`, 'shown', `${plugin.kind === 'ntlm' ? 'no candidate control is known for this plugin on this client (spec §S7.5): it is built into the client, and --plugin-dir names a folder it never opens' : 'every candidate control was refused by this client before it connected, so none was shown to stop the plugin'}${unknown.length === 0 ? '' : `; the client does not know: ${unknown.join('; ')}`}: the pair stays refused`);
   } else if (stoppers.length === 0 && offeredUnder.some((row) => row.offered)) {
     stop(`${tag}-decision`, `${plugin.label} is offered under every candidate (parent §7, row PK1: the pair stays refused, Q18)`);
   } else {

@@ -37,6 +37,7 @@ const { mysqlLegs } = require('./lib/pkMysqlLegs.cjs');
 
 const { check, versionLine, systemRig } = probe;
 const { versionOfClient } = require('./lib/dbProbeRig.cjs');
+const { registerRan } = require('./lib/dbProbeClients.cjs');
 
 /** The builds this job's legs ran, in the order the clients were named: printed again at the end, so that a row of the parent's table can be checked against the build every leg ran. */
 const ran = [];
@@ -85,6 +86,8 @@ async function linux(scope, dir, home, product) {
     oracle === undefined ? [] : [{ name: own === undefined ? 'oracle' : 'oracle-distro', family: 'oracle', exe: oracle.exe }],
     mariadb === undefined ? [] : [{ name: 'mariadb', family: 'mariadb', exe: mariadb.exe }],
   ].flat();
+  // The clients whose legs ran here are the ones the job's last line lists (BRIDGED_BUILDS_FILE).
+  registerRan([...(psql === undefined ? [] : [{ name: 'psql', family: 'psql', exe: psql.exe, via: 'BRIDGED_PSQL' }]), ...clients.map((entry) => ({ ...entry, via: 'PK1' }))]);
   if (clients.length > 0) {
     await mysqlLegs({ scope, dir, product, home, realm, canWriteHome: true }, clients);
   }
@@ -100,6 +103,7 @@ async function windows(scope, dir, home, product) {
     });
     await psqlWindows({ scope, dir, product, exe: psql.exe, home, pg, systemRig: systemRig() });
   }
+  registerRan([...(psql === undefined ? [] : [{ name: 'psql', family: 'psql', exe: psql.exe, via: 'BRIDGED_PSQL' }]), ...(oracle === undefined ? [] : [{ name: 'oracle', family: 'oracle', exe: oracle.exe, via: 'BRIDGED_MYSQL_ORACLE' }])]);
   if (oracle !== undefined) {
     await mysqlLegs({ scope, dir, product, home, realm: { ok: false, why: 'a runner outside a domain has no Kerberos ticket' }, canWriteHome: false }, [{ name: 'oracle', family: 'oracle', exe: oracle.exe }]);
   }

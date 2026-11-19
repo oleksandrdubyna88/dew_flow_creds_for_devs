@@ -10,6 +10,7 @@
 // Nothing here logs the text of a password, and nothing is named for one: a credential of a rig is made at run time and is handed to a child by its
 // environment, and a log line holds a fixed phrase (R5).
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { spawnSync } = require('node:child_process');
@@ -193,10 +194,33 @@ function finish(harnessName) {
   return failures === 0 ? 0 : 1;
 }
 
+/**
+ * The runner image a job ran on, in words: GitHub's own names for it (`ImageOS`, `ImageVersion`), the system's name for itself and the kernel. A hosted label such as `ubuntu-latest` moves between
+ * two jobs of one run while an image is rolled out (the third run: psql 18.6 and ODBC 18.6 in one job, 18.7 and 18.7 in another), so a row is judged per build and each job says which image it was.
+ */
+function runnerImage() {
+  const parts = [`ImageOS=${process.env.ImageOS ?? 'unset'}`, `ImageVersion=${process.env.ImageVersion ?? 'unset'}`];
+  if (!IS_WINDOWS && fs.existsSync('/etc/os-release')) {
+    parts.push(`system ${/^PRETTY_NAME="?([^"\n]*)"?/m.exec(fs.readFileSync('/etc/os-release', 'utf8'))?.[1] ?? 'unnamed'}`);
+  }
+  parts.push(`kernel ${os.release()}`);
+  return parts.join('; ');
+}
+
+/**
+ * Where a client keeps its plugins by the layout of its install (the Windows builds, whose client does not name the folder in its words: `... The specified module could not be found`): MySQL's
+ * installer puts `lib\plugin` beside `bin`, a MariaDB layout `lib\mariadb\plugin`, and a portable one `plugin` beside the program. `{ folder, looked }`: the first that exists, and every place tried.
+ */
+function installPluginFolder(exe) {
+  const bin = path.dirname(exe);
+  const looked = [path.join(bin, '..', 'lib', 'plugin'), path.join(bin, '..', 'lib', 'mariadb', 'plugin'), path.join(bin, '..', 'plugin'), path.join(bin, 'plugin')].map((place) => path.normalize(place));
+  return { folder: looked.find((place) => fs.existsSync(place) && fs.statSync(place).isDirectory()), looked };
+}
+
 /** R3: a leg writes anything system-wide only on a CI runner whose step says so. */
 const mayWriteSystem = () => process.env.CI === 'true' && process.env.BRIDGED_DB_SYSTEM_RIG === '1';
 
 module.exports = {
   IS_WINDOWS, OUT, check, loadProduct, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, resolveProgram, describeFile,
-  pause, holdingListener, reachedRun, noteLeg, unmeasured, stop, announce, finish, mayWriteSystem,
+  pause, holdingListener, reachedRun, noteLeg, unmeasured, stop, announce, finish, mayWriteSystem, runnerImage, installPluginFolder,
 };

@@ -8,7 +8,7 @@ const { launch, endChild } = require('../itestSshd.cjs');
 const crypto = require('node:crypto');
 const net = require('node:net');
 const { fakeServer, within } = require('./mysqlFake.cjs');
-const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, reachedRun, noteLeg, unmeasured, IS_WINDOWS } = require('./dbProbeRig.cjs');
+const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, reachedRun, noteLeg, unmeasured, installPluginFolder, IS_WINDOWS } = require('./dbProbeRig.cjs');
 
 const INVENTED_FLAG = '--pa1-not-a-flag';
 const ABSENT_PLUGIN = 'pa1_absent_plugin';
@@ -59,6 +59,7 @@ const DRIVER_WORDS = /(?:Microsoft )?ODBC Driver \d+ for SQL Server|SQL Server N
  * The driver the ODBC client RAN with (N16), not every driver the runner has installed (the second run listed them all, and a reader could not tell which one the client used). A client run at a port that
  * refuses, under the bridged environment, names its driver in its own error line; on Linux the driver file that name stands for is then read from `odbcinst` (its file name carries the build, `libmsodbcsql-18.6.so.1.1`).
  * A client that names none in its words is said to have named none, and the installed list is printed under that label and no other.
+ * Returns the driver library's real file name (`libmsodbcsql-18.7.so.1.1`, the build in it), or `undefined`: the verdict of an ODBC `sqlcmd` is bound to the driver it loads as well as to its own build (spec L11).
  */
 async function odbcDriver(client, rig) {
   const port = await closedPort();
@@ -71,16 +72,35 @@ async function odbcDriver(client, rig) {
       : runSync('odbcinst', ['-q', '-d'], process.env);
     console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: the client's own words name none (exit ${answer.code}; it said ${JSON.stringify(oneLine(answer.text, 200))}); the drivers the runner lists, none of them shown to have run: ${JSON.stringify(oneLine(listed.text, 300))}`);
     noteLeg('PA1-a odbc-sqlcmd driver', true, 'the client named no driver');
-    return;
+    return undefined;
   }
   let file = '';
-  if (!IS_WINDOWS) {
+  let driverFile;
+  if (IS_WINDOWS) {
+    const found = windowsDriverFile(named);
+    driverFile = found?.file;
+    file = found === undefined ? '; the registry names no driver file for that name' : `; its Driver= path is ${found.path}, the file is ${found.file}, version ${found.version}`;
+  } else {
     const entry = runSync('odbcinst', ['-q', '-d', '-n', named.replace(/^Microsoft /, '')], process.env).stdout;
     const library = /^Driver\s*=\s*(\S+)/m.exec(entry)?.[1];
-    file = library === undefined ? '; odbcinst names no driver file for that name' : `; its file is ${path.basename(library)}`;
+    const real = library !== undefined && fs.existsSync(library) ? fs.realpathSync(library) : undefined;
+    driverFile = real === undefined ? undefined : path.basename(real);
+    file = library === undefined ? '; odbcinst names no driver file for that name' : `; its Driver= path is ${library}, the real file is ${real ?? 'not on disk'}, the driver library is ${driverFile ?? 'not read'}`;
   }
   console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: ${JSON.stringify(named)} (named by the client's own error line, exit ${answer.code})${file}`);
-  noteLeg('PA1-a odbc-sqlcmd driver', true, named);
+  noteLeg('PA1-a odbc-sqlcmd driver', true, driverFile === undefined ? named : `${named}, ${driverFile}`);
+  return driverFile;
+}
+
+/** On Windows: the `Driver` path of a named ODBC driver (the registry's own word, by `Get-OdbcDriver`), its file name and the file's version. `undefined` when it names none. */
+function windowsDriverFile(named) {
+  const wanted = named.replace(/^Microsoft /, '');
+  if (!/^[\w .-]+$/.test(wanted)) {
+    return undefined;
+  }
+  const answer = runSync('powershell', ['-NoProfile', '-Command', `$d = Get-OdbcDriver -Name '${wanted}' -ErrorAction SilentlyContinue | Select-Object -First 1; if ($null -ne $d) { $p = $d.Attribute['Driver']; $v = (Get-Item -LiteralPath $p).VersionInfo.FileVersion; Write-Output ($p + '|' + $v) }`], process.env);
+  const [driverPath, version] = answer.stdout.trim().split('|');
+  return driverPath === undefined || driverPath === '' ? undefined : { path: driverPath, file: path.basename(driverPath), version: version ?? 'unknown' };
 }
 
 /** The arguments that connect a client to the listener at `port`, with one candidate among them: `mysql` by TCP, `sqlcmd` with a SQL login named. */
@@ -160,15 +180,21 @@ function folderByLibrary(client) {
 /** PA1-e: the files of the client's own plugin folder are the loadable authentication plugins of that build (a plugin linked into the client is no file, N11). */
 async function legE(scope, client, rig) {
   const byWords = await folderByWords(scope, client, rig);
-  const folder = byWords.folder !== undefined && fs.existsSync(byWords.folder) ? byWords.folder : folderByLibrary(client);
-  const how = folder === byWords.folder ? "the client's own words when the server switched the login to a plugin that is not there" : 'the folder string compiled into the client library';
+  const layout = IS_WINDOWS ? installPluginFolder(client.exe) : undefined;
+  const folder = byWords.folder !== undefined && fs.existsSync(byWords.folder) ? byWords.folder : (layout === undefined ? folderByLibrary(client) : layout.folder);
+  let how = 'the folder string compiled into the client library';
+  if (folder === byWords.folder) {
+    how = "the client's own words when the server switched the login to a plugin that is not there";
+  } else if (layout !== undefined) {
+    how = "the install's layout (the Windows build says only 'The specified module could not be found', and names no folder; the folder is the one beside the client's bin folder)";
+  }
   if (folder === undefined && byWords.folder !== undefined) {
     console.log(`record (PA1-e) ${client.name}: the client looked for a plugin in ${byWords.folder}, which does not exist on this runner: it has no loadable authentication plugin file there`);
     noteLeg(`PA1-e ${client.name}`, true, 'the plugin folder the client named does not exist');
     return;
   }
   if (folder === undefined) {
-    unmeasured(`PA1-e ${client.name}`, `neither the client's words nor its library named a plugin folder that exists (it said ${JSON.stringify(byWords.said)})`);
+    unmeasured(`PA1-e ${client.name}`, `neither the client's words${layout === undefined ? ' nor its library' : ' nor the layout of its install'} named a plugin folder that exists (it said ${JSON.stringify(byWords.said)}${layout === undefined ? '' : `; looked in: ${layout.looked.join(', ')}`})`);
     return;
   }
   const names = fs.readdirSync(folder).sort((a, b) => a.localeCompare(b));

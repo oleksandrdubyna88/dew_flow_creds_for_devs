@@ -118,7 +118,12 @@ function placeProfileFiles(scope, dir, files) {
   }
 }
 
-/** PK1-w3: the profile files of the runner's own `%APPDATA%\postgresql`: a password file, a certificate and key, and `psqlrc.conf`. The control cuts the keywords and `-X`. */
+/**
+ * PK1-w3: the profile files of the runner's own `%APPDATA%\postgresql`: a password file, a certificate and key, and `psqlrc.conf`. The control cuts what the builder writes to close them: the three keywords, the
+ * variables, `-X`, and ALL the candidate keywords (the third run's control left `sslcertmode='disable'` in the string, which alone keeps a client certificate from being offered, so its certificate marker could not
+ * show); and it gives the client `%APPDATA%`: libpq finds the folder by the system's own call (the password file was read without the name), but `psql` finds `psqlrc.conf` by the variable, which the bridged
+ * environment does not carry (BRIDGED_ENV_WINDOWS), so the launch as built cannot read it and the control could not either.
+ */
 async function legProfileFiles(ctx, systemRig) {
   if (!systemRig) {
     unmeasured('PK1-w3', 'the marker files are written in the runner\'s own %APPDATA%\\postgresql: a CI runner whose step sets BRIDGED_DB_SYSTEM_RIG=1 (rule R3)');
@@ -139,7 +144,7 @@ async function legProfileFiles(ctx, systemRig) {
   const variables = ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'];
   for (const [label, control] of [['control (the three keywords, their variables and -X cut)', true], ['launch as built', false]]) {
     // Entry B (no password): a launch that carries the entry's own password never asks the password file, so the second run's control could not send its marker (the entry's word went instead).
-    const options = (extra) => ({ user: 'pdprobe', host: '127.0.0.1', entry: 'B', ...extra, ...(control ? { cut: keywords, dropArgs: ['-X'] } : {}) });
+    const options = (extra) => ({ user: 'pdprobe', host: '127.0.0.1', entry: 'B', ...extra, ...(control ? { control: true, cut: keywords, dropArgs: ['-X'] } : {}) });
     const build = (extra) => (port) => {
       const made = launchFor({ ...ctx, user: 'pdprobe' }, port, options(extra));
       for (const name of control ? variables : []) {
@@ -150,12 +155,12 @@ async function legProfileFiles(ctx, systemRig) {
     const fileRun = await rig.psqlRun(ctx.scope, ctx.exe, { prepare: () => undefined, build: build({}) });
     const certificate = await rig.psqlRun(ctx.scope, ctx.exe, { prepare: () => undefined, tlsMaterial, build: build({ query: '?sslmode=require' }) });
     await ctx.pg.setHba([SSPI_LINE]);
-    const echo = launchFor(ctx, ctx.pg.port, { entry: 'B', control, ...(control ? { dropArgs: ['-X'] } : {}) });
+    const echo = launchFor(ctx, ctx.pg.port, { entry: 'B', control, ...(control ? { dropArgs: ['-X'], envSet: { APPDATA: process.env.APPDATA ?? '' } } : {}) });
     const echoed = await runClient(ctx.scope, ctx.exe, echo.args, echo.env);
     const sentMarker = rig.holdsMarker(fileRun.state.sent);
     const sentCert = certificate.state.peer?.commonName === rig.PD3_MARKER_CN;
     const readRc = echoed.stdout.includes('pk1-psqlrc-marker');
-    const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : `not sent (the fake got: ${rig.labelled(fileRun.state.sent)})`}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : `not read (exit ${echoed.code}; stdout ${JSON.stringify(oneLine(echoed.stdout, 100))}; stderr ${JSON.stringify(oneLine(echoed.stderr, 140))})`}`;
+    const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : `not sent (the fake got: ${rig.labelled(fileRun.state.sent)})`}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : `not read (${control ? '%APPDATA% given' : 'the bridged environment carries no %APPDATA%'}; exit ${echoed.code}; stdout ${JSON.stringify(oneLine(echoed.stdout, 100))}; stderr ${JSON.stringify(oneLine(echoed.stderr, 140))})`}`;
     if (control) {
       const shown = sentMarker && sentCert && readRc;
       if (shown) {

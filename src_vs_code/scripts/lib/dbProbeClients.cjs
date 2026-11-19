@@ -7,7 +7,7 @@
 // the distribution's, as PK1 has always called them); with only one, the `name` is the family. A leg's words use the name, and its logic the family.
 const fs = require('node:fs');
 const path = require('node:path');
-const { IS_WINDOWS, runSync, resolveProgram, firstLine, versionOfClient } = require('./dbProbeRig.cjs');
+const { IS_WINDOWS, runSync, resolveProgram, firstLine, versionOfClient, buildTagOf, runnerImage } = require('./dbProbeRig.cjs');
 
 /** The newest `psql.exe` the PostgreSQL installer left under `Program Files`, or `undefined`. */
 function installerPsql() {
@@ -69,31 +69,85 @@ function libpqFileOf(exe, number) {
   return undefined;
 }
 
-/** The installed versions of the packages that carry the clients' libraries (Debian and Ubuntu), one line: what a build line cannot say, the library package that a second install may move. */
-function packageVersions() {
+/**
+ * The installed versions of the packages that carry the libraries of the clients that RAN (Debian and Ubuntu), one line: what a build line cannot say, the library package that a second install may
+ * move. Only the packages of the families a leg of the job ran: a package of a client no leg ran (the second `psql` major that PA1-i installs, `mssql-tools` of an image that was not measured) is not named.
+ */
+function packageVersions(clients) {
   if (IS_WINDOWS || !fs.existsSync('/usr/bin/dpkg-query')) {
     return '';
   }
-  const answer = runSync('dpkg-query', ['-W', '-f', '${Package} ${Version}\\n', 'libpq5', 'postgresql-client-*', 'libmariadb3', 'mysql-client-core-*'], process.env);
+  const families = new Set(clients.map((client) => client.family));
+  const patterns = [
+    ...(families.has('psql') ? ['libpq5', ...clients.filter((client) => client.family === 'psql').map((client) => `postgresql-client-${/(\d+)/.exec(realVersion(client).number ?? '')?.[1] ?? '*'}`)] : []),
+    ...(families.has('mariadb') ? ['libmariadb3'] : []),
+    ...(clients.some((client) => client.family === 'oracle' && client.exe.startsWith('/usr/bin/')) ? ['mysql-client-core-*'] : []),
+    ...(families.has('odbc-sqlcmd') ? ['msodbcsql17', 'msodbcsql18', 'mssql-tools', 'mssql-tools18'] : []),
+  ];
+  if (patterns.length === 0) {
+    return '';
+  }
+  const answer = runSync('dpkg-query', ['-W', '-f', '${Package} ${Version}\\n', ...patterns], process.env);
   const rows = answer.stdout.split('\n').map((row) => row.trim()).filter((row) => row !== '');
   return rows.length === 0 ? '' : `; packages: ${rows.join(', ')}`;
 }
 
 /**
- * R1, once more at the end of a job: the build of each client that every leg of the job ran, by the version the client says and the libpq file a `psql` loads. A row of the parent's table
- * names ONE build per client, and the jobs of one run do not always share it (the image's preinstalled `psql` and the one a step installs can differ by a minor version): the line is how a
- * reader checks that the build a row names is the build its legs ran. The jobs of the third run hold every probe of one image in ONE job, so that the line covers them all.
+ * The file that names the clients which the legs of THIS JOB ran (`BRIDGED_BUILDS_FILE`, one JSON object per line, written by the workflow step that begins the job's probes): each harness adds the clients
+ * its legs ran when it prints its own builds line, so the job's last line lists those and no other (the third run listed every client the runner HAS, among them ones no leg of the job ran, and a build
+ * tag was missing where two builds shared a version number: Oracle's two 8.4.13).
  */
-function buildsRecord(clients) {
+const BUILDS_FILE = 'BRIDGED_BUILDS_FILE';
+
+/** Adds `clients` (`{ name, family, exe, via, driver }`) to the job's file; nothing when the step did not name one. */
+function registerRan(clients) {
+  const file = process.env[BUILDS_FILE];
+  if (file === undefined || file === '' || clients.length === 0) {
+    return;
+  }
+  const rows = clients.map((client) => JSON.stringify({ name: client.name ?? client.family, family: client.family, exe: client.exe, via: client.via, driver: client.driver }));
+  fs.appendFileSync(file, `${rows.join('\n')}\n`);
+}
+
+/** The clients the job's legs ran, by what the harnesses wrote (once each, a driver kept once any harness read it), or `undefined` when no file was named or it holds none. */
+function ranClients() {
+  const file = process.env[BUILDS_FILE];
+  if (file === undefined || file === '' || !fs.existsSync(file)) {
+    return undefined;
+  }
+  const byKey = new Map();
+  for (const line of fs.readFileSync(file, 'utf8').split('\n').filter((row) => row.trim() !== '')) {
+    const client = JSON.parse(line);
+    const key = `${client.name}\0${client.exe}`;
+    byKey.set(key, { ...byKey.get(key), ...Object.fromEntries(Object.entries(client).filter(([, value]) => value !== undefined && value !== null)) });
+  }
+  return byKey.size === 0 ? undefined : [...byKey.values()];
+}
+
+/**
+ * R1, once more at the end of a job: the build of each client that a leg of the job ran, each by the version the client says AND its build tag (everything its version line holds after the number: two
+ * clients can say the same number, the distribution's and Oracle's own `mysql` both `8.4.13`, the image's `psql` and a second install), the libpq file a `psql` loads, the ODBC driver library an ODBC client
+ * loaded, and the image the job ran on. A row of the parent's table names ONE build per client, and the jobs of one run do not always share it (an image label moves while it is rolled out): the line is
+ * how a reader checks that the build a row names is the build its legs ran. `register` is false for the job's last line, which names what the harnesses wrote and adds nothing.
+ */
+function buildsRecord(clients, { register = true } = {}) {
+  if (register) {
+    registerRan(clients);
+  }
   const parts = clients.map((client) => {
-    const { number } = realVersion(client);
-    let libpq = '';
+    const read = realVersion(client);
+    const tag = buildTagOf(read.line, client.family);
+    const details = [`build tag ${JSON.stringify(tag)}`];
     if (client.family === 'psql' && !IS_WINDOWS) {
-      libpq = `, libpq file ${libpqFileOf(client.exe, number) ?? 'not read (no binary of that major to read)'}`;
+      details.push(`libpq file ${libpqFileOf(client.exe, read.number) ?? 'not read (no binary of that major to read)'}`);
     }
-    return `${client.name ?? client.family} ${number ?? 'no version read'}${libpq}`;
+    if (client.family === 'odbc-sqlcmd') {
+      details.push(`ODBC driver library ${client.driver ?? 'not read'}`);
+    }
+    return `${client.name ?? client.family} ${read.number ?? 'no version read'} [${details.join('; ')}]`;
   });
-  console.log(`record (R1) the builds every leg of this job ran: ${parts.join('; ') || 'no client'}${packageVersions()}`);
+  console.log(`record (R1) the runner image of this job: ${runnerImage()}`);
+  console.log(`record (R1) the builds every leg of this job ran: ${parts.join('; ') || 'no client'}${packageVersions(clients)}`);
 }
 
 /** `mysql` and `sqlcmd` are two clients each: the family of a file is what its own words say. */
@@ -146,4 +200,4 @@ const REQUIRED_ON_CI_LINUX = [
   ['mariadb', "MariaDB's client, unpacked by the step that installs it (BRIDGED_MYSQL_MARIADB)"],
 ];
 
-module.exports = { discover, versionOf, realVersion, buildsRecord, installerPsql, REQUIRED_ON_CI_LINUX };
+module.exports = { discover, versionOf, realVersion, buildsRecord, registerRan, ranClients, installerPsql, REQUIRED_ON_CI_LINUX };
