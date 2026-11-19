@@ -8,7 +8,7 @@
 // the entry (`buildDbQueryLaunch(..., { bridged: true })` under `bridgedSshEnv`), with the controls V3 will write added by hand in the shape V3 will write them. Each login is asked with
 // the entry's credential and with a wrong one; PE1-4 sets beside the `trust` leg the same launch with `require_auth` cut by hand, which must log in with the wrong password (the control
 // that shows `trust` would have let it in). A RECORD harness: it prints `record (PE1-…)` lines, says `UNMEASURED` where a control or a server was not there, says `STOP (PE1-…)` when
-// the entry's own login fails under the profile and succeeds without its controls, and fails only for the rig's own faults. PE1-7 (SQL Server) is the SQL Server job's. POSIX only.
+// the entry's own login fails under the profile and succeeds without its controls, and fails only for the rig's own faults. PE1-7 (SQL Server) is measured by the PS1 jobs, which hold rig Q (`psLegs.cjs`, `legEntry`). POSIX only.
 const fs = require('node:fs');
 const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
@@ -39,7 +39,7 @@ async function main(scope) {
     await legs.legPsql(scope, psql, shared);
   }
   await legs.legMysql(scope, found.filter((client) => client.family !== 'psql'), shared, process.env.PE1_MARIADB_IMAGE);
-  rig.unmeasured('PE1-7', 'SQL Server: rig Q belongs to the SQL Server job, not to this harness');
+  console.log('record (PE1-7) SQL Server is measured where rig Q is: the PS1 jobs (bridged-ps1-linux and bridged-ps1-windows) print PE1-7-go-sqlcmd and PE1-7-odbc-sqlcmd; this harness has no SQL Server');
   buildsRecord(found);
   return rig.finish('bridged db PE1');
 }

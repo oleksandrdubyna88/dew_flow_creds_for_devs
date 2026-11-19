@@ -749,6 +749,8 @@ jobs:
           Set-ItemProperty -Path $key -Name TcpPort -Value $port
           Set-ItemProperty -Path $key -Name TcpDynamicPorts -Value ''
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name LoginMode -Value 2
+          # AuditLevel 3: failed AND successful logins go to the error log, with how each connection was made (the legs of PS1 read that line; the first run logged failures only). Read at the start below.
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name AuditLevel -Value 3 -Type DWord
           Restart-Service 'MSSQL$SQLEXPRESS' -Force
           "BRIDGED_MSSQL_PORT=$port" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "BRIDGED_MSSQL_ERRORLOG=C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Log\ERRORLOG" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

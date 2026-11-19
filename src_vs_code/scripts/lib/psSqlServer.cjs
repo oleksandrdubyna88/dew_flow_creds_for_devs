@@ -17,16 +17,20 @@ const owned = require('./leftovers.cjs');
 
 const QUERY = 'select suser_sname() as signed_in_as, auth_scheme as scheme from sys.dm_exec_connections where session_id = @@spid';
 const SQL_LOGIN = 'ps1probe';
-const LOG_LINE = /login failed|sspi|ntlm|kerberos|untrusted domain|integrated|windows authentication|could not find a login|login timeout|login is from/i;
+const LOG_LINE = /login failed|login succeeded|connection made using|sspi|ntlm|kerberos|untrusted domain|integrated|windows authentication|could not find a login|login timeout|login is from/i;
 
-/** A throwaway CA and a server certificate for 127.0.0.1 and localhost, RSA, made by `openssl` into `folder` (the PATH's openssl is the rig's own tool). */
+/**
+ * A throwaway CA and a server certificate for 127.0.0.1 and localhost, RSA, made by `openssl` into `folder` (the PATH's openssl is the rig's own tool). The clients connect to `127.0.0.1`: go-sqlcmd
+ * checks the certificate's IP address, but the ODBC driver compares the host WORD with the subject and the DNS names, so the subject is `127.0.0.1` and `127.0.0.1` is also a DNS name of the
+ * certificate (the first run: "certificate verify failed: subject name does not match host name" before any sign-in). This is the rig's certificate for the rig's address and no option of a client.
+ */
 function makeCertificates(folder) {
   fs.mkdirSync(folder, { recursive: true });
   const run = (...args) => rigRun('openssl', args);
   const file = (name) => path.join(folder, name);
   run('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', '/CN=bridge-test-ca', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign', '-keyout', file('ca.key'), '-out', file('ca.crt'));
-  run('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost', '-keyout', file('server.key'), '-out', file('server.csr'));
-  fs.writeFileSync(file('server.ext'), 'subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n');
+  run('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=127.0.0.1', '-keyout', file('server.key'), '-out', file('server.csr'));
+  fs.writeFileSync(file('server.ext'), 'subjectAltName=IP:127.0.0.1,DNS:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n');
   run('x509', '-req', '-in', file('server.csr'), '-CA', file('ca.crt'), '-CAkey', file('ca.key'), '-CAcreateserial', '-days', '2', '-out', file('server.crt'), '-extfile', file('server.ext'));
   for (const name of ['server.key', 'server.crt', 'ca.crt']) {
     fs.chmodSync(file(name), 0o644); // NOSONAR: a throwaway certificate, read by the container's own user
@@ -90,7 +94,13 @@ async function startLinux(scope, dir, goSqlcmd) {
   };
   const up = await waitFor(() => admin(handle, 'select 1').ok, 150_000, 3000);
   check('rig Q: SQL Server answered the administrator within 150 s', up, `the container's last log lines: ${oneLine(handle.log().split('\n').slice(-6).join('\n'), 400)}`);
-  return up ? handle : { ok: false, why: 'the SQL Server container did not come up' };
+  if (!up) {
+    return { ok: false, why: 'the SQL Server container did not come up' };
+  }
+  // Successful logins in the error log are a setting the server reads at its START (`AuditLevel` 3); the container is not restarted for it (it runs with `--rm`, and the restart of such a
+  // container is not something this rig relies on), so on Linux the legs read how a session was made from `auth_scheme` of the session (which names SQL, NTLM or KERBEROS) and from the
+  // log's failed and integrated lines. The Windows step sets the level before the instance's own restart. The line printed after the login is made says which the run has.
+  return handle;
 }
 
 /** Windows: the Express instance the step installed, reached as the runner's own logon (a sysadmin through BUILTIN\Administrators). */
@@ -118,11 +128,17 @@ async function startSqlServer(scope, dir, adminClient) {
     return handle;
   }
   const loginWord = throwawayWord();
-  const made = admin(handle, `if not exists (select 1 from sys.server_principals where name = '${SQL_LOGIN}') create login ${SQL_LOGIN} with password = '${loginWord}', check_policy = off;`);
-  check('rig Q: the administrator made the SQL login of the legs', made.ok, oneLine(made.text, 300));
+  // The query the legs run through the client under test reads `sys.dm_exec_connections`, which needs `VIEW SERVER STATE` (the first run: Msg 300, VIEW SERVER PERFORMANCE STATE denied, so no leg
+  // could read how its session was made). The grant is the rig's, to the one throwaway login; it changes nothing of how that login signs in.
+  const made = admin(handle, `if not exists (select 1 from sys.server_principals where name = '${SQL_LOGIN}') create login ${SQL_LOGIN} with password = '${loginWord}', check_policy = off; grant view server state to ${SQL_LOGIN};`);
+  check('rig Q: the administrator made the SQL login of the legs and let it read its own session', made.ok, oneLine(made.text, 300));
   if (!made.ok) {
     return { ok: false, why: 'the SQL login could not be made' };
   }
+  const before = handle.log().length;
+  admin(handle, 'select 1');
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  console.log(`rig Q: a successful login ${/login succeeded/i.test(handle.log().slice(before)) ? 'IS' : 'is NOT'} written to the server's log (the legs read how a session was made from that line and from auth_scheme)`);
   return {
     ...handle, login: SQL_LOGIN, loginWord, query: QUERY,
     /** A mark of the server's log now. */

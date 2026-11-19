@@ -33,12 +33,14 @@ const { psqlWindows } = require('./lib/pkPsqlWin.cjs');
 const { mysqlLegs } = require('./lib/pkMysqlLegs.cjs');
 
 const { check, versionLine, systemRig } = probe;
+const { versionOfClient } = require('./lib/dbProbeRig.cjs');
 
 /** A client's path and version line (rule R1), or `undefined` with the failure of a missing tool on CI. */
-function client(name, variable, fallback, package_) {
+function client(name, variable, fallback, package_, family) {
   const exe = process.env[variable] ?? fallback;
   const version = exe !== undefined && fs.existsSync(exe) ? versionLine(exe) : undefined;
-  console.log(`${name}: ${exe ?? 'no path'}: ${version ?? 'not found'}`);
+  const said = version === undefined || family === undefined ? undefined : versionOfClient(family, version);
+  console.log(`${name}: ${exe ?? 'no path'}: ${version ?? 'not found'}${said === undefined ? '' : ` (the version it says: ${said.number})`}`);
   if (version === undefined) {
     check(`${name} is installed`, process.env.CI !== 'true', `${exe} is missing (${package_}; set ${variable}) — a skipped leg on the runner proves nothing`);
     return undefined;
@@ -47,12 +49,12 @@ function client(name, variable, fallback, package_) {
 }
 
 async function linux(scope, dir, home, product) {
-  const psql = client('psql', 'BRIDGED_PSQL', '/usr/bin/psql', 'the postgresql-client package');
-  const oracle = client("Oracle's mysql", 'BRIDGED_MYSQL_ORACLE', '/usr/bin/mysql', 'the mysql-client package');
+  const psql = client('psql', 'BRIDGED_PSQL', '/usr/bin/psql', 'the postgresql-client package', 'psql');
+  const oracle = client("Oracle's mysql", 'BRIDGED_MYSQL_ORACLE', '/usr/bin/mysql', 'the mysql-client package', 'oracle');
   // Oracle's own build (the generic Linux archive, checked against its SHA-256 and unpacked by the step into the folder the build was made for): it carries the Kerberos, LDAP, key-file and security-key
   // client plugins that the distribution's package leaves out. When the step names it, it IS the `oracle` client and the distribution's package is `oracle-distro`.
-  const own = process.env.BRIDGED_MYSQL_ORACLE_OWN === undefined ? undefined : client("Oracle's own mysql build", 'BRIDGED_MYSQL_ORACLE_OWN', undefined, "Oracle's generic archive, unpacked by the step");
-  const mariadb = client("MariaDB's client", 'BRIDGED_MYSQL_MARIADB', '/usr/bin/mariadb', "MariaDB's mariadb-client-core, unpacked by the step");
+  const own = process.env.BRIDGED_MYSQL_ORACLE_OWN === undefined ? undefined : client("Oracle's own mysql build", 'BRIDGED_MYSQL_ORACLE_OWN', undefined, "Oracle's generic archive, unpacked by the step", 'oracle');
+  const mariadb = client("MariaDB's client", 'BRIDGED_MYSQL_MARIADB', '/usr/bin/mariadb', "MariaDB's mariadb-client-core, unpacked by the step", 'mariadb');
   const realm = await startRealm(scope, path.join(dir, 'k'), home).catch((error) => {
     check('rig K: the realm was built', false, error.message);
     return { ok: false, why: error.message };
@@ -80,8 +82,8 @@ async function linux(scope, dir, home, product) {
 }
 
 async function windows(scope, dir, home, product) {
-  const psql = client('psql', 'BRIDGED_PSQL', undefined, 'PostgreSQL for Windows, whose bin folder is not on PATH on windows-latest');
-  const oracle = client("Oracle's mysql", 'BRIDGED_MYSQL_ORACLE', undefined, "Oracle's MySQL for Windows");
+  const psql = client('psql', 'BRIDGED_PSQL', undefined, 'PostgreSQL for Windows, whose bin folder is not on PATH on windows-latest', 'psql');
+  const oracle = client("Oracle's mysql", 'BRIDGED_MYSQL_ORACLE', undefined, "Oracle's MySQL for Windows", 'oracle');
   if (psql !== undefined) {
     const pg = await startPgServer(scope, path.join(dir, 'g'), { roles: [] }).catch((error) => {
       check('rig G: the real server was built', false, error.message);

@@ -4,6 +4,8 @@
 //
 // A RECORD, as every probe of E1.7 (§S7.2): go-sqlcmd and the ODBC client, each named by its own version answers (rule R1), against a REAL SQL Server that says how each login was made
 // (`auth_scheme` of the session, the name it was logged in as, its own error log); each leg beside its positive control, a launch with NO user, as the builder wrote it until §S6.15.
+// The same run measures PE1-7 (the entry's own SQL login: logged in with `auth_scheme` SQL, and a wrong password refused) for each client, since rig Q is here.
+// A leg whose run says the RIG failed (the reading login lacked a permission, the client refused the receiver's certificate) is `UNMEASURED`, never a `STOP`.
 // It fails only for the rig's own faults: a missing tool (named), a server that did not come up, a client that never ended. `UNMEASURED <leg>` says the control could not be produced.
 //
 //   Linux     Microsoft's container image on the runner's docker (`BRIDGED_MSSQL_IMAGE`, pinned by tag and digest in the workflow), a throwaway CA put in the trust store with `sudo` and taken out
@@ -21,6 +23,8 @@ const { startRealm } = require('./lib/pkKrbRig.cjs');
 const { startSqlServer } = require('./lib/psSqlServer.cjs');
 const { ps1Legs } = require('./lib/psLegs.cjs');
 
+const { realVersion } = require('./lib/dbProbeClients.cjs');
+
 const { check, versionLine, systemRig } = probe;
 
 /** A client's path, with the answers to `--version` and to `-?` (rule R1; they tell go-sqlcmd from the ODBC client), or `undefined` with the failure of a missing tool on CI. */
@@ -34,6 +38,9 @@ function client(name, variable, fallback, package_) {
   }
   console.log(`  --version: ${versionLine(exe, ['--version']) ?? 'no answer'}`);
   console.log(`  -?: ${versionLine(exe, ['-?']) ?? 'no answer'}`);
+  // Neither answer's first line names a version (the tool's name), so the version is read where the client puts it: `Version: v1.10.0`, `Version 18.6.1.1 Linux`.
+  const version = realVersion({ family: name, exe });
+  console.log(`  the version it says: ${version.number ?? 'none read'} (${version.line})`);
   return { name, exe };
 }
 

@@ -11,12 +11,27 @@ const net = require('node:net');
 const path = require('node:path');
 const { check, record, unmeasured, stop, bridgedEnv, runClient, oneLine, throwawayWord, systemRig } = require('./dbProbe.cjs');
 
-const INTEGRATED = /sspi|ntlm|kerberos|untrusted domain|windows authentication|integrated/i;
+/**
+ * What the server's log says of an INTEGRATED attempt. The word `Integrated` alone is not one: a client that sent a SQL login with an empty user (go-sqlcmd with no user) is told "An attempt to
+ * login using SQL authentication failed. Server is configured for Integrated authentication only", and the first run took that line for the integrated attempt the control needs.
+ */
+const INTEGRATED = /sspi|ntlm|kerberos|untrusted domain|windows authentication/i;
+const SQL_ATTEMPT = /using SQL authentication/i;
+const isIntegrated = (line) => INTEGRATED.test(line) && !SQL_ATTEMPT.test(line);
+/**
+ * What is the RIG's fault and no client's answer: the reading login could not read the session (`VIEW SERVER PERFORMANCE STATE` was not granted), or the client refused the receiver's
+ * certificate before it signed in. A leg whose run says one of these is `UNMEASURED`, with the words, and never a `STOP`.
+ */
+const RIG_DEFECT = /VIEW SERVER (?:PERFORMANCE )?STATE|certificate verify failed|subject name does not match|SSL Provider|x509: certificate|tls: failed to verify/i;
+/** What a client says of a flag it does not know. */
+const UNKNOWN_FLAG = /unknown (?:flag|shorthand flag|option)|unrecognized option|unknown command/i;
+/** How the server says a session was made: `Login succeeded for user 'x'. Connection made using SQL Server authentication.` */
+const MADE = /Login succeeded for user '([^']*)'\.\s*Connection made using ([A-Za-z ]+?) authentication/i;
 const SCHEME = /\b(SQL|NTLM|KERBEROS)\b/;
 const ABSENT_ADDRESS = '127.0.0.1';
 
 /** The launch of the builder for entry A, then what a leg does to it by hand. `host` replaces the `-S` value, `user` the entry's user, `flags` are added last. */
-function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
+function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
   const { product, q } = ctx;
   const encoded = encodeURIComponent(user);
   const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, q.query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
@@ -33,6 +48,8 @@ function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord 
     delete env.SQLCMDPASSWORD;
   } else if (withoutWord) {
     delete env.SQLCMDPASSWORD;
+  } else if (wrongWord) {
+    env.SQLCMDPASSWORD = throwawayWord();
   }
   return { args: [...args, ...flags], env, userAsRead: built.env.SQLCMDUSER };
 }
@@ -46,13 +63,15 @@ async function observe(ctx, client, options) {
   const scheme = SCHEME.exec(run.stdout)?.[1];
   const row = run.stdout.split(/\r?\n/).find((line) => scheme !== undefined && line.includes(scheme));
   const who = row === undefined ? undefined : row.replace(scheme, '').trim().replaceAll(/\s+/g, ' ').slice(0, 80);
+  const made = lines.map((line) => MADE.exec(line)).find((found) => found !== null);
   return {
-    ended: run.ended, code: run.code, scheme, who, lines, integrated: lines.some((line) => INTEGRATED.test(line)), said: oneLine(`${run.stderr} ${scheme === undefined ? run.stdout : ''}`, 200), launched,
+    ended: run.ended, code: run.code, scheme, who, lines, integrated: lines.some(isIntegrated), said: oneLine(`${run.stderr} ${scheme === undefined ? run.stdout : ''}`, 200), launched,
+    madeAs: made === undefined ? undefined : `${made[1]} (${made[2]} authentication)`, rigDefect: RIG_DEFECT.exec(`${run.stderr}\n${run.stdout}`)?.[0],
   };
 }
 
 /** The words of one observation for a record line. */
-const wordsOf = (seen) => `exit ${seen.code}; ${seen.scheme === undefined ? 'no session was made' : `the server logged the session in as ${JSON.stringify(seen.who)} by ${seen.scheme}`}; the server's log ${seen.lines.length === 0 ? 'names no attempt' : `names: ${JSON.stringify(seen.lines.slice(0, 3))}`}; the client said ${JSON.stringify(seen.said)}`;
+const wordsOf = (seen) => `exit ${seen.code}; ${seen.scheme === undefined ? 'no session was made' : `the server logged the session in as ${JSON.stringify(seen.who)} by ${seen.scheme}`}; the server's log ${seen.madeAs === undefined ? '' : `says the session was made as ${seen.madeAs}; it `}${seen.lines.length === 0 ? 'names no attempt' : `names: ${JSON.stringify(seen.lines.slice(0, 3))}`}; the client said ${JSON.stringify(seen.said)}`;
 
 /** PS1-0 on one client: the positive control. `{ shown, text }`. */
 async function control(ctx, client) {
@@ -82,8 +101,10 @@ async function listener() {
 }
 
 /** The records of PS1-1, 2, 5, 6, 7, 8 for one client: each is `record` when the control was shown and `UNMEASURED` (with what was seen) when it was not. */
-function say(leg, shown, text) {
-  if (shown) {
+function say(leg, shown, text, seen) {
+  if (seen?.rigDefect !== undefined) {
+    unmeasured(leg, `a RIG DEFECT, not an answer of the client (${JSON.stringify(seen.rigDefect)}): ${text}`);
+  } else if (shown) {
     record(leg, 'shown', text);
   } else {
     unmeasured(leg, `no positive control for this client and platform; without one: ${text}`);
@@ -94,10 +115,34 @@ function say(leg, shown, text) {
 async function legBuilt(ctx, client, shown, leg = 'PS1-1') {
   const seen = await observe(ctx, client, {});
   check(`(${leg}) ${client.name}: the client ended in time`, seen.ended, wordsOf(seen));
-  say(`${leg}-${client.name}`, shown, `the launch as built (user and password in the environment): ${wordsOf(seen)}`);
+  say(`${leg}-${client.name}`, shown, `the launch as built (user and password in the environment): ${wordsOf(seen)}`, seen);
   const clean = seen.scheme === 'SQL' && (seen.who ?? '').includes(ctx.q.login) && !seen.integrated;
-  if (shown && !clean) {
+  if (shown && !clean && seen.rigDefect === undefined) {
     stop(`${leg}-${client.name}`, `the launch as built did not make a plain SQL login for the entry's user (parent §7, row PS1: that client stays refused until a flag is shown to stop it)`);
+  }
+}
+
+/**
+ * PE1-7 (the spec's §S7.4: SQL Server): the entry's user and password make a SQL login, and a wrong password does not. Both through the launch as built, the first with the entry's
+ * word, the second with another in its place. `record` when the right one made a session by `SQL` and the wrong one made none; a rig defect is `UNMEASURED`; anything else the client did
+ * is a `STOP` for the lead (the entry's own login fails, or a wrong password logs in).
+ */
+async function legEntry(ctx, client) {
+  const leg = `PE1-7-${client.name}`;
+  const right = await observe(ctx, client, {});
+  const wrong = await observe(ctx, client, { wrongWord: true });
+  check(`(PE1-7) ${client.name}: both clients ended in time`, right.ended && wrong.ended, `${wordsOf(right)} | ${wordsOf(wrong)}`);
+  const rigDefect = right.rigDefect ?? wrong.rigDefect;
+  const text = `the entry's user and password: ${wordsOf(right)}. A wrong password: ${wordsOf(wrong)}`;
+  if (rigDefect !== undefined) {
+    unmeasured(leg, `a RIG DEFECT, not an answer of the client (${JSON.stringify(rigDefect)}): ${text}`);
+    return;
+  }
+  const loggedIn = right.scheme === 'SQL' && (right.who ?? '').includes(ctx.q.login);
+  const refused = wrong.scheme === undefined;
+  record(leg, 'shown', `${loggedIn ? 'logged in, auth_scheme SQL' : 'did NOT log in as a SQL login'}; a wrong password ${refused ? 'refused' : 'made a session'}: ${text}`);
+  if (!loggedIn || !refused) {
+    stop(leg, `${loggedIn ? 'a wrong password made a session' : "the entry's own SQL login did not make a SQL session"} under the launch as built (parent §7, row PE1: the pair is not served by this client)`);
   }
 }
 
@@ -198,7 +243,8 @@ async function legOdbc(ctx, client, shown) {
 async function legFlag(ctx, client, shown) {
   const seen = await observe(ctx, client, { flags: ['--authentication-method=SqlPassword'] });
   const works = seen.scheme === 'SQL' && (seen.who ?? '').includes(ctx.q.login);
-  say(`PS1-6-${client.name}`, shown, `--authentication-method=SqlPassword added to the launch as built: ${works ? 'the client knows it and the login still works' : 'the login did NOT work (the flag may be unknown to this build)'}; ${wordsOf(seen)}`);
+  const unknown = !works && UNKNOWN_FLAG.test(seen.said);
+  say(`PS1-6-${client.name}`, shown, `--authentication-method=SqlPassword added to the launch as built: ${works ? 'the client knows it and the login still works' : (unknown ? 'the flag is UNKNOWN TO THIS CLIENT (it refused it)' : 'the login did NOT work with the flag, and the client did not call the flag unknown')}; ${wordsOf(seen)}`, seen);
 }
 
 /** PS1-7: the host forms the builder refuses today, by hand: recorded only (§S7.15 keeps them refused). */
@@ -206,7 +252,7 @@ async function legHosts(ctx, client, shown) {
   const forms = [['PS1-7-tcp', `tcp:127.0.0.1,${ctx.q.port}`], ['PS1-7-ipv6', `[::1],${ctx.q.port}`], ['PS1-7-instance', '127.0.0.1\\ps1instance']];
   for (const [leg, host] of forms) {
     const seen = await observe(ctx, client, { host, ms: 30_000 });
-    say(`${leg}-${client.name}`, shown, `host ${JSON.stringify(host)}, by hand: ${wordsOf(seen)}`);
+    say(`${leg}-${client.name}`, shown, `host ${JSON.stringify(host)}, by hand: ${wordsOf(seen)}`, seen);
   }
 }
 
@@ -222,11 +268,11 @@ async function legAccount(ctx, client, shown) {
     return seen.lines.some((line) => /could not find a login/i.test(line)) ? 'a SQL login for the name as written (the server looked for a login of that name)' : 'the server\'s log does not say which';
   };
   const plain = await observe(ctx, client, { user, ms: 30_000 });
-  say(`PS1-8-${client.name}`, shown, `user ${user} with a password, as the builder launches it: ${classify(plain)}; ${wordsOf(plain)}`);
+  say(`PS1-8-${client.name}`, shown, `user ${user} with a password, as the builder launches it: ${classify(plain)}; ${wordsOf(plain)}`, plain);
   if (client.name === 'go-sqlcmd') {
     const flagged = await observe(ctx, client, { user, flags: ['--authentication-method=SqlPassword'], ms: 30_000 });
-    say(`PS1-8-flag-${client.name}`, shown, `user ${user} with --authentication-method=SqlPassword: ${classify(flagged)}; ${wordsOf(flagged)}`);
-    if (shown && classify(flagged).startsWith('an NTLM')) {
+    say(`PS1-8-flag-${client.name}`, shown, `user ${user} with --authentication-method=SqlPassword: ${classify(flagged)}; ${wordsOf(flagged)}`, flagged);
+    if (shown && flagged.rigDefect === undefined && classify(flagged).startsWith('an NTLM')) {
       stop(`PS1-8-flag-${client.name}`, 'SqlPassword did not stop the NTLM sign-in of a user written as a Windows account (parent §7, row PS1: go-sqlcmd stays refused until a flag is shown to stop it)');
     }
   }
@@ -238,11 +284,13 @@ async function oneClient(ctx, client) {
   if (made.shown) {
     record(`PS1-0-${client.name}`, 'shown', `positive control, ${made.text}`);
   } else {
-    unmeasured(`PS1-0-${client.name}`, `the identity on offer was not shown: ${made.text}`);
+    const rigDefect = made.seen?.rigDefect;
+    unmeasured(`PS1-0-${client.name}`, `${rigDefect === undefined ? '' : `a RIG DEFECT, not an answer of the client (${JSON.stringify(rigDefect)}): `}the identity on offer was not shown: ${made.text}`);
   }
   await legBuilt(ctx, client, made.shown);
+  await legEntry(ctx, client);
   const bareUser = await observe(ctx, client, { withoutWord: true });
-  say(`PS1-2-${client.name}`, made.shown, `a user and no password, by hand: ${wordsOf(bareUser)}`);
+  say(`PS1-2-${client.name}`, made.shown, `a user and no password, by hand: ${wordsOf(bareUser)}`, bareUser);
   if (client.name === 'go-sqlcmd') {
     await legConfig(ctx, client, made.shown);
     await legFlag(ctx, client, made.shown);
