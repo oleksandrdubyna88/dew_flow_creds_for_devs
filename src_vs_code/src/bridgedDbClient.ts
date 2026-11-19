@@ -72,13 +72,15 @@ interface Reader {
 
 /**
  * Where each client's own words put its version (the rig's readers of PA1-a, `scripts/lib/dbProbeRig.cjs`). The patterns are anchored at the start of the answer or, for
- * `sqlcmd`, of a line: a version word later in a line is no version. `mysql`'s two vendors print different lines, and Oracle's pattern refuses a tag that says MariaDB.
+ * `sqlcmd`, of a line: a version word later in a line is no version. `mysql`'s two vendors print different lines: MariaDB's `Distrib` pattern requires the word MariaDB right after the version (Oracle 5.7 prints `Distrib 5.7.44` too), and Oracle's patterns refuse a tag that says MariaDB.
  */
 const READERS: Readonly<Record<DbClient, readonly Reader[]>> = {
   psql: [{ vendor: 'postgresql', pattern: /^(?<token>psql \(PostgreSQL\) (?<version>\d+(?:\.\d+)*)(?<tag>[^\r\n]*))/ }],
   mysql: [
-    { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+Ver\s+\d+(?:\.\d+)*\s+Distrib\s+${VERSION}(?<tag>[^\r\n]*))`) },
+    { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+Ver\s+\d+(?:\.\d+)*\s+Distrib\s+${VERSION}(?<tag>-MariaDB[^\r\n]*))`) },
     { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+from\s+${VERSION}-MariaDB(?<tag>[^\r\n]*))`) },
+    // Before Oracle 8 the client printed its own number first (`Ver 14.14 Distrib 5.7.44, for Linux`): the version is the one after `Distrib`, and MariaDB is the word that tells the other vendor.
+    { vendor: 'oracle', pattern: new RegExp(String.raw`^${LEAD}(?<token>mysql(?:\.exe)?\s+Ver\s+\d+(?:\.\d+)*\s+Distrib\s+${VERSION}(?<tag>(?![^\r\n]*MariaDB)[^\r\n]*))`) },
     { vendor: 'oracle', pattern: new RegExp(String.raw`^${LEAD}(?<token>mysql(?:\.exe)?\s+Ver\s+${VERSION}(?<tag>(?![^\r\n]*MariaDB)[^\r\n]*))`) },
   ],
   sqlcmd: [

@@ -68,11 +68,11 @@ export const VENDOR_OF: Readonly<Record<DbClient, DbVendor>> = { psql: 'postgres
 /** A vendor of another client's family: a verdict the builder cannot use for this client. */
 const OTHER_VENDOR: Readonly<Record<DbClient, DbVendor>> = { psql: 'mariadb', mysql: 'postgresql', sqlcmd: 'oracle' };
 
-/** The line each client's recorded build prints, and the build a served row lists for it (the forms of `bridgedDbClient.test.ts`). */
+/** The line each client's recorded build prints, and the build a served row lists for it (lines recorded by CI run 44543740467, as `bridgedDbClient.test.ts` lists them). */
 export const RECORDED: Readonly<Record<DbClient, { readonly line: string; readonly version: string; readonly tag: string }>> = {
-  psql: { line: 'psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)\n', version: '18.7', tag: '(Debian 18.7-1.pgdg120+1)' },
-  mysql: { line: 'mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)\n', version: '8.4.13', tag: 'for Linux on x86_64 (MySQL Community Server - GPL)' },
-  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 18.6.1.1 Linux\nCopyright (C) 2022\n', version: '18.6.1.1', tag: 'Linux' },
+  psql: { line: 'psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)\n', version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' },
+  mysql: { line: '/usr/local/mysql/bin/mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)\n', version: '8.4.13', tag: 'for Linux on x86_64 (MySQL Community Server - GPL)' },
+  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 18.6.0001.1 Linux\nCopyright (C) 2022\n', version: '18.6.0001.1', tag: 'Linux' },
 };
 
 /** A table that serves the three clients on this platform, each with its one recorded build: what the real check admits. */

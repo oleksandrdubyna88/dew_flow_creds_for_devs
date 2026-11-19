@@ -11,8 +11,8 @@ import { materializedKeysDir } from '../materializedKeys';
 
 /**
  * The database client check and its reading (E1.7 spec §S7.6 and §S7.11, DC1-DC13). The version lines are written out here in the forms the clients print them (the
- * spec's N16 and the rig's own readers: `psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)`, `mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)`,
- * `Distrib 10.6.23-MariaDB`, `from 11.8.6-MariaDB`, go-sqlcmd's `Version: v1.10.0`, the ODBC client's `Version 18.6.1.1 Linux`); each is a case, and the CI run that recorded
+ * spec's N16 and the rig's own readers: `psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)`, `mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)`,
+ * `Distrib 10.6.23-MariaDB`, `from 11.8.6-MariaDB`, go-sqlcmd's `Version: v1.10.0`, the ODBC client's `Version 18.6.0001.1 Linux`); each is a case, and the CI run that recorded
  * the real line goes beside it when a row is turned (§S7.7).
  */
 
@@ -36,18 +36,35 @@ interface Line {
   readonly tag: string;
 }
 
+/**
+ * The version lines the clients printed on CI, each as the third probe run recorded it (CI run 44543740467, the `record (PA1-a)` lines and the `CANDIDATE` lines of its jobs; the job is named
+ * in each id). Nothing here is written from memory (E1.7 spec §S7.6 item 8): the Linux lines of `mysql` and `mariadb` lead with the absolute path of the file that answered, the ODBC client's
+ * version is four numbers (`18.6.0001.1`, never `18.6.0001.1`) and go-sqlcmd's first line is its own name, with its version on a line of its own.
+ */
+const GO_SQLCMD = 'sqlcmd: Install/Create/Query SQL Server, Azure SQL, and Tools\n\nVersion: v1.10.0\nCopyright (c) Microsoft Corporation\n';
+const ODBC = (version: string, system: string): string => `Microsoft (R) SQL Server Command Line Tool\nVersion ${version} ${system}\nCopyright (C) 2022 Microsoft Corporation. All rights reserved.\n\nusage: sqlcmd [-U login id]\n`;
+
 const LINES: readonly Line[] = [
-  { id: 'psql, a pgdg build on Debian', client: 'psql', platform: 'linux', stdout: 'psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)\n', vendor: 'postgresql', version: '18.7', tag: '(Debian 18.7-1.pgdg120+1)' },
-  { id: 'psql, a pgdg build on Ubuntu', client: 'psql', platform: 'linux', stdout: 'psql (PostgreSQL) 16.15 (Ubuntu 16.15-1.pgdg24.04+1)\n', vendor: 'postgresql', version: '16.15', tag: '(Ubuntu 16.15-1.pgdg24.04+1)' },
-  { id: 'psql on Windows, an upstream build prints no tag', client: 'psql', platform: 'win32', stdout: 'psql (PostgreSQL) 17.11\r\n', vendor: 'postgresql', version: '17.11', tag: '' },
-  { id: 'Oracle mysql 8.4 on Linux', client: 'mysql', platform: 'linux', stdout: 'mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)\n', vendor: 'oracle', version: '8.4.13', tag: 'for Linux on x86_64 (MySQL Community Server - GPL)' },
-  { id: 'Oracle mysql 8.0 of Ubuntu', client: 'mysql', platform: 'linux', stdout: 'mysql  Ver 8.0.46-0ubuntu0.22.04.1 for Linux on x86_64 ((Ubuntu))\n', vendor: 'oracle', version: '8.0.46', tag: '-0ubuntu0.22.04.1 for Linux on x86_64 ((Ubuntu))' },
-  { id: 'Oracle mysql on Windows, its path leads the line', client: 'mysql', platform: 'win32', stdout: 'C:\\Program Files\\MySQL\\MySQL Server 8.4\\bin\\mysql.exe  Ver 8.4.13 for Win64 on x86_64 (MySQL Community Server - GPL)\r\n', vendor: 'oracle', version: '8.4.13', tag: 'for Win64 on x86_64 (MySQL Community Server - GPL)' },
-  { id: 'MariaDB 10.6, Distrib', client: 'mysql', platform: 'linux', stdout: 'mysql  Ver 15.1 Distrib 10.6.23-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '10.6.23', tag: '-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper' },
-  { id: 'MariaDB 11.8, from', client: 'mysql', platform: 'linux', stdout: 'mysql from 11.8.6-MariaDB, client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '11.8.6', tag: ', client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper' },
-  { id: 'go-sqlcmd', client: 'sqlcmd', platform: 'linux', stdout: 'Microsoft (R) SQL Server Command Line Tool\nVersion: v1.10.0\nCopyright (c) 2022 Microsoft Corporation.\n\nusage: sqlcmd [-?]\n', vendor: 'go-sqlcmd', version: '1.10.0', tag: '' },
-  { id: 'the ODBC sqlcmd', client: 'sqlcmd', platform: 'linux', stdout: 'Microsoft (R) SQL Server Command Line Tool\nVersion 18.6.1.1 Linux\nCopyright (C) 2022 Microsoft Corporation. All rights reserved.\n\nusage: sqlcmd [-U login id]\n', vendor: 'odbc-sqlcmd', version: '18.6.1.1', tag: 'Linux' },
+  { id: 'psql 18.7, ubuntu-latest', client: 'psql', platform: 'linux', stdout: 'psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)\n', vendor: 'postgresql', version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' },
+  { id: 'psql 16.16, ubuntu-24.04', client: 'psql', platform: 'linux', stdout: 'psql (PostgreSQL) 16.16 (Ubuntu 16.16-1.pgdg24.04+1)\n', vendor: 'postgresql', version: '16.16', tag: '(Ubuntu 16.16-1.pgdg24.04+1)' },
+  { id: 'psql 17.11 on Windows, an upstream build prints no tag, windows-latest', client: 'psql', platform: 'win32', stdout: 'psql (PostgreSQL) 17.11\r\n', vendor: 'postgresql', version: '17.11', tag: '' },
+  { id: "Oracle's own mysql 8.4.13, the generic archive, ubuntu-latest", client: 'mysql', platform: 'linux', stdout: '/usr/local/mysql/bin/mysql  Ver 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)\n', vendor: 'oracle', version: '8.4.13', tag: 'for Linux on x86_64 (MySQL Community Server - GPL)' },
+  { id: "the distribution's mysql 8.0.46, ubuntu-22.04", client: 'mysql', platform: 'linux', stdout: '/usr/bin/mysql  Ver 8.0.46-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))\n', vendor: 'oracle', version: '8.0.46', tag: '-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))' },
+  { id: "Oracle's mysql 8.4.13 on Windows, its path leads the line, windows-latest", client: 'mysql', platform: 'win32', stdout: 'C:\\Program Files\\MySQL\\MySQL Server 8.4\\bin\\mysql.exe  Ver 8.4.13 for Win64 on x86_64 (MySQL Community Server - GPL)\r\n', vendor: 'oracle', version: '8.4.13', tag: 'for Win64 on x86_64 (MySQL Community Server - GPL)' },
+  { id: 'MariaDB 10.6.23, Distrib, ubuntu-22.04', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb  Ver 15.1 Distrib 10.6.23-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '10.6.23', tag: '-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper' },
+  { id: 'MariaDB 11.8.6, from, ubuntu-latest', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb from 11.8.6-MariaDB, client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '11.8.6', tag: ', client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper' },
+  { id: 'go-sqlcmd 1.10.0, every Linux job and windows-latest', client: 'sqlcmd', platform: 'linux', stdout: GO_SQLCMD, vendor: 'go-sqlcmd', version: '1.10.0', tag: '' },
+  { id: 'the ODBC sqlcmd 18.6.0001.1, the PS1 Linux job', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.6.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux' },
+  { id: 'the ODBC sqlcmd 18.7.0001.1, ubuntu-24.04 and ubuntu-latest', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.7.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.7.0001.1', tag: 'Linux' },
+  { id: 'the ODBC sqlcmd 17.11.0001.1, ubuntu-22.04', client: 'sqlcmd', platform: 'linux', stdout: ODBC('17.11.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '17.11.0001.1', tag: 'Linux' },
+  { id: 'the ODBC sqlcmd 16.0.1000.6 on Windows, the PS1 Windows job', client: 'sqlcmd', platform: 'win32', stdout: ODBC('16.0.1000.6', 'NT'), vendor: 'odbc-sqlcmd', version: '16.0.1000.6', tag: 'NT' },
+  { id: 'the ODBC sqlcmd 15.0.1300.359 on Windows, windows-latest', client: 'sqlcmd', platform: 'win32', stdout: ODBC('15.0.1300.359', 'NT'), vendor: 'odbc-sqlcmd', version: '15.0.1300.359', tag: 'NT' },
+  { id: 'MariaDB 10.11.14, Distrib, ubuntu-24.04', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb  Ver 15.1 Distrib 10.11.14-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '10.11.14', tag: '-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper' },
+  { id: "the distribution's mysql 8.4.13, ubuntu-latest", client: 'mysql', platform: 'linux', stdout: '/usr/bin/mysql  Ver 8.4.13-0ubuntu0.26.04.2 for Linux on x86_64 ((Ubuntu))\n', vendor: 'oracle', version: '8.4.13', tag: '-0ubuntu0.26.04.2 for Linux on x86_64 ((Ubuntu))' },
+  { id: 'psql 14.24, ubuntu-22.04', client: 'psql', platform: 'linux', stdout: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)\n', vendor: 'postgresql', version: '14.24', tag: '(Ubuntu 14.24-1.pgdg22.04+2)' },
 ];
+
+const ORACLE_5_7 = '/usr/bin/mysql  Ver 14.14 Distrib 5.7.44, for Linux (x86_64) using  EditLine wrapper\n';
 
 /** A table that serves exactly the build of `line`, as a turned row would list it. */
 const tableFor = (line: Line): DbProfileRow[] => [rowOf(line.client, line.platform, served(line.vendor, build(line.version, line.tag)))];
@@ -68,7 +85,7 @@ test('DC2: an exit that is not 0, no output, a version word later in the line, a
   assert.deepEqual(read(1, LINES[0].stdout), { ok: false, sentence: dr7('psql', '1') }, 'a good line with a bad exit');
   assert.deepEqual(read(null, LINES[0].stdout), { ok: false, sentence: dr7('psql', 'unknown') }, 'a killed child');
   assert.deepEqual(read(0, ''), { ok: false, sentence: dr7('psql', '0') }, 'empty output');
-  assert.deepEqual(read(0, 'banner psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)\n'), { ok: false, sentence: dr7('psql', '0') }, 'a version word later in the line');
+  assert.deepEqual(read(0, 'banner psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)\n'), { ok: false, sentence: dr7('psql', '0') }, 'a version word later in the line');
   assert.deepEqual(read(0, 'wrapper says hello\n' + LINES[0].stdout), { ok: false, sentence: dr7('psql', '0') }, 'the line is not the first');
   assert.deepEqual(read(0, 'no version here\n'), { ok: false, sentence: dr7('psql', '0') });
   for (const line of LINES.filter((one) => one.client !== 'sqlcmd')) {
@@ -80,18 +97,18 @@ const dr8 = (client: string, token: string, system: string, builds: string): str
   `The ${client} on this computer answered ${token}. A Remote Bridge runs a query with ${client} on ${system} only for the builds that were measured: ${builds}.`;
 
 test('DC3: a version below every recorded build, above every one, between two, a recorded version with another tag, and a vendor with no served row are DR8 with the token and the recorded builds; nothing else of the output is in the sentence', () => {
-  const table = [rowOf('psql', 'linux', served('postgresql', build('16.15', '(Ubuntu 16.15-1.pgdg24.04+1)'), build('18.7', '(Debian 18.7-1.pgdg120+1)')))];
-  const builds = 'psql 16.15 (Ubuntu 16.15-1.pgdg24.04+1); psql 18.7 (Debian 18.7-1.pgdg120+1)';
+  const table = [rowOf('psql', 'linux', served('postgresql', build('16.16', '(Ubuntu 16.16-1.pgdg24.04+1)'), build('18.7', '(Ubuntu 18.7-1.pgdg26.04+2)')))];
+  const builds = 'psql 16.16 (Ubuntu 16.16-1.pgdg24.04+1); psql 18.7 (Ubuntu 18.7-1.pgdg26.04+2)';
   const read = (line: string): Reading => dbClientVerdict(table, 'psql', 'linux', 0, `${line}\n${MORE}`);
   const refused = (token: string): Reading => ({ ok: false, sentence: dr8('psql', token, 'Linux', builds) });
 
-  assert.deepEqual(read('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)'), refused('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)'), 'below');
-  assert.deepEqual(read('psql (PostgreSQL) 19.1 (Debian 19.1-1.pgdg120+1)'), refused('psql (PostgreSQL) 19.1 (Debian 19.1-1.pgdg120+1)'), 'above');
-  assert.deepEqual(read('psql (PostgreSQL) 17.2 (Debian 17.2-1.pgdg120+1)'), refused('psql (PostgreSQL) 17.2 (Debian 17.2-1.pgdg120+1)'), 'between two recorded builds');
-  assert.deepEqual(read('psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+2)'), refused('psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+2)'), 'a recorded version with another build tag');
+  assert.deepEqual(read('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)'), refused('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)'), 'below');
+  assert.deepEqual(read('psql (PostgreSQL) 19.1 (Ubuntu 19.1-1.pgdg26.04+1)'), refused('psql (PostgreSQL) 19.1 (Ubuntu 19.1-1.pgdg26.04+1)'), 'above');
+  assert.deepEqual(read('psql (PostgreSQL) 17.2 (Ubuntu 17.2-1.pgdg26.04+1)'), refused('psql (PostgreSQL) 17.2 (Ubuntu 17.2-1.pgdg26.04+1)'), 'between two recorded builds');
+  assert.deepEqual(read('psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+3)'), refused('psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+3)'), 'a recorded version with another build tag');
   assert.deepEqual(read('psql (PostgreSQL) 18.7'), refused('psql (PostgreSQL) 18.7'), 'a recorded version with no tag at all');
-  assert.equal(read('psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)').ok, true, 'control: a recorded build, with the same trailing output, is served');
-  for (const answer of [read('psql (PostgreSQL) 14.24 (x)'), read('psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+2)')]) {
+  assert.equal(read('psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)').ok, true, 'control: a recorded build, with the same trailing output, is served');
+  for (const answer of [read('psql (PostgreSQL) 14.24 (x)'), read('psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+3)')]) {
     assert.equal(!answer.ok && answer.sentence.includes(SENTINEL), false, 'a sentinel in the rest of the output is in no sentence');
     assert.equal(!answer.ok && answer.sentence.includes('Copyright'), false);
   }
@@ -99,9 +116,9 @@ test('DC3: a version below every recorded build, above every one, between two, a
   const oracleOnly = [rowOf('mysql', 'linux', served('oracle', build('8.4.13', 'for Linux on x86_64 (MySQL Community Server - GPL)')))];
   assert.deepEqual(dbClientVerdict(oracleOnly, 'mysql', 'linux', 0, LINES[6].stdout), {
     ok: false,
-    sentence: dr8('mysql', 'mysql  Ver 15.1 Distrib 10.6.23-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper', 'Linux', "Oracle's mysql 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)"),
+    sentence: dr8('mysql', 'mariadb  Ver 15.1 Distrib 10.6.23-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper', 'Linux', "Oracle's mysql 8.4.13 for Linux on x86_64 (MySQL Community Server - GPL)"),
   }, 'a vendor with no served row');
-  assert.deepEqual(dbClientVerdict([], 'psql', 'linux', 0, LINES[0].stdout), { ok: false, sentence: dr8('psql', 'psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)', 'Linux', 'none') }, 'a table with no row for the pair lists no build');
+  assert.deepEqual(dbClientVerdict([], 'psql', 'linux', 0, LINES[0].stdout), { ok: false, sentence: dr8('psql', 'psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)', 'Linux', 'none') }, 'a table with no row for the pair lists no build');
 });
 
 test('DC3b: the token of Oracle\'s client on Windows holds no path, and DR8 says Windows for win32', () => {
@@ -117,14 +134,14 @@ test('DC3b: the token of Oracle\'s client on Windows holds no path, and DR8 says
 test('DC4: MariaDB\'s line and Oracle\'s, go-sqlcmd\'s and the ODBC client\'s: neither is read as the other', () => {
   const both = [
     rowOf('mysql', 'linux', served('oracle', build('8.4.13', 'for Linux on x86_64 (MySQL Community Server - GPL)')), served('mariadb', build('10.6.23', LINES[6].tag))),
-    rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')), served('odbc-sqlcmd', build('18.6.1.1', 'Linux'))),
+    rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')), served('odbc-sqlcmd', build('18.6.0001.1', 'Linux'))),
   ];
   const read = (client: DbClient, line: Line): Reading => dbClientVerdict(both, client, 'linux', 0, line.stdout);
 
   assert.deepEqual(read('mysql', LINES[3]), { ok: true, vendor: 'oracle', version: '8.4.13', tag: LINES[3].tag });
   assert.deepEqual(read('mysql', LINES[6]), { ok: true, vendor: 'mariadb', version: '10.6.23', tag: LINES[6].tag });
   assert.deepEqual(read('sqlcmd', LINES[8]), { ok: true, vendor: 'go-sqlcmd', version: '1.10.0', tag: '' });
-  assert.deepEqual(read('sqlcmd', LINES[9]), { ok: true, vendor: 'odbc-sqlcmd', version: '18.6.1.1', tag: 'Linux' });
+  assert.deepEqual(read('sqlcmd', LINES[9]), { ok: true, vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux' });
   const mariaOnly = [rowOf('mysql', 'linux', served('mariadb', build('10.6.23', LINES[6].tag)))];
   assert.equal(dbClientVerdict(mariaOnly, 'mysql', 'linux', 0, LINES[3].stdout).ok, false, 'Oracle\'s line is not read as MariaDB\'s');
   const oracleOnly = [rowOf('mysql', 'linux', served('oracle', build('8.4.13', LINES[3].tag)))];
@@ -132,8 +149,31 @@ test('DC4: MariaDB\'s line and Oracle\'s, go-sqlcmd\'s and the ODBC client\'s: n
   assert.equal(dbClientVerdict(oracleOnly, 'mysql', 'linux', 0, LINES[7].stdout).ok, false, 'nor its newer "from" form');
   const goOnly = [rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')))];
   assert.equal(dbClientVerdict(goOnly, 'sqlcmd', 'linux', 0, LINES[9].stdout).ok, false, 'the ODBC client is not read as go-sqlcmd');
-  const odbcOnly = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.1.1', 'Linux')))];
+  const odbcOnly = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.0001.1', 'Linux')))];
   assert.equal(dbClientVerdict(odbcOnly, 'sqlcmd', 'linux', 0, LINES[8].stdout).ok, false, 'go-sqlcmd is not read as the ODBC client');
+});
+
+test('DC4b: Oracle 5.7\'s "Ver 14.14 Distrib 5.7.44" is Oracle\'s 5.7.44: never MariaDB\'s ("Distrib" alone is no MariaDB word), and never the version 14.14', () => {
+  const oracle57 = [rowOf('mysql', 'linux', served('oracle', build('5.7.44', ', for Linux (x86_64) using  EditLine wrapper')))];
+  const mariaOnly = [rowOf('mysql', 'linux', served('mariadb', build('5.7.44', ', for Linux (x86_64) using  EditLine wrapper')))];
+
+  assert.deepEqual(dbClientVerdict(oracle57, 'mysql', 'linux', 0, ORACLE_5_7), { ok: true, vendor: 'oracle', version: '5.7.44', tag: ', for Linux (x86_64) using  EditLine wrapper' });
+  assert.equal(dbClientVerdict(mariaOnly, 'mysql', 'linux', 0, ORACLE_5_7).ok, false, 'a table that serves MariaDB 5.7.44 does not serve Oracle\'s 5.7.44');
+  const unrecorded = dbClientVerdict([rowOf('mysql', 'linux', served('oracle', build('8.4.13', LINES[3].tag)))], 'mysql', 'linux', 0, ORACLE_5_7);
+  assert.equal(!unrecorded.ok && unrecorded.sentence.includes('Ver 14.14 Distrib 5.7.44'), true, 'DR8 names the line as Oracle\'s');
+  for (const line of LINES.filter((one) => one.vendor === 'mariadb')) {
+    assert.equal(dbClientVerdict([rowOf('mysql', 'linux', served('oracle', build(line.version, line.tag)))], 'mysql', 'linux', 0, line.stdout).ok, false, `${line.id}: MariaDB's own line is not Oracle's`);
+  }
+});
+
+test('DC4c: a line is read where the client prints it: go-sqlcmd\'s first line is its name, the ODBC client\'s version has four numbers, and a Linux path before the program is not in the token', () => {
+  const first = (line: Line): string => line.stdout.split('\n')[0];
+  assert.equal(first(LINES[8]), 'sqlcmd: Install/Create/Query SQL Server, Azure SQL, and Tools');
+  assert.equal(LINES.filter((one) => one.vendor === 'odbc-sqlcmd').every((one) => /^\d+\.\d+\.\d{4}\.\d+$/.test(one.version)), true, 'the recorded ODBC versions are 18.6.0001.1, not 18.6.1.1');
+  for (const line of LINES.filter((one) => one.client === 'mysql' && one.platform === 'linux')) {
+    const answer = dbClientVerdict([rowOf('mysql', 'linux')], 'mysql', 'linux', 0, line.stdout);
+    assert.equal(!answer.ok && answer.sentence.includes('/usr') || !answer.ok && answer.sentence.includes('/home'), false, `${line.id}: no path in the sentence`);
+  }
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -192,8 +232,8 @@ interface Rig {
 }
 
 const GOOD_PSQL = (): ReturnType<ClientRunner> => Promise.resolve({ exitCode: 0, stdout: LINES[0].stdout, stderr: '' });
-const BAD_PSQL = (): ReturnType<ClientRunner> => Promise.resolve({ exitCode: 0, stdout: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)\n', stderr: '' });
-const SERVED_PSQL = [rowOf('psql', 'linux', served('postgresql', build('18.7', '(Debian 18.7-1.pgdg120+1)')))];
+const BAD_PSQL = (): ReturnType<ClientRunner> => Promise.resolve({ exitCode: 0, stdout: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)\n', stderr: '' });
+const SERVED_PSQL = [rowOf('psql', 'linux', served('postgresql', build('18.7', '(Ubuntu 18.7-1.pgdg26.04+2)')))];
 
 /** A check over a fake file system and a runner that records what it was given and what its folder held while it ran; `answers` are used in turn, the last again. */
 function rig(t: TestContext, answers: readonly (() => ReturnType<ClientRunner>)[], over: { rows?: readonly DbProfileRow[]; platform?: NodeJS.Platform; source?: NodeJS.ProcessEnv; extra?: Map<string, FakeFile> } = {}): Rig {
@@ -211,7 +251,7 @@ function rig(t: TestContext, answers: readonly (() => ReturnType<ClientRunner>)[
   return { check, runs, notes, files, dir };
 }
 
-const GOOD_OK = { ok: true, vendor: 'postgresql', version: '18.7', tag: '(Debian 18.7-1.pgdg120+1)' } as const;
+const GOOD_OK = { ok: true, vendor: 'postgresql', version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' } as const;
 const FILE = { program: 'psql', path: PSQL_FILE, realPath: PSQL_FILE, size: 10, mtimeMs: 100, launcher: false } as const;
 
 test('DC5: a good answer is kept (a second call spawns nothing), a bad one is not (a second call spawns again)', async (t) => {
@@ -289,7 +329,7 @@ test('DC7: a request that ends during the spawn is not an answer (the caller goe
 });
 
 test('DC8: a table that serves no row for the client on this platform starts nothing', async (t) => {
-  for (const rows of [[], [rowOf('psql', 'win32', served('postgresql', build('18.7', '(Debian 18.7-1.pgdg120+1)')))], [{ client: 'psql', platform: 'linux', served: false } as DbProfileRow]]) {
+  for (const rows of [[], [rowOf('psql', 'win32', served('postgresql', build('18.7', '(Ubuntu 18.7-1.pgdg26.04+2)')))], [{ client: 'psql', platform: 'linux', served: false } as DbProfileRow]]) {
     const world = rig(t, [GOOD_PSQL], { rows });
 
     const answer = await world.check({ client: 'psql' });
@@ -358,7 +398,7 @@ test('DC10: two calls for one file before the first verdict share one spawn; the
   const bad = rig(t, [badGate.run, GOOD_PSQL]);
   const c = bad.check({ client: 'psql' });
   const d = bad.check({ client: 'psql' });
-  badGate.release('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)\n');
+  badGate.release('psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)\n');
   const [one, two] = await Promise.all([c, d]);
   assert.equal(one.ok || two.ok, false, 'a bad verdict reaches both who waited');
   assert.equal(bad.runs.length, 1);
@@ -402,7 +442,7 @@ test('the real runner: a stand-in psql that prints a recorded line is ok, one th
   const dir = ownedDir(t, 'dbclient-real');
   const check = bridgedDbClientCheck({ storageDir: dir, rows: SERVED_PSQL, platform: 'linux', source: { PATH: bin, HOME: '/h' } });
 
-  stand('echo "psql (PostgreSQL) 18.7 (Debian 18.7-1.pgdg120+1)"');
+  stand('echo "psql (PostgreSQL) 18.7 (Ubuntu 18.7-1.pgdg26.04+2)"');
   const ok = await check({ client: 'psql' });
   assert.equal(ok.ok && ok.file.path, path.join(bin, 'psql'));
   assert.equal(ok.ok && ok.file.launcher, true, 'a script is a launcher: its verdict is not kept');

@@ -78,9 +78,9 @@ test('DG7b (V4, T66): the version spawn holds no password variable, no user vari
 
 /** The line of a build no row lists, per client. */
 const WRONG_BUILD: Readonly<Record<DbClient, { readonly line: string; readonly token: string }>> = {
-  psql: { line: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)\n', token: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+1)' },
-  mysql: { line: 'mysql  Ver 8.0.46 for Linux on x86_64 (MySQL Community Server - GPL)\n', token: 'mysql  Ver 8.0.46 for Linux on x86_64 (MySQL Community Server - GPL)' },
-  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 17.10.1.1 Linux\n', token: 'Version 17.10.1.1 Linux' },
+  psql: { line: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)\n', token: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)' },
+  mysql: { line: '/usr/bin/mysql  Ver 8.0.46-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))\n', token: 'mysql  Ver 8.0.46-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))' },
+  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 17.11.0001.1 Linux\n', token: 'Version 17.11.0001.1 Linux' },
 };
 const SYSTEM_WORD: Partial<Record<NodeJS.Platform, string>> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
 const BUILD_WORDS: Readonly<Record<DbClient, string>> = {
