@@ -11,6 +11,8 @@ const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfCli
 
 const INVENTED_FLAG = '--pa1-not-a-flag';
 const ABSENT_PLUGIN = 'pa1_absent_plugin';
+/** What a client says of a flag it does not know: it ends before it connects, and the flag stopped nothing (it was never a control of this client). */
+const UNKNOWN_FLAG = /unknown (?:variable|option|flag|shorthand flag)|unrecognized option|invalid option|cannot take an argument|Unknown Option|ambiguous option/i;
 
 /**
  * PA1-a: the version flag, under the bridged environment: the whole line, its stream, the exit code, the build tag. The version itself is read where the client's own family puts it
@@ -67,8 +69,9 @@ async function flagLegs(scope, leg, client, rig, candidates) {
   }
   for (const candidate of candidates) {
     const answer = await run(candidate);
-    console.log(`record (${leg}) ${client.family} ${candidate.join(' ')}: ${answer.reached ? 'KNOWN (the client read it and connected)' : 'not known, or refused before connecting'}; exit ${answer.code}; it said ${JSON.stringify(answer.said)}`);
-    noteLeg(`${leg} ${client.family} ${candidate.join(' ')}`, control.reached, answer.reached ? 'known' : 'not known or refused');
+    const unknown = !answer.reached && UNKNOWN_FLAG.test(answer.said);
+    console.log(`record (${leg}) ${client.family} ${candidate.join(' ')}: ${answer.reached ? 'KNOWN (the client read it and connected)' : (unknown ? 'UNKNOWN TO THIS CLIENT (it refused the flag in its own words before connecting: the flag is no control of this client)' : 'not known, or refused before connecting')}; exit ${answer.code}; it said ${JSON.stringify(answer.said)}`);
+    noteLeg(`${leg} ${client.family} ${candidate.join(' ')}`, control.reached, answer.reached ? 'known' : (unknown ? 'unknown to this client' : 'not known or refused'));
   }
 }
 

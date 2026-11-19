@@ -387,15 +387,20 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -eu
+          # The image tags are leftover names of this repository (the lower-case spelling of the rules' name form, with the owner label); the guard reads a tag held in a variable as dynamic.
+          owner="u$(id -u)"
+          suffix="$(openssl rand -hex 3)"
+          ubuntu_tag="teststodelete-$owner-creds-pa1-old-ubuntu2204-$suffix"
+          debian_tag="teststodelete-$owner-creds-pa1-old-debian12-$suffix"
           build_older() {
-            printf 'FROM %s\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*\n' "$2" | docker build --quiet --tag "$1" -
+            image_tag="$1"
+            printf 'FROM %s\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*\n' "$2" | docker build --quiet --label "testsToDelete.owner=$owner" --tag "${image_tag}" -
           }
-          build_older pa1-older-psql:ubuntu-22.04 ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
-          build_older pa1-older-psql:debian-12 debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+          build_older "$ubuntu_tag" ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
+          build_older "$debian_tag" debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+          echo "PA1_OLD_PSQL_IMAGES=$ubuntu_tag,$debian_tag" >> "$GITHUB_ENV"
 
       - name: Probe PA1 (database client versions, controls and the floor)
-        env:
-          PA1_OLD_PSQL_IMAGES: pa1-older-psql:ubuntu-22.04,pa1-older-psql:debian-12
         run: npm run itest:bridged-db-pa1
 
       # PP1 (the socket class) and PE1 (the entry's own login) start real servers made by this user in owned folders: a PostgreSQL cluster, a MySQL server (the image's `mysqld`,

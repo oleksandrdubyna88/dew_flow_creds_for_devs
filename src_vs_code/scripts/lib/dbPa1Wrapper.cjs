@@ -123,9 +123,9 @@ async function steeringMatrix(scope, rig, word, major) {
     const steered = { host: (row) => row.address === '127.0.0.2', port: (row) => row.reached === 'marker', dbname: (row) => row.database === 'pa1imarker' };
     const words = Object.keys(steered).map((field) => {
       const verdict = (named_) => {
-        const group = rows.filter((row) => row.names[field] === named_ && row.reached !== 'none');
-        const hits = group.filter(steered[field]).length;
-        return group.length === 0 ? 'no start reached a listener to tell' : `${hits === 0 ? 'NOT steered' : `STEERED (${hits} of ${group.length} starts)`}`;
+        const group = rows.filter((row) => row.names[field] === named_);
+        const hits = group.filter((row) => row.reached !== 'none' && steered[field](row)).length;
+        return hits === 0 ? `NOT steered (0 of ${group.length} starts took the file's value)` : `STEERED (${hits} of ${group.length} starts took the file's value)`;
       };
       return `${field}: when the string omits it, ${verdict(false)}; when the string names it, ${verdict(true)}`;
     });

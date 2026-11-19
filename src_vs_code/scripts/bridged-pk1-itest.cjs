@@ -35,12 +35,18 @@ const { mysqlLegs } = require('./lib/pkMysqlLegs.cjs');
 const { check, versionLine, systemRig } = probe;
 const { versionOfClient } = require('./lib/dbProbeRig.cjs');
 
+/** The builds this job's legs ran, in the order the clients were named: printed again at the end, so that a row of the parent's table can be checked against the build every leg ran. */
+const ran = [];
+
 /** A client's path and version line (rule R1), or `undefined` with the failure of a missing tool on CI. */
 function client(name, variable, fallback, package_, family) {
   const exe = process.env[variable] ?? fallback;
   const version = exe !== undefined && fs.existsSync(exe) ? versionLine(exe) : undefined;
   const said = version === undefined || family === undefined ? undefined : versionOfClient(family, version);
   console.log(`${name}: ${exe ?? 'no path'}: ${version ?? 'not found'}${said === undefined ? '' : ` (the version it says: ${said.number})`}`);
+  if (version !== undefined) {
+    ran.push(`${name} ${said?.number ?? version}`);
+  }
   if (version === undefined) {
     check(`${name} is installed`, process.env.CI !== 'true', `${exe} is missing (${package_}; set ${variable}) — a skipped leg on the runner proves nothing`);
     return undefined;
@@ -111,6 +117,7 @@ async function main(scope) {
   fs.mkdirSync(home, { recursive: true });
   const product = probe.productOf();
   await (process.platform === 'win32' ? windows : linux)(scope, dir, home, product);
+  console.log(`record (R1) the builds every leg of this job ran: ${ran.join('; ') || 'no client'}`);
   probe.printTable('PK1');
   const failures = probe.failureCount();
   console.log(failures === 0 ? '\nall PK1 rig checks passed (the legs above are records, not assertions)' : `\n${failures} rig check(s) failed`);

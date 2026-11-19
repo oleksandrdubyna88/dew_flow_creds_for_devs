@@ -26,7 +26,7 @@ const RIG_DEFECT = /VIEW SERVER (?:PERFORMANCE )?STATE|certificate verify failed
 /** What a client says of a flag it does not know. */
 const UNKNOWN_FLAG = /unknown (?:flag|shorthand flag|option)|unrecognized option|unknown command/i;
 /** How the server says a session was made: `Login succeeded for user 'x'. Connection made using SQL Server authentication.` */
-const MADE = /Login succeeded for user '([^']*)'\.\s*Connection made using ([A-Za-z ]+?) authentication/i;
+const MADE = /Login succeeded for user '([^']*)'\.\s*Connection made using ([a-z ]+?) authentication/i;
 const SCHEME = /\b(SQL|NTLM|KERBEROS)\b/;
 const ABSENT_ADDRESS = '127.0.0.1';
 
