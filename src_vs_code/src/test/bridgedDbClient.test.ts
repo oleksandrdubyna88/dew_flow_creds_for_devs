@@ -5,7 +5,7 @@ import { TestContext, test } from 'node:test';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { BRIDGED_ENV_POSIX, bridgedSshEnv } from '../bridgedSshEnv';
 import { ClientRunner, CLIENT_CHECK_TIMEOUT_MS } from '../bridgedSshClient';
-import { DbClientCheck, DbFiles, DbVendor, bridgedDbClientCheck, dbClientVerdict, resolveDbProgram } from '../bridgedDbClient';
+import { DbClientCheck, DbDriverFile, DbFiles, DbVendor, bridgedDbClientCheck, dbClientVerdict, resolveDbProgram } from '../bridgedDbClient';
 import type { DbClient, DbProfileRow, DbServedClient } from '../bridgedDbProfile';
 import { materializedKeysDir } from '../materializedKeys';
 
@@ -21,7 +21,7 @@ type Reading = ReturnType<typeof dbClientVerdict>;
 const SENTINEL = 'zq9x7k2m-after-the-line';
 const MORE = `Copyright (c) Somebody\nusage: ${SENTINEL}\n`;
 
-const build = (version: string, tag: string): { version: string; tag: string; record: string } => ({ version, tag, record: 'run 1 at 0123abc' });
+const build = (version: string, tag: string, driver?: string): { version: string; tag: string; record: string; driver?: string } => ({ version, tag, record: 'run 1 at 0123abc', ...(driver === undefined ? {} : { driver }) });
 const served = (vendor: DbVendor, ...builds: ReturnType<typeof build>[]): DbServedClient => ({ vendor, builds });
 const rowOf = (client: DbClient, platform: NodeJS.Platform, ...clients: DbServedClient[]): DbProfileRow => ({ client, platform, served: true, clients });
 
@@ -34,12 +34,14 @@ interface Line {
   readonly vendor: DbVendor;
   readonly version: string;
   readonly tag: string;
+  /** The version of the ODBC driver file the client loads (L11), read from its file name: `libmsodbcsql-18.6.so.1.1` is `18.6.1.1`. Absent where no driver file can be read (Windows). */
+  readonly driver?: string;
 }
 
 /**
  * The version lines the clients printed on CI, each as the third probe run recorded it (CI run 44543740467, the `record (PA1-a)` lines and the `CANDIDATE` lines of its jobs; the job is named
  * in each id). Nothing here is written from memory (E1.7 spec §S7.6 item 8): the Linux lines of `mysql` and `mariadb` lead with the absolute path of the file that answered, the ODBC client's
- * version is four numbers (`18.6.0001.1`, never `18.6.0001.1`) and go-sqlcmd's first line is its own name, with its version on a line of its own.
+ * version is four numbers (`18.6.0001.1`, never `18.6.1.1`) and go-sqlcmd's first line is its own name, with its version on a line of its own.
  */
 const GO_SQLCMD = 'sqlcmd: Install/Create/Query SQL Server, Azure SQL, and Tools\n\nVersion: v1.10.0\nCopyright (c) Microsoft Corporation\n';
 const ODBC = (version: string, system: string): string => `Microsoft (R) SQL Server Command Line Tool\nVersion ${version} ${system}\nCopyright (C) 2022 Microsoft Corporation. All rights reserved.\n\nusage: sqlcmd [-U login id]\n`;
@@ -54,9 +56,9 @@ const LINES: readonly Line[] = [
   { id: 'MariaDB 10.6.23, Distrib, ubuntu-22.04', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb  Ver 15.1 Distrib 10.6.23-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '10.6.23', tag: '-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper' },
   { id: 'MariaDB 11.8.6, from, ubuntu-latest', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb from 11.8.6-MariaDB, client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '11.8.6', tag: ', client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper' },
   { id: 'go-sqlcmd 1.10.0, every Linux job and windows-latest', client: 'sqlcmd', platform: 'linux', stdout: GO_SQLCMD, vendor: 'go-sqlcmd', version: '1.10.0', tag: '' },
-  { id: 'the ODBC sqlcmd 18.6.0001.1, the PS1 Linux job', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.6.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux' },
-  { id: 'the ODBC sqlcmd 18.7.0001.1, ubuntu-24.04 and ubuntu-latest', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.7.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.7.0001.1', tag: 'Linux' },
-  { id: 'the ODBC sqlcmd 17.11.0001.1, ubuntu-22.04', client: 'sqlcmd', platform: 'linux', stdout: ODBC('17.11.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '17.11.0001.1', tag: 'Linux' },
+  { id: 'the ODBC sqlcmd 18.6.0001.1, the PS1 Linux job', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.6.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux', driver: '18.6.1.1' },
+  { id: 'the ODBC sqlcmd 18.7.0001.1, ubuntu-24.04 and ubuntu-latest', client: 'sqlcmd', platform: 'linux', stdout: ODBC('18.7.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1' },
+  { id: 'the ODBC sqlcmd 17.11.0001.1, ubuntu-22.04', client: 'sqlcmd', platform: 'linux', stdout: ODBC('17.11.0001.1', 'Linux'), vendor: 'odbc-sqlcmd', version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1' },
   { id: 'the ODBC sqlcmd 16.0.1000.6 on Windows, the PS1 Windows job', client: 'sqlcmd', platform: 'win32', stdout: ODBC('16.0.1000.6', 'NT'), vendor: 'odbc-sqlcmd', version: '16.0.1000.6', tag: 'NT' },
   { id: 'the ODBC sqlcmd 15.0.1300.359 on Windows, windows-latest', client: 'sqlcmd', platform: 'win32', stdout: ODBC('15.0.1300.359', 'NT'), vendor: 'odbc-sqlcmd', version: '15.0.1300.359', tag: 'NT' },
   { id: 'MariaDB 10.11.14, Distrib, ubuntu-24.04', client: 'mysql', platform: 'linux', stdout: '/home/runner/mariadb-client/usr/bin/mariadb  Ver 15.1 Distrib 10.11.14-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper\n', vendor: 'mariadb', version: '10.11.14', tag: '-MariaDB, for debian-linux-gnu (x86_64) using  EditLine wrapper' },
@@ -67,16 +69,29 @@ const LINES: readonly Line[] = [
 const ORACLE_5_7 = '/usr/bin/mysql  Ver 14.14 Distrib 5.7.44, for Linux (x86_64) using  EditLine wrapper\n';
 
 /** A table that serves exactly the build of `line`, as a turned row would list it. */
-const tableFor = (line: Line): DbProfileRow[] => [rowOf(line.client, line.platform, served(line.vendor, build(line.version, line.tag)))];
+const tableFor = (line: Line): DbProfileRow[] => [rowOf(line.client, line.platform, served(line.vendor, build(line.version, line.tag, line.driver)))];
 
-test('DC1: each version line is read as its vendor, its version and its build tag, and a table that lists that build serves it', () => {
-  for (const line of LINES) {
-    assert.deepEqual(dbClientVerdict(tableFor(line), line.client, line.platform, 0, line.stdout), { ok: true, vendor: line.vendor, version: line.version, tag: line.tag }, line.id);
-  }
-});
+/** The driver file of a recorded driver version, as the check reads it from the ODBC configuration (L11). */
+const driverOf = (version: string | undefined, over: Partial<DbDriverFile> = {}): DbDriverFile | undefined =>
+  version === undefined ? undefined : { path: `/opt/microsoft/msodbcsql/lib64/libmsodbcsql-${version}.so`, realPath: `/opt/microsoft/msodbcsql/lib64/libmsodbcsql-${version}.so`, size: 500, mtimeMs: 50, version, ...over };
 
 const dr7 = (client: string, exit: string): string =>
   `${client} did not answer its version under the environment a Remote Bridge gives it (exit ${exit}). No database query can go through a Remote Bridge with ${client} from this computer until it does.`;
+
+/** What the check must say of a recorded line: its reading, or DR7 for the ODBC client where no driver file can be read (Windows, L11). */
+function expectedReading(line: Line, driver: DbDriverFile | undefined): Reading {
+  if (line.vendor === 'odbc-sqlcmd' && driver === undefined) {
+    return { ok: false, sentence: dr7('sqlcmd', '0') };
+  }
+  return { ok: true, vendor: line.vendor, version: line.version, tag: line.tag, ...(driver === undefined ? {} : { driver }) };
+}
+
+test('DC1: each version line is read as its vendor, its version and its build tag, and a table that lists that build (and, for the ODBC client, its driver) serves it', () => {
+  for (const line of LINES) {
+    const driver = driverOf(line.driver);
+    assert.deepEqual(dbClientVerdict(tableFor(line), line.client, line.platform, 0, line.stdout, driver), expectedReading(line, driver), line.id);
+  }
+});
 
 test('DC2: an exit that is not 0, no output, a version word later in the line, and the line on the other stream (nothing on stdout) are DR7 with the exit code or the word unknown', () => {
   const table = tableFor(LINES[0]);
@@ -134,14 +149,14 @@ test('DC3b: the token of Oracle\'s client on Windows holds no path, and DR8 says
 test('DC4: MariaDB\'s line and Oracle\'s, go-sqlcmd\'s and the ODBC client\'s: neither is read as the other', () => {
   const both = [
     rowOf('mysql', 'linux', served('oracle', build('8.4.13', 'for Linux on x86_64 (MySQL Community Server - GPL)')), served('mariadb', build('10.6.23', LINES[6].tag))),
-    rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')), served('odbc-sqlcmd', build('18.6.0001.1', 'Linux'))),
+    rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')), served('odbc-sqlcmd', build('18.6.0001.1', 'Linux', '18.6.1.1'))),
   ];
   const read = (client: DbClient, line: Line): Reading => dbClientVerdict(both, client, 'linux', 0, line.stdout);
 
   assert.deepEqual(read('mysql', LINES[3]), { ok: true, vendor: 'oracle', version: '8.4.13', tag: LINES[3].tag });
   assert.deepEqual(read('mysql', LINES[6]), { ok: true, vendor: 'mariadb', version: '10.6.23', tag: LINES[6].tag });
   assert.deepEqual(read('sqlcmd', LINES[8]), { ok: true, vendor: 'go-sqlcmd', version: '1.10.0', tag: '' });
-  assert.deepEqual(read('sqlcmd', LINES[9]), { ok: true, vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux' });
+  assert.deepEqual(dbClientVerdict(both, 'sqlcmd', 'linux', 0, LINES[9].stdout, driverOf('18.6.1.1')), { ok: true, vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux', driver: driverOf('18.6.1.1') });
   const mariaOnly = [rowOf('mysql', 'linux', served('mariadb', build('10.6.23', LINES[6].tag)))];
   assert.equal(dbClientVerdict(mariaOnly, 'mysql', 'linux', 0, LINES[3].stdout).ok, false, 'Oracle\'s line is not read as MariaDB\'s');
   const oracleOnly = [rowOf('mysql', 'linux', served('oracle', build('8.4.13', LINES[3].tag)))];
@@ -149,7 +164,7 @@ test('DC4: MariaDB\'s line and Oracle\'s, go-sqlcmd\'s and the ODBC client\'s: n
   assert.equal(dbClientVerdict(oracleOnly, 'mysql', 'linux', 0, LINES[7].stdout).ok, false, 'nor its newer "from" form');
   const goOnly = [rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')))];
   assert.equal(dbClientVerdict(goOnly, 'sqlcmd', 'linux', 0, LINES[9].stdout).ok, false, 'the ODBC client is not read as go-sqlcmd');
-  const odbcOnly = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.0001.1', 'Linux')))];
+  const odbcOnly = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.0001.1', 'Linux', '18.6.1.1')))];
   assert.equal(dbClientVerdict(odbcOnly, 'sqlcmd', 'linux', 0, LINES[8].stdout).ok, false, 'go-sqlcmd is not read as the ODBC client');
 });
 
@@ -166,13 +181,15 @@ test('DC4b: Oracle 5.7\'s "Ver 14.14 Distrib 5.7.44" is Oracle\'s 5.7.44: never 
   }
 });
 
+const sentenceOf = (answer: Reading): string => (answer.ok ? '' : answer.sentence);
+
 test('DC4c: a line is read where the client prints it: go-sqlcmd\'s first line is its name, the ODBC client\'s version has four numbers, and a Linux path before the program is not in the token', () => {
   const first = (line: Line): string => line.stdout.split('\n')[0];
   assert.equal(first(LINES[8]), 'sqlcmd: Install/Create/Query SQL Server, Azure SQL, and Tools');
   assert.equal(LINES.filter((one) => one.vendor === 'odbc-sqlcmd').every((one) => /^\d+\.\d+\.\d{4}\.\d+$/.test(one.version)), true, 'the recorded ODBC versions are 18.6.0001.1, not 18.6.1.1');
   for (const line of LINES.filter((one) => one.client === 'mysql' && one.platform === 'linux')) {
     const answer = dbClientVerdict([rowOf('mysql', 'linux')], 'mysql', 'linux', 0, line.stdout);
-    assert.equal(!answer.ok && answer.sentence.includes('/usr') || !answer.ok && answer.sentence.includes('/home'), false, `${line.id}: no path in the sentence`);
+    assert.equal(/\/usr|\/home/.test(sentenceOf(answer)), false, `${line.id}: no path in the sentence`);
   }
 });
 
@@ -188,8 +205,12 @@ interface FakeFile {
 }
 
 /** A file system of named files: `identityOf` is what the walk reads of a file, the identity of the file behind a link. */
-function fakeFiles(files: Map<string, FakeFile>): DbFiles {
+function fakeFiles(files: Map<string, FakeFile>, texts: Map<string, string> = new Map(), onRead: (file: string) => void = () => undefined): DbFiles {
   return {
+    readText: (file) => {
+      onRead(file);
+      return texts.get(file);
+    },
     identityOf: (file) => {
       const found = files.get(file);
       return found === undefined ? undefined : { realPath: found.realPath ?? file, size: found.size, mtimeMs: found.mtimeMs, launcher: found.launcher === true };
@@ -228,6 +249,7 @@ interface Rig {
   readonly runs: Run[];
   readonly notes: string[];
   readonly files: Map<string, FakeFile>;
+  readonly texts: Map<string, string>;
   readonly dir: string;
 }
 
@@ -236,10 +258,11 @@ const BAD_PSQL = (): ReturnType<ClientRunner> => Promise.resolve({ exitCode: 0, 
 const SERVED_PSQL = [rowOf('psql', 'linux', served('postgresql', build('18.7', '(Ubuntu 18.7-1.pgdg26.04+2)')))];
 
 /** A check over a fake file system and a runner that records what it was given and what its folder held while it ran; `answers` are used in turn, the last again. */
-function rig(t: TestContext, answers: readonly (() => ReturnType<ClientRunner>)[], over: { rows?: readonly DbProfileRow[]; platform?: NodeJS.Platform; source?: NodeJS.ProcessEnv; extra?: Map<string, FakeFile> } = {}): Rig {
+function rig(t: TestContext, answers: readonly (() => ReturnType<ClientRunner>)[], over: { rows?: readonly DbProfileRow[]; platform?: NodeJS.Platform; source?: NodeJS.ProcessEnv; extra?: Map<string, FakeFile>; texts?: Map<string, string>; onRead?: (file: string) => void } = {}): Rig {
   const dir = ownedDir(t, 'dbclient');
-  const given = { rows: SERVED_PSQL, platform: 'linux' as NodeJS.Platform, source: SOURCE, extra: new Map<string, FakeFile>([[PSQL_FILE, { size: 10, mtimeMs: 100 }]]), ...over };
+  const given = { texts: over.texts, onRead: over.onRead, rows: SERVED_PSQL, platform: 'linux' as NodeJS.Platform, source: SOURCE, extra: new Map<string, FakeFile>([[PSQL_FILE, { size: 10, mtimeMs: 100 }]]), ...over };
   const files = given.extra;
+  const texts = given.texts ?? new Map<string, string>();
   const runs: Run[] = [];
   const notes: string[] = [];
   const run: ClientRunner = (argv, options) => {
@@ -247,8 +270,8 @@ function rig(t: TestContext, answers: readonly (() => ReturnType<ClientRunner>)[
     runs.push({ program: options.program, argv, options, folder: { existed: fs.existsSync(cwd), files: fs.existsSync(cwd) ? fs.readdirSync(cwd) : [] } });
     return answers[Math.min(runs.length - 1, answers.length - 1)]();
   };
-  const check = bridgedDbClientCheck({ storageDir: dir, rows: given.rows, run, platform: given.platform, source: given.source, files: fakeFiles(files), note: (line) => notes.push(line) });
-  return { check, runs, notes, files, dir };
+  const check = bridgedDbClientCheck({ storageDir: dir, rows: given.rows, run, platform: given.platform, source: given.source, files: fakeFiles(files, texts, given.onRead), note: (line) => notes.push(line) });
+  return { check, runs, notes, files, texts, dir };
 }
 
 const GOOD_OK = { ok: true, vendor: 'postgresql', version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' } as const;
@@ -428,6 +451,125 @@ test('DC13: the check takes no exec slot: two calls for one file at once start o
 
   assert.equal(answers.every((answer) => answer.ok), true);
   assert.equal(world.runs.length, 1, 'one child for three callers');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * L11: the ODBC client's verdict is bound to the driver file it loads (DC14)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const ODBC_FILE = '/opt/found/bin/sqlcmd';
+const ODBCINST = '/etc/odbcinst.ini';
+const DRIVER_18 = '/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1';
+const DRIVER_17 = '/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.11.so.1.1';
+const iniOf = (driver18: string): string =>
+  `[ODBC Driver 17 for SQL Server]\nDescription=Microsoft ODBC Driver 17 for SQL Server\nDriver=${DRIVER_17}\nUsageCount=1\n\n[ODBC Driver 18 for SQL Server]\nDescription=Microsoft ODBC Driver 18 for SQL Server\nDriver=${driver18}\nUsageCount=1\n`;
+const ODBC_ROWS = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.0001.1', 'Linux', '18.6.1.1')))];
+const ODBC_ANSWER = (): ReturnType<ClientRunner> => Promise.resolve({ exitCode: 0, stdout: LINES[9].stdout, stderr: '' });
+
+/** A check for the ODBC client over a fake file system that holds the client, the ODBC configuration and the driver it names. */
+function odbcRig(t: TestContext, over: { files?: Map<string, FakeFile>; texts?: Map<string, string>; rows?: readonly DbProfileRow[] } = {}): Rig {
+  const given = {
+    files: new Map<string, FakeFile>([[ODBC_FILE, { size: 10, mtimeMs: 100 }], [DRIVER_18, { size: 500, mtimeMs: 50 }]]),
+    texts: new Map([[ODBCINST, iniOf(DRIVER_18)]]),
+    rows: ODBC_ROWS,
+    ...over,
+  };
+  return rig(t, [ODBC_ANSWER], { rows: given.rows, extra: given.files, texts: given.texts });
+}
+
+const driverOfAnswer = (answer: Reading | Awaited<ReturnType<DbClientCheck>>): DbDriverFile | undefined => (answer.ok ? answer.driver : undefined);
+
+const ODBC_DR8_BUILDS = 'the ODBC sqlcmd 18.6.0001.1 Linux with the driver 18.6.1.1';
+
+test('DC14a: a recorded ODBC client is served only with the driver file its odbcinst.ini names: the verdict carries the driver (real path, size, time, the version from its file name), and a second call with nothing changed spawns and asks nothing new', async (t) => {
+  const world = odbcRig(t);
+
+  const first = await world.check({ client: 'sqlcmd' });
+  const second = await world.check({ client: 'sqlcmd' });
+
+  assert.deepEqual(first, { ok: true, vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux', file: { program: 'sqlcmd', path: ODBC_FILE, realPath: ODBC_FILE, size: 10, mtimeMs: 100, launcher: false }, driver: { path: DRIVER_18, realPath: DRIVER_18, size: 500, mtimeMs: 50, version: '18.6.1.1' } });
+  assert.deepEqual(second, first);
+  assert.equal(world.runs.length, 1, 'one version spawn for two calls');
+});
+
+test('DC14b: the section is the one of the client\'s own major version: the 17.11 client reads "ODBC Driver 17 for SQL Server" and its driver libmsodbcsql-17.11.so.1.1', async (t) => {
+  const rows = [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('17.11.0001.1', 'Linux', '17.11.1.1')))];
+  const world = rig(t, [() => Promise.resolve({ exitCode: 0, stdout: LINES[11].stdout, stderr: '' })], {
+    rows, extra: new Map([[ODBC_FILE, { size: 10, mtimeMs: 100 }], [DRIVER_17, { size: 900, mtimeMs: 70 }]]), texts: new Map([[ODBCINST, iniOf(DRIVER_18)]]),
+  });
+
+  const answer = await world.check({ client: 'sqlcmd' });
+
+  assert.equal(driverOfAnswer(answer)?.version, '17.11.1.1');
+  assert.equal(driverOfAnswer(answer)?.path, DRIVER_17);
+});
+
+test('DC14c: a changed driver file (another size, another time, a link that points elsewhere) drops the kept verdict and asks the client again; a driver file that the odbcinst.ini now names elsewhere does the same; nothing changed asks nothing', async (t) => {
+  const world = odbcRig(t);
+  await world.check({ client: 'sqlcmd' });
+  await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 1, 'with nothing changed: no spawn');
+
+  world.files.set(DRIVER_18, { size: 501, mtimeMs: 50 });
+  const sized = await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 2, 'another size of the driver');
+  assert.equal(driverOfAnswer(sized)?.size, 501, 'and the verdict carries the driver that is there now');
+
+  world.files.set(DRIVER_18, { size: 501, mtimeMs: 51 });
+  await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 3, 'another time of the driver');
+
+  world.files.set(DRIVER_18, { size: 501, mtimeMs: 51, realPath: '/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1.bak' });
+  await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 4, 'a link that points elsewhere');
+
+  world.files.set('/opt/other/libmsodbcsql-18.6.so.1.1', { size: 7, mtimeMs: 7 });
+  world.texts.set(ODBCINST, iniOf('/opt/other/libmsodbcsql-18.6.so.1.1'));
+  const moved = await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 5, 'the configuration now names another driver file');
+  assert.equal(driverOfAnswer(moved)?.path, '/opt/other/libmsodbcsql-18.6.so.1.1');
+});
+
+test('DC14d: a driver that cannot be found or read is DR7 with the cause in the journal: no odbcinst.ini, no section for the client, no Driver line, a driver file that is not there and a file name that holds no version', async (t) => {
+  const cases: [string, Parameters<typeof odbcRig>[1], string][] = [
+    ['no odbcinst.ini', { texts: new Map() }, 'no ODBC configuration'],
+    ['no section for the driver', { texts: new Map([[ODBCINST, '[SomethingElse]\nDriver=/x/libmsodbcsql-18.6.so.1.1\n']]) }, 'ODBC Driver 18 for SQL Server'],
+    ['a section with no Driver line', { texts: new Map([[ODBCINST, '[ODBC Driver 18 for SQL Server]\nDescription=none\n']]) }, 'no Driver'],
+    ['a Driver file that is not there', { files: new Map([[ODBC_FILE, { size: 10, mtimeMs: 100 }]]) }, 'not a file'],
+    ['a file name with no version', { texts: new Map([[ODBCINST, iniOf('/opt/x/libother.so')]]), files: new Map([[ODBC_FILE, { size: 10, mtimeMs: 100 }], ['/opt/x/libother.so', { size: 1, mtimeMs: 1 }]]) }, 'version'],
+  ];
+  for (const [what, over, cause] of cases) {
+    const world = odbcRig(t, over);
+    const answer = await world.check({ client: 'sqlcmd' });
+
+    assert.deepEqual(answer, { ok: false, sentence: dr7('sqlcmd', '0') }, what);
+    assert.equal(world.notes.some((note) => note.includes(cause)), true, `${what}: the journal says why (${JSON.stringify(world.notes)})`);
+  }
+});
+
+test('DC14f: on Windows no driver file can be read (the drivers are registered, not listed in a file): the ODBC client is DR7 there, with the cause in the journal', async (t) => {
+  const win = rig(t, [() => Promise.resolve({ exitCode: 0, stdout: LINES[12].stdout, stderr: '' })], {
+    rows: [rowOf('sqlcmd', 'win32', served('odbc-sqlcmd', build('16.0.1000.6', 'NT', '16.0.0.0')))], platform: 'win32', source: { PATH: 'C:\\found\\bin', USERNAME: 'x' },
+    extra: new Map([['C:\\found\\bin\\sqlcmd.exe', { size: 1, mtimeMs: 1 }]]),
+  });
+
+  assert.deepEqual(await win.check({ client: 'sqlcmd' }), { ok: false, sentence: dr7('sqlcmd', '0') });
+  assert.equal(win.notes.some((note) => note.includes('registry')), true, JSON.stringify(win.notes));
+});
+
+test('DC14e: the driver is part of the build: a driver another than the recorded one, and a recorded build that lists no driver, are DR8 and name the driver; go-sqlcmd and the other clients never read the ODBC configuration', async (t) => {
+  const other = odbcRig(t, { files: new Map([[ODBC_FILE, { size: 10, mtimeMs: 100 }], ['/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.7.so.1.1', { size: 9, mtimeMs: 9 }]]), texts: new Map([[ODBCINST, iniOf('/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.7.so.1.1')]]) });
+  assert.deepEqual(await other.check({ client: 'sqlcmd' }), { ok: false, sentence: dr8('sqlcmd', 'Version 18.6.0001.1 Linux with the driver 18.7.1.1', 'Linux', ODBC_DR8_BUILDS) });
+
+  const bare = odbcRig(t, { rows: [rowOf('sqlcmd', 'linux', served('odbc-sqlcmd', build('18.6.0001.1', 'Linux')))] });
+  assert.deepEqual(await bare.check({ client: 'sqlcmd' }), { ok: false, sentence: dr8('sqlcmd', 'Version 18.6.0001.1 Linux with the driver 18.6.1.1', 'Linux', 'the ODBC sqlcmd 18.6.0001.1 Linux') }, 'a build of the row with no driver is not served for any driver');
+
+  const reads: string[] = [];
+  const go = rig(t, [() => Promise.resolve({ exitCode: 0, stdout: LINES[8].stdout, stderr: '' })], {
+    rows: [rowOf('sqlcmd', 'linux', served('go-sqlcmd', build('1.10.0', '')))], extra: new Map([[ODBC_FILE, { size: 10, mtimeMs: 100 }]]), texts: new Map([[ODBCINST, iniOf(DRIVER_18)]]), onRead: (file) => reads.push(file),
+  });
+  assert.equal((await go.check({ client: 'sqlcmd' })).ok, true);
+  assert.deepEqual(reads, [], 'go-sqlcmd has no driver: the ODBC configuration is not read');
 });
 
 const posix = process.platform === 'win32' ? { skip: 'a shell script stands in for the client' } : {};

@@ -6,8 +6,8 @@
 // that check starts nothing. So a harness hands the check THE PRODUCTION TABLE WITH ONE CANDIDATE ROW PUT IN: the row the turning commit will write, for the client, vendor, version and build tag
 // the leg is about. The check, the builder and the environment are the real ones; this file adds only the row, the folder the walk finds the client in, and the lines that say so.
 //
-//   CANDIDATE <client> <vendor> <version> <tag> <platform>     the table the leg was handed names this build (it is not yet served)
-//   PRODUCTION <client> <vendor> <version> <tag> <platform>    the production table already serves this build: nothing is handed in
+//   CANDIDATE <client> <vendor> <version> <tag> <platform> [driver <version>]    the table the leg was handed names this build (it is not yet served)
+//   PRODUCTION <client> <vendor> <version> <tag> <platform> [driver <version>]   the production table already serves this build: nothing is handed in
 //
 // The build of a candidate is read from the client's own version answer (stdout, exit 0) by the rig's readers of PA1-a (`dbProbeRig.cjs`), so the row names exactly the line the client prints
 // and the check must read the same line with its own reader. A client the check then refuses is a RIG/RECORD FINDING, printed as such with what the version spawn answered: it is never a crash
@@ -74,12 +74,24 @@ function sourceOf(folder, home) {
   return { ...kept, PATH: path_ };
 }
 
+/**
+ * The driver an ODBC `sqlcmd` build lists (E1.7 spec §S7.16 L11): the product's own lookup of the driver file the ODBC configuration names for this client, so that the candidate row names the driver the
+ * check will bind. Nothing for any other client, and nothing when the lookup fails: the build then lists no driver and the real check refuses the client with its own cause.
+ */
+function driverBuild(parts, family, clientVersion) {
+  if (family !== 'odbc-sqlcmd') {
+    return {};
+  }
+  const found = parts.clientModule.odbcDriverOf(process.platform, parts.clientModule.nodeDbFiles, clientVersion);
+  return found.ok ? { driver: found.driver.version } : {};
+}
+
 /** The table the check reads: the production table with the candidate row put in, or the production table itself when it already serves the build. */
 function tableWith(rows, platform, family, build) {
   const { client, vendor } = FAMILIES[family];
   const row = rows.find((one) => one.client === client && one.platform === platform);
   const recorded = (row?.clients ?? []).find((served) => served.vendor === vendor);
-  if (row?.served === true && (recorded?.builds ?? []).some((one) => one.version === build.version && one.tag === build.tag)) {
+  if (row?.served === true && (recorded?.builds ?? []).some((one) => one.version === build.version && one.tag === build.tag && one.driver === build.driver)) {
     return { rows, mode: 'PRODUCTION' };
   }
   const others = row?.served === true ? (row.clients ?? []).filter((served) => served.vendor !== vendor) : [];
@@ -87,7 +99,7 @@ function tableWith(rows, platform, family, build) {
     client,
     platform,
     served: true,
-    clients: [...others, { vendor, builds: [...(recorded?.builds ?? []), { version: build.version, tag: build.tag, record: 'candidate: this run' }] }],
+    clients: [...others, { vendor, builds: [...(recorded?.builds ?? []), { version: build.version, tag: build.tag, ...(build.driver === undefined ? {} : { driver: build.driver }), record: 'candidate: this run' }] }],
   };
   return { rows: row === undefined ? [...rows, candidate] : rows.map((one) => (one === row ? candidate : one)), mode: 'CANDIDATE' };
 }
@@ -122,9 +134,9 @@ async function verdictFor(client, rig) {
     if (read === undefined) {
       made.set(key, finding(name, `the rig read no build from the client's own answer to ${family.args.join(' ')} (exit ${asked.code}; stdout ${JSON.stringify(firstWords(asked.stdout))}; stderr ${JSON.stringify(firstWords(asked.stderr))}): the check reads only stdout of an exit 0, so it cannot serve this client`));
     } else {
-      const build = { version: read.number, tag: read.after };
+      const build = { version: read.number, tag: read.after, ...driverBuild(parts, client.family, read.number) };
       const table = tableWith(parts.profile.BRIDGED_DB_PROFILES, process.platform, client.family, build);
-      console.log(`${table.mode} ${family.client} ${family.vendor} ${build.version} ${JSON.stringify(build.tag)} ${process.platform}  (${name}: ${client.exe})`);
+      console.log(`${table.mode} ${family.client} ${family.vendor} ${build.version} ${JSON.stringify(build.tag)} ${process.platform}${build.driver === undefined ? '' : ` driver ${build.driver}`}  (${name}: ${client.exe})`);
       const check = parts.clientModule.bridgedDbClientCheck({
         storageDir: rig.dir,
         rows: table.rows,

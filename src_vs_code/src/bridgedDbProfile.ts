@@ -18,6 +18,11 @@ export interface DbRecordedBuild {
   readonly version: string;
   readonly tag: string;
   readonly record: string;
+  /**
+   * The ODBC `sqlcmd` only (E1.7 spec §S7.16 L11): the version of the driver file the client loads, read from its file name (`libmsodbcsql-18.6.so.1.1` is `18.6.1.1`). The client's own line does not name its
+   * driver, and its authentication lives in that library, so a build of this client is the pair of the two. A recorded ODBC build with no driver serves no driver.
+   */
+  readonly driver?: string;
 }
 
 /** One vendor's client of a served row, with the builds its legs ran on (E1.7 spec §S7.7). */

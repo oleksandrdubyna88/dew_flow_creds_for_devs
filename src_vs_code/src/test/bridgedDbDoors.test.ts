@@ -80,13 +80,13 @@ test('DG7b (V4, T66): the version spawn holds no password variable, no user vari
 const WRONG_BUILD: Readonly<Record<DbClient, { readonly line: string; readonly token: string }>> = {
   psql: { line: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)\n', token: 'psql (PostgreSQL) 14.24 (Ubuntu 14.24-1.pgdg22.04+2)' },
   mysql: { line: '/usr/bin/mysql  Ver 8.0.46-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))\n', token: 'mysql  Ver 8.0.46-0ubuntu0.22.04.5 for Linux on x86_64 ((Ubuntu))' },
-  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 17.11.0001.1 Linux\n', token: 'Version 17.11.0001.1 Linux' },
+  sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 17.11.0001.1 Linux\n', token: 'Version 17.11.0001.1 Linux with the driver 18.6.1.1' },
 };
 const SYSTEM_WORD: Partial<Record<NodeJS.Platform, string>> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
 const BUILD_WORDS: Readonly<Record<DbClient, string>> = {
   psql: `psql ${RECORDED.psql.version} ${RECORDED.psql.tag}`,
   mysql: `Oracle's mysql ${RECORDED.mysql.version} ${RECORDED.mysql.tag}`,
-  sqlcmd: `the ODBC sqlcmd ${RECORDED.sqlcmd.version} ${RECORDED.sqlcmd.tag}`,
+  sqlcmd: `the ODBC sqlcmd ${RECORDED.sqlcmd.version} ${RECORDED.sqlcmd.tag} with the driver 18.6.1.1`,
 };
 
 test('DG8 (V4, T65, T67): a table that serves the pair and a bad verdict: one dialog, the generic body, DR8 in the journal, one version spawn and no query spawn; a second call asks again', async () => {

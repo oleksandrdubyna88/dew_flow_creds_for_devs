@@ -75,12 +75,15 @@ export const RECORDED: Readonly<Record<DbClient, { readonly line: string; readon
   sqlcmd: { line: 'Microsoft (R) SQL Server Command Line Tool\nVersion 18.6.0001.1 Linux\nCopyright (C) 2022\n', version: '18.6.0001.1', tag: 'Linux' },
 };
 
+/** The driver version the ODBC client's recorded build lists (L11): `libmsodbcsql-18.6.so.1.1`. */
+const ODBC_DRIVER_VERSION = '18.6.1.1';
+
 /** A table that serves the three clients on this platform, each with its one recorded build: what the real check admits. */
 export const SERVED_BUILDS: readonly DbProfileRow[] = (['psql', 'mysql', 'sqlcmd'] as const).map((client) => ({
   client,
   platform: process.platform,
   served: true,
-  clients: [{ vendor: VENDOR_OF[client], builds: [{ version: RECORDED[client].version, tag: RECORDED[client].tag, record: 'run 1 at 0123abc' }] }],
+  clients: [{ vendor: VENDOR_OF[client], builds: [{ version: RECORDED[client].version, tag: RECORDED[client].tag, record: 'run 1 at 0123abc', ...(client === 'sqlcmd' ? { driver: ODBC_DRIVER_VERSION } : {}) }] }],
 }));
 
 const FOUND_DIR = process.platform === 'win32' ? 'C:\\found\\bin' : '/found/bin';
@@ -199,6 +202,7 @@ function realCheck(world: World, line: string): DbClientCheck {
     platform: process.platform,
     source: { PATH: FOUND_DIR, HOME: '/home/someone', PGPASSWORD: 'leaked', BRIDGE_TEST_SECRET: 'a-secret' },
     files: fakeFiles(),
+    driver: () => ({ ok: true, driver: { path: '/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1', realPath: '/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1', size: 500, mtimeMs: 50, version: ODBC_DRIVER_VERSION } }),
     note: (message) => world.journal.push(message),
     run: (argv, run) => {
       world.runs.push({ kind: 'version', command: run.program as string, args: argv, shell: false, env: run.env, cwd: run.cwd, folder: folderOf(run.cwd) });

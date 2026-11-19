@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describeError } from './describeError';
 import { DR1, DR7, DR8, vendorWords } from './bridgedDbSentences';
-import { BRIDGED_DB_PROFILES, DbClient, DbProfileRow } from './bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, DbClient, DbProfileRow, DbRecordedBuild } from './bridgedDbProfile';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { CLIENT_CHECK_TIMEOUT_MS } from './bridgedSshClient';
 import { bridgedCallFolder, callKeyName } from './materializedKeys';
@@ -34,6 +34,19 @@ export interface DbProgramFile {
   readonly launcher: boolean;
 }
 
+/**
+ * The ODBC driver file the ODBC `sqlcmd` loads (E1.7 spec §S7.16 L11): what the ODBC configuration lists for the client's own driver, with the identity of the file behind it and the version its
+ * file name gives (`libmsodbcsql-18.6.so.1.1` is `18.6.1.1`). A verdict of that client is bound to it as a verdict of any client is bound to its executable.
+ */
+export interface DbDriverFile {
+  /** The path the configuration lists. */
+  readonly path: string;
+  readonly realPath: string;
+  readonly size: number;
+  readonly mtimeMs: number;
+  readonly version: string;
+}
+
 /** A client that answered its version with a build the table serves. */
 export interface DbClientOk {
   readonly ok: true;
@@ -42,6 +55,8 @@ export interface DbClientOk {
   /** What the version line holds after the version itself, as PA1-a recorded it. */
   readonly tag: string;
   readonly file: DbProgramFile;
+  /** The ODBC `sqlcmd` only: the driver file it loads, which the verdict is bound to as well. */
+  readonly driver?: DbDriverFile;
 }
 
 export type DbClientVerdict = DbClientOk | { readonly ok: false; readonly sentence: string };
@@ -119,16 +134,38 @@ function byVersion(left: string, right: string): number {
   return at < 0 ? a.length - b.length : a[at] - (b[at] ?? 0);
 }
 
+/** One recorded build as DR8 lists it: the vendor's words, the version, the tag, and for the ODBC client the driver. */
+const buildWords = (vendor: DbVendor, build: DbRecordedBuild): string =>
+  `${vendorWords(vendor)} ${build.version}${build.tag === '' ? '' : ` ${build.tag}`}${build.driver === undefined ? '' : ` with the driver ${build.driver}`}`;
+
 /** The recorded builds of a row as DR8 lists them: the vendor's words, the version and the tag, in the row's vendor order and each vendor's version order; `none` when it lists nothing. */
 function buildsWords(row: DbProfileRow | undefined): string {
   const words = (row?.clients ?? []).flatMap((served) =>
-    [...served.builds].sort((a, b) => byVersion(a.version, b.version)).map((build) => `${vendorWords(served.vendor)} ${build.version}${build.tag === '' ? '' : ` ${build.tag}`}`),
+    [...served.builds].sort((a, b) => byVersion(a.version, b.version)).map((build) => buildWords(served.vendor, build)),
   );
   return words.length === 0 ? 'none' : words.join('; ');
 }
 
-const isRecorded = (row: DbProfileRow | undefined, reading: Reading): boolean =>
-  (row?.clients ?? []).some((served) => served.vendor === reading.vendor && served.builds.some((build) => build.version === reading.version && build.tag === reading.tag));
+/** The ODBC client's build lists the driver that ran (L11): a build with no driver listed serves no driver. Every other vendor has no driver to ask. */
+const driverMatches = (vendor: DbVendor, build: DbRecordedBuild, driver: DbDriverFile | undefined): boolean => vendor !== 'odbc-sqlcmd' || (driver !== undefined && build.driver === driver.version);
+
+const buildMatches = (build: DbRecordedBuild, reading: Reading, driver: DbDriverFile | undefined): boolean =>
+  build.version === reading.version && build.tag === reading.tag && driverMatches(reading.vendor, build, driver);
+
+/** A build is recorded when its vendor, version and tag are, and for the ODBC client its driver too. */
+const isRecorded = (row: DbProfileRow | undefined, reading: Reading, driver: DbDriverFile | undefined): boolean =>
+  (row?.clients ?? []).some((served) => served.vendor === reading.vendor && served.builds.some((build) => buildMatches(build, reading, driver)));
+
+/** The ODBC client is read only with the driver it loads. */
+const lacksDriver = (reading: Reading | undefined, driver: DbDriverFile | undefined): boolean => reading?.vendor === 'odbc-sqlcmd' && driver === undefined;
+
+/** The reading of an answer, or nothing when it is no good answer: an exit that is not 0, a line no reader reads, or the ODBC client with no driver (L11). */
+function usableReading(client: DbClient, exit: number | null, stdout: string, driver: DbDriverFile | undefined): Reading | undefined {
+  const reading = exit === 0 ? readVersion(client, stdout) : undefined;
+  return lacksDriver(reading, driver) ? undefined : reading;
+}
+
+const withDriver = (driver: DbDriverFile | undefined): { driver?: DbDriverFile } => (driver === undefined ? {} : { driver });
 
 /** What a version answer says: the client's vendor, version and build tag when it names a recorded build of a served row (DR8 otherwise), DR7 when the exit is not 0 or no reader reads the answer. Only stdout is read. */
 export function dbClientVerdict(
@@ -137,15 +174,17 @@ export function dbClientVerdict(
   platform: NodeJS.Platform,
   exit: number | null,
   stdout: string,
+  driver?: DbDriverFile,
 ): Omit<DbClientOk, 'file'> | { readonly ok: false; readonly sentence: string } {
-  const reading = exit === 0 ? readVersion(client, stdout) : undefined;
+  const reading = usableReading(client, exit, stdout, driver);
   if (reading === undefined) {
     return { ok: false, sentence: DR7(client, exit) };
   }
   const row = rowFor(rows, client, platform);
-  return isRecorded(row, reading)
-    ? { ok: true, vendor: reading.vendor, version: reading.version, tag: reading.tag }
-    : { ok: false, sentence: DR8(client, reading.token, platform, buildsWords(row)) };
+  const token = driver === undefined ? reading.token : `${reading.token} with the driver ${driver.version}`;
+  return isRecorded(row, reading, driver)
+    ? { ok: true, vendor: reading.vendor, version: reading.version, tag: reading.tag, ...withDriver(driver) }
+    : { ok: false, sentence: DR8(client, token, platform, buildsWords(row)) };
 }
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -155,6 +194,8 @@ export function dbClientVerdict(
 /** What the walk reads of a file: the identity of the file behind it, or `undefined` when there is no regular file. */
 export interface DbFiles {
   identityOf(file: string): Pick<DbProgramFile, 'realPath' | 'size' | 'mtimeMs' | 'launcher'> | undefined;
+  /** The text of a small configuration file (the ODBC configuration), or `undefined` when it is not there, not a regular file, or larger than a configuration file is. */
+  readText?(file: string): string | undefined;
 }
 
 const WALKS = {
@@ -195,7 +236,17 @@ function beginsWithShebang(file: string): boolean {
 }
 
 /** The real file system: a stat that follows links, the real path, and the first two bytes. A file that cannot be read is no file here. */
+/** The largest configuration file `readText` reads: an ODBC configuration is a few lines. */
+const CONFIG_LIMIT = 256 * 1024;
+
 export const nodeDbFiles: DbFiles = {
+  readText(file) {
+    try {
+      return fs.statSync(file).size <= CONFIG_LIMIT ? fs.readFileSync(file, 'utf8') : undefined;
+    } catch {
+      return undefined;
+    }
+  },
   identityOf(file) {
     try {
       const stat = fs.statSync(file);
@@ -205,6 +256,101 @@ export const nodeDbFiles: DbFiles = {
     }
   },
 };
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The driver: the ODBC client's authentication lives in a library its version line does not name (§S7.16 L11)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The ODBC configuration a bridged child reaches: it gets `PATH` and `HOME` only (G5), so the driver manager reads the system's `odbcinst.ini` and nothing a variable names. */
+const ODBCINST_FILES: Readonly<Partial<Record<NodeJS.Platform, string>>> = { linux: '/etc/odbcinst.ini' };
+
+/** What a driver lookup says when it fails: the cause for the journal (the sentence is DR7, which names no path). */
+export interface DbDriverFailure {
+  readonly ok: false;
+  readonly cause: string;
+}
+
+export type DbDriverAnswer = { readonly ok: true; readonly driver: DbDriverFile } | DbDriverFailure;
+
+const failure = (cause: string): DbDriverFailure => ({ ok: false, cause });
+const isFailure = (value: unknown): value is DbDriverFailure => typeof value === 'object' && value !== null && 'cause' in value;
+
+const WINDOWS_CAUSE = 'the ODBC drivers of Windows are registered in the registry and no file lists them: the driver of this client cannot be bound';
+
+/** The text of the ODBC configuration of this system, or why there is none. */
+function configurationOf(platform: NodeJS.Platform, files: DbFiles): string | DbDriverFailure {
+  const file = ODBCINST_FILES[platform];
+  if (file === undefined) {
+    return failure(platform === 'win32' ? WINDOWS_CAUSE : `no ODBC configuration is read on ${platform}`);
+  }
+  return readConfiguration(files, file);
+}
+
+const readConfiguration = (files: DbFiles, file: string): string | DbDriverFailure => files.readText?.(file) ?? failure('no ODBC configuration (odbcinst.ini) could be read');
+
+/** The section of the driver the client of this version loads: Microsoft's tools of major version 17 and 18 name `ODBC Driver <major> for SQL Server`. */
+function sectionOf(clientVersion: string): string | DbDriverFailure {
+  const major = clientVersion.split('.')[0];
+  return major === '17' || major === '18' ? `ODBC Driver ${major} for SQL Server` : failure('the version of this client names no ODBC driver section');
+}
+
+/** The lines of a section of an INI text, up to the next section. */
+function sectionLines(text: string, name: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim().toLowerCase() === `[${name.toLowerCase()}]`);
+  const rest = start < 0 ? [] : lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.trim().startsWith('['));
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** The `Driver=` path of a section. */
+function listedDriver(text: string, section: string): string | DbDriverFailure {
+  const lines = sectionLines(text, section);
+  const listed = lines.map((line) => /^\s*Driver\s*=\s*(.+?)\s*$/i.exec(line)?.[1]).find((value) => value !== undefined);
+  if (listed !== undefined) {
+    return listed;
+  }
+  return failure(lines.length === 0 ? `the ODBC configuration has no section "${section}"` : `the section "${section}" has no Driver line`);
+}
+
+/** `libmsodbcsql-18.6.so.1.1` is the driver version `18.6.1.1`. */
+const DRIVER_NAME = /^libmsodbcsql-(\d+(?:\.\d+)*)\.so\.(\d+(?:\.\d+)*)$/;
+
+function driverVersionOf(realPath: string): string | undefined {
+  const found = DRIVER_NAME.exec(path.posix.basename(realPath));
+  return found === null ? undefined : `${found[1]}.${found[2]}`;
+}
+
+/** The driver file the configuration lists, with its identity and the version its real file's name gives. */
+function driverFileOf(files: DbFiles, listed: string): DbDriverFile | DbDriverFailure {
+  const identity = files.identityOf(listed);
+  if (identity === undefined) {
+    return failure('the driver file the ODBC configuration lists is not a file');
+  }
+  const version = driverVersionOf(identity.realPath);
+  return version === undefined
+    ? failure("the driver file's name holds no version (libmsodbcsql-<version>.so.<version> is the form read)")
+    : { path: listed, realPath: identity.realPath, size: identity.size, mtimeMs: identity.mtimeMs, version };
+}
+
+/** The next step of a lookup, or the failure that ended it: a failure travels through the steps unchanged. */
+const then = <A, B>(value: A | DbDriverFailure, next: (found: A) => B | DbDriverFailure): B | DbDriverFailure => (isFailure(value) ? value : next(value));
+
+/**
+ * The driver the ODBC `sqlcmd` of this version loads, as the ODBC configuration the bridged environment gives it lists it (L11): the `Driver=` path of the client's own section, the identity of
+ * the file behind it, and the version from its file name. A driver that cannot be found or read is a failure with its cause, which the check answers as DR7.
+ */
+export function odbcDriverOf(platform: NodeJS.Platform, files: DbFiles, clientVersion: string): DbDriverAnswer {
+  const config = configurationOf(platform, files);
+  const section = then(config, () => sectionOf(clientVersion));
+  const listed = then(config, (text) => then(section, (name) => listedDriver(text, name)));
+  const file = then(listed, (listing) => driverFileOf(files, listing));
+  return isFailure(file) ? file : { ok: true, driver: file };
+}
+
+/** The identity a kept verdict's driver is bound to. */
+const sameDriver = (kept: DbDriverFile, found: DbDriverFile): boolean =>
+  kept.path === found.path && kept.realPath === found.realPath && kept.size === found.size && kept.mtimeMs === found.mtimeMs;
 
 /* ---------------------------------------------------------------------------------------------------------------
  * The spawn that asks, and what is kept
@@ -239,11 +385,14 @@ export interface DbClientCheckParts {
   readonly source?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
   readonly files?: DbFiles;
+  /** Where the ODBC client's driver is read from: by default the ODBC configuration of this system through `files`. A test says it; production never does. */
+  readonly driver?: (clientVersion: string) => DbDriverAnswer;
   /** The journal's line writer, for what the check cannot say any other way: the cause of a DR7, or a folder that could not be removed. */
   readonly note?: (message: string) => void;
 }
 
 type Resolved = Required<Omit<DbClientCheckParts, 'note'>> & Pick<DbClientCheckParts, 'note'>;
+
 
 /** The identity a kept verdict is bound to: the path found, the real path behind it, the size and the modification time. */
 const sameFile = (kept: DbProgramFile, found: DbProgramFile): boolean =>
@@ -295,12 +444,39 @@ async function spawnVersion(parts: Resolved, file: DbProgramFile, client: DbClie
   return outcome;
 }
 
+/** The driver of an answer that is the ODBC client's own (the one client whose authentication lives in a library its line does not name); nothing for any other client. */
+function driverOfAnswer(parts: Resolved, client: DbClient, outcome: Pick<SshExecOutcome, 'exitCode' | 'stdout'>): DbDriverAnswer | undefined {
+  const reading = readingOfOdbc(client, outcome);
+  return reading === undefined ? undefined : parts.driver(reading.version);
+}
+
+/** The reading of an answer of the ODBC client, or nothing for any other. */
+function readingOfOdbc(client: DbClient, outcome: Pick<SshExecOutcome, 'exitCode' | 'stdout'>): Reading | undefined {
+  const reading = outcome.exitCode === 0 ? readVersion(client, outcome.stdout) : undefined;
+  return reading?.vendor === 'odbc-sqlcmd' ? reading : undefined;
+}
+
+/** What a version answer makes of a file: the answer read against the table, with the driver of the ODBC client; a good verdict carries the file (and the driver) that answered. */
+function verdictFrom(parts: Resolved, file: DbProgramFile, client: DbClient, outcome: Awaited<ReturnType<DbRunner>>): DbClientVerdict {
+  const driver = driverOfAnswer(parts, client, outcome);
+  noteDriver(parts, client, driver);
+  const verdict = dbClientVerdict(parts.rows, client, parts.platform, outcome.exitCode, outcome.stdout, goodDriver(driver));
+  return verdict.ok ? { ...verdict, file } : verdict;
+}
+
+/** The cause a driver could not be bound, for the journal. */
+function noteDriver(parts: Resolved, client: DbClient, answer: DbDriverAnswer | undefined): void {
+  if (answer?.ok === false) {
+    parts.note?.(`${client}: the ODBC driver could not be bound: ${answer.cause}`);
+  }
+}
+
+const goodDriver = (answer: DbDriverAnswer | undefined): DbDriverFile | undefined => (answer?.ok === true ? answer.driver : undefined);
+
 /** The child, asked for its version and read against the table; a verdict that is good carries the file that answered. */
 async function askClient(parts: Resolved, file: DbProgramFile, client: DbClient, window: AbortSignal | undefined): Promise<DbClientVerdict> {
   try {
-    const outcome = await spawnVersion(parts, file, client, window);
-    const verdict = dbClientVerdict(parts.rows, client, parts.platform, outcome.exitCode, outcome.stdout);
-    return verdict.ok ? { ...verdict, file } : verdict;
+    return verdictFrom(parts, file, client, await spawnVersion(parts, file, client, window));
   } catch (error) {
     return notStartedVerdict(parts, client, error);
   }
@@ -352,10 +528,19 @@ function untilEnded(promise: Promise<DbClientVerdict>, request: AbortSignal | un
 
 const ended = (call: DbClientCall): boolean => call.request?.aborted === true || call.window?.aborted === true;
 
-/** The kept verdict of this very file, or nothing: a verdict kept for a file whose identity changed is dropped. */
+/** Whether the driver a kept verdict is bound to is still the one the ODBC configuration lists: a lookup of a few files, no spawn. */
+function driverStands(state: State, kept: DbClientOk): boolean {
+  if (kept.driver === undefined) {
+    return true;
+  }
+  const found = state.parts.driver(kept.version);
+  return found.ok && sameDriver(kept.driver, found.driver);
+}
+
+/** The kept verdict of this very file (and, for the ODBC client, this very driver), or nothing: a verdict kept for a file whose identity changed is dropped. */
 function keptFor(state: State, file: DbProgramFile): DbClientOk | undefined {
   const kept = state.kept.get(file.path);
-  if (kept !== undefined && sameFile(kept.file, file)) {
+  if (kept !== undefined && sameFile(kept.file, file) && driverStands(state, kept)) {
     return kept;
   }
   state.kept.delete(file.path);
@@ -386,7 +571,8 @@ async function ask(state: State, call: DbClientCall): Promise<DbClientVerdict> {
  * A table that serves nothing for the client starts nothing, and the verdict says DR1.
  */
 export function bridgedDbClientCheck(given: DbClientCheckParts): DbClientCheck {
-  const parts: Resolved = { rows: BRIDGED_DB_PROFILES, run: boundedRun, platform: process.platform, source: process.env, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, files: nodeDbFiles, ...given };
+  const base = { rows: BRIDGED_DB_PROFILES, run: boundedRun, platform: process.platform, source: process.env, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, files: nodeDbFiles, ...given };
+  const parts: Resolved = { ...base, driver: given.driver ?? ((version) => odbcDriverOf(base.platform, base.files, version)) };
   const state: State = { parts, kept: new Map(), inflight: new Map() };
   return (call) => (rowFor(parts.rows, call.client, parts.platform) === undefined ? Promise.resolve({ ok: false, sentence: DR1(call.client, parts.platform) }) : ask(state, call));
 }
