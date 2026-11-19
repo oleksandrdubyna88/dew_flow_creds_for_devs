@@ -545,6 +545,7 @@ jobs:
           for url in "https://cdn.mysql.com/Downloads/MySQL-8.4/$mysql_name" "https://cdn.mysql.com/archives/mysql-8.4/$mysql_name"; do
             curl -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
           done
+          # The SHA-256 of the archive whose Oracle signature (.asc; MySQL Release Engineering, key BCA43417C3B485DD128EC6D4B7B3B788A8D3785C) the lead verified on 2026-11-19.
           echo "e32f82598aef1384d2bbb8e57a1c684f9b7734409ae8028b363fb913e56b8e92  $RUNNER_TEMP/$mysql_name" | sha256sum -c -
           sudo mkdir -p /usr/local/mysql
           sudo tar -xJf "$RUNNER_TEMP/$mysql_name" -C /usr/local/mysql --strip-components=1 --wildcards '*/bin/mysql' '*/lib/plugin/authentication_*_client.so' '*/lib/private/*.so*'
