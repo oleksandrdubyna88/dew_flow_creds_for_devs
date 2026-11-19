@@ -729,7 +729,7 @@ New `test/bridgedDbClient.test.ts`:
 
 | # | Scenario | Observation |
 |---|---|---|
-| DG5 | a wall built by `wallSuppliersOf` with a table that serves no row for the client on this platform; a bridged `query` by a token and by MCP | the body is the generic sentence with the code `not_supported`; the journal holds one line for the call and its detail is DR1, not the generic sentence; `w.dialogs.length === 0`; no read of the stored connection; `runs` empty; **the grant is gone**: a second call with the same token is answered as an unknown token |
+| DG5 | a wall built by `wallSuppliersOf` with a table that serves no row for the client on this platform; a bridged `query` by a token and by MCP | the body is the generic sentence with the code `not_supported`; the journal holds one line for the call and its detail is DR1, not the generic sentence; `w.dialogs.length === 0`; no read of the stored connection; `runs` empty; **the call's grant is gone**: a bridged token call rides a grant of its own (`brokerCall.ts`), so `usable` drops that call's grant and the token survives; a second call with the same token is refused the same way, before any dialog (corrected from *answered as an unknown token* by the coder of V5, 2026-11-19, from the code) |
 | DG6 | DG5 under each consent policy | the same |
 | DG7 | a table that serves the pair, a good verdict | one dialog with today's words; the version spawn, then the query spawn, both of the same path; a second call records the query spawn alone |
 | DG8 | a table that serves the pair, a bad verdict | one dialog; the generic body; DR8 in the journal; one version spawn and no query spawn |
@@ -969,7 +969,7 @@ E2's stories document when E2 starts, §S7.8's note on the wall's wiring.
 - The moment between the walk's look at a file and its start (§S7.6 item 4). Nothing here closes it.
 - That an NTLM answer names the account in a form the fake can read (N15), that a virtual security key can be made on a runner, and that a
   KDC inside WSL 1 can serve a Windows client. The first is PK1's to show; the other two were not tried.
-- That a second call with a dropped grant's token is answered as an unknown token (§S7.8): read from `usable`, not run.
+- ~~That a second call with a dropped grant's token is answered as an unknown token (§S7.8)~~: false as written; the dropped grant is the call's own, the token survives, and a second call is refused the same way (DG5 pins it, 2026-11-19).
 - What a launcher starts (N10). The check binds to the launcher's file and keeps no verdict for it; PA1-i measures the rest.
 - The Windows half as a whole. Today no database client was run on Windows beyond a version flag (the parent's §4.11).
 - A measured pair is measured for the legs that ran. A plugin or a keyword that a later client version adds is covered only by the list
