@@ -256,6 +256,38 @@ const VENDOR_FLAGS: Readonly<Record<DbVendor, (absentFile: string) => readonly s
   'odbc-sqlcmd': () => [],
 };
 
+/** What each `sqlcmd` client was measured to take for `Encrypt` (PA1-f, CI run 44543740467): go-sqlcmd `-N true` and `-N strict`; the ODBC client `-N` alone, which it takes as `true`, and it refuses `-N strict`. A value not listed (`false` for both) is no flag. */
+const ENCRYPT_FLAGS: Readonly<Record<'go-sqlcmd' | 'odbc-sqlcmd', Readonly<Record<string, readonly string[] | undefined>>>> = {
+  'go-sqlcmd': { true: ['-N', 'true'], strict: ['-N', 'strict'] },
+  'odbc-sqlcmd': { true: ['-N'] },
+};
+
+/** The flags of a `sqlcmd` client for the settings that reach it (§S7.9): `Encrypt` as measured, `TrustServerCertificate=true` as `-C` (both clients), `false` as nothing (the default). `undefined` when no measured flag carries a setting. */
+function sqlcmdSettingFlags(vendor: 'go-sqlcmd' | 'odbc-sqlcmd', settings: Readonly<Record<string, string>>): readonly string[] | undefined {
+  const encrypt = settings.encrypt === undefined ? [] : ENCRYPT_FLAGS[vendor][settings.encrypt];
+  return encrypt === undefined ? undefined : [...encrypt, ...(settings.trustservercertificate === 'true' ? ['-C'] : [])];
+}
+
+/** Oracle's `--ssl-mode`, written straight after `--protocol=TCP`; MariaDB's client has no flag of that name, so a connection that asks for it makes no launch (a setting is never dropped silently). */
+const sslModeFlags = (vendor: 'oracle' | 'mariadb', settings: Readonly<Record<string, string>>): readonly string[] | undefined => {
+  if (settings['ssl-mode'] === undefined) {
+    return [];
+  }
+  return vendor === 'oracle' ? [`--ssl-mode=${settings['ssl-mode']}`] : undefined;
+};
+
+/**
+ * The flags each vendor's client is given for the settings of the connection that reach it (E1.7 spec §S7.9, Q15 kind (a)), or `undefined` when the client has no measured flag for one it was asked:
+ * the call then makes no launch (DR9), and never one that quietly leaves the setting out. `psql`'s settings are keywords of its own string.
+ */
+const SETTING_FLAGS: Readonly<Record<DbVendor, (settings: Readonly<Record<string, string>>) => readonly string[] | undefined>> = {
+  postgresql: () => [],
+  oracle: (settings) => sslModeFlags('oracle', settings),
+  mariadb: (settings) => sslModeFlags('mariadb', settings),
+  'go-sqlcmd': (settings) => sqlcmdSettingFlags('go-sqlcmd', settings),
+  'odbc-sqlcmd': (settings) => sqlcmdSettingFlags('odbc-sqlcmd', settings),
+};
+
 /** Whether the client check's verdict names a vendor of this type's own client: a verdict of another client's vendor is no verdict. */
 const verdictFits = (dbType: DbType, verdict: DbClientOk | undefined): verdict is DbClientOk => verdict !== undefined && (VENDORS_OF[dbType] ?? []).includes(verdict.vendor);
 
@@ -295,16 +327,19 @@ function bridgedLaunchOf(
   }
   const userEnv = BRIDGED_USER_ENV[dbType];
   const user = userEnv === undefined ? {} : { [userEnv]: connection.user };
-  return { exe: verdict.file.path, args: args(connection, query, options.absentFile, VENDOR_FLAGS[verdict.vendor](options.absentFile)), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
+  const settingFlags = SETTING_FLAGS[verdict.vendor](connection.settings);
+  return settingFlags === undefined
+    ? undefined
+    : { exe: verdict.file.path, args: args(connection, query, options.absentFile, VENDOR_FLAGS[verdict.vendor](options.absentFile), settingFlags), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
 }
 
 type BuiltConnection = Extract<BridgedDbConnection, { ok: true }>;
 
 /** The arguments of each client for a built connection. The ONE leading space on psql's -c is the first-character rule of `buildDbQueryLaunch`; `-X`: no `.psqlrc` of the person's (E1.6, parent §4.11). */
-const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string, controls: readonly string[]) => string[]>> = {
+const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string, controls: readonly string[], settingFlags: readonly string[]) => string[]>> = {
   postgres: (connection, query, absentFile) => ['-X', '-c', ' ' + query, '--', bridgedPsqlString(connection, absentFile)],
-  mysql: (connection, query, _absentFile, controls) => bridgedMysqlArgs(connection, query, controls),
-  mssql: (connection, query, _absentFile, controls) => bridgedMssqlArgs(connection, query, controls),
+  mysql: (connection, query, _absentFile, controls, settingFlags) => bridgedMysqlArgs(connection, query, controls, settingFlags),
+  mssql: (connection, query, _absentFile, controls, settingFlags) => bridgedMssqlArgs(connection, query, controls, settingFlags),
 };
 
 /** The variable that carries the user, for the client that has no flag for it (`sqlcmd`): always set, since a user is required. */
@@ -314,20 +349,20 @@ const BRIDGED_USER_ENV: Partial<Record<DbType, string>> = { mssql: 'SQLCMDUSER' 
  * No option file at all: `--no-defaults` first, because it is honoured only there and Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`. Then `--protocol=TCP`
  * straight after it (PM1: both clients take it there), then the vendor's authentication flags; `-h` is always named, so `localhost` means TCP and never the socket file (Q17).
  */
-function bridgedMysqlArgs(connection: BuiltConnection, query: string, controls: readonly string[]): string[] {
+function bridgedMysqlArgs(connection: BuiltConnection, query: string, controls: readonly string[], settingFlags: readonly string[]): string[] {
   const flags = [
     ['-h', connection.host],
     ...(connection.port === undefined ? [] : [['-P', connection.port]]),
     ['-u', connection.user],
     ...(connection.database === undefined ? [] : [['-D', connection.database]]),
   ].flat();
-  return ['--no-defaults', '--protocol=TCP', ...controls, ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
+  return ['--no-defaults', '--protocol=TCP', ...settingFlags, ...controls, ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
 }
 
 /** Today's `sqlcmd` arguments for the built fields: `-S host[,port]`, `-d`, `-Q`, `-b` and `-x` (scripting variables off: `$(SQLCMDPASSWORD)` is text), then the vendor's flag, last. */
-function bridgedMssqlArgs(connection: BuiltConnection, query: string, controls: readonly string[]): string[] {
+function bridgedMssqlArgs(connection: BuiltConnection, query: string, controls: readonly string[], settingFlags: readonly string[]): string[] {
   const server = connection.port === undefined ? connection.host : `${connection.host},${connection.port}`;
-  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x', ...controls];
+  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x', ...settingFlags, ...controls];
 }
 
 /**

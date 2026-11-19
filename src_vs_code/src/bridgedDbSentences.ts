@@ -105,6 +105,18 @@ const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
   connect_timeout: () => 'it must be one to four digits',
   application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+  encrypt: () => 'it must be true, false or strict',
+  trustservercertificate: () => 'it must be true or false',
+  'ssl-mode': () => 'it must be DISABLED, PREFERRED or REQUIRED',
+  'connection timeout': () => 'it must be one to five digits',
+  'connect timeout': () => 'it must be one to five digits',
+  'application name': () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+  app: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+  'persist security info': () => 'it must be true or false',
+  multipleactiveresultsets: () => 'it must be true or false',
+  pooling: () => 'it must be true or false',
+  'connect retry count': () => 'it must be one to three digits',
+  'connect retry interval': () => 'it must be one to three digits',
 };
 
 /** DR6: a field outside its shape, and the constraint it did not meet. `field` is the name of a field or of a profile setting, never a value; the constraint is fixed words, never the stored value. */

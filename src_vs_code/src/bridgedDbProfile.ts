@@ -251,10 +251,31 @@ function kvHostAndPort(raw: Fields): Fields {
 
 const withPart = (ctx: Ctx) => (fields: Fields | Refusal, part: string): Fields | Refusal => (isRefusal(fields) ? fields : kvPart(ctx, fields, part));
 
+/** The key of a part of a key-value string, as the parser reads it (trimmed, in lower case), or an empty text when the part has none. */
+function kvKey(part: string): string {
+  const at = part.indexOf('=');
+  return at > 0 ? part.slice(0, at).trim().toLowerCase() : '';
+}
+
+/** The settings a key-value string may hold (E1.7 §S7.9): only the `sqlcmd` dialect has any. */
+const kvSettings = (ctx: Ctx): ReadonlyMap<string, Setting> => (ctx.dbType === 'mssql' ? MSSQL_SETTINGS : new Map());
+
+/** The pairs of the parts that are settings, each by its key as the profile spells it: a key given twice is refused whatever its value. */
+function kvPairs(ctx: Ctx, parts: readonly string[]): readonly Pair[] | Refusal {
+  const pairs = parts.map((part): Pair => [kvKey(part), part.slice(part.indexOf('=') + 1).trim()]);
+  const doubled = pairs.find(([key], at) => pairs.findIndex(([given]) => given === key) !== at);
+  return doubled === undefined ? pairs : refused(doubledSetting(ctx, doubled[0]));
+}
+
 function kvDraft(ctx: Ctx, text: string): Draft | Refusal {
   const parts = text.split(';').map((raw) => raw.trim()).filter((part) => part !== '');
-  const fields = parts.reduce<Fields | Refusal>(withPart(ctx), {});
-  return isRefusal(fields) ? fields : { fields: kvHostAndPort(fields), pairs: [] };
+  const isSetting = (part: string): boolean => kvSettings(ctx).has(kvKey(part));
+  const fields = parts.filter((part) => !isSetting(part)).reduce<Fields | Refusal>(withPart(ctx), {});
+  const pairs = kvPairs(ctx, parts.filter(isSetting));
+  if (isRefusal(fields)) {
+    return fields;
+  }
+  return isRefusal(pairs) ? pairs : { fields: kvHostAndPort(fields), pairs };
 }
 
 function draftOf(ctx: Ctx, stored: string): Draft | Refusal {
@@ -266,30 +287,74 @@ function draftOf(ctx: Ctx, stored: string): Draft | Refusal {
   return dialect === 'uri' ? uriDraft(ctx, text) : kvDraft(ctx, text);
 }
 
+/**
+ * A setting of the profile (the E1.7 spec §S7.9, Q15 of the parent): the shape its value must have, how the builder is given it, and whether it reaches the client. A setting of kind (a) is a
+ * transport-security key a client can be made to honour by a measured flag, and it is carried. A setting of kind (b) is a key a client does not use, which changes neither who authenticates,
+ * which server is reached, nor how that server is verified: it is read for its shape and never carried, so the launch with it equals the launch without it. Every other key is refused (DR2).
+ */
+interface Setting {
+  readonly shape: RegExp;
+  readonly written?: (value: string) => string;
+  readonly carried: boolean;
+}
+
+const BOOLEAN = /^(?:true|false)$/i;
+const NAME = /^[A-Za-z0-9 _.-]{1,63}$/;
+const lower = (value: string): string => value.toLowerCase();
+const carried = (shape: RegExp, written?: (value: string) => string): Setting => ({ shape, written, carried: true });
+const dropped = (shape: RegExp): Setting => ({ shape, carried: false });
+
 /** The three settings of a postgres URI and the shape each value must have: a word, one to four digits, a short plain name. */
-const POSTGRES_SETTINGS: ReadonlyMap<string, RegExp> = new Map([
-  ['sslmode', /^(?:disable|allow|prefer|require|verify-ca|verify-full)$/],
-  ['connect_timeout', /^\d{1,4}$/],
-  ['application_name', /^[A-Za-z0-9 _.-]{1,63}$/],
+const POSTGRES_SETTINGS: ReadonlyMap<string, Setting> = new Map([
+  ['sslmode', carried(/^(?:disable|allow|prefer|require|verify-ca|verify-full)$/)],
+  ['connect_timeout', carried(/^\d{1,4}$/)],
+  ['application_name', carried(NAME)],
 ]);
 
+/**
+ * Kind (a): `Encrypt` and `TrustServerCertificate`; kind (b), each with its reason: `Application Name` and `App` name the connection to the server's own views, `Persist Security Info` is a
+ * connector's habit of keeping a password it was given, `MultipleActiveResultSets`, `Pooling`, `Connect Retry Count` and `Connect Retry Interval` are a connector's own business, and the two timeouts
+ * would only bound a wait. None of the nine reaches `sqlcmd`, and none of them names an identity, a server or a way to verify one.
+ */
+const MSSQL_SETTINGS: ReadonlyMap<string, Setting> = new Map([
+  ['encrypt', carried(/^(?:true|false|strict)$/i, lower)],
+  ['trustservercertificate', carried(BOOLEAN, lower)],
+  ['application name', dropped(NAME)],
+  ['app', dropped(NAME)],
+  ['persist security info', dropped(BOOLEAN)],
+  ['multipleactiveresultsets', dropped(BOOLEAN)],
+  ['pooling', dropped(BOOLEAN)],
+  ['connect retry count', dropped(/^\d{1,3}$/)],
+  ['connect retry interval', dropped(/^\d{1,3}$/)],
+  ['connection timeout', dropped(/^\d{1,5}$/)],
+  ['connect timeout', dropped(/^\d{1,5}$/)],
+]);
+
+/** Oracle's client takes `--ssl-mode`; `VERIFY_CA` and `VERIFY_IDENTITY` name a file the entry would carry, which waits for a typed field (parent §8). */
+const MYSQL_SETTINGS: ReadonlyMap<string, Setting> = new Map([['ssl-mode', carried(/^(?:DISABLED|PREFERRED|REQUIRED)$/i, (value) => value.toUpperCase())]]);
+
+const SETTINGS: Readonly<Record<DbType, ReadonlyMap<string, Setting>>> = { postgres: POSTGRES_SETTINGS, mysql: MYSQL_SETTINGS, mssql: MSSQL_SETTINGS, mongodb: new Map() };
+
 /** The pair a setting of the profile gives, `undefined` when the connection does not hold it, or the refusal of a value of the wrong shape. */
-function settingPair(ctx: Ctx, pairs: readonly Pair[], key: string, shape: RegExp): Pair | undefined | Refusal {
+function settingPair(ctx: Ctx, pairs: readonly Pair[], key: string, rule: Setting): Pair | undefined | Refusal {
   const value = pairs.find(([given]) => given === key)?.[1];
   if (value === undefined) {
     return undefined;
   }
-  return shape.test(value) ? [key, value] : refused(shapeOf(ctx, key));
+  return rule.shape.test(value) ? [key, writtenValue(rule, value)] : refused(shapeOf(ctx, key));
 }
 
-/** The profile's settings, in the order the builder writes them whatever order the connection gave. A key outside the profile is refused first, then each value's shape. */
+const writtenValue = (rule: Setting, value: string): string => rule.written?.(value) ?? value;
+
+/** The profile's settings, in the order the builder writes them whatever order the connection gave: only the ones that reach the client. A key outside the profile is refused first, then each value's shape. */
 function profileSettings(ctx: Ctx, pairs: readonly Pair[]): Readonly<Record<string, string>> | Refusal {
-  const outside = pairs.find(([key]) => ctx.dbType !== 'postgres' || !POSTGRES_SETTINGS.has(key));
+  const rules = SETTINGS[ctx.dbType];
+  const outside = pairs.find(([key]) => !rules.has(key));
   if (outside !== undefined) {
     return refused(unknownSetting(ctx, outside[0]));
   }
-  const taken = [...POSTGRES_SETTINGS].map(([key, shape]) => settingPair(ctx, pairs, key, shape));
-  return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair));
+  const taken = [...rules].map(([key, rule]) => settingPair(ctx, pairs, key, rule));
+  return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair).filter(([key]) => rules.get(key)?.carried === true));
 }
 
 const SOCKET_HOST = /(?:^[@/\\])|(?:[,/\\])/;
