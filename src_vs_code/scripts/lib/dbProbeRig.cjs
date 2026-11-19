@@ -44,9 +44,37 @@ const oneLine = (text, limit = 200) => text.trim().replaceAll(/\s*\r?\n\s*/g, ' 
 /** The first non-empty line of `text`. */
 const firstLine = (text) => text.split(/\r?\n/).find((line) => line.trim() !== '')?.trim() ?? '';
 
-/** What a version line holds after the version itself (N16): the package, the system, the distribution's words. */
-function buildTagOf(line) {
-  const found = /\d+(?:\.\d+)+/.exec(line); // NOSONAR: a version line of one client
+/**
+ * Where each client family's own words put its version: never "the first dotted number of the line" (the first run read `8.4` from the install path of Oracle's client on Windows, and
+ * `15.1`, the client protocol number, for MariaDB 10.x; and neither `sqlcmd` has the number on its first line).
+ */
+const VERSION_WORDS = {
+  psql: /\(PostgreSQL\)\s+(\d+(?:\.\d+)*)/, // NOSONAR: a version line of one client
+  oracle: /\bVer\s+(\d+(?:\.\d+)+)/, // `mysql  Ver 8.4.13 for Win64`
+  mariadb: /\bDistrib\s+(\d+(?:\.\d+)+)|\bfrom\s+(\d+(?:\.\d+)+)-MariaDB/, // `Ver 15.1 Distrib 10.6.23-MariaDB` and `from 11.8.6-MariaDB, client 15.2`
+  'go-sqlcmd': /^[ \t]*Version:[ \t]*v?(\d+(?:\.\d+)+)/m, // `Version: v1.10.0`, on the third line of `-?`
+  'odbc-sqlcmd': /^[ \t]*Version[ \t]+v?(\d+(?:\.\d+)+)/m, // `Version 18.6.1.1 Linux`, on the second line of `-?`
+};
+
+/** The version a client says, read where its family puts it: `{ number, line }` (the line it was read from), or `undefined` when the words hold none. `text` is all that the client printed. */
+function versionOfClient(family, text) {
+  const pattern = VERSION_WORDS[family];
+  const found = pattern === undefined ? null : pattern.exec(text);
+  if (found === null) {
+    return undefined;
+  }
+  const at = text.lastIndexOf('\n', found.index) + 1;
+  const end = text.indexOf('\n', found.index);
+  return { number: found[1] ?? found[2], line: text.slice(at, end < 0 ? text.length : end).trim(), after: text.slice(found.index + found[0].length, end < 0 ? text.length : end).trim() };
+}
+
+/** What a version line holds after the version itself (N16): the package, the system, the distribution's words. `family` says where the version is; with none the whole first line is the tag. */
+function buildTagOf(line, family) {
+  const read = family === undefined ? undefined : versionOfClient(family, line);
+  if (read !== undefined) {
+    return read.after;
+  }
+  const found = family === undefined ? /\d+(?:\.\d+)+/.exec(line) : null; // NOSONAR: a version line of one client
   return found === null ? line : line.slice(found.index + found[0].length).trim();
 }
 
@@ -83,12 +111,16 @@ function describeFile(file) {
 /** Waits `ms`. */
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A listener on the loopback that holds every connection it gets and never answers: `state.connections` counts them; `state.first` is the first bytes of the first one. */
-async function holdingListener() {
-  const state = { connections: 0, first: undefined };
+/**
+ * A listener on the loopback that holds every connection it gets and never answers: `state.connections` counts them; `state.first` is the first bytes of the first one;
+ * `state.addresses` are the local addresses the clients connected TO (on `0.0.0.0` every `127.x.y.z` reaches it, which tells a host a wrapper chose from the one a string named).
+ */
+async function holdingListener(bindHost = '127.0.0.1') {
+  const state = { connections: 0, first: undefined, addresses: [] };
   const open = new Set();
   const server = net.createServer((socket) => {
     state.connections += 1;
+    state.addresses.push(socket.localAddress);
     open.add(socket);
     socket.on('error', () => undefined);
     socket.once('close', () => open.delete(socket));
@@ -96,7 +128,7 @@ async function holdingListener() {
       state.first ??= chunk;
     });
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(0, bindHost, resolve));
   const close = () => {
     for (const socket of open) {
       socket.destroy();
@@ -165,6 +197,6 @@ function finish(harnessName) {
 const mayWriteSystem = () => process.env.CI === 'true' && process.env.BRIDGED_DB_SYSTEM_RIG === '1';
 
 module.exports = {
-  IS_WINDOWS, OUT, check, loadProduct, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, resolveProgram, describeFile,
+  IS_WINDOWS, OUT, check, loadProduct, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, resolveProgram, describeFile,
   pause, holdingListener, reachedRun, noteLeg, unmeasured, stop, announce, finish, mayWriteSystem,
 };

@@ -52,9 +52,14 @@ function databaseOf(chunk) {
   return at >= 0 ? fields[at + 1] : '(none named)';
 }
 
-/** One query start of `exe`, held: which program it is, and which listener it reached. The child is ended. */
-async function heldStart(scope, exe, env, port, listeners) {
-  const args = ['-X', '-w', '-c', ' select 1', '--', `host='127.0.0.1' ${port === undefined ? '' : `port='${port}' `}user='pa1' sslmode='disable' gssencmode='disable'`];
+/** The keyword string of one held start: `host`, `port` and `dbname` only when named (`port` is the number, `host` and `dbname` are booleans), then the user and the two controls that keep the start short. */
+function stringOf({ host = false, port, dbname = false }) {
+  return [host ? "host='127.0.0.1'" : '', port === undefined ? '' : `port='${port}'`, dbname ? "dbname='pa1named'" : '', "user='pa1' sslmode='disable' gssencmode='disable'"].filter((part) => part !== '').join(' ');
+}
+
+/** One query start of `exe` with the keyword string `connection`, held: which program it is, and which listener it reached. The child is ended. */
+async function heldStart(scope, exe, env, connection, listeners) {
+  const args = ['-X', '-w', '-c', ' select 1', '--', connection];
   const child = launch(scope, exe, args, { env });
   try {
     const reached = () => listeners.some((listener) => listener.state.connections > 0);
@@ -83,6 +88,53 @@ function startWords(start, named, marker) {
 function reset(listener) {
   listener.state.connections = 0;
   listener.state.first = undefined;
+  listener.state.addresses = [];
+}
+
+/** What one start of the matrix reached: the listener (`named`: the string's own, `marker`: the file's, `none`), the local address it connected to, and the database its start-up message named. */
+function reachedBy(started, named, marker) {
+  const listener = [[named, 'named'], [marker, 'marker']].find(([entry]) => entry.state.connections > 0);
+  return listener === undefined ? { reached: 'none', address: undefined, database: undefined, program: started.program } : { reached: listener[1], address: listener[0].state.addresses[0], database: databaseOf(listener[0].state.first), program: started.program };
+}
+
+/**
+ * The finding of PA1-i, stated for each field: which of `host`, `port` and `dbname` a `~/.postgresqlrc` steers, for a string that names the field and for a string that does not.
+ * The listeners hold `0.0.0.0`, so a start reaches them on any `127.x.y.z`: the string names `127.0.0.1`, the file names `127.0.0.2`, and the address a start connected TO says which host
+ * was used; the port says which listener; the start-up message says which database. Eight strings (every subset of the three fields), one start each, in a home folder that holds the file.
+ */
+async function steeringMatrix(scope, rig, word, major) {
+  const named = await holdingListener('0.0.0.0');
+  const marker = await holdingListener('0.0.0.0');
+  try {
+    const home = path.join(rig.dir, 'pa1i matrix home');
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, '.postgresqlrc'), `${major} 127.0.0.2:${marker.port} pa1imarker\n`);
+    const env = bridgedEnv(rig.product, home);
+    const rows = [];
+    for (let mask = 0; mask < 8; mask += 1) {
+      const names = { host: (mask & 1) !== 0, port: (mask & 2) !== 0, dbname: (mask & 4) !== 0 };
+      reset(named);
+      reset(marker);
+      const started = await heldStart(scope, word, env, stringOf({ host: names.host, port: names.port ? named.port : undefined, dbname: names.dbname }), [named, marker]);
+      const row = { names, ...reachedBy(started, named, marker), said: started.said };
+      rows.push(row);
+      console.log(`record (PA1-i) steering run ${mask + 1} of 8: the string names ${Object.entries(names).filter(([, on]) => on).map(([key]) => key).join(', ') || 'none of host, port, dbname'}: the start ${row.reached === 'none' ? `reached NO listener (it said ${JSON.stringify(row.said)})` : `reached the ${row.reached === 'named' ? "string's" : "marker file's"} listener, on address ${row.address} (the string says 127.0.0.1, the file 127.0.0.2), database ${row.database}`}`);
+    }
+    const steered = { host: (row) => row.address === '127.0.0.2', port: (row) => row.reached === 'marker', dbname: (row) => row.database === 'pa1imarker' };
+    const words = Object.keys(steered).map((field) => {
+      const verdict = (named_) => {
+        const group = rows.filter((row) => row.names[field] === named_ && row.reached !== 'none');
+        const hits = group.filter(steered[field]).length;
+        return group.length === 0 ? 'no start reached a listener to tell' : `${hits === 0 ? 'NOT steered' : `STEERED (${hits} of ${group.length} starts)`}`;
+      };
+      return `${field}: when the string omits it, ${verdict(false)}; when the string names it, ${verdict(true)}`;
+    });
+    console.log(`record (PA1-i) the file \`${major} 127.0.0.2:<port> pa1imarker\` in the home folder steers: ${words.join(' | ')}`);
+    noteLeg('PA1-i steering', true, words.join(' | '));
+  } finally {
+    await named.close();
+    await marker.close();
+  }
 }
 
 /** PA1-i on Debian and Ubuntu; elsewhere a printed fact. `psqlWord` is the file the bridged `PATH` resolves the program word to. */
@@ -108,7 +160,7 @@ async function legI(scope, rig) {
     fs.mkdirSync(steeredHome, { recursive: true });
     const plainEnv = bridgedEnv(rig.product, plainHome);
     const versionPlain = firstLine(runSync(word, ['--version'], plainEnv).stdout);
-    const plain = await heldStart(scope, word, plainEnv, named.port, [named, marker]);
+    const plain = await heldStart(scope, word, plainEnv, stringOf({ host: true, port: named.port }), [named, marker]);
     console.log(`record (PA1-i) no steering file: \`psql --version\` says ${JSON.stringify(versionPlain)} (major ${majorOfLine(versionPlain) ?? '?'}); ${startWords(plain, named, marker)}`);
     const first = majorOfExe(plain.program) ?? majorOfLine(versionPlain);
     const other = majors.find((major) => major !== first) ?? first;
@@ -118,18 +170,19 @@ async function legI(scope, rig) {
     fs.writeFileSync(path.join(steeredHome, '.postgresqlrc'), `${other ?? first} 127.0.0.1:${marker.port} pa1imarker\n`);
     const steeredEnv = bridgedEnv(rig.product, steeredHome);
     const versionSteered = runSync(word, ['--version'], steeredEnv);
-    const noPort = await heldStart(scope, word, steeredEnv, undefined, [named, marker]);
+    const noPort = await heldStart(scope, word, steeredEnv, stringOf({ host: true }), [named, marker]);
     console.log(`record (PA1-i) a marker ~/.postgresqlrc "${other ?? first} 127.0.0.1:<marker port> pa1imarker" in the rig home, the string names NO port: \`psql --version\` says ${JSON.stringify(oneLine(versionSteered.text))} (major ${majorOfLine(firstLine(versionSteered.stdout)) ?? '?'}); ${startWords(noPort, named, marker)}`);
     const portSteered = marker.state.connections > 0;
     reset(named);
     reset(marker);
-    const withPort = await heldStart(scope, word, steeredEnv, named.port, [named, marker]);
+    const withPort = await heldStart(scope, word, steeredEnv, stringOf({ host: true, port: named.port }), [named, marker]);
     console.log(`record (PA1-i) the same file, the string names its own port: ${startWords(withPort, named, marker)}`);
     const versionMajor = majorOfLine(firstLine(versionSteered.stdout));
     const queryMajor = majorOfExe(noPort.program);
     const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
     console.log(`record (PA1-i) control, the wrapper starts the other version: ${twoVersions ? (queryMajor === other ? 'SHOWN (the marker named it and it ran)' : `NOT shown (the marker named ${other} and ${queryMajor ?? 'none'} ran)`) : 'NOT shown (one psql version is installed)'}`);
     noteLeg('PA1-i psql', twoVersions && queryMajor === other, `the version start and the query start ${differs ? 'DIFFER' : 'agree'} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`);
+    await steeringMatrix(scope, rig, word, other ?? first);
     if (differs) {
       stop('PA1-i', 'a file under the home folder makes the version start and the query start differ: the pair is not turned to served on this image, and the row returns to the lead (§S7.4, the decision of PA1-i)');
     }

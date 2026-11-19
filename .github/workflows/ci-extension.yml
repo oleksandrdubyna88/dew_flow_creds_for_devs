@@ -379,16 +379,23 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 update
           sudo ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mssql-tools18 unixodbc
 
-      # PA1-g: the older `psql` clients are the ones of the PostgreSQL 12 and 15 images, by digest (R7). `docker run` of the harness never pulls: a missing image is `UNMEASURED`.
-      - name: Pull the older psql clients, by digest
+      # PA1-g: the older `psql` clients, built here from two DISTRIBUTIONS' own images (each base pinned by digest, R7): Ubuntu 22.04's own `postgresql-client` (libpq 14) and Debian 12's (libpq 15),
+      # with no PostgreSQL project repository. The first run used the PostgreSQL project's images (`psql` 12 and 15), and their `psql` loaded the newest `libpq5` of the same repository, so they took
+      # `require_auth` as a new client does and were no older client. The harness reads which libpq file each image's `psql` loads and prints it beside the version line; an image whose libpq is 16
+      # or newer is `UNMEASURED`, never a `STOP`. `docker run` of the harness never pulls or builds: a missing image is `UNMEASURED`.
+      - name: Build the older psql clients (the distributions' own libpq, base images pinned by digest)
         if: runner.os == 'Linux'
         run: |
-          docker pull postgres@sha256:2f2a8c2a7d10862e7fba2602e304523554f9df8244c632dafe2628ccb398fb5c
-          docker pull postgres@sha256:496f07cd16dff6406cee521a66b37080be917ea063f017336affdfcb1c61f90e
+          set -eu
+          build_older() {
+            printf 'FROM %s\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*\n' "$2" | docker build --quiet --tag "$1" -
+          }
+          build_older pa1-older-psql:ubuntu-22.04 ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
+          build_older pa1-older-psql:debian-12 debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
       - name: Probe PA1 (database client versions, controls and the floor)
         env:
-          PA1_OLD_PSQL_IMAGES: postgres@sha256:2f2a8c2a7d10862e7fba2602e304523554f9df8244c632dafe2628ccb398fb5c,postgres@sha256:496f07cd16dff6406cee521a66b37080be917ea063f017336affdfcb1c61f90e
+          PA1_OLD_PSQL_IMAGES: pa1-older-psql:ubuntu-22.04,pa1-older-psql:debian-12
         run: npm run itest:bridged-db-pa1
 
       # PP1 (the socket class) and PE1 (the entry's own login) start real servers made by this user in owned folders: a PostgreSQL cluster, a MySQL server (the image's `mysqld`,

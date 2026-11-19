@@ -27,14 +27,14 @@ const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const rig = require('./lib/dbProbeRig.cjs');
-const { discover, versionOf, REQUIRED_ON_CI_LINUX } = require('./lib/dbProbeClients.cjs');
+const { discover, realVersion, buildsRecord, REQUIRED_ON_CI_LINUX } = require('./lib/dbProbeClients.cjs');
 const clients = require('./lib/dbPa1Clients.cjs');
 const psql = require('./lib/dbPa1Psql.cjs');
 const wrapper = require('./lib/dbPa1Wrapper.cjs');
 
 /** The legs one client family has, in order: its version line first (R1), then PA1-a, then its own. */
 async function legsOf(scope, client, shared) {
-  rig.announce(client.family, `${client.exe} (found by ${client.via})`, versionOf(client.exe).line); // R1: the line comes first
+  rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line); // R1: the line comes first (the version line of the client's own family, not its first line)
   clients.legA(client, shared);
   if (client.family === 'psql') {
     psql.libpqLegs();
@@ -81,6 +81,7 @@ async function main(scope) {
     await psql.legG(scope, shared);
     await wrapper.legI(scope, shared);
   }
+  buildsRecord(found);
   return rig.finish('bridged db PA1');
 }
 

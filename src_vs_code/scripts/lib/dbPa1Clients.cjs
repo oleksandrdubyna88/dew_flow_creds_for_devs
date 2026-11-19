@@ -7,12 +7,16 @@ const path = require('node:path');
 const { launch, endChild } = require('../itestSshd.cjs');
 const crypto = require('node:crypto');
 const { fakeServer, within } = require('./mysqlFake.cjs');
-const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, reachedRun, noteLeg, unmeasured, IS_WINDOWS } = require('./dbProbeRig.cjs');
+const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, reachedRun, noteLeg, unmeasured, IS_WINDOWS } = require('./dbProbeRig.cjs');
 
 const INVENTED_FLAG = '--pa1-not-a-flag';
 const ABSENT_PLUGIN = 'pa1_absent_plugin';
 
-/** PA1-a: the version flag, under the bridged environment: the whole line, its stream, the exit code, the build tag. The line goes to R1. */
+/**
+ * PA1-a: the version flag, under the bridged environment: the whole line, its stream, the exit code, the build tag. The version itself is read where the client's own family puts it
+ * (`mysql  Ver 8.4.13`, `Distrib 10.6.23-MariaDB`, `Version: v1.10.0`), never as the first dotted number of the line: a path (Oracle's client on Windows) or the client protocol number
+ * (MariaDB 10.x) has one, and neither `sqlcmd` has a version on its first line. The line goes to R1.
+ */
 function legA(client, rig) {
   const env = bridgedEnv(rig.product, rig.home);
   const flags = client.family.endsWith('sqlcmd') ? ['--version', '-?'] : ['--version'];
@@ -23,7 +27,9 @@ function legA(client, rig) {
     if (flag === '--version') {
       versionLine = line;
     }
-    console.log(`record (PA1-a) ${client.family} ${flag}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(line))}`);
+    const read = versionOfClient(client.family, answer.text);
+    const said = read === undefined ? 'the answer holds no version of this family\'s kind' : `the version it says: ${read.number}, from the line ${JSON.stringify(read.line)}`;
+    console.log(`record (PA1-a) ${client.family} ${flag}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
   }
   return versionLine;
 }

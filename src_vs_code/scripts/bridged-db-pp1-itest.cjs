@@ -17,7 +17,7 @@ const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const rig = require('./lib/dbProbeRig.cjs');
-const { discover, versionOf } = require('./lib/dbProbeClients.cjs');
+const { discover, realVersion, buildsRecord } = require('./lib/dbProbeClients.cjs');
 const legs = require('./lib/dbPp1Legs.cjs');
 
 async function main(scope) {
@@ -34,7 +34,7 @@ async function main(scope) {
   const found = discover();
   const byFamily = (family) => found.find((client) => client.family === family);
   for (const client of found.filter((one) => ['psql', 'oracle', 'mariadb'].includes(one.family))) {
-    rig.announce(client.family, `${client.exe} (found by ${client.via})`, versionOf(client.exe).line);
+    rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line);
   }
   const psql = byFamily('psql');
   if (psql === undefined) {
@@ -48,6 +48,7 @@ async function main(scope) {
   } else {
     await legs.legMysql(scope, oracle, [byFamily('mariadb')].filter((client) => client !== undefined), shared);
   }
+  buildsRecord(found.filter((one) => ['psql', 'oracle', 'mariadb'].includes(one.family)));
   return rig.finish('bridged db PP1');
 }
 

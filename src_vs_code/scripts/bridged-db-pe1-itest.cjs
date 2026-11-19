@@ -14,7 +14,7 @@ const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const rig = require('./lib/dbProbeRig.cjs');
-const { discover, versionOf } = require('./lib/dbProbeClients.cjs');
+const { discover, realVersion, buildsRecord } = require('./lib/dbProbeClients.cjs');
 const legs = require('./lib/dbPe1Legs.cjs');
 
 async function main(scope) {
@@ -30,7 +30,7 @@ async function main(scope) {
   console.log(`PE1: node ${process.version}; ${process.platform}/${process.arch}; CI=${process.env.CI ?? ''}`);
   const found = discover().filter((client) => ['psql', 'oracle', 'mariadb'].includes(client.family));
   for (const client of found) {
-    rig.announce(client.family, `${client.exe} (found by ${client.via})`, versionOf(client.exe).line);
+    rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line);
   }
   const psql = found.find((client) => client.family === 'psql');
   if (psql === undefined) {
@@ -40,6 +40,7 @@ async function main(scope) {
   }
   await legs.legMysql(scope, found.filter((client) => client.family !== 'psql'), shared, process.env.PE1_MARIADB_IMAGE);
   rig.unmeasured('PE1-7', 'SQL Server: rig Q belongs to the SQL Server job, not to this harness');
+  buildsRecord(found);
   return rig.finish('bridged db PE1');
 }
 
