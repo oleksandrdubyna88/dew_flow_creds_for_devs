@@ -75,16 +75,22 @@ async function legGssEncryption(ctx) {
   }
 }
 
-/** PK1-w4: a server's GSSAPI request (7) on Windows, for entry A and entry B: recorded, and never a control (N14). */
+/**
+ * PK1-w4: a server's GSSAPI request (7) on Windows, for entry A and entry B: as launched, and with `require_auth` written last (the control the spec names for the authentication road; the second run
+ * left it out, so the Windows row said only that the request was refused). Recorded, and never a control (N14): a runner outside a domain has no ticket, so no token can be on offer either way.
+ */
 async function legRequest7(ctx) {
   unmeasured('PK1-w4', 'the positive control needs a Kerberos ticket, and a runner outside a domain has none; what the client does with no ticket follows and does not count');
-  for (const entry of ['A', 'B']) {
-    const fake = await withFakePg({ mode: 'gss', gssenc: 'N' }, async (port) => {
-      const launched = launchFor(ctx, port, { entry });
-      return runClient(ctx.scope, ctx.exe, launched.args, launched.env);
-    });
-    const state = fake.state;
-    record(`PK1-w4-${entry}`, 'not shown', `as launched, entry ${entry}, a server asking for GSSAPI (7): request ${state.requested === 'gss' ? 'SEEN' : 'not seen'}; a token ${(state.answers[0] ?? 0) > 0 ? `FOLLOWED (${state.answers[0]} bytes)` : 'did not follow'}; psql said ${JSON.stringify(oneLine(fake.result.stderr, 160))}. No control: this does not count.`);
+  const cases = [['as launched', '', {}], ['with require_auth written last', '-require_auth', { control: true, add: [CANDIDATE.auth] }]];
+  for (const [what, suffix, options] of cases) {
+    for (const entry of ['A', 'B']) {
+      const fake = await withFakePg({ mode: 'gss', gssenc: 'N' }, async (port) => {
+        const launched = launchFor(ctx, port, { ...options, entry });
+        return runClient(ctx.scope, ctx.exe, launched.args, launched.env);
+      });
+      const state = fake.state;
+      record(`PK1-w4${suffix}-${entry}`, 'not shown', `${what}, entry ${entry}, a server asking for GSSAPI (7): request ${state.requested === 'gss' ? 'SEEN' : 'not seen'}; a token ${(state.answers[0] ?? 0) > 0 ? `FOLLOWED (${state.answers[0]} bytes)` : 'did not follow'}; psql said ${JSON.stringify(oneLine(fake.result.stderr, 160))}. No control: this does not count.`);
+    }
   }
 }
 
@@ -131,7 +137,8 @@ async function legProfileFiles(ctx, systemRig) {
   const keywords = [/ passfile='[^']*'/g, / sslcert='[^']*'/g, / sslkey='[^']*'/g];
   const variables = ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'];
   for (const [label, control] of [['control (the three keywords, their variables and -X cut)', true], ['launch as built', false]]) {
-    const options = (extra) => ({ user: 'pdprobe', host: '127.0.0.1', ...extra, ...(control ? { cut: keywords, dropArgs: ['-X'] } : {}) });
+    // Entry B (no password): a launch that carries the entry's own password never asks the password file, so the second run's control could not send its marker (the entry's word went instead).
+    const options = (extra) => ({ user: 'pdprobe', host: '127.0.0.1', entry: 'B', ...extra, ...(control ? { cut: keywords, dropArgs: ['-X'] } : {}) });
     const build = (extra) => (port) => {
       const made = launchFor({ ...ctx, user: 'pdprobe' }, port, options(extra));
       for (const name of control ? variables : []) {
@@ -147,7 +154,7 @@ async function legProfileFiles(ctx, systemRig) {
     const sentMarker = rig.holdsMarker(fileRun.state.sent);
     const sentCert = certificate.state.peer?.commonName === rig.PD3_MARKER_CN;
     const readRc = echoed.stdout.includes('pk1-psqlrc-marker');
-    const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : 'not sent'}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : 'not read'}`;
+    const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : `not sent (the fake got: ${rig.labelled(fileRun.state.sent)})`}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : `not read (exit ${echoed.code}; stdout ${JSON.stringify(oneLine(echoed.stdout, 100))}; stderr ${JSON.stringify(oneLine(echoed.stderr, 140))})`}`;
     if (control) {
       const shown = sentMarker && sentCert && readRc;
       if (shown) {

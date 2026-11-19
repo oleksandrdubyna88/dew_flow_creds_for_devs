@@ -40,6 +40,13 @@ function clientConfig(port) {
     '  }',
     // Which realm a host name belongs to is asked of this table and never of the DNS (`dns_lookup_realm = false`): a service on `localhost` or on the loopback address has no domain to
     // take a realm from, and a client that cannot name the realm of the service asks for a ticket the KDC does not know.
+    // Oracle's LDAP SASL client plugin (the GSSAPI mechanism) asks the Kerberos profile which host is the LDAP server, and asks the KDC for the service `ldap/<that host>`; it also destroys the
+    // ticket it used unless it is told not to. The rig names the host (`localhost`, which `[domain_realm]` below maps to the realm) and keeps the rig's ticket.
+    '[appdefaults]',
+    '  authentication_ldap_sasl_client = {',
+    '    ldap_server_host = localhost',
+    '    ldap_destroy_tgt = false',
+    '  }',
     '[domain_realm]',
     `  localhost = ${REALM}`,
     `  .localhost = ${REALM}`,
@@ -145,6 +152,9 @@ async function startRealm(scope, dir, home) {
   // The service names the receivers of the legs ask for: PostgreSQL's (`postgres` on `localhost`, which libpq builds from the host word) and the one PK1's fake MySQL server sends in its plugin data
   // (the first run had no such principal, so MariaDB's GSSAPI plugin asked the KDC for a service it did not know and the leg was `UNMEASURED`).
   addPrincipal(MYSQL_SPN.replace(`@${REALM}`, ''));
+  // The services Oracle's LDAP SASL plugin asks for (the second run had none, and the plugin got no ticket for its SASL step): `ldap` on the host the profile names and on the loopback address.
+  addPrincipal('ldap/localhost');
+  addPrincipal('ldap/127.0.0.1');
   const kdc = launch(scope, tool.krb5kdc, ['-n', '-r', REALM], { env: rigEnv });
   const up = await waitFor(() => listening(port), 10_000);
   check('rig K: the KDC listens on its loopback port', up, `krb5kdc said: ${kdc.stderr.trim().slice(0, 300)}`);
@@ -209,7 +219,7 @@ async function startRealm(scope, dir, home) {
   }
   // The rig's own check that a client library under the bridged environment can GET a ticket for each service a leg asks for. A failure is the rig's fault (a leg that needs the service cannot be
   // shown), and it prints what the library asked, what the KDC answered and the KDC's own log.
-  for (const [label, args] of [['postgres on localhost, as libpq names it (service postgres, host localhost)', ['-S', 'postgres', 'localhost']], [`${MYSQL_SPN}, as the fake MySQL server sends it`, [MYSQL_SPN]]]) {
+  for (const [label, args] of [['postgres on localhost, as libpq names it (service postgres, host localhost)', ['-S', 'postgres', 'localhost']], [`${MYSQL_SPN}, as the fake MySQL server sends it`, [MYSQL_SPN]], ['ldap on localhost, as the LDAP SASL plugin asks for it (service ldap, host localhost)', ['-S', 'ldap', 'localhost']]]) {
     const got = handle.serviceCheck(args);
     check(`rig K: the client library gets a ticket for ${label}`, got.ok, `kvno said: ${got.said}\nthe client library's trace:\n${got.trace}\nthe KDC's log:\n${handle.kdcLogTail()}`);
   }

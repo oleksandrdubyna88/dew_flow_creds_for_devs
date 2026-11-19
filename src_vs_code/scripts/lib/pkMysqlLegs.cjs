@@ -9,9 +9,10 @@
 //
 // The record is words and numbers: the length of an answer and, where a plugin sends the entry's own word, whether the answer WAS that word. No answer's bytes are kept.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { check, record, unmeasured, stop, bridgedEnv, runClient, oneLine, throwawayWord, rigRun } = require('./dbProbe.cjs');
+const { check, record, unmeasured, notThisClients, stop, bridgedEnv, runClient, oneLine, throwawayWord, rigRun, systemRig } = require('./dbProbe.cjs');
 const { withFakeMysql } = require('./pkMysqlFake.cjs');
 const { MYSQL_SPN: SPN } = require('./pkKrbRig.cjs');
 
@@ -35,12 +36,19 @@ const le16 = (text) => {
   return Buffer.concat([head, Buffer.from(text)]);
 };
 
+/**
+ * What the server's WebAuthn plugin sends the client after the switch: a capability byte, then the 32-byte random challenge and the relying party's id, each as a length-encoded string. The second CI run sent the
+ * challenge alone, and the client said "Challange recevied is corrupt" before it looked for a device (a rig fault, not an answer). With this shape the client gets as far as the device and says
+ * "No FIDO device available on client host" (read on Oracle's 8.4.13 build by hand), so the leg stays unmeasured for the right reason: no device and no answer made with one (spec L1).
+ */
+const WEBAUTHN_CHALLENGE = Buffer.concat([Buffer.from([0x00, 0x20]), Buffer.alloc(32, 0x5a), Buffer.from([0x09]), Buffer.from('mysql.com')]);
+
 /** The plugins of the parent's list. `names` per client, `kind` says what the positive control is, `data` is what that plugin's server sends after the name. */
 const PLUGINS = [
   { leg: 'PK1-m1', label: 'Kerberos', kind: 'ticket', names: { oracle: ['authentication_kerberos_client'], mariadb: ['auth_gssapi_client'] }, data: { oracle: Buffer.concat([le16(SPN), le16('BRIDGE.TEST')]), mariadb: Buffer.from(`${SPN}\0`) } },
   { leg: 'PK1-m2', label: 'LDAP SASL with the GSSAPI mechanism', kind: 'ticket', names: { oracle: ['authentication_ldap_sasl_client'], mariadb: [] }, data: { oracle: Buffer.from('GSSAPI') } },
   { leg: 'PK1-m3', label: 'the cloud key file', kind: 'file', names: { oracle: ['authentication_oci_client'], mariadb: [] }, data: { oracle: Buffer.from('0123456789abcdef0123456789abcdef') } },
-  { leg: 'PK1-m4', label: 'a security key', kind: 'device', names: { oracle: ['authentication_webauthn_client', 'authentication_fido_client'], mariadb: [] }, data: { oracle: Buffer.from('0123456789abcdef0123456789abcdef') } },
+  { leg: 'PK1-m4', label: 'a security key', kind: 'device', names: { oracle: ['authentication_webauthn_client', 'authentication_fido_client'], mariadb: [] }, data: { oracle: WEBAUTHN_CHALLENGE } },
   { leg: 'PK1-m5', label: 'a clear-text request', kind: 'word', names: { oracle: ['mysql_clear_password'], mariadb: ['dialog', 'mysql_clear_password'] }, data: { oracle: Buffer.alloc(0), mariadb: Buffer.concat([Buffer.from([0x04]), Buffer.from('Password: ')]) } },
   { leg: 'PK1-m5b', label: 'a clear-text request (the plugin of that name, which N11 says may be linked into the client)', kind: 'word', only: 'mariadb', names: { oracle: [], mariadb: ['mysql_clear_password'] }, data: { mariadb: Buffer.alloc(0) } },
 ];
@@ -59,7 +67,7 @@ function pluginFolder(client) {
 const listPlugins = (folder) => (folder === undefined ? [] : fs.readdirSync(folder).filter((file) => /\.(so|dll)$/.test(file)).map((file) => file.replace(/\.(so|dll)$/, '')).sort((a, b) => a.localeCompare(b)));
 
 /** The builder's launch for the fake at `port`, then what a leg does to it by hand. */
-function launchMysql(ctx, client, port, { entry = 'A', control = false, add = [], home = ctx.home } = {}) {
+function launchMysql(ctx, client, port, { entry = 'A', control = false, add = [], home = ctx.home, envSet = {} } = {}) {
   const { product } = ctx;
   const built = product.buildDbQueryLaunch('mysql', `mysql://${ctx.user}:${ctx.entryWord}@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
   if (built === undefined) {
@@ -68,7 +76,7 @@ function launchMysql(ctx, client, port, { entry = 'A', control = false, add = []
   const args = control ? built.args.filter((arg) => !CANDIDATE_FLAG.test(arg)) : [...built.args];
   const at = args.indexOf('--protocol=TCP') + 1;
   args.splice(at, 0, ...add);
-  const env = bridgedEnv(product, home, built.env);
+  const env = { ...bridgedEnv(product, home, built.env), ...envSet };
   if (entry === 'B') {
     delete env.MYSQL_PWD;
   }
@@ -125,6 +133,22 @@ function candidatesOf(ctx, client) {
   return list;
 }
 
+/**
+ * What a ticket plugin's control that offered nothing leaves for the reader (the second run's LDAP SASL control said only "Unknown MySQL error"): the plugin's own log at the error level
+ * (`AUTHENTICATION_LDAP_CLIENT_LOG=3`, a variable that changes what the plugin says and nothing it does, added to this one diagnostic run only), the client library's trace of what it asked and the
+ * KDC's last lines (which service names it was asked for). Printed, never counted; a ticket's text is in none of them.
+ */
+async function diagnoseTicket(ctx, client, plugin, pluginName) {
+  const traceFile = path.join(ctx.dir, `diagnose-${client.name}-${plugin.leg}.trace`);
+  fs.rmSync(traceFile, { force: true });
+  const seen = await observe(ctx, client, plugin, pluginName, { control: true, envSet: { AUTHENTICATION_LDAP_CLIENT_LOG: '3', KRB5_TRACE: traceFile } });
+  const lines = (text, limit) => text.trim().split('\n').slice(-limit).map((line) => line.slice(0, 200)).join('\n    ');
+  console.log(`diagnosis (${plugin.leg}-${client.name}, the control launched again with the plugin's error log and the client library's trace on):`);
+  console.log(`  the client said: ${JSON.stringify(seen.said)} (the plugin's own lines above are in it)`);
+  console.log(`  the client library's trace:\n    ${fs.existsSync(traceFile) ? lines(fs.readFileSync(traceFile, 'utf8'), 20) : '(none written: the plugin did not reach Kerberos)'}`);
+  console.log(`  the KDC's log:\n    ${ctx.realm.kdcLogTail(10).split('\n').join('\n    ')}`);
+}
+
 /** The control of a plugin kind: the launch with no candidate, and the half that takes the identity away. `{ shown, text }`. */
 async function control(ctx, client, plugin, pluginName, controlFlags) {
   const base = { control: true, add: controlFlags };
@@ -140,6 +164,9 @@ async function control(ctx, client, plugin, pluginName, controlFlags) {
     return { shown: false, text: `a security key needs a device and an answer made with it (spec L1): none can be made on this runner; the client with the plugin: ${withIdentity.words}` };
   }
   if (!withIdentity.offered) {
+    if (plugin.kind === 'ticket' && ctx.realm?.ok === true) {
+      await diagnoseTicket(ctx, client, plugin, pluginName);
+    }
     return { shown: false, text: `the client offered nothing with the identity in reach: ${withIdentity.words}` };
   }
   if (plugin.kind === 'ticket' || plugin.kind === 'file') {
@@ -163,6 +190,11 @@ async function pluginLeg(ctx, client, plugin) {
   }
   if (plugin.leg === 'PK1-m5b') {
     record(`${tag}-form`, 'shown', `mysql_clear_password is ${ctx.present[client.name].includes('mysql_clear_password') ? 'a FILE of the client\'s plugin folder (--plugin-dir at the absent path is expected to stop it)' : 'NOT a file of the client\'s plugin folder: it may be linked into the client (N11), and --plugin-dir would not stop it'}`);
+  }
+  if ((plugin.names[familyOf(client)] ?? []).length === 0) {
+    // The parent's list (§4.11) names no such plugin for this client: it is not this client's road, so it is no missing control either.
+    notThisClients(tag, `${plugin.label} is not on the parent's list for ${familyOf(client)}'s client (§4.11): nothing to measure, and nothing left unmeasured`);
+    return;
   }
   if (pluginName === undefined) {
     unmeasured(tag, `${client.name}'s client has no ${plugin.label} plugin in the parent's list for it (no client build with the plugin${client.name === familyOf(client) ? '' : `; this is the distribution's package: Oracle's own build is the \`oracle\` client`})`);
@@ -215,32 +247,47 @@ async function pluginLeg(ctx, client, plugin) {
 async function legPath(ctx, client) {
   const tag = `PK1-m7-${client.name}`;
   const folder = ctx.folders[client.name];
-  const carrier = ['mysql_clear_password', 'dialog', 'caching_sha2_password'].find((name) => ctx.present[client.name].includes(name));
-  if (folder === undefined || carrier === undefined) {
-    unmeasured(tag, `no loadable plugin to copy: the client's plugin folder ${folder === undefined ? 'was not found' : 'lists none of mysql_clear_password, dialog, caching_sha2_password'}`);
+  const clear = PLUGINS.find((entry) => entry.leg === 'PK1-m5');
+  const kerberos = PLUGINS.find((entry) => entry.leg === 'PK1-m1');
+  // The plugin files THIS build has: the password plugins that are files of MariaDB's and of the distribution's client, and, in Oracle's own build (whose password plugins are linked in), the
+  // Kerberos plugin, which answers when the rig's ticket is in reach. The second run looked for the three password names in Oracle's own folder and found none.
+  const carriers = [
+    ...['mysql_clear_password', 'dialog', 'caching_sha2_password'].map((name) => ({ name, plugin: clear, flags: ['--enable-cleartext-plugin'] })),
+    ...(familyOf(client) === 'oracle' && ctx.realm?.ok === true ? [{ name: 'authentication_kerberos_client', plugin: kerberos, flags: [] }] : []),
+  ];
+  const carrier = folder === undefined ? undefined : carriers.find((entry) => ctx.present[client.name].includes(entry.name));
+  if (carrier === undefined) {
+    const listed = ctx.present[client.name].filter(isClientAuthPlugin);
+    unmeasured(tag, `no loadable plugin to copy: the client's plugin folder ${folder === undefined ? 'was not found' : `lists no client plugin this leg can use (it lists: ${listed.join(', ') || 'none'}; the password plugins of this build are linked in, N11`}${folder === undefined ? '' : `, and the Kerberos plugin needs the realm: ${ctx.realm?.ok === true ? 'built' : 'not built'})`}`);
     return;
   }
-  const rigFolder = path.join(ctx.dir, `m7 ${client.name}`);
+  const { name: loaded, plugin, flags } = carrier;
+  const rigRoot = path.join(ctx.dir, `m7 ${client.name}`);
+  const rigFolder = path.join(rigRoot, 'lib', 'plugin');
   const empty = path.join(ctx.dir, `m7 ${client.name} empty`);
   fs.mkdirSync(rigFolder, { recursive: true });
   fs.mkdirSync(empty, { recursive: true });
   const extension = process.platform === 'win32' ? '.dll' : '.so';
-  fs.copyFileSync(path.join(folder, `${carrier}${extension}`), path.join(rigFolder, `${carrier}${extension}`));
-  const plugin = PLUGINS.find((entry) => entry.leg === 'PK1-m5');
-  const flags = ['--enable-cleartext-plugin'];
-  let shown = await observe(ctx, client, plugin, carrier, { control: true, add: [`--plugin-dir=${rigFolder}`, ...flags] });
+  fs.copyFileSync(path.join(folder, `${loaded}${extension}`), path.join(rigFolder, `${loaded}${extension}`));
+  // A plugin of Oracle's own build finds its libraries through `$ORIGIN/../private`: the copy's folder has the same neighbour, so that the copy loads as the original does.
+  const privateLibs = path.join(folder, '..', 'private');
+  if (process.platform !== 'win32' && fs.existsSync(privateLibs) && !fs.existsSync(path.join(rigRoot, 'lib', 'private'))) {
+    fs.symlinkSync(fs.realpathSync(privateLibs), path.join(rigRoot, 'lib', 'private'));
+  }
+  const withFlags = (extra) => [...extra, ...flags];
+  let shown = await observe(ctx, client, plugin, loaded, { control: true, add: withFlags([`--plugin-dir=${rigFolder}`]) });
   if (!shown.offered) {
-    shown = await observe(ctx, client, plugin, carrier, { control: true, add: [`--plugin-dir=${rigFolder}`] });
+    shown = await observe(ctx, client, plugin, loaded, { control: true, add: [`--plugin-dir=${rigFolder}`] });
   }
   if (!shown.offered) {
-    unmeasured(tag, `the control (the copy's folder as --plugin-dir, the plugin named bare) did not load and answer: ${shown.words}`);
+    unmeasured(tag, `the control (the copy's folder as --plugin-dir, ${loaded} named bare) did not load and answer: ${shown.words}`);
     return;
   }
-  record(`${tag}-control`, 'shown', `positive control, ${carrier} named bare with the copy's folder as --plugin-dir: ${shown.words}`);
+  record(`${tag}-control`, 'shown', `positive control, ${loaded} named bare with the copy's folder as --plugin-dir: ${shown.words}`);
   for (const [where, pluginDir] of [['as launched (the client\'s own plugin folder)', folder], ['with --plugin-dir at an empty folder that exists', empty]]) {
-    const steps = path.relative(pluginDir, path.join(rigFolder, carrier)).split(path.sep).join('/');
-    for (const [what, name] of [['a name with ../ steps', steps], ['the absolute path', path.join(rigFolder, carrier)]]) {
-      const options = where.startsWith('as launched') ? { control: true, add: flags } : { control: true, add: [`--plugin-dir=${empty}`, ...flags] };
+    const steps = path.relative(pluginDir, path.join(rigFolder, loaded)).split(path.sep).join('/');
+    for (const [what, name] of [['a name with ../ steps', steps], ['the absolute path', path.join(rigFolder, loaded)]]) {
+      const options = where.startsWith('as launched') ? { control: true, add: withFlags([]) } : { control: true, add: withFlags([`--plugin-dir=${empty}`]) };
       const seen = await observe(ctx, client, plugin, name, options);
       record(`${tag}-${what.startsWith('a name') ? 'dotdot' : 'absolute'}-${where.startsWith('as launched') ? 'default' : 'empty'}`, 'shown', `${what}, ${where}: ${seen.offered ? 'THE COPY WAS OPENED AND ANSWERED' : 'the copy was not opened'}; ${seen.words}`);
       if (seen.offered) {
@@ -250,13 +297,79 @@ async function legPath(ctx, client) {
   }
 }
 
-/** One throwaway key file and configuration for the cloud plugin (R5), under `home`. */
-function makeKeyFile(home) {
-  const folder = path.join(home, '.oci');
-  fs.mkdirSync(folder, { recursive: true });
+/**
+ * Where the cloud plugin reads its configuration, by the client's OWN words: with no file it says `Could not read the config file: <path>`. The plugin does not look in `HOME` (the second
+ * run set the bridged `HOME` to the rig home, wrote its marker there, and the client read `/home/runner/.oci/config`): it takes the account's home from the passwd entry, so a file the plugin
+ * reads is a file of the runner's own home. The path is read from the answer, never assumed, and must be `.oci/config` in the account's own home folder before anything is written (rule R3).
+ * `undefined` when the client says no such thing (a build that cannot load the plugin, a platform that keeps the file elsewhere).
+ */
+async function keyFileSite(ctx, client, plugin, pluginName) {
+  const seen = await observe(ctx, client, plugin, pluginName, { control: true });
+  const named = /config file: (.+?)(?: \||$)/.exec(seen.said)?.[1]?.trim();
+  if (named === undefined) {
+    return { why: `the client names no configuration file in its words (it said ${JSON.stringify(seen.said)})` };
+  }
+  const home = os.homedir();
+  const inside = path.relative(home, named);
+  if (inside.startsWith('..') || path.isAbsolute(inside) || !/^\.oci[\\/]config$/.test(inside)) {
+    return { why: `the client reads ${named}, which is not .oci/config under the account's own home folder (${home}): nothing is written there` };
+  }
+  return { file: named, folder: path.dirname(named), home };
+}
+
+/**
+ * One throwaway key file and configuration for the cloud plugin (R5), in the folder the plugin reads (R3: the account's own home on a CI runner whose step says so). A folder that is already there is
+ * moved aside, and `restore` (idempotent; the scope calls it too) removes the rig's own and puts the old one back. `{ folder, restore }`.
+ */
+function makeKeyFile(ctx, site) {
+  const folder = site.folder;
+  const aside = `${folder}.pk1-aside`;
+  const had = fs.existsSync(folder);
+  let restored = false;
+  const restore = () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    fs.rmSync(folder, { recursive: true, force: true });
+    fs.rmSync(`${folder}.away`, { recursive: true, force: true });
+    if (had && fs.existsSync(aside)) {
+      fs.renameSync(aside, folder);
+    }
+  };
+  if (had) {
+    fs.renameSync(folder, aside);
+  }
+  ctx.scope.after(restore);
+  fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
   rigRun('openssl', ['genrsa', '-out', path.join(folder, 'oci_api_key.pem'), '2048']);
-  fs.writeFileSync(path.join(folder, 'config'), ['[DEFAULT]', 'user=ocid1.user.oc1..rigfake', 'fingerprint=00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff', `key_file=${path.join(folder, 'oci_api_key.pem')}`, 'tenancy=ocid1.tenancy.oc1..rigfake', 'region=rig-test-1', ''].join('\n'));
-  return folder;
+  fs.writeFileSync(path.join(folder, 'config'), ['[DEFAULT]', 'user=ocid1.user.oc1..rigfake', 'fingerprint=00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff', `key_file=${path.join(folder, 'oci_api_key.pem')}`, 'tenancy=ocid1.tenancy.oc1..rigfake', 'region=rig-test-1', ''].join('\n'), { mode: 0o600 });
+  return { folder, restore };
+}
+
+/** PK1-m3 on one client: the cloud plugin. The file is written where the client says it reads (see `keyFileSite`), then the leg runs as every other. */
+async function fileLeg(ctx, client, plugin, keyFolder) {
+  const tag = `${plugin.leg}-${client.name}`;
+  const pluginName = (plugin.names[familyOf(client)] ?? []).find((name) => ctx.present[client.name].includes(name)) ?? plugin.names[familyOf(client)]?.[0];
+  if (!systemRig()) {
+    unmeasured(tag, "the cloud plugin reads .oci/config in the account's own home folder (not HOME), a file of the runner's own profile: a CI runner whose step sets BRIDGED_DB_SYSTEM_RIG=1 (rule R3)");
+    return;
+  }
+  const site = await keyFileSite(ctx, client, plugin, pluginName);
+  let made;
+  if (site.why === undefined) {
+    made = makeKeyFile(ctx, site);
+    keyFolder.current = made.folder;
+    console.log(`rig: the cloud plugin of ${client.name} reads ${site.file} (the account's home by the passwd entry, ${site.home}; the bridged HOME is ${ctx.home} and does not move it): a throwaway key and configuration are there for this leg and are put back`);
+  } else {
+    console.log(`rig: no key file is written for ${tag}: ${site.why}`);
+  }
+  try {
+    await pluginLeg(ctx, client, plugin);
+  } finally {
+    keyFolder.current = undefined;
+    made?.restore();
+  }
 }
 
 /** PK1-m1 to PK1-m7, and the listed plugins, for each `mysql` client the harness found. `clients` is `[{ name, exe }]`. */
@@ -285,12 +398,11 @@ async function mysqlLegs(ctx, clients) {
       fs.renameSync(`${keyFolder.current}.away`, keyFolder.current);
     }
   };
-  keyFolder.current = ctx.canWriteHome === true ? makeKeyFile(ctx.home) : undefined;
   for (const client of clients) {
     const plugins = process.platform === 'win32' ? [...PLUGINS, WINDOWS_PLUGIN] : PLUGINS;
     for (const plugin of plugins) {
-      if (plugin.kind === 'file' && keyFolder.current === undefined) {
-        unmeasured(`${plugin.leg}-${client.name}`, 'no throwaway key file was made for this platform (the rig home is the profile only off Windows)');
+      if (plugin.kind === 'file' && (plugin.names[familyOf(client)] ?? []).length > 0) {
+        await fileLeg(base, client, plugin, keyFolder);
       } else {
         await pluginLeg(base, client, plugin);
       }
