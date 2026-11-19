@@ -1,6 +1,6 @@
 # PLAN — E2.S4 spec: the CHANGELOG entry claims only what holds, and E1's smoke runs on the changed words (R5, test 27)
 
-> Status: **spec, 2026-11-18, by Opus; built (805aed3b, d0ae4b3c), unmerged; section 10 shows 48 ok locally on OpenSSH 10.2p1, and CI is the second run.** Story E2.S4 of
+> Status: **spec, 2026-11-18, by Opus; built (805aed3b, d0ae4b3c), unmerged; section 10 shows 48 ok locally on OpenSSH 10.2p1, and CI is the second run. Three sentences of its CHANGELOG entry are cut in the re-review for epoch 3 ("No `ssh` starts" for an unusable saved key, "Nothing starts then", and the remote command among the cases of sentence D) and corrected forward in E3.** Story E2.S4 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (repair R5 of its `## Epics`, E2; its §6, decision 11, and
 > test 27 of its §5) and of its stories document [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md)
 > (`## E2.S4`). A test harness and a reading of the entry against the tests, not a security judgement: Opus writes this spec, a

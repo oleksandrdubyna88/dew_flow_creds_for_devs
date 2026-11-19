@@ -1,6 +1,6 @@
 # PLAN — E2.S2 spec: the complete words of one pinned call, and the two refusals that stand before them (SECURITY, CORNERSTONE)
 
-> Status: **spec, 2026-11-18, by Fable; nothing of it is built.** The cornerstone spec of epic E2 of the G1 plan, and a security
+> Status: **spec, 2026-11-18, by Fable; built (c20be822, 581d96c0, 70676a95), unmerged; the Opus judge of the re-review for epoch 3 found nothing of its code cut; the docblock of `localLaunch` ("no `ssh` starts" for sentence F) is corrected forward in E3 with W7 of the parent.** The cornerstone spec of epic E2 of the G1 plan, and a security
 > spec, written before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`; the ledger line of
 > the parent's `## Epics` names E2.S2). Story E2.S2 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its
 > §3.10, §3.11, part 1 of §3.12, §3.6, the repairs R1, R2 and R3, and the tests 17, 18, the road half of 19, and 20 to 23 of its §5)

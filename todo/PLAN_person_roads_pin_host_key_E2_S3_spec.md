@@ -1,6 +1,6 @@
 # PLAN — E2.S3 spec: sentence C only when `ssh` names the pin file of the call, sentence D otherwise (SECURITY)
 
-> Status: **spec, 2026-11-18, by Fable; not built.** A security spec, written before its code (the row *Security judgement* of
+> Status: **spec, 2026-11-18, by Fable; built (a686badd, a375c3f2), unmerged; its condition that asks the text alone (sentence D whatever the run's exit code was) is cut in the re-review for epoch 3 and replaced by the parent's §3.12, part 4 (E3.S1): nothing is built from that condition again.** A security spec, written before its code (the row *Security judgement* of
 > `subagent-models.md`; outside the quota, not the cornerstone: E2.S2 holds it). Story E2.S3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.12 parts 2 and 3, the rows of sentences C and D
 > in §3.5, §3.6, the tests 24 and 25 of its §5, the mutation checks of test 26 that name the `Offending` line, the folder and

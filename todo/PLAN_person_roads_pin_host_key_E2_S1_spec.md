@@ -1,6 +1,6 @@
 # PLAN — E2.S1 spec: the client's answer, what `ssh -V` says read as one of three (SECURITY)
 
-> Status: **spec, 2026-11-18, by Fable; nothing of it is built.** A security spec, written before its code (the row *Security
+> Status: **spec, 2026-11-18, by Fable; built (79652693), unmerged; the Opus judge of the re-review for epoch 3 found nothing of it cut.** A security spec, written before its code (the row *Security
 > judgement* of `subagent-models.md`: which client gets which words decides whether a source of trust stays on). Story E2.S1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.10, the repair R1, and the unit half of test 19 of
 > its §5) and of its stories document [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md) (`## E2.S1`).
