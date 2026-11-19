@@ -318,16 +318,38 @@ jobs:
         working-directory: .
         run: npm ci --ignore-scripts --prefix .agents/conventions
 
-      # `psql` (the wrapper of the packaging, and three versions beside each other for PA1-i), Oracle's `mysql`, and MariaDB's client unpacked as `build-test` does.
+      # `psql` (the packaging's wrapper and the image's own version), Oracle's `mysql`, and MariaDB's client unpacked as `build-test` does.
       - name: Install the PostgreSQL and MySQL clients, and unpack MariaDB's
         if: runner.os == 'Linux'
         run: |
           sudo apt-get -o Acquire::Retries=3 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client postgresql-client-14 postgresql-client-16 mysql-client libmariadb3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client mysql-client libmariadb3
           mkdir -p "$HOME/mariadb-client/deb"
           (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download mariadb-client-core && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
           echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql" >> "$GITHUB_ENV"
           echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
+
+      # PA1-i: a second and a third `psql` version beside the image's own, so that the wrapper of the packaging has something to choose between. Each image's package list
+      # names the majors it carries (the first CI run: no `postgresql-client-14` on 24.04 and 26.04, no `-16` on 22.04 and 26.04), so the step asks the list instead of naming
+      # versions. A step that finds fewer than two is not a failure: PA1-i then prints `NOT shown (one psql version is installed)` and the row stays unmeasured.
+      - name: Install a second and a third psql version, where the image's packages have them
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          set -eu
+          extra=()
+          for major in 14 15 16 17 18; do
+            if [ "${#extra[@]}" -ge 2 ] || dpkg -s "postgresql-client-$major" > /dev/null 2>&1; then
+              continue
+            fi
+            if apt-cache policy "postgresql-client-$major" | grep -Eq '^ +Candidate: [0-9]'; then
+              extra+=("postgresql-client-$major")
+            fi
+          done
+          echo "psql versions to add: ${extra[*]:-none}"
+          if [ "${#extra[@]}" -gt 0 ]; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends "${extra[@]}"
+          fi
 
       # go-sqlcmd, by version and by the checksum of the archive (R7): one static file.
       - name: Install go-sqlcmd 1.10.0
@@ -372,7 +394,11 @@ jobs:
       - name: Make sure a MySQL server is installed and not running
         if: runner.os == 'Linux'
         run: |
-          test -x /usr/sbin/mysqld || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mysql-server-core-8.0
+          if ! test -x /usr/sbin/mysqld; then
+            core=$(apt-cache search --names-only '^mysql-server-core-[0-9.]+$' | awk '{ print $1 }' | sort -V | tail -n 1)
+            test -n "$core"
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends "$core"
+          fi
           sudo systemctl stop mysql.service 2>/dev/null || true
           ls /usr/lib/postgresql/*/bin/initdb > /dev/null 2>&1 || sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql
           sudo systemctl stop postgresql.service 2>/dev/null || true
@@ -498,10 +524,12 @@ jobs:
           plugins=/usr/lib/x86_64-linux-gnu/libmariadb3/plugin
           test -d "$plugins"
           sudo cp "$HOME/mariadb-gssapi$plugins/auth_gssapi_client.so" "$plugins/"
-          echo "BRIDGED_MARIADB_PLUGIN_DIR=$plugins" >> "$GITHUB_ENV"
-          echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql" >> "$GITHUB_ENV"
-          echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb" >> "$GITHUB_ENV"
-          echo "BRIDGED_PSQL=/usr/bin/psql" >> "$GITHUB_ENV"
+          {
+            echo "BRIDGED_MARIADB_PLUGIN_DIR=$plugins"
+            echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql"
+            echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb"
+            echo "BRIDGED_PSQL=/usr/bin/psql"
+          } >> "$GITHUB_ENV"
 
       - name: Probe PK1 (record legs)
         env:
@@ -618,7 +646,7 @@ jobs:
 
       - name: Pull the SQL Server image (pinned by tag and digest)
         run: |
-          image='mcr.microsoft.com/mssql/server:2022-CU24-ubuntu-22.04@sha256:9ac8dc248935975f856cc1170ef062b991c4e1ebb3f2d7d7b2f75babf114cea6'
+          image='mcr.microsoft.com/mssql/server:2022-CU24-ubuntu-22.04@sha256:49b45a911dc535e9345fbfd7101a1bd8a1e190a5f29b877ef75387a061e5fcf0'
           docker pull "$image"
           echo "BRIDGED_MSSQL_IMAGE=$image" >> "$GITHUB_ENV"
 
