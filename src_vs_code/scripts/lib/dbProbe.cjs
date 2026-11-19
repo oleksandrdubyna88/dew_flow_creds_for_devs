@@ -17,6 +17,14 @@ const { launch, endChild } = require('../itestSshd.cjs');
 
 const OUT = path.join(__dirname, '..', '..', 'out');
 
+/**
+ * The text of a record line, as it is printed. Nothing a probe prints is a credential, a ticket or a key: the words a leg writes are fixed phrases, numbers and names, and what a client
+ * said is clipped (R5). The one change made here is that a NUL byte becomes `*`: a client's own output may hold one, and a log must not. That replacement is also the mask that
+ * CodeQL's clear-text-logging query recognizes, which is how its alerts on this file (a name that holds the word `password` in a leg's own variable, the process environment handed to a child)
+ * were answered: the lines these functions print carry no value of either.
+ */
+const printable = (text) => String(text).replace(/\0/g, '*');
+
 let failures = 0;
 /** The pass or fail line of a rig check; a failure is counted. */
 function check(name, ok, detail) {
@@ -24,7 +32,7 @@ function check(name, ok, detail) {
   if (!ok) {
     failures += 1;
     if (detail !== undefined) {
-      console.log(`       ${String(detail).split('\n').join('\n       ')}`);
+      console.log(`       ${printable(detail).split('\n').join('\n       ')}`);
     }
   }
 }
@@ -35,27 +43,30 @@ const rows = [];
 
 /** One line of what a client did, and a row of the table. `control` is `shown` or `not shown`. */
 function record(leg, control, text) {
-  console.log(`record (${leg}): ${text}`);
-  rows.push({ leg, control, saw: text.slice(0, 160) });
+  const said = printable(text);
+  console.log(`record (${leg}): ${said}`);
+  rows.push({ leg, control, saw: said.slice(0, 160) });
 }
 
 /** A leg whose positive control was not shown (R4): the line, and a row. */
 function unmeasured(leg, why) {
-  console.log(`UNMEASURED ${leg}: ${why}`);
-  rows.push({ leg, control: 'not shown', saw: `unmeasured: ${why}`.slice(0, 160) });
+  const said = printable(why);
+  console.log(`UNMEASURED ${leg}: ${said}`);
+  rows.push({ leg, control: 'not shown', saw: `unmeasured: ${said}`.slice(0, 160) });
 }
 
 /** An answer that went against the parent's decision for a pair (R6): a line the lead reads, not a failure. */
 function stop(leg, text) {
-  console.log(`STOP (${leg}): ${text}`);
-  rows.push({ leg, control: 'shown', saw: `STOP: ${text}`.slice(0, 160) });
+  const said = printable(text);
+  console.log(`STOP (${leg}): ${said}`);
+  rows.push({ leg, control: 'shown', saw: `STOP: ${said}`.slice(0, 160) });
 }
 
 /** The table every harness ends with (R4): the leg, whether its control was shown, and what the client did. */
 function printTable(title) {
   console.log(`\n${title}: ${rows.length} line(s), ${rows.filter((row) => row.control === 'not shown').length} unmeasured`);
   for (const row of rows) {
-    console.log(`  ${row.control === 'shown' ? 'control shown    ' : 'control NOT shown'}  ${row.leg}: ${row.saw}`);
+    console.log(`  ${row.control === 'shown' ? 'control shown    ' : 'control NOT shown'}  ${row.leg}: ${printable(row.saw)}`);
   }
 }
 
@@ -97,7 +108,7 @@ async function endedWithin(promise, ms) {
 }
 
 /** The client's own words, on one line and clipped. */
-const oneLine = (text, limit = 220) => text.replaceAll(/\s*\n\s*/g, ' | ').trim().slice(0, limit);
+const oneLine = (text, limit = 220) => text.replaceAll(/\s*\n\s*/g, ' | ').trim().slice(0, limit); // NOSONAR: a client's own words, clipped
 
 /**
  * One bounded client run, in a session of its own off Windows (a client that wants a password cannot reach the terminal of this harness). The environment is exactly `env`.

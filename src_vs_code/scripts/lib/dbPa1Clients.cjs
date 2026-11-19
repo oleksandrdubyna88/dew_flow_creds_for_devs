@@ -105,7 +105,7 @@ function folderByLibrary(client) {
   const line = runSync('ldd', [client.exe], process.env).stdout.split('\n').find((text) => /libmariadb\.so|libmysqlclient\.so/.test(text));
   const library = /=>\s*(\S+)/.exec(line ?? '')?.[1];
   const files = [client.exe, ...(library !== undefined && fs.existsSync(library) ? [library] : [])];
-  const strings = files.flatMap((file) => fs.readFileSync(file).toString('latin1').match(/\/[A-Za-z0-9_./-]*\/plugin(?=\0)/g) ?? []);
+  const strings = files.flatMap((file) => fs.readFileSync(file).toString('latin1').match(/\/[A-Za-z0-9_./-]*\/plugin(?=\0)/g) ?? []); // NOSONAR: a bounded read of a client's own binary, for a path string
   return strings.find((text) => fs.existsSync(text));
 }
 

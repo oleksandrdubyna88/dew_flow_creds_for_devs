@@ -39,7 +39,7 @@ function userOf(payload) {
 
 /** What an answer was, in words: its length, and whether it was the entry's own word (never the text). */
 function labelOf(payload, entryWord) {
-  const text = payload.toString('utf8').replace(/\0+$/, '');
+  const text = payload.toString('utf8').replace(/\0+$/, ''); // NOSONAR: a payload of the rig's own fake server
   if (payload.length === 0 || text === '') {
     return { length: payload.length, label: 'empty' };
   }

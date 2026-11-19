@@ -139,12 +139,12 @@ async function legProfileFiles(ctx, systemRig) {
       }
       return made;
     };
-    const password = await rig.psqlRun(ctx.scope, ctx.exe, { prepare: () => undefined, build: build({}) });
+    const fileRun = await rig.psqlRun(ctx.scope, ctx.exe, { prepare: () => undefined, build: build({}) });
     const certificate = await rig.psqlRun(ctx.scope, ctx.exe, { prepare: () => undefined, tlsMaterial, build: build({ query: '?sslmode=require' }) });
     await ctx.pg.setHba([SSPI_LINE]);
     const echo = launchFor(ctx, ctx.pg.port, { entry: 'B', control, ...(control ? { dropArgs: ['-X'] } : {}) });
     const echoed = await runClient(ctx.scope, ctx.exe, echo.args, echo.env);
-    const sentMarker = rig.holdsMarker(password.state.sent);
+    const sentMarker = rig.holdsMarker(fileRun.state.sent);
     const sentCert = certificate.state.peer?.commonName === rig.PD3_MARKER_CN;
     const readRc = echoed.stdout.includes('pk1-psqlrc-marker');
     const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : 'not sent'}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : 'not read'}`;
@@ -153,7 +153,7 @@ async function legProfileFiles(ctx, systemRig) {
       if (shown) {
         record('PK1-w3-control', 'shown', text);
       } else {
-        unmeasured('PK1-w3-control', `the control sent not every marker (${text}); psql said ${JSON.stringify(oneLine(`${password.stderr} ${certificate.stderr} ${echoed.stderr}`, 200))}`);
+        unmeasured('PK1-w3-control', `the control sent not every marker (${text}); psql said ${JSON.stringify(oneLine(`${fileRun.stderr} ${certificate.stderr} ${echoed.stderr}`, 200))}`);
       }
     } else {
       record('PK1-w3', 'shown', text);

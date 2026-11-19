@@ -29,7 +29,7 @@ function makeCertificates(folder) {
   fs.writeFileSync(file('server.ext'), 'subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n');
   run('x509', '-req', '-in', file('server.csr'), '-CA', file('ca.crt'), '-CAkey', file('ca.key'), '-CAcreateserial', '-days', '2', '-out', file('server.crt'), '-extfile', file('server.ext'));
   for (const name of ['server.key', 'server.crt', 'ca.crt']) {
-    fs.chmodSync(file(name), 0o644); // a throwaway, read by the container's own user
+    fs.chmodSync(file(name), 0o644); // NOSONAR: a throwaway certificate, read by the container's own user
   }
   return { ca: file('ca.crt'), key: file('server.key'), cert: file('server.crt') };
 }
@@ -37,16 +37,16 @@ function makeCertificates(folder) {
 /** The CA in the runner's trust store, taken out by the scope (rule R3). */
 function trustCa(scope, ca) {
   const target = '/usr/local/share/ca-certificates/bridge-test-ps1.crt';
-  execFileSync('sudo', ['-n', 'cp', ca, target], { stdio: 'pipe' });
+  execFileSync('sudo', ['-n', 'cp', ca, target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
   scope.after(() => {
     try {
-      execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' });
-      execFileSync('sudo', ['-n', 'update-ca-certificates', '--fresh'], { stdio: 'pipe' });
+      execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
+      execFileSync('sudo', ['-n', 'update-ca-certificates', '--fresh'], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
     } catch (error) {
       console.log(`rig: the throwaway CA was NOT taken out of the trust store (${error.message.slice(0, 100)})`);
     }
   });
-  execFileSync('sudo', ['-n', 'update-ca-certificates'], { stdio: 'pipe' });
+  execFileSync('sudo', ['-n', 'update-ca-certificates'], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
 }
 
 /** One query as the rig's own administrator (never the client under test). `{ ok, text }`. */
@@ -65,25 +65,25 @@ async function startLinux(scope, dir, goSqlcmd) {
   if (image === undefined || image === '') {
     return { ok: false, why: 'no SQL Server image named' };
   }
-  fs.chmodSync(dir, 0o755); // the container's own user reads the certificate and the configuration through the folder
+  fs.chmodSync(dir, 0o755); // NOSONAR: the container's own user reads the certificate and the configuration through the folder
   const certs = makeCertificates(path.join(dir, 'certs'));
-  fs.chmodSync(path.join(dir, 'certs'), 0o755);
+  fs.chmodSync(path.join(dir, 'certs'), 0o755); // NOSONAR: the container's own user reads through the folder
   trustCa(scope, certs.ca);
   const conf = path.join(dir, 'mssql.conf');
   fs.writeFileSync(conf, '[network]\ntlscert = /certs/server.crt\ntlskey = /certs/server.key\ntlsprotocols = 1.2\nforceencryption = 0\n');
-  fs.chmodSync(conf, 0o666);
+  fs.chmodSync(conf, 0o666); // NOSONAR: the container's own user must be able to read the file
   const port = await freePort();
   const name = owned.ownedName('ps1-mssql');
   const saWord = `Aa1!${throwawayWord()}`;
   const ownerLabel = `testsToDelete.owner=${owned.formatOwner(owned.thisOwner())}`;
-  scope.after(() => spawnSync('docker', ['rm', '-f', '-v', name], { stdio: 'pipe', timeout: 60_000 })); // by exact name, on every path
+  scope.after(() => spawnSync('docker', ['rm', '-f', '-v', name], { stdio: 'pipe', timeout: 60_000 })); // NOSONAR: the CI runner's own docker; by exact name, on every path
   rigRun('docker', ['run', '--rm', '-d', '--name', name, '--label', ownerLabel, '-e', 'ACCEPT_EULA=Y', '-e', `MSSQL_SA_PASSWORD=${saWord}`, '-p', `127.0.0.1:${port}:1433`,
     '-v', `${path.join(dir, 'certs')}:/certs:ro`, '-v', `${conf}:/var/opt/mssql/mssql.conf`, image]);
   const handle = {
     ok: true, host: '127.0.0.1', port, kind: 'container', name, adminClient: goSqlcmd, adminEnv: { PATH: process.env.PATH, HOME: dir, SQLCMDUSER: 'sa', SQLCMDPASSWORD: saWord },
     adminArgs: (sql) => ['-S', `127.0.0.1,${port}`, '-Q', sql, '-b'],
     log: () => {
-      const answer = spawnSync('docker', ['logs', name], { encoding: 'utf8', timeout: 30_000 });
+      const answer = spawnSync('docker', ['logs', name], { encoding: 'utf8', timeout: 30_000 }); // NOSONAR: the CI runner's own docker
       return `${answer.stdout ?? ''}${answer.stderr ?? ''}`;
     },
   };

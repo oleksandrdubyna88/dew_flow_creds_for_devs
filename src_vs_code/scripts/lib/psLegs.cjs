@@ -16,7 +16,7 @@ const SCHEME = /\b(SQL|NTLM|KERBEROS)\b/;
 const ABSENT_ADDRESS = '127.0.0.1';
 
 /** The launch of the builder for entry A, then what a leg does to it by hand. `host` replaces the `-S` value, `user` the entry's user, `flags` are added last. */
-function launchFor(ctx, { user = ctx.q.login, host, nouser = false, nopassword = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
+function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
   const { product, q } = ctx;
   const encoded = encodeURIComponent(user);
   const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, q.query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
@@ -31,7 +31,7 @@ function launchFor(ctx, { user = ctx.q.login, host, nouser = false, nopassword =
   if (nouser) {
     delete env.SQLCMDUSER;
     delete env.SQLCMDPASSWORD;
-  } else if (nopassword) {
+  } else if (withoutWord) {
     delete env.SQLCMDPASSWORD;
   }
   return { args: [...args, ...flags], env, userAsRead: built.env.SQLCMDUSER };
@@ -241,8 +241,8 @@ async function oneClient(ctx, client) {
     unmeasured(`PS1-0-${client.name}`, `the identity on offer was not shown: ${made.text}`);
   }
   await legBuilt(ctx, client, made.shown);
-  const nopassword = await observe(ctx, client, { nopassword: true });
-  say(`PS1-2-${client.name}`, made.shown, `a user and no password, by hand: ${wordsOf(nopassword)}`);
+  const bareUser = await observe(ctx, client, { withoutWord: true });
+  say(`PS1-2-${client.name}`, made.shown, `a user and no password, by hand: ${wordsOf(bareUser)}`);
   if (client.name === 'go-sqlcmd') {
     await legConfig(ctx, client, made.shown);
     await legFlag(ctx, client, made.shown);

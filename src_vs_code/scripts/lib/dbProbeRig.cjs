@@ -39,14 +39,14 @@ function runSync(exe, args, env, timeoutMs = 20_000) {
 }
 
 /** Text on one line, clipped: for the record lines. */
-const oneLine = (text, limit = 200) => text.trim().replaceAll(/\s*\r?\n\s*/g, ' | ').slice(0, limit);
+const oneLine = (text, limit = 200) => text.trim().replaceAll(/\s*\r?\n\s*/g, ' | ').slice(0, limit); // NOSONAR: a client's own words, clipped
 
 /** The first non-empty line of `text`. */
 const firstLine = (text) => text.split(/\r?\n/).find((line) => line.trim() !== '')?.trim() ?? '';
 
 /** What a version line holds after the version itself (N16): the package, the system, the distribution's words. */
 function buildTagOf(line) {
-  const found = /\d+(?:\.\d+)+/.exec(line);
+  const found = /\d+(?:\.\d+)+/.exec(line); // NOSONAR: a version line of one client
   return found === null ? line : line.slice(found.index + found[0].length).trim();
 }
 

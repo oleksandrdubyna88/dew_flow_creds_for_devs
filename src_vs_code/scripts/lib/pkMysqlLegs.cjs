@@ -45,7 +45,7 @@ function pluginFolder(name) {
   return [named, ...usual].find((folder) => folder !== undefined && folder !== '' && fs.existsSync(folder));
 }
 
-const listPlugins = (folder) => (folder === undefined ? [] : fs.readdirSync(folder).filter((file) => /\.(so|dll)$/.test(file)).map((file) => file.replace(/\.(so|dll)$/, '')).sort());
+const listPlugins = (folder) => (folder === undefined ? [] : fs.readdirSync(folder).filter((file) => /\.(so|dll)$/.test(file)).map((file) => file.replace(/\.(so|dll)$/, '')).sort((a, b) => a.localeCompare(b)));
 
 /** The builder's launch for the fake at `port`, then what a leg does to it by hand. */
 function launchMysql(ctx, client, port, { entry = 'A', control = false, add = [], home = ctx.home } = {}) {

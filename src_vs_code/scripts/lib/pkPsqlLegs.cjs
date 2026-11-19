@@ -21,7 +21,7 @@ const CANDIDATE = {
   auth: "require_auth='password,md5,scram-sha-256'",
 };
 const OPPOSITE = { PGGSSENCMODE: 'prefer', PGREQUIREAUTH: 'gss', PGSSLCERTMODE: 'allow' };
-const CANDIDATE_KEYWORD = /\s+(?:gssencmode|sslcertmode|require_auth)='[^']*'/g;
+const CANDIDATE_KEYWORD = /\s+(?:gssencmode|sslcertmode|require_auth)='[^']*'/g; // NOSONAR: the rig's own connection string
 const GSS_LINE = 'gss include_realm=0 krb_realm=BRIDGE.TEST';
 
 /** The builder's launch for `host:port`, then what a leg does to it by hand: take the candidate keywords out (`control`), add some last, change the environment, be entry B. */
