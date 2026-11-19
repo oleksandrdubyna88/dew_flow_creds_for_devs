@@ -8,8 +8,10 @@
 // shown the other legs are printed as what was seen without a control, and the pair stays refused.
 const fs = require('node:fs');
 const net = require('node:net');
+const os = require('node:os');
 const path = require('node:path');
 const { check, record, unmeasured, stop, bridgedEnv, runClient, oneLine, throwawayWord, systemRig } = require('./dbProbe.cjs');
+const { runSync } = require('./dbProbeRig.cjs');
 
 /**
  * What the server's log says of an INTEGRATED attempt. The word `Integrated` alone is not one: a client that sent a SQL login with an empty user (go-sqlcmd with no user) is told "An attempt to
@@ -82,8 +84,15 @@ async function control(ctx, client) {
     const shown = seen.scheme !== undefined && seen.scheme !== 'SQL' && own !== '' && (seen.who ?? '').toLowerCase().includes(own);
     return { shown, text: `no user, by hand: ${wordsOf(seen)}${shown ? '' : ` (the runner's own logon, ${own || 'unknown'}, was not the name the server logged)`}`, seen };
   }
+  const where = ctx.realm?.ok === true ? "with the realm's ticket in the default cache" : `with no ticket (${ctx.realm?.why ?? 'no realm'})`;
+  if (ctx.realm?.ok === true && !seen.integrated && client.name === 'go-sqlcmd') {
+    // go-sqlcmd with no user makes a SQL login for an empty name (the server says so), which is no integrated attempt: its own request for one is `-E` (a trusted connection).
+    const trusted = await observe(ctx, client, { nouser: true, flags: ['-E'] });
+    check('(PS1-0) go-sqlcmd -E: the client ended in time', trusted.ended, wordsOf(trusted));
+    return { shown: trusted.integrated, text: `no user ${where}: ${wordsOf(seen)}; then with -E (a trusted connection): ${wordsOf(trusted)}`, seen: trusted.rigDefect === undefined ? seen : trusted };
+  }
   const shown = ctx.realm?.ok === true && seen.integrated;
-  return { shown, text: `no user, by hand, ${ctx.realm?.ok === true ? 'with the realm\'s ticket in the default cache' : `with no ticket (${ctx.realm?.why ?? 'no realm'})`}: ${wordsOf(seen)}`, seen };
+  return { shown, text: `no user, by hand, ${where}: ${wordsOf(seen)}`, seen };
 }
 
 /** A TCP listener that only counts who connected: the "another server" of PS1-3 and PS1-4. */
@@ -165,6 +174,20 @@ function placeFile(scope, dir, target, text) {
   });
 }
 
+/**
+ * The configuration file go-sqlcmd reads, in the shape the tool writes it itself (`sqlcmd config add-endpoint`, `add-user`, `add-context`, read by hand on 1.10.0): the key is `currentcontext`, the
+ * password is base64 beside `password-encryption: none`. The second run wrote `current-context` and a plain password, which the tool did not read (no context was current), so its control never
+ * went to the file's server. With this file a plain `sqlcmd -Q ...` with no `-S` goes to the file's endpoint (checked by hand against a listener).
+ */
+function sqlconfigText(port, otherWord) {
+  return [
+    'contexts:', '    - context:', '        endpoint: ep1', '        user: user1', '      name: ctx1', 'currentcontext: ctx1',
+    'endpoints:', '    - endpoint:', `        address: ${ABSENT_ADDRESS}`, `        port: ${port}`, '      name: ep1',
+    'users:', '    - authentication-type: basic', '      basic-auth:', `        password: ${Buffer.from(otherWord).toString('base64')}`, '        password-encryption: none', '        username: otheruser', '      name: user1',
+    'version: v1', '',
+  ].join('\n');
+}
+
 async function legConfig(ctx, client, shown) {
   const windows = process.platform === 'win32';
   if (windows && !systemRig()) {
@@ -174,10 +197,7 @@ async function legConfig(ctx, client, shown) {
   const other = await listener();
   const home = windows ? process.env.USERPROFILE : path.join(ctx.dir, 'ps3 home');
   const otherWord = throwawayWord();
-  placeFile(ctx.scope, ctx.dir, path.join(home, '.sqlcmd', 'sqlconfig'), [
-    'apiVersion: v1', 'kind: Config', 'contexts:', '- context:', '    endpoint: ep1', '    user: user1', '  name: ctx1', 'current-context: ctx1', 'endpoints:', '- endpoint:',
-    `    address: ${ABSENT_ADDRESS}`, `    port: ${other.port}`, '  name: ep1', 'users:', '- authentication-type: basic', '  basic-auth:', '    username: otheruser', '    password-encryption: none', `    password: ${otherWord}`, '  name: user1', '',
-  ].join('\n'));
+  placeFile(ctx.scope, ctx.dir, path.join(home, '.sqlcmd', 'sqlconfig'), sqlconfigText(other.port, otherWord));
   try {
     const noHost = launchFor(ctx, { home });
     const idx = noHost.args.indexOf('-S');
@@ -206,7 +226,37 @@ async function legConfig(ctx, client, shown) {
   }
 }
 
-/** PS1-4: the ODBC client with the driver manager's file in the rig home naming another server. */
+/** The driver the ODBC client runs with, by the name its own error line gives (PA1-a records the same), else the driver the 18 package registers. */
+async function driverNameOf(ctx, client) {
+  const free = await listener();
+  const port = free.port;
+  await free.close();
+  const launched = launchFor(ctx, { host: `${ABSENT_ADDRESS},${port}`, flags: ['-l', '5'] });
+  const run = await runClient(ctx.scope, client.exe, launched.args, launched.env, { ms: 30_000 });
+  const named = /ODBC Driver \d+ for SQL Server/.exec(`${run.stderr}\n${run.stdout}`)?.[0];
+  return named ?? 'ODBC Driver 18 for SQL Server';
+}
+
+/** The user data source file of the driver manager under the bridged environment: `{ file, how }`, or `{ why }` when it cannot be written (off the system rig, or outside the account's home). */
+function odbcUserFile(ctx, home) {
+  const answer = runSync('odbcinst', ['-j'], bridgedEnv(ctx.product, home));
+  const named = /USER DATA SOURCES\.*:[ \t]*(.+)$/m.exec(answer.text)?.[1]?.trim();
+  if (named === undefined) {
+    return { why: `odbcinst -j names no user data source file (exit ${answer.code}; it said ${JSON.stringify(oneLine(answer.text, 200))})` };
+  }
+  if (named.startsWith(`${home}${path.sep}`)) {
+    return { file: named, how: 'odbcinst -j under the bridged environment: a file of the rig home' };
+  }
+  if (!systemRig()) {
+    return { why: `the driver manager reads ${named}, outside the rig home (it takes the account's home, not HOME): a CI runner whose step sets BRIDGED_DB_SYSTEM_RIG=1 (rule R3)` };
+  }
+  if (!named.startsWith(`${os.homedir()}${path.sep}`)) {
+    return { why: `the driver manager reads ${named}, which is not under the account's own home folder (${os.homedir()}): nothing is written there` };
+  }
+  return { file: named, how: `odbcinst -j under the bridged environment names a file of the account's own home, not of the bridged HOME ${home}` };
+}
+
+/** PS1-4: the ODBC client with the driver manager's file naming another server. */
 async function legOdbc(ctx, client, shown) {
   if (process.platform === 'win32') {
     unmeasured(`PS1-4-${client.name}`, 'the Windows driver manager reads the registry, not a file of the home folder: not probed here');
@@ -215,7 +265,17 @@ async function legOdbc(ctx, client, shown) {
   const other = await listener();
   const home = path.join(ctx.dir, 'ps4 home');
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(path.join(home, '.odbc.ini'), ['[ps1dsn]', 'Driver=ODBC Driver 18 for SQL Server', `Server=${ABSENT_ADDRESS},${other.port}`, 'Trusted_Connection=yes', 'Encrypt=no', ''].join('\n'));
+  // Where the driver manager reads the user's data sources is asked of the driver manager (`odbcinst -j`, under the same bridged environment), never assumed: the second run wrote `.odbc.ini` in the
+  // rig home and the manager did not find the data source, so the file is where the manager says it is (and, if that is outside the rig home, in the account's own home, R3).
+  const driver = await driverNameOf(ctx, client);
+  const site = odbcUserFile(ctx, home);
+  if (site.file === undefined) {
+    await other.close();
+    unmeasured(`PS1-4-${client.name}`, site.why);
+    return;
+  }
+  placeFile(ctx.scope, ctx.dir, site.file, ['[ps1dsn]', `Driver=${driver}`, `Server=${ABSENT_ADDRESS},${other.port}`, 'Trusted_Connection=yes', 'Encrypt=no', ''].join('\n'));
+  console.log(`rig: the driver manager reads user data sources from ${site.file} (${site.how}); the data source names the driver ${JSON.stringify(driver)}, which is the driver the client ran`);
   try {
     const launched = launchFor(ctx, { home });
     const dsnArgs = ['-D', '-S', 'ps1dsn', '-Q', 'select 1', '-b'];
@@ -268,11 +328,14 @@ async function legAccount(ctx, client, shown) {
     return seen.lines.some((line) => /could not find a login/i.test(line)) ? 'a SQL login for the name as written (the server looked for a login of that name)' : 'the server\'s log does not say which';
   };
   const plain = await observe(ctx, client, { user, ms: 30_000 });
-  say(`PS1-8-${client.name}`, shown, `user ${user} with a password, as the builder launches it: ${classify(plain)}; ${wordsOf(plain)}`, plain);
+  // go-sqlcmd: the first half IS the positive control of the second. A user written as an account, with a password, is an NTLM sign-in on offer when the server's log names one; the flag half is
+  // judged against that and not against PS1-0 (the second run printed this half `UNMEASURED` because PS1-0's integrated attempt was not shown on Linux, though the attempt was in the log).
+  const ownControl = client.name === 'go-sqlcmd' && classify(plain).startsWith('an NTLM');
+  say(`PS1-8-${client.name}`, client.name === 'go-sqlcmd' ? ownControl : shown, `user ${user} with a password, as the builder launches it${client.name === 'go-sqlcmd' ? ' (the control of the flag half below)' : ''}: ${classify(plain)}; ${wordsOf(plain)}`, plain);
   if (client.name === 'go-sqlcmd') {
     const flagged = await observe(ctx, client, { user, flags: ['--authentication-method=SqlPassword'], ms: 30_000 });
-    say(`PS1-8-flag-${client.name}`, shown, `user ${user} with --authentication-method=SqlPassword: ${classify(flagged)}; ${wordsOf(flagged)}`, flagged);
-    if (shown && flagged.rigDefect === undefined && classify(flagged).startsWith('an NTLM')) {
+    say(`PS1-8-flag-${client.name}`, ownControl, `user ${user} with --authentication-method=SqlPassword: ${classify(flagged)}; ${wordsOf(flagged)}`, flagged);
+    if (ownControl && flagged.rigDefect === undefined && classify(flagged).startsWith('an NTLM')) {
       stop(`PS1-8-flag-${client.name}`, 'SqlPassword did not stop the NTLM sign-in of a user written as a Windows account (parent §7, row PS1: go-sqlcmd stays refused until a flag is shown to stop it)');
     }
   }
@@ -312,4 +375,4 @@ async function ps1Legs(ctx, clients) {
   }
 }
 
-module.exports = { ps1Legs };
+module.exports = { ps1Legs, sqlconfigText };
