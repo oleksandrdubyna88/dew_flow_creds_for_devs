@@ -48,6 +48,16 @@ function record(leg, control, text) {
   rows.push({ leg, control, saw: said.slice(0, 160) });
 }
 
+/**
+ * A leg that is not this client's road: a plugin that the parent's list of the client does not name (MariaDB's client has no LDAP SASL, key-file or security-key plugin of its own). It is no
+ * measurement and no missing control, so it is not `UNMEASURED` (that word is for a control that could not be produced) and the table does not count it as one.
+ */
+function notThisClients(leg, why) {
+  const said = printable(why);
+  console.log(`record (${leg}): not this client's plugin: ${said}`);
+  rows.push({ leg, control: 'not applicable', saw: `not this client's plugin: ${said}`.slice(0, 160) });
+}
+
 /** A leg whose positive control was not shown (R4): the line, and a row. */
 function unmeasured(leg, why) {
   const said = printable(why);
@@ -66,7 +76,8 @@ function stop(leg, text) {
 function printTable(title) {
   console.log(`\n${title}: ${rows.length} line(s), ${rows.filter((row) => row.control === 'not shown').length} unmeasured`);
   for (const row of rows) {
-    console.log(`  ${row.control === 'shown' ? 'control shown    ' : 'control NOT shown'}  ${row.leg}: ${printable(row.saw)}`);
+    const control = { shown: 'control shown    ', 'not applicable': 'not applicable   ' }[row.control] ?? 'control NOT shown';
+    console.log(`  ${control}  ${row.leg}: ${printable(row.saw)}`);
   }
 }
 
@@ -191,6 +202,6 @@ async function waitFor(ready, ms, step = 100) {
 }
 
 module.exports = {
-  check, failureCount, record, unmeasured, stop, printTable, systemRig, throwawayWord, productOf, bridgedEnv, endedWithin, oneLine, runClient, rigRun, findFile, versionLine,
+  check, failureCount, record, unmeasured, notThisClients, stop, printTable, systemRig, throwawayWord, productOf, bridgedEnv, endedWithin, oneLine, runClient, rigRun, findFile, versionLine,
   freePort, printRun, waitFor, rows,
 };

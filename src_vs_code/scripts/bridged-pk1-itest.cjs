@@ -14,6 +14,9 @@
 //   Windows   `psql.exe`: SSPI with the runner's own logon (PK1-w0, w1), what the build says of GSSAPI (w2), the profile files (w3), the GSSAPI request 7 (w4); Oracle's `mysql.exe`:
 //             a clear-text request (m5) and Windows authentication with the receiver reading the account's name (m6).
 //
+// In CI this harness runs in the job of the image's other database probes (PA1, PP1, PE1: `bridged-db-clients`), last, so that every leg of a pair runs on the build the row records (§S7.7); `BRIDGED_PSQL` there
+// names the image's own `psql` by its real file, and `BRIDGED_MYSQL_ORACLE_OWN` Oracle's own build.
+//
 // The Kerberos realm writes `/etc/krb5.conf` and the Windows profile legs write the runner's own `%APPDATA%\postgresql`: both only when `CI=true` and the step sets
 // `BRIDGED_DB_SYSTEM_RIG=1` (rule R3), and both put the files back. Anywhere else the leg is a printed skip that says `UNMEASURED`. Nothing real stands in a committed file (R5): the realm,
 // the principals, the roles and the words are made at run time.

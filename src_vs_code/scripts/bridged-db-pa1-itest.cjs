@@ -19,9 +19,12 @@
 //   PA1-h  what the runner carries
 //   PA1-i  which file the program word `psql` is, and whether a `~/.postgresqlrc` in the home folder can make the version start and the query start differ (Debian and Ubuntu)
 //
-// Clients are found by `BRIDGED_PSQL`, `BRIDGED_MYSQL_ORACLE`, `BRIDGED_MYSQL_MARIADB`, `BRIDGED_SQLCMD_GO`, `BRIDGED_SQLCMD_ODBC`, else by `PATH`. With `CI=true` on Linux
-// a missing `psql`, Oracle's `mysql` or MariaDB's client FAILS; any other missing client is `UNMEASURED`, with its name. Off CI nothing is installed and a missing client is the same
-// printed fact. Linux and Windows.
+// Clients are found by `BRIDGED_PSQL`, `BRIDGED_MYSQL_ORACLE`, `BRIDGED_MYSQL_ORACLE_OWN` (Oracle's own build, a second `oracle` client), `BRIDGED_MYSQL_MARIADB`, `BRIDGED_SQLCMD_GO`,
+// `BRIDGED_SQLCMD_ODBC`, else by `PATH`. With `CI=true` on Linux a missing `psql`, Oracle's `mysql` or MariaDB's client FAILS; any other missing client is `UNMEASURED`, with its name. Off CI nothing
+// is installed and a missing client is the same printed fact. Linux and Windows.
+//
+// `PA1_FAMILIES` (a comma list of `psql`, `oracle`, `mariadb`, `go-sqlcmd`, `odbc-sqlcmd`) limits the run to those families: the PS1 jobs name the two `sqlcmd` clients, so that PA1 records the
+// build that PS1's legs run, in the same job (a row of the parent's table is judged per recorded build). The job prints one `record (R1) the builds every leg of this job ran` line at its end.
 const fs = require('node:fs');
 const path = require('node:path');
 const harnessScope = require('./lib/harnessScope.cjs');
@@ -34,7 +37,7 @@ const wrapper = require('./lib/dbPa1Wrapper.cjs');
 
 /** The legs one client family has, in order: its version line first (R1), then PA1-a, then its own. */
 async function legsOf(scope, client, shared) {
-  rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line); // R1: the line comes first (the version line of the client's own family, not its first line)
+  rig.announce(client.name, `${client.exe} (found by ${client.via})`, realVersion(client).line); // R1: the line comes first (the version line of the client's own family, not its first line)
   clients.legA(client, shared);
   if (client.family === 'psql') {
     psql.libpqLegs();
@@ -44,7 +47,7 @@ async function legsOf(scope, client, shared) {
     await clients.legE(scope, client, shared);
   } else {
     if (client.family === 'odbc-sqlcmd') {
-      clients.odbcDrivers();
+      await clients.odbcDriver(client, shared);
     }
     await clients.legF(scope, client, shared);
   }
@@ -60,6 +63,12 @@ function missing(family) {
   }
 }
 
+/** The families this run covers: all five, or `PA1_FAMILIES`. */
+const familiesOfRun = () => {
+  const named = (process.env.PA1_FAMILIES ?? '').split(',').map((name) => name.trim()).filter((name) => name !== '');
+  return named.length === 0 ? ['psql', 'oracle', 'mariadb', 'go-sqlcmd', 'odbc-sqlcmd'] : named;
+};
+
 async function main(scope) {
   const product = rig.loadProduct();
   const dir = ownedDir(scope, 'bridged-db-pa1');
@@ -68,8 +77,9 @@ async function main(scope) {
   const shared = { product, dir, home, absentFile: product.materializedKeyPath(dir, 'no-client-file') };
   console.log(`PA1: node ${process.version}; ${process.platform}/${process.arch}; CI=${process.env.CI ?? ''}`);
   wrapper.legH();
-  const found = discover();
-  for (const family of ['psql', 'oracle', 'mariadb', 'go-sqlcmd', 'odbc-sqlcmd']) {
+  const families = familiesOfRun();
+  const found = discover().filter((client) => families.includes(client.family));
+  for (const family of families) {
     if (!found.some((client) => client.family === family)) {
       missing(family);
     }
@@ -77,7 +87,7 @@ async function main(scope) {
   for (const client of found) {
     await legsOf(scope, client, shared);
   }
-  if (process.platform === 'linux') {
+  if (process.platform === 'linux' && families.includes('psql')) {
     await psql.legG(scope, shared);
     await wrapper.legI(scope, shared);
   }

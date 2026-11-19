@@ -30,7 +30,7 @@ async function main(scope) {
   console.log(`PE1: node ${process.version}; ${process.platform}/${process.arch}; CI=${process.env.CI ?? ''}`);
   const found = discover().filter((client) => ['psql', 'oracle', 'mariadb'].includes(client.family));
   for (const client of found) {
-    rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line);
+    rig.announce(client.name, `${client.exe} (found by ${client.via})`, realVersion(client).line);
   }
   const psql = found.find((client) => client.family === 'psql');
   if (psql === undefined) {

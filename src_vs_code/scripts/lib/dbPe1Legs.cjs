@@ -96,16 +96,16 @@ function mysqlLogin(client, rig, server, label, flags) {
   const wrong = servers.throwaway();
   const entry = `mysql://${user}:${good}@127.0.0.1:${server.port}/pe1db`;
   const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who', { bridged: true, absentFile: rig.absentFile });
-  check(`(PE1-5/6) ${client.family} on ${label}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
+  check(`(PE1-5/6) ${client.name} on ${label}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
   const ask = (withFlags, env) => runSync(client.exe, withFlags ? mysqlArgs(built.args, flags) : built.args, bridgedEnv(rig.product, rig.home, env));
   const right = ask(true, built.env);
   const bad = ask(true, { ...built.env, MYSQL_PWD: wrong });
   const control = ask(false, built.env);
-  console.log(`record (PE1-${client.family === 'oracle' ? '5' : '6'}) ${client.family} on ${label}: under the profile (${flags.join(' ').replace(rig.absentFile, '<the absent file>')}): the entry ${outcomeOf(right, user)}; a wrong password ${outcomeOf(bad, user)}; CONTROL, the same launch with no control flag: the entry ${outcomeOf(control, user)}`);
+  console.log(`record (PE1-${client.family === 'oracle' ? '5' : '6'}) ${client.name} on ${label}: under the profile (${flags.join(' ').replace(rig.absentFile, '<the absent file>')}): the entry ${outcomeOf(right, user)}; a wrong password ${outcomeOf(bad, user)}; CONTROL, the same launch with no control flag: the entry ${outcomeOf(control, user)}`);
   if (!loggedIn(right, user) && loggedIn(control, user)) {
-    stop(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.family} on ${label}`, 'the entry\'s own login fails under the profile and succeeds without its controls: the pair is not served by this control (parent §7, row PE1: back to the lead)');
+    stop(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, 'the entry\'s own login fails under the profile and succeeds without its controls: the pair is not served by this control (parent §7, row PE1: back to the lead)');
   }
-  noteLeg(`PE1 ${client.family} on ${label}`, loggedIn(control, user), `entry under the profile: ${loggedIn(right, user) ? 'in' : 'REFUSED'}; wrong password: ${loggedIn(bad, user) ? 'IN' : 'refused'}`);
+  noteLeg(`PE1 ${client.name} on ${label}`, loggedIn(control, user), `entry under the profile: ${loggedIn(right, user) ? 'in' : 'REFUSED'}; wrong password: ${loggedIn(bad, user) ? 'IN' : 'refused'}`);
 }
 
 /** The flags a `mysql` family gets as controls (the spec's §S7.5). */

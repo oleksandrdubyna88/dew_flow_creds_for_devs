@@ -12,6 +12,8 @@
 //             again (rule R3), and the throwaway Kerberos realm of PK1 (rig K) so that the control can be an integrated attempt that the server records.
 //   Windows   SQL Server Express installed by the workflow step with TCP on a fixed loopback port (`BRIDGED_MSSQL_PORT`, `BRIDGED_MSSQL_ERRORLOG`); the control is the runner's own logon.
 //
+// PA1 runs in the same job before this probe (`PA1_FAMILIES=go-sqlcmd,odbc-sqlcmd`), so that the build PA1 records for each `sqlcmd` is the build these legs ran.
+//
 // The clients are named by path: `BRIDGED_SQLCMD_GO` (go-sqlcmd; the rig's own administrator too) and `BRIDGED_SQLCMD_ODBC` (the ODBC client, default `/opt/mssql-tools18/bin/sqlcmd`). With `CI=true`
 // a missing one FAILS; off CI it is a printed skip. macOS: this plan's CI has no runner, so every macOS pair stays refused.
 const fs = require('fs');
@@ -23,7 +25,7 @@ const { startRealm } = require('./lib/pkKrbRig.cjs');
 const { startSqlServer } = require('./lib/psSqlServer.cjs');
 const { ps1Legs } = require('./lib/psLegs.cjs');
 
-const { realVersion } = require('./lib/dbProbeClients.cjs');
+const { realVersion, buildsRecord } = require('./lib/dbProbeClients.cjs');
 
 const { check, versionLine, systemRig } = probe;
 
@@ -80,6 +82,7 @@ async function main(scope) {
       console.log(`UNMEASURED PS1: no receiver (${q.why})`);
     }
   }
+  buildsRecord([go, odbc].filter((entry) => entry !== undefined).map((entry) => ({ ...entry, family: entry.name })));
   probe.printTable('PS1');
   const failures = probe.failureCount();
   console.log(failures === 0 ? '\nall PS1 rig checks passed (the legs above are records, not assertions)' : `\n${failures} rig check(s) failed`);

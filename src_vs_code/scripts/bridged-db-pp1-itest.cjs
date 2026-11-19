@@ -34,7 +34,7 @@ async function main(scope) {
   const found = discover();
   const byFamily = (family) => found.find((client) => client.family === family);
   for (const client of found.filter((one) => ['psql', 'oracle', 'mariadb'].includes(one.family))) {
-    rig.announce(client.family, `${client.exe} (found by ${client.via})`, realVersion(client).line);
+    rig.announce(client.name, `${client.exe} (found by ${client.via})`, realVersion(client).line);
   }
   const psql = byFamily('psql');
   if (psql === undefined) {
@@ -46,7 +46,7 @@ async function main(scope) {
   if (oracle === undefined) {
     rig.check("Oracle's mysql client is installed", process.env.CI !== 'true', 'no Oracle mysql client was found: install mysql-client — a skipped leg on the runner proves nothing');
   } else {
-    await legs.legMysql(scope, oracle, [byFamily('mariadb')].filter((client) => client !== undefined), shared);
+    await legs.legMysql(scope, oracle, found.filter((client) => ['oracle', 'mariadb'].includes(client.family) && client !== oracle), shared);
   }
   buildsRecord(found.filter((one) => ['psql', 'oracle', 'mariadb'].includes(one.family)));
   return rig.finish('bridged db PP1');
