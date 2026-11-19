@@ -4,10 +4,10 @@ import { describeError } from './describeError';
 import { DR1, DR7, DR8, vendorWords } from './bridgedDbSentences';
 import { BRIDGED_DB_PROFILES, DbClient, DbProfileRow } from './bridgedDbProfile';
 import { bridgedSshEnv } from './bridgedSshEnv';
-import { CLIENT_CHECK_TIMEOUT_MS, ClientRunner } from './bridgedSshClient';
+import { CLIENT_CHECK_TIMEOUT_MS } from './bridgedSshClient';
 import { bridgedCallFolder, callKeyName } from './materializedKeys';
 import { endedStage, notStarted } from './requestLife';
-import { runSshExec } from './sshExecRunner';
+import { SshExecOptions, SshExecOutcome, runBounded } from './sshExecRunner';
 import type { DbType } from './types';
 
 /**
@@ -78,7 +78,7 @@ const READERS: Readonly<Record<DbClient, readonly Reader[]>> = {
   psql: [{ vendor: 'postgresql', pattern: /^(?<token>psql \(PostgreSQL\) (?<version>\d+(?:\.\d+)*)(?<tag>[^\r\n]*))/ }],
   mysql: [
     { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+Ver\s+\d+(?:\.\d+)*\s+Distrib\s+${VERSION}(?<tag>[^\r\n]*))`) },
-    { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+from\s+${VERSION}(?<tag>-MariaDB[^\r\n]*))`) },
+    { vendor: 'mariadb', pattern: new RegExp(String.raw`^${LEAD}(?<token>(?:mysql|mariadb)(?:\.exe)?\s+from\s+${VERSION}-MariaDB(?<tag>[^\r\n]*))`) },
     { vendor: 'oracle', pattern: new RegExp(String.raw`^${LEAD}(?<token>mysql(?:\.exe)?\s+Ver\s+${VERSION}(?<tag>(?![^\r\n]*MariaDB)[^\r\n]*))`) },
   ],
   sqlcmd: [
@@ -212,6 +212,11 @@ export const nodeDbFiles: DbFiles = {
 const CLIENT_WORDS: Readonly<Record<DbClient, string>> = { psql: 'psql', mysql: 'mysql', sqlcmd: 'sqlcmd' };
 const VERSION_ARGS: Readonly<Record<DbClient, readonly string[]>> = { psql: ['--version'], mysql: ['--version'], sqlcmd: ['-?'] };
 
+/** What starts the version spawn: the file's path and the version flag, under the options of the bounded runner. The default is the generic bounded runner, `runBounded`: the client is a database client and never `ssh`. */
+export type DbRunner = (argv: string[], options: SshExecOptions & { readonly program: string }) => Promise<Pick<SshExecOutcome, 'exitCode' | 'stdout' | 'stderr'>>;
+
+const boundedRun: DbRunner = (argv, options) => runBounded(options.program, argv, false, options);
+
 /** One ask of the check: which client the call is for, the window's end (which ends the version spawn) and the request's (which ends only this caller's wait). */
 export interface DbClientCall {
   readonly client: DbClient;
@@ -227,7 +232,7 @@ export interface DbClientCheckParts {
   readonly storageDir: string;
   /** The table the check reads (default: the production table). */
   readonly rows?: readonly DbProfileRow[];
-  readonly run?: ClientRunner;
+  readonly run?: DbRunner;
   readonly platform?: NodeJS.Platform;
   readonly source?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
@@ -278,7 +283,7 @@ function notStartedVerdict(parts: Resolved, client: DbClient, error: unknown): D
 const killedBy = (window: AbortSignal | undefined): { signal?: AbortSignal } => (window === undefined ? {} : { signal: window });
 
 /** The version spawn: the file's path, the version flag, the bridged environment and no name of its own, in a folder that holds nothing. Only the window's end kills it (§S7.6 item 7). */
-async function spawnVersion(parts: Resolved, file: DbProgramFile, client: DbClient, window: AbortSignal | undefined): ReturnType<ClientRunner> {
+async function spawnVersion(parts: Resolved, file: DbProgramFile, client: DbClient, window: AbortSignal | undefined): ReturnType<DbRunner> {
   const outcome = await inEmptyFolder(parts, 'client check', (dir) =>
     parts.run([...VERSION_ARGS[client]], { program: file.path, env: bridgedSshEnv(parts.source, parts.platform), cwd: dir, timeoutMs: parts.timeoutMs, ...killedBy(window) }),
   );
@@ -379,7 +384,7 @@ async function ask(state: State, call: DbClientCall): Promise<DbClientVerdict> {
  * A table that serves nothing for the client starts nothing, and the verdict says DR1.
  */
 export function bridgedDbClientCheck(given: DbClientCheckParts): DbClientCheck {
-  const parts: Resolved = { rows: BRIDGED_DB_PROFILES, run: runSshExec, platform: process.platform, source: process.env, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, files: nodeDbFiles, ...given };
+  const parts: Resolved = { rows: BRIDGED_DB_PROFILES, run: boundedRun, platform: process.platform, source: process.env, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, files: nodeDbFiles, ...given };
   const state: State = { parts, kept: new Map(), inflight: new Map() };
   return (call) => (rowFor(parts.rows, call.client, parts.platform) === undefined ? Promise.resolve({ ok: false, sentence: DR1(call.client, parts.platform) }) : ask(state, call));
 }

@@ -169,10 +169,11 @@ test('G2: the two options are spelled in one file', () => {
 test('G2: no other door to a spawned ssh: the generic runner, the spawn launches, the manager and the process modules are listed whole', () => {
   // `runBounded` starts ANY program with ANY argv: `runBounded('ssh', …)` would be an ssh that never met a builder. Every use is listed,
   // so a new one is red until somebody has looked at what it starts. The programs of today are git, ssh-keyscan, a script's own
-  // interpreter, a saved terminal command and a database client: none is `ssh`.
+  // interpreter, a saved terminal command and a database client (the version spawn of its check, and the query): none is `ssh`.
   assert.deepEqual(
     usesOf('runBounded', 'sshExecRunner'),
-    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'configWrite.ts#boundedGit', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
+    // E1.7: the database client check (boundedRun) and the bridged query (spawned) start a database client from the path the check asked: neither is `ssh`.
+    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'bridgedDbClient.ts#boundedRun', 'bridgedDbQuery.ts#spawned', 'configWrite.ts#boundedGit', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
     HOW_TO_FIX,
   );
   // The two ways to name the program of a spawned ssh. `openSshBinary` is called by `sshSpawnLaunch` only (and `openSshProgram` is a string for a terminal).
@@ -185,7 +186,7 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
     // E1.6: bridgedSshClient.ts names the runner for the client check, whose one argv is `-V` (no connection).
-    ['agentUseActions.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    ['agentUseActions.ts', 'bridgedDbClient.ts', 'bridgedDbQuery.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'sshUseActions.ts', 'transportFactory.ts'],
     HOW_TO_FIX,
   );
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.

@@ -228,6 +228,8 @@ test('DG2 (§S6.15 Z1, Z2): through the main port the same three entries run, as
       assert.equal(qw.spawns.length, 1, `${client.dbType}: spawned`);
       assert.deepEqual(qw.journal, [], `${client.dbType}: nothing in the journal`);
       assert.equal(qw.spawns[0].args.includes('--protocol=TCP'), false, `${client.dbType}: off a bridge, no flag a bridge adds`);
+      assert.equal(qw.spawns[0].args.some((arg) => /plugin-dir|gssencmode|sslcertmode|require_auth|authentication-method|skip-enable-cleartext/.test(arg)), false, `${client.dbType}: off a bridge, no authentication control`);
+      assert.equal(qw.spawns[0].cwd, undefined, `${client.dbType}: off a bridge, no folder of the action's making`);
     } finally {
       ww.dispose();
     }

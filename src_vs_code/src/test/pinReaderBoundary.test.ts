@@ -52,7 +52,7 @@ type ReaderKind = 'carrier' | 'door' | 'automatic' | 'presence';
  * `src/`, with forward slashes. A file that does two kinds of reading lists both, and must satisfy both.
  */
 const READERS: Readonly<Record<string, ReaderKind | readonly ReaderKind[]>> = {
-  'agentUseActions.ts': 'automatic', // the broker's db query: pinFieldRefusal before the client
+  'bridgedDbQuery.ts': 'automatic', // the broker's db query, both roads (storedConnectionOf): pinFieldRefusal before the client
   'commands/entityCommands.ts': 'door', // Copy Password / DB / Code, Connect DB, Install SSH Key
   'configCommands.ts': ['door', 'automatic'], // Show Config Changes (click) and the config route body
   'configWrite.ts': 'door', // Write Config File
