@@ -40,6 +40,7 @@ async function startPgServer(scope, dir, { roles, keytab }) {
   if (bin === undefined) {
     return { ok: false, why: 'no PostgreSQL server binaries on this machine' };
   }
+  fs.mkdirSync(dir, { recursive: true });
   const data = path.join(dir, 'data');
   const logFile = path.join(dir, 'server.log');
   const port = await freePort();
@@ -59,19 +60,22 @@ async function startPgServer(scope, dir, { roles, keytab }) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   };
   fs.writeFileSync(hbaFile, 'host all all 127.0.0.1/32 trust\n');
-  try {
-    rigRun(exe('pg_ctl'), ['-D', data, '-l', logFile, '-w', '-t', '60', 'start']);
-  } catch (error) {
-    check('rig G: the server started', false, `${error.message}\n${fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').slice(-600) : 'no log'}`);
-    return { ok: false, why: 'the PostgreSQL server did not start' };
-  }
+  // Registered BEFORE the start, so that a start that timed out still stops the server it began (a running server holds its folder, and the scope could not remove it).
   scope.after(() => {
     try {
-      execFileSync(exe('pg_ctl'), ['-D', data, '-m', 'immediate', 'stop'], { stdio: 'pipe', timeout: 60_000 }); // NOSONAR: the rig's own binary
+      execFileSync(exe('pg_ctl'), ['-D', data, '-m', 'immediate', 'stop'], { stdio: 'ignore', timeout: 60_000 }); // NOSONAR: the rig's own binary
     } catch (error) {
       console.log(`rig: the PostgreSQL server did not stop cleanly (${error.message.slice(0, 120)})`);
     }
   });
+  try {
+    // No pipe on any of the three streams: `postgres` inherits the handles of the `pg_ctl` that starts it, and on Windows a pipe it holds keeps `spawnSync` waiting for an end of
+    // file that never comes (the first CI run: the server was ready after 1 s and the call still ended on its 120 s limit). The server's own words go to `logFile`.
+    rigRun(exe('pg_ctl'), ['-D', data, '-l', logFile, '-w', '-t', '60', 'start'], { stdio: 'ignore' });
+  } catch (error) {
+    check('rig G: the server started', false, `${error.message}\n${fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').slice(-600) : 'no log'}`);
+    return { ok: false, why: 'the PostgreSQL server did not start' };
+  }
   for (const role of roles) {
     rigRun(exe('psql'), ['-X', '-h', '127.0.0.1', '-p', String(port), '-U', owner, '-d', 'postgres', '-c', `create role "${role}" login`]);
   }

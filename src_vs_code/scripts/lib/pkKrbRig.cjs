@@ -28,7 +28,7 @@ function clientConfig(port) {
     '  rdns = false',
     '  dns_canonicalize_hostname = false',
     '  udp_preference_limit = 1',
-    '  default_ccache_name = FILE:/tmp/krb5cc_%{uid}',
+    '  default_ccache_name = FILE:/tmp/krb5cc_%{uid}', // NOSONAR: the MIT default, written out so that the client and the rig name one cache
     '[realms]',
     `  ${REALM} = {`,
     `    kdc = 127.0.0.1:${port}`,
@@ -60,21 +60,21 @@ function installSystemConfig(scope, dir, text) {
   const kept = path.join(dir, 'krb5.conf.system');
   const had = fs.existsSync(target);
   if (had) {
-    execFileSync('sudo', ['-n', 'cp', '-p', target, kept], { stdio: 'pipe' });
+    execFileSync('sudo', ['-n', 'cp', '-p', target, kept], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
   }
   scope.after(() => {
     try {
       if (had) {
-        execFileSync('sudo', ['-n', 'cp', '-p', kept, target], { stdio: 'pipe' });
+        execFileSync('sudo', ['-n', 'cp', '-p', kept, target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
       } else {
-        execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' });
+        execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
       }
     } catch (error) {
       console.log(`rig: /etc/krb5.conf was NOT put back (${error.message})`);
     }
   });
-  execFileSync('sudo', ['-n', 'tee', target], { input: text, stdio: ['pipe', 'ignore', 'pipe'] });
-  execFileSync('sudo', ['-n', 'chmod', '644', target], { stdio: 'pipe' });
+  execFileSync('sudo', ['-n', 'tee', target], { input: text, stdio: ['pipe', 'ignore', 'pipe'] }); // NOSONAR: the CI runner's own sudo
+  execFileSync('sudo', ['-n', 'chmod', '644', target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
 }
 
 /** Whether something accepts a TCP connection on `port` of the loopback. */
@@ -104,6 +104,7 @@ async function startRealm(scope, dir, home) {
   if (Object.values(tool).includes(undefined)) {
     return { ok: false, why: 'a Kerberos tool is missing (named above)' };
   }
+  fs.mkdirSync(dir, { recursive: true }); // the caller names the folder; nothing before this made it (the first CI run: ENOENT on its `krb5.conf`)
   const port = await freePort();
   const rigEnv = { PATH: process.env.PATH, KRB5_CONFIG: path.join(dir, 'krb5.conf'), KRB5_KDC_PROFILE: path.join(dir, 'kdc.conf') };
   fs.writeFileSync(rigEnv.KRB5_CONFIG, clientConfig(port));
