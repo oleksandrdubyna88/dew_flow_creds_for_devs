@@ -30,16 +30,17 @@ server logs no login.
 
 A refused host key is told. When `ssh` names the saved key of this entry as the key that does not fit, *Install creds on host*
 shows: `"<name>" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH
-on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.` After *Open Remote
+on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the
+server's owner gives you before you trust it. If it was not, do not connect.` After *Open Remote
 Bridge…* the socket check shows `The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no
 output to show. When `ssh` ends with `Host key verification failed` and does not name that key (a jump host of your own
 `ProxyJump` whose key your own known_hosts file refuses, a remote command that prints that line, or your own `ssh` config that
 gives this host another name or port), the message is another one: `The connection to "<name>" ended with "Host key verification
 failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh
 config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do
-not replace a saved key because of this message. Connect SSH on this entry checks this host's key again and asks before it changes
-anything.` After *Open Remote Bridge…* the socket check opens it with `The bridge to "<name>" could not be checked: `, because the
-bridge itself can be up. A host that is down, a host that does not answer and a login that is refused are told as before. These
+not replace a saved key because of this message. Check this host's key fingerprint with the server's owner, and check your own ssh
+config for a HostName or Port that renames this host and for a jump host.` After *Open Remote Bridge…* the socket check opens it
+with `The bridge to "<name>" could not be checked: `, because the bridge itself can be up. A host that is down, a host that does not answer and a login that is refused are told as before. These
 calls state their own log level (`LogLevel=ERROR`), so `ssh` prints a refused host key under a quiet config (`LogLevel QUIET`) too
 (measured by hand). What that may cost: on these calls `ssh` may no longer print what it prints only at its `INFO` level, for
 example a server's banner before the login (read in the manual, not measured).

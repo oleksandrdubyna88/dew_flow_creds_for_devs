@@ -179,16 +179,16 @@ stdout, not whether the run timed out, not the order of the two lines. One pure 
 | the socket check | the sweep is NOT asked | nothing | nothing | as today |
 | *Open Remote Bridge…* | cannot be asked: its `ssh` has no stdio | nothing of its own; the socket check speaks | the same | as today |
 
-**Sentence C** (§3.5; its words do not change; `<name>` is the entry's name):
+**Sentence C** (§3.5; `<name>` is the entry's name). **Changed by the code gate of G1 E2, 2026-11-19:** one sentence is added, the comparison of the fingerprint; the words before it are those of E1.S3. Connect's trust prompt shows the fingerprint and asks, but Connect's own line keeps the person's other trust sources (C4) and a scan that answers nothing goes on without a question, so the person compares what Connect shows with what the server's owner says before trusting it:
 
 ```text
-"<name>" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.
+"<name>" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server's owner gives you before you trust it. If it was not, do not connect.
 ```
 
-**Sentence D** (new; the final words):
+**Sentence D** (new; the final words, **changed by the code gate of G1 E2, 2026-11-19, SECURITY**: the last sentence named Connect SSH as the way to check the host, and it is gone; see the last bullet of *Sentence D's words* below. The listings of §2, §4, §5 and §6 below show the words as first written; the product, the tests and the CHANGELOG carry these):
 
 ```text
-The connection to "<name>" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Connect SSH on this entry checks this host's key again and asks before it changes anything.
+The connection to "<name>" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Check this host's key fingerprint with the server's owner, and check your own ssh config for a HostName or Port that renames this host and for a jump host.
 ```
 
 **The two forms.** *Install creds on host* shows the sentence as it is, as an error message, for C and for D. The socket check
@@ -252,9 +252,16 @@ shows `The bridge to "<name>" is not open: ` + sentence C, or `The bridge to "<n
     clause goes and one test literal with it (*Notes for the lead*).
   - "Do not replace a saved key because of this message": the contract's "never tells the person to replace a saved key",
     said as an order, because sentence C beside it does name Connect SSH as the way to a new key.
-  - "Connect SSH on this entry checks this host's key again and asks before it changes anything": the advice cannot end in an
-    unchecked connection, by the argument of *Sentence C against P2* (§3.5). The pin of this entry parses (a pin that does not
-    parse never reaches an `ssh`: sentence A), so Connect keeps enforcing it and asks before it replaces it.
+  - ~~"Connect SSH on this entry checks this host's key again and asks before it changes anything"~~ **removed by the code gate of
+    G1 E2, 2026-11-19.** The argument that the advice cannot end in an unchecked connection (*Sentence C against P2*, §3.5) was
+    wrong for sentence D: Connect's own line writes the pin as the person's known-hosts file alone (C4), so the system-wide
+    known_hosts, `VerifyHostKeyDNS` and `KnownHostsCommand` of the person still count, and sentence D is shown exactly when the
+    call's `ssh` did not judge the saved key (a jump host, a renamed host or port, a remote text). Following the advice could
+    connect to another host and send a password without checking the saved key. In its place, two things the person does outside
+    the extension: "Check this host's key fingerprint with the server's owner", and "check your own ssh config for a HostName or
+    Port that renames this host and for a jump host" (the two measured causes of D, J10 and J11). Sentence C keeps Connect SSH:
+    its scan is `ssh-keyscan` of the entry's own host and port (not the person's config), and a key that differs from the saved
+    one is a modal that shows the fingerprint and asks. The sentence now says to compare that fingerprint with the server owner's.
 - **"Could not be checked", not "is not open".** With sentence C the check's `ssh` met a host with another key, and the
   bridge's `ssh` met the same host with the same words a moment earlier: the bridge is not open (E1.S3; the limits of that are
   in its §12). With sentence D the check knows less. The tunnel can be up: a remote command that wrote the line ran on a host

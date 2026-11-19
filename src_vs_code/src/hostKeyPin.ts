@@ -390,21 +390,34 @@ export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: s
 
 /**
  * Sentence C: `ssh` refused the host's key on a pinned entry, and named the pin file of the call ({@link hostKeyTold}). *Install
- * creds on host* shows it as it is; the bridge socket check opens it with `The bridge to "<name>" is not open: `. Its advice cannot
- * end in an unchecked connection: with a saved key that parses, Connect SSH keeps enforcing it, and asks before it replaces it.
+ * creds on host* shows it as it is; the bridge socket check opens it with `The bridge to "<name>" is not open: `.
+ *
+ * <p>Its advice is Connect SSH, and Connect's trust prompt is what makes that advice safe, only as far as the person reads it
+ * (the code gate of G1 E2, 2026-11-19). Connect scans the entry's own host and port with `ssh-keyscan` (`hostKeyTrust.ts`), never what
+ * the person's ssh config says, and a key that differs from the saved one is a modal that shows the key's fingerprint and asks
+ * before it replaces the saved one. But the line Connect then starts (`sshCommand.ts`) names the pin as the person's known-hosts file
+ * ALONE (candidate C4): the system-wide file, `VerifyHostKeyDNS` and `KnownHostsCommand` of the person still count, and a scan that
+ * answered nothing lets Connect go on without a question. So the sentence asks for the one thing that decides: the fingerprint that
+ * Connect shows is compared with the one the server's owner gives, before the person trusts it.</p>
  */
 export function refusedHostKeySentence(name: string): string {
-  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.`;
+  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server's owner gives you before you trust it. If it was not, do not connect.`;
 }
 
 /**
  * Sentence D: the run of a pinned call ended with the verification line, and `ssh` did not name the pin file of the call
  * ({@link hostKeyTold}). It names no host as the one that changed and never tells the person to replace a saved key. The bridge
- * socket check opens it with `The bridge to "<name>" could not be checked: `: the tunnel can be up. Its advice cannot end in an
- * unchecked connection, for the reason of sentence C.
+ * socket check opens it with `The bridge to "<name>" could not be checked: `: the tunnel can be up.
+ *
+ * <p>It does NOT send the person to Connect SSH (the code gate of G1 E2, 2026-11-19; security). Connect's own line still accepts the
+ * person's other trust sources (candidate C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), and this sentence
+ * is shown exactly when the call's `ssh` did NOT judge the saved key of this entry (a jump host, a renamed host or port in the config, a
+ * remote text). Connect could then reach another host through one of those sources and, for an entry that signs in with a password,
+ * send it there with the saved key never checked. The advice is what the person can do outside the extension: the host's key fingerprint
+ * from the server's owner, and the person's own ssh config (a `HostName` or `Port` that renames the host, a jump host).</p>
  */
 export function unnamedHostKeySentence(name: string): string {
-  return `The connection to "${name}" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Connect SSH on this entry checks this host's key again and asks before it changes anything.`;
+  return `The connection to "${name}" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Check this host's key fingerprint with the server's owner, and check your own ssh config for a HostName or Port that renames this host and for a jump host.`;
 }
 
 export type PinVerdict = 'first-contact' | 'match' | 'mismatch' | 'unreachable';

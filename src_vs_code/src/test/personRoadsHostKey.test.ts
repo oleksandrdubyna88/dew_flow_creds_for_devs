@@ -40,7 +40,7 @@ const PROBE_OK = 'creds=-\narch=x86_64\nos=Linux\nget=/usr/bin/curl\n';
 const INSTALLED = 'creds-install: installed /home/dev/.local/bin/creds\n';
 
 const SENTENCE_C =
-  '"box" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.';
+  '"box" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server\'s owner gives you before you trust it. If it was not, do not connect.';
 const BRIDGE_NOT_OPEN = `The bridge to "box" is not open: ${SENTENCE_C}`;
 
 /** The lines of a real `ssh` as it prints them: it ends its own lines with CR LF, also on Linux. */

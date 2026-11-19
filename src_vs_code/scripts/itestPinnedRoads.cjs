@@ -631,14 +631,12 @@ function rigOf(section, dir, out) {
   return rig;
 }
 
-/** What the real client says of itself, read by the product's reader (E2.S1). The words this smoke expects are those of a client that knows `KnownHostsCommand`. */
+/**
+ * What the real client says of itself, read by the product's own asker (E2.S1: `pinClientAsker` of `out/pinClient.js`, `ssh -V` under `runBounded`:
+ * a time limit, SIGTERM then SIGKILL of the child). The rig starts no launcher of its own. The words this smoke expects are those of a client that knows `KnownHostsCommand`.
+ */
 function clientAnswer(product, real) {
-  return new Promise((resolve) => {
-    execFile(real, ['-V'], { timeout: 5_000 }, (error, _stdout, stderr) => { // NOSONAR: a CI rig, the real client by its real path
-      const code = error === null ? 0 : typeof error.code === 'number' ? error.code : null;
-      resolve(product.pinClientOf(code, String(stderr)));
-    });
-  });
+  return product.pinClientAsker()({ program: real, env: process.env });
 }
 
 async function pinnedLegs(check, rig) {

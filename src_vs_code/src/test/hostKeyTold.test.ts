@@ -26,9 +26,9 @@ const scope = cleanupScope();
 after(() => scope.close());
 
 const SENTENCE_C =
-  '"box" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.';
+  '"box" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server\'s owner gives you before you trust it. If it was not, do not connect.';
 const SENTENCE_D =
-  'The connection to "box" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Connect SSH on this entry checks this host\'s key again and asks before it changes anything.';
+  'The connection to "box" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Check this host\'s key fingerprint with the server\'s owner, and check your own ssh config for a HostName or Port that renames this host and for a jump host.';
 const TOLD_C = { install: SENTENCE_C, bridge: `The bridge to "box" is not open: ${SENTENCE_C}` };
 const TOLD_D = { install: SENTENCE_D, bridge: `The bridge to "box" could not be checked: ${SENTENCE_D}` };
 
@@ -176,7 +176,7 @@ test('S4: an unpinned call is told nothing, whatever its ssh printed', () => {
   }
 });
 
-test('S5: sentence D, word for word, and sentence C as E1 wrote it', () => {
+test('S5: sentence D, word for word, and sentence C with the comparison the gate of E2 added to it', () => {
   const unnamedHostKeySentence = exported<(name: string) => string>('unnamedHostKeySentence');
   const refusedHostKeySentence = exported<(name: string) => string>('refusedHostKeySentence');
 
@@ -189,6 +189,10 @@ test('S6: sentence D never tells the person to replace, trust or forget a saved 
   const sentence = unnamedHostKeySentence('box');
 
   assert.match(sentence, /Do not replace a saved key because of this message\./);
+  // The gate of G1 E2 (2026-11-19): Connect's own line still takes the person's other trust sources (candidate C4), so D must not send the person there.
+  assert.doesNotMatch(sentence, /Connect/);
+  assert.match(sentence, /fingerprint with the server's owner/);
+  assert.match(sentence, /HostName or Port that renames this host and for a jump host/);
   assert.doesNotMatch(sentence, /did not present|was rebuilt|Trust and connect|[Ff]orget|is not open/);
 });
 
