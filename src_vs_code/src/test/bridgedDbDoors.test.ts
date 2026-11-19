@@ -1,15 +1,17 @@
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { parseAuditLine } from '../agentAuditLog';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
 import { statusForErrorCode } from '../brokerProtocol';
 import type { DbClient, DbProfileRow } from '../bridgedDbProfile';
 import { notStarted } from '../requestLife';
 import type { DbType } from '../types';
 import { code, message } from './bridgeDoorHarness';
-import { Ask, send, sendAbortable, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { Ask, registryOf, send, sendAbortable, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 import { QueryOptions, QueryWorld, RECORDED, SERVED_BUILDS, foundPath, queryWorld } from './bridgedDbQueryWorld';
 import { materializedKeysDir } from '../materializedKeys';
+import { memento } from './bridgeModules';
 
 /**
  * The bridged road of a database `query` through the real doors, with the client check (E1.7 spec §S7.6 and §S7.11, DG7-DG11, DC13): what is spawned, in which order, from
@@ -223,5 +225,105 @@ test('DG2b (V4, T73): through the main port nothing is checked and nothing is ma
       assert.equal(qw.runs[0].cwd, undefined, `${entry.client}: no folder of the action's making`);
       assert.deepEqual(qw.keysFolders(), [], `${entry.client}: nothing was made under the keys folder`);
     });
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.7 V5 (§S7.8): the gate's refusal before the consent dialog, through the broker's own road
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** DR1 as the broker's journal holds it for a call that was refused before the dialog: the detail of the refusal's own line. */
+const DR1_TEXT = (client: string): string => `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${SYSTEM_WORD[process.platform] ?? process.platform} is not among them.`;
+
+/** The broker's journal lines of the calls a world made (the share that hands the world its token is setup, not a call). */
+const callLines = (ww: Awaited<ReturnType<typeof wallWorld>>, since: number): string[] => ww.w.audit.slice(since).filter((line) => parseAuditLine(line)?.action === 'query');
+
+const NOW = 1_700_000_000_000;
+
+/** The grants of single calls the broker holds: a refused call leaves none. */
+const callGrants = (ww: Awaited<ReturnType<typeof wallWorld>>): number => [...registryOf(ww).grants.values()].filter((grant) => grant.scope === 'call').length;
+
+const askOf = (door: 'token' | 'mcp', token: string): Ask => (door === 'token' ? { path: '/v1/use/query', token, body: { query: 'select 1' } } : query());
+
+/** The outcome and the detail of a journal line. */
+function outcomeAndDetail(line: string): [string | undefined, string | undefined] {
+  const parsed = parseAuditLine(line);
+  assert.ok(parsed !== undefined, `a journal line: ${line}`);
+  return [parsed.outcome, parsed.detail];
+}
+
+/** One refused call of DG5: the body, the one journal line and its detail, and every thing that must not have happened. */
+async function refusedBeforeTheDialog(entry: (typeof ENTRIES)[number], door: 'token' | 'mcp'): Promise<void> {
+  const qw = await queryWorld(entry.dbType, entry.connection);
+  const ww = await wallWorld({ query: qw.action, e1Db: entry.dbType });
+  try {
+    const token = await ww.tokenFor('a1', 'e1', 'prod');
+    const since = ww.w.audit.length;
+    const ask = askOf(door, token);
+
+    const reply = await send(viaBridge(ww.bridge), ask);
+
+    const what = `${entry.client} through ${door}`;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [...GENERIC], `${what}: the generic body`);
+    const lines = callLines(ww, since);
+    assert.equal(lines.length, 1, `${what}: one journal line for the call`);
+    assert.deepEqual(outcomeAndDetail(lines[0]), ['not_supported', DR1_TEXT(entry.client)], `${what}: its detail is DR1`);
+    assert.equal(lines[0].includes(BRIDGE_USE_REFUSED('prod')), false, `${what}: and not the generic sentence`);
+    assert.equal(ww.w.dialogs.length, 0, `${what}: nobody was asked`);
+    assert.equal(qw.reads.count, 0, `${what}: the stored connection was not read`);
+    assert.deepEqual([qw.runs, qw.journal], [[], []], `${what}: nothing was spawned and the action never ran`);
+    assert.equal(callGrants(ww), 0, `${what}: no grant of the call is left (usable dropped it)`);
+    // The spec (§S7.8) says a second call with the token is answered as an unknown token; the code does not: a bridged token call rides a grant of its own and the token only
+    // authenticates it (brokerCall.ts), so usable drops the call's grant and the token lives on. It is refused the same way, before any dialog.
+    const again = door === 'token' ? await send(viaBridge(ww.bridge), ask) : reply;
+    assert.deepEqual([again.status, code(again), message(again)], [...GENERIC], `${what}: a second call is refused the same way`);
+    assert.equal(ww.w.dialogs.length, 0, `${what}: and still before any dialog`);
+  } finally {
+    ww.dispose();
+  }
+}
+
+test('DG5 (V5, T78, T79): a wall built by wallSuppliersOf over a table that serves no row for the client answers a bridged query by a token and by MCP before the dialog: the generic body, one journal line whose detail is DR1, no dialog, no read of the stored connection, nothing spawned, and the grant of the call is gone', async () => {
+  for (const entry of ENTRIES) {
+    await refusedBeforeTheDialog(entry, 'token');
+    await refusedBeforeTheDialog(entry, 'mcp');
+  }
+});
+
+test('DG6 (V5): DG5 under each consent policy of the entry: the same refusal, still before any dialog', async () => {
+  for (const ask of ['always', 'every12h', 'never'] as const) {
+    for (const entry of ENTRIES) {
+      const qw = await queryWorld(entry.dbType, entry.connection);
+      const ww = await wallWorld({ query: qw.action, e1Db: entry.dbType, consent: { ask, state: memento(), now: () => NOW } });
+      try {
+        const since = ww.w.audit.length;
+
+        const reply = await send(viaBridge(ww.bridge), query());
+
+        const what = `${entry.client} under ${ask}`;
+        assert.deepEqual([reply.status, code(reply), message(reply)], [...GENERIC], `${what}: the generic body`);
+        assert.equal(parseAuditLine(callLines(ww, since)[0])?.detail, DR1_TEXT(entry.client), `${what}: DR1 in the journal`);
+        assert.equal(ww.w.dialogs.length, 0, `${what}: no dialog`);
+        assert.deepEqual([qw.reads.count, qw.runs.length], [0, 0], `${what}: nothing read, nothing spawned`);
+      } finally {
+        ww.dispose();
+      }
+    }
+  }
+});
+
+test('DG5b (V5): control — the same entries behind a table that serves the pair are asked once and run, with the wall built by the same function', async () => {
+  for (const entry of ENTRIES) {
+    const qw = await queryWorld(entry.dbType, entry.connection, SERVED_BUILDS, { check: 'real' });
+    const ww = await wallWorld({ query: qw.action, e1Db: entry.dbType, gate: { profiles: SERVED_BUILDS, platform: process.platform } });
+    try {
+      const reply = await send(viaBridge(ww.bridge), query());
+
+      assert.equal(reply.status, 200, `${entry.client}: ${reply.body}`);
+      assert.equal(ww.w.dialogs.length, 1, `${entry.client}: a person was asked`);
+      assert.deepEqual(kinds(qw), ['version', 'query'], `${entry.client}: and the client was started`);
+    } finally {
+      ww.dispose();
+    }
   }
 });

@@ -564,7 +564,7 @@ export class CredsAgentServer implements vscode.Disposable {
     const refused = validated.ok ? referenceRefusal(grant, this.hooks.bridgeWall) : validationRefusal(validated);
     if (refused !== undefined) {
       this.grants.drop(grant.secret);
-      this.respondError(res, refused.code, refused.message, grant, action, undefined, who.via, who.caller);
+      this.respondError(res, refused.code, refused.message, grant, action, refused.detail, who.via, who.caller);
       return undefined;
     }
     return useAction;
