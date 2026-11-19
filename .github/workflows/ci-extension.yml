@@ -524,6 +524,25 @@ jobs:
       - name: The builds every leg of this job ran
         run: node scripts/bridged-db-builds.cjs
 
+      # Legs (u) and (v) of the E1.7 spec (§S7.12) as ASSERTIONS, last in the job (their rigs are the probes' own: a Kerberos realm, real servers, the clients of this image). Each leg is built by the real
+      # builder under the verdict of the real client check, handed the production table with one candidate row put in until a row is served and the production table alone after (§S7.7); a leg whose
+      # control is not shown is printed BLOCKING for a candidate and fails a served pair. `BRIDGED_DB_JOB` names this job for the lock of `scripts/lib/dbServedJobs.cjs` (DP21).
+      - name: Assert leg (u), psql, through the real client check and the real builder
+        if: runner.os == 'Linux'
+        env:
+          BRIDGED_DB_SYSTEM_RIG: '1'
+          BRIDGED_DB_JOB: database-clients-${{ matrix.os }}
+          PE1_MARIADB_IMAGE: mariadb@sha256:7d829180b5b2a9ba74f6242876ab401a0d7dd338a807e522ef92bc9698760f20
+        run: node scripts/bridged-psql-assert-itest.cjs
+
+      - name: Assert leg (v), the mysql clients, through the real client check and the real builder
+        if: runner.os == 'Linux'
+        env:
+          BRIDGED_DB_SYSTEM_RIG: '1'
+          BRIDGED_DB_JOB: database-clients-${{ matrix.os }}
+          PE1_MARIADB_IMAGE: mariadb@sha256:7d829180b5b2a9ba74f6242876ab401a0d7dd338a807e522ef92bc9698760f20
+        run: node scripts/bridged-mysql-assert-itest.cjs
+
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
   # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
@@ -650,6 +669,14 @@ jobs:
       - name: The builds every leg of this job ran
         run: node scripts/bridged-db-builds.cjs
 
+      # Leg (w) of the E1.7 spec (§S7.12) as an ASSERTION, last in the job: the real client check and the real builder, the production table with one candidate row put in until a row is served and the
+      # production table alone after (§S7.7); a leg whose control is not shown is printed BLOCKING for a candidate and fails a served pair. `BRIDGED_DB_JOB` names this job for the lock (DP21).
+      - name: Assert leg (w), sqlcmd, through the real client check and the real builder
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+          BRIDGED_DB_JOB: bridged-ps1-linux
+        run: node scripts/bridged-sqlcmd-itest.cjs
+
   # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
   # Microsoft's installer against its own SHA-256; the package file itself is checked here against a SHA-512 written in this workflow), mixed mode so that a SQL login exists. The control is the
   # runner's own logon (a sysadmin through BUILTIN\Administrators). If the install or the TCP switch does not hold, every `sqlcmd` pair on Windows is unmeasured: the harness says so.
@@ -740,3 +767,11 @@ jobs:
 
       - name: The builds every leg of this job ran
         run: node scripts/bridged-db-builds.cjs
+
+      # Leg (w) of the E1.7 spec (§S7.12) as an ASSERTION, last in the job: the real client check and the real builder, the production table with one candidate row put in until a row is served and the
+      # production table alone after (§S7.7); a leg whose control is not shown is printed BLOCKING for a candidate and fails a served pair. `BRIDGED_DB_JOB` names this job for the lock (DP21).
+      - name: Assert leg (w), sqlcmd, through the real client check and the real builder
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+          BRIDGED_DB_JOB: bridged-ps1-windows
+        run: node scripts/bridged-sqlcmd-itest.cjs

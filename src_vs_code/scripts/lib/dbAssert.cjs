@@ -12,6 +12,7 @@
 // that sets no name for a family whose pair the production table serves fails (the lock).
 //
 // Nothing here prints a credential: it reads what the legs printed, and prints their words back, clipped.
+const path = require('node:path');
 const { SERVED_JOBS, servedBuilds, keyOf, wordsOf } = require('./dbServedJobs.cjs');
 const { rulesFor, legsOf } = require('./dbAssertRules.cjs');
 
@@ -63,7 +64,7 @@ function judge(rule, ledger, statusOf) {
     return { id: rule.id, status: 'not shown', why: `its positive control ${rule.after} is ${statusOf(rule.after)}` };
   }
   if (records.length < (rule.min ?? 1)) {
-    const missing = ledger.find((entry) => entry.kind === 'unmeasured' && (entry.leg === rule.leg || rule.leg.startsWith(`${entry.leg}-`) || entry.leg.startsWith(rule.leg)));
+    const missing = ledger.find((entry) => entry.kind === 'unmeasured' && (entry.leg === rule.leg || rule.leg.startsWith(`${entry.leg}-`) || entry.leg.startsWith(rule.leg) || rule.u?.test(entry.leg) === true));
     return missing === undefined ? { id: rule.id, status: 'not run', why: `no record (${rule.leg}) was printed` } : { id: rule.id, status: 'not shown', why: `UNMEASURED ${missing.leg}: ${missing.text.slice(0, 140)}` };
   }
   if (rule.noStop === true && legs.some((entry) => entry.kind === 'stop')) {
@@ -146,6 +147,9 @@ function report(family, assessed, lock, log = console.log) {
       log(`BLOCKING ${client.name} ${blocked.id}: ${blocked.why}`);
     }
   }
+  if (assessed.clients.length === 0) {
+    log(`BLOCKING ${family}: no client of this family was read by the real check on this runner (no CANDIDATE or PRODUCTION line was printed)`);
+  }
   for (const problem of lock) {
     log(problem);
   }
@@ -154,4 +158,16 @@ function report(family, assessed, lock, log = console.log) {
   return code;
 }
 
-module.exports = { parseLine, ledgerOf, tapped, judge, judgeAll, assessFamily, lockCheck, shadowProblems, report, legsOf, keyOf };
+/**
+ * The ending every assertion harness shares: the lines its legs printed, judged for `family`, the lock of this job applied to the PRODUCTION table (`out/bridgedDbProfile.js`), and the report. Answers the exit code.
+ */
+function conclude(family, lines) {
+  const rows = require(path.join(__dirname, '..', '..', 'out', 'bridgedDbProfile.js')).BRIDGED_DB_PROFILES;
+  const ledger = ledgerOf(lines);
+  const assessed = assessFamily(family, ledger);
+  const ci = process.env.CI === 'true';
+  const lock = [...shadowProblems(ledger, rows, ci), ...lockCheck({ family, platform: process.platform, job: process.env.BRIDGED_DB_JOB, ci, rows, assessed, ledger })];
+  return report(family, assessed, lock);
+}
+
+module.exports = { conclude, parseLine, ledgerOf, tapped, judge, judgeAll, assessFamily, lockCheck, shadowProblems, report, legsOf, keyOf };

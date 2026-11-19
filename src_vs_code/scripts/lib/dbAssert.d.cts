@@ -44,5 +44,6 @@ export function lockCheck(parts: {
 }): string[];
 export function shadowProblems(ledger: Entry[], rows: readonly DbProfileRow[], ci: boolean): string[];
 export function report(family: string, assessed: Assessment, lock: string[], log?: (line: string) => void): number;
+export function conclude(family: string, lines: string[]): number;
 export function legsOf(family: string, vendor: string): string[];
 export function keyOf(build: unknown): string;

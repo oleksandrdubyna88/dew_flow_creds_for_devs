@@ -30,8 +30,17 @@ const wordsOf = (build) => `${build.client} ${build.vendor} ${build.version} ${J
 /** The steps of a workflow file: the text from one `- name:` line to the next. */
 const stepsOf = (workflow) => workflow.split(/\n\s*- name:/).slice(1);
 
-/** Whether the workflow has a step that sets `BRIDGED_DB_JOB: <job>` and runs `scripts/<harness>`. */
-const hasJobStep = (workflow, job, harness) => stepsOf(workflow).some((step) => step.includes(`BRIDGED_DB_JOB: ${job}`) && step.includes(`scripts/${harness}`));
+/** `${{ matrix.os }}` of a job name in the workflow: any one image name of the job's matrix. */
+const MATRIX_OS = '${{ matrix.os }}';
+
+/** The pattern a `BRIDGED_DB_JOB: <name>` of a step stands for: the name itself, with `${{ matrix.os }}` for any one image name. */
+const patternOf = (name) => new RegExp(`^${name.split(MATRIX_OS).map((part) => part.replaceAll(/\W/g, (char) => `\\${char}`)).join('[A-Za-z0-9._-]+')}$`);
+
+/** The job names a step sets. */
+const namesOfStep = (step) => [...step.matchAll(/BRIDGED_DB_JOB: ([^\r\n]+)/g)].map((found) => patternOf(found[1].trim()));
+
+/** Whether the workflow has a step that sets `BRIDGED_DB_JOB: <job>` (a matrix name names each of its images) and runs `scripts/<harness>`. */
+const hasJobStep = (workflow, job, harness) => stepsOf(workflow).some((step) => step.includes(`scripts/${harness}`) && namesOfStep(step).some((name) => name.test(job)));
 
 /**
  * The problems of the lock, as sentences (DP21): every served build stands in at least one job's list; every entry of a list is a served build, with the legs of its vendor and no others; every job a list

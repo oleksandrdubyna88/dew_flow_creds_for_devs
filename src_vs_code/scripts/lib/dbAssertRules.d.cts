@@ -8,6 +8,7 @@ export interface Expectation {
   after?: string;
   na?: string;
   noStop?: boolean;
+  u?: RegExp;
 }
 
 export function rulesFor(family: string, vendor: string, name: string): Expectation[];

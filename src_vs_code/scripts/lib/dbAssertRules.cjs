@@ -9,6 +9,7 @@
 //   match  what the text of a record of that leg must say; `mode` is `any` (some record says it: the default, since a leg id is shared by lines of several cases) or `all` (every record says it);
 //   min    how many records of the leg there must be (default 1);
 //   after  the id of the expectation that is the POSITIVE CONTROL of this one: while that is not shown, this one is not judged (R4: `not shown`);
+//   u      (derived) the UNMEASURED lines of a group that explain a leg with no record;
 //   na     the id of a record that says the leg is not this client's road (a plugin the parent's list does not name for MariaDB's client): the expectation is then not applicable;
 //   noStop a `STOP (<leg>)` line of the same leg is a failure.
 // A leg whose control printed `UNMEASURED` is `not shown`, and one that printed nothing is `not run`. The words each `match` looks for are fixed words of the legs: a leg that stops saying them
@@ -85,12 +86,16 @@ function sqlcmdRules(name, vendor) {
   return [...common, ...(vendor === 'go-sqlcmd' ? go : odbc)];
 }
 
+/** The `UNMEASURED` lines that explain a leg that printed no record: a probe leg that could not start its rig prints one line for the whole group (`UNMEASURED PE1 psql: no server`). */
+const UNMEASURED_OF = [[/^PE1/, /^PE1/], [/^PP1/, /^PP1/], [/^PS1/, /^PS1/], [/^PK1-/, /^PK1-m/]];
+const withUnmeasured = (rules) => rules.map((rule) => ({ ...rule, u: UNMEASURED_OF.find(([id]) => id.test(rule.id))?.[1] }));
+
 /** The expectations of a family for one client of it (`name` is what the harness named it). */
 function rulesFor(family, vendor, name) {
   if (family === 'psql') {
-    return PSQL;
+    return withUnmeasured(PSQL);
   }
-  return family === 'mysql' ? mysqlRules(name, vendor) : sqlcmdRules(name, vendor);
+  return withUnmeasured(family === 'mysql' ? mysqlRules(name, vendor) : sqlcmdRules(name, vendor));
 }
 
 /** The ids of the legs a build of this vendor must run (§S7.7: a job's list names them): what `rulesFor` holds, with no client's name in it. */

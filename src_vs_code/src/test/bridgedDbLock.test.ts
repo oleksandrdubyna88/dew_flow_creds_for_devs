@@ -6,7 +6,7 @@ import { BRIDGED_DB_PROFILES, type DbProfileRow, type DbServedClient } from '../
 import { assessFamily, judgeAll, ledgerOf, lockCheck, parseLine, report, shadowProblems } from '../../scripts/lib/dbAssert.cjs';
 import { rulesFor } from '../../scripts/lib/dbAssertRules.cjs';
 import { tableWith } from '../../scripts/lib/dbCandidates.cjs';
-import { HARNESS_OF, SERVED_JOBS, lockProblems } from '../../scripts/lib/dbServedJobs.cjs';
+import { HARNESS_OF, SERVED_JOBS, hasJobStep, lockProblems } from '../../scripts/lib/dbServedJobs.cjs';
 
 /**
  * The CI lock and the assertion legs of the E1.7 spec (§S7.7 "The lock in CI", §S7.12, rule R4): DP20 (the candidate rows), DP21 (the lock: every served build is in a job's list with its legs, every entry
@@ -27,8 +27,20 @@ test('DP21: the production table, the jobs\' list and the workflow agree: with n
   assert.deepEqual(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: WORKFLOW, legsOf }), []);
   assert.deepEqual(Object.values(SERVED_JOBS).flat(), [], 'and the list is empty with it');
   for (const harness of Object.values(HARNESS_OF) as string[]) {
-    assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'scripts', harness)) || harness.includes('assert') || harness.includes('sqlcmd'), true, harness);
+    assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'scripts', harness)), true, `${harness} is a file of scripts/`);
   }
+});
+
+const JOBS_OF_THE_WORKFLOW: ReadonlyArray<readonly [string, string]> = [
+  ['database-clients-ubuntu-22.04', 'psql'], ['database-clients-ubuntu-24.04', 'mysql'], ['database-clients-ubuntu-latest', 'psql'], ['database-clients-ubuntu-latest', 'mysql'],
+  ['bridged-ps1-linux', 'sqlcmd'], ['bridged-ps1-windows', 'sqlcmd'],
+];
+
+test('DP21: the workflow runs each assertion harness in the jobs that will name their builds: the database-clients matrix (psql and mysql, on Linux) and both PS1 jobs (sqlcmd); nothing else runs one', () => {
+  for (const [job, family] of JOBS_OF_THE_WORKFLOW) {
+    assert.equal(hasJobStep(WORKFLOW, job, HARNESS_OF[family]), true, `${job} runs ${HARNESS_OF[family]}`);
+  }
+  assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux', HARNESS_OF.psql), false, 'and the PS1 jobs run only the sqlcmd one');
 });
 
 test('DP21: a served build stands in a job\'s list with the legs of its vendor, and the job is a step of the workflow that sets its name and runs the family\'s harness; each way it is not, the lock says so', () => {

@@ -87,6 +87,9 @@ const HARNESSES = [
   { name: 'bridged-db-pe1', script: 'bridged-db-pe1-itest.cjs', needs: 'PostgreSQL server binaries (initdb), mysqld, and (optional) a MariaDB image named by PE1_MARIADB_IMAGE (Linux)', windows: false },
   { name: 'bridged-db-pp1', script: 'bridged-db-pp1-itest.cjs', needs: 'PostgreSQL server binaries (initdb) and mysqld; the MySQL half needs the default socket folder, which only a CI run with BRIDGED_DB_SYSTEM_RIG=1 makes (Linux)', windows: false },
   { name: 'bridged-db-pa1', script: 'bridged-db-pa1-itest.cjs', needs: 'the database clients this machine has (a record harness: a missing one is printed as UNMEASURED; CI installs them)', windows: false },
+  { name: 'bridged-psql-assert', script: 'bridged-psql-assert-itest.cjs', needs: "leg (u) of the E1.7 spec: PostgreSQL's psql, and on a CI runner whose step sets BRIDGED_DB_SYSTEM_RIG=1 the Kerberos realm and the real server; elsewhere the road legs print UNMEASURED and the candidate run prints BLOCKING (Linux)", windows: false },
+  { name: 'bridged-mysql-assert', script: 'bridged-mysql-assert-itest.cjs', needs: "leg (v) of the E1.7 spec: Oracle's mysql and MariaDB's client, the Kerberos realm, mysqld and a MariaDB image named by PE1_MARIADB_IMAGE; elsewhere the legs print UNMEASURED and the candidate run prints BLOCKING (Linux)", windows: false },
+  { name: 'bridged-sqlcmd', script: 'bridged-sqlcmd-itest.cjs', needs: 'leg (w) of the E1.7 spec: the PS1 rigs (a SQL Server container or Express, go-sqlcmd, the ODBC sqlcmd) on a CI runner with BRIDGED_DB_SYSTEM_RIG=1; elsewhere the legs print UNMEASURED and the candidate run prints BLOCKING', windows: true },
   {
     // The one harness outside this directory: it drives the SERVER binary, so it lives in the
     // server's tree and runs on the server's CI path filter. `itest:all` still covers it, because a
