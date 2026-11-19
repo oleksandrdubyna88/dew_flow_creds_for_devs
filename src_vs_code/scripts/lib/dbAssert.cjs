@@ -94,9 +94,9 @@ const clientsOf = (ledger) => ledger.filter((entry) => entry.kind === 'table');
  */
 function assessFamily(family, ledger) {
   const seen = clientsOf(ledger).filter((entry) => entry.client === family);
-  const unique = [...new Map(seen.map((entry) => [`${entry.vendor}|${entry.name}`, entry])).values()];
+  const unique = [...new Map(seen.map((entry) => [`${entry.vendor}|${entry.version}|${entry.tag}|${entry.driver ?? ''}`, entry])).values()];
   const clients = unique.map((client) => {
-    const served = seen.filter((entry) => entry.vendor === client.vendor && entry.name === client.name).every((entry) => entry.mode === 'PRODUCTION');
+    const served = seen.filter((entry) => keyOf(entry) === keyOf(client)).every((entry) => entry.mode === 'PRODUCTION');
     const results = judgeAll(rulesFor(family, client.vendor, client.name), ledger);
     const failed = results.filter((result) => result.status === 'FAIL' || (served && result.status !== 'pass' && result.status !== 'n/a'));
     return { ...client, served, results, failed, blocking: results.filter((result) => result.status === 'not shown' || result.status === 'not run') };
