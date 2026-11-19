@@ -189,7 +189,7 @@ test('DC4c: a line is read where the client prints it: go-sqlcmd\'s first line i
   assert.equal(LINES.filter((one) => one.vendor === 'odbc-sqlcmd').every((one) => /^\d+\.\d+\.\d{4}\.\d+$/.test(one.version)), true, 'the recorded ODBC versions are 18.6.0001.1, not 18.6.1.1');
   for (const line of LINES.filter((one) => one.client === 'mysql' && one.platform === 'linux')) {
     const answer = dbClientVerdict([rowOf('mysql', 'linux')], 'mysql', 'linux', 0, line.stdout);
-    assert.equal(/\/usr|\/home/.test(sentenceOf(answer)), false, `${line.id}: no path in the sentence`);
+    assert.equal(/\/(?:usr|home)\//.test(sentenceOf(answer)), false, `${line.id}: no path in the sentence`);
   }
 });
 
