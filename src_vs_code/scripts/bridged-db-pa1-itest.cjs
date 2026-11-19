@@ -17,7 +17,9 @@
 //   PA1-f  each `sqlcmd` with each candidate flag
 //   PA1-g  an older `psql` in a container (`PA1_OLD_PSQL_IMAGES`, a comma list of image digests the workflow pulled) with the string V3 will write
 //   PA1-h  what the runner carries
-//   PA1-i  which file the program word `psql` is, and whether a `~/.postgresqlrc` in the home folder can make the version start and the query start differ (Debian and Ubuntu)
+//   PA1-i  which file the program word `psql` is, and whether a `~/.postgresqlrc` in the home folder can make the version start and the query start differ (Debian and Ubuntu): the program each of the two
+//          spawns started, with and without a marker that names a REMOTE cluster and one that names a LOCAL cluster of the other installed major (a real cluster made with that major's own
+//          pg_createcluster under the system rig, dropped by the scope); a wrapper that follows neither is UNMEASURED, with the reason
 //
 // Clients are found by `BRIDGED_PSQL`, `BRIDGED_MYSQL_ORACLE`, `BRIDGED_MYSQL_ORACLE_OWN` (Oracle's own build, a second `oracle` client), `BRIDGED_MYSQL_MARIADB`, `BRIDGED_SQLCMD_GO`,
 // `BRIDGED_SQLCMD_ODBC`, else by `PATH`. With `CI=true` on Linux a missing `psql`, Oracle's `mysql` or MariaDB's client FAILS; any other missing client is `UNMEASURED`, with its name. Off CI nothing
@@ -47,7 +49,7 @@ async function legsOf(scope, client, shared) {
     await clients.legE(scope, client, shared);
   } else {
     if (client.family === 'odbc-sqlcmd') {
-      await clients.odbcDriver(client, shared);
+      client.driver = await clients.odbcDriver(client, shared);
     }
     await clients.legF(scope, client, shared);
   }
@@ -75,7 +77,8 @@ async function main(scope) {
   const home = path.join(dir, 'rig home');
   fs.mkdirSync(home, { recursive: true });
   const shared = { product, dir, home, absentFile: product.materializedKeyPath(dir, 'no-client-file') };
-  console.log(`PA1: node ${process.version}; ${process.platform}/${process.arch}; CI=${process.env.CI ?? ''}`);
+  console.log(`PA1: node ${process.version}; ${process.platform}/${process.arch}; CI=${process.env.CI ?? ''}; system rig ${rig.mayWriteSystem() ? 'on' : 'off'}`);
+  console.log(`record (R1) the runner image of this job: ${rig.runnerImage()}`);
   wrapper.legH();
   const families = familiesOfRun();
   const found = discover().filter((client) => families.includes(client.family));

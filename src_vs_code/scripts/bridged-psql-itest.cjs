@@ -40,6 +40,7 @@ const R = require('./lib/psqlRig.cjs');
 const { check, failureCount } = require('./lib/psqlCheck.cjs');
 const { legPQ2 } = require('./lib/psqlProbeLegs.cjs');
 const candidates = require('./lib/dbCandidates.cjs');
+const { registerRan } = require('./lib/dbProbeClients.cjs');
 const { PD2_PASSWORD_MARKER, PD3_MARKER_CN, holdsMarker, described, versionOf, psqlRun, throwawayCertificate } = R;
 
 const OUT = path.join(__dirname, '..', 'out');
@@ -199,6 +200,7 @@ async function main(scope) {
   if (version === undefined) {
     check('the psql client is installed', process.env.CI !== 'true', `${exe} is missing (the postgresql-client package) — a skipped leg on the runner proves nothing`);
   } else {
+    registerRan([{ name: 'psql', family: 'psql', exe, via: 'BRIDGED_PSQL' }]); // the job's last line lists the clients whose legs ran (BRIDGED_BUILDS_FILE)
     const dir = ownedDir(scope, 'bridged-psql');
     const product = { ...require(path.join(OUT, 'dbCliLauncher.js')), ...require(path.join(OUT, 'bridgedSshEnv.js')), ...require(path.join(OUT, 'materializedKeys.js')) };
     // Every production launch below is built under the verdict of the REAL database client check, asked of this very client under the candidate table (§S7.7, §S7.12).

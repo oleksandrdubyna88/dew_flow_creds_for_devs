@@ -41,7 +41,9 @@ function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord 
   if (built === undefined) {
     throw new Error('buildDbQueryLaunch refused the entry of a PS1 leg that must launch (it stores a user and a password and names only the profile, under a good verdict of the real client check)');
   }
-  const args = [...built.args];
+  // The control (no user) is the launch as it was built until §S6.15: no user, no password and no candidate flag. go-sqlcmd with `--authentication-method=SqlPassword` and no user asks for a password on a
+  // terminal and ends before it connects (the third run's `liner: function not supported in this terminal`), so the flag stays out of the control; a candidate is a leg's own to add, by hand.
+  const args = built.args.filter((arg) => !(nouser && /^--authentication-method=/.test(arg)));
   if (host !== undefined) {
     args[args.indexOf('-S') + 1] = host;
   }
@@ -73,8 +75,15 @@ async function observe(ctx, client, options) {
   };
 }
 
+/**
+ * What go-sqlcmd says when it asks for a password on a terminal and has none (stdin of every run here is /dev/null, and a prompt needs a terminal): it ends before it connects. The record says so, so that the line is
+ * read as the client's own answer to a user with no password and not as a rig that failed to start the client.
+ */
+const NEEDS_TERMINAL = /liner: function not supported in this terminal/;
+const terminalNote = (said) => (NEEDS_TERMINAL.test(said) ? ' (the client asked for a password on a terminal, which a run with stdin at /dev/null has none of, and ended before it connected: this is its answer to a SQL login with no password in reach)' : '');
+
 /** The words of one observation for a record line. */
-const wordsOf = (seen) => `exit ${seen.code}; ${seen.scheme === undefined ? 'no session was made' : `the server logged the session in as ${JSON.stringify(seen.who)} by ${seen.scheme}`}; the server's log ${seen.madeAs === undefined ? '' : `says the session was made as ${seen.madeAs}; it `}${seen.lines.length === 0 ? 'names no attempt' : `names: ${JSON.stringify(seen.lines.slice(0, 3))}`}; the client said ${JSON.stringify(seen.said)}`;
+const wordsOf = (seen) => `exit ${seen.code}; ${seen.scheme === undefined ? 'no session was made' : `the server logged the session in as ${JSON.stringify(seen.who)} by ${seen.scheme}`}; the server's log ${seen.madeAs === undefined ? '' : `says the session was made as ${seen.madeAs}; it `}${seen.lines.length === 0 ? 'names no attempt' : `names: ${JSON.stringify(seen.lines.slice(0, 3))}`}; the client said ${JSON.stringify(seen.said)}${terminalNote(seen.said)}`;
 
 /** PS1-0 on one client: the positive control. `{ shown, text }`. */
 async function control(ctx, client) {

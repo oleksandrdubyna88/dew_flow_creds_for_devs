@@ -26,6 +26,7 @@ const { startSqlServer } = require('./lib/psSqlServer.cjs');
 const { ps1Legs } = require('./lib/psLegs.cjs');
 
 const { realVersion, buildsRecord } = require('./lib/dbProbeClients.cjs');
+const { odbcDriver } = require('./lib/dbPa1Clients.cjs');
 
 const { check, versionLine, systemRig } = probe;
 
@@ -70,6 +71,10 @@ async function main(scope) {
     const home = path.join(dir, 'rig home');
     fs.mkdirSync(home, { recursive: true });
     const product = probe.productOf();
+    if (odbc !== undefined) {
+      // The ODBC client's verdict is bound to the driver library it loads as well as to its own build (spec L11): the library each run loaded is read here, in the job of the legs.
+      odbc.driver = await odbcDriver({ ...odbc, family: 'odbc-sqlcmd' }, { product, home });
+    }
     const q = await startSqlServer(scope, path.join(dir, 'q'), go.exe).catch((error) => {
       check('rig Q: the receiver was built', false, error.message);
       return { ok: false, why: error.message };
