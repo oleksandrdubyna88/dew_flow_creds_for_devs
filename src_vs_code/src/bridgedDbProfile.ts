@@ -25,7 +25,7 @@ const SYSTEMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin'];
 export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => ({ client, platform, served: false })));
 
 /** The client a type is launched as, when it has one a profile can name. */
-function profileClientOf(dbType: DbType): DbClient | undefined {
+export function profileClientOf(dbType: DbType): DbClient | undefined {
   return CLIENTS.find((client) => client === clientNameOf(dbType));
 }
 
@@ -390,16 +390,29 @@ export function bridgedDbConnection(dbType: DbType, stored: string, entityName: 
 /** A value of a libpq keyword string: in single quotes, a backslash before every backslash and every quote. */
 const quoted = (value: string): string => `'${value.replaceAll(/[\\']/g, '\\$&')}'`;
 
+/** libpq's own default port, written whenever the entry names none (see `bridgedPsqlString`). */
+const POSTGRES_PORT = '5432';
+
+/**
+ * The authentication controls of `psql` (E1.7 spec §S7.5; probes PK1 and PE1, 2026-11-19): no GSS encryption request and no token made from a ticket, no client certificate, and a login the
+ * server grants only by one of the three password methods PE1 logged in with (a method a later libpq adds is refused: the list never grows by itself). Constants: nothing of a stored
+ * connection reaches them, and a stored connection that names one of the keys is refused (DP4).
+ */
+const PSQL_CONTROLS: readonly Pair[] = [['gssencmode', 'disable'], ['sslcertmode', 'disable'], ['require_auth', 'password,md5,scram-sha-256']];
+
 /**
  * The one keyword string `psql` is given after `--` for a built connection: `host`, `port`, `dbname`, `user`, the settings, then `passfile`, `sslcert` and `sslkey`
- * at `absentFile`. The controls come last because libpq takes the LAST value of a keyword written twice (PQ2-d3); no setting of the profile is one of them. There is no
- * `password` keyword, ever: the password travels in `PGPASSWORD`.
+ * at `absentFile`, then the three controls of `PSQL_CONTROLS`. The controls come last because libpq takes the LAST value of a keyword written twice (PQ2-d3); no setting of the
+ * profile is one of them. `host`, `port` and `dbname` are written EVERY time, with libpq's own defaults (5432; the user name) when the entry names none: Debian's and Ubuntu's
+ * `pg_wrapper` reads `~/.postgresqlrc` and fills any of the three that the string leaves out (PA1-i: 4 of 4; never one it names: 0 of 4). There is no `password` keyword, ever: the
+ * password travels in `PGPASSWORD`.
  */
 export function bridgedPsqlString(connection: Built, absentFile: string): string {
   const pairs: Pair[] = [
-    ['host', connection.host], ...Object.entries(optional('port', connection.port)), ...Object.entries(optional('dbname', connection.database)),
+    ['host', connection.host], ['port', connection.port ?? POSTGRES_PORT], ['dbname', connection.database ?? connection.user],
     ['user', connection.user], ...Object.entries(connection.settings),
     ['passfile', absentFile], ['sslcert', absentFile], ['sslkey', absentFile],
+    ...PSQL_CONTROLS,
   ];
   return pairs.map(([key, value]) => `${key}=${quoted(value)}`).join(' ');
 }

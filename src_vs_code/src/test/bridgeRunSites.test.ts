@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type { AgentUseDeps, dbQueryAction as DbQueryAction } from '../agentUseActions';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
 import type { DbProfileRow } from '../bridgedDbProfile';
+import type { DbClientCheck } from '../bridgedDbClient';
 import type { DbType, EntityMetadata } from '../types';
 import { LinksWorld, linksWorld } from './bridgeLinksWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
@@ -13,6 +14,8 @@ import { statusForErrorCode } from '../brokerProtocol';
 import { allowListedNames } from './bridgeLinksRun';
 import { code, message } from './bridgeDoorHarness';
 import { DR5, dr2, dr4, dr6 } from './bridgedDbCases';
+import type { DbVendor } from '../bridgedDbClient';
+import { FOUND, verdictOf } from './bridgedDbVerdicts';
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
@@ -72,7 +75,7 @@ async function queryWorld(dbType: DbType, connection: string, profiles?: readonl
     reads.count += 1;
     return read(accountId, entityId);
   };
-  const deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[] } = {
+  const deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck } = {
     storage,
     storageDir: '/unused',
     signal: new AbortController().signal,
@@ -83,10 +86,15 @@ async function queryWorld(dbType: DbType, connection: string, profiles?: readonl
     trustStore: { get: () => [], update: () => Promise.resolve() },
     applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
     onPath: () => true,
+    // A client check that passes: the vendor each client of the three types is read as. The check itself is the subject of `bridgedDbClient.test.ts` and of DG7-DG11 below.
+    dbClient: (call) => Promise.resolve(verdictOf(VENDOR_OF[call.client])),
     ...(profiles === undefined ? {} : { profiles }),
   };
   return { action: dbQueryAction(deps), spawns, journal, reads };
 }
+
+/** The vendor a passing check reads for each client. */
+const VENDOR_OF: Readonly<Record<'psql' | 'mysql' | 'sqlcmd', DbVendor>> = { psql: 'postgresql', mysql: 'oracle', sqlcmd: 'odbc-sqlcmd' };
 
 const QUERY_SENTENCE = 'The database client runs on this computer, using the connection stored in "prod". Its output goes back to the agent on that server.';
 const EXEC_SENTENCE = 'The connection starts on this computer; the command runs on "prod", and its output goes back to that server.';
@@ -117,7 +125,7 @@ const CLIENTS: readonly {
     command: 'psql',
     passwordEnv: 'PGPASSWORD',
     password: 'pw-one',
-    pointsAtTheEntry: ({ args }) => /^host='db\.example\.test' port='5433' dbname='orders' user='app' passfile='[^']*no-client-file' sslcert='[^']*no-client-file' sslkey='[^']*no-client-file'$/.test(args[args.length - 1]) && args[args.length - 2] === '--',
+    pointsAtTheEntry: ({ args }) => /^host='db\.example\.test' port='5433' dbname='orders' user='app' passfile='[^']*no-client-file' sslcert='[^']*no-client-file' sslkey='[^']*no-client-file' gssencmode='disable' sslcertmode='disable' require_auth='password,md5,scram-sha-256'$/.test(args[args.length - 1]) && args[args.length - 2] === '--',
   },
   {
     dbType: 'mysql',
@@ -160,7 +168,7 @@ test('C10 (change 6.2): every client through every door — the sentence says th
         // The observation beside them: one spawn, on this computer, of the client, never of a shell, pointed at the entry's own connection.
         assert.equal(qw.spawns.length, 1, `${what}: exactly one process was spawned, here`);
         const [spawn] = qw.spawns;
-        assert.equal(spawn.command, client.command, `${what}: the spawned program is the database client`);
+        assert.equal(spawn.command, FOUND[VENDOR_OF[client.command as 'psql' | 'mysql' | 'sqlcmd']], `${what}: the spawned program is the file the client check found, not the bare word`);
         assert.equal(spawn.shell, false, `${what}: no shell`);
         assert.ok(client.pointsAtTheEntry(spawn), `${what}: pointed at the entry's own host, port, user and database: ${spawn.args.join(' ')} ${spawn.env.SQLCMDUSER ?? ''}`);
         assert.equal(spawn.args.filter((arg) => arg.includes('select 1')).length, 1, `${what}: the agent's SQL is one argument to the client, run by the database`);
@@ -311,7 +319,9 @@ test('DG3 (§S6.15 Z1, Z2): under a table that serves the pair the bridged psql 
   const { postgres, mysql, mssql } = seen;
   assert.equal(postgres.args.some((arg) => arg.includes('postgresql://')), false, 'the stored URI is no argument');
   assert.deepEqual(postgres.args.slice(0, 4), ['-X', '-c', ' select 1', '--']);
-  assert.deepEqual(mysql.args.slice(0, 3), ['--no-defaults', '--protocol=TCP', '-h']);
+  assert.deepEqual(mysql.args.slice(0, 2), ['--no-defaults', '--protocol=TCP']);
+  assert.match(mysql.args[2], /^--plugin-dir=.*no-client-file$/);
+  assert.deepEqual([mysql.args[3], mysql.args[4]], ['--skip-enable-cleartext-plugin', '-h']);
   assert.equal(mssql.env.SQLCMDUSER, 'app');
 });
 

@@ -29,7 +29,8 @@ import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
-import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbConnection, bridgedDbPair } from './bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbConnection, bridgedDbPair, profileClientOf } from './bridgedDbProfile';
+import { DbClientCheck, DbClientOk, goodVerdict } from './bridgedDbClient';
 import { BRIDGE_USE_REFUSED } from './bridgeScope';
 import { fieldReadingOf } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
@@ -575,6 +576,15 @@ function bridgedDbConnectionRefusal(deps: Pick<AgentUseDeps, 'note'>, ctx: UseAc
   return connection.ok ? undefined : bridgedDbRefused(deps, ctx, connection.sentence);
 }
 
+/** The good verdict of the client check for a bridged call; `undefined` off a bridge, with no check, or when the client did not pass (the builder then answers no launch). */
+async function bridgedVerdict(deps: { dbClient?: DbClientCheck }, ctx: UseActionContext, dbType: DbType): Promise<DbClientOk | undefined> {
+  const client = profileClientOf(dbType);
+  if (ctx.bridge === undefined || client === undefined) {
+    return undefined;
+  }
+  return goodVerdict(await deps.dbClient?.({ client }));
+}
+
 /**
  * Query a DATABASE.
  *
@@ -586,7 +596,7 @@ function bridgedDbConnectionRefusal(deps: Pick<AgentUseDeps, 'note'>, ctx: UseAc
  */
 // eslint-disable-next-line max-lines-per-function
 export function dbQueryAction(
-  deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[] },
+  deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck },
 ): UseAction {
   return {
     kind: 'db',
@@ -657,7 +667,8 @@ export function dbQueryAction(
       // On a bridge the client is given a connection the builder writes from the entry's own fields (§S6.15 Z2), never the stored string, and is asked for the files it would read
       // under the person's `HOME` (`.mylogin.cnf`, `.pgpass`, `.postgresql/`) at a path in the keys folder that nothing ever writes (E1.6 §S6.14 Y6), built by the one sanctioned
       // builder as the call-free sentinel of `bridgedSshRefusals.ts` is. Those paths are a defence inside the profile; the lock is that no stored setting reaches the client.
-      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file') });
+      const verdict = await bridgedVerdict(deps, ctx, dbType);
+      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file'), verdict });
       if (launch === undefined) {
         return fail(
           'not_supported',
