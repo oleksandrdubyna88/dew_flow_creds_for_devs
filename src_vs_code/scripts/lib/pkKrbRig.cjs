@@ -29,6 +29,9 @@ function clientConfig(port) {
     '  dns_lookup_realm = false',
     '  rdns = false',
     '  dns_canonicalize_hostname = false',
+    // MIT 1.18+ appends the DNS search domain to a short name such as `localhost` (qualify_shortname); the second CI run asked for
+    // postgres/localhost.<the runner's domain> in that domain's realm. An empty value turns it off.
+    '  qualify_shortname = ""',
     '  udp_preference_limit = 1',
     '  default_ccache_name = FILE:/tmp/krb5cc_%{uid}', // NOSONAR: the MIT default, written out so that the client and the rig name one cache
     '[realms]',
