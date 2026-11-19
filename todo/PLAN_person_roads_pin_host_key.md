@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **epoch 2 approved 2026-11-18 (re-reviewed after the stop at entry 1.2), open, one change (2.1); E2 built and through the coai code gate (2026-11-19, `proceed` in every round, accepted findings fixed) on `fix/g1-e2-measurements`, unmerged (its PR waits for the owner: over the PR cap); E3 not built. Epic 1 merged (#379, `f3e9887d`), not released: no extension release from `main` (release-please #383 held) until E3 passes and the owner gives the word.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **stopped for re-review, 2026-11-19, at entry 2.2 (E3's M4 cannot pass as written; more E3 criteria to repair). E2 built and through the coai code gate on `fix/g1-e2-measurements`, unmerged (no merge of this plan's work until the re-review). Epic 1 merged (#379), not released; release-please #383 held.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). The revision replaces the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Every other candidate has a written disposition. E1's stories document is
@@ -91,9 +91,11 @@ Narrowed: no — the scope grows: the known repairs become a build epic (E2), an
   entry. The re-review passed on 2026-11-18: the coai document round on this file, `proceed`, three findings on E3's
   rows M11 and the release condition accepted and folded in before approval.)
 
-> Epoch 2 · approved 2026-11-18 · by reviewers · state: open
+> Epoch 2 · approved 2026-11-18 · by reviewers · state: stopped
 
 - 2.1 · 2026-11-18 · reviewer · scope — §3.11's refused kinds of a storage path grow from six to eight: a tilde at the start and a backslash at the end are refused too (measured by the E2.S2 spec author with `ssh -G` on OpenSSH 10.2p1: a leading tilde is expanded and a trailing backslash escapes the closing quote, so neither names the intended file). Recorded in the E2.S2 spec; tests hold them as pure cases. Also from the spec work, not changes: the kept answer of `ssh -V` is the newer-client answer only (consult 85d3babf, both: a kept older answer goes stale in the unsafe direction), which is §3.7's "only a good answer is kept"; and for *Run with Secrets* the refusal stands in its launch after Connect's options made the pin file, as §3.10 lets the spec name the place.
+- 2.2 · 2026-11-19 · reviewer · dod — E3's M4 cannot pass as written: it asks that an unusable pin and a failed pin write "start nothing" (0 client starts), but since E2.S1/E2.S2 the call asks `ssh -V` before it knows the pin is unusable (`pinOfCall.ts` ~:60; test P15 expects that question), so a client start always happens there; and a warm cache would hide it, so row order decides the result. Raised by the cadence consultant (`dbe12934`) before E3's build; checked by reading. The same consult also found that M5 (g) runs the remote-output case with exit 255, not C19's successful command; that M11 (c) does not measure C20's ten-second wait; that C19's note "nothing is connected" is false (authentication and the remote command already ran); and that the local sshd recipe edits a scratch copy, which E3's final-commit evidence must reconcile — these go to the re-review, not to separate entries.
+  (This second change stopped the plan for re-review, 2026-11-19.)
 
 ## 1. Symptom
 
