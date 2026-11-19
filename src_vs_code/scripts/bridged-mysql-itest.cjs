@@ -35,6 +35,7 @@ const harnessScope = require('./lib/harnessScope.cjs');
 const { launch, endChild } = require('./itestSshd.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const { fakeServer, within } = require('./lib/mysqlFake.cjs');
+const candidates = require('./lib/dbCandidates.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const MARKER_TEXT = 'the-bytes-of-the-marker-file\n';
@@ -78,7 +79,7 @@ async function received(scope, exe, build, markerPath) {
   }
 }
 
-async function legM(scope, dir, name, exe, product) {
+async function legM(scope, dir, name, exe, product, verdict) {
   const marker = path.join(dir, 'marker.txt');
   const home = path.join(dir, `${name} home`);
   fs.mkdirSync(home, { recursive: true });
@@ -95,8 +96,12 @@ async function legM(scope, dir, name, exe, product) {
     const gap = await received(scope, exe, manual('--local-infile=0'), marker);
     check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', !gap.timedOut && gap.bytes === MARKER_TEXT, JSON.stringify(gap));
   }
+  if (verdict === undefined) {
+    console.log(`UNMEASURED (m) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    return;
+  }
   const productionBuild = (port) => {
-    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(dir, 'no-client-file') });
+    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(dir, 'no-client-file'), verdict });
     return { args: launchOf.args, env: product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home, MYSQL_HOME: dir }, 'linux', launchOf.env) };
   };
   const production = await received(scope, exe, productionBuild, marker);
@@ -127,7 +132,7 @@ function pd1Record(name, exe, home, absent, withVariable) {
 }
 
 /** PD1: `mysql_config_editor` writes a login file under a rig home, then every client present is asked what it reads. A missing editor FAILS on CI and names the package. */
-function recordLoginFile(dir, clients, product) {
+function recordLoginFile(dir, clients, product, verdicts) {
   const [, oracle] = clients[0];
   const editor = process.env.BRIDGED_MYSQL_CONFIG_EDITOR ?? path.join(path.dirname(oracle), 'mysql_config_editor');
   const home = path.join(dir, 'pd1 home');
@@ -149,7 +154,7 @@ function recordLoginFile(dir, clients, product) {
     }
   }
   if (wrote) {
-    assertLoginFileClosed(dir, clients, home, product);
+    assertLoginFileClosed(dir, clients, home, product, verdicts);
   }
 }
 
@@ -159,9 +164,15 @@ function recordLoginFile(dir, clients, product) {
  * either client. The control, for Oracle's client (which reads the file, PD1), is the same run without `MYSQL_TEST_LOGIN_FILE`: the marker stands, so this
  * rig can make the bad thing happen. MariaDB's client reads no login file, so it has no control and its leg shows only that the launch does not change that.
  */
-function assertLoginFileClosed(dir, clients, home, product) {
+function assertLoginFileClosed(dir, clients, home, product, verdicts) {
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
-  const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile });
+  // The environment of the production launch is the same for both clients; it is built under the verdict of the first client whose check answered.
+  const verdict = clients.map(([name]) => verdicts.get(name)).find((one) => one !== undefined);
+  if (verdict === undefined) {
+    console.log('UNMEASURED (m) the login file: the real client check refused every client under the candidate table, so the builder launches nothing');
+    return;
+  }
+  const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile, verdict });
   const production = product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, 'linux', launchOf.env);
   const stands = (answer) => answer.stdout.includes(PD1_MARKER_HOST) || answer.stderr.includes(PD1_MARKER_HOST);
   check('(m) the production launch names MYSQL_TEST_LOGIN_FILE at a path that does not exist', production.MYSQL_TEST_LOGIN_FILE === absentFile && !fs.existsSync(absentFile), JSON.stringify(production.MYSQL_TEST_LOGIN_FILE));
@@ -273,12 +284,16 @@ async function legPM1(scope, dir, name, exe, product) {
 const T_USER = 'ttuser';
 
 /** (t) on one client: the arguments and the environment the builder and `bridgedSshEnv` give a bridged client, for an entry that stores a user and a password. */
-async function legT(scope, dir, name, exe, product) {
+async function legT(scope, dir, name, exe, product, verdict) {
+  if (verdict === undefined) {
+    console.log(`UNMEASURED (t) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    return;
+  }
   const home = path.join(dir, `t ${name} home`);
   fs.mkdirSync(home, { recursive: true });
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
   const built = (withoutFlag) => (port) => {
-    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://${T_USER}:${PM1_PASSWORD}@localhost:${port}/db`, 'select 1', { bridged: true, absentFile });
+    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://${T_USER}:${PM1_PASSWORD}@localhost:${port}/db`, 'select 1', { bridged: true, absentFile, verdict });
     if (launchOf === undefined) {
       throw new Error('buildDbQueryLaunch refused the entry of (t): it stores a user and a password and its host is localhost');
     }
@@ -301,11 +316,11 @@ async function legT(scope, dir, name, exe, product) {
 }
 
 /** PM1 and (t) on every client present. */
-async function recordProtocol(scope, dir, clients, product) {
+async function recordProtocol(scope, dir, clients, product, verdicts) {
   for (const [name, exe] of clients) {
     console.log(`record (PM1) ${name} --version: ${versionOf(exe)}`);
     await legPM1(scope, dir, name, exe, product);
-    await legT(scope, dir, name, exe, product);
+    await legT(scope, dir, name, exe, product, verdicts.get(name));
   }
 }
 
@@ -323,6 +338,7 @@ async function main(scope) {
   };
   const clients = [['oracle', process.env.BRIDGED_MYSQL_ORACLE ?? '/usr/bin/mysql'], ['mariadb', process.env.BRIDGED_MYSQL_MARIADB ?? '/usr/bin/mariadb']];
   const present = [];
+  const verdicts = new Map();
   for (const [name, exe] of clients) {
     const version = fs.existsSync(exe) ? versionOf(exe) : undefined;
     console.log(`${name}: ${exe}: ${version ?? 'not found'}`);
@@ -331,15 +347,21 @@ async function main(scope) {
       continue;
     }
     check(`${exe} is the ${name} client`, name === 'mariadb' ? /MariaDB/i.test(version) : !/MariaDB/i.test(version), version);
-    await legM(scope, dir, name, exe, product);
+    // The production launch of every leg below is built under the verdict of the REAL client check, asked of this very client under the candidate table (§S7.7, §S7.12).
+    const under = await candidates.verdictFor({ family: name, exe, name }, { dir, home: dir });
+    if (under.ok) {
+      candidates.say(`(m), (t) and PD1 on ${name}`, under);
+      verdicts.set(name, under.verdict);
+    }
+    await legM(scope, dir, name, exe, product, verdicts.get(name));
     present.push([name, exe]);
   }
   if (present.length === clients.length) {
-    recordLoginFile(dir, present, product);
+    recordLoginFile(dir, present, product, verdicts);
   } else {
     check('(PD1) both clients are present, so the record leg ran', process.env.CI !== 'true', 'a client is missing: PD1 asks each one');
   }
-  await recordProtocol(scope, dir, present, product);
+  await recordProtocol(scope, dir, present, product, verdicts);
   console.log(failures === 0 ? '\nall bridged mysql checks passed' : `\n${failures} check(s) failed`);
   return failures === 0 ? 0 : 1;
 }

@@ -15,6 +15,7 @@ const { execFileSync } = require('node:child_process');
 const { check, record, unmeasured, notThisClients, stop, bridgedEnv, runClient, oneLine, throwawayWord, rigRun, systemRig } = require('./dbProbe.cjs');
 const { withFakeMysql } = require('./pkMysqlFake.cjs');
 const { MYSQL_SPN: SPN } = require('./pkKrbRig.cjs');
+const candidates = require('./dbCandidates.cjs');
 
 const CANDIDATE_FLAG = /^--(?:plugin-dir=|skip-enable-cleartext-plugin$|restricted-auth=)/;
 /** What a client says when it does not know a flag it was given: it ends before it connects, so nothing a leg sees is the flag's doing (the first run called MariaDB's refusals `stopped`). */
@@ -69,9 +70,9 @@ const listPlugins = (folder) => (folder === undefined ? [] : fs.readdirSync(fold
 /** The builder's launch for the fake at `port`, then what a leg does to it by hand. */
 function launchMysql(ctx, client, port, { entry = 'A', control = false, add = [], home = ctx.home, envSet = {} } = {}) {
   const { product } = ctx;
-  const built = product.buildDbQueryLaunch('mysql', `mysql://${ctx.user}:${ctx.entryWord}@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
+  const built = product.buildDbQueryLaunch('mysql', `mysql://${ctx.user}:${ctx.entryWord}@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdicts.get(client)?.verdict });
   if (built === undefined) {
-    throw new Error('buildDbQueryLaunch refused the entry of a PK1 mysql leg that must launch');
+    throw new Error('buildDbQueryLaunch refused the entry of a PK1 mysql leg that must launch (a good verdict of the real client check for this client, and an entry that stores a user and a password)');
   }
   const args = control ? built.args.filter((arg) => !CANDIDATE_FLAG.test(arg)) : [...built.args];
   const at = args.indexOf('--protocol=TCP') + 1;
@@ -375,7 +376,7 @@ async function fileLeg(ctx, client, plugin, keyFolder) {
 /** PK1-m1 to PK1-m7, and the listed plugins, for each `mysql` client the harness found. `clients` is `[{ name, exe }]`. */
 async function mysqlLegs(ctx, clients) {
   const entryWord = throwawayWord();
-  const base = { ...ctx, entryWord, user: ctx.realm?.user ?? 'probe', present: {}, folders: {} };
+  const base = { ...ctx, entryWord, user: ctx.realm?.user ?? 'probe', present: {}, folders: {}, verdicts: new Map() };
   for (const client of clients) {
     const folder = pluginFolder(client);
     base.folders[client.name] = folder;
@@ -399,6 +400,14 @@ async function mysqlLegs(ctx, clients) {
     }
   };
   for (const client of clients) {
+    // The launch of every leg of this client is built under the verdict of the REAL client check for it, under the candidate table (§S7.7).
+    const under = await candidates.verdictFor(client, base);
+    if (!under.ok) {
+      unmeasured(`PK1-m ${client.name}`, 'the real database client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing and no leg of it ran');
+      continue;
+    }
+    base.verdicts.set(client, under);
+    candidates.say(`PK1-m ${client.name}`, under);
     const plugins = process.platform === 'win32' ? [...PLUGINS, WINDOWS_PLUGIN] : PLUGINS;
     for (const plugin of plugins) {
       if (plugin.kind === 'file' && (plugin.names[familyOf(client)] ?? []).length > 0) {

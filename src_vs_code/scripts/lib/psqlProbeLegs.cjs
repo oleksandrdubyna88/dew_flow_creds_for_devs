@@ -18,7 +18,7 @@ const { PD2_PASSWORD_MARKER, PD3_MARKER_CN, PQ2_SECOND_CN, PQ2_SERVICE_PASSWORD_
  * marker client certificate of PD3 under `.postgresql`), a second throwaway client certificate that a URI or a service file can name, a TLS
  * server certificate signed by a CA, and the absent file of the production launch. `write(port)` writes what depends on the fake server's port.
  */
-function pq2Rig(scope, dir, product) {
+function pq2Rig(scope, dir, product, verdict) {
   const home = path.join(dir, 'pq2 home');
   const material = path.join(dir, 'pq2-material');
   fs.mkdirSync(path.join(home, '.postgresql'), { recursive: true, mode: 0o700 });
@@ -33,7 +33,7 @@ function pq2Rig(scope, dir, product) {
   fs.chmodSync(marker.key, 0o600);
   const tlsOf = (files) => ({ key: fs.readFileSync(files.key), cert: fs.readFileSync(files.cert) });
   const rig = {
-    scope, dir, product, home, second, marker,
+    scope, dir, product, verdict, home, second, marker,
     pgpass: path.join(home, '.pgpass'),
     serviceFile: path.join(home, '.pg_service.conf'),
     servicePassfile: path.join(material, 'service.pgpass'),
@@ -85,9 +85,9 @@ function pq2Run(rig, options) {
 function viaBuilder(rig, uriOf) {
   return (port) => {
     const uri = uriOf(port);
-    const launchOf = rig.product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile: rig.absentFile });
+    const launchOf = rig.product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
     if (launchOf === undefined) {
-      throw new Error('buildDbQueryLaunch refused the entry of a leg that must launch (it stores a password and names only the profile)');
+      throw new Error('buildDbQueryLaunch refused the entry of a leg that must launch (it stores a password and names only the profile, under a good verdict of the real client check)');
     }
     return { args: launchOf.args, env: rig.product.bridgedSshEnv({ PATH: process.env.PATH, HOME: rig.home }, 'linux', launchOf.env) };
   };
@@ -348,10 +348,10 @@ async function legS(rig) {
   const starts = spawnsDuring(() => {
     for (const id of Object.keys(rig.uris)) {
       const entry = rig.uris[id](1).replace('pdprobe@', `pdprobe:${PQ2_STORED_PASSWORD}@`);
-      const launchOf = rig.product.buildDbQueryLaunch('postgres', entry, 'select 1', { bridged: true, absentFile: rig.absentFile });
+      const launchOf = rig.product.buildDbQueryLaunch('postgres', entry, 'select 1', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
       check(`(s) production: the entry of ${id} (a stored password and its setting) is refused: no launch`, launchOf === undefined, JSON.stringify(launchOf === undefined ? null : launchOf.args.length));
     }
-    clean = rig.product.buildDbQueryLaunch('postgres', entryUri(1), 'select 1', { bridged: true, absentFile: rig.absentFile });
+    clean = rig.product.buildDbQueryLaunch('postgres', entryUri(1), 'select 1', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   });
   check('(s) production: the same entry without a setting is built, so each refusal above is the setting\'s', clean !== undefined && clean.env.PGPASSWORD === PQ2_STORED_PASSWORD);
   check('(s) production: no process was started while the builder ran for any of those entries', starts === 0, `${starts} started`);
@@ -367,9 +367,9 @@ async function legS(rig) {
 }
 
 /** All of PQ2, and then (s), after the client's version. */
-async function legPQ2(scope, exe, dir, product, version) {
+async function legPQ2(scope, exe, dir, product, version, verdict) {
   console.log(`record (PQ2) psql --version: ${version}`);
-  const rig = pq2Rig(scope, dir, product);
+  const rig = pq2Rig(scope, dir, product, verdict);
   rig.exe = exe;
   check('(PQ2) the path given as the absent file does not exist', !fs.existsSync(rig.absentFile), rig.absentFile);
   for (const leg of [legPQ2ab, legPQ2c, legPQ2d1, legPQ2d2, legPQ2d3, legPQ2d4, legPQ2e, legPQ2f, legPQ2gh, legS]) {

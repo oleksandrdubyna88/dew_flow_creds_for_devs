@@ -22,7 +22,9 @@ const UNKNOWN_FLAG = /unknown (?:variable|option|flag|shorthand flag)|unrecogniz
  */
 function legA(client, rig) {
   const env = bridgedEnv(rig.product, rig.home);
-  const flags = client.family.endsWith('sqlcmd') ? ['--version', '-?'] : ['--version'];
+  // `sqlcmd` answers its version in its help, `-?`, which both of its clients take and which is the flag the product's check asks; `--version` is asked beside it only as a record: go-sqlcmd prints its
+  // help for it and the ODBC client refuses it as an unknown option (an error line is its answer, not a version).
+  const flags = client.family.endsWith('sqlcmd') ? ['-?', '--version'] : ['--version'];
   let versionLine;
   for (const flag of flags) {
     const answer = runSync(client.exe, [flag], env);
@@ -32,7 +34,8 @@ function legA(client, rig) {
     }
     const read = versionOfClient(client.family, answer.text);
     const said = read === undefined ? 'the answer holds no version of this family\'s kind' : `the version it says: ${read.number}, from the line ${JSON.stringify(read.line)}`;
-    console.log(`record (PA1-a) ${client.name} ${flag}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
+    const own = client.family.endsWith('sqlcmd') && flag === '--version' ? ' (not the version flag of sqlcmd: the check asks -?)' : '';
+    console.log(`record (PA1-a) ${client.name} ${flag}${own}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
   }
   return versionLine;
 }

@@ -1,26 +1,24 @@
 'use strict';
 // PE1 (E1.7 spec §S7.4, parent §7's probe table): the entry's own login still works under the pair's whole profile, and nothing else decided it. The launch is the builder's own for
-// the entry, with the controls V3 will write added BY HAND in the shape V3 will write them (the spec's §S7.5): for `psql` three keywords at the end of the built string, for `mysql`
-// `--plugin-dir` at the absent file after `--protocol=TCP` (and, on Oracle's client, `--skip-enable-cleartext-plugin`). Each login is asked against a real server that checks it, with
+// the entry, built under the verdict of the REAL database client check for the client asked (`dbCandidates.cjs`), so it carries the controls V3 wrote (the spec's §S7.5): for `psql` three keywords at the end of the built string, for `mysql`
+// `--plugin-dir` at the absent file after `--protocol=TCP` (and, on Oracle's client, `--skip-enable-cleartext-plugin`). The CONTROLS of a leg are the same launch with a control cut out by hand. Each login is asked against a real server that checks it, with
 // the entry's right credential and with a wrong one. RECORD legs: they print what happened and fail only for the rig's own faults. A login that fails under the profile while the same
 // launch without its controls succeeds is a `STOP`: the pair is not served until it passes, and a control dropped to make it pass goes back to the lead first.
 const path = require('node:path');
 const { ownedDir } = require('./leftovers.cjs');
 const { check, bridgedEnv, runSync, oneLine, noteLeg, unmeasured, stop } = require('./dbProbeRig.cjs');
 const servers = require('./dbServers.cjs');
+const candidates = require('./dbCandidates.cjs');
 
-/** The three keywords V3 writes after `sslkey` (the spec's §S7.5), as a suffix of the built keyword string; and the same without the one PE1-4's control cuts. */
-const PROFILE_KEYWORDS = " gssencmode='disable' sslcertmode='disable' require_auth='password,md5,scram-sha-256'";
-const WITHOUT_REQUIRE_AUTH = " gssencmode='disable' sslcertmode='disable'";
+/** The keywords V3 writes after `sslkey` (the spec's §S7.5), each as the builder writes it. */
+const PROFILE_KEYWORD = /\s+(?:gssencmode|sslcertmode|require_auth)='[^']*'/g;
+const REQUIRE_AUTH_KEYWORD = /\s+require_auth='[^']*'/g;
 
-/** The built `psql` arguments with `suffix` added to the keyword string (the last argument). */
-const psqlArgs = (args, suffix) => args.map((arg, at) => (at === args.length - 1 ? `${arg}${suffix}` : arg));
+/** The built `psql` arguments with the keywords matching `pattern` cut out of the keyword string (the last argument): `undefined` cuts nothing, the launch as built. */
+const psqlArgs = (args, pattern) => args.map((arg, at) => (at === args.length - 1 && pattern !== undefined ? arg.replaceAll(pattern, '') : arg));
 
-/** The built `mysql` arguments with `flags` put straight after `--protocol=TCP`. */
-function mysqlArgs(args, flags) {
-  const at = args.indexOf('--protocol=TCP');
-  return [...args.slice(0, at + 1), ...flags, ...args.slice(at + 1)];
-}
+/** The flags V3 writes into a `mysql` launch as controls. */
+const CONTROL_FLAG = /^--(?:plugin-dir=|skip-enable-cleartext-plugin$)/;
 
 /** What a run did, in words that hold no credential: logged in as the row's user, or refused in the client's own words. */
 function outcomeOf(run, user) {
@@ -35,7 +33,14 @@ async function methodsSince(pg, from, user) {
 }
 
 /** PE1-1 to PE1-4 for `psql`. */
-async function legPsql(scope, client, rig) {
+async function legPsql(scope, client, shared) {
+  const under = await candidates.verdictFor(client, shared);
+  if (!under.ok) {
+    unmeasured('PE1 psql', 'the real check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
+    return;
+  }
+  candidates.say('PE1-1 to PE1-4 psql', under);
+  const rig = { ...shared, verdict: under.verdict };
   const hba = ['local all all peer', 'host pe1_scram all 127.0.0.1/32 scram-sha-256', 'host pe1_md5 all 127.0.0.1/32 md5', 'host pe1_password all 127.0.0.1/32 password', 'host pe1_trust all 127.0.0.1/32 trust'];
   const pg = await servers.startPostgres(scope, 'pe1-pg', hba);
   if (pg.missing !== undefined) {
@@ -60,11 +65,11 @@ async function legPsql(scope, client, rig) {
 /** One `pg_hba` method: the entry's right credential, a wrong one, and the control that shows what the profile changed. */
 async function psqlMethod(pg, client, rig, { leg, method, database, user, good, wrong }) {
   const entry = `postgresql://${user}:${good}@127.0.0.1:${pg.port}/${database}`;
-  const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who', { bridged: true, absentFile: rig.absentFile });
+  const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check(`(${leg}) ${method}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
-  const ask = (suffix, env) => runSync(client.exe, psqlArgs(built.args, suffix), bridgedEnv(rig.product, rig.home, env));
+  const ask = (cut, env) => runSync(client.exe, psqlArgs(built.args, cut), bridgedEnv(rig.product, rig.home, env));
   const from = (await pg.log()).length;
-  const right = ask(PROFILE_KEYWORDS, built.env);
+  const right = ask(undefined, built.env);
   const profileRight = right.stderr.includes('invalid connection option') ? undefined : outcomeOf(right, user);
   if (profileRight === undefined) {
     unmeasured(`${leg} psql ${method}`, `this psql does not know a control of the profile (PA1-b): ${oneLine(right.stderr, 140)}`);
@@ -72,9 +77,9 @@ async function psqlMethod(pg, client, rig, { leg, method, database, user, good, 
   }
   console.log(`record (${leg}) psql, server method ${method}, the entry's user and password, under the whole profile: ${profileRight}; the server's log names: ${await methodsSince(pg, from, user)}`);
   const mark = (await pg.log()).length;
-  const bad = ask(PROFILE_KEYWORDS, { ...built.env, PGPASSWORD: wrong });
+  const bad = ask(undefined, { ...built.env, PGPASSWORD: wrong });
   console.log(`record (${leg}) psql, server method ${method}, a wrong password, under the whole profile: ${outcomeOf(bad, user)}; the server's log names: ${await methodsSince(pg, mark, user)}`);
-  const control = ask(WITHOUT_REQUIRE_AUTH, { ...built.env, PGPASSWORD: wrong });
+  const control = ask(REQUIRE_AUTH_KEYWORD, { ...built.env, PGPASSWORD: wrong });
   console.log(`record (${leg}) psql, server method ${method}, CONTROL: a wrong password with require_auth cut by hand: ${outcomeOf(control, user)}`);
   if (method === 'trust') {
     // PE1-4: the server asks for nothing, so under the profile the CLIENT refuses (even with the right credential), and the control, with require_auth cut by hand, logs in with a wrong one.
@@ -83,21 +88,22 @@ async function psqlMethod(pg, client, rig, { leg, method, database, user, good, 
     noteLeg('PE1 psql trust', loggedIn(control, user), `under the profile: entry ${loggedIn(right, user) ? 'IN' : 'refused by the client'}, wrong password ${loggedIn(bad, user) ? 'IN' : 'refused'}; control (require_auth cut): wrong password ${loggedIn(control, user) ? 'IN (trust would have let it in)' : 'refused'}`);
     return;
   }
-  if (!loggedIn(right, user) && loggedIn(ask('', built.env), user)) {
+  if (!loggedIn(right, user) && loggedIn(ask(PROFILE_KEYWORD, built.env), user)) {
     stop(`${leg} psql ${method}`, "the entry's own login fails under the profile and succeeds without its controls: the pair is not served until it passes (parent §7, row PE1)");
   }
   noteLeg(`PE1 psql ${method}`, loggedIn(right, user), `entry: ${loggedIn(right, user) ? 'in' : 'REFUSED'}; wrong password: ${loggedIn(bad, user) ? 'IN' : 'refused'}`);
 }
 
 /** PE1-5 and PE1-6 for one `mysql` client against one server. */
-function mysqlLogin(client, rig, server, label, flags) {
+function mysqlLogin(client, rig, server, label, verdict) {
   const user = 'pe1user';
   const good = server.good;
   const wrong = servers.throwaway();
   const entry = `mysql://${user}:${good}@127.0.0.1:${server.port}/pe1db`;
-  const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who', { bridged: true, absentFile: rig.absentFile });
+  const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who', { bridged: true, absentFile: rig.absentFile, verdict });
   check(`(PE1-5/6) ${client.name} on ${label}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
-  const ask = (withFlags, env) => runSync(client.exe, withFlags ? mysqlArgs(built.args, flags) : built.args, bridgedEnv(rig.product, rig.home, env));
+  const flags = built.args.filter((arg) => CONTROL_FLAG.test(arg));
+  const ask = (withFlags, env) => runSync(client.exe, withFlags ? built.args : built.args.filter((arg) => !CONTROL_FLAG.test(arg)), bridgedEnv(rig.product, rig.home, env));
   const right = ask(true, built.env);
   const bad = ask(true, { ...built.env, MYSQL_PWD: wrong });
   const control = ask(false, built.env);
@@ -107,9 +113,6 @@ function mysqlLogin(client, rig, server, label, flags) {
   }
   noteLeg(`PE1 ${client.name} on ${label}`, loggedIn(control, user), `entry under the profile: ${loggedIn(right, user) ? 'in' : 'REFUSED'}; wrong password: ${loggedIn(bad, user) ? 'IN' : 'refused'}`);
 }
-
-/** The flags a `mysql` family gets as controls (the spec's §S7.5). */
-const controlFlags = (client, rig) => (client.family === 'oracle' ? [`--plugin-dir=${rig.absentFile}`, '--skip-enable-cleartext-plugin'] : [`--plugin-dir=${rig.absentFile}`]);
 
 /** PE1-5 and PE1-6: MySQL's server and MariaDB's, each at its default plugin, for each client present. */
 async function legMysql(scope, clients, rig, mariadbImage) {
@@ -132,9 +135,19 @@ async function legMysql(scope, clients, rig, mariadbImage) {
   } else {
     unmeasured('PE1-5/6 on MariaDB', container.missing);
   }
+  const verdicts = new Map();
+  for (const client of clients) {
+    verdicts.set(client, await candidates.verdictFor(client, rig));
+  }
   for (const [server, label] of targets) {
     for (const client of clients) {
-      mysqlLogin(client, rig, server, label, controlFlags(client, rig));
+      const under = verdicts.get(client);
+      if (under.ok) {
+        candidates.say(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, under);
+        mysqlLogin(client, rig, server, label, under.verdict);
+      } else {
+        unmeasured(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, 'the real check refused this client under the candidate table (the finding is printed above), so the builder launches nothing');
+      }
     }
   }
 }

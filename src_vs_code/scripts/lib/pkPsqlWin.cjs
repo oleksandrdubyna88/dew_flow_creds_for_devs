@@ -9,6 +9,7 @@ const path = require('node:path');
 const { check, record, unmeasured, stop, runClient, oneLine, throwawayWord, bridgedEnv } = require('./dbProbe.cjs');
 const { withFakePg } = require('./pkPgFake.cjs');
 const { launchFor, CANDIDATE } = require('./pkPsqlLegs.cjs');
+const candidates = require('./dbCandidates.cjs');
 const rig = require('./psqlRig.cjs');
 
 const SSPI_LINE = 'host all all 127.0.0.1/32 sspi include_realm=0';
@@ -173,7 +174,15 @@ async function legProfileFiles(ctx, systemRig) {
 
 /** PK1 for `psql` on `windows-latest`. */
 async function psqlWindows(ctx) {
-  const next = { ...ctx, entryWord: throwawayWord(), user: ctx.pg?.owner ?? 'runner' };
+  const under = await candidates.verdictFor({ family: 'psql', exe: ctx.exe, name: 'psql' }, ctx);
+  if (!under.ok) {
+    for (const leg of ['PK1-w0', 'PK1-w1', 'PK1-w2', 'PK1-w3', 'PK1-w4']) {
+      unmeasured(leg, 'the real database client check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
+    }
+    return;
+  }
+  candidates.say('PK1 psql', under);
+  const next = { ...ctx, verdict: under.verdict, entryWord: throwawayWord(), user: ctx.pg?.owner ?? 'runner' };
   if (ctx.pg?.ok === true) {
     await legSspi(next);
     await legGssEncryption(next);

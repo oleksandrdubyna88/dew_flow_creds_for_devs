@@ -101,7 +101,7 @@ async function windows(scope, dir, home, product) {
     await psqlWindows({ scope, dir, product, exe: psql.exe, home, pg, systemRig: systemRig() });
   }
   if (oracle !== undefined) {
-    await mysqlLegs({ scope, dir, product, home, realm: { ok: false, why: 'a runner outside a domain has no Kerberos ticket' }, canWriteHome: false }, [{ name: 'oracle', exe: oracle.exe }]);
+    await mysqlLegs({ scope, dir, product, home, realm: { ok: false, why: 'a runner outside a domain has no Kerberos ticket' }, canWriteHome: false }, [{ name: 'oracle', family: 'oracle', exe: oracle.exe }]);
   }
 }
 

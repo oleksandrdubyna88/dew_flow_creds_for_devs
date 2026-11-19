@@ -38,8 +38,10 @@ function client(name, variable, fallback, package_) {
     check(`${name} is installed`, process.env.CI !== 'true', `${exe} is missing (${package_}; set ${variable}) — a skipped leg on the runner proves nothing`);
     return undefined;
   }
-  console.log(`  --version: ${versionLine(exe, ['--version']) ?? 'no answer'}`);
-  console.log(`  -?: ${versionLine(exe, ['-?']) ?? 'no answer'}`);
+  // `-?` is the flag the product's database client check asks of both clients (their help holds the version line). `--version` is a record only: go-sqlcmd answers it with its help, and the ODBC client
+  // refuses it as an unknown option, so its line is an error and no version (CI run 44534390878: 'Sqlcmd: Error: ...does not have an associated argument').
+  console.log(`  -? (the flag the check asks): ${versionLine(exe, ['-?']) ?? 'no answer'}`);
+  console.log(`  --version (a record: not a sqlcmd version flag): ${versionLine(exe, ['--version']) ?? 'no answer'}`);
   // Neither answer's first line names a version (the tool's name), so the version is read where the client puts it: `Version: v1.10.0`, `Version 18.6.1.1 Linux`.
   const version = realVersion({ family: name, exe });
   console.log(`  the version it says: ${version.number ?? 'none read'} (${version.line})`);

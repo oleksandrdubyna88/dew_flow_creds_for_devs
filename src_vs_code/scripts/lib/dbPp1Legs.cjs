@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { check, bridgedEnv, runSync, oneLine, noteLeg, unmeasured, stop } = require('./dbProbeRig.cjs');
 const servers = require('./dbServers.cjs');
+const candidates = require('./dbCandidates.cjs');
 
 const ENTRY_USER = 'pp1entry';
 
@@ -19,7 +20,14 @@ const envOf = (rig, extra = {}) => bridgedEnv(rig.product, rig.home, extra);
 const wordsOf = (text) => oneLine(text, 160);
 
 /** PP1 for `psql`: a PostgreSQL cluster with `local … peer` and a password login over TCP. */
-async function legPsql(scope, client, rig) {
+async function legPsql(scope, client, shared) {
+  const under = await candidates.verdictFor(client, shared);
+  if (!under.ok) {
+    unmeasured('PP1 psql', 'the real check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
+    return;
+  }
+  candidates.say('PP1-1 psql', under);
+  const rig = { ...shared, verdict: under.verdict };
   const hba = ['local all all peer', 'host all all 127.0.0.1/32 scram-sha-256', 'host all all ::1/128 scram-sha-256'];
   const pg = await servers.startPostgres(scope, 'pp1-pg', hba);
   if (pg.missing !== undefined) {
@@ -32,7 +40,7 @@ async function legPsql(scope, client, rig) {
   const asRunner = control.stdout.trim() === os.userInfo().username;
   console.log(`record (PP1-0) psql, pointed at the socket by hand, no user, no password: exit ${control.code}; ${asRunner ? "LOGGED IN as the runner's user" : 'did not log in as the runner\'s user'}; it said ${wordsOf(control.text)}`);
   const entry = `postgresql://${ENTRY_USER}:${entryValue}@localhost:${pg.port}/postgres`;
-  const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who, inet_client_addr() is not null as over_tcp', { bridged: true, absentFile: rig.absentFile });
+  const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who, inet_client_addr() is not null as over_tcp', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check('(PP1-1) the builder launched an entry that names localhost and stores a user and a password', built !== undefined, 'buildDbQueryLaunch answered undefined');
   const production = runSync(client.exe, built.args, envOf(rig, built.env));
   const row = new RegExp(String.raw`${ENTRY_USER}\s*\|\s*([tf])`).exec(production.stdout);
@@ -110,7 +118,13 @@ async function mysqlGroup(scope, oracle, group, index, rig) {
   }
   check(`(PP1) the rig granted the entry account its database on ${socket}`, my.admin(`grant all on pp1db.* to '${ENTRY_USER}'@'127.0.0.1'`).code === 0, 'grant failed');
   for (const client of group.clients) {
-    await mysqlClient(client, rig, my, entryValue, plugin ?? 'the default plugin');
+    const under = await candidates.verdictFor(client, rig);
+    if (under.ok) {
+      candidates.say(`PP1-1 ${client.name}`, under);
+      await mysqlClient(client, { ...rig, verdict: under.verdict }, my, entryValue, plugin ?? 'the default plugin');
+    } else {
+      unmeasured(`PP1-1 ${client.name}`, 'the real check refused this client under the candidate table (the finding is printed above), so the builder launches nothing');
+    }
   }
 }
 
@@ -127,7 +141,7 @@ async function mysqlClient(client, rig, my, entryValue, plugin) {
   const asRunner = rowOf(control.stdout)?.startsWith(`${runner}@`) === true;
   console.log(`record (PP1-0) ${client.name}, the default socket, the runner's name, no password: exit ${control.code}; ${asRunner ? `LOGGED IN as ${rowOf(control.stdout)}` : 'did not log in by identity'}; it said ${wordsOf(control.text)}`);
   const entry = `mysql://${ENTRY_USER}:${entryValue}@localhost:${my.port}/pp1db`;
-  const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who, user() as asked', { bridged: true, absentFile: rig.absentFile });
+  const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who, user() as asked', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check(`(PP1-1) ${client.name}: the builder launched an entry that names localhost and stores a user and a password`, built !== undefined, 'buildDbQueryLaunch answered undefined');
   const production = runSync(client.exe, built.args, envOf(rig, built.env));
   const row = rowOf(production.stdout);

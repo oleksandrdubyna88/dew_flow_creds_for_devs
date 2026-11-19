@@ -12,6 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { check, record, unmeasured, stop, bridgedEnv, runClient, oneLine, throwawayWord, systemRig } = require('./dbProbe.cjs');
 const { runSync } = require('./dbProbeRig.cjs');
+const candidates = require('./dbCandidates.cjs');
 
 /**
  * What the server's log says of an INTEGRATED attempt. The word `Integrated` alone is not one: a client that sent a SQL login with an empty user (go-sqlcmd with no user) is told "An attempt to
@@ -36,9 +37,9 @@ const ABSENT_ADDRESS = '127.0.0.1';
 function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
   const { product, q } = ctx;
   const encoded = encodeURIComponent(user);
-  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, q.query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
+  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, q.query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
   if (built === undefined) {
-    throw new Error('buildDbQueryLaunch refused the entry of a PS1 leg that must launch (it stores a user and a password and names only the profile)');
+    throw new Error('buildDbQueryLaunch refused the entry of a PS1 leg that must launch (it stores a user and a password and names only the profile, under a good verdict of the real client check)');
   }
   const args = [...built.args];
   if (host !== undefined) {
@@ -371,7 +372,14 @@ async function oneClient(ctx, client) {
 /** PS1 for every client the harness found. `clients` is `[{ name, exe }]`; `ctx.q` is the receiver. */
 async function ps1Legs(ctx, clients) {
   for (const client of clients) {
-    await oneClient(ctx, client);
+    // Every launch of this client is built under the verdict of the REAL client check for it, under the candidate table (§S7.7).
+    const under = await candidates.verdictFor({ family: client.name, exe: client.exe, name: client.name }, ctx);
+    if (!under.ok) {
+      unmeasured(`PS1-${client.name}`, 'the real database client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing and no leg of it ran');
+      continue;
+    }
+    candidates.say(`PS1 ${client.name}`, under);
+    await oneClient({ ...ctx, verdict: under.verdict }, client);
   }
 }
 

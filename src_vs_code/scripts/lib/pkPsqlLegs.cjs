@@ -14,6 +14,7 @@ const path = require('node:path');
 const { check, record, unmeasured, stop, bridgedEnv, runClient, oneLine, throwawayWord } = require('./dbProbe.cjs');
 const { withFakePg } = require('./pkPgFake.cjs');
 const rig = require('./psqlRig.cjs');
+const candidates = require('./dbCandidates.cjs');
 
 const CANDIDATE = {
   gss: "gssencmode='disable'",
@@ -28,9 +29,9 @@ const GSS_LINE = 'gss include_realm=0 krb_realm=BRIDGE.TEST';
 function launchFor(ctx, port, { entry = 'A', control = false, add = [], envSet = {}, user = ctx.user, host = 'localhost', query = '', cut = [], dropArgs = [], address = true }) {
   const { product } = ctx;
   const uri = `postgresql://${user}:${ctx.entryWord}@${host}:${port}/postgres${query}`;
-  const built = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
+  const built = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
   if (built === undefined) {
-    throw new Error('buildDbQueryLaunch refused the entry of a PK1 leg that must launch (it stores a user and a password and names only the profile)');
+    throw new Error('buildDbQueryLaunch refused the entry of a PK1 leg that must launch (it stores a user and a password and names only the profile, under a good verdict of the real client check)');
   }
   let connection = built.args.at(-1);
   if (control) {
@@ -214,8 +215,16 @@ async function legCertificate(ctx) {
 
 /** PK1 for `psql` on Linux (rigs K, G and F). */
 async function psqlLinux(ctx) {
+  const under = await candidates.verdictFor({ family: 'psql', exe: ctx.exe, name: 'psql' }, ctx);
+  if (!under.ok) {
+    for (const leg of ['PK1-p0', 'PK1-p1', 'PK1-p2', 'PK1-p3', 'PK1-p4', 'PK1-p5', 'PK1-p6']) {
+      unmeasured(leg, 'the real database client check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
+    }
+    return;
+  }
+  candidates.say('PK1 psql', under);
   const entryWord = throwawayWord();
-  const next = { ...ctx, entryWord, user: ctx.realm?.user ?? 'probe' };
+  const next = { ...ctx, verdict: under.verdict, entryWord, user: ctx.realm?.user ?? 'probe' };
   if (ctx.realm?.ok === true && ctx.pg?.ok === true) {
     await legRoads({ ...next, realm: ctx.realm, pg: ctx.pg });
   } else {
