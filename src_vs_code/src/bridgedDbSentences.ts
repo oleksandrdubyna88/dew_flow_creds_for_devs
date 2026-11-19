@@ -117,3 +117,30 @@ export function DR6(entity: string, field: string, client: string): string {
 export function DR6Quoted(entity: string, field: string, client: string): string {
   return `The ${field} of "${entity}" has a form that cannot be given to ${client} through a Remote Bridge: in a key=value string it must not begin with a quote.`;
 }
+
+/** The client of each vendor as a sentence names it: DR8 lists builds by these words. */
+const VENDOR_WORDS: Readonly<Record<string, string>> = {
+  postgresql: 'psql',
+  oracle: "Oracle's mysql",
+  mariadb: "MariaDB's mysql",
+  'go-sqlcmd': 'go-sqlcmd',
+  'odbc-sqlcmd': 'the ODBC sqlcmd',
+};
+
+/** The vendor's name as DR8 writes it before a recorded build. */
+export function vendorWords(vendor: string): string {
+  return VENDOR_WORDS[vendor] ?? vendor;
+}
+
+/** DR7: the client's word could not be turned into a file, it did not answer its version, or the answer could not be read. `exit` is its exit code, or the word `unknown` when it had none. */
+export function DR7(client: string, exit: number | null): string {
+  return `${client} did not answer its version under the environment a Remote Bridge gives it (exit ${exit ?? 'unknown'}). No database query can go through a Remote Bridge with ${client} from this computer until it does.`;
+}
+
+/** DR8: the answer was read and names no recorded build of a served row. `token` is the words the pattern matched, `builds` the recorded builds (constants of the table). */
+export function DR8(client: string, token: string, platform: NodeJS.Platform, builds: string): string {
+  return `The ${client} on this computer answered ${token}. A Remote Bridge runs a query with ${client} on ${systemNameOf(platform)} only for the builds that were measured: ${builds}.`;
+}
+
+/** DR9: on a bridge the builder answered no launch: it was handed no good verdict, or it refused by a rule of its own. */
+export const DR9 = "No launch was built for this call after the profile's rules and the client check had passed it. No query was started.";

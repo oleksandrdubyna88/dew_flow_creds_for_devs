@@ -1,6 +1,7 @@
 import type { DbType } from './types';
 import { DR1, DR2, DR3, DR4, DR5, DR6, DR6Quoted, KeyDialect, clientNameOf, settingWords } from './bridgedDbSentences';
 import { cleanHost } from './dbConnString';
+import type { DbVendor } from './bridgedDbClient';
 
 /**
  * The gate of a bridged database query (the E1.6 spec §S6.15 Z1; parent §4.11, Q18). Pure, no `vscode`.
@@ -12,10 +13,25 @@ import { cleanHost } from './dbConnString';
 
 export type DbClient = 'psql' | 'mysql' | 'sqlcmd';
 
+/** A build whose legs ran: the version and the build tag exactly as the client's own version line gives them (PA1-a), and the record of its runs (`run <number> at <sha>`). */
+export interface DbRecordedBuild {
+  readonly version: string;
+  readonly tag: string;
+  readonly record: string;
+}
+
+/** One vendor's client of a served row, with the builds its legs ran on (E1.7 spec §S7.7). */
+export interface DbServedClient {
+  readonly vendor: DbVendor;
+  readonly builds: readonly DbRecordedBuild[];
+}
+
 export interface DbProfileRow {
   readonly client: DbClient;
   readonly platform: NodeJS.Platform;
   readonly served: boolean;
+  /** What a served row serves: the check admits a client only when its version line names one of these builds. Absent on a row that is not served. */
+  readonly clients?: readonly DbServedClient[];
 }
 
 const CLIENTS: readonly DbClient[] = ['psql', 'mysql', 'sqlcmd'];

@@ -18,7 +18,7 @@ import { describeSshTarget } from './sshCommand';
 import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
-import { DbType, EntityMetadata, TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
 import { runBounded } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
@@ -27,13 +27,10 @@ import { LaunchPlan, SshLink, planLaunch, refusalSaid, sshLinkOf, trustLineFor }
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
-import { bridgedSshEnv } from './bridgedSshEnv';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
-import { BRIDGED_DB_PROFILES, DbProfileRow, bridgedDbConnection, bridgedDbPair, profileClientOf } from './bridgedDbProfile';
-import { DbClientCheck, DbClientOk, goodVerdict } from './bridgedDbClient';
-import { BRIDGE_USE_REFUSED } from './bridgeScope';
-import { fieldReadingOf } from './secretOpener';
-import { automaticOpenerFor } from './automaticRead';
+import type { DbProfileRow } from './bridgedDbProfile';
+import { DbClientCheck, bridgedDbClientCheck } from './bridgedDbClient';
+import { runBridgedDbQuery, storedConnectionOf } from './bridgedDbQuery';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -544,48 +541,6 @@ export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: str
 }
 
 /**
- * A bridged database call that is refused: the generic sentence for the agent, the real one in the journal, in the form `bridgedRefusal` of
- * `sshUseActions.ts` writes it. `not_supported`, as every refusal of this road.
- */
-function bridgedDbRefused(deps: Pick<AgentUseDeps, 'note'>, ctx: UseActionContext, sentence: string): UseActionResult {
-  deps.note(`${ctx.entityName}: ${sentence} (a Remote Bridge was told only that it could not be used)`);
-  return fail('not_supported', BRIDGE_USE_REFUSED(ctx.entityName));
-}
-
-/**
- * The gate of a bridged query (the E1.6 spec §S6.15 Z1): the pair of this entry's client and this system must be served by `profiles`. Asked before the
- * stored connection is read, so a refused pair touches nothing of the entry. `undefined` off a bridge and for a served pair.
- */
-function bridgedDbGate(deps: Pick<AgentUseDeps, 'note'> & { profiles?: readonly DbProfileRow[] }, ctx: UseActionContext, dbType: DbType): UseActionResult | undefined {
-  if (ctx.bridge === undefined) {
-    return undefined;
-  }
-  const pair = bridgedDbPair(deps.profiles ?? BRIDGED_DB_PROFILES, dbType, process.platform);
-  return pair.served ? undefined : bridgedDbRefused(deps, ctx, pair.sentence);
-}
-
-/**
- * The connection of a bridged query, checked (the E1.6 spec §S6.15 Z2): a setting outside the profile, a missing user, password or host and a field outside its shape are
- * refused here, with the rule's own sentence in the journal, before the query is looked at and before anything starts. `undefined` off a bridge and for a connection the profile builds.
- */
-function bridgedDbConnectionRefusal(deps: Pick<AgentUseDeps, 'note'>, ctx: UseActionContext, dbType: DbType, stored: string): UseActionResult | undefined {
-  if (ctx.bridge === undefined) {
-    return undefined;
-  }
-  const connection = bridgedDbConnection(dbType, stored, ctx.entityName);
-  return connection.ok ? undefined : bridgedDbRefused(deps, ctx, connection.sentence);
-}
-
-/** The good verdict of the client check for a bridged call; `undefined` off a bridge, with no check, or when the client did not pass (the builder then answers no launch). */
-async function bridgedVerdict(deps: { dbClient?: DbClientCheck }, ctx: UseActionContext, dbType: DbType): Promise<DbClientOk | undefined> {
-  const client = profileClientOf(dbType);
-  if (ctx.bridge === undefined || client === undefined) {
-    return undefined;
-  }
-  return goodVerdict(await deps.dbClient?.({ client }));
-}
-
-/**
  * Query a DATABASE.
  *
  * <p>The one non-SSH kind where the agent's own text reaches a process — so it reaches it
@@ -598,6 +553,8 @@ async function bridgedVerdict(deps: { dbClient?: DbClientCheck }, ctx: UseAction
 export function dbQueryAction(
   deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck },
 ): UseAction {
+  // The client check of this window (E1.7 spec §S7.6): one per action, built here with the action's own table, so a window cannot be wired without it and a good verdict is asked once for the window's life.
+  const dbClient = deps.dbClient ?? bridgedDbClientCheck({ storageDir: deps.storageDir, note: deps.note, ...(deps.profiles === undefined ? {} : { rows: deps.profiles }) });
   return {
     kind: 'db',
     action: 'query',
@@ -627,25 +584,14 @@ export function dbQueryAction(
       if (dbType === undefined) {
         return fail('no_credential', `"${ctx.entityName}" has no database type set.`);
       }
-      // The gate (§S6.15 Z1, Q18): a bridged call for a client and system that are not served stops here, before the stored connection is read.
-      const gated = bridgedDbGate(deps, ctx, dbType);
-      if (gated !== undefined) {
-        return gated;
+      // A call through a Remote Bridge takes its own road (E1.7 spec §S7.6): the gate, the checks, the client check and a spawn from a folder that holds nothing. Everything below is the main port's.
+      if (ctx.bridge !== undefined) {
+        return runBridgedDbQuery({ ...deps, dbClient }, ctx, entity, dbType, body);
       }
-      // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is
-      // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost — and a
-      // damaged wrap as damaged (`automaticOpenerFor`, typed-secrets plan T3: until then its text was
-      // handed to the client as the connection string), and a rotated value waiting beside an unprotected entry first.
-      const stored = fieldReadingOf(await automaticOpenerFor(deps.storage, ctx.accountId)(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId), 'dbConnection'));
-      if (stored.kind !== 'value') {
-        return fail('no_credential', stored.kind === 'withheld' ? stored.reason : `"${ctx.entityName}" has no stored connection string.`);
-      }
-      const connection = stored.value;
-      // On a bridge the profile is asked first: an entry it cannot build from, a postgres one that is not a plain URL included, earns the generic body and the detail goes to the
-      // journal, where the detailed sentence below would tell the agent on the server what the entry holds (§S6.15 Z2). Off a bridge the line below is unchanged.
-      const unbuilt = bridgedDbConnectionRefusal(deps, ctx, dbType, connection);
-      if (unbuilt !== undefined) {
-        return unbuilt;
+      // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is SAID (`storedConnectionOf`).
+      const connection = await storedConnectionOf(deps, ctx, entity);
+      if (typeof connection !== 'string') {
+        return connection;
       }
       if (dbType === 'postgres' && !isSafePostgresUri(connection)) {
         return fail(
@@ -664,11 +610,7 @@ export function dbQueryAction(
       if (refusal !== undefined) {
         return fail('not_supported', refusal);
       }
-      // On a bridge the client is given a connection the builder writes from the entry's own fields (§S6.15 Z2), never the stored string, and is asked for the files it would read
-      // under the person's `HOME` (`.mylogin.cnf`, `.pgpass`, `.postgresql/`) at a path in the keys folder that nothing ever writes (E1.6 §S6.14 Y6), built by the one sanctioned
-      // builder as the call-free sentinel of `bridgedSshRefusals.ts` is. Those paths are a defence inside the profile; the lock is that no stored setting reaches the client.
-      const verdict = await bridgedVerdict(deps, ctx, dbType);
-      const launch = buildDbQueryLaunch(dbType, connection, query, { bridged: ctx.bridge !== undefined, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file'), verdict });
+      const launch = buildDbQueryLaunch(dbType, connection, query);
       if (launch === undefined) {
         return fail(
           'not_supported',
@@ -687,8 +629,7 @@ export function dbQueryAction(
       }
       try {
         const outcome = await runBounded(launch.exe, launch.args, false, {
-          // A bridged client gets the allow-list of `ssh` and its own password variable, and nothing else of the extension host's environment (§4.9 row 5, §4.11).
-          env: ctx.bridge === undefined ? { ...process.env, ...launch.env } : bridgedSshEnv(process.env, process.platform, launch.env),
+          env: { ...process.env, ...launch.env },
           timeoutMs: clampExecTimeout(undefined),
           ...launchGuards(deps.signal, ctx),
         });

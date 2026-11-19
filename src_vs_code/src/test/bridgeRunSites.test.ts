@@ -1,21 +1,17 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
-import type { AgentUseDeps, dbQueryAction as DbQueryAction } from '../agentUseActions';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
 import type { DbProfileRow } from '../bridgedDbProfile';
-import type { DbClientCheck } from '../bridgedDbClient';
-import type { DbType, EntityMetadata } from '../types';
+import type { DbType } from '../types';
 import { LinksWorld, linksWorld } from './bridgeLinksWorld';
-import { memoryStorage, seedEntry } from './pinWorld';
 import { Ask, Door, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
-import { loadWithVscode } from './vscodeStub';
 import { statusForErrorCode } from '../brokerProtocol';
 import { allowListedNames } from './bridgeLinksRun';
 import { code, message } from './bridgeDoorHarness';
 import { DR5, dr2, dr4, dr6 } from './bridgedDbCases';
-import type { DbVendor } from '../bridgedDbClient';
-import { FOUND, verdictOf } from './bridgedDbVerdicts';
+import { FOUND } from './bridgedDbVerdicts';
+import { OUTPUT, Spawn, VENDOR_OF, queryWorld } from './bridgedDbQueryWorld';
 
 /**
  * Destination and recipient (change 6.2; the parent's §7): each run-site sentence of a bridged dialog is asserted BESIDE an observation of
@@ -27,74 +23,8 @@ import { FOUND, verdictOf } from './bridgedDbVerdicts';
  * Both through a real bridge listener, in front of a dialog the world records.</p>
  */
 
-const OUTPUT = { exitCode: 0, stdout: '1\n', stderr: '', stdoutTruncated: false, stderrTruncated: false, timedOut: false, durationMs: 1 };
-
-interface Spawn {
-  readonly command: string;
-  readonly args: string[];
-  readonly shell: boolean;
-  readonly env: NodeJS.ProcessEnv;
-}
-
-interface QueryWorld {
-  readonly action: unknown;
-  readonly spawns: Spawn[];
-  /** The lines the action wrote to the agent journal (`deps.note`). */
-  readonly journal: string[];
-  /** How many times the stored connection was read. */
-  readonly reads: { count: number };
-}
-
 /** A table that serves the three clients on this platform: what a test that runs the launch (C10, Q4, DG3) names, since production serves no pair (§S6.15 Z1). */
 const SERVED: readonly DbProfileRow[] = (['psql', 'mysql', 'sqlcmd'] as const).map((client) => ({ client, platform: process.platform, served: true }));
-
-/**
- * The real `dbQueryAction` over the REAL `StorageManager` holding one stored connection (a real `database connection` slot, in the clear); the
- * spawner is a recorder that answers `OUTPUT`. The deps are a typed `AgentUseDeps` built from real defaults: nothing is cast.
- */
-async function queryWorld(dbType: DbType, connection: string, profiles?: readonly DbProfileRow[]): Promise<QueryWorld> {
-  const spawns: Spawn[] = [];
-  const journal: string[] = [];
-  const reads = { count: 0 };
-  const real = require('../sshExecRunner') as Record<string, unknown>;
-  const mocks = {
-    './sshExecRunner': {
-      ...real,
-      runBounded: (command: string, args: string[], shell: boolean, options: { env: NodeJS.ProcessEnv }): Promise<unknown> => {
-        spawns.push({ command, args, shell, env: options.env });
-        return Promise.resolve(OUTPUT);
-      },
-    },
-  };
-  const stub = { window: {} };
-  const { dbQueryAction } = loadWithVscode<{ dbQueryAction: typeof DbQueryAction }>('../agentUseActions', stub, mocks);
-  const storage = memoryStorage(stub);
-  await seedEntry(storage, { id: 'e1', name: 'prod', kind: 'db', dbType } as EntityMetadata, { 'database connection': connection });
-  const read = storage.getDbConnection.bind(storage);
-  storage.getDbConnection = (accountId, entityId) => {
-    reads.count += 1;
-    return read(accountId, entityId);
-  };
-  const deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck } = {
-    storage,
-    storageDir: '/unused',
-    signal: new AbortController().signal,
-    acquireExecSlot: () => () => undefined,
-    note: (line) => {
-      journal.push(line);
-    },
-    trustStore: { get: () => [], update: () => Promise.resolve() },
-    applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
-    onPath: () => true,
-    // A client check that passes: the vendor each client of the three types is read as. The check itself is the subject of `bridgedDbClient.test.ts` and of DG7-DG11 below.
-    dbClient: (call) => Promise.resolve(verdictOf(VENDOR_OF[call.client])),
-    ...(profiles === undefined ? {} : { profiles }),
-  };
-  return { action: dbQueryAction(deps), spawns, journal, reads };
-}
-
-/** The vendor a passing check reads for each client. */
-const VENDOR_OF: Readonly<Record<'psql' | 'mysql' | 'sqlcmd', DbVendor>> = { psql: 'postgresql', mysql: 'oracle', sqlcmd: 'odbc-sqlcmd' };
 
 const QUERY_SENTENCE = 'The database client runs on this computer, using the connection stored in "prod". Its output goes back to the agent on that server.';
 const EXEC_SENTENCE = 'The connection starts on this computer; the command runs on "prod", and its output goes back to that server.';
