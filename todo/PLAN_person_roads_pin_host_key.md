@@ -1,9 +1,11 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **stopped for re-review, 2026-11-19, at entry 2.2 (E3's M4 cannot pass as written; more E3 criteria to repair). E2 built and through the coai code gate on `fix/g1-e2-measurements`, unmerged (no merge of this plan's work until the re-review). Epic 1 merged (#379), not released; release-please #383 held.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
-> findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). The revision replaces the
+> Status: **stopped for re-review, 2026-11-19, at entry 2.2 (E3's M4 cannot pass as written; more of E3's criteria to repair). The revision for epoch 3 is written (2026-11-19, by Fable) and waits for the Opus judge and the re-review; nothing of epoch 3 is approved, and nothing of it is built. E2 is built and through the coai code gate on `fix/g1-e2-measurements` (`22caab8b`), unmerged: no merge of this plan's work until the re-review has passed. Epic 1 merged (#379), not released; release-please #383 held.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). Its re-review replaced the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
-> measurements against a real `sshd`, as the release gate. Every other candidate has a written disposition. E1's stories document is
+> measurements against a real `sshd`, as the release gate. Epoch 2 had two changes (2.1: two more refused kinds of a storage path; 2.2: the stop). The revision for
+> epoch 3 keeps the three epics and changes E3 (§1.2): its first story builds C19 (a run that ended with 0 is told nothing about a host key: §3.12, part 4), its second
+> commits the launch instrument of the real runs, and its rows M1, M3-M5, M7, M9, M11, M12 and M14 are revised (`## Epics`). Every other candidate has a written disposition. E1's stories document is
 > [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (2026-11-17), with the specs of its four stories:
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md),
 > [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (the cornerstone),
@@ -24,7 +26,8 @@
 > 2026-11-17 (#376, `07ed8303`). This plan is built on it (§4).
 > **Which tree the line references mean:** §1, §3.1-§3.9, §4, §5 (tests 1-16) and §7 keep the references of the tree before E1
 > (`main` at `ca99cd91`): they are the record of what E1 was built against. §1.1, §3.10-§3.12, tests 17-27 and `## Epics` (E2, E3)
-> name `main` at `f3e9887d`, read on 2026-11-18.
+> name `main` at `f3e9887d`, read on 2026-11-18. What epoch 3 adds (§1.2, decisions 14-18, the parts marked "epoch 3" in §3 and §5-§9, tests 28-33, E3 as
+> revised) names E2's head, `22caab8b` on `fix/g1-e2-measurements`, read on 2026-11-19.
 
 ## Plan changes
 
@@ -97,6 +100,42 @@ Narrowed: no — the scope grows: the known repairs become a build epic (E2), an
 - 2.2 · 2026-11-19 · reviewer · dod — E3's M4 cannot pass as written: it asks that an unusable pin and a failed pin write "start nothing" (0 client starts), but since E2.S1/E2.S2 the call asks `ssh -V` before it knows the pin is unusable (`pinOfCall.ts` ~:60; test P15 expects that question), so a client start always happens there; and a warm cache would hide it, so row order decides the result. Raised by the cadence consultant (`dbe12934`) before E3's build; checked by reading. The same consult also found that M5 (g) runs the remote-output case with exit 255, not C19's successful command; that M11 (c) does not measure C20's ten-second wait; that C19's note "nothing is connected" is false (authentication and the remote command already ran); and that the local sshd recipe edits a scratch copy, which E3's final-commit evidence must reconcile — these go to the re-review, not to separate entries.
   (This second change stopped the plan for re-review, 2026-11-19.)
 
+### Re-review for epoch 3
+
+Narrowed: no — the scope grows: C19 becomes a build story of E3 (so E3 no longer "builds no behaviour"), the launch instrument of the real runs becomes a story of E3, M5 gains the run that ends with 0, M11 the client that never answers, M12 goes from four path shapes to all eight kinds of entry 2.1, and M7 gains one shape; M4 and M9 count connection starts and authentication attempts in both states of the asker in place of starts of the client, a number that §3.10 as approved for epoch 2 made unreachable (the third note below the table says why this is read as no smaller gate)
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| the plan documents inside PR #379 (the plan as first written, the boundary with G2, the approval with P1-P4 and the split, the revision after G2 with change 1.1, the review repairs, the candidates C11-C17), squash f3e9887d | main | TBD | proposed: kept, as in the re-review for epoch 2: the record of epoch 1; their text is rewritten forward by the revision for epoch 2 (5e775a7c) and by this one |
+| E1's stories document and the four specs E1.S1-E1.S4, in PR #379, squash f3e9887d | main | TBD | proposed: kept as the record of what E1 built; item 1 of the stories document (the local `sshd`, run from a scratch copy with three edits) stays as the record of how E1 and E2 ran, and E3.S2's committed instrument replaces the recipe |
+| E1.S1, the one function: `hostKeyWords` in `hostKeyPin.ts`, called by both argv builders (`sshBridge.ts`, `execHostKeyWords` of `sshExecCommand.ts`), its three pairs, white space in double quotes, `hostKeyWords.test.ts`, `pinnedArgv.ts`, the one changed expectation of `sshExecCommand.test.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2.S2 added its pairs and changed its parameter on the branch, and epoch 3 changes nothing of it |
+| E1.S1, the rule of the path inside `oneFileWord`: an apostrophe written bare, a double quote answered with `NO_KEY_FILE`, `/dev/null`, and its docblock, in PR #379, squash f3e9887d | main | TBD | proposed: cut, as in the re-review for epoch 2 (decision 9, §3.11); the correction is built by E2.S2 (c20be822, 581d96c0), unmerged, and reaches `main` with E2's pull request, before any release; not reverted, for the reasons of that re-review |
+| the grouped import lines of `agentCommands.ts` (E1.S2, §3.6), in PR #379, squash f3e9887d | main | TBD | proposed: kept |
+| E1.S2 code and tests, the cornerstone: `personPin.ts`, the two guards of `writtenKey.ts`, sentences A and B, `personPin.test.ts`, `personRoadsPin.test.ts`, `writtenKey.test.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2.S2 moved the decision of the pin behind the same one value (`pinOfCall.ts`), and epoch 3 reads its order as it is built (decision 15) |
+| E1.S3, the roads: the four argv calls name `knownHostsFile` (`sweepDeadSockets` with its parameter), `refusedHostKeySentence`, the two branches with the bridge's message, `personRoadsHostKey.test.ts`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E3.S1 hands the run's exit code to the function that the two branches ask, on lines that exist |
+| E1.S3, the condition of sentence C: `hostKeyRefused`, the verification line anywhere in the stderr of a pinned call, and its docblock, in PR #379, squash f3e9887d | main | TBD | proposed: cut, as in the re-review for epoch 2 (decision 10, §3.12); the correction is built by E2.S3 (a686badd), unmerged, and reaches `main` with E2's pull request, before any release; not reverted |
+| E1.S4 the smoke on real input: `itestPinnedRoads.cjs` (section 10 of `ssh-agent-itest.cjs`) with its four repairs, the exports lines of `itestSshd.cjs` and of `itestNoSharing.cjs`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2.S4 ran it on the changed words, and E3.S2 makes its serving launcher the committed instrument of every row |
+| E1's module documents: `research/module_extension.md` (B10, the bridge's key file, the table of secrets, Rule C) and `research/module_tests.md`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; E2's commits bring them up to the branch, and they reach `main` with E2's pull request |
+| E1's entry of `src_vs_code/CHANGELOG.md` under `[Unreleased]`, in PR #379, squash f3e9887d | main | TBD | proposed: cut, as in the re-review for epoch 2 (decision 11); the correction is built by E2.S4 (d0ae4b3c) and the commits of E2's code gate, unmerged; it is published only by a release, and the release waits for E3 |
+| the other side of the boundaries: G1 of N16's §5 (`research/PLAN_person_roads_forget_key.md`), the pointer in §8 of `todo/PLAN_remote_bridge_scoped.md`, the rows of `todo/README.md`, in PR #379, squash f3e9887d | main | TBD | proposed: kept; this revision updates the plan's own row and the row of E2's stories document |
+| the re-review of epoch 1 on the branch: change 1.2 and the stop (bcaafce2), the revision for epoch 2 (5e775a7c), the judge's verdicts (e1bd2ebb), the document round folded in and epoch 2 approved (96f6c85f) | pushed, unmerged | TBD | proposed: kept: the ledger is append only, and the baseline of epoch 2 is what E2 was built on; it reaches `main` with E2's pull request |
+| E2's stories document (cbeae5b8), the specs of E2.S1 and E2.S2 (9e4f58d5) with their README rows (473dd1b0), and change 2.1 (ab3dc23d) | pushed, unmerged | TBD | proposed: kept; the eight kinds of entry 2.1 are what M12 now covers |
+| E2.S1, the client's answer: `pinClient.ts` (`pinClientOf`, `pinClientAsker`, `windowPinClient`), `versionTokenOf` shared from `bridgedSshClient.ts`, `pinClient.test.ts`, its rows of `module_tests.md`, 79652693 | pushed, unmerged | TBD | proposed: kept; that the asker keeps the newer answer alone is what the two states of the asker in M4, M9 and M11 are built on (decision 15) |
+| E2.S2, the cornerstone: its tests watched RED (c20be822); the complete words of a pinned call, the rule of the path with its eight kinds, `CheckedPin`, `pinOfCall.ts`, sentences E and F, the two refusals on the agent's exec and on *Run with Secrets* (581d96c0); its documents (70676a95); the review's fixes (6f582b59); the real-`sshd` scripts hand the builders a checked pin, with the scan `itestCallers.test.ts` (ff50c987) | pushed, unmerged | TBD | proposed: kept; the order of `decidePinOfCall` (no saved key, the rule of the path, the question, the write) is the order that M4, M9 and M12 are revised to, and epoch 3 changes nothing of it |
+| E2.S3: its spec (76bd8bed) and README row (4bd29cbd); `hostKeyTold` in place of `hostKeyRefused`, sentence C on the evidence of the call's own pin file, sentence D otherwise, `hostKeyTold.test.ts`, the two branches of `agentCommands.ts` (a686badd); its documents (a375c3f2); the review's nits (35dd6dac) | pushed, unmerged | TBD | proposed: kept; one thing of it is not what the revised §3.12 says: the function asks the text alone, so a run that ended with 0 can be told sentence D. E3.S1 builds that forward on E3's branch (the exit code as a required parameter, part 4) and rewrites the docblock sentence "whatever the run's exit code was"; no revert and no rewrite of history |
+| E2.S4: its spec (71a430e9) and its links (5f8827f6, 01aa18d7); section 10 on the changed words (805aed3b); the CHANGELOG entry that claims only what holds (d0ae4b3c) | pushed, unmerged | TBD | proposed: kept; two sentences of the entry are corrected forward inside E3, before any release: "No `ssh` starts" for a saved host key that cannot be used (the question `ssh -V` starts first: M4), and "a remote command that prints that line" (only when the run did not end with 0: E3.S1). The record in `module_tests.md` that the local run set `SshdSessionPath` and `SshdAuthPath` in a scratch copy stays as the record of that run; E3.S2 ends the recipe |
+| the plan repairs made while E2 was built: the links to the specs, what E2.S3's measurements settle, the candidates C18 and C19 (ec06139e) | pushed, unmerged | TBD | proposed: kept; C19's note there ("nothing is connected") is false, and this revision rewrites it forward |
+| E2's code gate, its fixes: a disposed bridge manager spawns nothing, the changelog claims what was asked, sentences E and F name a remedy (516afd05); the rig reads `ssh -V` through the product's bounded asker, and the scan reads each script whole (4474eb07); sentences D and C no longer send the person to Connect SSH (ffc897ce, e38d9331); the two sharing words in `module_tests.md` (1cef821e); the plan's §3.5 and sentence D's contract say so (0f5e07ea) | pushed, unmerged | TBD | proposed: kept; this re-review does not open E2's gate again (the question consultants, 8d07d6a6) |
+| the status "E2 built and gated" and candidate C20 (22caab8b) | pushed, unmerged | TBD | proposed: kept; C20's disposition is rewritten forward by this revision (M11 d) |
+| change 2.2 and the stop, 6d10c4f5 | pushed, unmerged | TBD | proposed: kept: entry 2.2 and the stop stay (the ledger is append only) |
+
+  (The re-review, 2026-11-19. The verdicts are the Opus judge's: `TBD` stands until the judge has filled them, and the check of the ledger reads `TBD` as a finding until then. The actions are proposals for the judge. This revision's own commit is no row yet: its hash exists only after it, and the judge's commit adds the row, as e1bd2ebb did for 5e775a7c.)
+  (Where the work stands, read on 2026-11-19 with `git ls-remote`: `fix/g1-e2-measurements` is at 22caab8b on the remote and `fix/g1-e3-release-gate` at 6d10c4f5; no pull request is open for either branch. `main` holds of this plan's work what #379 merged, and nothing else. The 33 commits after f3e9887d on `fix/g1-e3-release-gate` are each the work of exactly one row above; a row's action can name a commit of another row.)
+  (Why the line says `Narrowed: no` although one number of M4 and of M9 gets smaller. Both rows said "0 starts of the client" for a saved host key that cannot be used and for a pin write that fails. They now say: 0 connection starts and 0 authentication attempts, and of the client's starts exactly one in a cold window, the question `ssh -V`, and none in a warm one. That is read here as a correction and not as a smaller gate, for three reasons. First, §3.10 as approved for epoch 2 puts the question where the pin of the call is decided, before the write that finds a saved key unusable, so no code that keeps §3.10 could meet the old number. Second, what the person is promised, that nothing is sent to that host, is measured more closely than before: connections and authentication attempts, in both states of the asker. Third, nothing else of the Definition of Done, the merge conditions or the release got smaller. One sentence of the plan does get weaker: "no `ssh` starts" for such a saved key (§3.1, §3.5, and the CHANGELOG says it too) becomes "no connection starts". The other way to settle entry 2.2, to read the saved key before the question so that the old number holds, changes E2's built order and is not what the consult advised. If the judge or the re-review reads this as a smaller Definition of Done, the line above becomes `Narrowed: yes`, and the owner approves epoch 3 first.)
+  (The consult for the re-review is `22147fce`: E3 as written counts starts of a process where it means connections or commands that succeeded; M4 and M9 are revised together; C19 is built now, as a small first story of E3; M11 gains the client that never answers; the launch instrument is committed before anything is measured; M12 is checked against the complete pathname of the pin file; and an instrument that is not known to work does not make the gate smaller. The cadence consult `dbe12934` raised entry 2.2 and three more points: C19's old note is false, M11 (c) does not measure C20, and a local recipe on a scratch copy is no evidence about the final commit. The question consultants, `8d07d6a6`, both answers: C19 is a small first story of E3, and this re-review revises E3's scope ("builds no behaviour"), §3.12 and C19's disposition together; E2's gate is not opened again; no fourth epic. Checked for this revision on 2026-11-19 by reading the code at `22caab8b`: §1.2.)
+  (The epics did not change in number or in order, so nothing is split again: three epics, a quota of two cornerstones, both marked. What changed inside E3 is in `## Epics`.)
+  (The whole plan below is revised against that. What the revision changes is the baseline of epoch 3 and is no entry. The line of epoch 3 is written when the re-review has passed.)
+
 ## 1. Symptom
 
 An SSH entry can hold a pinned host key (`hostKey`, `types.ts:90-96`: "Its presence is what turns
@@ -146,6 +185,32 @@ to justify its repair. These seven are the baseline of epoch 2.
 | V7 | the real runs test the plan's theory and can fail (P4) | the old rows could not decide: no quiet config, no jump host, no remote output that ends with the line, no apostrophe, no double quote, no UNC path; one row joined `KnownHostsCommand` and SSHFP and passed on either result; M3 could pass because the master was killed; and M1's install run would have written `/usr/local/bin` of this machine (`installCommand()` passes no prefix, `agentCommands.ts:318`, `remoteCliInstall.ts:120`; `install.sh:21`; a `CREDS_PREFIX` that is exported on this side does not reach the remote command) | entry 1.2; the cadence consult `594a6709` |
 
 V1-V6 are E2's (§3.10-§3.12, §6). V7 is E3's (`## Epics`).
+
+### 1.2 What E2 closed, and what is known since (the reason of epoch 3)
+
+E2 is built on `fix/g1-e2-measurements` (`79652693` to `22caab8b`, four stories), is through its code gate, and is not merged:
+V1-V6 are repaired there. A pinned call of the three roads, of the agent's exec and of *Run with Secrets* asks the `ssh`
+program for its version, says `VerifyHostKeyDNS=no`, `KnownHostsCommand=none` (for a client that knows it) and
+`LogLevel=ERROR`, names its pin file as one file or is refused with sentence E, and tells a refused host key with sentence C
+on evidence and with sentence D without it.
+
+Before E3 was built, the cadence consult (`dbe12934`) and the consult of the re-review (`22147fce`) read E3's rows against
+that code. Seven things do not hold. Each was checked for this revision by reading the code at `22caab8b`, on 2026-11-19.
+They are the baseline of epoch 3.
+
+| # | What E3 or the plan says | What is so | How it is known |
+|---|---|---|---|
+| W1 | M4 and M9: a saved host key that cannot be used, and a pin write that fails, "start nothing": 0 starts of the client | the call asks `ssh -V` BEFORE it can know either: `decidePinOfCall` asks the rule of the path (`pinOfCall.ts:56`), then the client (`:60`), and only then writes (`:68`), and the write is what finds a saved key unusable. So one start of the client is there in a window that asked nothing yet, and none in a window that holds a kept answer (`pinClient.ts:91-92`): the old number depends on what ran before. The rows count starts of a process where they mean connections | entry 2.2; test P15 of `personPin.test.ts` expects the question first |
+| W2 | §3.12 and C19's note: a remote text with the verification line gets sentence D, "the person is told a true thing about the line, and nothing is connected" | `hostKeyTold` (`hostKeyPin.ts:380`) asks the text alone. A run that ended with 0 (the login was accepted and the remote command ran to its end) and whose remote side printed the line is told sentence D: the install stops before its question (`agentCommands.ts:283-286`), and the socket check says "could not be checked" (`:216-222`). Sentence D says that the connection "ended with" the line, which is false for such a run, and the note is false too: authentication and the command already ran. M5 (g) runs the remote text with exit code 255 only | `dbe12934`; read |
+| W3 | C20 "would be justified by a row of E3", and M11 (c) is the row of a client that cannot be read | the program of M11 (c) answers at once. The wait of C20 is the one of a program that does not answer: up to the runner's limit (`CLIENT_CHECK_TIMEOUT_MS`, 10 s, `bridgedSshClient.ts:81`). No row measures it | `dbe12934`; read |
+| W4 | E3's rows run "on the rig of E1's smoke (an unpacked `sshd` here)", and E3 passes "on the final code" | the launcher names one executable, `/usr/sbin/sshd` (`scripts/itestSshd.cjs:13`); its starter runs `sshd -d`, which serves one connection (`:118`); the starter that serves every connection, `startServingSshd`, lives in `scripts/itestPinnedRoads.cjs` (`:103`), and its config (`servingConfig`, `:68`) has no place for the lines that an unpacked `sshd` needs (`SshdSessionPath`, `SshdAuthPath`). So every local run so far was a run of a scratch COPY with three edits (E1's stories document, item 1; `research/module_tests.md`, the smoke of E2.S4: "set in a scratch copy only"). A result from such a copy is not a result of the commit | `dbe12934`, `22147fce`; read |
+| W5 | M12 measures "a path that cannot be written for `ssh` as one file" with four shapes | the rule refuses eight kinds since entry 2.1 (`REFUSED_PIN_PATHS`, `hostKeyPin.ts:157-166`). And a kind is decided by the COMPLETE pathname of the pin file (`knownHostsPath`: the storage folder, `keys/<pid>/`, `known_hosts-<id>-<uuid>`), not by the folder: a storage folder that ends with a backslash gives a pathname that does not, so "a backslash at the end" cannot be reached through a folder, and neither can "a tilde at the start" of an absolute folder. Six kinds can be reached, and four have a row | `22147fce`; read; the spec of E2.S2 says the same of its own road tests |
+| W6 | the setup names instruments "here" for the install's stand-in, the resolver of M10, the older client of M11 and Windows (M13) | none of the four is known to work. The feasibility story may find that one does not; the plan must say now that this does not make the gate smaller | `22147fce` |
+| W7 | the CHANGELOG entry (E2.S4): a saved host key that cannot be used is refused, "No `ssh` starts" | by W1 the question starts. What holds is that no connection starts and nothing is sent | read, `src_vs_code/CHANGELOG.md`, `[Unreleased]`; found by this revision |
+
+W2 is repaired by a change of the product, C19: E3's first story (§3.12, part 4). W1, W3 and W5 are repaired in E3's rows
+(M4, M9, M11, M12). W4 is E3's second story, the committed launch instrument. W6 is decision 18. W7 is corrected inside E3
+with the row that measures it (M4; §6).
 
 ## 2. Settled before this plan (the baseline)
 
@@ -204,6 +269,29 @@ epoch 2, not entries. Decision 6 is replaced by decision 7.
 13. **Three epics get the feature review.** `review_feature` runs once, after E3 and before the release
     (`coai-feature-gate.md`: a plan of three or more epics).
 
+Five more were settled by the re-review on 2026-11-19 (consults `22147fce`, `dbe12934`, `8d07d6a6`). They are the baseline of
+epoch 3, not entries. Decisions 7-13 stay; decision 10 gains the condition of decision 14.
+
+14. **C19 is built, as the first story of E3** (§3.12, part 4). The function that chooses the sentence for a host key takes
+    the run's exit code as a required parameter and answers nothing when it is 0, from both callers. E3's scope said "no
+    new behaviour of the product": it now says "one, C19, and it is built before anything is measured". C19 is no fourth
+    epic, and E2's code gate is not opened again for it. (Both answers of `8d07d6a6`; `22147fce`.)
+15. **A row counts what it is about.** A start of the client program, a connection start, an authentication attempt and
+    an accepted login with its command are four counts, and no row puts one for another (`## Epics`, E3, the setup). For a
+    saved host key that cannot be used and for a pin write that fails, the contract is: 0 connection starts and 0
+    authentication attempts, in a window that asked the client nothing yet (one start, the question `ssh -V`) and in a
+    window that holds a kept answer (no start). For a path that the rule refuses it stays 0 starts of any kind: that
+    refusal stands before the question. The order of `decidePinOfCall` as E2 built it is not changed. (`22147fce`.)
+16. **The launch instrument is committed before anything is measured.** The real runs start their `sshd` through one
+    committed launcher that takes the executable and the extra lines of an unpacked server's config as parameters. No row is
+    run from a copy with edits. The identities of what ran are recorded beside the results of the same commit.
+    (`22147fce`, `dbe12934`.)
+17. **The order of the merges: E2's pull request first, then E3's.** E3's branch stands on E2's head. After E2 has merged,
+    E3's branch takes `main` by a merge: this repository never rebases a pushed branch and never force-pushes one. (`8d07d6a6`.)
+18. **An instrument that is not known to work does not make the gate smaller.** The install's stand-in, the resolver that
+    the run owns (M10), the client older than 8.5 (M11) and the Windows client (M13) are not proven. A row that is not
+    measured is not passed. Making the gate smaller is a plan change, and it needs the owner's word. (`22147fce`.)
+
 ## 3. Fix
 
 **The rule:** on these three roads, an entry with a pin starts `ssh` only with `StrictHostKeyChecking=yes` and with ONE
@@ -224,7 +312,15 @@ for the call, or the call does not start (§3.11); and what the person is told a
 
 **Built and not built.** §3.1-§3.9 were built by E1 (#379, `f3e9887d`). They stand as the record of what was built,
 with the references of the tree before E1; where epoch 2 changes one of them, the place says so and names the new
-section. §3.10-§3.12 are E2's to build. Nothing of them is in the code.
+section. §3.10, §3.11 and parts 1-3 of §3.12 were built by E2, on `fix/g1-e2-measurements` (`22caab8b`), unmerged: they
+stand as they were approved, and where E2 built another word or another count than the baseline here, the place says so.
+
+**Epoch 3 changes one thing of the product, and one reading.** The one thing is part 4 of §3.12 (C19): a run that ended
+with 0 is told nothing about a host key. It is E3.S1's, and nothing of it is in the code. The one reading: since E2,
+"no `ssh` starts" in §3.1-§3.5 means that no CONNECTION starts. A pinned call asks the `ssh` program for its version before
+it can know that its saved key cannot be used or that its pin file cannot be written (§3.10, *The order as E2 built it*),
+so in a window that asked nothing yet one local `ssh -V` starts, and nothing reaches the host. Only a path that the rule
+refuses (§3.11) still starts no `ssh` at all.
 
 ### 3.1 The pin of one call
 
@@ -336,6 +432,10 @@ tests of the registered commands (C1-C6, I1-I7, R1, B1-B9) run unchanged: their 
 | pinned, the run's stderr holds the verification line and does NOT name the pin file of this call (a jump host of the person's config, a config whose `HostName` alias or `Port` renames the lookup, a remote text): epoch 2, §3.12 | sentence D | the socket check shows an error message: `The bridge to "<name>" could not be checked: ` + sentence D. It does not say "is not open": without the evidence the check does not know that |
 | pinned, the pin file's path cannot be written for `ssh` as one file: epoch 2, §3.11 | `Cannot reach "<name>": ` + sentence E; no `ssh`, no pin file | `Cannot bridge to "<name>": ` + sentence E; no `ssh`, no bridge |
 | pinned, the `ssh` program cannot be asked what it is: epoch 2, §3.10 | the same with sentence F; no connection is started | the same with sentence F; no connection is started, no bridge |
+| pinned, the run ended with 0, and its stderr holds the verification line (a text of the remote side): epoch 3, §3.12, part 4 | no sentence about a host key: the install goes on to its question, as for a probe without that line | no message about a host key: the check goes on and reads the socket's mode |
+
+In the third and the fourth row "no `ssh`" reads "no connection" since E2 (§3, *Epoch 3 changes one thing*): the question
+`ssh -V` can start first. In the sixth row the run did not end with 0 (epoch 3). In the seventh row "no `ssh`" is exact.
 
 **Sentence A** (new; the pin is present and unusable). It has two forms, and the call's own login chooses (P2): the
 `auth` that `resolveExecAuth` answered (`sshExecAuth.ts:35`), which comes from the same `resolveSshCredential` that
@@ -445,6 +545,14 @@ asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside 
 
 **Sentences D, E and F** are epoch 2's. Their words and their conditions are in §3.12 (D), §3.11 (E) and §3.10 (F).
 
+**The words as E2 built them** (read 2026-11-19 at `22caab8b`). Four sentences differ from the baselines that this plan
+prints, by the specs and by E2's code gate, and the product's functions hold them word for word: sentence C
+(`refusedHostKeySentence`, `hostKeyPin.ts:403`) and sentence D (`unnamedHostKeySentence`, `:419`) name no road of the product
+and send the person to the server's owner for the fingerprint; sentence E (`pinPathSentence`, `:280`) and sentence F
+(`pinClientSentence`, `:288`) name a remedy, and F says "it did not start, or did not end in time" in place of an exit code
+when there is none. The baselines stay here as the record of what was approved. A row of E3 compares what was shown with
+what the product's function answers, never with a text typed in this plan.
+
 ### 3.6 The file size
 
 `commands/agentCommands.ts` has 794 lines; lint refuses more than 800 (`eslint.config.mjs:30`). **Measured again on `main`
@@ -479,6 +587,11 @@ spec of E1.S3 counted. Three lines are left under the limit. E2 is planned so th
 The specs of E2 state the count per story. If it does not hold, F5 (§7; C10) is the reserve: the doc comments of this file
 that have no function under them go, in a commit of their own, inside E2. Moving the socket check or the install out of the
 file stays not taken, for the reason above.
+
+**After E2, and E3.S1's budget.** Counted on E2's head, `22caab8b`, 2026-11-19: `commands/agentCommands.ts` has **797** lines
+still: E2 kept the count. E3.S1 (C19) hands the run's exit code to the one function that the
+two branches ask, as one more argument on the two lines that call it (`:216`, `:283`); no branch and no line is added, so
+the file stays at 797. No lint rule limits the length of a line (`eslint.config.mjs`, read). The spec of E3.S1 states the count.
 
 ### 3.7 What grows, and who retires it
 
@@ -515,6 +628,19 @@ call writes or deletes `known_hosts-<entryId>`, the name that the agent's exec a
 No new timer and no new continuation in the product. A pin file is still written only for a call that will start `ssh`: a call
 that §3.10 or §3.11 refuses writes none.
 
+**Added by epoch 3.** The product gains nothing that grows: C19 is one parameter of a pure function, with no file, no
+process and no timer. The real runs gain two things, the tests' only:
+
+| What | How many | Who retires it | When it is interrupted |
+|---|---|---|---|
+| the program of M11 (d) that records its `-V` start and never answers | one process per road and run of that leg, for about the runner's limit (10 s) | the product's runner, at its limit, by the process tree: that is what the leg measures. If the leg fails, the run's own end removes the process by its recorded pid and start time | a killed run: the repository's janitor for test leftovers, as for every process of E3 |
+| the record of identities (E3.S2): the path, the version and the hash of each executable, and the hash of each config text | a few kB of text per run of the whole set | it is part of the results: the numbers go into §10, and the run's file goes with the run's owned folder | nothing to sweep beyond that folder |
+
+The launcher of E3.S2 starts nothing that E1's and E2's launchers did not start: one `sshd` per counterpart, in the run's
+owned folder. Its listener-only stop (M3) leaves the session processes of the master alive on purpose; the leg ends them by
+their recorded pids and start times when it has read them, as the end of a leg's server does for everything that server
+forked (`endServer`, `itestPinnedRoads.cjs:198`).
+
 ### 3.8 What does not change
 
 **As E1 built it:** `materializeKnownHosts` and every other function of `hostKeyTrust.ts`; the existing functions of `hostKeyPin.ts` (the
@@ -531,6 +657,12 @@ more sentences (D, E, F). Not changed by epoch 2 either: `materializeKnownHosts`
 (C3); Connect's road (C1, C4); the `-F` file of a bridged call and its own rule of a path (`bridgedSshConfig.ts`: `ownPath`,
 `:167-169`; `unsafeBridgedFileValue`, `:98-100`); the rule of a key file's path (`unsafeSshConfigValue`, `:88-90`); the floor of
 the bridged client (`BRIDGED_SSH_FLOOR`, `bridgedSshClient.ts:28`).
+
+**In epoch 3 the same holds, with one difference.** `hostKeyTold` (`hostKeyPin.ts:380`) gains the run's exit code, and its
+two callers in `commands/agentCommands.ts` pass it (§3.12, part 4). Nothing else of the product changes: not the words of a
+pinned call, not the order in which the pin of a call is decided (`pinOfCall.ts`), not the asker and what it keeps
+(`pinClient.ts`), not a sentence's words. The agent's exec and *Run with Secrets* do not call that function, so they do not
+change. The scripts of the real runs change (E3.S2), and they are no part of the shipped extension.
 
 ### 3.9 The pin file is the only known-hosts file of a pinned call (P1)
 
@@ -660,6 +792,15 @@ refused was measured for the command on 2026-11-17 (§3.9, row 4). For DNS it is
   agent's exec and *Run with Secrets* it is where their pin file is made (`sshUseActions.ts:236`; `remoteLaunch.ts:518`
   takes the prepared one): the spec names the place and the shape of the refusal, by the precedent of §3.11.
 - **An unpinned call is not asked and gets no new word.**
+- **The order as E2 built it** (read 2026-11-19, `decidePinOfCall`, `pinOfCall.ts:51-62`; the baseline of epoch 3,
+  decision 15). (1) An entry with no saved host key is asked nothing (`:53`). (2) The rule of the path is asked of the whole
+  pathname that the pin file would have (`:56`): a refused path ends the call here, before any `ssh` of any kind. (3) The
+  client is asked (`:60`): `ssh -V` starts, unless the asker of the window holds a kept answer. (4) Only then the pin file is
+  written (`:68`), and the write is what answers that a saved key cannot be used, or throws. So sentence E comes before the
+  question, and sentences A, B and F after it. What the asker keeps (`pinClient.ts:84-96`): the answer of a client that
+  knows the option, per program word, folder and `PATH`, for the window's life; an older answer and an unreadable one are
+  asked again at every pinned call. One question is bounded by the runner's limit, 10 s (`CLIENT_CHECK_TIMEOUT_MS`,
+  `bridgedSshClient.ts:81`), and the person sees no sign while it runs (C20).
 
 **Sentence F** (new; the client cannot be asked). The words are the spec's; the contract: it says that no connection was
 started, that the reason is the `ssh` program on this machine and not the host, and it holds the exit code and no other
@@ -726,6 +867,16 @@ another tokenizer (K8; E3's M11 runs one); Windows beyond K8 (E3's M13, the clie
   and a uuid (`materializedKeys.ts`), which hold none of these characters. The rule is still asked of the whole path.
 - **The key file's path (`-i`) is not this rule's.** It is one argv word that `ssh` does not read as a config line, and it
   has its own rule (`unsafeSshConfigValue`).
+- **Eight kinds since entry 2.1, and which of them a storage folder can cause** (epoch 3; read 2026-11-19,
+  `REFUSED_PIN_PATHS`, `hostKeyPin.ts:157-166`). The table above names six; the spec of E2.S2 measured two more, and the rule
+  refuses them too: a backslash at the END of the path (in double quotes: `invalid quotes`) and a tilde at its START
+  (expanded in the person's list alone). The rule is asked of the complete pathname, and the pathname is made from the storage
+  folder, `keys/<pid>/` and a file name that ends with a uuid (`knownHostsPath`, `hostKeyTrust.ts:66-68`). So six kinds can
+  come from a storage folder: a control character, a double quote, two backslashes in a row, a backslash before an
+  apostrophe, a percent sign, the characters `${`. Two cannot: no pathname ends with a backslash, whatever the folder
+  (a folder whose own name ends with one gives a pathname with one backslash INSIDE, which the rule writes bare: E3's M7, e),
+  and no absolute folder starts with a tilde. The rule holds both for a caller that hands it another path; the pure tests
+  hold them, and E3's M12 asks the rule and the client alone for them and drives the roads for the six.
 
 **Sentence E** (new; the path cannot be written for `ssh`). The contract: nothing was sent; the reason is the folder of the
 extension's files on this machine, not the host and not the saved key; it names the kind of character and echoes no path.
@@ -791,6 +942,45 @@ line, is not built: it tells a hop apart, but a remote text can END with the lin
 
 An unpinned call is shown the sentences of before, whatever its `ssh` printed, as E1 built it.
 
+**Part 4 (epoch 3, C19; decision 14): the run's exit code is asked first.** The three parts above ask the TEXT of the run
+alone, and that is one condition short (W2, §1.2).
+
+- **What is wrong.** `ssh` ends with 255 when it refuses a host's key (measured, §3.5 and part 1). A run that ended with 0
+  is a run whose `ssh` checked the host's key, logged in, and ran the remote command to its end. When the stderr of such a
+  run holds the verification line, the remote side wrote it: a profile of the login, or the command itself. As E2 built it, such a run is told sentence D. The install then stops before its question although its
+  probe was answered, and the socket check says "could not be checked" although its answer is there to read. And the
+  sentence says that the connection "ended with" the line, which is not so. The old note on C19 said that "nothing is
+  connected": it is false, the login and the command already ran (`dbe12934`).
+- **The fix.** The one pure function of this section (`hostKeyTold`, `hostKeyPin.ts:380`) takes the run's exit code, as
+  the runner answers it (`number | null`, `sshExecRunner.ts:58`), and answers NOTHING when it is 0, whatever the stderr
+  holds. Every other answer is as parts 2 and 3 say. The order of its questions: no pin of the call, nothing; exit code 0,
+  nothing; no verification line, nothing; the evidence of part 2, sentence C; else sentence D.
+- **The parameter is required.** A caller that hands no exit code does not compile, as with N16's reporter, E1.S2's pin
+  writer and E2's checked pin: the compiler proves that no caller is missed. There are two callers (a search of
+  `src_vs_code/src` outside the tests, 2026-11-19): the install's probe (`agentCommands.ts:283`), which has the code of
+  `runRemote` (`:341`, `:350`: -1 when the runner has none), and the socket check's mode check (`:216`), which has the
+  runner's own (`outcome.exitCode`). Both hand it over on the line that exists (§3.6).
+- **What a road then does with such a run.** Nothing new: it goes on as for a run without the line. The install reads the
+  probe's answer and reaches its question; the socket check reads the socket's mode.
+- **Sentence C under exit code 0.** It is not shown either. A run that ended with 0 was not refused by `ssh`, so no line of
+  it can be `ssh`'s refusal of this call's pin. A remote side cannot print the evidence of part 2 anyway (it never learns
+  the pin file's name), so this is the same answer by a second reason.
+- **What it does not change.** A run with no exit code (a time limit, a start that failed) and a run that ended with any
+  other code than 0 are told as parts 2 and 3 say. A remote command that prints the line and ends with 255 (M5, g), or
+  with another code than 0, is still told sentence D: its run did end, with the line in its text, and sentence D names no
+  host as the cause. Not taken: to show sentence D for 255 alone. A remote command can end with 255 itself, so the code does
+  not prove whose line it is, and the narrower rule was not asked for.
+
+| A pinned call's run ended | and its stderr holds | The person is shown (epoch 3) |
+|---|---|---|
+| with 0 | anything, the verification line included | nothing about a host key; the road goes on |
+| with another code, or with none | the verification line and the `Offending` line with this call's pin file | sentence C |
+| with another code, or with none | the verification line, and no such line | sentence D |
+| with another code, or with none | neither | the sentences of before |
+
+The spec of E3.S1 is a security judgement: it is Fable's (`subagent-models.md`), outside the cornerstone quota. Tests 28-32
+of §5 hold it; E3's M5 measures it on the roads, with exit code 255 (g) and with 0 (h).
+
 **Sentence D** (new). The contract: it says that the connection ended with that line, and that `ssh` did not name this
 entry's saved key as the reason; it names a jump host of the person's own config as a possible place; it never tells the
 person to replace a saved key; and it names no in-product road to reconnect (revised by E2's code gate: see *Sentence C against P2*, §3.5). The baseline:
@@ -851,6 +1041,13 @@ M3 is E3's row now, with a stop of the listener alone that keeps the master aliv
 its `-F` file belong to [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md): E2 changes neither, and reuses that
 file's reading of a client's version and the kinds of path it refuses, without changing them (§3.10, §3.11). If a spec of
 E2 wants one shared function in place of two, that is a question to the lead and a line in both plans, not a silent move.
+
+**Epoch 3 moves nothing of it either.** C19 changes one function about what a person is told, and no word of an argv.
+E3.S2 changes the launchers of the real runs in `scripts/`: `itestSshd.cjs` is the file that G2's section 9
+(`itestNoSharing.cjs`) and the bridge plan's rig (`itestBridgedRig.cjs` and its sections) start their `sshd` with too. The
+change keeps what they call as it is (the same exports, the same defaults), so their sections run as before, and the story
+shows it where they run. As E2 built it, the reading of a client's version is shared with the bridged road by one export of
+`bridgedSshClient.ts` (`versionTokenOf`); the bridged road's own rule and floor did not change.
 
 ## 5. Tests (RED first)
 
@@ -976,6 +1173,41 @@ stand-in that reads, at the moment of each run, the file that the argv names. `m
     (section 10 of `ssh-agent-itest.cjs`) run again on the changed words:** leg 1 passes with the new pairs in every
     recorded argv; leg 2 shows sentence C on both roads, which now needs the `Offending` line of the real client.
 
+**Tests 17-27 were built by E2** (on `fix/g1-e2-measurements`; the counts are in `research/module_tests.md` on that branch).
+**Tests 28-32 are E3.S1's (C19) and test 33 is E3.S2's (the instrument)**, RED first on E2's head, `22caab8b`. Where a test of
+1-27 holds an expectation that they change, the commit that changes it names it.
+
+28. **The exit code is asked first (§3.12, part 4),** on the pure function, with the fixtures of test 24: each text that gives
+    sentence C or sentence D there gives NOTHING with exit code 0; with 255, with another code (1) and with none it gives what
+    test 24 says; a text with neither line gives nothing under every code; an unpinned call gives nothing under every code.
+    RED first: the function takes no exit code today, so a remote text under exit code 0 gives sentence D. The spec says how
+    the RED is watched, because the new argument does not compile against the old function.
+29. **The roads go on (§3.12, part 4).** The stand-in answers exit code 0 and a stderr that holds the verification line,
+    with the stdout of a good run. The install shows no sentence about a host key and reaches its question, the one that
+    `confirmationFor` builds from the probe's answer. The socket check, driven through the registered
+    `credSshManager.openRemoteBridge`, shows no error message, reads the socket's mode, and the row stays *bridged*. The
+    guard: the same stderr with exit code 255 shows sentence D on both roads, as test 25 says, and the stderr of a refused
+    key with 255 shows sentence C.
+30. **No caller is missed.** A call of the function without an exit code does not compile (held in the suite the way this
+    repository holds a type that must refuse; the spec names it). A scan that stays finds the callers of the function in
+    `src_vs_code/src` outside the tests: exactly the two of `commands/agentCommands.ts`, each handing the exit code of its
+    own run. It finds both, so it cannot pass by matching nothing.
+31. **Mutation checks** (by hand, recorded in the commit body): answer a sentence under exit code 0 → 28 and 29 are red;
+    hand a constant in place of the run's own code at one caller → 29 is red for that road; make the parameter optional →
+    30 is red; ask the exit code AFTER the evidence of sentence C → the sentence C case of 28 under exit code 0 is red.
+32. The whole extension suite, lint (`max-lines` included: `agentCommands.ts` stays at 797, §3.6) and the build green, and
+    E1's smoke (section 10) passes again, both legs: no leg of it has a run that ends with 0 and holds the line.
+33. **The launch instrument (E3.S2),** in the suite, as `itestCallers.test.ts` holds the scripts today. No script under
+    `scripts/` holds the path of an `sshd` of its own: each takes the executable from the instrument's one place. The two
+    starters that E1's smoke and E3's rows use (the one-connection `startSshd` and the serving launcher) take the extra lines of
+    the server's config from the same place. A script of another plan that writes an `sshd` config of its own is named in
+    the scan with its plan as the reason, as the scan of test 14 names Connect's line. With no parameter the executable is
+    `/usr/sbin/sshd` and there is no extra line, so a run without parameters starts what it started before. The scan finds
+    its places, so it cannot pass by matching nothing. RED first on `22caab8b`: the path is a constant
+    (`itestSshd.cjs:13`), and neither config reads a parameter (`itestSshd.cjs:102-117`, `itestPinnedRoads.cjs:68-84`). What a
+    parameter DOES is not a unit test's to show: the story's own run on an unpacked `sshd`, from a tree with no edit of a
+    tracked file, shows it (`## Epics`, E3.S2).
+
 **What the suite cannot prove, and what proves it (P4, decision 12).** That `ssh` refuses a host whose key is not the pinned one,
 asks no other source, reads the one file and prints the line that sentence C needs: all of that is `ssh`'s decision, made from
 words that the tests above can only see in the argv or ask of `ssh -G` (`security.md`, *a measure you have
@@ -987,7 +1219,9 @@ the guard tests (`CREDS_GUARD_TESTS_REQUIRED`, `.agents/PROJECT.md`, *Commands*)
 `CI=true` (E1's stories document). **Checked on 2026-11-18:** this machine has no `sshd` on its `PATH` (`which sshd`); E1's smoke runs
 here on an unpacked one (E1's stories document, item 1). A public host stays
 out of the suite (not hermetic); §3.5, §3.9 and §3.12 used one by hand. Windows is the client alone (M13); a login on Windows
-is C6.
+is C6. **Since epoch 3 (decision 16):** that unpacked `sshd` was run from a scratch copy with three edits, which was enough for
+a smoke and is not enough for the release gate. E3's rows run from the commit itself, through the committed instrument of
+E3.S2, and the identities of what ran stand beside the results (`## Epics`, E3).
 
 ## 6. Docs
 
@@ -1025,9 +1259,28 @@ answers of the client, the rule of the path with its refusal, sentences D, E and
 them proves; the docblocks of `hostKeyPin.ts` that E2 makes untrue ("What these words do NOT switch off", the `/dev/null`
 paragraph of `oneFileWord`, "What it cannot tell apart" of `hostKeyRefused`).
 
+**As E2 built it** (`fix/g1-e2-measurements`, unmerged): the entry's heading is `Changed — security: a call without a terminal
+asks ssh to trust only a saved host key that can be used`; it carries a claim table in the spec of E2.S4 (32 rows) and one
+*Not covered* paragraph. The list above is the record of what was asked of it.
+
+**E3.S1 (C19) updates, with its code:** the CHANGELOG entry, where it lists "a remote command that prints that line" among the
+cases of the second message: the case is told only when the run did not end with 0, and a run that ended with 0 goes on;
+`research/module_extension.md`, **B10**: the exit code as the first question of the rule of evidence;
+`research/module_tests.md`: the new cases with their counts; the docblock of `hostKeyTold`, whose sentence "A remote command
+that wrote the verification line reads as sentence D whatever the run's exit code was" becomes untrue.
+
+**E3.S2 (the instrument) updates:** `research/module_tests.md`: where the counterpart of the real runs comes from and the
+exact command, with the parameters in place of the recipe of a scratch copy; the comments of the two launchers.
+
 **E3 writes:** its results into this plan as §10, before `## Epics`, per row: the numbers, the date, the versions of the
-client and of the counterpart, the commit; in `research/module_tests.md` the real runs: where the counterpart lives, the
-exact command, M1-M14 marked as measured, and what they do not prove.
+client and of the counterpart, the commit, and since epoch 3 the identities of what ran (`## Epics`, E3, the setup); in
+`research/module_tests.md` the real runs: where the counterpart lives, the exact command, M1-M14 marked as measured, and what
+they do not prove.
+
+**E3 corrects in the CHANGELOG entry what a row says otherwise.** One such sentence is known before any row runs (W7,
+§1.2): for a saved host key that cannot be used the entry says "No `ssh` starts, nothing is sent to that host". Since E2 the
+question `ssh -V` can start first. E3 writes what M4 measures: no connection starts and nothing is sent. The entry is a text
+that ships in the package, and no row measures it: a correction of the entry alone does not mean the whole set again.
 
 - **Not in the epics: the help article** `remote-bridge`, *What can go wrong* (`helpEn.ts`). A change to it changes
   all five languages together (`.agents/PROJECT.md`, rule 7), so it cannot be cut down to English: candidate C5. Read on
@@ -1047,6 +1300,9 @@ exact command, M1-M14 marked as measured, and what they do not prove.
 - The key file's path, the `-F` file of a bridged call and its rules, the floor of the bridged client (§3.8).
 - The key check of a jump host: the person's own config and files (§4).
 - Any new word on an unpinned call.
+- Since epoch 3: a sign of progress while the `ssh` program is asked for its version (C20); a change of the order in
+  which the pin of a call is decided, so that a saved key that cannot be used is found before the question (decision 15);
+  showing sentence D for exit code 255 alone (§3.12, part 4); a product change for the sake of a test instrument.
 
 **In scope since epoch 2, and no longer here:** the sources of trust that only an `ssh` config turns on (§3.10; they were
 C2 and C17).
@@ -1080,8 +1336,11 @@ F3 was taken into the plan at the plan round. The dispositions of the others are
 
 ## 8. Definition of Done
 
-Revised for epoch 2. The first group is E1's, as approved in epoch 1; its work is merged, and the judge of the re-review
-sorted it (`## Plan changes`). The boxes are ticked by the commit that proves each.
+Revised for epoch 2, and again for epoch 3. The first group is E1's, as approved in epoch 1; its work is merged, and the judge
+of each re-review sorts it (`## Plan changes`). The second group is E2's, as approved in epoch 2; its work is built and
+gated on its branch, and unmerged. Epoch 3 adds the groups of E3.S1 and E3.S2, and revises the groups of E3 and of the whole
+plan. In the groups of E1 and E2, "before any `ssh`" for a saved key that cannot be used and for a pin write that fails reads
+"before any connection" since E2 (§3, *Epoch 3 changes one thing*). The boxes are ticked by the commit that proves each.
 
 **E1 (merged, #379):**
 
@@ -1115,24 +1374,60 @@ sorted it (`## Plan changes`). The boxes are ticked by the commit that proves ea
 - [ ] The tests 17-27 of §5 RED first, then GREEN; the mutation checks recorded; E1's smoke passes on the changed words.
 - [ ] The documents of §6 that are E2's.
 
+**E3.S1 (C19, the one behaviour that E3 builds; epoch 3):**
+
+- [ ] The function that chooses the sentence for a host key takes the run's exit code as a REQUIRED parameter and answers
+      nothing when it is 0; with another code or none it answers as before (§3.12, part 4).
+- [ ] Both callers hand it the exit code of their own run, on the lines that exist; a scan finds exactly these two callers,
+      and a call without the exit code does not compile (test 30).
+- [ ] A run that ended with 0 and holds the verification line: the install reaches its question, and the socket check goes
+      on and reads the socket's mode; neither sentence C nor sentence D is shown (test 29).
+- [ ] No word of an argv, no other sentence and no unpinned call changes; `agentCommands.ts` stays at 797 lines (§3.6).
+- [ ] The tests 28-32 of §5 RED first, then GREEN; the mutation checks recorded; the documents of §6 that are E3.S1's.
+
+**E3.S2 (the launch instrument; epoch 3):**
+
+- [ ] One committed launcher starts every counterpart of the real runs. It takes the `sshd` executable and the extra lines
+      of the server's config as parameters; with none it starts `/usr/sbin/sshd` as before, so CI does not change, and
+      `CI=true` still fails a missing `sshd`.
+- [ ] A local run on an unpacked `sshd` needs no edit of a tracked file: the story's own run shows it, from a tree whose
+      tracked files are those of its commit.
+- [ ] The serving launcher (`sshd -D -e`, every connection) is the one that every row uses, and it has a stop of the
+      listener alone that leaves a master's session alive; the story shows a master that outlives its listener and carries
+      one more command.
+- [ ] The run records, beside its results, the identity of every executable and of every config text that it handed out
+      (`## Epics`, E3, the setup). The sections of other plans that start their `sshd` through the same file pass as before,
+      where they run.
+- [ ] Test 33 of §5 RED first, then GREEN; the documents of §6 that are E3.S2's.
+
 **E3 (the release gate):**
 
-- [ ] Every measurement M1-M14 passed as its last column says, in one run of the whole set on the final code, against a
-      real `sshd`, through the registered commands. A missing measurement is not a pass; no row passed on either result;
-      every control showed what it is there for. The results are in this plan (§10).
+- [ ] Every measurement M1-M14 passed as its last column says (the rows as revised for epoch 3), in one run of the whole
+      set on the final code, against a real `sshd`, through the registered commands. A missing measurement is not a pass;
+      no row passed on either result; every control showed what it is there for. The results are in this plan (§10).
+- [ ] The whole set ran from the commit itself: through the committed instrument, from a tree with no modified tracked
+      file, and after E3's branch had taken `main`. §10 names that commit and the identities of what ran.
+- [ ] Every row counted what it is about: starts of the client, connection starts, authentication attempts and accepted
+      logins are separate numbers in §10, and a row that depends on the state of the asker ran in the state it names
+      (decision 15).
 - [ ] No run of E3 wrote outside its owned folder: the places that the real installer writes are the same before and
       after (M1).
-- [ ] Every sentence of the CHANGELOG entry that claims a behaviour names, in §10, the test or the row behind it.
+- [ ] An instrument that could not be made to work is a recorded plan change, with the owner's word when it makes the gate
+      smaller; no row is left out without one (decision 18).
+- [ ] Every sentence of the CHANGELOG entry that claims a behaviour names, in §10, the test or the row behind it; the
+      sentence "No `ssh` starts" is corrected (§6).
 - [ ] The documents of §6 that are E3's.
 
 **The whole plan:**
 
 - [ ] The coai code gate at `proceed` on each epic's branch; the lead's Opus review; CI green on the head sha;
       CodeRabbit read.
+- [ ] E2's pull request merged before E3's was opened; E3's branch took `main` by a merge, never by a rebase or a force
+      push (decision 17).
 - [ ] The feature review ran once, after E3 and before the release, and every finding is resolved (decision 13).
 - [ ] Every candidate that is not built has its disposition (`## Epics`), read again by the lead at the release.
-- [ ] Released as an extension patch with the owner's word, only after E3 passed; the plan and its stories documents
-      promoted, with the deviations.
+- [ ] Released as an extension patch with the owner's word, only after E3 passed, and from the tree that E3 measured (§9,
+      step 11); the plan and its stories documents promoted, with the deviations.
 
 ## 9. Build order and merge conditions
 
@@ -1148,27 +1443,50 @@ sorted it (`## Plan changes`). The boxes are ticked by the commit that proves ea
    the judge orders any (a new pull request or a fix forward, never a rewrite of history), the re-review of the revised
    plan, and then the line of epoch 2. Until that line stands: no new code on any epic of this plan and no merge of its
    work.
-6. **E2**, on its own branch from `main`, after epoch 2 is open. Opus writes its stories document when E2 starts
-   (`todo/PLAN_person_roads_pin_host_key_E2.md`, with its own row in `todo/README.md`), marks the one cornerstone
-   within the quota and updates the ledger line in the same commit. Fable writes the cornerstone's spec and every spec
-   that is a security judgement; Sonnet codes each story, tests RED first; Opus reviews each. The cadence consult, if
-   the gate orders one, comes before E2's code round. Then `review_code` over E2's diff → `resolve` until `proceed`,
-   and one PR (a squash merge) after the head sha's checks exist and pass. A PR over the repository's cap needs the
-   owner's word. **E2 is merged and not released.**
-7. **E3**, on its own branch, after E2 has merged. Opus writes its stories document when E3 starts (`…_E3.md`). Its
-   first story is the feasibility of the instruments that are not known to work (`## Epics`, E3): it runs before any row
-   is built. Then the rows M1-M14. A row that fails is repaired inside E3 only when the repair makes the code do what
-   this plan already says; the whole set is then run again. A repair that changes a planned step or a pass criterion
-   is a plan change and is recorded as one; so is a row that cannot be run. An instrument that E3's setup marks with
-   "here" is the stories document's to choose. The results are written into this plan
-   (§10). Then `review_code` → `resolve` until `proceed`, and one PR.
-8. **The feature review** (`review_feature`), once, from a checkout of `main` that holds E1, E2 and E3; its `baseRef`
-   is the commit before E1 (`4392a272`). Findings that are accepted land as new pull requests.
-9. **The release** (an extension patch) with the owner's word, and only when: E3 passed as a whole on the code that is
-   released (any later change that can affect the shipped extension or the measurements — `src_vs_code/src`, its dependencies, build, packaging, or the harness — means the whole set again, and the release names the commit and the vsix that E3 measured); the feature review is resolved; every
-   candidate that is not built has its disposition. Then the promotion PR: this plan and its stories documents
-   together.
-10. **The candidates that are not built** follow their dispositions (`## Epics`). One that the lead takes becomes a
+6. **Done up to its pull request, 2026-11-19:** E2, on its own branch from `main` (`fix/g1-e2-measurements`), after
+   epoch 2 was open. Opus wrote its stories document (`todo/PLAN_person_roads_pin_host_key_E2.md`) and marked the one
+   cornerstone; Fable wrote the cornerstone's spec and the specs that are security judgements; Sonnet coded each story,
+   tests RED first; Opus reviewed each; `review_code` over E2's diff reached `proceed` (read from the gate's record on
+   2026-11-19: its last round on `1cef821e`, all eight reviewers answered; the one commit after it, the head `22caab8b`, is
+   plan text). **Built and gated, not merged:** its pull request is step 8, because the stop of step 7 came first.
+7. **The stop, 2026-11-19** (`6d10c4f5`, entry 2.2), and the re-review: the consult (`22147fce`), the question consultants
+   (`8d07d6a6`), this revision of the whole plan, the Opus judge's verdicts on the done work, the cuts if the judge orders
+   any (a revert commit or a fix forward on the branch that holds the work, a new pull request for what is on `main`, never
+   a rewrite of history), the re-review of the revised plan, and then the line of epoch 3. Until that line stands: no new
+   code on any epic of this plan and no merge of its work.
+8. **E2's pull request, first** (decision 17), after epoch 3 is open: one PR from `fix/g1-e2-measurements`, merged by
+   squash after the head sha's checks exist and pass and CodeRabbit is read. E2's code gate stands at `proceed` and is not
+   opened again by the re-review. If the judge cuts a part of E2, the cut is a commit on that branch, and that branch's
+   code round runs once more (`again: true`) before the pull request. A PR over the repository's cap needs the owner's
+   word. **E2 is merged and not released.**
+9. **E3**, on its own branch (`fix/g1-e3-release-gate`), which stands on E2's head, after epoch 3 is open. Opus writes its
+   stories document when E3 starts (`…_E3.md`). The order of its first three stories is fixed here (`## Epics`, E3):
+   1. **E3.S1, C19.** Fable writes the spec (a security judgement), Sonnet codes it, tests RED first, Opus reviews.
+   2. **E3.S2, the launch instrument,** committed before any row is measured.
+   3. **E3.S3, the feasibility** of the instruments that are not known to work, each probed through the committed
+      instrument, before any row is built.
+
+   Then the rows M1-M14, as the stories document splits them. A row that fails is repaired inside E3 only when the repair
+   makes the code do what this plan already says; the whole set is then run again. A repair that changes a planned step or
+   a pass criterion is a plan change and is recorded as one; so is a row that cannot be run, and so is an instrument that
+   cannot be made to work (decision 18). An instrument that E3's setup marks with "here" is the stories document's to
+   choose. **The merge conditions of E3:** E2's pull request is merged; then E3's branch takes `main` by a merge (never a
+   rebase, never a force push), and the files that tooling parses are read again after it (`src_vs_code/CHANGELOG.md`,
+   `todo/README.md`, the scripts' exports; `git-workflow.md`, rule 11); only then the whole set runs once, on that tree,
+   and its results are written into this plan (§10). Then `review_code` → `resolve` until `proceed`, and one PR, merged by
+   squash after the head sha's checks exist and pass. A PR over the repository's cap needs the owner's word. The cadence
+   consult, if the gate orders one, comes before E3's code round.
+10. **The feature review** (`review_feature`), once, from a checkout of `main` that holds E1, E2 and E3; its `baseRef`
+    is the commit before E1 (`4392a272`). Findings that are accepted land as new pull requests.
+11. **The release** (an extension patch) with the owner's word, and only when: E3 passed as a whole on the code that is
+    released (any later change that can affect the shipped extension or the measurements — `src_vs_code/src`, its dependencies, build, packaging, or the harness — means the whole set again, and the release names the commit and the vsix that E3 measured); the feature review is resolved; every
+    candidate that is not built has its disposition. **Since epoch 3, "the code that is released" is checked, not assumed:**
+    the tree of the released commit is the tree that E3 measured. A squash merge makes another commit of the same tree, so
+    the release compares the tree of `src_vs_code` at both commits (`git rev-parse <commit>:src_vs_code`; that folder holds
+    the harness too), and names both commits, the hash of the vsix, and the identities that §10 holds. If the two trees
+    differ in more than the text of the CHANGELOG entry (§6), the whole set runs again on `main` before the release. Then the promotion PR:
+    this plan and its stories documents together.
+12. **The candidates that are not built** follow their dispositions (`## Epics`). One that the lead takes becomes a
     plan of its own, the question consultants first.
 
 ## Epics
@@ -1178,8 +1496,13 @@ for epoch 2 (§2, decision 7; the question consultants `274c6e9d`, both answers;
 of epoch 1 (two epics and a list of candidates, consult `cbe21f00`); it does not append an epic to it. The gate's split
 order allows two epics beyond what is done: E1 is done, E2 and E3 are the two. Each epic's stories are one document,
 `todo/PLAN_person_roads_pin_host_key_E<n>.md`, written by Opus when that epic starts; it links back here and gets its own
-`todo/README.md` row. The stories of E2 and E3 are not written now. The code gate runs once per epic, on that epic's
-branch. Three epics: the cornerstone quota is 2, and the feature review runs once at the end (§9, step 8).
+`todo/README.md` row. The code gate runs once per epic, on that epic's
+branch. Three epics: the cornerstone quota is 2, and the feature review runs once at the end (§9, step 10).
+
+**The re-review for epoch 3 keeps this split** (the question consultants `8d07d6a6`, both answers: C19 is a story of E3,
+not a fourth epic). E1 is done. E2 is built and gated, and not merged. E3 is revised: it builds one behaviour first (C19),
+commits its launch instrument second, and its rows are repaired (§1.2). The stories document of E2 is written; that of E3
+is not. Both cornerstones of the quota are marked (E1.S2, E2.S2), so E3 has none.
 
 ### E1 — The three roads enforce the saved pin of one call
 
@@ -1231,6 +1554,12 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
 
 ### E2 — The known repairs: a pinned call trusts the pin alone, names it as one file or does not start, and says only what it saw
 
+- **State.** Built 2026-11-18 and 2026-11-19 on `fix/g1-e2-measurements` (`79652693` to `22caab8b`), four stories; through
+  its code gate (`proceed`; §9, step 6); pushed, not merged, not released. The text below is E2 as it was approved for
+  epoch 2 and built. The Opus judge of the re-review for epoch 3 sorts its commits (`## Plan changes`). Epoch 3 changes
+  nothing of its scope. Three things that E2 built are carried forward by E3, on E3's branch and never by a rewrite: the
+  function of §3.12 gains the exit code (E3.S1), two sentences of the CHANGELOG entry are corrected (§6), and the launchers
+  of the real runs become the committed instrument (E3.S2). Its pull request is the first merge of epoch 3 (§9, step 8).
 - **Goal.** The six places where the merged code does not keep this plan's contract (V1-V6, §1.1) are repaired, before
   the measurements that decide the release. After E2 every `ssh` that the extension starts for a pinned entry with no
   terminal, off a bridge, asks no source of trust but its pin file; reads that file and no other, or does not start; and
@@ -1270,13 +1599,45 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
 
 ### E3 — The release gate: every claim is measured on the roads, against a real `sshd`
 
+- **State.** Not built. Revised by the re-review for epoch 3 (§1.2; decisions 14-18). Its branch, `fix/g1-e3-release-gate`,
+  stands on E2's head and holds nothing of E3 yet: the stop (`6d10c4f5`) and this revision.
 - **Goal.** Every claim of this plan about what `ssh` does with these words is measured, on the roads themselves, on the
-  code that will be released. E3 is the release gate: the release waits for the whole set (§2, decision 12). The pass
-  criteria below were written on 2026-11-18, before any of E2 or E3 is built.
-- **Scope.** The harness of the real runs (E1's counterpart, section 10, extended); the measurements M1-M14; the repair of
-  whatever one of them shows, inside the limit of §9, step 7; the results, written into this plan as §10; the check of
-  the CHANGELOG entry against them; the real-run part of `research/module_tests.md` (§6). No new behaviour of the product.
-- **Depends on.** E2 merged. G2 merged (M3 measures it).
+  code that will be released. E3 is the release gate: the release waits for the whole set (§2, decision 12). Before it
+  measures, E3 builds the one repair that is known and not built (C19), and commits the instrument that it measures with,
+  so that what is measured is the final behaviour, from the commit itself. The pass criteria below were written on
+  2026-11-18, before any of E2 or E3 was built, and revised on 2026-11-19, before any of E3 is built.
+- **Scope.**
+  - **One behaviour of the product, built first: C19** (E3.S1; §3.12, part 4; tests 28-32). This replaces the sentence "No
+    new behaviour of the product" of epoch 2 (decision 14). E3 builds no other behaviour.
+  - **The launch instrument, committed second** (E3.S2; decision 16; test 33), and the feasibility of the instruments that
+    are not known to work (E3.S3; decision 18).
+  - The harness of the real runs (E1's counterpart, section 10, extended); the measurements M1-M14; the repair of
+    whatever one of them shows, inside the limit of §9, step 9; the results, written into this plan as §10; the check of
+    the CHANGELOG entry against them, with its known correction (§6); the real-run part of `research/module_tests.md` (§6).
+- **Depends on.** E2 built and through its code gate (done; not merged). Epoch 3 open: the re-review has passed. E2's
+  pull request merged before E3's branch takes `main` and before the whole set runs (§9, step 9). G2 merged (M3 measures it).
+- **Its first three stories, in this order.** The stories document (by Opus, when E3 starts) writes them out and splits
+  the rows into the stories after them; the order of these three is the re-review's.
+  - **E3.S1 — C19: a run that ended with 0 is told nothing about a host key.** `hostKeyTold` takes the run's exit code as
+    a required parameter and answers nothing for 0; both callers hand it over on the lines that exist (§3.12, part 4). The
+    spec is Fable's, a security judgement; tests RED first. *Done when:* tests 28-32 pass, each mutation check of test 31
+    turned red what it names and was restored, the documents of §6 that are E3.S1's are written, and M5 keeps its leg with
+    exit code 255 (g) and has its leg with 0 (h).
+  - **E3.S2 — The launch instrument, committed before anything is measured** (W4, §1.2). One launcher for every
+    counterpart. (1) The `sshd` executable is a parameter of the run, and so are the extra lines of the server's config (an
+    unpacked `sshd` needs `SshdSessionPath` and `SshdAuthPath`, and its executable is a wrapper that sets its library
+    path). With no parameter: `/usr/sbin/sshd` and no extra line, as CI runs it today; under `CI=true` a missing `sshd` still
+    fails. How the parameters are handed (the names of the variables, or a file of the run) is the story's to choose; no
+    tracked file is edited to hand them. (2) The serving launcher (`startServingSshd`, `sshd -D -e`, every connection) is the
+    one that every row uses; `sshd -d`, which serves one connection, starts no counterpart of a row. (3) A stop of the
+    listener ALONE, by its own pid, which leaves alive what the listener forked for a session; `endServer`
+    (`itestPinnedRoads.cjs:198`) ends those too, and stays the end of a leg. (4) The record of identities (the setup,
+    below). (5) The other sections that start their `sshd` through `itestSshd.cjs` keep what they call. *Done when:* test 33
+    passes; E1's smoke (section 10) passes locally on an unpacked `sshd` from a tree with no modified tracked file, and its
+    record of identities is in the story's results; the story shows, with a master connection and the listener-only stop,
+    that the master outlives its listener and carries one more command (the instrument of M3, proven before M3 is built).
+  - **E3.S3 — The feasibility of the instruments that are not known to work** (*The feasibility comes first*, below),
+    each probed through the committed instrument.
 - **The setup of every measurement.**
   - *The counterpart:* an `sshd` that the run starts for itself on the loopback, on a free port, from its own
     config, with host key K1, in an owned temporary folder. K2 is another host key:
@@ -1308,7 +1669,9 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
     `extraConfig` of `startSshd`, `scripts/itestSshd.cjs:94`) is NOT measured: it is the first thing that E3's first story
     probes. The stories document may choose another instrument that keeps the four conditions.
   - *The stop of the listener alone (entry 1.2; M3).* The process that listens is ended by its own pid, not by its
-    process group, so that the session of a master connection stays. The row proves that it stayed (M3).
+    process group, so that the session of a master connection stays. The row proves that it stayed (M3). Since epoch 3
+    this stop is a committed function of the launch instrument (E3.S2), proven there before M3 is built; the ordinary end
+    of a leg's server, which ends everything that the listener forked, is not used for it.
   - *The control client.* The real `ssh` client that the harness starts itself, not through a road, with the words that
     the row names: "E1's words" are the three pairs of §3.9 alone, as `f3e9887d` writes them. A control shows that the hole
     is there without the repair. Its argv, exit code and the counterpart's log are recorded. **A control that does not
@@ -1323,52 +1686,91 @@ branch. Three epics: the cornerstone quota is 2, and the feature review runs onc
     `CI=true` fails a missing one). M10 where the run owns the resolver, and M11 where a client older than 8.5 runs: a
     container that the run starts, or an unpacked package; the stories document says which. M13 on the Windows client of
     the owner's machine, the client alone, as K7 of the spec of E1.S1 did.
+  - *The launch instrument (epoch 3, decision 16).* Every counterpart of a row is started by the committed launcher of
+    E3.S2, with the executable and the extra config lines as parameters of the run. The whole set runs from a tree with no
+    modified tracked file; the run records `git rev-parse HEAD` and the answer of
+    `git status --porcelain --untracked-files=no`, which is empty, or the run is no run of that commit.
+  - *The identities (epoch 3, decision 16).* Beside the results, for the same commit: the path, the version and the
+    SHA-256 of every executable that a row ran (the client; the `sshd`, its wrapper and the helper programs that its config
+    names; the older client of M11; `ssh.exe` of M13; the resolver of M10), and the SHA-256 of every config text that the
+    run handed to one of them. A result with no identity beside it is not a result of its row.
+  - *What a row counts (epoch 3, decision 15).* Four numbers, and no row puts one for another. A START of the client: every
+    start that the shim records, the question `ssh -V` included. A CONNECTION START: a start whose argv names a
+    destination (the sweep, the mode check, the probe, the install run, the bridge). An AUTHENTICATION ATTEMPT, from the
+    counterpart's log. An ACCEPTED LOGIN, from the counterpart's log, with the command that ran and the exit code that the
+    run ended with. A road that the refusal of another road keeps from starting (the socket check after a refused bridge,
+    §3.3) has no start of any kind in that leg, and the record shows it.
+  - *The state of the asker (epoch 3, decision 15).* The window keeps the answer of a client that knows
+    `KnownHostsCommand`, and asks an older or an unreadable client again at every pinned call (§3.10, *The order as E2
+    built it*). *Cold:* an asker that asked nothing yet; a new world has one (`world()` evicts the modules of `out/`,
+    `itestPinnedRoads.cjs:47`). *Warm:* an asker that holds the kept answer of the newer client, made by one pinned call to
+    K1 in the same world before the leg; that call's own starts are not counted in the leg. A leg whose numbers depend on
+    the state names it and makes it itself. No leg takes it over from the leg before, so the order of the rows decides
+    nothing.
 
 | # | The theory | The run | Passes when |
 |---|---|---|---|
-| M1 | A pinned entry whose host presents the pinned key works on all three roads, to the end of the install | the entry pinned to K1, the counterpart K1; the install to its end through the stand-in, the bridge with its check | the counterpart logs exactly 5 accepted logins, one per run; each of the 5 recorded argvs holds `StrictHostKeyChecking=yes`, one path as both known-hosts files, `VerifyHostKeyDNS=no`, `KnownHostsCommand=none` and `LogLevel=ERROR`; the install's two runs name one path, the check's two runs one path, the bridge its own: 3 distinct paths; the forwarded socket exists while the bridge is open and the check reads its mode; no sentence of §3.5 is shown; the stand-in's marker holds the run's nonce; the four conditions of the stand-in hold, each by its own evidence |
+| M1 | A pinned entry whose host presents the pinned key works on all three roads, to the end of the install | the entry pinned to K1, the counterpart K1; the install to its end through the stand-in, the bridge with its check | the counterpart logs exactly 5 accepted logins, one per run; each of the 5 recorded argvs holds `StrictHostKeyChecking=yes`, one path as both known-hosts files, `VerifyHostKeyDNS=no`, `KnownHostsCommand=none` and `LogLevel=ERROR`; the install's two runs name one path, the check's two runs one path, the bridge its own: 3 distinct paths; the forwarded socket exists while the bridge is open and the check reads its mode; no sentence of §3.5 is shown; the stand-in's marker holds the run's nonce; the four conditions of the stand-in hold, each by its own evidence. Since epoch 3: the run is cold, and beside the 5 connection starts the record holds exactly ONE question `ssh -V`, started before the first connection; how long it took is recorded (C20: the wait of a normal run) |
 | M2 | A key that another known-hosts file trusts does not satisfy a pinned call (P1) | the entry pinned to K1; K2 is listed (a) in the file that the client reads as the person's default one, (b) in the file that it reads as the system-wide one (an owned file that the handed config names; the result says which). Two legs, each for (a) and for (b). *The mismatch:* the counterpart is K2 from the start. *The switch:* the counterpart is K1 until the install's question is open, then K2 takes the address and the question is answered | *The mismatch,* for (a) and for (b): each of the four runs that start ends with exit code 255 and the verification line; the record of the client's starts holds no install run; K2 logs 0 accepted logins, 0 authentication attempts and 0 forwards. *The switch,* for (a) and for (b): K1 logged the probe as accepted; the install run starts once and ends with exit code 255 and the verification line; K2 logs 0 accepted logins and 0 authentication attempts; the stand-in's marker was not written; what the install shows is recorded word for word. The control, in (b): the control client with the two pairs of before E1 (no `GlobalKnownHostsFile`) is accepted by K2 |
-| M3 | With G2 on `main`, a live master connection does not carry a pinned call past the key check | a master connection to the counterpart (K1) is alive through the handed config (`ControlMaster`, `ControlPath`, `ControlPersist`). Two legs. *The mismatch:* the entry is pinned to K2. *The switch:* the entry is pinned to K1; when the install's question is open, K1's listener alone is ended, K2 takes the address, and the question is answered | *The mismatch:* each of the four runs that start ends with exit code 255 and the verification line; the record of the client's starts holds no install run; after the master was set up, K1's log shows no new session, command or forward. *The switch:* the master is alive directly before the question is answered and directly after the install run has ended (`ssh -O check` on the control path ends with 0 both times); the install run starts once and ends with exit code 255 and the verification line; between the switch and the end of that run K1's log shows no new session or command, and K2 logs 0 accepted logins. Then the control, AFTER the switch: the control client with the same pin words and without G2's two options ends with 0, and K1's log shows one new command: the master was there to ride, and the road did not ride it |
-| M4 | An absent pin connects as before; an unusable pin and a failed pin write start nothing | (a) no `hostKey`, an empty one, one of white space; (b) a text that does not parse; (c) a parsed key on a host that cannot form a line; (d) a pin write that fails | (a): the 5 runs carry `accept-new`, no known-hosts file and none of the pairs of E2; 5 accepted logins; 0 pin files written; and, in a world that made no pinned call before, no start of the client with `-V`. (b), (c), (d), on each road: 0 starts of the client, 0 connections in the counterpart's log, no *bridged* row, 0 files left in `keys/<pid>/` (except one case, candidate C14: in (d) a pin file that the failed write had begun can stay until the next activation's purge, and the run names such a file when it finds one); sentence A in the login's form for (b) and (c), sentence B for (d). Recorded for C9: whether the bridge's command minted a token before it refused |
-| M5 | A refused host key is told to the person as what the call saw, and nothing else is (P3, V4, V5) | pinned to K1 in all seven. (a) the counterpart K2. (b) the counterpart stopped. (c) the counterpart K1, its login refused. (d) an address that does not answer inside the run's time limit. (e) as (a), and the handed config says `LogLevel QUIET`. (f) the counterpart K1, and the handed config sends the connection through a jump host of the run (a second `sshd`) whose key the jump host's own known-hosts file refuses. (g) the counterpart K1 with the login accepted, and the remote side writes `Host key verification failed.` as the last line of its stderr and ends with 255 (here: the `sshd`'s forced command) | (a): the install shows sentence C once and not "did not answer the probe"; after *Open Remote Bridge…* no *bridged* row is left, and exactly one error MESSAGE holds `The bridge to "<name>" is not open: ` and sentence C (a log line alone does not pass); the stderr of the probe and of the mode check holds the `Offending` line with the pin file of that call; the order of the messages is recorded. (b), (c), (d): sentences C and D are shown 0 times on both roads; what is shown is recorded word for word and is the same text that the same case shows on an unpinned entry in the same run. (e): as (a), every item; the control: the control client with E1's words under the same config ends with 255 and an empty stderr. (f): each run that starts ends with 255; the destination logs 0 connections; sentence C is shown 0 times; the install shows sentence D once; exactly one error message holds `The bridge to "<name>" could not be checked: ` and sentence D; no *bridged* row is left; no stderr holds a line with the pin file of its call. (g): K1 logs the logins as accepted; sentence C is shown 0 times; the install shows sentence D once; exactly one error message holds `The bridge to "<name>" could not be checked: ` and sentence D, and the *bridged* row stays (the tunnel is up) |
+| M3 | With G2 on `main`, a live master connection does not carry a pinned call past the key check | a master connection to the counterpart (K1) is alive through the handed config (`ControlMaster`, `ControlPath`, `ControlPersist`). The counterpart is the serving launcher of E3.S2, and the switch uses its stop of the listener alone (epoch 3). Two legs. *The mismatch:* the entry is pinned to K2. *The switch:* the entry is pinned to K1; when the install's question is open, K1's listener alone is ended, K2 takes the address, and the question is answered | *The mismatch:* each of the four runs that start ends with exit code 255 and the verification line; the record of the client's starts holds no install run; after the master was set up, K1's log shows no new session, command or forward. *The switch:* the master is alive directly before the question is answered and directly after the install run has ended (`ssh -O check` on the control path ends with 0 both times); the install run starts once and ends with exit code 255 and the verification line; between the switch and the end of that run K1's log shows no new session or command, and K2 logs 0 accepted logins. Then the control, AFTER the switch: the control client with the same pin words and without G2's two options ends with 0, and K1's log shows one new command: the master was there to ride, and the road did not ride it. Since epoch 3, said outright: if that control does not end with 0 through the master that survived, the row is NOT passed, because a master that went down with its listener would show "no bypass" for the wrong reason |
+| M4 | An absent pin connects as before; an unusable pin and a failed pin write start no connection and attempt no authentication, whatever the window asked before (revised for epoch 3: entry 2.2, decision 15) | (a) no `hostKey`, an empty one, one of white space; (b) a text that does not parse; (c) a parsed key on a host that cannot form a line; (d) a pin write that fails. (b), (c) and (d) each run TWICE on each road, in a world of their own: once *cold* and once *warm* (the setup: the state of the asker). The newer client is the program of the roads | (a): the 5 connection starts carry `accept-new`, no known-hosts file and none of the pairs of E2; 5 accepted logins; 0 pin files written; and, cold, 0 starts of the client with `-V` (an unpinned call is not asked). (b), (c), (d), on each road, in BOTH states: 0 connection starts; 0 connections and 0 authentication attempts in the counterpart's log; no *bridged* row; 0 files left in `keys/<pid>/` (except one case, candidate C14: in (d) a pin file that the failed write had begun can stay until the next activation's purge, and the run names such a file when it finds one); sentence A in the login's form for (b) and (c), sentence B for (d). And the starts of the client, which the row of epoch 2 put at 0: *cold*, exactly ONE per refused call, the question `ssh -V`, and it had ended before the sentence was shown; *warm*, exactly 0. Either number wrong fails the leg: two starts cold, or one start warm, is a call that asks more than §3.10 says. Recorded for C9: whether the bridge's command minted a token before it refused |
+| M5 | A refused host key is told to the person as what the call saw, and nothing else is (P3, V4, V5) | pinned to K1 in all eight. (a) the counterpart K2. (b) the counterpart stopped. (c) the counterpart K1, its login refused. (d) an address that does not answer inside the run's time limit. (e) as (a), and the handed config says `LogLevel QUIET`. (f) the counterpart K1, and the handed config sends the connection through a jump host of the run (a second `sshd`) whose key the jump host's own known-hosts file refuses. (g) the counterpart K1 with the login accepted, and the remote side writes `Host key verification failed.` as the last line of its stderr and ends with 255 (here: the `sshd`'s forced command). (h), epoch 3 (C19): as (g), but the remote side writes the line to its stderr and then runs the command that it was asked for, which ends with 0 (here: a forced command that writes the line and hands over to the original command) | (a): the install shows sentence C once and not "did not answer the probe"; after *Open Remote Bridge…* no *bridged* row is left, and exactly one error MESSAGE holds `The bridge to "<name>" is not open: ` and sentence C (a log line alone does not pass); the stderr of the probe and of the mode check holds the `Offending` line with the pin file of that call; the order of the messages is recorded. (b), (c), (d): sentences C and D are shown 0 times on both roads; what is shown is recorded word for word and is the same text that the same case shows on an unpinned entry in the same run. (e): as (a), every item; the control: the control client with E1's words under the same config ends with 255 and an empty stderr. (f): each run that starts ends with 255; the destination logs 0 connections; sentence C is shown 0 times; the install shows sentence D once; exactly one error message holds `The bridge to "<name>" could not be checked: ` and sentence D; no *bridged* row is left; no stderr holds a line with the pin file of its call. (g): K1 logs the logins as accepted; the probe and the mode check each ended with 255 (recorded); sentence C is shown 0 times; the install shows sentence D once; exactly one error message holds `The bridge to "<name>" could not be checked: ` and sentence D, and the *bridged* row stays (the tunnel is up). (h): K1 logs the logins as accepted; the probe and the mode check each ended with 0, and the stderr of each holds the verification line (without that the leg could not have failed, and it is not passed); sentences C and D are shown 0 times on both roads; the install reaches its question, the one that `confirmationFor` builds from the probe's answer; the socket check shows no error message and reads the socket's mode, and the *bridged* row stays. The control of (h) is (g) of the same run: the same text with exit code 255 shows sentence D, so the text was read and the exit code alone decided |
 | M6 | Every call owns its files, calls do not disturb each other, nothing is left | two installs of one pinned entry that overlap; a bridge with its check; a bridge replaced by a second; each with a stored key, with a key that the person named by its path, and with a password; a file `known_hosts-<id>` is in the folder before | the pin paths of calls that overlap are distinct, as many as the calls; at each call's end its own file is gone and every other call's file is there with its bytes; `known_hosts-<id>` and the person's own key file are the same bytes after; after the last end: 0 files of these calls in `keys/<pid>/`, 0 client processes alive (by the recorded pids, not by name), no forwarded socket left. The password entry: with K1 the counterpart's log shows that the password attempt arrived (accepted, or `Failed password` where the counterpart cannot check one; the result says which); with K2 it shows 0 authentication attempts |
-| M7 | The pin file is read as the one intended file where its path needs double quotes (V2, R2) | the storage folder's path holds (a) a space, (b) one apostrophe, (c) a pair of apostrophes, (d) a space and an apostrophe; for each the runs of M1 and of M2 (b), both legs. *The collision,* for (c): a file at the path that the bare word resolves to (the apostrophes taken out) holds K2's line, the pin file holds K1's; once the counterpart is K1, once K2 | (a)-(d): as M1 and as M2 (b), both legs; in the mismatch leg both roads show sentence C (the `Offending` line names the pin file of a quoted word). *The collision:* with the counterpart K1, 5 accepted logins; with K2, each of the four runs that start ends with 255 and the verification line, and K2 logs 0 accepted logins and 0 authentication attempts. The control: the control client with E1's words (the path bare) is ACCEPTED by K2: it read the other file |
+| M7 | The pin file is read as the one intended file where its path needs double quotes (V2, R2) | the storage folder's path holds (a) a space, (b) one apostrophe, (c) a pair of apostrophes, (d) a space and an apostrophe, and, since epoch 3, (e) a backslash as the last character of the folder's own name: the complete pathname of the pin file then holds one backslash inside and does not end with one, so the rule writes it bare, and it is no case of M12 (W5); for each the runs of M1 and of M2 (b), both legs. *The collision,* for (c): a file at the path that the bare word resolves to (the apostrophes taken out) holds K2's line, the pin file holds K1's; once the counterpart is K1, once K2 | (a)-(e): as M1 and as M2 (b), both legs; in the mismatch leg both roads show sentence C (the `Offending` line names the pin file of a quoted word, and for (e) of a bare word with a backslash, which `ssh` prints as two). Before (e) drives a road, the run asks the product's rule for the complete pathname of its folder and gets no refusal: if the rule refuses it, the leg is not passed, it has become a case of M12. *The collision:* with the counterpart K1, 5 accepted logins; with K2, each of the four runs that start ends with 255 and the verification line, and K2 logs 0 accepted logins and 0 authentication attempts. The control: the control client with E1's words (the path bare) is ACCEPTED by K2: it read the other file |
 | M8 | `KnownHostsCommand`, alone, is not asked by a pinned call (V1, R1) | the entry pinned to K1, the counterpart K2; the handed config names a `KnownHostsCommand` that prints K2's line and records each of its own starts; no DNS source is on | The control first: the control client with E1's words is accepted by K2, and the command's record holds at least one start. Then the roads: each of the four runs that start ends with 255 and the verification line; each recorded argv holds `KnownHostsCommand=none`; the command's record holds 0 starts for the roads' runs; K2 logs 0 accepted logins and 0 authentication attempts |
-| M9 | The advice of sentence A repairs the pin (the key form), and no password entry is given it (P2) | a key entry with a pin that does not parse: all three roads; then Connect's options (`connectionOptions`) with the real scan of the counterpart (K1) and *Trust and connect* answered; then the runs of M1. Beside it, for C1: a password entry in the same state, the scan given no answer | the three roads showed the key form and started nothing; the stored pin is K1's line after the answer, and M1 passes on that entry; the password entry was shown the password form by all three roads. Recorded for C1: whether Connect's options for it name no pin file |
+| M9 | The advice of sentence A repairs the pin (the key form), and no password entry is given it (P2) (revised for epoch 3 with M4: decision 15) | a key entry with a pin that does not parse: all three roads, once *cold* and once *warm*, each in a world of its own; then Connect's options (`connectionOptions`) with the real scan of the counterpart (K1) and *Trust and connect* answered; then the runs of M1. Beside it, for C1: a password entry in the same state, the scan given no answer, the roads cold and warm as for the key entry | the roads showed the key form and started NO CONNECTION: 0 connection starts, and 0 connections and 0 authentication attempts in the counterpart's log, in both states; of the client's starts, which the row of epoch 2 called "nothing": cold, exactly one per refused call, the question `ssh -V`; warm, exactly 0; the stored pin is K1's line after the answer, and M1 passes on that entry; the password entry was shown the password form, with the same numbers in both states, and the counterpart's log shows no password attempt. Recorded for C1: whether Connect's options for it name no pin file |
 | M10 | A secure SSHFP record, alone, does not admit a key to a pinned call (V1, R1) | where the run owns the resolver: the counterpart has a name, and the resolver answers a SECURE SSHFP record of K2 for it and records each question. The entry is pinned to K1, the counterpart is K2, the handed config says `VerifyHostKeyDNS yes`; no `KnownHostsCommand` is named | The control first: the control client with E1's words is accepted by K2, and the resolver's record holds the SSHFP question. Then the roads: each of the four runs that start ends with 255 and the verification line; each recorded argv holds `VerifyHostKeyDNS=no`; the resolver's record holds 0 SSHFP questions for the roads' runs; K2 logs 0 accepted logins and 0 authentication attempts. If the control is not accepted, the row is NOT passed: it showed no bypass |
-| M11 | The answer for an older client holds on a real one (R1, R2) | a real client older than 8.5 as the program of the roads. (a) The client alone: a config line `KnownHostsCommand …` and no `IgnoreUnknown`; then the same with the config's own `IgnoreUnknown` for it, pinned to K1 against the counterpart K2 with the command printing K2's line. (b) The roads, under a config of their own that names no `KnownHostsCommand` (that line is (a)'s alone; a pre-8.5 client would refuse to read it): the runs of M1, of M2 (b) the mismatch, and of M7 (a)-(d), M7's control showing acceptance through the colliding file with E1's words. (c) A program that answers `-V` with no version at the start of its stderr | (a): without `IgnoreUnknown` the client ends with `Bad configuration option` and 255 before it connects; with it the login is refused with the verification line and K2 logs 0 accepted logins. (b): as M1 and M7 with their `KnownHostsCommand` assertion replaced by its opposite: NO `KnownHostsCommand` pair in the 5 argvs and with `VerifyHostKeyDNS=no` and `LogLevel=ERROR` in each; as M2 (b), the mismatch; as M7 (a)-(d) with its collision. (c): on each road 0 starts of a connection (the record holds the `-V` starts alone), 0 connections in the counterpart's log, 0 pin files written, sentence F, no *bridged* row. The result names the client's version |
-| M12 | A path that cannot be written for `ssh` as one file starts nothing (V2, V3, R3) | the storage folder's path holds (a) a double quote, (b) two backslashes in a row (the shape of a UNC folder; on Linux a folder of that name stands for it), (c) `%h`, (d) `${HOME}`. The entry is pinned to K1 and the counterpart is K1, so only the refusal can stop the call. It signs in with a key that the person named by its path, outside that folder, so the pin file is the only file that the call would write there | for each of (a)-(d), on each road: 0 starts of the client, 0 connections in the counterpart's log, no file written into the storage folder, no *bridged* row, sentence E with the kind of that path. No recorded argv of the whole run of E3 names `/dev/null` as a known-hosts file |
+| M11 | The answer for an older client holds on a real one (R1, R2); and, since epoch 3, a client that never answers ends the call in bounded time, with nothing sent | a real client older than 8.5 as the program of the roads. (a) The client alone: a config line `KnownHostsCommand …` and no `IgnoreUnknown`; then the same with the config's own `IgnoreUnknown` for it, pinned to K1 against the counterpart K2 with the command printing K2's line. (b) The roads, under a config of their own that names no `KnownHostsCommand` (that line is (a)'s alone; a pre-8.5 client would refuse to read it): the runs of M1, of M2 (b) the mismatch, and of M7 (a)-(e), M7's control showing acceptance through the colliding file with E1's words. (c) A program that answers `-V` AT ONCE, with no version at the start of its stderr. (d), epoch 3 (W3; C20), *the version that never comes:* cold, a program that records its start with `-V`, answers nothing and does not end by itself | (a): without `IgnoreUnknown` the client ends with `Bad configuration option` and 255 before it connects; with it the login is refused with the verification line and K2 logs 0 accepted logins. (b): as M1 and M7 with their `KnownHostsCommand` assertion replaced by its opposite: NO `KnownHostsCommand` pair in the 5 argvs and with `VerifyHostKeyDNS=no` and `LogLevel=ERROR` in each; as M2 (b), the mismatch; as M7 (a)-(e) with its collision; and, since epoch 3, M1's one question replaced by its count for an older client: one question `ssh -V` before the connections of EACH pinned call (three: the install, the bridge, its socket check), because an older answer is not kept. (c): on each road 0 connection starts (the record holds the `-V` starts alone, one per refused call), 0 connections and 0 authentication attempts in the counterpart's log, 0 pin files written, sentence F with the exit code, no *bridged* row. (d): on each road the record holds exactly ONE start, the `-V`; 0 connection starts; 0 connections and 0 authentication attempts in the counterpart's log; 0 pin files written, during the wait and after it; sentence F in its form without an exit code ("it did not start, or did not end in time"); no *bridged* row; the program that never answers is gone, by its recorded pid and start time and never by name, no later than the margin after sentence F; two times are recorded per road, from the start of the command to sentence F and to the end of that program, and each lies between the runner's limit (10 s, `CLIENT_CHECK_TIMEOUT_MS`) and that limit plus a margin that the stories document fixes before the run; recorded for C20: both times, and what the person was shown while waiting. The result names the client's version |
+| M12 | A path that cannot be written for `ssh` as one file starts nothing, for every refused kind (V2, V3, R3; entry 2.1; revised for epoch 3: W5) | A leg is named by the COMPLETE pathname of the pin file as the product makes it (`knownHostsPath`: the storage folder, `keys/<pid>/`, `known_hosts-<id>-<uuid>`), not by the folder alone. Six kinds can come from a storage folder, and each is a leg on the roads; the folder's path holds (a) a double quote, (b) two backslashes in a row (the shape of a UNC folder; on Linux a folder of that name stands for it), (c) `%h`, (d) `${HOME}`, (e) a backslash before an apostrophe, (f) a control character (a tab). Two kinds cannot come from a storage folder, and are legs of the rule and of the client alone: (g) a backslash at the END of the pathname (the pathname ends with the file's name; a folder that ends with a backslash is M7, e), (h) a tilde at its START (the storage folder is an absolute path). In (a)-(f) the entry is pinned to K1 and the counterpart is K1, so only the refusal can stop the call; it signs in with a key that the person named by its path, outside that folder, so the pin file is the only file that the call would write there; each leg is cold | Coverage first: the run reads the kinds from the product (`PIN_PATH_KINDS`, `hostKeyPin.ts:143`) and fails when one of them is neither a leg (a)-(f) nor (g) or (h); and for each of (a)-(f) it asks the product's rule for the complete pathname of that leg's folder and gets the kind of the leg, before a road is driven. (a)-(f), on each road: 0 starts of the client of ANY kind, the question `ssh -V` included (the rule stands before the question); 0 connections in the counterpart's log; no file written into the storage folder; no *bridged* row; sentence E with the kind of that path. (g), (h): the product's rule, asked with such a pathname, refuses it with its kind; no road is driven for them, and the result says so; the control, the client alone: `ssh -G` with that word as both known-hosts options does not resolve both lists to the one pathname ((g) in double quotes: `invalid quotes`; (h): expanded in the person's list and not in the system-wide one), so the refusal has its reason on the client of this run. No recorded argv of the whole run of E3 names `/dev/null` as a known-hosts file |
 | M13 | The Windows client reads the words as the Linux client does (R2, R3), the client alone | `ssh.exe -G` of the Windows that the owner's machine has, started with the argv as separate arguments, with the words that the final code writes for a pin file under a storage folder (a) with a space, (b) with an apostrophe, (c) with both; and the rule asked for a UNC folder (`\\server\share\…`) | (a)-(c): the client resolves strict checking, `verifyhostkeydns false`, no `knownhostscommand`, `loglevel ERROR`, and both known-hosts lists as the one intended path; one file is told from two by the control of K7. The UNC folder: the rule refuses it, and no `ssh.exe` is started for it; the control: `ssh.exe -G` with the bare and the quoted UNC word resolves another path (K8 c). The result names the client's version. NOT in this row: a login on Windows (C6) |
-| M14 | The agent's pinned exec gets the same words and the same refusals (§3.9: the one effect outside the three roads) | the agent's `ssh:exec` through its own call, off a bridge, as section 9 of `ssh-agent-itest.cjs` drives an exec; the entry pinned to K1. (a) the counterpart K1. (b) the counterpart K2 and the handed config of M2 (b). (c) the counterpart K2 and the handed config of M8. (d) the storage folder of M12 (a) | (a): one accepted login; the recorded argv holds the six pairs of M1. (b), (c): exit code 255 and the verification line; K2 logs 0 accepted logins and 0 authentication attempts. (d): 0 starts of the client, and the agent's answer names the field and holds no path. NOT in this row: *Run with Secrets* over SSH, which calls the same builder (tests 22, 23) and needs a terminal's launch to run |
+| M14 | The agent's pinned exec gets the same words and the same refusals (§3.9: the one effect outside the three roads) | the agent's `ssh:exec` through its own call, off a bridge, as section 9 of `ssh-agent-itest.cjs` drives an exec; the entry pinned to K1. (a) the counterpart K1. (b) the counterpart K2 and the handed config of M2 (b). (c) the counterpart K2 and the handed config of M8. (d) the storage folder of M12 (a) | (a): one accepted login; the recorded argv holds the six pairs of M1. (b), (c): exit code 255 and the verification line; K2 logs 0 accepted logins and 0 authentication attempts. (d): 0 starts of the client of any kind, the question `ssh -V` included (cold), and the agent's answer names the field and holds no path. NOT in this row: *Run with Secrets* over SSH, which calls the same builder (tests 22, 23) and needs a terminal's launch to run |
 
-- **The feasibility comes first.** E3's first story probes the instruments that are not known to work, before any row is
-  built, as E1.S4's probe did: the `PATH` of the counterpart's login for the install's stand-ins; the stop of the listener
-  alone with a master that stays; a resolver that the run owns and whose answer the client takes as secure (M10); a client
-  older than 8.5 that runs here (M11); a handed config that the nested client of a jump host reads too (M5 f); the Windows
-  client from this machine (M13). A probe that fails is not a skipped row. It is a recorded plan change, and when it makes
-  the release gate smaller it goes to the owner, the question consultants first.
+- **The feasibility comes first** (E3.S3 since epoch 3: after C19 and after the committed instrument, before any row is
+  built). The story probes the instruments that are not known to work, as E1.S4's probe did: the `PATH` of the
+  counterpart's login for the install's stand-ins; a resolver that the run owns and whose answer the client takes as secure
+  (M10); a client older than 8.5 that runs here (M11); a handed config that the nested client of a jump host reads too
+  (M5 f); the Windows client from this machine (M13); and, since epoch 3, a forced command that writes the verification line
+  and then runs the command it was asked for, to exit code 0 (M5 h), and a program that never answers `-V` and that the
+  runner's limit ends (M11 d). The stop of the listener alone, with a master that stays, is proven by E3.S2. Each probe
+  runs through the committed instrument and records the identities of what it ran, as a row does. A probe that fails is
+  not a skipped row. It is a recorded plan change, and when it makes the release gate smaller it goes to the owner, the
+  question consultants first (decision 18). Four of these are not proven and are said so here, so that nobody plans on
+  them: the install's stand-in, the resolver, the older client, Windows.
 - **Done when.**
+  - E3.S1 and E3.S2 are done as their own lines say (above), before the first row is measured: the commit of the results
+    is a descendant of the instrument's commit and of C19's.
   - Every row passes as its last column says, in ONE run of the whole set on the final code: the rows of the rig in one
     run of the script, and M10, M11 and M13 on the same commit. A repair means the whole set again. Any later change before the release that can affect the
     shipped extension or the measurements (`src_vs_code/src`, the dependencies, the build, the packaging, the harness)
     means the whole set again; the run names its commit, and the release ships that commit's vsix.
+  - That one run is a run of the commit: through the committed instrument, from a tree with no modified tracked file, after
+    E3's branch has taken `main` (§9, step 9), with the identities of what ran beside the results.
   - A row that was not measured is not passed, and E3 is then not done: there is no "if no real host can be had". No row
     passes on either result. Every control showed what its row says.
-  - The results are in §10, per row: the numbers, the date, the client's and the counterpart's version, the commit, and
-    for M10, M11 and M13 where they ran.
+  - The results are in §10, per row: the four numbers of the setup where the row counts them, the date, the client's and
+    the counterpart's version, the commit, the identities, and for M10, M11 and M13 where they ran.
   - §10 holds one table for the CHANGELOG entry: each sentence of it that claims a behaviour, and the test of §5 or the
-    row behind it. A claim with nothing behind it is taken out of the entry or said as "not measured".
-  - The code gate is at `proceed` and E3's PR is merged.
-- **Cornerstone areas.** None: E3 measures and builds no behaviour.
-- **Stories.** `todo/PLAN_person_roads_pin_host_key_E3.md`: not written yet.
+    row behind it. A claim with nothing behind it is taken out of the entry or said as "not measured". The sentence "No
+    `ssh` starts" is corrected from M4 (§6).
+  - The code gate is at `proceed` and E3's PR is merged, after E2's (decision 17).
+- **Cornerstone areas.** None. The quota of this plan is two cornerstones for three epics, and both are marked (E1.S2,
+  E2.S2), so E3 can mark none; a third would go to the operator and not into the stories document (`subagent-models.md`).
+  The one behaviour that E3 builds, C19, changes the rule of evidence of §3.12: its spec is a security judgement and is
+  Fable's all the same, outside the quota (the row *Security judgement*). The instrument and the rows are Opus's to
+  specify, as for every story that is no cornerstone.
+- **Stories.** `todo/PLAN_person_roads_pin_host_key_E3.md`: not written yet. Its first three stories are E3.S1 (C19), E3.S2
+  (the launch instrument) and E3.S3 (the feasibility), in that order; from E3.S4 on, the rows M1-M14, the results (§10) and
+  the check of the CHANGELOG entry, as the stories document splits them.
 - **Info for M5 (a), the bridge.** The person also sees *Bridge open to …* before the check's error (§3.5 says so):
   the click shows it at once, and the check's message follows when its `ssh` is refused. E3's reading of the screen counts both lines.
 
 ### The remaining candidates
 
-None is built in E1, E2 or E3. Each has its disposition here, as decision 12 asks before the release; the lead reads the list
-again at the release. "Taken" means that E2 builds it and the candidate is closed. A candidate that becomes work gets a plan
-of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1, C18 and C19 during E2.
+Each has its disposition here, as decision 12 asks before the release; the lead reads the list again at the release.
+"Taken" means that an epic builds it and the candidate is closed: E2 built C2, C11, C13, C16 and C17, and since epoch 3 E3
+builds C19 as its first story. No other candidate is built in E1, E2 or E3. A candidate that becomes work gets a plan
+of its own (§9, step 12). C1-C10 were written with the plan, C11-C17 during E1, C18 and C19 during E2, C20 at E2's code
+gate. The re-review for epoch 3 read all twenty again (2026-11-19): C19 and C20 change, the others stand as they are.
 
 - **C1 — Connect refuses to go on when its scan answers nothing and no usable pin stands in** (§3.5; §7, F2).
   **Disposition: not built; a plan of its own, with C8** (the repair of a saved host key that cannot be used). Does not block
@@ -1420,14 +1822,25 @@ of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1,
   A `HostName` alias or a `Port` in the person's `ssh` config (measured by the E2.S3 spec, 2026-11-18: the alias once, the port on two hosts; a
   `HostKeyAlias` read, not measured) makes `ssh` look the key up under the resolved name and port, while the pin file holds the
   line under the entry's own host and port; the call is refused with `No <type> host key is known for <that name>` and the
-  verification line, which is sentence D. **Disposition: not built; a plan of its own (§9, step 10), not blocking: it fails
+  verification line, which is sentence D. **Disposition: not built; a plan of its own (§9, step 12), not blocking: it fails
   closed.** No test of this plan and no row of E3 holds it. Whether a pinned call should state `HostKeyAlias` itself is the
   question of that plan.
-- **C20 — Progress while the client is asked** (the coai code gate of E2, rejected there for scope). A pinned *Run with Secrets* (and the other roads) waits up to 10 s with no sign when the `ssh` program does not answer `-V`, then shows sentence F. Would be justified by a row of E3 showing the wait in a normal run; not blocking.
 - **C19 — Show sentence D only when the run did not end with 0.** A remote profile that prints the verification line while the
-  command succeeds gets sentence D today, and the install stops (the rule of §3.12 asks the text only). **Disposition: not
-  built; it would be a recorded plan change** (a second condition and one more parameter, `exitCode`, in the function of
-  §3.12), and a second entry of epoch 2. Not blocking: the person is told a true thing about the line, and nothing is
-  connected.
+  command succeeds gets sentence D as E2 built it, and the install stops (the rule of §3.12 asked the text only).
+  **Taken into E3, as its first story** (E3.S1; §3.12, part 4; decision 14; tests 28-32; M5, g and h). The disposition of
+  epoch 2 ("not built; … not blocking: the person is told a true thing about the line, and nothing is connected") is
+  withdrawn, because both of its reasons are false (W2, §1.2): the sentence says that the connection "ended with" the line
+  when it did not, and authentication and the remote command have already run. It is the baseline of epoch 3, not an
+  entry: the re-review took it in (`8d07d6a6`, `22147fce`).
+- **C20 — Progress while the client is asked** (the coai code gate of E2, rejected there for scope). A pinned *Run with
+  Secrets* (and the other roads) waits up to 10 s with no sign when the `ssh` program does not answer `-V`, then shows
+  sentence F. Epoch 2 said that a row of E3 would justify it, and no row measured that wait (W3). **Disposition: not built
+  by this plan; decided by M11 (d), with M1's number beside it.** M11 (d) measures the worst case: how long a call waits for
+  a program that never answers, that the wait ends with sentence F, and that no process and no connection is left. M1
+  records how long the question takes in a normal run. If M11 (d) passes, the wait is bounded and fails closed, and a sign
+  of progress is a change of what the person sees on five roads: a small plan of its own after the release (§9, step 12),
+  for which the two numbers in §10 are the case or the dismissal; it does not block the release. If M11 (d) fails (no
+  sentence F, a program left, a wait beyond the bound), that is not C20: it is a defect of §3.10, repaired inside E3, and
+  it blocks the release.
 
 Cornerstones: 2 of 2 — E1.S2, E2.S2

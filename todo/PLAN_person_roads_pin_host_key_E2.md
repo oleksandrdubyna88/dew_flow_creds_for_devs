@@ -1,6 +1,6 @@
 # PLAN — G1, epic E2: the stories (the known repairs: a pinned call trusts the pin alone, names it as one file or does not start, and says only what it saw)
 
-> Status: **stories document written 2026-11-18, the baseline of epic E2; nothing of E2 built.** The stories document of epic E2 of
+> Status: **Epic 2 built 2026-11-18 and 2026-11-19 (E2.S1-E2.S4) on `fix/g1-e2-measurements` (`22caab8b`), through its code gate, not merged, not released; its pull request waits for the parent's epoch 3 (the parent's §9, step 8). Stories document written 2026-11-18, the baseline of epic E2.** The stories document of epic E2 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E2; epoch 2, approved 2026-11-18). It is
 > the epic's baseline, written when E2 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E2.S2). To be built on its own branch
@@ -282,5 +282,5 @@ Spec: [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_
 When the four stories are built, the code gate runs on E2's branch: `review_code`, then `resolve`, until `proceed`. A cadence
 consult, if the gate orders one, comes before that round. Then the lead's Opus review (it reads the CHANGELOG entry against E2.S4's
 list: R5), CI green on the head sha, CodeRabbit read, and one PR, merged by squash after the head sha's checks exist and pass. A PR
-over the repository's cap needs the owner's word. **E2 is merged and not released** (the parent's §9, step 6). E3 then writes
+over the repository's cap needs the owner's word. **E2 is merged and not released** (the parent's §9, steps 6 and 8, as its revision for epoch 3 numbers them). E3 then writes
 `todo/PLAN_person_roads_pin_host_key_E3.md`.
