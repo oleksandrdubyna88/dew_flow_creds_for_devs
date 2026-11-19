@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **epoch 2 approved 2026-11-18 (re-reviewed after the stop at entry 1.2), open, no change yet; E2 and E3 not built. Epic 1 merged (#379, `f3e9887d`), not released: no extension release from `main` (release-please #383 held) until E3 passes and the owner gives the word.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **epoch 2 approved 2026-11-18 (re-reviewed after the stop at entry 1.2), open, one change (2.1); E2 built and through the coai code gate (2026-11-19, `proceed` in every round, accepted findings fixed) on `fix/g1-e2-measurements`, unmerged (its PR waits for the owner: over the PR cap); E3 not built. Epic 1 merged (#379, `f3e9887d`), not released: no extension release from `main` (release-please #383 held) until E3 passes and the owner gives the word.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). The revision replaces the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Every other candidate has a written disposition. E1's stories document is
@@ -1421,6 +1421,7 @@ of its own (§9, step 10). C1-C10 were written with the plan, C11-C17 during E1,
   verification line, which is sentence D. **Disposition: not built; a plan of its own (§9, step 10), not blocking: it fails
   closed.** No test of this plan and no row of E3 holds it. Whether a pinned call should state `HostKeyAlias` itself is the
   question of that plan.
+- **C20 — Progress while the client is asked** (the coai code gate of E2, rejected there for scope). A pinned *Run with Secrets* (and the other roads) waits up to 10 s with no sign when the `ssh` program does not answer `-V`, then shows sentence F. Would be justified by a row of E3 showing the wait in a normal run; not blocking.
 - **C19 — Show sentence D only when the run did not end with 0.** A remote profile that prints the verification line while the
   command succeeds gets sentence D today, and the install stops (the rule of §3.12 asks the text only). **Disposition: not
   built; it would be a recorded plan change** (a second condition and one more parameter, `exitCode`, in the function of
