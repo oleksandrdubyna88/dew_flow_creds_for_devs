@@ -181,6 +181,7 @@ async function legI(scope, rig) {
     const queryMajor = majorOfExe(noPort.program);
     const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
     console.log(`record (PA1-i) control, the wrapper starts the other version: ${twoVersions ? (queryMajor === other ? 'SHOWN (the marker named it and it ran)' : `NOT shown (the marker named ${other} and ${queryMajor ?? 'none'} ran)`) : 'NOT shown (one psql version is installed)'}`);
+    console.log(`record (PA1-i) the wrapper's choice, by the program each start runs (the majors installed: ${majors.join(' ') || 'none'}): with no file, \`psql --version\` is major ${majorOfLine(versionPlain) ?? '?'} and the query start is major ${majorOfExe(plain.program) ?? '?'}; with a ~/.postgresqlrc that names major ${other ?? first}, \`psql --version\` is major ${versionMajor ?? '?'} and the query start is major ${queryMajor ?? '?'}${twoVersions ? '' : ' (only one major is installed, so the file names the one there is and shows nothing of the wrapper\'s choice)'}`);
     noteLeg('PA1-i psql', twoVersions && queryMajor === other, `the version start and the query start ${differs ? 'DIFFER' : 'agree'} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`);
     await steeringMatrix(scope, rig, word, other ?? first);
     if (differs) {

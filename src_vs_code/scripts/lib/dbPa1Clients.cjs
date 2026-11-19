@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { launch, endChild } = require('../itestSshd.cjs');
 const crypto = require('node:crypto');
+const net = require('node:net');
 const { fakeServer, within } = require('./mysqlFake.cjs');
 const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, reachedRun, noteLeg, unmeasured, IS_WINDOWS } = require('./dbProbeRig.cjs');
 
@@ -31,17 +32,52 @@ function legA(client, rig) {
     }
     const read = versionOfClient(client.family, answer.text);
     const said = read === undefined ? 'the answer holds no version of this family\'s kind' : `the version it says: ${read.number}, from the line ${JSON.stringify(read.line)}`;
-    console.log(`record (PA1-a) ${client.family} ${flag}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
+    console.log(`record (PA1-a) ${client.name} ${flag}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
   }
   return versionLine;
 }
 
-/** The ODBC client's driver, read from the rig and not from the client (N16): Linux `odbcinst`, Windows the driver list. */
-function odbcDrivers() {
-  const answer = IS_WINDOWS
-    ? runSync('powershell', ['-NoProfile', '-Command', 'Get-OdbcDriver | ForEach-Object { $_.Name }'], process.env)
-    : runSync('odbcinst', ['-q', '-d'], process.env);
-  console.log(`record (PA1-a) odbc-sqlcmd, the driver the rig lists: exit ${answer.code}; ${JSON.stringify(oneLine(answer.text, 300))}`);
+/** A loopback port nothing listens on: bound, read, let go. */
+function closedPort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/** The driver names an ODBC client prints in its own error lines: `Microsoft ODBC Driver 18 for SQL Server`, `SQL Server Native Client 11.0`. */
+const DRIVER_WORDS = /(?:Microsoft )?ODBC Driver \d+ for SQL Server|SQL Server Native Client(?: \d+(?:\.\d+)?)?/i;
+
+/**
+ * The driver the ODBC client RAN with (N16), not every driver the runner has installed (the second run listed them all, and a reader could not tell which one the client used). A client run at a port that
+ * refuses, under the bridged environment, names its driver in its own error line; on Linux the driver file that name stands for is then read from `odbcinst` (its file name carries the build, `libmsodbcsql-18.6.so.1.1`).
+ * A client that names none in its words is said to have named none, and the installed list is printed under that label and no other.
+ */
+async function odbcDriver(client, rig) {
+  const port = await closedPort();
+  const env = bridgedEnv(rig.product, rig.home, { SQLCMDPASSWORD: `probe-${crypto.randomBytes(6).toString('hex')}` });
+  const answer = runSync(client.exe, ['-S', `127.0.0.1,${port}`, '-U', 'pa1', '-Q', 'select 1', '-l', '5'], env, 40_000);
+  const named = DRIVER_WORDS.exec(answer.text)?.[0];
+  if (named === undefined) {
+    const listed = IS_WINDOWS
+      ? runSync('powershell', ['-NoProfile', '-Command', 'Get-OdbcDriver | ForEach-Object { $_.Name }'], process.env)
+      : runSync('odbcinst', ['-q', '-d'], process.env);
+    console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: the client's own words name none (exit ${answer.code}; it said ${JSON.stringify(oneLine(answer.text, 200))}); the drivers the runner lists, none of them shown to have run: ${JSON.stringify(oneLine(listed.text, 300))}`);
+    noteLeg('PA1-a odbc-sqlcmd driver', true, 'the client named no driver');
+    return;
+  }
+  let file = '';
+  if (!IS_WINDOWS) {
+    const entry = runSync('odbcinst', ['-q', '-d', '-n', named.replace(/^Microsoft /, '')], process.env).stdout;
+    const library = /^Driver\s*=\s*(\S+)/m.exec(entry)?.[1];
+    file = library === undefined ? '; odbcinst names no driver file for that name' : `; its file is ${path.basename(library)}`;
+  }
+  console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: ${JSON.stringify(named)} (named by the client's own error line, exit ${answer.code})${file}`);
+  noteLeg('PA1-a odbc-sqlcmd driver', true, named);
 }
 
 /** The arguments that connect a client to the listener at `port`, with one candidate among them: `mysql` by TCP, `sqlcmd` with a SQL login named. */
@@ -59,19 +95,19 @@ async function flagLegs(scope, leg, client, rig, candidates) {
   const env = bridgedEnv(rig.product, rig.home, client.family.endsWith('sqlcmd') ? { SQLCMDPASSWORD: sealed } : {});
   const run = (candidate) => reachedRun(scope, client.exe, (port) => connectArgs(client, port, candidate), env);
   const control = await run([]);
-  console.log(`record (${leg}) ${client.family} control, no candidate: ${control.reached ? 'the client connected' : 'the client did NOT connect'}; exit ${control.code}; it said ${JSON.stringify(control.said)}`);
-  check(`(${leg}) ${client.family} control: the run with no candidate connects to the listener (without it a refusal below proves nothing)`, control.reached, JSON.stringify(control));
+  console.log(`record (${leg}) ${client.name} control, no candidate: ${control.reached ? 'the client connected' : 'the client did NOT connect'}; exit ${control.code}; it said ${JSON.stringify(control.said)}`);
+  check(`(${leg}) ${client.name} control: the run with no candidate connects to the listener (without it a refusal below proves nothing)`, control.reached, JSON.stringify(control));
   const invented = await run([INVENTED_FLAG]);
-  console.log(`record (${leg}) ${client.family} a flag that does not exist (${INVENTED_FLAG}): ${invented.reached ? 'it went ON and connected (the client ignores an unknown flag)' : 'refused, no connection'}; exit ${invented.code}; it said ${JSON.stringify(invented.said)}`);
-  noteLeg(`${leg} ${client.family} control`, control.reached, `an unknown flag: ${invented.reached ? 'IGNORED' : 'refused'}`);
+  console.log(`record (${leg}) ${client.name} a flag that does not exist (${INVENTED_FLAG}): ${invented.reached ? 'it went ON and connected (the client ignores an unknown flag)' : 'refused, no connection'}; exit ${invented.code}; it said ${JSON.stringify(invented.said)}`);
+  noteLeg(`${leg} ${client.name} control`, control.reached, `an unknown flag: ${invented.reached ? 'IGNORED' : 'refused'}`);
   if (control.reached && invented.reached) {
-    console.log(`STOP (${leg}, ${client.family}): the client ignores a flag it does not know and goes on — the database client check is then its only lock (parent §7, row PA1)`);
+    console.log(`STOP (${leg}, ${client.name}): the client ignores a flag it does not know and goes on — the database client check is then its only lock (parent §7, row PA1)`);
   }
   for (const candidate of candidates) {
     const answer = await run(candidate);
     const unknown = !answer.reached && UNKNOWN_FLAG.test(answer.said);
-    console.log(`record (${leg}) ${client.family} ${candidate.join(' ')}: ${answer.reached ? 'KNOWN (the client read it and connected)' : (unknown ? 'UNKNOWN TO THIS CLIENT (it refused the flag in its own words before connecting: the flag is no control of this client)' : 'not known, or refused before connecting')}; exit ${answer.code}; it said ${JSON.stringify(answer.said)}`);
-    noteLeg(`${leg} ${client.family} ${candidate.join(' ')}`, control.reached, answer.reached ? 'known' : (unknown ? 'unknown to this client' : 'not known or refused'));
+    console.log(`record (${leg}) ${client.name} ${candidate.join(' ')}: ${answer.reached ? 'KNOWN (the client read it and connected)' : (unknown ? 'UNKNOWN TO THIS CLIENT (it refused the flag in its own words before connecting: the flag is no control of this client)' : 'not known, or refused before connecting')}; exit ${answer.code}; it said ${JSON.stringify(answer.said)}`);
+    noteLeg(`${leg} ${client.name} ${candidate.join(' ')}`, control.reached, answer.reached ? 'known' : (unknown ? 'unknown to this client' : 'not known or refused'));
   }
 }
 
@@ -124,17 +160,17 @@ async function legE(scope, client, rig) {
   const folder = byWords.folder !== undefined && fs.existsSync(byWords.folder) ? byWords.folder : folderByLibrary(client);
   const how = folder === byWords.folder ? "the client's own words when the server switched the login to a plugin that is not there" : 'the folder string compiled into the client library';
   if (folder === undefined && byWords.folder !== undefined) {
-    console.log(`record (PA1-e) ${client.family}: the client looked for a plugin in ${byWords.folder}, which does not exist on this runner: it has no loadable authentication plugin file there`);
-    noteLeg(`PA1-e ${client.family}`, true, 'the plugin folder the client named does not exist');
+    console.log(`record (PA1-e) ${client.name}: the client looked for a plugin in ${byWords.folder}, which does not exist on this runner: it has no loadable authentication plugin file there`);
+    noteLeg(`PA1-e ${client.name}`, true, 'the plugin folder the client named does not exist');
     return;
   }
   if (folder === undefined) {
-    unmeasured(`PA1-e ${client.family}`, `neither the client's words nor its library named a plugin folder that exists (it said ${JSON.stringify(byWords.said)})`);
+    unmeasured(`PA1-e ${client.name}`, `neither the client's words nor its library named a plugin folder that exists (it said ${JSON.stringify(byWords.said)})`);
     return;
   }
   const names = fs.readdirSync(folder).sort((a, b) => a.localeCompare(b));
-  console.log(`record (PA1-e) ${client.family}: the plugin folder, found by ${how}: ${folder}; ${names.length} file(s): ${names.join(' ') || '(none)'}`);
-  noteLeg(`PA1-e ${client.family}`, true, `${names.length} file(s) in ${path.basename(path.dirname(folder))}/${path.basename(folder)}`);
+  console.log(`record (PA1-e) ${client.name}: the plugin folder, found by ${how}: ${folder}; ${names.length} file(s): ${names.join(' ') || '(none)'}`);
+  noteLeg(`PA1-e ${client.name}`, true, `${names.length} file(s) in ${path.basename(path.dirname(folder))}/${path.basename(folder)}`);
 }
 
-module.exports = { legA, odbcDrivers, legD, legE, legF };
+module.exports = { legA, odbcDriver, legD, legE, legF };

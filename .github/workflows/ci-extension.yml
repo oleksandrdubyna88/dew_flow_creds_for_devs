@@ -283,12 +283,16 @@ jobs:
   # `UNMEASURED` line says that a positive control could not be produced, and a `STOP (PA1-…)` line is an answer against the spec's decision. It fails only for the rig's
   # own faults (a client the runner must carry and does not). Every client the image lacks is added by a step, pinned (R7): go-sqlcmd by version and checksum, the ODBC
   # `sqlcmd` by Microsoft's repository under a key checked against a checksum (a step that may fail, and then that client is `UNMEASURED`), the older `psql` clients by the
-  # digest of the PostgreSQL image of an older release, a second and a third `psql` version by apt (the wrapper of PA1-i). Only this job writes to the runner system-wide
-  # (apt, `/usr/share/keyrings`), and only on CI.
+  # digest of the PostgreSQL image of an older release, a second `psql` major from the PostgreSQL project's apt repository (the wrapper of PA1-i), Oracle's own `mysql` 8.4.13.
+  #
+  # ONE JOB PER IMAGE FOR EVERY DATABASE PROBE (the spec's §S7.7: a row is judged per recorded BUILD, and every leg of a pair must run on the build the row records). The second run had PK1 in a job
+  # of its own on `ubuntu-latest`, with another `psql` build than PA1, PP1 and PE1 on the same image; so PA1, PP1, PE1 and PK1 (Linux, and on `windows-latest` PA1 and PK1) run here, after the same
+  # installs, and the job ends with one line, `record (R1) the builds every leg of this job ran`, that covers them all. PK1 comes last: its rigs write `/etc/krb5.conf` and one file into the plugin folder
+  # of `libmariadb3`, which the probes before it must not see. Only this job writes to the runner system-wide (apt, `/usr/share/keyrings`, `/usr/local/mysql`), and only on CI.
   bridged-db-clients:
     name: database clients · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -323,7 +327,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get -o Acquire::Retries=3 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client mysql-client libmariadb3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client mysql-client libmariadb3 libncurses6
           mkdir -p "$HOME/mariadb-client/deb"
           # Ubuntu 22.04 names the package with its version (mariadb-client-core-10.6); later images name it mariadb-client-core.
           (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download "$(apt-cache pkgnames mariadb-client-core | sort | tail -n 1)" && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
@@ -332,27 +336,37 @@ jobs:
           mariadb_bin="$HOME/mariadb-client/usr/bin/mariadb"; [ -x "$mariadb_bin" ] || mariadb_bin="$HOME/mariadb-client/usr/bin/mysql"
           echo "BRIDGED_MYSQL_MARIADB=$mariadb_bin" >> "$GITHUB_ENV"
 
-      # PA1-i: a second and a third `psql` version beside the image's own, so that the wrapper of the packaging has something to choose between. Each image's package list
-      # names the majors it carries (the first CI run: no `postgresql-client-14` on 24.04 and 26.04, no `-16` on 22.04 and 26.04), so the step asks the list instead of naming
-      # versions. A step that finds fewer than two is not a failure: PA1-i then prints `NOT shown (one psql version is installed)` and the row stays unmeasured.
-      - name: Install a second and a third psql version, where the image's packages have them
+      # The image's own `psql` is named by the real file of its major BEFORE a second major is installed: with two majors the program word `psql` (the packaging's `pg_wrapper`) starts the NEWEST, and every
+      # probe but PA1-i would then run another build than the image's own. PA1-i reads the wrapper through the program word itself, so it still sees both.
+      - name: Name the image's own psql by its real file
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          major="$(psql --version | sed -n 's/^psql (PostgreSQL) \([0-9][0-9]*\).*/\1/p')"
+          test -n "$major"
+          test -x "/usr/lib/postgresql/$major/bin/psql"
+          echo "the image's own psql: $(psql --version), by its file /usr/lib/postgresql/$major/bin/psql"
+          echo "BRIDGED_PSQL=/usr/lib/postgresql/$major/bin/psql" >> "$GITHUB_ENV"
+
+      # PA1-i: a second `psql` major beside the image's own, so that the wrapper has something to choose between. The images' `psql` is the PostgreSQL project's own build (its version line says
+      # `pgdg`), but their apt sources do not list the project's repository (the second run: no candidate for any major, one `psql`, the wrapper's control not shown). The repository is added here.
+      # PIN (R7): the repository's signing key is fetched from the project and kept only if its primary key's fingerprint is the one the project publishes (https://wiki.postgresql.org/wiki/Apt);
+      # apt then checks every package of the repository against that key. This is the project's signature, not a checksum of a file (the key file changes when a signature is added to it).
+      # Only ONE other major is installed (17: not an image's own, which are 14, 16 and 18). A step that fails is not a failure: PA1-i then says NOT shown, with the missing second major as its reason.
+      - name: Add the PostgreSQL project's apt repository and a second psql major
         if: runner.os == 'Linux'
         continue-on-error: true
         run: |
           set -eu
-          extra=()
-          for major in 14 15 16 17 18; do
-            if [ "${#extra[@]}" -ge 2 ] || dpkg -s "postgresql-client-$major" > /dev/null 2>&1; then
-              continue
-            fi
-            if apt-cache policy "postgresql-client-$major" | grep -Eq '^ +Candidate: [0-9]'; then
-              extra+=("postgresql-client-$major")
-            fi
-          done
-          echo "psql versions to add: ${extra[*]:-none}"
-          if [ "${#extra[@]}" -gt 0 ]; then
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends "${extra[@]}"
-          fi
+          key="$RUNNER_TEMP/ACCC4CF8.asc"
+          curl -fsSL --retry 3 -o "$key" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          fingerprint="$(gpg --show-keys --with-colons "$key" | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$fingerprint" = "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+          sudo gpg --dearmor --yes -o /usr/share/keyrings/postgresql-pgdg.gpg "$key"
+          echo "deb [signed-by=/usr/share/keyrings/postgresql-pgdg.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client-17
+          ls /usr/lib/postgresql/*/bin/psql
 
       # go-sqlcmd, by version and by the checksum of the archive (R7): one static file.
       - name: Install go-sqlcmd 1.10.0
@@ -379,6 +393,28 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 update
           sudo ACCEPT_EULA=Y DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends mssql-tools18 unixodbc
 
+      # Oracle's own build of `mysql` (the generic Linux archive of 8.4.13), unpacked into `/usr/local/mysql`, the folder it was built for (its client looks for plugins there): the program, the four
+      # `authentication_*_client` plugins it carries (Kerberos, LDAP SASL, the cloud key file, the security key) and the private libraries they were linked with. The distribution's `mysql` carries none of those
+      # four, so it stays beside it (the harnesses call it `oracle-distro`, and this build `oracle`). PIN (R7): the SHA-256 of the archive, written here, whose Oracle signature (.asc; MySQL Release Engineering,
+      # key BCA43417C3B485DD128EC6D4B7B3B788A8D3785C) was verified on 2026-11-19. The archive is named at `cdn.mysql.com` where Oracle publishes the latest patch release and, once a newer one replaces it, in `archives`.
+      - name: Unpack Oracle's own mysql 8.4.13 (the generic Linux archive, checked)
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          mysql_name=mysql-8.4.13-linux-glibc2.28-x86_64.tar.xz
+          for url in "https://cdn.mysql.com/Downloads/MySQL-8.4/$mysql_name" "https://cdn.mysql.com/archives/mysql-8.4/$mysql_name"; do
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
+          done
+          echo "e32f82598aef1384d2bbb8e57a1c684f9b7734409ae8028b363fb913e56b8e92  $RUNNER_TEMP/$mysql_name" | sha256sum -c -
+          sudo mkdir -p /usr/local/mysql
+          sudo tar -xJf "$RUNNER_TEMP/$mysql_name" -C /usr/local/mysql --strip-components=1 --wildcards '*/bin/mysql' '*/lib/plugin/authentication_*_client.so' '*/lib/private/*.so*'
+          rm -f "${RUNNER_TEMP:?}/${mysql_name:?}"
+          /usr/local/mysql/bin/mysql --version
+          {
+            echo "BRIDGED_MYSQL_ORACLE_OWN=/usr/local/mysql/bin/mysql"
+            echo "BRIDGED_MYSQL_ORACLE_PLUGIN_DIR=/usr/local/mysql/lib/plugin"
+          } >> "$GITHUB_ENV"
+
       # PA1-g: the older `psql` clients, built here from two DISTRIBUTIONS' own images (each base pinned by digest, R7): Ubuntu 22.04's own `postgresql-client` (libpq 14) and Debian 12's (libpq 15),
       # with no PostgreSQL project repository. The first run used the PostgreSQL project's images (`psql` 12 and 15), and their `psql` loaded the newest `libpq5` of the same repository, so they took
       # `require_auth` as a new client does and were no older client. The harness reads which libpq file each image's `psql` loads and prints it beside the version line; an image whose libpq is 16
@@ -399,6 +435,18 @@ jobs:
           build_older "$ubuntu_tag" ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
           build_older "$debian_tag" debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
           echo "PA1_OLD_PSQL_IMAGES=$ubuntu_tag,$debian_tag" >> "$GITHUB_ENV"
+
+      # Windows: `psql.exe` is outside `PATH` on this image (PW1), so the step names the newest installed PostgreSQL's folder, for PA1 and PK1 alike (one build for both).
+      - name: Name the clients and the server of this image
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pg = Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory | Sort-Object { [int]($_.Name -replace '\D.*$', '') } -Descending | Select-Object -First 1
+          if ($null -eq $pg) { throw 'no PostgreSQL under C:\Program Files\PostgreSQL on this image' }
+          "BRIDGED_PG_BIN=$($pg.FullName)\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "BRIDGED_PSQL=$($pg.FullName)\bin\psql.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $mysql = Get-ChildItem 'C:\Program Files\MySQL' -Recurse -Filter mysql.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -ne $mysql) { "BRIDGED_MYSQL_ORACLE=$($mysql.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8 } else { Write-Host 'no mysql.exe on this image: the mysql legs are skipped, not measured' }
 
       - name: Probe PA1 (database client versions, controls and the floor)
         run: npm run itest:bridged-db-pa1
@@ -434,6 +482,47 @@ jobs:
         env:
           PE1_MARIADB_IMAGE: mariadb@sha256:7d829180b5b2a9ba74f6242876ab401a0d7dd338a807e522ef92bc9698760f20
         run: npm run itest:bridged-db-pe1
+
+      # PK1 (the E1.7 spec §S7.4; parent §7's probe table): does a bridged database client offer an identity that is not the entry's? Its rigs (a throwaway Kerberos realm BRIDGE.TEST, whose
+      # `/etc/krb5.conf` the harness writes with `sudo` and puts back, rule R3; a real PostgreSQL server in an owned folder; the MariaDB client's GSSAPI plugin put beside its library) come last in the job
+      # (see the comment above it). `policy-rc.d` keeps the packages' own services (the Kerberos daemons) from starting: the rig runs its own as the runner's user. MariaDB's GSSAPI plugin is a package
+      # that depends on the server-side client package, so it is DOWNLOADED and unpacked, and the one file is put in the plugin folder of the installed `libmariadb3` (a system write on a throwaway runner).
+      - name: Install the Kerberos tools and MariaDB's GSSAPI client plugin (the rigs of PK1)
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
+          sudo chmod +x /usr/sbin/policy-rc.d
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user openssl
+          sudo rm -f /usr/sbin/policy-rc.d
+          mkdir -p "$HOME/mariadb-gssapi/deb"
+          (cd "$HOME/mariadb-gssapi/deb" && apt-get -o Acquire::Retries=3 download mariadb-plugin-gssapi-client && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-gssapi"; done)
+          plugins=/usr/lib/x86_64-linux-gnu/libmariadb3/plugin
+          test -d "$plugins"
+          sudo cp "$HOME/mariadb-gssapi$plugins/auth_gssapi_client.so" "$plugins/"
+          echo "BRIDGED_MARIADB_PLUGIN_DIR=$plugins" >> "$GITHUB_ENV"
+
+      # On `windows-latest` the runner's own logon is the identity on offer (a real PostgreSQL server with an `sspi` line names it; fakes ask for SSPI and for Windows authentication and read the account's name
+      # from the NTLM answer). The runner is in no domain: the Kerberos legs are UNMEASURED by construction. The profile legs write marker files in the runner's own `%APPDATA%\postgresql` and put them back
+      # (rule R3). `openssl` for the throwaway certificates is Git for Windows' own, put on `PATH` for this step only.
+      - name: Probe PK1 (record legs)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+        run: |
+          $env:PATH = "$env:PATH;C:\Program Files\Git\usr\bin"
+          node scripts/bridged-pk1-itest.cjs
+
+      - name: Probe PK1 (record legs)
+        if: runner.os == 'Linux'
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+        run: node scripts/bridged-pk1-itest.cjs
+
+      - name: The builds every leg of this job ran
+        run: node scripts/bridged-db-builds.cjs
 
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
@@ -484,137 +573,6 @@ jobs:
       # carries (WN4; a client that is not there is a case skipped as "not measured", never a pass). Every case prints a `PW1 <case>` line first.
       - name: Bridged environment on Windows (ssh.exe -V, the child's names, the database clients)
         run: node --test out/test/bridgedEnvWindows.test.js
-
-  # PK1 (the E1.7 spec §S7.4; parent §7's probe table): does a bridged database client offer an identity that is not the entry's? A job of its own, so that the
-  # rigs it needs (a throwaway Kerberos realm BRIDGE.TEST, whose `/etc/krb5.conf` the harness writes with `sudo` and puts back, rule R3; a real PostgreSQL server in an owned
-  # folder; the MariaDB client's GSSAPI plugin put beside its library) never touch `build-test`. The harness is a RECORD: it prints what each client did beside its positive
-  # control, says `UNMEASURED <leg>` when a control cannot be produced, and fails only for the rig's own faults. BRIDGED_DB_SYSTEM_RIG=1 is the step's word for rule R3.
-  # `policy-rc.d` keeps the packages' own services (the system PostgreSQL cluster, the Kerberos daemons) from starting: the rig runs its own as the runner's user.
-  bridged-pk1-linux:
-    name: bridged PK1 (identity offered) · linux
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: src_vs_code
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Fetch the shared rules
-        working-directory: .
-        run: git submodule update --init --depth 1 .agents/conventions
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: src_vs_code/package-lock.json
-
-      - name: Install
-        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
-
-      - name: The leftovers guard's dependencies
-        working-directory: .
-        run: npm ci --ignore-scripts --prefix .agents/conventions
-
-      - name: Compile
-        run: npm run compile
-
-      # The Kerberos tools, a PostgreSQL server and client, Oracle's mysql client and the MariaDB client's library. MariaDB's `mariadb` program is unpacked into the home
-      # folder as in `build-test` (its package conflicts with Oracle's client); its GSSAPI plugin is a package that depends on the server-side client package, so it is DOWNLOADED and
-      # unpacked too, and the one file is put in the plugin folder of the installed `libmariadb3` (a system write on a throwaway runner). Oracle's own build (the generic Linux archive of 8.4.13, checked against the SHA-256 written
-      # here) is unpacked into `/usr/local/mysql`, the folder it was built for (its client looks for plugins there): the program, the four `authentication_*_client` plugins it carries
-      # (Kerberos, LDAP SASL, the cloud key file, the security key) and the private libraries they were linked with. The distribution's `mysql` carries none of those four, so it stays beside
-      # it as `oracle-distro`. The archive is named at `cdn.mysql.com` where Oracle publishes the latest patch release and, once a newer one replaces it, in `archives`.
-      - name: Install the rigs and the clients
-        run: |
-          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
-          sudo chmod +x /usr/sbin/policy-rc.d
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user postgresql postgresql-client mysql-client libmariadb3 libncurses6 openssl
-          sudo rm -f /usr/sbin/policy-rc.d
-          mkdir -p "$HOME/mariadb-client/deb" "$HOME/mariadb-gssapi/deb"
-          (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download mariadb-client-core && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
-          (cd "$HOME/mariadb-gssapi/deb" && apt-get -o Acquire::Retries=3 download mariadb-plugin-gssapi-client && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-gssapi"; done)
-          plugins=/usr/lib/x86_64-linux-gnu/libmariadb3/plugin
-          test -d "$plugins"
-          sudo cp "$HOME/mariadb-gssapi$plugins/auth_gssapi_client.so" "$plugins/"
-          mysql_name=mysql-8.4.13-linux-glibc2.28-x86_64.tar.xz
-          for url in "https://cdn.mysql.com/Downloads/MySQL-8.4/$mysql_name" "https://cdn.mysql.com/archives/mysql-8.4/$mysql_name"; do
-            curl -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
-          done
-          # The SHA-256 of the archive whose Oracle signature (.asc; MySQL Release Engineering, key BCA43417C3B485DD128EC6D4B7B3B788A8D3785C) the lead verified on 2026-11-19.
-          echo "e32f82598aef1384d2bbb8e57a1c684f9b7734409ae8028b363fb913e56b8e92  $RUNNER_TEMP/$mysql_name" | sha256sum -c -
-          sudo mkdir -p /usr/local/mysql
-          sudo tar -xJf "$RUNNER_TEMP/$mysql_name" -C /usr/local/mysql --strip-components=1 --wildcards '*/bin/mysql' '*/lib/plugin/authentication_*_client.so' '*/lib/private/*.so*'
-          rm -f "$RUNNER_TEMP/$mysql_name"
-          {
-            echo "BRIDGED_MARIADB_PLUGIN_DIR=$plugins"
-            echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql"
-            echo "BRIDGED_MYSQL_ORACLE_OWN=/usr/local/mysql/bin/mysql"
-            echo "BRIDGED_MYSQL_ORACLE_PLUGIN_DIR=/usr/local/mysql/lib/plugin"
-            echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb"
-            echo "BRIDGED_PSQL=/usr/bin/psql"
-          } >> "$GITHUB_ENV"
-
-      - name: Probe PK1 (record legs)
-        env:
-          BRIDGED_DB_SYSTEM_RIG: "1"
-        run: node scripts/bridged-pk1-itest.cjs
-
-  # PK1 on windows-latest (the E1.7 spec §S7.4, PK1-w0 to PK1-w4 and the Windows legs of PK1-m5 and PK1-m6): the runner's own logon is the identity on offer, a real PostgreSQL
-  # server with an `sspi` line names it, and fakes ask for SSPI and for Windows authentication and read the account's name from the NTLM answer. The runner is in no domain: the
-  # Kerberos legs are UNMEASURED by construction. The profile legs write marker files in the runner's own `%APPDATA%\postgresql` and put them back (rule R3). `psql.exe` is outside
-  # `PATH` on this image (PW1), so the step names the newest installed PostgreSQL's folder; `openssl` for the throwaway certificates is Git for Windows' own, put on `PATH` for this step only.
-  bridged-pk1-windows:
-    name: bridged PK1 (identity offered) · windows
-    runs-on: windows-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: src_vs_code
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Fetch the shared rules
-        working-directory: .
-        run: git submodule update --init --depth 1 .agents/conventions
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: src_vs_code/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      - name: The leftovers guard's dependencies
-        working-directory: .
-        run: npm ci --ignore-scripts --prefix .agents/conventions
-
-      - name: Compile
-        run: npm run compile
-
-      - name: Name the clients and the server of this image
-        run: |
-          $pg = Get-ChildItem 'C:\Program Files\PostgreSQL' -Directory | Sort-Object { [int]($_.Name -replace '\D.*$', '') } -Descending | Select-Object -First 1
-          if ($null -eq $pg) { throw 'no PostgreSQL under C:\Program Files\PostgreSQL on this image' }
-          "BRIDGED_PG_BIN=$($pg.FullName)\bin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "BRIDGED_PSQL=$($pg.FullName)\bin\psql.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $mysql = Get-ChildItem 'C:\Program Files\MySQL' -Recurse -Filter mysql.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -ne $mysql) { "BRIDGED_MYSQL_ORACLE=$($mysql.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8 } else { Write-Host 'no mysql.exe on this image: the mysql legs are skipped, not measured' }
-
-      - name: Probe PK1 (record legs)
-        env:
-          BRIDGED_DB_SYSTEM_RIG: "1"
-        run: |
-          $env:PATH = "$env:PATH;C:\Program Files\Git\usr\bin"
-          node scripts/bridged-pk1-itest.cjs
 
   # PS1 (the E1.7 spec §S7.4; parent §7's probe table): what a bridged `sqlcmd` signs in with. A job of its own, so that the receiver it needs (Microsoft's SQL Server container on the
   # runner's docker, a throwaway CA that the harness puts in the runner's trust store with `sudo` and takes out again, rule R3; and PK1's throwaway Kerberos realm, for the control that
@@ -678,10 +636,19 @@ jobs:
           docker pull "$image"
           echo "BRIDGED_MSSQL_IMAGE=$image" >> "$GITHUB_ENV"
 
+      # PA1 for the two `sqlcmd` clients, in THIS job (the second run's PA1 ran another ODBC build than PS1 did: a row is judged per recorded build).
+      - name: Probe PA1 (the two sqlcmd clients this job runs)
+        env:
+          PA1_FAMILIES: go-sqlcmd,odbc-sqlcmd
+        run: node scripts/bridged-db-pa1-itest.cjs
+
       - name: Probe PS1 (record legs)
         env:
           BRIDGED_DB_SYSTEM_RIG: "1"
         run: node scripts/bridged-ps1-itest.cjs
+
+      - name: The builds every leg of this job ran
+        run: node scripts/bridged-db-builds.cjs
 
   # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
   # Microsoft's installer against its own SHA-256; the package file itself is checked here against a SHA-512 written in this workflow), mixed mode so that a SQL login exists. The control is the
@@ -761,7 +728,15 @@ jobs:
           "BRIDGED_MSSQL_PORT=$port" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "BRIDGED_MSSQL_ERRORLOG=C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Log\ERRORLOG" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Probe PA1 (the two sqlcmd clients this job runs)
+        env:
+          PA1_FAMILIES: go-sqlcmd,odbc-sqlcmd
+        run: node scripts/bridged-db-pa1-itest.cjs
+
       - name: Probe PS1 (record legs)
         env:
           BRIDGED_DB_SYSTEM_RIG: "1"
         run: node scripts/bridged-ps1-itest.cjs
+
+      - name: The builds every leg of this job ran
+        run: node scripts/bridged-db-builds.cjs
