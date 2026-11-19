@@ -945,6 +945,12 @@ become contracts only by their probes, as §4.11 says; the gate before the dialo
   programs. If the lead wants more (the check to follow the launcher to the program it starts), that is a new step.
 - **L11. The driver under the ODBC `sqlcmd`.** No version answer names it and this client has no control to refuse on (§S7.7). The spec
   serves the recorded version line and writes the driver that ran into the record. The lead may hold an ODBC pair refused instead.
+  **Decided by the lead, 2026-11-19, after a consult (3d062873; one consultant of two answered, gemini, for (1)):** the verdict of the ODBC
+  `sqlcmd` is bound to the driver too: the check reads the driver's file from the ODBC configuration the bridged environment gives the
+  client (the `Driver=` path of *ODBC Driver 18 for SQL Server*), binds its real path, size and mtime beside the executable's, and records
+  its version (from the file name, `libmsodbcsql-18.6.so.1.1`) in the row's build; a driver it cannot find or read refuses (DR7). Until
+  that is built the pair stays refused. This is "the build that ran" made exact for a client whose authentication lives in a library, not a
+  new refusal: a driver change re-checks, as an executable change does.
 - **L12. Who records new builds after E1.7.** §S7.7's cost: a served row goes red with every image update until the new build's legs are
   recorded, and a person's client is served only while it is a recorded build. The parent names no owner and no rhythm for that.
 
