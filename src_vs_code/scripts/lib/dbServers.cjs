@@ -12,7 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { launch, freePort } = require('../itestSshd.cjs');
-const { ownedDir, ownedName } = require('./leftovers.cjs');
+const { ownedDir, ownedName, formatOwner, thisOwner } = require('./leftovers.cjs');
 const { runSync, pause, resolveProgram, mayWriteSystem } = require('./dbProbeRig.cjs');
 
 /** A value made at run time for a rig account: hex, so it needs no quoting in SQL or in a connection string. */
@@ -97,7 +97,7 @@ async function startMysqld(scope, label, socket, client) {
   const real = fs.realpathSync(system);
   const mysqld = path.join(ownedDir(scope, `${label}-bin`), 'mysqld');
   fs.copyFileSync(real, mysqld);
-  fs.chmodSync(mysqld, 0o755);
+  fs.chmodSync(mysqld, 0o755); // NOSONAR: the rig's own copy of a server binary, run by this user
   const baseOfSystem = /\/s?bin\/mysqld$/.test(real) ? [`--basedir=${path.resolve(path.dirname(real), '..')}`] : [];
   const common = ['--no-defaults', ...baseOfSystem, `--datadir=${data}`, `--log-error=${path.join(folder, 'error.log')}`, '--secure-file-priv=NULL'];
   const initialised = runSync(mysqld, [...common, '--initialize-insecure'], serverEnv(), 180_000);
@@ -153,7 +153,7 @@ function ensureSocketFolder(socket) {
 
 /**
  * A MariaDB server in a container on the host's network (the image is named by digest, R7): `docker run -d`, a root account whose credential is given to the container by
- * the environment and never by an argument, and a free loopback port. The container is named with the token and removed by the scope. `admin(sql)` runs a statement as root
+ * the environment and never by an argument, and a free loopback port. The container is named with the token, carries the owner label, is started with `--rm`, and is removed by exact name by the scope. `admin(sql)` runs a statement as root
  * through `client` (MariaDB's), over TCP.
  */
 async function startMariadbContainer(scope, label, image, client) {
@@ -168,10 +168,10 @@ async function startMariadbContainer(scope, label, image, client) {
   scope.after(() => spawnSync(docker, ['rm', '-f', '-v', name], { stdio: 'ignore' })); // NOSONAR: the rig's own docker, an argument list
   const port = await freePort();
   const rootValue = throwaway();
-  const started = spawnSync(docker, ['run', '-d', '--name', name, '--network', 'host', '-e', 'MARIADB_ROOT_PASSWORD', '-e', 'MARIADB_ROOT_HOST=%', image, `--port=${port}`, '--bind-address=127.0.0.1', '--skip-name-resolve'], // NOSONAR: the rig's own docker, an argument list
+  const started = spawnSync(docker, ['run', '--rm', '-d', '--name', name, '--label', `testsToDelete.owner=${formatOwner(thisOwner())}`, '--network', 'host', '-e', 'MARIADB_ROOT_PASSWORD', '-e', 'MARIADB_ROOT_HOST=%', image, `--port=${port}`, '--bind-address=127.0.0.1', '--skip-name-resolve'], // NOSONAR: the rig's own docker, an argument list
     { env: { ...process.env, MARIADB_ROOT_PASSWORD: rootValue }, encoding: 'utf8' });
   if (started.status !== 0) {
-    throw new Error(`docker run of the MariaDB image failed: ${String(started.stderr).slice(0, 300)}`);
+    throw new Error(`the MariaDB container could not be started: ${String(started.stderr).slice(0, 300)}`);
   }
   const admin = (sql) => runSync(client, ['--no-defaults', '--protocol=TCP', '-h', '127.0.0.1', '-P', String(port), '-u', 'root', '-e', sql], { PATH: process.env.PATH, HOME: process.env.HOME, MYSQL_PWD: rootValue }, 60_000);
   const up = await until(() => admin('select 1').code === 0, 120_000);
