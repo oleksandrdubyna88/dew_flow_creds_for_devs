@@ -65,6 +65,7 @@ async function startLinux(scope, dir, goSqlcmd) {
   if (image === undefined || image === '') {
     return { ok: false, why: 'no SQL Server image named' };
   }
+  fs.mkdirSync(dir, { recursive: true }); // the rig folder q is this function's to make, as rig K's is (pkKrbRig.cjs)
   fs.chmodSync(dir, 0o755); // NOSONAR: the container's own user reads the certificate and the configuration through the folder
   const certs = makeCertificates(path.join(dir, 'certs'));
   fs.chmodSync(path.join(dir, 'certs'), 0o755); // NOSONAR: the container's own user reads through the folder
