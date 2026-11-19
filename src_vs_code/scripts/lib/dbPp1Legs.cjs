@@ -62,8 +62,16 @@ const rowOf = (text) => text.trim().split('\n')[1]?.trim();
 
 /** A socket path by the folder's real name: `/run` and `/var/run` are one folder on the images, and two servers cannot share a socket. */
 function canonicalSocket(socket) {
+  // The deepest folder that exists is resolved, the rest kept as written: before the rig makes `/run/mysqld`, the clients' `/var/run/mysqld/…`
+  // and `/run/mysqld/…` must already be one path (`/var/run` links to `/run` on Ubuntu), or two servers are started on one socket.
+  let folder = path.dirname(socket);
+  const rest = [path.basename(socket)];
+  while (!fs.existsSync(folder) && path.dirname(folder) !== folder) {
+    rest.unshift(path.basename(folder));
+    folder = path.dirname(folder);
+  }
   try {
-    return path.join(fs.realpathSync(path.dirname(socket)), path.basename(socket));
+    return path.join(fs.realpathSync(folder), ...rest);
   } catch {
     return socket;
   }
