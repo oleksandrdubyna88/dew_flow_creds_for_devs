@@ -402,7 +402,7 @@ reads its empty answer as `unreadable` and writes a log line only (`agentCommand
 host's key is not the pinned one" a designed outcome of these roads, so the person has to be able to tell it from a
 host that is down.
 
-**Sentence C against P2.** Its advice cannot end in an unchecked connection: with a pin that parses, Connect keeps
+**Sentence C against P2.** (Revised by the code gate of E2, 2026-11-19: neither C nor D names Connect SSH any more, because Connect's own line still trusts the person's other sources, C4, and a password entry can proceed there without a fingerprint when its scan answers nothing; C and D now say not to replace the saved key because of the message and to get the fingerprint from the server's owner. The argument below is kept as first written.) Its advice cannot end in an unchecked connection: with a pin that parses, Connect keeps
 enforcing it when its scan answers nothing (the pin file is written, `connectionOptions.ts:70`; the password branch
 softens nothing when one exists, `sshSession.ts:503-506`), and when the scan answers, the alarm of a changed key is
 asked first (`hostKeyTrust.ts:157-170`). What Connect's own `ssh` trusts beside the pin is candidate C4 (§3.9).
@@ -791,8 +791,7 @@ An unpinned call is shown the sentences of before, whatever its `ssh` printed, a
 
 **Sentence D** (new). The contract: it says that the connection ended with that line, and that `ssh` did not name this
 entry's saved key as the reason; it names a jump host of the person's own config as a possible place; it never tells the
-person to replace a saved key; and its advice cannot end in an unchecked connection (by the argument of *Sentence C
-against P2*, §3.5: the pin of this entry parses, so Connect keeps enforcing it and asks before it replaces it). The baseline:
+person to replace a saved key; and it names no in-product road to reconnect (revised by E2's code gate: see *Sentence C against P2*, §3.5). The baseline:
 
 ```text
 The connection to "<name>" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks. Do not replace a saved key because of this message. Connect SSH on this entry checks this host's key again and asks before it changes anything.
