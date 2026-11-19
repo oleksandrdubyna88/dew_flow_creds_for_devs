@@ -18,7 +18,8 @@
 // `BRIDGED_DB_SYSTEM_RIG=1` (rule R3), and both put the files back. Anywhere else the leg is a printed skip that says `UNMEASURED`. Nothing real stands in a committed file (R5): the realm,
 // the principals, the roles and the words are made at run time.
 //
-// The clients are named by an absolute path: `BRIDGED_PSQL` (default `/usr/bin/psql`), `BRIDGED_MYSQL_ORACLE` (default `/usr/bin/mysql`), `BRIDGED_MYSQL_MARIADB` (default `/usr/bin/mariadb`); a
+// The clients are named by an absolute path: `BRIDGED_PSQL` (default `/usr/bin/psql`), `BRIDGED_MYSQL_ORACLE` (default `/usr/bin/mysql`), `BRIDGED_MYSQL_ORACLE_OWN` (Oracle's own build, when the step unpacks it:
+// then it is the `oracle` client and `BRIDGED_MYSQL_ORACLE` is the `oracle-distro` one), `BRIDGED_MYSQL_MARIADB` (default `/usr/bin/mariadb`); a
 // PostgreSQL server by `BRIDGED_PG_BIN` or its usual folder. With `CI=true` a missing client or server FAILS; off CI it is a printed skip.
 const fs = require('fs');
 const path = require('path');
@@ -48,6 +49,9 @@ function client(name, variable, fallback, package_) {
 async function linux(scope, dir, home, product) {
   const psql = client('psql', 'BRIDGED_PSQL', '/usr/bin/psql', 'the postgresql-client package');
   const oracle = client("Oracle's mysql", 'BRIDGED_MYSQL_ORACLE', '/usr/bin/mysql', 'the mysql-client package');
+  // Oracle's own build (the generic Linux archive, checked against its SHA-256 and unpacked by the step into the folder the build was made for): it carries the Kerberos, LDAP, key-file and security-key
+  // client plugins that the distribution's package leaves out. When the step names it, it IS the `oracle` client and the distribution's package is `oracle-distro`.
+  const own = process.env.BRIDGED_MYSQL_ORACLE_OWN === undefined ? undefined : client("Oracle's own mysql build", 'BRIDGED_MYSQL_ORACLE_OWN', undefined, "Oracle's generic archive, unpacked by the step");
   const mariadb = client("MariaDB's client", 'BRIDGED_MYSQL_MARIADB', '/usr/bin/mariadb', "MariaDB's mariadb-client-core, unpacked by the step");
   const realm = await startRealm(scope, path.join(dir, 'k'), home).catch((error) => {
     check('rig K: the realm was built', false, error.message);
@@ -65,7 +69,11 @@ async function linux(scope, dir, home, product) {
       : { ok: false, why: realm.why };
     await psqlLinux({ scope, dir, product, exe: psql.exe, home, realm, pg });
   }
-  const clients = [oracle === undefined ? [] : [{ name: 'oracle', exe: oracle.exe }], mariadb === undefined ? [] : [{ name: 'mariadb', exe: mariadb.exe }]].flat();
+  const clients = [
+    own === undefined ? [] : [{ name: 'oracle', family: 'oracle', exe: own.exe }],
+    oracle === undefined ? [] : [{ name: own === undefined ? 'oracle' : 'oracle-distro', family: 'oracle', exe: oracle.exe }],
+    mariadb === undefined ? [] : [{ name: 'mariadb', family: 'mariadb', exe: mariadb.exe }],
+  ].flat();
   if (clients.length > 0) {
     await mysqlLegs({ scope, dir, product, home, realm, canWriteHome: true }, clients);
   }

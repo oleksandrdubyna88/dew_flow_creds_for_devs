@@ -25,7 +25,7 @@ const CANDIDATE_KEYWORD = /\s+(?:gssencmode|sslcertmode|require_auth)='[^']*'/g;
 const GSS_LINE = 'gss include_realm=0 krb_realm=BRIDGE.TEST';
 
 /** The builder's launch for `host:port`, then what a leg does to it by hand: take the candidate keywords out (`control`), add some last, change the environment, be entry B. */
-function launchFor(ctx, port, { entry = 'A', control = false, add = [], envSet = {}, user = ctx.user, host = 'localhost', query = '', cut = [], dropArgs = [] }) {
+function launchFor(ctx, port, { entry = 'A', control = false, add = [], envSet = {}, user = ctx.user, host = 'localhost', query = '', cut = [], dropArgs = [], address = true }) {
   const { product } = ctx;
   const uri = `postgresql://${user}:${ctx.entryWord}@${host}:${port}/postgres${query}`;
   const built = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file') });
@@ -39,13 +39,21 @@ function launchFor(ctx, port, { entry = 'A', control = false, add = [], envSet =
   for (const text of cut) {
     connection = connection.replace(text, '');
   }
-  const args = [...built.args.slice(0, -1).filter((arg) => !dropArgs.includes(arg)), [connection, ...add].join(' ')];
+  // `hostaddr` is the rig's own word, never the builder's: the string names `localhost` (the service name the ticket is for) and `hostaddr` puts the connection on the loopback address the
+  // servers of the rig listen on, so that `localhost` resolving to `::1` first does not hide the answer the leg wants behind a refused attempt on an address nothing listens on.
+  const args = [...built.args.slice(0, -1).filter((arg) => !dropArgs.includes(arg)), [connection, ...(address && host === 'localhost' ? ["hostaddr='127.0.0.1'"] : []), ...add].join(' ')];
   const env = bridgedEnv(product, ctx.home, built.env);
   if (entry === 'B') {
     args.unshift('-w');
     delete env.PGPASSWORD;
   }
   return { args, env: { ...env, ...envSet } };
+}
+
+/** What psql said, in one line, WITHOUT the attempt on an address nothing listens on (`localhost` is also `::1`): the words that remain are the client's answer on the address that has a listener. */
+function saidOf(stderr) {
+  const kept = stderr.split(/\r?\n/).filter((line) => !/\(::1\)|^\s*Is the server running on/.test(line)).join('\n');
+  return oneLine(kept === '' ? stderr : kept, 260);
 }
 
 /** What the real server and the fake saw of one launch on one road. `road`: `enc` (the GSS encryption request) or `auth` (the answer to request 7). */
@@ -67,12 +75,27 @@ async function observe(ctx, road, options) {
   const tokenBytes = road === 'enc' ? state.gssencTokenBytes : (state.answers[0] ?? 0);
   return {
     requestSeen, tokenBytes, named: names.at(0)?.identity, ended: realRun.ended && fake.result.ended,
-    offered: tokenBytes > 0 || names.length > 0, said: oneLine(realRun.stderr, 120), identity: realm.identity,
+    offered: tokenBytes > 0 || names.length > 0, said: saidOf(realRun.stderr), saidByFake: saidOf(fake.result.stderr), identity: realm.identity,
   };
 }
 
 /** The words of one observation for a record line. */
-const wordsOf = (seen) => `request ${seen.requestSeen ? 'SEEN' : 'not seen'} by the fake; a token ${seen.tokenBytes > 0 ? `FOLLOWED (${seen.tokenBytes} bytes)` : 'did not follow'}; the real server ${seen.named === undefined ? 'named no identity' : `NAMED ${seen.named}`}; psql said ${JSON.stringify(seen.said)}`;
+const wordsOf = (seen) => `request ${seen.requestSeen ? 'SEEN' : 'not seen'} by the fake; a token ${seen.tokenBytes > 0 ? `FOLLOWED (${seen.tokenBytes} bytes)` : 'did not follow'}; the real server ${seen.named === undefined ? 'named no identity' : `NAMED ${seen.named}`}; psql said ${JSON.stringify(seen.said)}${seen.tokenBytes > 0 || seen.said === seen.saidByFake ? '' : `; against the fake it said ${JSON.stringify(seen.saidByFake)}`}`;
+
+/**
+ * What a control that was not shown leaves for the reader: the client library's own trace of the control's launch (what it asked and what the KDC answered), the real server's last words and
+ * the KDC's own log. Printed, never counted; a ticket's text is in none of them (a trace names principals and encryption types, the logs name principals and addresses).
+ */
+async function diagnose(ctx, name) {
+  const traceFile = path.join(ctx.dir, `diagnose-${name}.trace`);
+  fs.rmSync(traceFile, { force: true });
+  await observe(ctx, name, { control: true, envSet: { KRB5_TRACE: traceFile } });
+  const lines = (text, limit) => text.trim().split('\n').slice(-limit).map((line) => line.slice(0, 200)).join('\n    ');
+  console.log(`diagnosis (the ${name} road, its control launched again with the client library's trace on):`);
+  console.log(`  the client library's trace:\n    ${fs.existsSync(traceFile) ? lines(fs.readFileSync(traceFile, 'utf8'), 30) : '(the library wrote none: it did not reach Kerberos at all)'}`);
+  console.log(`  the real server's log:\n    ${lines(ctx.pg.logText(), 8)}`);
+  console.log(`  the KDC's log:\n    ${ctx.realm.kdcLogTail(12).split('\n').join('\n    ')}`);
+}
 
 /** The legs of one road: its control, then each variant for entry A and entry B. */
 async function road(ctx, name, controlLeg, variants) {
@@ -83,6 +106,7 @@ async function road(ctx, name, controlLeg, variants) {
     record(controlLeg, 'shown', `positive control, ${variants[0].what}, entry A: ${wordsOf(control)}`);
   } else {
     unmeasured(controlLeg, `the control did not show the identity on offer: ${wordsOf(control)}`);
+    await diagnose(ctx, name);
   }
   for (const entry of ['A', 'B']) {
     for (const variant of variants.slice(entry === 'A' ? 1 : 0)) {

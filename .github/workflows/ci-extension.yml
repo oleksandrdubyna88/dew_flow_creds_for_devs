@@ -519,14 +519,16 @@ jobs:
 
       # The Kerberos tools, a PostgreSQL server and client, Oracle's mysql client and the MariaDB client's library. MariaDB's `mariadb` program is unpacked into the home
       # folder as in `build-test` (its package conflicts with Oracle's client); its GSSAPI plugin is a package that depends on the server-side client package, so it is DOWNLOADED and
-      # unpacked too, and the one file is put in the plugin folder of the installed `libmariadb3` (a system write on a throwaway runner). Oracle's community client carries no Kerberos
-      # plugin: that leg is expected to be UNMEASURED on it.
+      # unpacked too, and the one file is put in the plugin folder of the installed `libmariadb3` (a system write on a throwaway runner). Oracle's own build (the generic Linux archive of 8.4.13, checked against the SHA-256 written
+      # here) is unpacked into `/usr/local/mysql`, the folder it was built for (its client looks for plugins there): the program, the four `authentication_*_client` plugins it carries
+      # (Kerberos, LDAP SASL, the cloud key file, the security key) and the private libraries they were linked with. The distribution's `mysql` carries none of those four, so it stays beside
+      # it as `oracle-distro`. The archive is named at `cdn.mysql.com` where Oracle publishes the latest patch release and, once a newer one replaces it, in `archives`.
       - name: Install the rigs and the clients
         run: |
           printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
           sudo chmod +x /usr/sbin/policy-rc.d
           sudo apt-get -o Acquire::Retries=3 update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user postgresql postgresql-client mysql-client libmariadb3 openssl
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user postgresql postgresql-client mysql-client libmariadb3 libncurses6 openssl
           sudo rm -f /usr/sbin/policy-rc.d
           mkdir -p "$HOME/mariadb-client/deb" "$HOME/mariadb-gssapi/deb"
           (cd "$HOME/mariadb-client/deb" && apt-get -o Acquire::Retries=3 download mariadb-client-core && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-client"; done)
@@ -534,9 +536,19 @@ jobs:
           plugins=/usr/lib/x86_64-linux-gnu/libmariadb3/plugin
           test -d "$plugins"
           sudo cp "$HOME/mariadb-gssapi$plugins/auth_gssapi_client.so" "$plugins/"
+          mysql_name=mysql-8.4.13-linux-glibc2.28-x86_64.tar.xz
+          for url in "https://cdn.mysql.com/Downloads/MySQL-8.4/$mysql_name" "https://cdn.mysql.com/archives/mysql-8.4/$mysql_name"; do
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
+          done
+          echo "e32f82598aef1384d2bbb8e57a1c684f9b7734409ae8028b363fb913e56b8e92  $RUNNER_TEMP/$mysql_name" | sha256sum -c -
+          sudo mkdir -p /usr/local/mysql
+          sudo tar -xJf "$RUNNER_TEMP/$mysql_name" -C /usr/local/mysql --strip-components=1 --wildcards '*/bin/mysql' '*/lib/plugin/authentication_*_client.so' '*/lib/private/*.so*'
+          rm -f "$RUNNER_TEMP/$mysql_name"
           {
             echo "BRIDGED_MARIADB_PLUGIN_DIR=$plugins"
             echo "BRIDGED_MYSQL_ORACLE=/usr/bin/mysql"
+            echo "BRIDGED_MYSQL_ORACLE_OWN=/usr/local/mysql/bin/mysql"
+            echo "BRIDGED_MYSQL_ORACLE_PLUGIN_DIR=/usr/local/mysql/lib/plugin"
             echo "BRIDGED_MYSQL_MARIADB=$HOME/mariadb-client/usr/bin/mariadb"
             echo "BRIDGED_PSQL=/usr/bin/psql"
           } >> "$GITHUB_ENV"
