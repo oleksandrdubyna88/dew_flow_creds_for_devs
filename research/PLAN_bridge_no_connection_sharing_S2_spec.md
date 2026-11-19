@@ -1,6 +1,6 @@
 # PLAN — S2 spec: a real ssh and real sshd runs show what the two options do (SECURITY, CORNERSTONE)
 
-> Status: **built 2026-11-17 on `fix/g2-no-connection-sharing` (f8ef08f3 the probe, 1a66f228 the legs), in PR #376, unmerged; later review and gate fixes are on the branch. Spec written 2026-11-17, by Fable.** The feasibility probe of its step 1 was run for this spec and passed
+> Status: **IMPLEMENTED, 2026-11-17** (f8ef08f3 the probe, 1a66f228 the legs; later review and gate fixes; extension 1.22.3, #376). Spec written 2026-11-17, by Fable. The feasibility probe of its step 1 was run for this spec and passed
 > (L2). The cornerstone spec of the plan, and a security spec, written before its code (the rows *Cornerstone spec* and *Security
 > judgement* of `subagent-models.md`). Story S2 of
 > [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md) (its §7.4, the real-leg half of §7.5, §4.5,
@@ -877,16 +877,16 @@ killed run ends within `ControlPersist`.
 
 ## 11. Done when (each item can be counted)
 
-- [ ] Step 1 ran before the other legs were written, with eight `ok`, and is commit c2.
-- [ ] Section 9 on the product of S1: 42 `ok`, three runs in a row; the whole itest: 119 `ok` lines and `all agent integration checks passed`.
-- [ ] The 16 `FAIL` of §7 were watched on the two files of `b84416aa`, with every control `ok`; S1's files were put back.
-- [ ] N1 to N8 each showed what §10 names; the copy was restored after each.
-- [ ] After a run, after N7 and after the cleaning of N8: no folder `testsToDelete-…-creds-nsh-…`, no process of the rig.
-- [ ] `scripts/itestSshd.cjs` is unchanged; `scripts/ssh-agent-itest.cjs` has 764 lines; the new script has no temp call of its
+- [x] Step 1 ran before the other legs were written, with eight `ok`, and is commit c2.
+- [x] Section 9 on the product of S1: 42 `ok`, three runs in a row; the whole itest: 119 `ok` lines and `all agent integration checks passed`.
+- [x] The 16 `FAIL` of §7 were watched on the two files of `b84416aa`, with every control `ok`; S1's files were put back.
+- [x] N1 to N8 each showed what §10 names; the copy was restored after each.
+- [x] After a run, after N7 and after the cleaning of N8: no folder `testsToDelete-…-creds-nsh-…`, no process of the rig.
+- [x] `scripts/itestSshd.cjs` is unchanged; `scripts/ssh-agent-itest.cjs` has 764 lines; the new script has no temp call of its
       own (`test/harnessSites.test.ts` green) and the leftovers guard is clean.
-- [ ] The three product files changed in comments only (200, 384 and 103 lines); the paragraph of §6.1 says what N4 and N5 showed.
-- [ ] `npm run typecheck`, `npm run lint` and `npm test` are green.
-- [ ] The legs are green in the step `Integration test (SSH agent against a real ssh-add)` of the head sha's CI run (the lead
+- [x] The three product files changed in comments only (200, 384 and 103 lines); the paragraph of §6.1 says what N4 and N5 showed.
+- [x] `npm run typecheck`, `npm run lint` and `npm test` are green.
+- [x] The legs are green in the step `Integration test (SSH agent against a real ssh-add)` of the head sha's CI run (the lead
       reads it after the push; the version of the runner's `sshd` goes into the plan's record).
 
 ## 12. Break it — ways to make the legs pass while the defect stays, and the row that stops each one

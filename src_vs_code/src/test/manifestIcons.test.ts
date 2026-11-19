@@ -23,12 +23,13 @@ const OBVIOUS_VERBS = [
   'credSshManager.setAutoLock',
   'credSshManager.showMcpLog',
   'credSshManager.help',
+  'credSshManager.search',
 ];
 
 type CommandIcon = string | { light: string; dark: string };
 
 /**
- * A codicon, or — for a coloured mark (the yellow help question, the green Connect/DB) — an
+ * A codicon, or — for a coloured mark (the yellow help question, the green Connect/DB, the green search magnifier) — an
  * SVG pair whose files exist. A codicon cannot be coloured in a title bar or a menu.
  */
 function assertIcon(id: string, icon: CommandIcon | undefined): void {

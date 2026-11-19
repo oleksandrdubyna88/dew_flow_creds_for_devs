@@ -289,6 +289,16 @@
         }
       },
       {
+        "id": "credSshManager.searchAccent",
+        "description": "The search row's magnifier and the word Search (owner, 2026-11-18). The title-bar magnifier is a fixed SVG in the default green — a title-bar icon cannot take a theme colour.",
+        "defaults": {
+          "dark": "#3FB950",
+          "light": "#1A7F37",
+          "highContrast": "#4AE168",
+          "highContrastLight": "#117A2D"
+        }
+      },
+      {
         "id": "credSshManager.fileName",
         "description": "Stored file and image names in the entity pages (T27) — the dark orange the owner asked for",
         "defaults": {
@@ -1075,7 +1085,10 @@
         "command": "credSshManager.search",
         "title": "Filter Credentials…",
         "category": "CredsForDevs",
-        "icon": "$(search)"
+        "icon": {
+          "light": "media/search-green-light.svg",
+          "dark": "media/search-green.svg"
+        }
       },
       {
         "command": "credSshManager.clearSearch",
@@ -1307,14 +1320,24 @@
       ],
       "view/title": [
         {
-          "command": "credSshManager.help",
+          "command": "credSshManager.search",
           "when": "view == credSshManagerView",
           "group": "navigation@0"
         },
         {
+          "command": "credSshManager.clearSearch",
+          "when": "view == credSshManagerView && credSshManager.searchActive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "credSshManager.help",
+          "when": "view == credSshManagerView",
+          "group": "navigation@2"
+        },
+        {
           "command": "credSshManager.addAccount",
           "when": "view == credSshManagerView",
-          "group": "navigation@1"
+          "group": "navigation@3"
         },
         {
           "command": "credSshManager.refresh",

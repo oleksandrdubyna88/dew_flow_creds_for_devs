@@ -1,8 +1,6 @@
 # PLAN — the extension's own `ssh` calls share no connection (G2 of N16, widened)
 
-> Status: **built 2026-11-17 on the branch `fix/g2-no-connection-sharing` (S1, S2 and S3), unmerged: the coai code gate, the
-> head sha's CI run, the owner's word for the PR (over the cap) and the release are still ahead; approved 2026-11-17 (the coai
-> plan gate, `proceed`), epoch 1 open, one change (1.1).** Split into three stories (`## Stories`), S2 the cornerstone; the two
+> Status: **IMPLEMENTED, 2026-11-17.** Extension 1.22.3 (#376, squash 07ed8303; release PR #377). Epoch 1, one change (1.1). Deviations: §12. Split into three stories (`## Stories`), S2 the cornerstone; the two
 > security specs by Fable, 2026-11-17:
 > [S1](PLAN_bridge_no_connection_sharing_S1_spec.md) and [S2](PLAN_bridge_no_connection_sharing_S2_spec.md) (the
 > cornerstone). The feasibility probe of S2's first step was run for its spec and passed (§2). **What S3 recorded as built, for
@@ -15,7 +13,7 @@
 > Scope: the extension only (`src_vs_code`): the argv of the Remote Bridge's tunnel (`src/sshBridge.ts`), the argv of every
 > non-interactive `ssh` run (`src/sshExecCommand.ts`), their tests, one new real-`sshd` test script, the docs. No change of
 > the person's interactive terminal, of the shared composer `src/sshOptions.ts`, or of any file on disk. Found as G2 of
-> [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5, `:198`), by reading; measured on
+> [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (N16, §5, `:198`), by reading; measured on
 > 2026-11-17 (§2). The plan `todo/PLAN_person_roads_pin_host_key.md` (G1 of the same list; written on another branch, not
 > on this one) depends on this plan (§3, decision 3).
 
@@ -135,7 +133,7 @@ of `buildSshExecArgv` themselves (C and D were run with the tunnel's argv; that 
 2. **Jump hosts** (codex's answer): the guarantee covers the connection the extension spawns, and no hop. `-J` makes
    `ssh` start a nested `ssh` for each hop with `-l`, `-p`, `-F` and `-W` only: it inherits `-F` and the environment, and
    none of the outer's `-o` options (recorded in
-   [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md), D.1, `:2167-2190`; measured there
+   [PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md), D.1, `:2167-2190`; measured there
    with `ssh -v` and `ssh -G` on OpenSSH 10.2). A hop leg can still join or create a master. The hop case is a
    follow-up (§9), not built here.
 3. **Order:** this plan first, then G1 (`todo/PLAN_person_roads_pin_host_key.md`). The reason is run C: while a call can
@@ -160,7 +158,7 @@ spelling of these two words in `src/`:
 **Only these two options are shared.** `ClearAllForwardings=yes` must not reach the tunnel: it clears the forwards of the
 command line too (`sshExecCommand.ts:23-26`: *no localforward/remoteforward line even with -L and -R on the command
 line*), so the tunnel would lose its own `-R`. The scoped bridge plan says the same from the other side: the tunnel is to
-carry `-o ClearAllForwardings=no` ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9, `:579`). It must
+carry `-o ClearAllForwardings=no` ([PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) §4.9, `:579`). It must
 not reach a non-bridged run either: such a run keeps the entry's own `-L`/`-R`/`-D` and `-A` (`sshOptionArgv`).
 
 What each option does alone was not measured (§2). Read from ssh_config(5): `ControlPath=none` turns sharing off in both
@@ -291,15 +289,15 @@ Only a person whose `ssh` config shares connections sees any change.
 
 | Item | Which plan builds it | The other's part |
 |---|---|---|
-| the two options on the outer leg of the tunnel and of every run of `buildSshExecArgv` | this plan | [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9 (`:583`) keeps `ControlMaster no` / `ControlPath none` in the `Host *` block of its per-call `-F` file; E1.6 (PR #365, `bridgedSshConfig.ts`) writes that file for a bridged `exec`, and E2.2 is to put the tunnel and its helper runs under one (`:566`). When E2.2 does, the `-o` words of this plan stay: they bind the outer leg before any file is read |
+| the two options on the outer leg of the tunnel and of every run of `buildSshExecArgv` | this plan | [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) §4.9 (`:583`) keeps `ControlMaster no` / `ControlPath none` in the `Host *` block of its per-call `-F` file; E1.6 (PR #365, `bridgedSshConfig.ts`) writes that file for a bridged `exec`, and E2.2 is to put the tunnel and its helper runs under one (`:566`). When E2.2 does, the `-o` words of this plan stay: they bind the outer leg before any file is read |
 | the hop legs of a bridged `exec` | the scoped bridge plan, E1.6 (the file reaches the nested `ssh` through `-F`) | none here |
-| the hop legs of every other road (H1, §9) | no plan yet; the natural owner is [PLAN_askpass_answers_the_hop.md](PLAN_askpass_answers_the_hop.md), which weighs the same `-F` file for the roads off a bridge | this plan states the gap and builds nothing |
+| the hop legs of every other road (H1, §9) | no plan yet; the natural owner is [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md), which weighs the same `-F` file for the roads off a bridge | this plan states the gap and builds nothing |
 | the pinned host key on the three roads of the person (G1) | `todo/PLAN_person_roads_pin_host_key.md` | this plan goes first (decision 3) and adds no pin |
 | the pin on all five `ssh` runs, the per-call pin file and the three sentences (G1) | G1 | none: this plan writes no pin file, no known-hosts option and no sentence about a host key |
 | the words of a pinned call in both argv builders: the pin file as both known-hosts files, its path as one file (G1's §3.9) | G1 | none; the two options of this plan are other words of the same two argvs. G1's §4 carries the same row from its side |
 | `commands/agentCommands.ts`, `test/personRoadsWorld.ts` and the two builders `sshBridge.ts` and `sshExecCommand.ts` | both plans edit them | this plan first; G1 measures its §3.6 again and repairs its line references after this plan has merged |
-| which agent a run forwards | [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md) | none: this plan adds no `ForwardAgent` word, and a non-bridged run keeps its `-A`. With sharing off, the agent a run forwards is the one of its own environment, never a master's |
-| the key file of the three roads (N16, shipped) | [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) | not changed; §4.2 says what G2 does to the moment a bridge's key file is deleted |
+| which agent a run forwards | [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md) | none: this plan adds no `ForwardAgent` word, and a non-bridged run keeps its `-A` except where it already did not: an entry that forwards the agent on a call whose own agent is taken away (`ownAgent: false`) has its `-A` removed by `composedEntity` and gets `ForwardAgent=no` from `ownAgentWords`, as before this plan. With sharing off, the agent a run forwards is the one of its own environment, never a master's |
+| the key file of the three roads (N16, shipped) | [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) | not changed; §4.2 says what G2 does to the moment a bridge's key file is deleted |
 
 Disjoint from everything else in `todo/`. The same boundary was to be written into the older documents (N16's G2 line,
 §4.9 of the scoped bridge plan, the askpass plan) by S3. S3 wrote it into the askpass plan (a *Boundary with* paragraph, the form
@@ -499,7 +497,7 @@ names that binary, or the first run of the legs is CI's.
   non-interactive `ssh` through one launcher that applies the options, and make the generic `runBounded` refuse `ssh`
   (by its program name, whatever the path). No product logic is changed here.
 - **G1**, the pin on the three roads: `todo/PLAN_person_roads_pin_host_key.md`.
-- **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md).
+- **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md).
 - Turning sharing off for the person's terminal (decision 1), and ending a master that the person or an older version of
   the extension left running.
 - G3 to G8 of N16.
@@ -511,13 +509,13 @@ names that binary, or the first run of the legs is CI's.
       sharing; a bridged argv is unchanged; the two words are spelled in one place.
 - [x] The tunnel has no `ClearAllForwardings` word and keeps its `-R`.
 - [x] The three tests of §7.1 changed as the table says, and no other existing test changed.
-- [ ] The tests of §7.2 and §7.3 RED first, then GREEN; the legs of §7.4 green on the head sha's CI run (the three legs
+- [x] The tests of §7.2 and §7.3 RED first, then GREEN; the legs of §7.4 green on the head sha's CI run (the three legs
       of change 1.1 among them), their RED and the mutations of §7.5 recorded with what was seen.
 - [x] A stranded master of the test rig ends by itself (§4.5), and the leftovers guard is green.
 - [x] The docs of §8, the three help articles in five languages each included; every sentence about an effect names its
       conditions.
-- [ ] The coai code gate at `proceed`; the lead's Opus review of each story; CI green on the head sha; CodeRabbit read.
-- [ ] Released as an extension patch with the owner's word; the plan promoted with its deviations; G1's plan told that
+- [x] The coai code gate at `proceed`; the lead's Opus review of each story; CI green on the head sha; CodeRabbit read.
+- [x] Released as an extension patch with the owner's word; the plan promoted with its deviations; G1's plan told that
       its condition is met.
 
 ## 11. Build order and merge conditions
@@ -533,6 +531,31 @@ names that binary, or the first run of the legs is CI's.
 6. PR #365 changes files this plan also changes (§4.6). Whichever merges second merges `main` and runs both suites again; the
    bridged argv of §4.3 is the fixed point.
 7. The release (a patch) with the owner's word, then the promotion PR. G1 is built after the merge of step 5.
+
+## 12. Deviations
+
+What shipped differently from the plan as approved (30364080):
+
+1. **Change 1.1** (the cadence consult `59aa353c`, before the build): the cost reaches Run with Secrets and the agent's exec;
+   legs K-I, P-I1 and P-I2 and the help sentences were added.
+2. **The own SSH agent, per road** (the lead's Opus review, then CodeRabbit on #376): Run with Secrets and the agent's linked
+   run do not pass on the inherited `SSH_AUTH_SOCK`, so the person's own agent is not used there unless their ssh config
+   names one with `IdentityAgent`; `creds_exec` and the bridge keep it. The help (five languages), the CHANGELOG and the
+   module documents say so; `sshRunsLoginHelp.test.ts` pins it.
+3. **K-C's exit code** is recorded, not asserted: the client that rides the master exited 0 on the local measurement and 1
+   on the CI runner (both OpenSSH 10.2p1). The control stands on the forward being served through the master and the named
+   `sshd` seeing no connection.
+4. **`-S` and `-M`** (the lead's review): only `-o` words in `extra` come too late; the flag spellings would override. The
+   docblock says so; production passes no `extra` (H4).
+5. **Test hygiene added in review:** the rig's orphaned remote `sleep 120` (now `cat` on a held pipe), the call-site scan's
+   blind spots (whole lists of `runBounded`, `sshSpawnLaunch`, `openSshBinary`, `new SshBridgeManager`, `child_process`
+   importers), fixtures built whole (no assignment), a SonarCloud S3403 false positive avoided (K-A compares the code as
+   text), two spec lines that read as e-mail addresses (public hygiene).
+6. **Rejected in the gates, with reasons:** ending a tunnel when the extension host is killed (H3, new process design); a
+   dedicated non-interactive ssh launcher (H5, architecture).
+7. **Checked: Linux with a real `sshd` (local unprivileged 10.2p1, and the CI runner's), the unit tests on Windows CI, and
+   `ssh.exe -G` (OpenSSH_for_Windows 9.5p2) for the two options. Not checked: a real login from Windows or macOS.**
+8. **Open after this plan:** H1-H5 of §9; G1 (the pin on the three roads) builds on this.
 
 ## Stories
 

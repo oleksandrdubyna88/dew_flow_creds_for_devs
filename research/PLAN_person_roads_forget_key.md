@@ -194,11 +194,14 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
 - **G1 (medium).** The three roads do not enforce the entry's pinned host key: they pass no `knownHostsFile`, so `ssh`
   runs with `StrictHostKeyChecking=accept-new` against `~/.ssh/known_hosts` (`sshBridge.ts:164-167`,
   `sshExecCommand.ts:146-148`), where the agent's exec uses the pin (`sshUseActions.ts:224`). Another machine at that
-  address is accepted on first contact.
+  address is accepted on first contact. Its plan, written 2026-11-17:
+  [PLAN_person_roads_pin_host_key.md](../todo/PLAN_person_roads_pin_host_key.md); its Epic 1 (the three roads enforce the pin)
+  is built in PR #379 after G2 (1.22.3); its Epic 2 (the measurements on a real `sshd`) and its candidates are open.
 - **G2 (medium if it holds, not measured).** The bridge's argv does not turn connection sharing off (`sshBridge.ts:156-161`
   has no `ControlPath=none`/`ControlMaster=no`); with `ControlMaster auto` + `ControlPersist` in the person's config the
   `-R` forward may live in a master that *Close* and the window's dispose do not kill. The key is not needed after login,
-  so N16 is not affected.
+  so N16 is not affected. **Fixed in extension 1.22.3** (#376, 2026-11-17), widened to the bridge tunnel and every argv of `buildSshExecArgv` (not `git` over SSH, its H2), by
+  [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md).
 - **G3.** The Windows facts of the spawner (ENOENT with no `pid`, the delete after exit) are read, not run: the extension
   suite runs on Ubuntu; `bridgeSpawner.test.ts` could join a windows-latest step.
 - **G4.** A password with a NUL byte makes the spawn throw a message that quotes the environment value; on the agent's

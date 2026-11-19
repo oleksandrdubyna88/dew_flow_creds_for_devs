@@ -12,7 +12,7 @@ import { TreeElement } from '../types';
 import { VaultKeys } from '../vaultKeys';
 import * as vscode from 'vscode';
 import { showHelp } from '../helpPanel';
-import { wireSearchBox } from '../searchBox';
+import { searchBoxOpener } from '../searchBox';
 import { asElement } from '../commandTargets';
 import { entityKey } from '../entityFlags';
 import { clickToView } from '../viewerClicks';
@@ -22,6 +22,7 @@ import { quickOpenItems } from '../quickOpen';
 import { ENTITY_KIND_LABELS } from '../types';
 import { askForEntryId } from '../mcpHooks';
 import { findById } from '../entityLookup';
+import { pinSearch } from '../searchPin';
 export interface ViewCommandsHost {
   readonly announceArrival: (accountId: string, entityId: string) => Promise<void>;
   readonly clicks: ViewerClicks;
@@ -58,6 +59,11 @@ export function registerViewCommands(host: ViewCommandsHost): void {
     );
   });
 
+  // T21/T22: the help page — the yellow question mark in the view's title bar.
+  register('credSshManager.help', () => showHelp());
+
+  const openSearch = searchBoxOpener(() => vscode.window.createInputBox()); // the one filter box that may be open
+
   /**
    * The filter row's field.
    *
@@ -66,16 +72,15 @@ export function registerViewCommands(host: ViewCommandsHost): void {
    * what makes it filter as you type; Escape puts back whatever was filtered before, so a
    * cancelled search is not a lost one.</p>
    */
-  // T21/T22: the help page — the yellow question mark in the view's title bar.
-  register('credSshManager.help', () => showHelp());
-
   register('credSshManager.search', () => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     // Wiring in searchBox.ts, where it is tested — including the T15 flag that lets a person
-    // CLICK what the filter found without the box reading it as "never mind".
-    wireSearchBox(vscode.window.createInputBox(), {
+    // CLICK what the filter found without the box reading it as "never mind", and the rule that a
+    // second run while the box is open shows that box again instead of making a second one.
+    openSearch({
       before: provider.searchQuery,
       apply: (term) => provider.setSearchQuery(term),
+      current: () => provider.searchQuery,
     });
   });
 
@@ -93,6 +98,13 @@ export function registerViewCommands(host: ViewCommandsHost): void {
       await announceArrival(selected.accountId, selected.node.id);
     }
   });
+
+  // The search, pinned (owner, 2026-11-18): the line above the tree and the title bar's Clear Filter
+  // say what the filter row says, from the moment the view exists. Its one listener sits on the
+  // provider's onDidChangeTreeData emitter, which the provider disposes with itself on deactivate,
+  // so there is nothing further to dispose here — and wiring it here rather than in extension.ts
+  // keeps that file inside its size ratchet (.size-baseline.json).
+  pinSearch(treeView, provider, (key, value) => void vscode.commands.executeCommand('setContext', key, value));
 
   /**
    * From a folder inside the "Depended on by" list to that folder where it really lives.

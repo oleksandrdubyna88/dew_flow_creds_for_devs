@@ -6,6 +6,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the search stays in reach and its filter stays in view
+
+- The search is pinned in the title bar: a green magnifier opens *Filter Credentials…* from anywhere in the tree, and *Clear Filter* sits beside it while a filter is on.
+- The active filter shows in a line above the tree that does not scroll, so it is visible however far down the list you are.
+- Running *Filter Credentials…* again while its box is open brings that box back instead of opening a second one, which used to put the filter you were typing back to what it was before.
+- Clearing the filter from outside while its box is still open (*Clear Filter* in the title bar, or a jump that clears it) and then pressing Escape in the box no longer brings the old filter back. Running *Filter Credentials…* again then shows the cleared filter in that box, and Enter always applies what the box shows.
+
+### Changed — security: a saved host key is the only key a call without a terminal accepts
+
+*Open Remote Bridge…*, the socket check that follows it, and *Install creds on host* now check an entry's saved host key.
+Before, these three started `ssh` with `StrictHostKeyChecking=accept-new` against your own `~/.ssh/known_hosts`, also for an
+entry with a saved host key. A machine at that address that `known_hosts` did not list yet was accepted on first contact: it
+got the forwarded socket of the bridge, it was the machine the installer was downloaded onto, and a password entry sent its
+password there. Now, for an entry with a saved host key, `ssh` connects only to a host that presents that key, with two
+exceptions that your own `ssh` config can switch on (the manual, `ssh_config(5)`): with `VerifyHostKeyDNS yes`, `ssh` also
+trusts a key that matches a secure SSHFP record in DNS, and that key may not be the saved one (OpenSSH 10.2 asks DNS before it reads
+the known-hosts files); and a `KnownHostsCommand` is a further source of host keys, read in addition to the files. Neither is
+off on these calls yet. Otherwise a host that presents another key is refused, and a message says so. *Install creds on host* shows: `"<name>" did not present its saved
+host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and
+asks before it replaces the saved one. If it was not, do not connect.` After *Open Remote Bridge…* the socket check shows
+`The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no output to show. A host
+that is down and a login that is refused are told as before. Not covered: if your own `ssh` config says `LogLevel QUIET`,
+`ssh` prints nothing about the refusal, the connection is still refused, and the message is the one of before: for
+*Open Remote Bridge…* that is *Bridge open to …*, and only the tree row going back shows that the bridge is not open. A host key
+that a jump host of your own `ProxyJump` refuses is told with the same sentence.
+
+An SSH entry can hold a saved host key (you confirmed its fingerprint with *Trust and connect*). On every call that the extension
+starts for such an entry without a terminal (the tunnel of *Open Remote Bridge…*, its socket check, *Install creds on host*, an
+agent's `ssh:exec` and its run over SSH, *Run with Secrets* over SSH), `ssh` now
+gets the saved key as its ONLY known-hosts file. One case is not covered: a saved host key that cannot be used (a stored text that is
+no host key, or a host that cannot be written as a known_hosts line). The three roads of a person refuse it, as below; the agent's
+`ssh:exec` and *Run with Secrets* over SSH still read it as no saved key, and run with `accept-new` against your own
+`~/.ssh/known_hosts`, as before (candidate C3 of the plan). Before, it got the saved key as your own known-hosts file, and still read the
+system-wide ones (`/etc/ssh/ssh_known_hosts`): a key that such a file listed for the host was accepted beside the saved one.
+Measured (OpenSSH 10.2p1 on both ends, loopback): with another key saved and the host's real key in a system-wide file, the
+login was accepted before and now ends with `Host key verification failed`. What is not covered yet: your own terminal,
+*Connect via SSH*, still reads the system-wide files beside the saved key; and a `KnownHostsCommand` or `VerifyHostKeyDNS` in
+your own `ssh` config is still asked.
+
+And a storage folder whose path holds a space no longer breaks these calls. `ssh` read such a path as two file names, found the
+saved key in neither, and refused the host. This is the usual place of the editor's storage on macOS (`Application Support`).
+
+*Open Remote Bridge…* and *Install creds on host* now refuse an entry whose saved host key cannot be used: a stored text that is
+no host key, or a host that cannot be written as a known_hosts line. No `ssh` starts, nothing is sent to that host, and the
+message says what to do. An entry that signs in with a key is sent to *Connect SSH*, which shows the host's fingerprint and
+saves the key when you confirm it. An entry that signs in with a password is told that there is no safe repair yet: Connect SSH
+would send the password without a check of the host when it cannot read the host's key first. If the file of the saved host key
+cannot be written to disk, the message says that, and nothing is sent either.
+
+An entry with no saved host key connects as before.
+
+### Changed — the search row is green
+
+- The search row's magnifier and the word *Search* are green (the colour is `credSshManager.searchAccent`, so a theme can change it).
+
+## [1.22.3] — 2026-11-17 — Security — the extension's own `ssh` calls share no connection
+
 ### Changed — security: the extension's own `ssh` calls share no connection
 
 If your `~/.ssh/config` shares connections (`ControlMaster auto` with a `ControlPath`, often with `ControlPersist`), the extension's own `ssh`
