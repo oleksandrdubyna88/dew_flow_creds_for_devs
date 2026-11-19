@@ -163,4 +163,4 @@ function say(leg, under) {
   console.log(`record (verdict) ${leg}: the launch is built under the real check's verdict: ${under.line}`);
 }
 
-module.exports = { verdictFor, say, FAMILIES };
+module.exports = { verdictFor, say, FAMILIES, tableWith };
