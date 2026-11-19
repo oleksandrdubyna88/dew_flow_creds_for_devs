@@ -5412,15 +5412,17 @@ name otherwise than it is (a path in double quotes with none, a backslash as two
 and three octal digits), so the function is handed the path, not the word, and reads the printed name back. **Sentence D**
 (`unnamedHostKeySentence`) is shown for the verification line without that evidence: a jump host's refused key, an `ssh` config
 that gives the host another name or port, a remote text. It names no host as the cause and tells the person not to replace a
-saved key. It does not send the person to *Connect SSH* (the code gate of G1 E2, 2026-11-19): Connect's own line still accepts the
+saved key. It does not send the person to *Connect SSH* (the code gate of G1 E2, 2026-11-19; sentence C lost the same advice in the gate's second change, below): Connect's own line still accepts the
 person's other trust sources (C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), and sentence D is shown exactly
 when the call's `ssh` did not judge the saved key, so Connect could reach another host and send a password with the saved key never
 checked. It says what the person does outside the extension: check the host's key fingerprint with the server's owner, and check the
-own ssh config for a `HostName` or `Port` that renames the host and for a jump host. Sentence C keeps *Connect SSH* as the way to a
-new key, because Connect's scan (`ssh-keyscan` of the entry's own host and port) and its modal show the fingerprint and ask before
-the saved key is replaced; but that line is not strict about the other trust sources, and a scan that answers nothing lets Connect go
-on without a question, so sentence C asks the person to compare the fingerprint that Connect shows with the one the server's owner
-gives before trusting it. The install shows either sentence for its probe, as an error in place of "the host did not answer the probe". The
+own ssh config for a `HostName` or `Port` that renames the host and for a jump host. **Sentence C does not name *Connect SSH* either**
+(the code gate of G1 E2, second change, 2026-11-19, SECURITY). Connect's scan (`ssh-keyscan` of the entry's own host and port) can
+answer nothing, and then, for an entry that signs in with a password, Connect goes on without showing any fingerprint; and its own
+line still accepts the person's other trust sources (C4). Following the advice could send a password to another host. Sentence C says
+that the host did not present its saved key and that CredsForDevs did not connect, that nothing was sent to that host, that the saved
+key is not to be replaced because of this message, and, for a rebuilt server, to get its key fingerprint from the server's owner; it
+names no way in the product that could connect unchecked (the tests assert that it holds no *Connect*). The install shows either sentence for its probe, as an error in place of "the host did not answer the probe". The
 socket check shows it for the bridge, as an error message, and writes it to the log, because the tunnel's `ssh` has no stdio:
 `The bridge to "<name>" is not open: ` with sentence C, `The bridge to "<name>" could not be checked: ` with sentence D (the
 tunnel can be up). A host that is down, a host that does not answer, a refused login, a run with no text and every run of an

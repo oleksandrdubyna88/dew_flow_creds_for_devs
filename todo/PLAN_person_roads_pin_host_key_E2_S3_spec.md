@@ -179,10 +179,10 @@ stdout, not whether the run timed out, not the order of the two lines. One pure 
 | the socket check | the sweep is NOT asked | nothing | nothing | as today |
 | *Open Remote Bridge…* | cannot be asked: its `ssh` has no stdio | nothing of its own; the socket check speaks | the same | as today |
 
-**Sentence C** (§3.5; `<name>` is the entry's name). **Changed by the code gate of G1 E2, 2026-11-19:** one sentence is added, the comparison of the fingerprint; the words before it are those of E1.S3. Connect's trust prompt shows the fingerprint and asks, but Connect's own line keeps the person's other trust sources (C4) and a scan that answers nothing goes on without a question, so the person compares what Connect shows with what the server's owner says before trusting it:
+**Sentence C** (§3.5; `<name>` is the entry's name). **Changed twice by the code gate of G1 E2, 2026-11-19.** First, one sentence was added, the comparison of the fingerprint. Second, **SECURITY: the advice to use Connect SSH is gone**, as it was gone from sentence D. For an entry that signs in with a password, Connect can go on WITHOUT showing any fingerprint when its key scan (`ssh-keyscan` of the entry's own host and port) answers nothing, and Connect's own line still accepts the person's other trust sources (C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), so following the advice could send a password to another host. The sentence says that the host did not present its saved key and that CredsForDevs did not connect, that nothing was sent to that host, that the saved key is not to be replaced because of this message, and that the person gets the server's key fingerprint from the server's owner when the server was rebuilt. It names no way in the product that could connect unchecked (the tests assert that it holds no "Connect"). The opening is as before: the install shows it as it is, the socket check opens it with `The bridge to "<name>" is not open: `. The listings of §2, §4, §5 and §6 below show the words as first written; the product, the tests and the CHANGELOG carry these:
 
 ```text
-"<name>" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server's owner gives you before you trust it. If it was not, do not connect.
+"<name>" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server's owner. If it was not, do not connect.
 ```
 
 **Sentence D** (new; the final words, **changed by the code gate of G1 E2, 2026-11-19, SECURITY**: the last sentence named Connect SSH as the way to check the host, and it is gone; see the last bullet of *Sentence D's words* below. The listings of §2, §4, §5 and §6 below show the words as first written; the product, the tests and the CHANGELOG carry these):
@@ -210,7 +210,7 @@ shows `The bridge to "<name>" is not open: ` + sentence C, or `The bridge to "<n
     names the file of an older call. **Why that is enough:** the rule has to keep sentence C from naming a cause that the call
     did not see. It does not have to stop an attack: a remote command runs only on a host that has already presented the saved
     key, so a forged line could only make that host raise a false alarm about itself, and sentence C's advice then leads to
-    Connect SSH, which finds the saved key and replaces nothing (§3.5, *Sentence C against P2*). A machine that is NOT the saved
+    the server's owner for the key fingerprint, with nothing replaced (§3.5, *Sentence C against P2*, whose Connect SSH route the gate removed). A machine that is NOT the saved
     one never gets to write anything: the `ssh` of the call ends at the key exchange.
   - **Another call of the same entry** (the bridge's `ssh` beside its socket check, two installs at once) has another uuid in
     the same folder. So the folder, the entry's id or the start of the name are not enough: the whole name is asked (S2, X2, X6).
@@ -251,7 +251,7 @@ shows `The bridge to "<name>" is not open: ` + sentence C, or `The bridge to "<n
     not there. The words are the spec's (the stories document, E2.S3); if the lead wants the baseline's words alone, this
     clause goes and one test literal with it (*Notes for the lead*).
   - "Do not replace a saved key because of this message": the contract's "never tells the person to replace a saved key",
-    said as an order, because sentence C beside it does name Connect SSH as the way to a new key.
+    said as an order, because sentence C beside it speaks of a rebuilt server (it named Connect SSH as the way to a new key until the gate, 2026-11-19, took that out too).
   - ~~"Connect SSH on this entry checks this host's key again and asks before it changes anything"~~ **removed by the code gate of
     G1 E2, 2026-11-19.** The argument that the advice cannot end in an unchecked connection (*Sentence C against P2*, §3.5) was
     wrong for sentence D: Connect's own line writes the pin as the person's known-hosts file alone (C4), so the system-wide
@@ -259,9 +259,9 @@ shows `The bridge to "<name>" is not open: ` + sentence C, or `The bridge to "<n
     call's `ssh` did not judge the saved key (a jump host, a renamed host or port, a remote text). Following the advice could
     connect to another host and send a password without checking the saved key. In its place, two things the person does outside
     the extension: "Check this host's key fingerprint with the server's owner", and "check your own ssh config for a HostName or
-    Port that renames this host and for a jump host" (the two measured causes of D, J10 and J11). Sentence C keeps Connect SSH:
-    its scan is `ssh-keyscan` of the entry's own host and port (not the person's config), and a key that differs from the saved
-    one is a modal that shows the fingerprint and asks. The sentence now says to compare that fingerprint with the server owner's.
+    Port that renames this host and for a jump host" (the two measured causes of D, J10 and J11). Sentence C kept Connect SSH in that first change, with a comparison of
+    the fingerprint, and lost it in the second (the same day, SECURITY): Connect's scan can answer nothing, and then, for a password
+    entry, Connect goes on without showing any fingerprint, so the comparison the sentence asked for could not be made. See §1.
 - **"Could not be checked", not "is not open".** With sentence C the check's `ssh` met a host with another key, and the
   bridge's `ssh` met the same host with the same words a moment earlier: the bridge is not open (E1.S3; the limits of that are
   in its §12). With sentence D the check knows less. The tunnel can be up: a remote command that wrote the line ran on a host

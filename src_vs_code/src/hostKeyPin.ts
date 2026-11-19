@@ -392,16 +392,16 @@ export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: s
  * Sentence C: `ssh` refused the host's key on a pinned entry, and named the pin file of the call ({@link hostKeyTold}). *Install
  * creds on host* shows it as it is; the bridge socket check opens it with `The bridge to "<name>" is not open: `.
  *
- * <p>Its advice is Connect SSH, and Connect's trust prompt is what makes that advice safe, only as far as the person reads it
- * (the code gate of G1 E2, 2026-11-19). Connect scans the entry's own host and port with `ssh-keyscan` (`hostKeyTrust.ts`), never what
- * the person's ssh config says, and a key that differs from the saved one is a modal that shows the key's fingerprint and asks
- * before it replaces the saved one. But the line Connect then starts (`sshCommand.ts`) names the pin as the person's known-hosts file
- * ALONE (candidate C4): the system-wide file, `VerifyHostKeyDNS` and `KnownHostsCommand` of the person still count, and a scan that
- * answered nothing lets Connect go on without a question. So the sentence asks for the one thing that decides: the fingerprint that
- * Connect shows is compared with the one the server's owner gives, before the person trusts it.</p>
+ * <p>It does NOT send the person to Connect SSH (the code gate of G1 E2, 2026-11-19; SECURITY; sentence D lost the same advice first). For an
+ * entry that signs in with a password, Connect can go on WITHOUT showing any fingerprint when its key scan (`ssh-keyscan` of the entry's own
+ * host and port, `hostKeyTrust.ts`) answers nothing, and the line Connect then starts (`sshCommand.ts`) names the pin as the person's
+ * known-hosts file ALONE (candidate C4): the system-wide file, `VerifyHostKeyDNS` and `KnownHostsCommand` of the person still count. So
+ * following the advice could send a password to another host. The sentence says what is true (the host did not present its saved key; nothing
+ * was sent), that the saved key is not to be replaced because of it, and what the person does outside the extension: get the server's key
+ * fingerprint from the server's owner. It names no way in the product that could connect unchecked.</p>
  */
 export function refusedHostKeySentence(name: string): string {
-  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the server's owner gives you before you trust it. If it was not, do not connect.`;
+  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server's owner. If it was not, do not connect.`;
 }
 
 /**

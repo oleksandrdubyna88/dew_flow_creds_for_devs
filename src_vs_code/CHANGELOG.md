@@ -29,9 +29,11 @@ socket check reads the socket; with another key at the same address, every call 
 server logs no login.
 
 A refused host key is told. When `ssh` names the saved key of this entry as the key that does not fit, *Install creds on host*
-shows: `"<name>" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH
-on this entry: it shows the new key and asks before it replaces the saved one. Compare the fingerprint it shows with the one the
-server's owner gives you before you trust it. If it was not, do not connect.` After *Open Remote
+shows: `"<name>" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not
+replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server's owner. If it
+was not, do not connect.` (It does not send you to *Connect SSH*: for a password entry Connect can go on without showing any
+fingerprint when its key scan answers nothing, and its own line still accepts your other trust sources, so following that advice
+could send a password to another host.) After *Open Remote
 Bridge…* the socket check shows `The bridge to "<name>" is not open: ` and the same sentence, because the tunnel's own `ssh` has no
 output to show. When `ssh` ends with `Host key verification failed` and does not name that key (a jump host of your own
 `ProxyJump` whose key your own known_hosts file refuses, a remote command that prints that line, or your own `ssh` config that
