@@ -9,9 +9,10 @@ import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
 import type { McpAskPolicy } from '../mcpAccess';
 import type { ConsentStampStore } from '../mcpConsentPolicy';
-import type { EntityMetadata, TreeNode } from '../types';
+import type { DbType, EntityMetadata, TreeNode } from '../types';
 import { stored, type StoredSecret } from '../storedSecret';
 import { wallSuppliersOf } from '../bridgeWallSource';
+import { BRIDGED_DB_PROFILES, type DbProfileRow } from '../bridgedDbProfile';
 import { visibleMcpEntries } from '../mcpEntries';
 import * as assert from 'node:assert/strict';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
@@ -114,6 +115,8 @@ interface Flavour {
   /** Whether a1's `e1` is a config. Off, with `collide`, only a2's `e1` is: the snippet must not be served from there. */
   readonly a1Config: boolean;
   readonly agentForward: boolean;
+  /** `e1` is a database entry of this type (default: the ssh entry it has always been). */
+  readonly e1Db?: DbType;
   /** What `e1` is called (default `prod`): a test of the dialog gives it a hostile name. */
   readonly entryName: string;
   /** The consent policy of the folder `e1` and its neighbours live in: absent leaves the folder setting none (every call asks). */
@@ -149,7 +152,7 @@ function agentsFolderPolicy(flavour: Flavour): NonNullable<TreeNode['mcp']> {
 
 /** What `e1` has beyond its name: a config of its own (unless the world says a1's is not), and the agent forwarding some scenarios turn on. */
 function e1Extras(flavour: Flavour): Partial<EntityMetadata> {
-  return { ...(flavour.a1Config ? config('prod') : {}), ...(flavour.agentForward ? { agentForward: true } : {}) };
+  return { ...(flavour.a1Config ? config('prod') : {}), ...(flavour.agentForward ? { agentForward: true } : {}), ...(flavour.e1Db === undefined ? {} : { kind: 'db' as const, dbType: flavour.e1Db }) };
 }
 
 /** The folder of the `unseen` entry `x`: no switch of its own, and none above it. */
@@ -256,6 +259,10 @@ export interface WallOptions {
   a1Config?: boolean;
   /** a1's `e1` forwards the laptop's SSH agent (L4). */
   agentForward?: boolean;
+  /** a1's `e1` is a database entry of this type: the wall's refusal before the dialog asks the table (V5). */
+  e1Db?: DbType;
+  /** The table and the system the wall's database refusal reads (default: the production table, which serves no pair, and this process's platform). */
+  gate?: { readonly profiles: readonly DbProfileRow[]; readonly platform: NodeJS.Platform };
   /** The wall's `entryRefusal` as E2 wires it (default), or one that never refuses (L4's second leg: the action must refuse alone). */
   entryRefusal?: 'wired' | 'none';
   /** `listEntriesOf` answers a promise the test holds until `listing.release()` (S24). */
@@ -331,6 +338,9 @@ function aliasesFor(x: XState): Record<string, Target> {
   return x === 'absent' ? known : { ...known, xalias: X };
 }
 
+/** A world whose `e1` is a database entry serves grants of the `db` kind; every other world is the ssh one it has always been. */
+const kindOf = (options: WallOptions): { kind?: string } => (options.e1Db === undefined ? {} : { kind: 'db' });
+
 export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const o = { ...DEFAULTS, ...options };
   const modules = loadBridgeModules();
@@ -361,7 +371,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   // The suppliers are PRODUCTION's (`bridgeWallSource.ts`), over this vault. The spies only record what they were asked,
   // hold the listing when a scenario asks them to, and switch the refusal off for the one scenario that needs the action
   // to refuse alone; none of the four is defined here.
-  const real = wallSuppliersOf(vault);
+  const real = wallSuppliersOf(vault, o.gate ?? { profiles: BRIDGED_DB_PROFILES, platform: process.platform });
   const wall: BridgeWallSource = {
     scopes,
     refSource: refSourceOf(vault),
@@ -385,6 +395,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const aliases = aliasesFor(o.x);
   const w = world({
     supports: [...o.supports],
+    ...kindOf(options),
     answers: Array.from({ length: o.allows }, () => 'Allow'),
     aliasMap: aliases,
     aliasList: aliasRows(aliases),
@@ -407,14 +418,14 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     hooks: { bridgeWall: wall, configRoute: configSpy(forbidden), ...(options.releaseWaiting === undefined ? {} : { releaseWaiting: options.releaseWaiting }) },
   });
   w.server.setFolderHooks(folderSpy(forbidden));
-  const token = await w.server.share(ACCOUNT, 'e1', 'prod', 'ssh');
+  const token = await w.server.share(ACCOUNT, 'e1', 'prod', w.kind);
   const bridge = await w.server.openBridgeListener(CONTEXT_1);
   return {
     w, bridge, scopes, wall, vault, texts, lookups, nodesAsked, forbidden, listed, configsAsked, refusalsAsked,
     listing: { asked: () => askedListing, release: () => releaseListing() },
     main: Number(token.slice(0, token.indexOf('.'))),
     tokenFor: async (account, entityId, entityName) => {
-      const shared = await w.server.share(account, entityId, entityName, 'ssh');
+      const shared = await w.server.share(account, entityId, entityName, w.kind);
       return shared.slice(shared.indexOf('.') + 1);
     },
     openOther: async (context, scope) => {
@@ -436,7 +447,7 @@ function realActionsOf(o: WallOptions): Record<string, unknown> | undefined {
 
 /** What the world's vault is built from: the options that change its nodes, and the folder's consent policy when the world has a store. */
 function flavourOf(options: WallOptions, o: { collide: boolean; a1Config: boolean; agentForward: boolean }): Flavour {
-  return { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward, ask: options.consent?.ask, entryName: options.entryName ?? 'prod' };
+  return { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward, ask: options.consent?.ask, entryName: options.entryName ?? 'prod', e1Db: options.e1Db };
 }
 
 /**

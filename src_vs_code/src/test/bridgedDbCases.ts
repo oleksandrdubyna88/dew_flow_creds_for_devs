@@ -38,6 +38,10 @@ const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
   connect_timeout: () => 'it must be one to four digits',
   application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
+  encrypt: () => 'it must be true, false or strict',
+  trustservercertificate: () => 'it must be true or false',
+  'ssl-mode': () => 'it must be DISABLED, PREFERRED or REQUIRED',
+  'connection timeout': () => 'it must be one to five digits',
 };
 /** DR6 for a value of a key=value string that begins with a quote, as an ADO string writes one: the profile does not read that form. */
 export const dr6q = (field: string, client: string): string => `The ${field} of "${ENTRY}" has a form that cannot be given to ${client} through a Remote Bridge: in a key=value string it must not begin with a quote.`;
@@ -168,12 +172,12 @@ const FIELDS: Refused[] = [
 ];
 
 const dp11: Refused[] = [
-  { id: 'DP11 mysql ssl-mode', dbType: 'mysql', stored: MYSQL('?ssl-mode={v}'), sentence: dr2('"ssl-mode"') },
+  { id: 'DP11 mysql ssl-mode', dbType: 'mysql', stored: MYSQL('?ssl-mode={v}'), sentence: dr6('ssl-mode', 'mysql') },
   { id: 'DP11 mysql unknown key', dbType: 'mysql', stored: MYSQL('?x{v}=1'), sentence: dr2(UNKNOWN) },
-  { id: 'DP11 mssql uri query', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@db.example:1433/orders?encrypt=true`, sentence: dr2('"encrypt"') },
-  { id: 'DP11 Encrypt', dbType: 'mssql', stored: KV(';Encrypt={v}'), sentence: dr2('"encrypt"') },
-  { id: 'DP11 TrustServerCertificate', dbType: 'mssql', stored: KV(';TrustServerCertificate={v}'), sentence: dr2('"trustservercertificate"') },
-  { id: 'DP11 Connection Timeout', dbType: 'mssql', stored: KV(';Connection Timeout={v}'), sentence: dr2('"connection timeout"') },
+  { id: 'DP11 mssql uri query', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@db.example:1433/orders?encrypt=${v}`, sentence: dr6('encrypt', 'sqlcmd') },
+  { id: 'DP11 Encrypt', dbType: 'mssql', stored: KV(';Encrypt={v}'), sentence: dr6('encrypt', 'sqlcmd') },
+  { id: 'DP11 TrustServerCertificate', dbType: 'mssql', stored: KV(';TrustServerCertificate={v}'), sentence: dr6('trustservercertificate', 'sqlcmd') },
+  { id: 'DP11 Connection Timeout', dbType: 'mssql', stored: KV(';Connection Timeout={v}'), sentence: dr6('connection timeout', 'sqlcmd') },
   { id: 'DP11 Integrated Security', dbType: 'mssql', stored: KV(';Integrated Security={v}'), sentence: dr2('"integrated security"') },
   { id: 'DP11 Trusted_Connection', dbType: 'mysql', stored: KV(';Trusted_Connection={v}'), sentence: dr2('"trusted_connection"') },
   { id: 'DP11 unknown kv key', dbType: 'mssql', stored: KV(';Zk{v}=1'), sentence: dr2(UNKNOWN) },

@@ -4,6 +4,8 @@ import { DbType } from '../types';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from '../dbCliLauncher';
 import { REFUSED, stored } from './bridgedDbCases';
 import { OFF_BRIDGE_TODAY } from './bridgedDbOffBridgeGolden';
+import { FOUND, verdictOf } from './bridgedDbVerdicts';
+import type { DbVendor } from '../bridgedDbClient';
 
 /**
  * Handing a query to a database CLI with the password never on the command line.
@@ -418,49 +420,80 @@ test('the over-refusal sentences say how to write the word as SQL, and that way 
  * E1.6 B8 (Q1-Q3): the flags a bridged query adds, so the person's own client configuration is not read
  * ------------------------------------------------------------------------------------------------------------- */
 
-test('Q1 (§S6.15 Z4, T46): a bridged postgres launch has -X, -c, the query with its one leading space, --, and the string this extension builds; the stored URI is no argument', () => {
-  const args = buildDbQueryLaunch('postgres', PG, 'select 1', { bridged: true, absentFile: ABSENT })?.args ?? [];
+/** What a bridged launch is handed after the call's client check: the vendor the check read, and the file it found. */
+const bridgedWith = (vendor: DbVendor): { readonly bridged: true; readonly absentFile: string; readonly verdict: ReturnType<typeof verdictOf> } => ({ bridged: true, absentFile: ABSENT, verdict: verdictOf(vendor) });
+/** A launch that must exist. */
+const launchOf = (dbType: DbType, connection: string, options?: Parameters<typeof buildDbQueryLaunch>[3]): NonNullable<ReturnType<typeof buildDbQueryLaunch>> => {
+  const launch = buildDbQueryLaunch(dbType, connection, 'select 1', options);
+  assert.ok(launch !== undefined, `${dbType}: a launch`);
+  return launch;
+};
+const POLICY = `gssencmode='disable' sslcertmode='disable' require_auth='password,md5,scram-sha-256'`;
 
-  assert.deepEqual(args, ['-X', '-c', ' select 1', '--', `host='db' port='5432' dbname='orders' user='alice' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}'`]);
+test('Q1 (§S6.15 Z4, T46; E1.7 V3): a bridged postgres launch has -X, -c, the query with its one leading space, --, and the string this extension builds, ending with the three policy keywords; the stored URI is no argument; the program is the verdict\'s file', () => {
+  const launch = buildDbQueryLaunch('postgres', PG, 'select 1', bridgedWith('postgresql'));
+  const args = launch?.args ?? [];
+
+  assert.deepEqual(args, ['-X', '-c', ' select 1', '--', `host='db' port='5432' dbname='orders' user='alice' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}' ${POLICY}`]);
+  assert.equal(launch?.exe, FOUND.postgresql, 'the program is the path the check asked, not the bare word');
   assert.equal(args.some((arg) => arg.includes('postgresql://') || arg.includes('hunter2')), false, 'neither the stored URI nor its password is an argument');
   assert.notDeepEqual(args, ['-X', '-c', ' select 1', '--', PG], 'and the stored URI is not handed over');
 });
 
-test('Q1b: a bridged postgres launch with settings writes them before the three controls, in the builder\'s order', () => {
+test('Q1b (V3, T61): a bridged postgres launch with settings writes them before the controls, in the builder\'s order, and the policy keywords come after everything the entry gave', () => {
   const stored = 'postgresql://alice:hunter2@db/orders?application_name=a&sslmode=disable';
-  const args = buildDbQueryLaunch('postgres', stored, 'select 1', { bridged: true, absentFile: ABSENT })?.args ?? [];
+  const args = buildDbQueryLaunch('postgres', stored, 'select 1', bridgedWith('postgresql'))?.args ?? [];
 
-  assert.equal(args[4], `host='db' dbname='orders' user='alice' sslmode='disable' application_name='a' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}'`);
+  assert.equal(args[4], `host='db' port='5432' dbname='orders' user='alice' sslmode='disable' application_name='a' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}' ${POLICY}`);
+});
+
+test('Q1c (V3): an entry that names no port and no database is written with port 5432 and the user as dbname, because pg_wrapper reads ~/.postgresqlrc and fills what the string leaves out', () => {
+  const args = buildDbQueryLaunch('postgres', 'postgresql://alice:hunter2@db/', 'select 1', bridgedWith('postgresql'))?.args ?? [];
+
+  assert.equal(args[4], `host='db' port='5432' dbname='alice' user='alice' passfile='${ABSENT}' sslcert='${ABSENT}' sslkey='${ABSENT}' ${POLICY}`);
 });
 
 /** What the production caller hands a bridged launch: a path from `materializedKeyPath`, in a folder nothing ever writes this name into (Y6). */
 const ABSENT = '/k/keys/1/no-client-file';
 
 /** The argv of a launch that must exist. */
-const argvOf = (dbType: DbType, connection: string, bridged: boolean): string[] => (buildDbQueryLaunch(dbType, connection, 'select 2', { bridged, absentFile: ABSENT }) as { args: string[] }).args;
+const argvOf = (dbType: DbType, connection: string, bridged: boolean, vendor?: DbVendor): string[] =>
+  (buildDbQueryLaunch(dbType, connection, 'select 2', { bridged, absentFile: ABSENT, ...(vendor === undefined ? {} : { verdict: verdictOf(vendor) }) }) as { args: string[] }).args;
 
-test('Q2 (§S6.15 Z4, T52): a bridged mysql launch has --no-defaults first and --protocol=TCP straight after it; the three pins stand after the connection flags and before -e', () => {
-  const args = argvOf('mysql', MY, true);
+test('Q2 (§S6.15 Z4, T52; E1.7 V3, T62): a bridged Oracle mysql launch has --no-defaults first, --protocol=TCP second, then --plugin-dir at the absent file and --skip-enable-cleartext-plugin; the three pins stand after the connection flags and before -e', () => {
+  const args = argvOf('mysql', MY, true, 'oracle');
 
   assert.equal(args[0], '--no-defaults');
   assert.equal(args[1], '--protocol=TCP');
-  assert.equal(args[2], '-h');
+  assert.deepEqual(args.slice(2, 4), [`--plugin-dir=${ABSENT}`, '--skip-enable-cleartext-plugin']);
+  assert.equal(args[4], '-h');
   for (const flag of ['--skip-named-commands', '--delimiter=;', '--local-infile=0']) {
     assertBetween(args, flag, args.indexOf('-D'), args.indexOf('-e'));
   }
-  assert.deepEqual(args.slice(2), argvOf('mysql', MY, false), 'and the rest is today\'s, word for word');
+  assert.deepEqual(args.slice(4), argvOf('mysql', MY, false), 'and the rest is today\'s, word for word');
   assert.equal(argvOf('mysql', MY, false).includes('--protocol=TCP'), false, 'off a bridge: no --protocol');
+  assert.equal(argvOf('mysql', MY, false).some((arg) => arg.startsWith('--plugin-dir')), false, 'off a bridge: no control');
 });
 
 test('Q2b: a bridged mysql entry for localhost is asked for by name and over TCP, and an entry that names no host is refused where today\'s launch asks for localhost', () => {
-  const args = buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@localhost/orders', 'select 2', { bridged: true, absentFile: ABSENT })?.args ?? [];
-  assert.deepEqual(args.slice(0, 4), ['--no-defaults', '--protocol=TCP', '-h', 'localhost']);
-  assert.equal(buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@/orders', 'select 2', { bridged: true, absentFile: ABSENT }), undefined);
+  const args = buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@localhost/orders', 'select 2', bridgedWith('oracle'))?.args ?? [];
+  assert.deepEqual(args.slice(0, 2), ['--no-defaults', '--protocol=TCP']);
+  assert.deepEqual(args.slice(4, 6), ['-h', 'localhost']);
+  assert.equal(buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@/orders', 'select 2', bridgedWith('oracle')), undefined);
   assert.deepEqual(buildDbQueryLaunch('mysql', 'mysql://alice:hunter2@/orders', 'select 2')?.args.slice(0, 2), ['-h', 'localhost'], 'off a bridge today\'s default stays');
 });
 
-test('Q3: a bridged mssql launch has no new flag, and off a bridge all three launches are today\'s', () => {
-  assert.deepEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { bridged: true, absentFile: ABSENT }), buildDbQueryLaunch('mssql', MS, 'select 1'));
+test('Q3 (E1.7 V3, T83): a bridged ODBC sqlcmd launch has no new flag; go-sqlcmd\'s ends with --authentication-method=SqlPassword; off a bridge all three launches are today\'s', () => {
+  const odbc = launchOf('mssql', MS, bridgedWith('odbc-sqlcmd'));
+  const today = launchOf('mssql', MS);
+  assert.deepEqual({ ...odbc, exe: 'sqlcmd' }, today, 'the ODBC client gets none: it has no control whose acceptance could be asked');
+  assert.equal(odbc.exe, FOUND['odbc-sqlcmd']);
+  const go = launchOf('mssql', MS, bridgedWith('go-sqlcmd'));
+  assert.deepEqual(go.args, [...today.args, '--authentication-method=SqlPassword']);
+  assert.deepEqual(go.env, today.env, 'the user and the password are the entry\'s, as for the other client');
+});
+
+test('Q3b: off a bridge all three launches are today\'s, and carry none of what a bridge adds', () => {
   const connections = { postgres: PG, mysql: MY, mssql: MS } as const;
   for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
     assert.deepEqual(buildDbQueryLaunch(dbType, connections[dbType], 'select 1', { bridged: false }), buildDbQueryLaunch(dbType, connections[dbType], 'select 1'));
@@ -474,33 +507,35 @@ test('Q3: a bridged mssql launch has no new flag, and off a bridge all three lau
  * ------------------------------------------------------------------------------------------------------------- */
 
 test('Q5: a bridged mysql launch asks for MYSQL_TEST_LOGIN_FILE at the absent file, beside its password; the argv is Q2\'s', () => {
-  const launch = buildDbQueryLaunch('mysql', MY, 'select 2', { bridged: true, absentFile: ABSENT });
+  const launch = buildDbQueryLaunch('mysql', MY, 'select 2', bridgedWith('oracle'));
 
   assert.deepEqual(launch?.env, { MYSQL_PWD: 'hunter2', MYSQL_TEST_LOGIN_FILE: ABSENT });
   assert.equal(launch?.args[0], '--no-defaults');
 });
 
 test('Q6: a bridged postgres launch asks for PGPASSFILE, PGSSLCERT and PGSSLKEY at the absent file, beside its password', () => {
-  const launch = buildDbQueryLaunch('postgres', PG, 'select 1', { bridged: true, absentFile: ABSENT });
+  const launch = buildDbQueryLaunch('postgres', PG, 'select 1', bridgedWith('postgresql'));
 
   assert.deepEqual(launch?.env, { PGPASSWORD: 'hunter2', PGPASSFILE: ABSENT, PGSSLCERT: ABSENT, PGSSLKEY: ABSENT });
   assert.equal(Object.keys(launch?.env ?? {}).includes('MYSQL_TEST_LOGIN_FILE'), false);
 });
 
 test('Q7 (§S6.15 Z4, T50): a bridged mssql launch asks for none of the four; an entry with no stored password, or no user, is refused for each client', () => {
-  assert.deepEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { bridged: true, absentFile: ABSENT })?.env, { SQLCMDPASSWORD: 'hunter2', SQLCMDUSER: 'alice' });
+  assert.deepEqual(buildDbQueryLaunch('mssql', MS, 'select 1', bridgedWith('odbc-sqlcmd'))?.env, { SQLCMDPASSWORD: 'hunter2', SQLCMDUSER: 'alice' });
   const noPassword = { postgres: 'postgresql://alice@db:5432/orders', mysql: 'mysql://bob@h:3307/shop', mssql: 'Server=h,1433;Database=d;User Id=sa' } as const;
   const noUser = { postgres: 'postgresql://:pw@db:5432/orders', mysql: 'mysql://:pw@h:3307/shop', mssql: 'Server=h,1433;Database=d;Password=pw' } as const;
+  const vendors = { postgres: 'postgresql', mysql: 'oracle', mssql: 'odbc-sqlcmd' } as const;
   for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
-    assert.equal(buildDbQueryLaunch(dbType, noPassword[dbType], 'select 1', { bridged: true, absentFile: ABSENT }), undefined, `${dbType}: no stored password`);
-    assert.equal(buildDbQueryLaunch(dbType, noUser[dbType], 'select 1', { bridged: true, absentFile: ABSENT }), undefined, `${dbType}: no user`);
+    assert.equal(buildDbQueryLaunch(dbType, noPassword[dbType], 'select 1', bridgedWith(vendors[dbType])), undefined, `${dbType}: no stored password`);
+    assert.equal(buildDbQueryLaunch(dbType, noUser[dbType], 'select 1', bridgedWith(vendors[dbType])), undefined, `${dbType}: no user`);
     assert.notEqual(buildDbQueryLaunch(dbType, noPassword[dbType], 'select 1'), undefined, `${dbType}: off a bridge the entry is served, as today`);
   }
 });
 
 test('Q10 (§S6.15 Z4, T47, T51): a bridged launch of each refused connection of DP4-DP11 is refused, with a query that would pass', () => {
   for (const refused of REFUSED) {
-    assert.equal(buildDbQueryLaunch(refused.dbType, stored(refused), 'select 1', { bridged: true, absentFile: ABSENT }), undefined, refused.id);
+    const vendor = { postgres: 'postgresql', mysql: 'oracle', mssql: 'odbc-sqlcmd', mongodb: 'postgresql' }[refused.dbType] as DbVendor;
+    assert.equal(buildDbQueryLaunch(refused.dbType, stored(refused), 'select 1', bridgedWith(vendor)), undefined, refused.id);
   }
 });
 
@@ -528,8 +563,48 @@ test('Q8: off a bridge the launch is byte for byte today\'s, whether or not an a
 
 test('Q9: a bridged postgres or mysql launch with no absent file (or an empty one) is refused, not launched with the person\'s files readable; mssql needs none', () => {
   for (const absentFile of [undefined, '']) {
-    assert.equal(buildDbQueryLaunch('postgres', PG, 'select 1', { bridged: true, absentFile }), undefined);
-    assert.equal(buildDbQueryLaunch('mysql', MY, 'select 2', { bridged: true, absentFile }), undefined);
-    assert.notEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { bridged: true, absentFile }), undefined);
+    assert.equal(buildDbQueryLaunch('postgres', PG, 'select 1', { ...bridgedWith('postgresql'), absentFile }), undefined);
+    assert.equal(buildDbQueryLaunch('mysql', MY, 'select 2', { ...bridgedWith('oracle'), absentFile }), undefined);
+    assert.notEqual(buildDbQueryLaunch('mssql', MS, 'select 1', { ...bridgedWith('odbc-sqlcmd'), absentFile }), undefined);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.7 V3 (§S7.5, §S7.11 Q12, Q13): the controls come from the client check's verdict, and only the vendor that knows a flag is given it
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('Q12 (V3, T64): a bridged launch built with no verdict is undefined, for each client, with a connection and a query that would launch with one', () => {
+  const connections = { postgres: PG, mysql: MY, mssql: MS } as const;
+  for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
+    assert.equal(buildDbQueryLaunch(dbType, connections[dbType], 'select 1', { bridged: true, absentFile: ABSENT }), undefined, `${dbType}: no verdict, no launch`);
+    assert.notEqual(buildDbQueryLaunch(dbType, connections[dbType], 'select 1', { bridged: true, absentFile: ABSENT, verdict: verdictOf({ postgres: 'postgresql', mysql: 'oracle', mssql: 'odbc-sqlcmd' }[dbType] as DbVendor) }), undefined, `${dbType}: control, the same call with a verdict`);
+  }
+});
+
+test('Q12b (V3): a verdict of another client\'s vendor is no verdict for this one: a postgres launch handed MariaDB\'s is undefined', () => {
+  assert.equal(buildDbQueryLaunch('postgres', PG, 'select 1', bridgedWith('mariadb')), undefined);
+  assert.equal(buildDbQueryLaunch('mysql', MY, 'select 1', bridgedWith('go-sqlcmd')), undefined);
+  assert.equal(buildDbQueryLaunch('mssql', MS, 'select 1', bridgedWith('oracle')), undefined);
+});
+
+test('Q13 (V3, T63): MariaDB\'s verdict gets --plugin-dir and no flag only Oracle\'s client knows; an ODBC verdict gets no flag only go-sqlcmd knows; Oracle\'s gets what MariaDB\'s does not', () => {
+  const mariadb = argvOf('mysql', MY, true, 'mariadb');
+  assert.deepEqual(mariadb.slice(0, 3), ['--no-defaults', '--protocol=TCP', `--plugin-dir=${ABSENT}`]);
+  for (const flag of ['--skip-enable-cleartext-plugin', '--restricted-auth']) {
+    assert.equal(mariadb.some((arg) => arg.startsWith(flag)), false, `MariaDB's client does not know ${flag}`);
+  }
+  assert.equal(argvOf('mysql', MY, true, 'oracle').includes('--skip-enable-cleartext-plugin'), true);
+  const odbc = argvOf('mssql', MS, true, 'odbc-sqlcmd');
+  assert.equal(odbc.some((arg) => arg.startsWith('--authentication-method')), false, 'the ODBC client does not know it');
+  assert.equal(argvOf('mssql', MS, true, 'go-sqlcmd').includes('--authentication-method=SqlPassword'), true);
+});
+
+test('Q11b (V3): off a bridge a verdict changes nothing: the launch is today\'s, the bare program word included, whatever vendor is handed in', () => {
+  const connections = { postgres: PG, mysql: MY, mssql: MS } as const;
+  for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
+    const today = buildDbQueryLaunch(dbType, connections[dbType], 'select 1');
+    for (const vendor of ['postgresql', 'oracle', 'mariadb', 'go-sqlcmd', 'odbc-sqlcmd'] as const) {
+      assert.deepEqual(buildDbQueryLaunch(dbType, connections[dbType], 'select 1', { bridged: false, absentFile: ABSENT, verdict: verdictOf(vendor) }), today, `${dbType} ${vendor}`);
+    }
   }
 });

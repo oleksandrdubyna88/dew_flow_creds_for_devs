@@ -34,6 +34,8 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { launch, endChild } = require('./itestSshd.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
+const { fakeServer, within } = require('./lib/mysqlFake.cjs');
+const candidates = require('./lib/dbCandidates.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const MARKER_TEXT = 'the-bytes-of-the-marker-file\n';
@@ -49,108 +51,6 @@ function check(name, ok, detail) {
   }
 }
 
-/** One MySQL packet: three bytes of length, the sequence number, the payload. */
-const packet = (sequence, payload) => Buffer.concat([Buffer.from([payload.length & 0xff, (payload.length >> 8) & 0xff, (payload.length >> 16) & 0xff, sequence]), payload]);
-
-const GREETING = Buffer.concat([
-  Buffer.from([0x0a]), Buffer.from('8.0.99-fake\0'), Buffer.from([1, 0, 0, 0]), Buffer.from('abcdefgh'), Buffer.from([0]),
-  Buffer.from([0x8d, 0xa2]), Buffer.from([0x21]), Buffer.from([0x02, 0x00]), Buffer.from([0x08, 0x00]), Buffer.from([21]), Buffer.alloc(10),
-  Buffer.from('ijklmnopqrst\0'), Buffer.from('mysql_native_password\0'),
-]);
-const OK = Buffer.from([0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
-
-/**
- * A server that speaks just enough of the protocol: the greeting, an OK for any login, and for the first query a LOCAL INFILE request for
- * `markerPath`; it collects what the client sends back (the packets after the request, up to the empty one) in `received`.
- */
-function fakeServer(markerPath) {
-  // `logins`: the user name and the length of the authentication answer of each login (PM1). With no `markerPath` a query is just answered with an OK.
-  const state = { received: [], requested: false, logins: [] };
-  const open = new Set();
-  const server = net.createServer((socket) => {
-    open.add(socket);
-    socket.once('close', () => open.delete(socket));
-    let pending = Buffer.alloc(0);
-    let phase = 'login';
-    socket.on('error', () => undefined);
-    socket.write(packet(0, GREETING));
-    socket.on('data', (chunk) => {
-      pending = Buffer.concat([pending, chunk]);
-      for (let at = parsePacket(pending); at !== undefined; at = parsePacket(pending)) {
-        pending = pending.subarray(at.size);
-        phase = step(socket, phase, at, markerPath, state);
-      }
-    });
-  });
-  /**
-   * Resolves `true` when every connection of the client has been read to its end: what the client sent is then all in `state`. After `ms` it resolves
-   * `false`: some connection was still open, so `state` may hold only part of what the client sent, and the caller must not pass on it.
-   */
-  const drained = (ms) => within(Promise.all([...open].map((socket) => new Promise((resolve) => socket.once('close', resolve)))).then(() => true), ms, false);
-  return { server, state, drained };
-}
-
-function parsePacket(buffer) {
-  if (buffer.length < 4) {
-    return undefined;
-  }
-  const length = buffer[0] | (buffer[1] << 8) | (buffer[2] << 16);
-  return buffer.length < 4 + length ? undefined : { sequence: buffer[3], payload: buffer.subarray(4, 4 + length), size: 4 + length };
-}
-
-/**
- * What a login packet (HandshakeResponse41) says: the user name, and the length of the authentication answer (0 when the client has no password). Never the
- * answer itself. `undefined` fields when the packet is not one this reads (an SSL request, a protocol older than 4.1).
- */
-function loginOf(payload) {
-  const caps = payload.length >= 4 ? payload.readUInt32LE(0) : 0;
-  const end = payload.length > 32 ? payload.indexOf(0, 32) : -1;
-  if ((caps & 0x200) === 0 || end < 0) {
-    return { user: undefined, authLength: undefined };
-  }
-  const user = payload.subarray(32, end).toString('utf8');
-  const at = end + 1;
-  // Which of the three layouts the client chose: a length-encoded answer, a one-byte length, or a NUL-ended text.
-  let authLength;
-  if ((caps & 0x00200000) !== 0) {
-    authLength = payload[at] < 0xfb ? payload[at] : undefined;
-  } else if ((caps & 0x8000) !== 0) {
-    authLength = payload[at];
-  } else {
-    authLength = Math.max(payload.indexOf(0, at) - at, 0);
-  }
-  return { user, authLength };
-}
-
-/** One packet of the client; the next phase. */
-function step(socket, phase, incoming, markerPath, state) {
-  if (phase === 'login') {
-    state.logins.push(loginOf(incoming.payload));
-    socket.write(packet(incoming.sequence + 1, OK));
-    return 'command';
-  }
-  if (phase === 'command') {
-    if (incoming.payload[0] !== 0x03) {
-      return 'command';
-    }
-    if (state.requested || markerPath === undefined) {
-      // Only the FIRST query is answered with the request: Oracle's 8.4 client sends more than one COM_QUERY for `-e`, and a request on each
-      // made the control receive the marker three times (CI, 2026-11-13). Every later query gets an OK.
-      socket.write(packet(incoming.sequence + 1, OK));
-      return 'command';
-    }
-    state.requested = true;
-    socket.write(packet(incoming.sequence + 1, Buffer.concat([Buffer.from([0xfb]), Buffer.from(markerPath)])));
-    return 'infile';
-  }
-  if (incoming.payload.length === 0) {
-    socket.write(packet(incoming.sequence + 1, OK));
-    return 'command';
-  }
-  state.received.push(incoming.payload);
-  return 'infile';
-}
-
 const versionOf = (exe) => {
   try {
     return execFileSync(exe, ['--version'], { encoding: 'utf8' }).trim(); // NOSONAR: an absolute path chosen by the rig
@@ -158,19 +58,6 @@ const versionOf = (exe) => {
     return undefined;
   }
 };
-
-/** Resolves with `promise`'s value, or with `value` after `ms`; the timer does not outlive the race. */
-async function within(promise, ms, value) {
-  let timer;
-  const bound = new Promise((resolve) => {
-    timer = setTimeout(resolve, ms, value);
-  });
-  try {
-    return await Promise.race([promise, bound]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /** One real client against one fake server: the bytes of the marker that the server received. */
 async function received(scope, exe, build, markerPath) {
@@ -192,7 +79,7 @@ async function received(scope, exe, build, markerPath) {
   }
 }
 
-async function legM(scope, dir, name, exe, product) {
+async function legM(scope, dir, name, exe, product, verdict) {
   const marker = path.join(dir, 'marker.txt');
   const home = path.join(dir, `${name} home`);
   fs.mkdirSync(home, { recursive: true });
@@ -209,8 +96,12 @@ async function legM(scope, dir, name, exe, product) {
     const gap = await received(scope, exe, manual('--local-infile=0'), marker);
     check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', !gap.timedOut && gap.bytes === MARKER_TEXT, JSON.stringify(gap));
   }
+  if (verdict === undefined) {
+    console.log(`UNMEASURED (m) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    return;
+  }
   const productionBuild = (port) => {
-    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(dir, 'no-client-file') });
+    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://u:pw@127.0.0.1:${port}/db`, 'select 1', { bridged: true, absentFile: product.materializedKeyPath(dir, 'no-client-file'), verdict });
     return { args: launchOf.args, env: product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home, MYSQL_HOME: dir }, 'linux', launchOf.env) };
   };
   const production = await received(scope, exe, productionBuild, marker);
@@ -241,7 +132,7 @@ function pd1Record(name, exe, home, absent, withVariable) {
 }
 
 /** PD1: `mysql_config_editor` writes a login file under a rig home, then every client present is asked what it reads. A missing editor FAILS on CI and names the package. */
-function recordLoginFile(dir, clients, product) {
+function recordLoginFile(dir, clients, product, verdicts) {
   const [, oracle] = clients[0];
   const editor = process.env.BRIDGED_MYSQL_CONFIG_EDITOR ?? path.join(path.dirname(oracle), 'mysql_config_editor');
   const home = path.join(dir, 'pd1 home');
@@ -263,7 +154,7 @@ function recordLoginFile(dir, clients, product) {
     }
   }
   if (wrote) {
-    assertLoginFileClosed(dir, clients, home, product);
+    assertLoginFileClosed(dir, clients, home, product, verdicts);
   }
 }
 
@@ -273,9 +164,15 @@ function recordLoginFile(dir, clients, product) {
  * either client. The control, for Oracle's client (which reads the file, PD1), is the same run without `MYSQL_TEST_LOGIN_FILE`: the marker stands, so this
  * rig can make the bad thing happen. MariaDB's client reads no login file, so it has no control and its leg shows only that the launch does not change that.
  */
-function assertLoginFileClosed(dir, clients, home, product) {
+function assertLoginFileClosed(dir, clients, home, product, verdicts) {
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
-  const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile });
+  // The environment of the production launch is the same for both clients; it is built under the verdict of the first client whose check answered.
+  const verdict = clients.map(([name]) => verdicts.get(name)).find((one) => one !== undefined);
+  if (verdict === undefined) {
+    console.log('UNMEASURED (m) the login file: the real client check refused every client under the candidate table, so the builder launches nothing');
+    return;
+  }
+  const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile, verdict });
   const production = product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, 'linux', launchOf.env);
   const stands = (answer) => answer.stdout.includes(PD1_MARKER_HOST) || answer.stderr.includes(PD1_MARKER_HOST);
   check('(m) the production launch names MYSQL_TEST_LOGIN_FILE at a path that does not exist', production.MYSQL_TEST_LOGIN_FILE === absentFile && !fs.existsSync(absentFile), JSON.stringify(production.MYSQL_TEST_LOGIN_FILE));
@@ -387,12 +284,16 @@ async function legPM1(scope, dir, name, exe, product) {
 const T_USER = 'ttuser';
 
 /** (t) on one client: the arguments and the environment the builder and `bridgedSshEnv` give a bridged client, for an entry that stores a user and a password. */
-async function legT(scope, dir, name, exe, product) {
+async function legT(scope, dir, name, exe, product, verdict) {
+  if (verdict === undefined) {
+    console.log(`UNMEASURED (t) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    return;
+  }
   const home = path.join(dir, `t ${name} home`);
   fs.mkdirSync(home, { recursive: true });
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
   const built = (withoutFlag) => (port) => {
-    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://${T_USER}:${PM1_PASSWORD}@localhost:${port}/db`, 'select 1', { bridged: true, absentFile });
+    const launchOf = product.buildDbQueryLaunch('mysql', `mysql://${T_USER}:${PM1_PASSWORD}@localhost:${port}/db`, 'select 1', { bridged: true, absentFile, verdict });
     if (launchOf === undefined) {
       throw new Error('buildDbQueryLaunch refused the entry of (t): it stores a user and a password and its host is localhost');
     }
@@ -415,11 +316,11 @@ async function legT(scope, dir, name, exe, product) {
 }
 
 /** PM1 and (t) on every client present. */
-async function recordProtocol(scope, dir, clients, product) {
+async function recordProtocol(scope, dir, clients, product, verdicts) {
   for (const [name, exe] of clients) {
     console.log(`record (PM1) ${name} --version: ${versionOf(exe)}`);
     await legPM1(scope, dir, name, exe, product);
-    await legT(scope, dir, name, exe, product);
+    await legT(scope, dir, name, exe, product, verdicts.get(name));
   }
 }
 
@@ -437,6 +338,7 @@ async function main(scope) {
   };
   const clients = [['oracle', process.env.BRIDGED_MYSQL_ORACLE ?? '/usr/bin/mysql'], ['mariadb', process.env.BRIDGED_MYSQL_MARIADB ?? '/usr/bin/mariadb']];
   const present = [];
+  const verdicts = new Map();
   for (const [name, exe] of clients) {
     const version = fs.existsSync(exe) ? versionOf(exe) : undefined;
     console.log(`${name}: ${exe}: ${version ?? 'not found'}`);
@@ -445,15 +347,21 @@ async function main(scope) {
       continue;
     }
     check(`${exe} is the ${name} client`, name === 'mariadb' ? /MariaDB/i.test(version) : !/MariaDB/i.test(version), version);
-    await legM(scope, dir, name, exe, product);
+    // The production launch of every leg below is built under the verdict of the REAL client check, asked of this very client under the candidate table (§S7.7, §S7.12).
+    const under = await candidates.verdictFor({ family: name, exe, name }, { dir, home: dir });
+    if (under.ok) {
+      candidates.say(`(m), (t) and PD1 on ${name}`, under);
+      verdicts.set(name, under.verdict);
+    }
+    await legM(scope, dir, name, exe, product, verdicts.get(name));
     present.push([name, exe]);
   }
   if (present.length === clients.length) {
-    recordLoginFile(dir, present, product);
+    recordLoginFile(dir, present, product, verdicts);
   } else {
     check('(PD1) both clients are present, so the record leg ran', process.env.CI !== 'true', 'a client is missing: PD1 asks each one');
   }
-  await recordProtocol(scope, dir, present, product);
+  await recordProtocol(scope, dir, present, product, verdicts);
   console.log(failures === 0 ? '\nall bridged mysql checks passed' : `\n${failures} check(s) failed`);
   return failures === 0 ? 0 : 1;
 }
