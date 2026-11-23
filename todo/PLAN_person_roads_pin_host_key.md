@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **epoch 3 approved by the owner 2026-11-23 (narrowed), open, one change (3.1: release before E3). E2 in PR #388, to be merged and released from `main` by the owner's choice; E3 not built (next: E3.S1 C19, E3.S2 the launcher).** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **epoch 3 approved by the owner 2026-11-23 (narrowed), open, one change (3.1: release before E3). E1 and E2 merged (#379, #388) and released in 1.23.0 on 2026-11-23, before E3 (3.1). E3 started 2026-11-23: its stories document is written; nothing of it is built (next: E3.S1 C19, then E3.S2 the launcher).** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). Its re-review replaced the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Epoch 2 had two changes (2.1: two more refused kinds of a storage path; 2.2: the stop). The revision for
@@ -1772,7 +1772,8 @@ is not. Both cornerstones of the quota are marked (E1.S2, E2.S2), so E3 has none
   The one behaviour that E3 builds, C19, changes the rule of evidence of §3.12: its spec is a security judgement and is
   Fable's all the same, outside the quota (the row *Security judgement*). The instrument and the rows are Opus's to
   specify, as for every story that is no cornerstone.
-- **Stories.** `todo/PLAN_person_roads_pin_host_key_E3.md`: not written yet. Its first three stories are E3.S1 (C19), E3.S2
+- **Stories.** [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md) (2026-11-23): ten stories, no
+  cornerstone. Its first three stories are E3.S1 (C19), E3.S2
   (the launch instrument) and E3.S3 (the feasibility), in that order; from E3.S4 on, the rows M1-M14, the results (§10) and
   the check of the CHANGELOG entry, as the stories document splits them.
 - **Info for M5 (a), the bridge.** The person also sees *Bridge open to …* before the check's error (§3.5 says so):
