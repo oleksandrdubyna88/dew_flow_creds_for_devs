@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.23.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.3...extension-v1.23.0) (2026-11-23)
+
+
+### Features
+
+* **bridge:** E1.6 — SSH execution containment for a bridged ssh, and the database road refused until measured ([#365](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/365)) ([e18fd42](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/e18fd420736c7df54e1b84d26afcbd576dab4138))
+* **extension:** the search stays in reach while the tree scrolls, and it is green ([#382](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/382)) ([3007e5b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/3007e5bd330039bcd5c706994771e6424a9deb0f))
+
+
+### Bug Fixes
+
+* **extension:** G1 E2 — pinned calls trust only the saved key; refusals told on evidence ([#388](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/388)) ([4799f9d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/4799f9d7d75742dd30dc4428434424d52d1a3478))
+* **ssh:** G1 E1 — the bridge, its socket check and Install creds on host check the saved host key ([#379](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/379)) ([f3e9887](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/f3e9887d152130adf1a3355b78f4db31f6b859b9))
+
 ## [1.22.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.2...extension-v1.22.3) (2026-11-17)
 
 
