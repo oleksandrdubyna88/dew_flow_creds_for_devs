@@ -1632,7 +1632,7 @@ is not. Both cornerstones of the quota are marked (E1.S2, E2.S2), so E3 has none
   pull request merged before E3's branch takes `main` and before the whole set runs (§9, step 9). G2 merged (M3 measures it).
 - **Its first three stories, in this order.** The stories document (by Opus, when E3 starts) writes them out and splits
   the rows into the stories after them; the order of these three is the re-review's.
-  - **E3.S1 — C19: a run that ended with 0 is told nothing about a host key.** `hostKeyTold` takes the run's exit code as
+  - **E3.S1 — C19: a run that ended with 0 is told nothing about a host key.** Its spec: [PLAN_person_roads_pin_host_key_E3_S1_spec.md](PLAN_person_roads_pin_host_key_E3_S1_spec.md) (Fable, 2026-11-23). `hostKeyTold` takes the run's exit code as
     a required parameter and answers nothing for 0; both callers hand it over on the lines that exist (§3.12, part 4). The
     spec is Fable's, a security judgement; tests RED first. *Done when:* tests 28-32 pass, each mutation check of test 31
     turned red what it names and was restored, the documents of §6 that are E3.S1's are written, and M5 keeps its leg with
