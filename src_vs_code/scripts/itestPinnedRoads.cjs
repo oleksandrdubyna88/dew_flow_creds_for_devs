@@ -180,7 +180,7 @@ function recordingRunner(runner, outcomes) {
 }
 
 /** The world of one leg: the real agent commands, the real runner and spawner, the real pin writer and deletes, the entry pinned to K1 at `port`. */
-function openLeg(rig, port) {
+function openLeg(rig, port, parts = {}) {
   const { product } = rig;
   const outcomes = [];
   const reported = [];
@@ -197,6 +197,7 @@ function openLeg(rig, port) {
     checks: [credentialOf(rig)],
     spawn: product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }),
     mocks: { '../sshExecRunner': recordingRunner(product.runner, outcomes) },
+    ...parts,
   });
   return { w, outcomes, reported, before: new Set(recordedStarts(rig).map((one) => one.file)) };
 }
@@ -542,4 +543,4 @@ async function livePinnedRoads(check, out) {
   }
 }
 
-module.exports = { livePinnedRoads };
+module.exports = { livePinnedRoads, productOf, realSsh, installShim, writeClientConfig, recordedStarts, openLeg, startsOf, finishes, makeKeys, knownHostsDigest, rigOf };
