@@ -74,7 +74,7 @@ that cannot be made to work goes to the lead, and it is a plan change (decision 
 |---|---|---|
 | F1 | **The local `sshd`.** `~/.cache/creds-itest-sshd/` holds `sshd-wrap.sh` (`LD_LIBRARY_PATH=<…>/root/usr/lib/x86_64-linux-gnu exec <…>/root/usr/sbin/sshd "$@"`), `extra.conf` (the two lines `SshdSessionPath …/sshd-session`, `SshdAuthPath …/sshd-auth`), `root/` (the unpacked files) and `deb/` with `openssh-server_1%3a10.2p1-2ubuntu3.8_amd64.deb`, `libwrap0_7.6.q-36build2_amd64.deb` and `SHA256SUMS`. It is handed as `CREDS_ITEST_SSHD=$HOME/.cache/creds-itest-sshd/sshd-wrap.sh` and `CREDS_ITEST_SSHD_CONFIG=$HOME/.cache/creds-itest-sshd/extra.conf` | read (`ls`, `cat`) |
 | F2 | **The client.** `/usr/bin/ssh -V`: `OpenSSH_10.2p1 Ubuntu-2ubuntu3.8, OpenSSL 3.5.5 27 Jan 2026`. `ldd /usr/bin/ssh` lists `libresolv.so.2` and no `libldns`: an SSHFP question goes through glibc's stub resolver. glibc passes the AD bit of an answer on only with `options trust-ad` in `resolv.conf` (glibc 2.31 and later; read in `resolv.conf(5)`, not run), and OpenSSH marks an SSHFP answer as secure by that bit (`openbsd-compat/getrrsetbyname.c`; read, not run) | measured; read |
-| F3 | **The resolver of this machine.** `/etc/resolv.conf`: `nameserver 10.255.255.254`, `search localdomain` (WSL's own). glibc takes the name server from that file only; no environment variable names one | read |
+| F3 | **The resolver of this machine.** `/etc/resolv.conf`: `nameserver <WSL's own address>`, `search localdomain` (WSL's own). glibc takes the name server from that file only; no environment variable names one | read |
 | F4 | **The Windows client.** `/mnt/c/Windows/System32/OpenSSH/ssh.exe` exists (1 256 448 bytes). `ssh.exe -V`, started from WSL through interop: `OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2` (the version of K7 of the E1.S1 spec) | measured |
 | F5 | **wslc.** `wslc.exe` is on `PATH` (`/mnt/c/Program Files/WSL/wslc.exe`). `wslc run` takes `--rm`, `--name`, `--label`, `-v`/`--mount`, `--dns`, `--dns-option`, `--pull`, `-u`, `--cap-add`, `-e` (`wslc run --help`). Local images: `python:3.12-slim` (Debian, Python 3.12.16), `python:3.14-slim`, `koalaman/shellcheck-alpine`, and large ROCm/ComfyUI images. None holds Node or OpenSSH (`wslc images`, `wslc image inspect python:3.12-slim`). A port that `wslc` publishes is on the Windows loopback only and the distro cannot reach it (measured 2026-11-04, an earlier task on this machine) | read; earlier measurement |
 | F6 | **The janitor does not read `wslc`.** `janitor.sh:317`: `if command -v docker …; else … "janitor: no docker binary — containers, volumes and networks not swept"`. This machine has no `docker` | read |
@@ -334,7 +334,7 @@ no shell), reads its `-G` output, and tells one file from two by K7's control (F
 
 **The words.** The client is asked as the product asks it: `pinClientAsker()({ program: <ssh.exe's path>, env: process.env })` must answer
 `knows` (OpenSSH_for_Windows_9.5). The pin path is written as the product writes it on Windows: `path.win32.join(<storage>, 'keys', <pid>,
-'known_hosts-e1-<uuid>')` with the storage folder `C:\Users\probe user\AppData\Roaming\Code\User\globalStorage\probe` (a made-up user
+'known_hosts-e1-<uuid>')` with the storage folder `C:\Users\<you> probe\AppData\Roaming\Code\User\globalStorage\probe` (a made-up user
 name: never the owner's), then `checkedPin(path, client)` and `hostKeyWords(pin)`. The argv: `-G`, `-F`, `none`, the words, `-p`, `22`,
 `probe-host`.
 
@@ -343,7 +343,7 @@ name: never the owner's), then `checkedPin(path, client)` and `hostKeyWords(pin)
 - P5.2 The `-G` run ends with 0; its lines (CR removed) hold `stricthostkeychecking true`, `userknownhostsfile <path>` and
   `globalknownhostsfile <path>` (the path whole), `verifyhostkeydns false`, `loglevel ERROR`, and no line that starts with
   `knownhostscommand`.
-- P5.3 K7's control: a storage folder with ` ~` after a space (`C:\Users\probe user\x ~y\…`): with the product's word (quoted) exit 0 and
+- P5.3 K7's control: a storage folder with ` ~` after a space (`C:\Users\<you> probe\x ~y\…`): with the product's word (quoted) exit 0 and
   the path whole; with the bare word exit 255 and a line with `tilde_expand`. So the probe can tell one file from two.
 - P5.4 The record (`identitiesOf`, R1, R2), with `probe.executables` = `ssh.exe` by its path, `-V` line and SHA-256 (read through `/mnt/c`).
 
@@ -531,7 +531,7 @@ OpenSSH 8.2, not the 8.4 that Q1 read.
 - The parent, *Where the rows run*: "M10 where the run owns the resolver, and M11 where a client older than 8.5 runs: a container that the
   run starts, or an unpacked package; the stories document says which." The stories document: "The second way, an unpacked package, is
   probed only if the container cannot be had, and only with evidence that the client of the run asks that resolver."
-- What is so: the client asks the name server of `/etc/resolv.conf` (F2, F3), which is WSL's (`10.255.255.254`); no variable names another.
+- What is so: the client asks the name server of `/etc/resolv.conf` (F2, F3), which is WSL's (an address of its own); no variable names another.
   An unpacked resolver alone is therefore never asked. The client asks it only inside a mount namespace whose `/etc/resolv.conf` names it,
   and the resolver needs port 53 there: a user, mount and network namespace (`unshare`; F8), with the counterpart, the client and the
   harness inside it. The resolver could then be the same Node code as in P2, with no package at all.
