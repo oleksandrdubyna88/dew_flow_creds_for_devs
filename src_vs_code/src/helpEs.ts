@@ -264,7 +264,7 @@ export const ES_BODIES: Readonly<Record<string, HelpBody>> = {
     title: "El filtro, y los filtros por capacidad",
     whatItIs: "La fila de búsqueda filtra el árbol en vivo por lo que una fila muestra — nombre, host, usuario, comando — y, con los predicados `has:` / `mcp:`, por lo que una entrada PUEDE HACER.",
     why: "«¿Qué entradas pueden rotar los agentes?» y «¿qué tiene un código de un solo uso?» son preguntas que una búsqueda por nombre no responde.",
-    setup: "Nada. Haga clic en la fila de búsqueda o ejecute Filter Credentials….",
+    setup: "Nada. Haga clic en la fila de búsqueda o en la lupa verde de la barra de título, o ejecute Filter Credentials….",
     usage: "`aws has:totp mcp:usable` — el texto libre y los predicados se combinan con Y. Disponibles: has:totp, has:cli, has:env, has:code-access, has:deps, has:attachment, has:image, is:ephemeral, mcp:visible/usable/rotate/create/delete-own/delete-any. Haga clic en un resultado y siga trabajando — al cerrar el filtro se revela y se tiñe brevemente la fila que tenía seleccionada.\n\nEl filtro estrecha lo que se MUESTRA; **Go to Credential…** (Ctrl+Alt+P) responde a la otra pregunta — sé cómo se llama, ábrela — como una sola lista a través de todas las cuentas. Encuentra exactamente lo mismo que el filtro, y por la misma razón: ninguno de los dos busca jamás dentro de un secreto.",
     whatCanGoWrong: "Los secretos no se buscan nunca — un filtro sobre contraseñas las confirmaría de una pulsación en una pulsación. Un predicado desconocido se nombra en la fila en lugar de buscarse en silencio como texto.",
   },

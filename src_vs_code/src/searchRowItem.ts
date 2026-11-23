@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { SEARCH_ACCENT_COLOR_ID, searchRowUri } from './searchAccent';
+import { SEARCH_ACTIVE_ROW_CONTEXT } from './searchPin';
 
 /**
  * The filter row.
@@ -36,7 +38,10 @@ export function searchRowItem(
   const item = new vscode.TreeItem(look.label, vscode.TreeItemCollapsibleState.None);
   item.id = 'search';
   item.contextValue = look.contextValue;
-  item.iconPath = new vscode.ThemeIcon(look.icon);
+  item.iconPath = new vscode.ThemeIcon(look.icon, new vscode.ThemeColor(SEARCH_ACCENT_COLOR_ID));
+  // A synthetic address that lets a FileDecorationProvider colour the LABEL. Safe because
+  // `label` and `iconPath` are both set explicitly, so the resourceUri supplies neither.
+  item.resourceUri = searchRowUri();
   item.description = look.description;
   item.tooltip = look.tooltip;
   item.command = { command: 'credSshManager.search', title: 'Search' };
@@ -57,7 +62,7 @@ function filtering(query: string, found: number, unknownPredicates: readonly str
     unknownPredicates.length === 0 ? '' : `  ·  unknown filter: ${unknownPredicates.join(', ')}`;
   return {
     label: `Search: ${query}`,
-    contextValue: 'credSearchActive',
+    contextValue: SEARCH_ACTIVE_ROW_CONTEXT,
     icon: 'filter-filled',
     // "nothing matches" rather than "0 found": the empty case is the one worth spelling out,
     // because an empty tree and a broken tree look identical otherwise.

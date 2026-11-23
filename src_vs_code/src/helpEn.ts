@@ -264,7 +264,7 @@ export const EN_BODIES: Readonly<Record<string, HelpBody>> = {
     title: "The filter, and capability filters",
     whatItIs: "The search row filters the tree live by what a row shows — name, host, user, command — and, with `has:` / `mcp:` predicates, by what an entry CAN DO.",
     why: "“Which entries can agents rotate?” and “what has a one-time code?” are questions a name search cannot answer.",
-    setup: "Nothing. Click the search row or run Filter Credentials….",
+    setup: "Nothing. Click the search row, click the green magnifier in the title bar, or run Filter Credentials….",
     usage: "`aws has:totp mcp:usable` — free text and predicates AND together. Available: has:totp, has:cli, has:env, has:code-access, has:deps, has:attachment, has:image, is:ephemeral, mcp:visible/usable/rotate/create/delete-own/delete-any. Click a result and keep working — closing the filter reveals and briefly tints the row you had selected.\n\nThe filter narrows what is DISPLAYED; **Go to Credential…** (Ctrl+Alt+P) answers the other question — I know its name, open it — as one list across every account. It matches exactly what the filter matches, and for the same reason: neither one ever searches a secret.",
     whatCanGoWrong: "Secrets are never searched — a filter over passwords would confirm one keystroke at a time. An unknown predicate is named on the row rather than silently matched as text.",
   },
