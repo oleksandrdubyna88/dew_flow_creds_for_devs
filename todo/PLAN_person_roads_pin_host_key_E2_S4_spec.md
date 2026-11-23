@@ -80,6 +80,8 @@ behaviour of the product changes. If leg 2 shows `could not be checked`, that is
 
 ## 1. The CHANGELOG entry, final text
 
+> **Superseded in two places, 2026-11-23 (CodeRabbit on #388).** The block below was the final text when this spec was written. The code gate of E2 (2026-11-19, security) changed it: neither sentence C nor sentence D names *Connect SSH* any more, because Connect can go on without showing a fingerprint when its key scan answers nothing, and for a password entry it then sends the password (see the E2.S3 spec §1, and `hostKeyPin.ts`). The two advices to use Connect SSH below (sentence C: "use Connect SSH on this entry…"; sentence D: "Connect SSH on this entry checks this host's key again…") are history; the shipped words are in the E2.S3 spec §1 and the code, and the shipped `CHANGELOG.md`. Also, the sentence about a storage folder lists "a backslash at its end" among the shapes a folder is refused for; a folder cannot produce that (the file name follows it), the whole path rule still refuses such a path, and the shipped CHANGELOG no longer lists it for a folder. The block is kept as written.
+
 Replace, under `## [Unreleased]` of `CHANGELOG.md`, the whole block that starts at the line
 `### Changed — security: a saved host key is the only key a call without a terminal accepts` and ends at the line
 `An entry with no saved host key connects as before.` (after E2.S3's commit it holds E2.S3's paragraph about sentence D; read the

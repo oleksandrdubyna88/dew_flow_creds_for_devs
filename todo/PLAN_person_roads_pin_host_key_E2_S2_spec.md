@@ -226,6 +226,8 @@ On the three roads both sentences stand behind the opening that a road already w
 
 ### 2.1 The change
 
+> **Note, 2026-11-23 (CodeRabbit on #388): the listings of sentences E and F below, and the expected strings of test P5 in §6.3, are words as first written; the final words are §1 and the code (`pinPathSentence` and `pinClientSentence` in `hostKeyPin.ts`).** In the final words E ends with the remedy ("To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.") and F ends with the advice to check which ssh program is first on the PATH and that it prints its version with -V. The listings are kept as the history of the build; the test P5 of the shipped `pinWords.test.ts` holds the final words.
+
 `NO_KEY_FILE` and `oneFileWord` go, with their docblocks. In their place, from the line where `NO_KEY_FILE` stood to the line
 before `HOST_KEY_REFUSED_LINE`: the kinds, the rule, the checked value, the words, the check of a pin file that exists, and the two
 sentences. One import is added. `hostKeyRefused` changes its parameter and nothing else. Everything above `knownHostsLine` and
@@ -1633,6 +1635,7 @@ test('P4: every path that the rule of the bridged file refuses, this rule refuse
   }
 });
 
+// Words as first written (2026-11-18): the final words, with the remedy at the end of E and of F, are §1 and `hostKeyPin.ts`; the shipped P5 holds them.
 test('P5: sentences E and F, word for word: no path, no part of the program\'s output but the exit code', () => {
   const pinPathSentence = exported<(name: string, kind: Kind) => string>('pinPathSentence');
   const pinClientSentence = exported<(name: string, exitCode: number | null) => string>('pinClientSentence');

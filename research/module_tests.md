@@ -2547,7 +2547,7 @@ An SSH entry can hold a saved host key. G1 makes `ssh` read it as the ONLY known
 of ONE call (E1.S2), and hand it to `ssh` (E1.S3). The tests prove, for the words: what is SENT by both argv builders
 and what a real `ssh -G` RESOLVES from it; and, for the roads, the three states of a saved host key for one call (absent: nothing is written and the
 call runs as before; usable: one file of this call alone, kept while the call needs it and deleted with it, whether or not a key file was written;
-there and unusable, or not writable: no `ssh` starts and the person reads one sentence), and that a road reads ONE value, the answer of its guard.
+there and unusable, or not writable: no CONNECTION starts (a cold window runs the local `ssh -V` first) and the person reads one sentence), and that a road reads ONE value, the answer of its guard.
 The road tests run the REAL `registerAgentCommands` over the world of the section above, with a real, owned storage folder and the real
 `materializeKnownHosts` and `forgetMaterializedKey`. Run them with
 `node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/<file>.test.js"`, after `npm run compile`; the smoke with `npm run itest:ssh-agent` (section 10).

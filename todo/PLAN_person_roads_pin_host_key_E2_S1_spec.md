@@ -639,7 +639,7 @@ module of the scratch copy; the coder repeats them on the source and records eac
 | M6 | hand the child the call's whole environment (drop `bridgedSshEnv`) | A1, A2 |
 | M7 | keep an answer under the program word alone | A5 |
 | M8 | in `bridgedSshClient.ts`, drop the `^` of `VERSION_TOKEN` (the bridge's T42) | CV7 of `test/bridgedSshClient.test.ts`; V4 and V6 here |
-| M9 | drop `timeoutMs` from the runner's options | A1, R2 |
+| M9 | drop `timeoutMs` from the runner's options | A1, R1 (first written as R2; CodeRabbit on #388, 2026-11-23: R2 asks the real `ssh -V`, which answers at once, so only R1, the stand-in that hangs, catches a removed `timeoutMs`) |
 | M10 | compare the versions as text | V1, and with it A1, A3, A6, A8, R1 |
 
 ## 5. Documents

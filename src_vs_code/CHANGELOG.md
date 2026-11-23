@@ -77,7 +77,7 @@ A storage folder whose path holds a space no longer breaks these calls. `ssh` re
 key in neither, and refused the host. This is the usual place of the editor's storage on macOS (`Application Support`). A path with
 an apostrophe or an equals sign works too (the extension writes such a path in double quotes, as it does one with a space:
 OpenSSH 8.4 splits an unquoted value at `=`; OpenSSH 10.2 reads it whole either way, measured). A folder whose path holds a control character, a double quote, two backslashes in a row (a network path),
-a backslash before an apostrophe, a backslash at its end, a percent sign, the characters `${` or a tilde at its start is refused
+a backslash before an apostrophe, a percent sign, the characters `${` or a tilde at its start is refused
 before anything connects, and nothing is sent: `ssh` would read another file, two files or none from such a path. The message says
 that the folder where the editor keeps the files of CredsForDevs has a path with that character, and that this is about this
 computer, not about the host or the saved key. It also says what to do: move the storage (user data) folder of the editor to a path

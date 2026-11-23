@@ -2594,7 +2594,7 @@ three roads the answer of `resolveExecAuth` has no name: it is the first argumen
 key (none, an empty one, one of white space) writes nothing and runs as before. A saved host key that is there and cannot be
 used (the text is no host key, or the host forms no known_hosts line) is a refusal with a sentence in the form of the login:
 a key entry is sent to Connect SSH, a password entry is told that there is no safe repair yet. A pin file that cannot be
-written is a refusal too. On a refusal no `ssh` starts. The pin file is deleted where the key file is, by the same `finally`
+written is a refusal too. On a refusal no connection starts (a cold window runs the local `ssh -V` first). The pin file is deleted where the key file is, by the same `finally`
 and the same one continuation, whether or not a key file was written, and only a path that the writer returned in this call
 is deleted. Each of the four argv calls of these roads names the file (E1.S3, the paragraph B10). The bound that stays: a
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
@@ -5419,7 +5419,7 @@ sent. Where it stands: the three roads (`writePersonPin`, asynchronous, in `writ
 before `run` and `start`; the bridge's handoff from `start` to `handed = true` has no `await`) and the agent's exec (`localPin` in
 `sshUseActions.ts`, before the pin file; the optional `SshUseDeps.pinClient`, and deps that name none refuse a pinned call as one whose
 client cannot be read) refuse BEFORE a pin file is written. *Run with Secrets* does not: Connect's options write its pin file before
-`secretsLaunch`, so there the file exists when the call is refused, no `ssh` starts, and the owner's cleanup deletes the file
+`secretsLaunch`, so there the file exists when the call is refused, no connection starts (at most the local `ssh -V`), and the owner's cleanup deletes the file
 (`checkExistingPin`; a pinned session whose client was not asked is refused as unreadable). The agent's exec still reads an unusable saved
 key as no pin and runs with `accept-new` (candidate C3), with one corner: such an entry in a storage folder that the rule refuses, or with
 an `ssh` that cannot be read, is now refused where it ran unchecked. Connect's terminal line has none of this (C4).
