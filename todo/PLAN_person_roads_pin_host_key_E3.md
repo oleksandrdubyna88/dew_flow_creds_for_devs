@@ -1,11 +1,11 @@
 # PLAN — G1, epic E3: the stories (the release gate: every claim is measured on the roads, against a real `sshd`)
 
-> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1 is built and reviewed (`a445af56`..`5b8078c8`). The spec of E3.S2 is written (2026-11-23); E3.S2 is next.** The stories document of epic E3 of
+> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1 and E3.S2 are built and reviewed (`a445af56`..`bf11b088`). The brief of E3.S3 is written (2026-11-23); E3.S3 is next.** The stories document of epic E3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E3; epoch 3, approved by the owner on 2026-11-23, with entry 3.1). It is
 > the epic's baseline, written when E3 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Ten stories, no cornerstone (the quota of two is spent: E1.S2, E2.S2). Built on
 > `fix/g1-e3-release-gate`, which stands on E2's head and has taken `main` by a merge (`8dabad08`). Each spec is written when its story starts,
-> `todo/PLAN_person_roads_pin_host_key_E3_S<n>_spec.md`: E3.S1, [PLAN_person_roads_pin_host_key_E3_S1_spec.md](PLAN_person_roads_pin_host_key_E3_S1_spec.md) (2026-11-23); E3.S2, [PLAN_person_roads_pin_host_key_E3_S2_spec.md](PLAN_person_roads_pin_host_key_E3_S2_spec.md) (2026-11-23).
+> `todo/PLAN_person_roads_pin_host_key_E3_S<n>_spec.md`: E3.S1, [PLAN_person_roads_pin_host_key_E3_S1_spec.md](PLAN_person_roads_pin_host_key_E3_S1_spec.md) (2026-11-23); E3.S2, [PLAN_person_roads_pin_host_key_E3_S2_spec.md](PLAN_person_roads_pin_host_key_E3_S2_spec.md) (2026-11-23); E3.S3, [PLAN_person_roads_pin_host_key_E3_S3_spec.md](PLAN_person_roads_pin_host_key_E3_S3_spec.md) (2026-11-23).
 
 The goal, scope, dependencies and done-when of the epic are in the parent's `## Epics`, E3, with its setup and the rows M1-M14. The sections
 named below (§3.12 and so on), the decisions (14-18) and the tests (28-33) are the parent's. This document does not write a pass criterion again:
