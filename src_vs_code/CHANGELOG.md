@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a server that prints "Host key verification failed" and still answers no longer stops Install creds on host or the bridge's socket check
+
+Since 1.23.0, *Install creds on host* and the socket check of *Open Remote Bridge…* tell you when their call for an entry with a
+saved host key ends with `Host key verification failed`. That rule read the text of the run alone. So when the server itself
+printed that line (a profile of the login, or the command) and the run still ended with exit code 0, *Install creds on host*
+stopped before its question with the second message of 1.23.0 (`The connection to "<name>" ended with "Host key verification
+failed", and ssh did not name the saved host key of this entry as the reason. …`), and after *Open Remote Bridge…* the socket
+check said `The bridge to "<name>" could not be checked: …` although it could read the socket. 1.23.0 named this under "Not yet
+right".
+
+Now the exit code of the run is asked first. A run that ended with exit code 0 is told nothing about a host key, whatever it
+printed: *Install creds on host* goes on to its question, and the socket check goes on and reads the mode of the socket. `ssh`
+ends with 255 when it refuses a host's key, and with the exit code of the remote command when that command ran (the manual,
+`ssh(1)`), so a run that ended with 0 was not refused. A run that did not end with 0 is told as in 1.23.0: a refused host key,
+and also a remote command that prints that line and ends with another code than 0, which still gets the second message. So is a
+run that has no exit code (the time limit ended it). An entry with no saved host key is told none of this, as before.
+
+Nothing that `ssh` is given changes: the same words, and the same one file with the saved key. So what `ssh` accepts and refuses
+is as in 1.23.0. What changes is one message, which was shown for a run that `ssh` had not refused.
+
+Held by the tests, on the texts that a real `ssh` printed: the same text is answered with exit code 0 and with 255, and the exit
+code alone decides. Not measured yet: a real `ssh` against a real `sshd` whose run ends with exit code 0 and holds that line,
+through these two commands. The real-road runs that follow measure it.
+
+## [1.23.0] — 2026-11-23 — Security — a call without a terminal trusts only a saved host key that can be used; the search stays in reach
+
 ### Added — the search stays in reach and its filter stays in view
 
 - The search is pinned in the title bar: a green magnifier opens *Filter Credentials…* from anywhere in the tree, and *Clear Filter* sits beside it while a filter is on.
