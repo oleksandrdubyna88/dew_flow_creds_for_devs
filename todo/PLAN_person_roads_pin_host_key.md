@@ -1,6 +1,6 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **epoch 3 approved by the owner 2026-11-23 (narrowed), open, one change (3.1: release before E3). E1 and E2 merged (#379, #388) and released in 1.23.0 on 2026-11-23, before E3 (3.1). E3 started 2026-11-23: its stories document is written; nothing of it is built (next: E3.S1 C19, then E3.S2 the launcher).** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **epoch 3 approved by the owner 2026-11-23 (narrowed), open, one change (3.1: release before E3). E1 and E2 merged (#379, #388) and released in 1.23.0 on 2026-11-23, before E3 (3.1). E3 started 2026-11-23: its stories document is written; E3.S1 (C19) is built and reviewed; next E3.S2 the launcher (its spec is written).** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). Its re-review replaced the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Epoch 2 had two changes (2.1: two more refused kinds of a storage path; 2.2: the stop). The revision for
