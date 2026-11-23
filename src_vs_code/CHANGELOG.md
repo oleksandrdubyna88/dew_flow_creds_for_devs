@@ -65,8 +65,8 @@ version with that option. An older `ssh` gets no such word: it has no such optio
 (read, not run: no `ssh` older than 8.5 was tried). `ssh -G` shows that `ssh` takes both words, and resolves both sources to off under a config that switches them on: that is what was asked
 and what `ssh` reads, not yet what a login does.
 Measured by hand against a public `sshd`: a host key that only a `KnownHostsCommand` listed passed the check with the words of
-before and fails with `KnownHostsCommand=none`. Not measured here: a login against a signed DNS zone (an SSHFP record), and a `KnownHostsCommand` on these calls' own roads; the real-road
-runs before the release measure both. To know which words to send, the
+before and fails with `KnownHostsCommand=none`. Not measured here: a login against a signed DNS zone (an SSHFP record), and a `KnownHostsCommand` on these calls' own roads; neither is
+measured before this release (it ships before the real-road runs, which follow). To know which words to send, the
 extension asks the `ssh` program for its version (`ssh -V`) before such a call. When the version cannot be read, the call is not
 started, and the message says so: `CredsForDevs could not read the version of the ssh program on this computer (exit code <n>), so
 it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The reason is the ssh
@@ -83,14 +83,14 @@ computer, not about the host or the saved key. It also says what to do: move the
 without that character, or point the editor at another user-data folder.
 
 *Open Remote Bridge…* and *Install creds on host* now refuse an entry whose saved host key cannot be used: a stored text that is
-no host key, or a host that cannot be written as a known_hosts line. No `ssh` starts, nothing is sent to that host, and the
+no host key, or a host that cannot be written as a known_hosts line. No connection starts (at most the local `ssh -V` that reads the version runs first), nothing is sent to that host, and the
 message says what to do. An entry that signs in with a key is sent to *Connect SSH*, which shows the host's fingerprint and saves
 the key when you confirm it. An entry that signs in with a password is told that there is no safe repair yet: Connect SSH would
 send the password without a check of the host when it cannot read the host's key first. If the file of the saved host key cannot
 be written to disk, the message says that, and nothing is sent either.
 
 An agent's `ssh:exec` and *Run with Secrets* over SSH, with a saved host key that can be used, get the same words, and the same two
-refusals: of a storage folder of the kinds above, and of an `ssh` whose version cannot be read. Nothing starts then, and the
+refusals: of a storage folder of the kinds above, and of an `ssh` whose version cannot be read. No connection starts then (for the second, only the `ssh -V` that could not be read ran), and the
 refusal says which of the two it is and holds no path.
 
 Not covered, in one place. *Connect via SSH* (your own terminal) does not change: it still reads the system-wide known-hosts files
@@ -100,7 +100,9 @@ the entry's host another name or port (`HostName`, `Port`), `ssh` looks for the 
 every such call is refused with the second message above (measured by hand, OpenSSH 10.2p1). A jump host whose key is refused under
 a config that says `LogLevel QUIET` is told with the messages of before, not as a host key: the jump host's own `ssh` prints
 nothing, and `LogLevel=ERROR` does not reach it (measured by hand). On Windows no login was measured; the Windows `ssh` was asked
-only how it reads such a path (`ssh -G`).
+only how it reads such a path (`ssh -G`). Not yet right: a remote command that prints `Host key verification failed` and still
+ends with exit code 0 stops *Install creds on host* with the second message above; nothing more is sent. Not measured before
+this release: an `ssh` older than 8.5, the install to its end on a real host, and a login on Windows.
 
 ### Changed — the search row is green
 
