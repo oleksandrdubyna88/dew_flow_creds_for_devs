@@ -3062,7 +3062,7 @@ is contributed against `contextValue === 'credSearchActive'`, which is why the r
 two different context values. `credSshManager.search` is also in `view/title` (`navigation@0`,
 a green magnifier), so the filter is reachable from anywhere in the tree, not only from the row.
 
-**The filter stays in reach while the tree scrolls** (owner, 2026-11-18). A `TreeView` cannot pin
+**The filter stays in reach while the tree scrolls** (owner, 2026-11-18; `research/PLAN_pinned_green_search.md`). A `TreeView` cannot pin
 a row, so what does not scroll carries it: the title bar has the magnifier and, beside it, Clear
 Filter, shown only while the context key `credSshManager.searchActive` is true; and
 `TreeView.message` — the line above the tree — repeats what the filter row says (`Search: prod — 4
@@ -3235,7 +3235,9 @@ this is a correctness requirement with a test, not an optimisation.
 The Search row is painted the same way, with a second synthetic scheme: `credssearch:/row`. The
 same `DepDecorationProvider` answers it first (`searchRowDecoration` in `searchAccent.ts`), by the
 same scheme comparison, with the theme colour `credSshManager.searchAccent` — one provider widened
-rather than a second one registered.
+rather than a second one registered. The colour reaches the row's description too, not only the label:
+in the owner's window on 2026-11-23, `8 found` was green beside `Search: orc`. Only that one theme and its
+settings were checked (`research/PLAN_pinned_green_search.md` §7).
 
 **The sub-tree is a place to act, not a picture.** A `dependentEntity` row carries the SAME
 `contextValue` as the entity's real row, and `asElement` narrows it back to a plain `node` — so

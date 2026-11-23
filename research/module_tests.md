@@ -2639,7 +2639,9 @@ Named rather than implied, because the rule asks for exactly this.
   green icon. What stands in: the stub suites `searchPinned.test.ts` (what is sent to the context key
   and the banner, and when) and `searchBox.test.ts` (the box's Escape, Enter, reuse and
   outside-change rules). **The limit is exact**: the rendered look — placement, green, banner text in
-  a real window — is an owner hand check.
+  a real window — is an owner hand check. It was done once, on 2026-11-23, in the owner's window on a
+  test VSIX built from `main` at 3a6afd22: all five checks passed, the scroll check included
+  (`research/PLAN_pinned_green_search.md` §8). Nothing repeats it on a later change.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is
