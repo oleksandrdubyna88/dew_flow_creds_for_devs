@@ -5392,8 +5392,9 @@ its launch, *Run with Secrets* the program and folder of `spawnLaunch` with `pro
 word, folder and `PATH`); an `older` and an `unreadable` answer are asked again by the next call, so a client replaced by a newer one is
 read as newer and never left without the word.
 
-*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space or
-an apostrophe, or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
+*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space, an
+apostrophe or an equals sign (OpenSSH 8.4 splits an unquoted known-hosts value at `=`, read in its source; 10.2p1 resolves the bare and the quoted
+spelling alike, measured 2026-11-23), or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
 OpenSSH 10.2p1): a control character (a tab splits a bare word; every control character is refused, as the bridged file's rule does),
 a double quote (`invalid quotes`), two backslashes in a row (read as one: a network path names another path), a backslash before an
 apostrophe (dropped), a backslash at its end (`invalid quotes` in double quotes), a percent sign (`%h` names two files, `%Z` ends the

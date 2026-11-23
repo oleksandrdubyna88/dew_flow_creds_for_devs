@@ -25,8 +25,11 @@ const GAP = String.raw`(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*`;
  * the name, the separator and the value may be on three lines (a formatter or a long call makes them), and a scan of lines sees none of that.
  */
 const PIN_PROPERTY = new RegExp(String.raw`\bknownHostsFile\b(${GAP})((?:\?\?|\|\||&&)?[:=](?!=))?(${GAP})`, 'g');
-/** The only values of the property that a rig may write; `await` is no part of the value, the rig's `checkedPinOf` is async (it asks the client). */
-const CHECKED_VALUE = /^(?:await\s+)?(?:checkedPinOf\(|undefined\b)/;
+/**
+ * The only values of the property that a rig may write: `await checkedPinOf(...)` or `undefined`. The `await` is REQUIRED: the rig's `checkedPinOf` is async (it
+ * asks the client), and without it the builder gets a `Promise`, not a `CheckedPin`, and writes `UserKnownHostsFile=undefined`. `undefined` is its own value.
+ */
+const CHECKED_VALUE = /^(?:await\s+checkedPinOf\(|undefined\b)/;
 
 const isComment = (line: string): boolean => /^\s*(?:\/\/|\/?\*)/.test(line);
 
@@ -73,7 +76,7 @@ test('every script that calls an argv builder gives it a checked pin, not a path
   assert.ok(found.includes('itestForwardAgent.cjs') && found.includes('itestNoSharing.cjs'), `callers found: ${found.join(', ')}`);
 });
 
-test('the scan names a plain path, a shorthand and an assignment, and lets a checked pin, undefined, a comment and a read through', () => {
+test('the scan names a plain path, a shorthand, an assignment and a checked pin with no await, and lets an awaited checked pin, undefined, a comment and a read through', () => {
   const bad = [
     "buildSshExecArgv(e, k, 'id', 'key', { knownHostsFile: started.knownHosts });",
     'const o = { port, knownHostsFile };',
@@ -88,21 +91,26 @@ test('the scan names a plain path, a shorthand and an assignment, and lets a che
     'options.\n  knownHostsFile =\n  started.knownHosts;',
     'const o = { knownHostsFile: // the pin\n  started.knownHosts };',
     'const o = {\n  knownHostsFile: await\n    parts.pin ?? started.knownHosts,\n};',
+    // A checked pin with no `await`: the rig's `checkedPinOf` is async, the builder would get a Promise.
+    "buildSshExecArgv(e, k, 'id', 'key', { knownHostsFile: checkedPinOf(rig.out, started.knownHosts) });",
+    'const o = {\n  knownHostsFile:\n    checkedPinOf(rig.out, started.knownHosts),\n};',
+    'const o = {\n  knownHostsFile: // the pin, checked\n    checkedPinOf(rig.out, started.knownHosts),\n};',
+    'const o = {\n  knownHostsFile: await\n    somethingElse(rig.out),\n};',
   ];
   for (const text of bad) {
     assert.equal(plainPins(text).length, 1, text);
   }
   const good = [
-    "buildSshExecArgv(e, k, 'id', 'key', { knownHostsFile: checkedPinOf(rig.out, started.knownHosts) });",
+    "buildSshExecArgv(e, k, 'id', 'key', { knownHostsFile: await checkedPinOf(rig.out, started.knownHosts) });",
     'const o = { knownHostsFile: undefined };',
     ' * (`knownHostsFile`, no `-F`) is refused by the argv builder.',
     '// knownHostsFile: started.knownHosts',
     'const pin = options.knownHostsFile;',
     // The same, with a line break between the parts.
-    'const o = {\n  knownHostsFile:\n    checkedPinOf(rig.out, started.knownHosts),\n};',
+    'const o = {\n  knownHostsFile:\n    await checkedPinOf(rig.out, started.knownHosts),\n};',
     'const o = {\n  knownHostsFile\n    : await checkedPinOf(rig.out, started.knownHosts),\n};',
     'const o = {\n  knownHostsFile: await\n    checkedPinOf(rig.out, started.knownHosts),\n};',
-    'const o = {\n  knownHostsFile: // the pin, checked\n    checkedPinOf(rig.out, started.knownHosts),\n};',
+    'const o = {\n  knownHostsFile: // the pin, checked\n    await checkedPinOf(rig.out, started.knownHosts),\n};',
     'const o = {\n  knownHostsFile:\n    undefined,\n};',
     'const pin = options\n  .knownHostsFile;',
     'const pin = options.\n  knownHostsFile;',

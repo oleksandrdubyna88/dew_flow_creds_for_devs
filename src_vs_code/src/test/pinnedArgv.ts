@@ -1,3 +1,4 @@
+import { versionTokenOf } from '../bridgedSshClient';
 import * as hostKeyPin from '../hostKeyPin';
 
 /**
@@ -10,6 +11,16 @@ import * as hostKeyPin from '../hostKeyPin';
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
+
+/**
+ * Whether a local `ssh` that answered `ssh -V` with `stderr` knows `KnownHostsCommand` (OpenSSH 8.5 or newer): an older client ends at that word, in an
+ * argv or in a config, so a test that gives it to the real `ssh -G` skips there. The version is read as the product reads it (`versionTokenOf`). A version
+ * that cannot be read counts as knowing it: a strange `ssh -V` is not turned into a skip.
+ */
+export function sshKnowsKnownHostsCommand(stderr: string | undefined): boolean {
+  const version = versionTokenOf(stderr ?? '')?.version;
+  return version === undefined || version[0] * 1000 + version[1] >= 8 * 1000 + 5;
+}
 
 /** The pairs that E2 adds to a pinned call (the plan's §3.10 and §3.12, part 1), in the order the words say them. */
 export const PIN_SOURCE_OPTIONS: readonly string[] = ['VerifyHostKeyDNS', 'KnownHostsCommand', 'LogLevel'];

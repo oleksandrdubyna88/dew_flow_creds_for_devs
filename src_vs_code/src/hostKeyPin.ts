@@ -206,19 +206,24 @@ export type PinCheck = { readonly ok: true; readonly pin: CheckedPin } | { reado
 
 /**
  * The rule of the path and the client's answer, made into the one value that the words take. A path that the rule refuses answers its
- * kind and no value. A path with white space or an apostrophe goes in double quotes; every other path is written as it is, byte for
+ * kind and no value. A path with white space, an apostrophe or an equals sign goes in double quotes; every other path is written as it is, byte for
  * byte. `client` is a version that was READ: a client that cannot be read is no argument of this function, so its call gets no words.
  *
  * <p><b>Measured 2026-11-18</b> as in {@link pinPathRefusal}. A pair of apostrophes, bare, resolves ANOTHER path in both lists (the
  * apostrophes are dropped), and one apostrophe, bare, ends the client (`invalid quotes`). In double quotes both resolve to themselves,
  * as do a path with a space, one with ` #`, and one with a space and an apostrophe together.</p>
+ *
+ * <p><b>The equals sign</b> is quoted for older clients, which are still supported: OpenSSH 8.4 reads a known-hosts value with `strdelim`, which
+ * splits an UNQUOTED value at `=`, so a path such as `/tmp/data=prod/keys/known_hosts-e1` would be two file names. Measured 2026-11-23 with
+ * OpenSSH 10.2p1: `ssh -G -o UserKnownHostsFile=/tmp/data=prod/k` and the quoted form both resolve to `/tmp/data=prod/k`, so the quotes cost a new client nothing
+ * (row `an equals sign` of `pinWords.test.ts`, G4). The 8.4 reading is from its source (`readconf.c`), not run here.</p>
  */
 export function checkedPin(file: string, client: ReadablePinClient): PinCheck {
   const kind = pinPathRefusal(file);
   if (kind !== undefined) {
     return { ok: false, kind };
   }
-  const word = /[\s']/.test(file) ? `"${file}"` : file;
+  const word = /[\s'=]/.test(file) ? `"${file}"` : file;
   return { ok: true, pin: { file, word, knowsKnownHostsCommand: client.kind === 'knows' } as CheckedPin };
 }
 
