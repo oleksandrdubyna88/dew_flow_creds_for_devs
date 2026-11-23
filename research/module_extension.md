@@ -2594,7 +2594,7 @@ three roads the answer of `resolveExecAuth` has no name: it is the first argumen
 key (none, an empty one, one of white space) writes nothing and runs as before. A saved host key that is there and cannot be
 used (the text is no host key, or the host forms no known_hosts line) is a refusal with a sentence in the form of the login:
 a key entry is sent to Connect SSH, a password entry is told that there is no safe repair yet. A pin file that cannot be
-written is a refusal too. On a refusal no `ssh` starts. The pin file is deleted where the key file is, by the same `finally`
+written is a refusal too. On a refusal no connection starts (a cold window runs the local `ssh -V` first). The pin file is deleted where the key file is, by the same `finally`
 and the same one continuation, whether or not a key file was written, and only a path that the writer returned in this call
 is deleted. Each of the four argv calls of these roads names the file (E1.S3, the paragraph B10). The bound that stays: a
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
@@ -3059,9 +3059,29 @@ The row is the field because the API has no alternative: a `TreeView` renders ro
 widgets, so clicking it opens an `InputBox` whose `onDidChangeValue` sets the term live.
 Escape restores the previous term (a cancelled search is not a lost one); the inline **×**
 is contributed against `contextValue === 'credSearchActive'`, which is why the row carries
-two different context values. `credSshManager.search` is listed as palette-only in
-`manifest.test.ts`: it is reached by the row's own `TreeItem.command`, which a manifest check
-cannot see.
+two different context values. `credSshManager.search` is also in `view/title` (`navigation@0`,
+a green magnifier), so the filter is reachable from anywhere in the tree, not only from the row.
+
+**The filter stays in reach while the tree scrolls** (owner, 2026-11-18). A `TreeView` cannot pin
+a row, so what does not scroll carries it: the title bar has the magnifier and, beside it, Clear
+Filter, shown only while the context key `credSshManager.searchActive` is true; and
+`TreeView.message` — the line above the tree — repeats what the filter row says (`Search: prod — 4
+found`), empty when idle. `searchPin.ts` keeps both in step. It reads the row the provider builds
+with `searchRowItem`, through `getTreeItem`, so the banner can only say what the row says; it
+applies the state when it is wired and again on every repaint of the tree, and sends only what
+changed. It is wired in `commands/viewCommands.ts`, because `extension.ts` is under the size
+ratchet. Running Search again while the box is open shows that same box (`searchBoxOpener` in
+`searchBox.ts`): a second `InputBox` would hide the first, whose hide handler
+reads that as Escape and puts the old filter back under the term still typed in the new box. The
+opener holds the open box privately and forgets it when the box hides, so the next run makes a fresh
+one. The box stays open (`ignoreFocusOut`), so the filter can be changed from outside while it is
+up — Clear Filter in the title bar, `goToOriginalFolder`, `revealById`; on a hide that is not Enter
+the box puts `before` back only if the tree's filter is still the term the box itself applied last
+(`SearchWiring.current`), so Escape does not bring back a filter the person just cleared.
+`wireSearchBox` returns a handle, and running Search again over a box whose term is no longer the
+tree's filter resyncs that box in place (`reshow`: its text and its Escape baseline become the
+current filter, same instance), while Enter applies the box's text when the tree does not hold it —
+so what the box shows is always what Enter confirms.
 
 ### One notification for locked vaults (0.55.0)
 
@@ -3211,6 +3231,11 @@ whether `FileDecoration.color` reaches a *custom* tree. It does. **`provideFileD
 refuse a foreign scheme on its first line** — a decoration provider is registered against the
 whole workbench, so VS Code asks it about every file in the person's workspace on every repaint;
 this is a correctness requirement with a test, not an optimisation.
+
+The Search row is painted the same way, with a second synthetic scheme: `credssearch:/row`. The
+same `DepDecorationProvider` answers it first (`searchRowDecoration` in `searchAccent.ts`), by the
+same scheme comparison, with the theme colour `credSshManager.searchAccent` — one provider widened
+rather than a second one registered.
 
 **The sub-tree is a place to act, not a picture.** A `dependentEntity` row carries the SAME
 `contextValue` as the entity's real row, and `asElement` narrows it back to a plain `node` — so
@@ -5367,8 +5392,9 @@ its launch, *Run with Secrets* the program and folder of `spawnLaunch` with `pro
 word, folder and `PATH`); an `older` and an `unreadable` answer are asked again by the next call, so a client replaced by a newer one is
 read as newer and never left without the word.
 
-*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space or
-an apostrophe, or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
+*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space, an
+apostrophe or an equals sign (OpenSSH 8.4 splits an unquoted known-hosts value at `=`, read in its source; 10.2p1 resolves the bare and the quoted
+spelling alike, measured 2026-11-23), or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
 OpenSSH 10.2p1): a control character (a tab splits a bare word; every control character is refused, as the bridged file's rule does),
 a double quote (`invalid quotes`), two backslashes in a row (read as one: a network path names another path), a backslash before an
 apostrophe (dropped), a backslash at its end (`invalid quotes` in double quotes), a percent sign (`%h` names two files, `%Z` ends the
@@ -5393,7 +5419,7 @@ sent. Where it stands: the three roads (`writePersonPin`, asynchronous, in `writ
 before `run` and `start`; the bridge's handoff from `start` to `handed = true` has no `await`) and the agent's exec (`localPin` in
 `sshUseActions.ts`, before the pin file; the optional `SshUseDeps.pinClient`, and deps that name none refuse a pinned call as one whose
 client cannot be read) refuse BEFORE a pin file is written. *Run with Secrets* does not: Connect's options write its pin file before
-`secretsLaunch`, so there the file exists when the call is refused, no `ssh` starts, and the owner's cleanup deletes the file
+`secretsLaunch`, so there the file exists when the call is refused, no connection starts (at most the local `ssh -V`), and the owner's cleanup deletes the file
 (`checkExistingPin`; a pinned session whose client was not asked is refused as unreadable). The agent's exec still reads an unusable saved
 key as no pin and runs with `accept-new` (candidate C3), with one corner: such an entry in a storage folder that the rule refuses, or with
 an `ssh` that cannot be read, is now refused where it ran unchecked. Connect's terminal line has none of this (C4).

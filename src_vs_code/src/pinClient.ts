@@ -83,13 +83,14 @@ export interface PinClientParts {
  */
 export function pinClientAsker(given: PinClientParts = {}): PinClientAsk {
   const parts = { run: runSshExec, platform: process.platform, timeoutMs: CLIENT_CHECK_TIMEOUT_MS, ...given };
-  const kept = new Map<string, KnowsPinClient>();
+  // Replaced, never changed in place (the coding style's immutability rule); read after the await, so two calls at once lose no answer.
+  let kept: ReadonlyMap<string, KnowsPinClient> = new Map();
   return async (call) => {
     const env = bridgedSshEnv(call.env, parts.platform);
     const key = keptUnder(call, env);
     const read = kept.get(key) ?? (await asked(parts, call, env));
     if (read.kind === 'knows') {
-      kept.set(key, read);
+      kept = new Map([...kept, [key, read]]);
     }
     return read;
   };

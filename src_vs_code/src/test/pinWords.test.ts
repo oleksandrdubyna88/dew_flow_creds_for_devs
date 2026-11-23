@@ -11,7 +11,7 @@ import { SshExecAuth, buildSshExecArgv } from '../sshExecCommand';
 import type { EntityMetadata } from '../types';
 import { discoverSources } from './tempSiteScan';
 import { fakePath } from './fakePaths';
-import { PIN_SOURCE_OPTIONS, hostKeyWordsOf, sourceWordsOf, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
+import { PIN_SOURCE_OPTIONS, hostKeyWordsOf, sourceWordsOf, sshKnowsKnownHostsCommand, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
 
 /**
  * G1, E2.S2: the complete words of one pinned call, and the rule of the path that stands before them (the plan's §3.10, §3.11, §3.12
@@ -138,9 +138,13 @@ test('W6: one function writes them, and both builders say exactly what it answer
 /* --- part 2: what the real client resolves (tests 18 and 21) --- */
 
 const ssh = (args: readonly string[]) => spawnSync('ssh', [...args], { encoding: 'utf8', timeout: 15_000 }); // NOSONAR: the PATH's ssh is the subject
-const HAS_SSH = ssh(['-V']).error === undefined;
+const VERSION_ANSWER = ssh(['-V']);
+const HAS_SSH = VERSION_ANSWER.error === undefined;
 /** Skipped only where there is no `ssh` and no CI: under `CI=true` a missing client fails. */
 const NEEDS_SSH = { skip: HAS_SSH || process.env.CI === 'true' ? false : 'no ssh on the PATH' };
+const KNOWS_COMMAND = sshKnowsKnownHostsCommand(VERSION_ANSWER.stderr);
+/** Tests that give the real client a `KnownHostsCommand` (in the config or in the argv): skipped on a client older than 8.5, never failed; the argv tests (W1 to W6, P1 to P5) stay on. Where there is no client, or under `CI=true`, as `NEEDS_SSH`. */
+const NEEDS_SSH_85 = { skip: NEEDS_SSH.skip === false && !KNOWS_COMMAND ? 'the local ssh is older than 8.5: it has no KnownHostsCommand' : NEEDS_SSH.skip };
 
 /** A config that turns on the two other sources of host keys, and silences the client. */
 const OTHER_SOURCES_CONFIG = 'Host *\n  KnownHostsCommand /bin/echo x\n  VerifyHostKeyDNS yes\n  LogLevel QUIET\n';
@@ -159,20 +163,20 @@ function sources(t: TestContext, argv: readonly string[]): string[] {
   return answer.stdout.split(/\r?\n/).filter((line) => /^(verifyhostkeydns|knownhostscommand|loglevel) /.test(line)).sort();
 }
 
-test('G1: under a config that says KnownHostsCommand, VerifyHostKeyDNS yes and LogLevel QUIET, the real ssh resolves every pinned argv to none of them', NEEDS_SSH, (t) => {
+test('G1: under a config that says KnownHostsCommand, VerifyHostKeyDNS yes and LogLevel QUIET, the real ssh resolves every pinned argv to none of them', NEEDS_SSH_85, (t) => {
   for (const [name, argv] of [...everyKind(PIN, 'knows'), ['the tunnel with a caller\'s hostile extra', tunnel(PIN, 'knows', 'key', HOSTILE_EXTRA)] as const]) {
     assert.deepEqual(sources(t, argv), ['loglevel ERROR', 'verifyhostkeydns false'], name);
   }
 });
 
-test('G2: the control: the same config with an UNPINNED argv keeps all three on, so the test above can show the fault', NEEDS_SSH, (t) => {
+test('G2: the control: the same config with an UNPINNED argv keeps all three on, so the test above can show the fault', NEEDS_SSH_85, (t) => {
   const kept = sources(t, run(undefined, 'knows'));
   assert.equal(kept.includes('knownhostscommand /bin/echo x'), true, kept.join(' | '));
   assert.equal(kept.includes('verifyhostkeydns true'), true, kept.join(' | '));
   assert.equal(kept.some((line) => line === 'loglevel ERROR'), false, kept.join(' | '));
 });
 
-test('G3: the words of an OLDER client leave a config\'s KnownHostsCommand on in a client that knows the option: so the answer about the client decides', NEEDS_SSH, (t) => {
+test('G3: the words of an OLDER client leave a config\'s KnownHostsCommand on in a client that knows the option: so the answer about the client decides', NEEDS_SSH_85, (t) => {
   assert.deepEqual(sources(t, run(PIN, 'older')), ['knownhostscommand /bin/echo x', 'loglevel ERROR', 'verifyhostkeydns false']);
 });
 
@@ -196,7 +200,7 @@ const refused = (kind: Kind): { kind: Kind } => ({ kind });
 const ROWS: readonly Row[] = [
   ['a plain POSIX path', '/home/me/.config/Code/keys/42/known_hosts-e1-0b6f', bare('/home/me/.config/Code/keys/42/known_hosts-e1-0b6f')],
   ['a plain Windows path: single backslashes, a drive letter', 'C:\\Users\\me\\AppData\\keys\\42\\known_hosts-e1', bare('C:\\Users\\me\\AppData\\keys\\42\\known_hosts-e1')],
-  ['characters that ssh keeps in a bare word', '/tmp/a#b=c,d;e&f(g)[h]{i}~j$k/kh', bare('/tmp/a#b=c,d;e&f(g)[h]{i}~j$k/kh')],
+  ['characters that ssh keeps in a bare word', '/tmp/a#b,c;d&e(f)[g]{h}~i$j/kh', bare('/tmp/a#b,c;d&e(f)[g]{h}~i$j/kh')],
   // A space is followed by a `~` in the rows that hold only a space: `ssh -G` joins the files with spaces, so a word that was split in two
   // shows (`ssh` expands a `~` only at the start of a file name), as in hostKeyWords.test.ts (SPACE_THEN_TILDE).
   ['a space (macOS: Application Support)', '/Users/me/Library/Application ~/Support/Code/keys/42/kh', quoted('/Users/me/Library/Application ~/Support/Code/keys/42/kh')],
@@ -204,6 +208,8 @@ const ROWS: readonly Row[] = [
   ['a pair of apostrophes (row a: bare, ssh reads ANOTHER path)', "/tmp/creds-a'b'/kh", quoted("/tmp/creds-a'b'/kh")],
   ['one apostrophe (row c: bare, invalid quotes)', "/tmp/creds-a'b/kh", quoted("/tmp/creds-a'b/kh")],
   ['a space and an apostrophe together (row k)', "/tmp/it's here/kh", quoted("/tmp/it's here/kh")],
+  // OpenSSH 8.4 reads a known-hosts value with `strdelim`, which splits an unquoted value at `=`: two file names, not one. 10.2 reads it whole either way.
+  ['an equals sign (OpenSSH 8.4 splits a bare value at it)', '/tmp/data=prod/keys/known_hosts-e1', quoted('/tmp/data=prod/keys/known_hosts-e1')],
   ['a space and then a hash', '/tmp/q #r/kh', quoted('/tmp/q #r/kh')],
   ['a no-break space', '/tmp/nb\u00a0sp/kh', quoted('/tmp/nb\u00a0sp/kh')],
   ['a double quote (row e)', '/tmp/a"b/kh', refused('quote')],
@@ -304,7 +310,7 @@ test('P5: sentences E and F, word for word: no path, no part of the program\'s o
 test('G4: every path that the rule writes, the real ssh resolves to exactly that path in BOTH lists', NEEDS_SSH, (t) => {
   // The rows a POSIX client can be asked: a Windows path is a relative name to it, and it is written as it is all the same.
   for (const [what, file] of ROWS.filter((row) => 'word' in row[2])) {
-    const resolved = lists(t, run(file, 'knows'));
+    const resolved = lists(t, run(file, KNOWS_COMMAND ? 'knows' : 'older')); // the words differ only in the KnownHostsCommand pair, which a client below 8.5 does not take
     assert.deepEqual({ user: resolved.user, system: resolved.system }, { user: file, system: file }, `${what}: ${resolved.stderr}`);
   }
 });

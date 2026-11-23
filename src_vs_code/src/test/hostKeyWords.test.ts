@@ -11,7 +11,7 @@ import { type SshExecAuth, type SshExecOptions, buildSshExecArgv } from '../sshE
 import { EntityMetadata } from '../types';
 import { fakePath } from './fakePaths';
 import { importedUses } from './funnelScan';
-import { hostKeyWordsOf, lastHostKeyWordAt, sourceWordsOf, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
+import { hostKeyWordsOf, lastHostKeyWordAt, sourceWordsOf, sshKnowsKnownHostsCommand, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
 import { discoverSources } from './tempSiteScan';
 
 /**
@@ -190,10 +190,14 @@ const SPACE_THEN_TILDE = fakePath('a ~/known_hosts-e1');
 // The PATH lookup is on purpose: the PATH's ssh is the client the extension starts, and it is the thing asked here.
 const ssh = (args: readonly string[]) => spawnSync('ssh', [...args], { encoding: 'utf8', timeout: 15_000 }); // NOSONAR: the PATH's ssh is the subject
 
-const HAS_SSH = ssh(['-V']).error === undefined;
+const VERSION_ANSWER = ssh(['-V']);
+const HAS_SSH = VERSION_ANSWER.error === undefined;
 
 /** Locally a machine with no ssh skips, with the reason; where CI=true nothing skips, so a missing ssh fails. */
 const NEEDS_SSH = { skip: HAS_SSH || process.env.CI === 'true' ? false : 'no ssh on the PATH' };
+
+/** A pinned argv of a client that knows `KnownHostsCommand` carries that word: a real `ssh` older than 8.5 ends at it, so these tests skip there (as `NEEDS_SSH`, otherwise). */
+const NEEDS_SSH_85 = { skip: NEEDS_SSH.skip === false && !sshKnowsKnownHostsCommand(VERSION_ANSWER.stderr) ? 'the local ssh is older than 8.5: it has no KnownHostsCommand' : NEEDS_SSH.skip };
 
 /** What `ssh -G` answers for `argv` under a config file of this test that holds `config`. */
 function asked(t: TestContext, config: string, argv: readonly string[]): ReturnType<typeof ssh> {
@@ -212,13 +216,13 @@ function resolved(t: TestContext, argv: readonly string[]): string[] {
 /** What `ssh -G` prints when the check is strict and `file` is the only known-hosts file of both lists. */
 const onlyFile = (file: string): string[] => [`globalknownhostsfile ${file}`, 'stricthostkeychecking true', `userknownhostsfile ${file}`];
 
-test('G1: under a config that names other known-hosts files, the real ssh resolves every pinned argv to the pin file alone', NEEDS_SSH, (t) => {
+test('G1: under a config that names other known-hosts files, the real ssh resolves every pinned argv to the pin file alone', NEEDS_SSH_85, (t) => {
   for (const [name, argv] of [...argvs(PIN), ['the tunnel with a caller\'s hostile extra', tunnel(PIN, 'key', HOSTILE_EXTRA) ?? []] as const]) {
     assert.deepEqual(resolved(t, argv), onlyFile(PIN), name);
   }
 });
 
-test('G1: the real ssh reads a pin file whose path holds white space as ONE file', NEEDS_SSH, (t) => {
+test('G1: the real ssh reads a pin file whose path holds white space as ONE file', NEEDS_SSH_85, (t) => {
   for (const [name, argv] of argvs(SPACE_THEN_TILDE)) {
     assert.deepEqual(resolved(t, argv), onlyFile(SPACE_THEN_TILDE), name);
   }
