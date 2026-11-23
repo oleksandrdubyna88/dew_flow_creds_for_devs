@@ -11,7 +11,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
 
     <!-- Serilog: the one logging stack, per .agents/conventions/common/logging-serilog.md. Apache-2.0. -->
-    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="11.0.0" />
 
     <!-- src_service_defaults: the shared sinks the server and both AOT binaries use. Serilog core is
          the latest stable (4.4.0, 2026-07-10), Apache-2.0. Serilog.Sinks.File 7.0.0 is the latest
