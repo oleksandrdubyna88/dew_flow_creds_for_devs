@@ -169,9 +169,9 @@ function settledAfter(promise, ms) {
   return Promise.race([promise, bound]).finally(() => clearTimeout(timer));
 }
 
-/** A real ssh with `argv` under `config`: its exit code, what it printed and what it said. Bounded: 20 s. */
-async function runClient(rig, config, argv, env = rig.env) {
-  const client = launch(rig.scope, 'ssh', ['-F', config, ...argv], { env });
+/** A real ssh with `argv` under `config`: its exit code, what it printed and what it said. Bounded: 20 s. `program`: the client by its path (G1 E3.S2's leg 0). */
+async function runClient(rig, config, argv, env = rig.env, program = 'ssh') {
+  const client = launch(rig.scope, program, ['-F', config, ...argv], { env });
   try {
     const code = await settledAfter(client.done, 20_000);
     await settledAfter(client.closed, 2000); // output that arrived between `exit` and `close`
@@ -440,4 +440,4 @@ async function liveNoSharing(check, out) {
   }
 }
 
-module.exports = { liveNoSharing, tool, within, settledAfter };
+module.exports = { liveNoSharing, tool, within, settledAfter, runClient };

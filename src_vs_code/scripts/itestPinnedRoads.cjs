@@ -13,6 +13,8 @@
 //          the install shows sentence C and the bridge's check shows its message, the real client's `Offending` line names the pin file
 //          of the probe and of the mode check, and no sentence D is shown.
 // The control, by hand (`hostKeyWords` made to answer `accept-new`), turns leg 2 red: K2 then logs the logins.
+//   leg 0  (E3.S2, `itestListenerStop.cjs`) the stop of the listener alone: a master connection outlives it and carries one more command.
+// Then the record of identities (E3.S2, `itestIdentities.cjs`): the commit, a tree with no modified tracked file, and what ran, by SHA-256.
 //
 // Every server is started by the serving launcher of `itestServing.cjs`, with the run's sshd and config lines (`CREDS_ITEST_SSHD`,
 // `CREDS_ITEST_SSHD_CONFIG` of `lib/sshdRun.cjs`; with neither, the system's sshd, as CI runs it). Linux only: the end of a server reads
@@ -25,6 +27,8 @@ const os = require('os');
 const path = require('path');
 const { SSHD, endChild } = require('./itestSshd.cjs');
 const { startServingSshd, endServer, alive, descendantsOfListener } = require('./itestServing.cjs');
+const { listenerStopLeg } = require('./itestListenerStop.cjs');
+const { recordIdentities } = require('./itestIdentities.cjs');
 const { tool, within, settledAfter } = require('./itestNoSharing.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
@@ -506,6 +510,10 @@ async function pinnedLegs(check, rig) {
   const port = await legOne(check, pinned);
   if (port !== undefined) {
     await legTwo(check, pinned, port);
+  }
+  if (real !== undefined) {
+    await listenerStopLeg(check, pinned, real);
+    await recordIdentities(check, pinned, real);
   }
 }
 
