@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testPin } from './pinnedArgv';
 import { test } from 'node:test';
 import * as execCommand from '../sshExecCommand';
 import {
@@ -257,7 +258,7 @@ test('A3: a pinned bridged call says StrictHostKeyChecking=yes, no word starts w
 });
 
 test('A4: a bridged call that is given a known-hosts file is refused', () => {
-  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { ...BRIDGED, knownHostsFile: '/p/known_hosts' }), undefined);
+  assert.equal(buildSshExecArgv(entity(), KEY_FILE, 'id', 'key', { ...BRIDGED, knownHostsFile: testPin('/p/known_hosts') }), undefined);
 });
 
 test('A5: a bridged password call has the three password words after the six and before -F, and no word names PubkeyAuthentication', () => {
@@ -271,12 +272,14 @@ test('A5: a bridged password call has the three password words after the six and
 });
 
 test('A6: off a bridge a configFile or a pinned flag changes nothing: today\'s argv', () => {
-  const plain = argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts' }, 'key', KEY_FILE);
+  const plain = argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: testPin('/p/known_hosts') }, 'key', KEY_FILE);
 
-  assert.deepEqual(argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: '/p/known_hosts', configFile: 'c.conf', pinned: false }, 'key', KEY_FILE), plain);
+  assert.deepEqual(argvWith(entity(), { jump: 'hop@jump.example.com', knownHostsFile: testPin('/p/known_hosts'), configFile: 'c.conf', pinned: false }, 'key', KEY_FILE), plain);
   // G1 (§3.9) changes today's pinned off-bridge argv on purpose: the pin file is ALSO the system-wide known-hosts file, so no
   // `/etc/ssh/ssh_known_hosts` entry passes beside it. The six words are `hostKeyWords`'s; the test of that rule is `hostKeyWords.test.ts`.
-  assert.deepEqual(plain.slice(0, 10), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'GlobalKnownHostsFile=/p/known_hosts', '-o', 'ConnectTimeout=10']);
+  // E2 (§3.10, §3.12) adds three pairs behind them, for a client that knows `KnownHostsCommand`: the test of that rule is `pinWords.test.ts`.
+  assert.deepEqual(plain.slice(0, 16), ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/p/known_hosts', '-o', 'GlobalKnownHostsFile=/p/known_hosts',
+    '-o', 'VerifyHostKeyDNS=no', '-o', 'KnownHostsCommand=none', '-o', 'LogLevel=ERROR', '-o', 'ConnectTimeout=10']);
   assert.ok(!plain.includes('-F'));
 });
 
@@ -348,7 +351,7 @@ function runOf(n: number): Run {
     port: AXES.port[digit(n, 8)],
   };
   // A bridged call (E1.6) names its per-call file and carries its pin in it, so it takes no known-hosts file: `pinned` says which check it asks for.
-  const placed: SshExecOptions = c.bridged ? { configFile: 'c.conf', pinned: c.pin !== undefined } : { knownHostsFile: c.pin };
+  const placed: SshExecOptions = c.bridged ? { configFile: 'c.conf', pinned: c.pin !== undefined } : { knownHostsFile: testPin(c.pin) };
   const options: SshExecOptions = { bridged: c.bridged, noTty: c.noTty, ownAgent: c.ownAgent, jump: c.jump, ...placed };
   const argv = buildSshExecArgv({ ...c.entry, port: c.port }, c.key, 'id', c.auth, options);
   assert.notEqual(argv, undefined);

@@ -353,10 +353,10 @@ test('Q8b: a bridge and its socket check hold two pin files; the check deletes o
   assert.equal(fs.readFileSync(older, 'utf8'), 'the pin of another road\n', 'Q8b: known_hosts-e1 was touched');
 });
 
-test('QS: on the three roads the answer of the resolve has no name: each resolveExecAuth( of agentCommands.ts is the first argument of a guard that is given writePersonPin', () => {
+test('QS: on the three roads the answer of the resolve has no name: each resolveExecAuth( of agentCommands.ts is the first argument of a guard that is given personPinWriter', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'agentCommands.ts'), 'utf8');
   const resolves = source.match(/\bresolveExecAuth\s*\(/g) ?? [];
-  const guarded = source.match(/\bwithWrittenKey(?:UntilExit)?\(await resolveExecAuth\([^\n]*?\), \(auth\) => writePersonPin\(storageDir, (?:entity|details), auth\), /g) ?? [];
+  const guarded = source.match(/\bwithWrittenKey(?:UntilExit)?\(await resolveExecAuth\([^\n]*?\), personPinWriter\(storageDir, (?:entity|details)\), /g) ?? [];
 
   assert.equal(resolves.length, 3, `the scan does not find the three resolves of the three roads: ${resolves.length}`);
   assert.equal(guarded.length, 3, 'QS: a road keeps the answer of the resolve under a name, or hands its guard another pin writer');

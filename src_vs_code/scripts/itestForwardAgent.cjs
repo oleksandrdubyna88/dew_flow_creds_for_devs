@@ -20,7 +20,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, launch, startSshd, endChild } = require('./itestSshd.cjs');
+const { SSHD, launch, startSshd, endChild, checkedPinOf } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -124,7 +124,7 @@ async function oneLeg(rig, bridged) {
     if (bridged) {
       return await productionLeg(rig, started, 'printenv SSH_AUTH_SOCK');
     }
-    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: started.knownHosts });
+    const argv = buildSshExecArgv(entityOn(started.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: await checkedPinOf(rig.out, started.knownHosts) });
     return await runClient(rig, rig.config, argv, started);
   } finally {
     await endChild(started.sshd);

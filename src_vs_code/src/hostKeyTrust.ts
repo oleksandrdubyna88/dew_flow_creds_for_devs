@@ -63,7 +63,7 @@ export async function scanHostKey(
  * verbatim, so one containing `../` would put this file — and the host key a connection then
  * trusts — outside the directory the purge can reach. See `safeFileComponent`.</p>
  */
-function knownHostsPath(storageDir: string, entityId: string, suffix?: string): string {
+export function knownHostsPath(storageDir: string, entityId: string, suffix?: string): string {
   return materializedKeyPath(storageDir, `known_hosts-${entityId}${suffix === undefined ? '' : `-${suffix}`}`);
 }
 

@@ -40,7 +40,7 @@ const PROBE_OK = 'creds=-\narch=x86_64\nos=Linux\nget=/usr/bin/curl\n';
 const INSTALLED = 'creds-install: installed /home/dev/.local/bin/creds\n';
 
 const SENTENCE_C =
-  '"box" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.';
+  '"box" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server\'s owner. If it was not, do not connect.';
 const BRIDGE_NOT_OPEN = `The bridge to "box" is not open: ${SENTENCE_C}`;
 
 /** The lines of a real `ssh` as it prints them: it ends its own lines with CR LF, also on Linux. */
@@ -63,15 +63,11 @@ const REFUSED_KEY = printed(
   'Host key for box.example has changed and you have requested strict checking.',
   'Host key verification failed.',
 );
-/** The pin file holds no key for the host (E1.S1's file for a path that cannot be named). */
-const NO_KEY_KNOWN = printed('No ED25519 host key is known for box.example and you have requested strict checking.', 'Host key verification failed.');
-/** A person's config says `LogLevel FATAL`: the one line is all that is printed. */
-const ONLY_THE_LINE = printed('Host key verification failed.');
+/** The same 15 lines, naming the pin file of THIS run, read back from its argv and written as `ssh` prints it (a backslash as two): sentence C needs that line (E2.S3). */
+const refusedKeyOf = (argv: readonly string[]): string => REFUSED_KEY.replaceAll('/storage/keys/4242/known_hosts-e1-0b6f3c1e', (knownHostsOf(argv)?.file ?? '(the argv names no known-hosts file)').replaceAll('\\', '\\\\'));
 const HOST_DOWN = printed('ssh: connect to host box.example port 22: Connection refused');
 const LOGIN_REFUSED = printed('dev@box.example: Permission denied (publickey,password).');
 const NO_ANSWER = printed('ssh: connect to host box.example port 22: Connection timed out');
-/** A hop of the person's own `ProxyJump` whose key `ssh` refused: the nested `ssh` prints the same line, the outer one a line more. */
-const HOP_REFUSED = `${REFUSED_KEY}${printed('Connection closed by UNKNOWN port 65535')}`;
 
 const yes = (_message: string, rest: readonly unknown[]): string | undefined => rest.find((one): one is string => typeof one === 'string');
 
@@ -101,47 +97,13 @@ function exported<T>(name: string): T {
   return found as T;
 }
 
-type Match = (pinFile: string | undefined, stderr: string) => boolean;
-
-const A_PIN_FILE = '/storage/keys/4242/known_hosts-e1-0b6f3c1e';
-
-test('H1: a refused host key is a PINNED call whose ssh printed the line "Host key verification failed."', () => {
-  const hostKeyRefused = exported<Match>('hostKeyRefused');
-
-  assert.equal(hostKeyRefused(A_PIN_FILE, REFUSED_KEY), true, 'the text of a host with another key');
-  assert.equal(hostKeyRefused(A_PIN_FILE, NO_KEY_KNOWN), true, 'the text of a pin file that holds no key for the host');
-  assert.equal(hostKeyRefused(A_PIN_FILE, ONLY_THE_LINE), true, 'the line alone');
-  assert.equal(hostKeyRefused(A_PIN_FILE, REFUSED_KEY.replaceAll('\r\n', '\n')), true, 'lines that end with LF alone');
-  assert.equal(hostKeyRefused(A_PIN_FILE, 'Host key verification failed.'), true, 'the line with no line end');
-});
-
-test('H2: an unpinned call is never a refused host key, whatever ssh printed', () => {
-  const hostKeyRefused = exported<Match>('hostKeyRefused');
-
-  for (const stderr of [REFUSED_KEY, NO_KEY_KNOWN, ONLY_THE_LINE]) {
-    assert.equal(hostKeyRefused(undefined, stderr), false);
-  }
-});
-
-test('H3: a host that is down, a refused login, a host that does not answer, no text, and the words inside another line are no refused host key', () => {
-  const hostKeyRefused = exported<Match>('hostKeyRefused');
-
-  for (const stderr of [HOST_DOWN, LOGIN_REFUSED, NO_ANSWER, '', printed('note: Host key verification failed. earlier'), printed('Host key verification failed')]) {
-    assert.equal(hostKeyRefused(A_PIN_FILE, stderr), false, stderr);
-  }
-});
-
-test('H4: what the match cannot tell from a refused host key of the entry: a hop of the person\'s own config, and a host that prints the line itself', () => {
-  const hostKeyRefused = exported<Match>('hostKeyRefused');
-
-  assert.equal(hostKeyRefused(A_PIN_FILE, HOP_REFUSED), true);
-  assert.equal(hostKeyRefused(A_PIN_FILE, 'Host key verification failed.\n'), true);
-});
-
 test('H5: sentence C, word for word', () => {
   const refusedHostKeySentence = exported<(name: string) => string>('refusedHostKeySentence');
 
   assert.equal(refusedHostKeySentence('box'), SENTENCE_C);
+  // The code gate of G1 E2 (2026-11-19, SECURITY): no word of the sentence names an in-product way that could connect unchecked.
+  assert.doesNotMatch(refusedHostKeySentence('box'), /Connect/);
+  assert.doesNotMatch(BRIDGE_NOT_OPEN, /Connect/);
 });
 
 /* --- part 2: what the five runs are sent --- */
@@ -354,11 +316,36 @@ test('T4d (guard): a pinned bridge that gets no argv, or whose argv cannot be bu
   assert.deepEqual(pinFiles(dir), [], 'T4d: no bridge was started and a pin file stays');
 });
 
+test('T4e (guard): a window that is gone when the decision settles: the pinned bridge spawns NO ssh, and the key file and the pin file are deleted at once', async () => {
+  // Spec E2.S2, exit table row 4 (changed by the code gate: the manager no longer spawns and kills; it answers undefined before it spawns).
+  const dir = storage('t4e');
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const spawned: string[][] = [];
+  const spawn = (_command: string, argv: readonly string[]): never => {
+    spawned.push([...argv]);
+    throw new Error('T4e: an ssh was spawned after the window was gone');
+  };
+  const w = world(pinned(dir, { checks: [], resolveGate: gate, spawn }));
+  const clicked = click(w, 'openRemoteBridge');
+  await settled();
+  w.bridges.dispose();
+  release();
+  await clicked;
+  await settled();
+
+  assert.deepEqual(spawned, [], 'T4e: an ssh was spawned although the manager was disposed');
+  assert.equal(w.bridges.isOpen(KEY), false);
+  assert.deepEqual(pinFiles(dir), [], 'T4e: no bridge started and the pin file stays');
+});
+
 /* --- part 3: sentence C --- */
 
 test('T9a: the install on a pinned entry whose host presents another key shows sentence C, and not that the host did not answer the probe', async () => {
   const dir = storage('t9a');
-  const w = world(pinned(dir, { answer: yes, run: () => ran('', 255, REFUSED_KEY) }));
+  const w = world(pinned(dir, { answer: yes, run: (_index, argv) => ran('', 255, refusedKeyOf(argv)) }));
   await click(w, 'installRemoteCli');
 
   assert.deepEqual(w.errors, [SENTENCE_C], 'T9a: the refused host key was not told to the person');
@@ -371,7 +358,7 @@ test('T9a: the install on a pinned entry whose host presents another key shows s
 test('T9b: Open Remote Bridge on a pinned entry whose host presents another key: the socket check shows ONE error message, the bridge is not open and why, and logs it', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const dir = storage('t9b');
-  const w = world(pinned(dir, { run: () => ran('', 255, REFUSED_KEY) }));
+  const w = world(pinned(dir, { run: (_index, argv) => ran('', 255, refusedKeyOf(argv)) }));
   await click(w, 'openRemoteBridge');
   await settled();
   w.children[0].end(255); // the ssh of the bridge was refused too; it has no stdio, so it says nothing

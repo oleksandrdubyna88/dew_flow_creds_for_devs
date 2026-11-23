@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { EntityMetadata, TreeNode } from './types';
 import { commandRefusal, resolveCommand } from './commandLine';
 import { resolveKind } from './entityKind';
+import { CheckedPin, checkExistingPin } from './hostKeyPin';
 import { HostShell, asOsName, isWindowsPowerShell51, quoteFor } from './hostShell';
+import type { PinClient } from './pinClient';
 import { buildSshExecArgv } from './sshExecCommand';
 import { RefPlan, rewriteRefs } from './runPlan';
 import { shortValuesCaveat } from './outputMask';
@@ -498,11 +500,16 @@ export function secretsLocalOnly(name: string): string {
  * it is refused as not local (K1), fail closed, though a local window never produces one. It reads the prepared snapshot only (one
  * snapshot): the trust line, this argv, the spawn program's folder and the banner's target all come from the same `ready`.</p>
  */
-export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean, nonce: string): SecretsLaunch {
+export function secretsLaunch(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean, nonce: string, client: PinClient | undefined): SecretsLaunch {
   if (composedForAnotherShell(prepared)) {
     return { kind: 'refused', reason: secretsLocalOnly(plan.entryName) };
   }
-  const argv = secretsArgv(prepared, ownAgent, nonce);
+  const pin = checkExistingPin(plan.sshName, prepared.options.knownHostsFile, client);
+  return pin.ok ? launchWith(plan, prepared, ownAgent, nonce, pin.pin) : { kind: 'refused', reason: pin.message };
+}
+
+function launchWith(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent: boolean, nonce: string, pin: CheckedPin | undefined): SecretsLaunch {
+  const argv = secretsArgv(prepared, ownAgent, nonce, pin);
   return argv === undefined || prepared.target === undefined ? { kind: 'refused', reason: noHostSentence(plan.sshName) } : { kind: 'spawn', argv, target: prepared.target };
 }
 
@@ -511,11 +518,11 @@ function composedForAnotherShell(prepared: PreparedForSpawn): boolean {
   return prepared.prefix !== undefined || prepared.options.program !== undefined;
 }
 
-function secretsArgv(prepared: PreparedForSpawn, ownAgent: boolean, nonce: string): string[] | undefined {
+function secretsArgv(prepared: PreparedForSpawn, ownAgent: boolean, nonce: string, pin: CheckedPin | undefined): string[] | undefined {
   const auth = prepared.env === undefined ? 'key' : 'askpass';
   return buildSshExecArgv(prepared.entity, prepared.entity.sshKeyPath, secretsRemoteCommand(nonce), auth, {
     jump: prepared.jump,
-    knownHostsFile: prepared.options.knownHostsFile,
+    knownHostsFile: pin,
     ownAgent,
     noTty: true,
   });

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testPin } from './pinnedArgv';
 import { test } from 'node:test';
 import { planRefs } from '../runPlan';
 import {
@@ -20,6 +21,7 @@ import { sshOptionArgv } from '../sshOptions';
 import { NO_AGENT_TO_FORWARD } from '../sshProgram';
 import { EntityMetadata, PortForward } from '../types';
 import { NONCE } from './remoteShellHarness';
+import { KNOWS } from './sshRoadWorld';
 import { fakeRoad, sshNode } from './sshRoadWorld';
 
 /**
@@ -63,7 +65,7 @@ function containsRun(argv: readonly string[], words: readonly string[]): boolean
 }
 
 function spawnArgv(plan: RemotePlan, prepared: PreparedForSpawn, ownAgent = false): readonly string[] {
-  const launch = secretsLaunch(plan, prepared, ownAgent, NONCE);
+  const launch = secretsLaunch(plan, prepared, ownAgent, NONCE, KNOWS);
   assert.equal(launch.kind, 'spawn', launch.kind === 'refused' ? launch.reason : '');
   return launch.kind === 'spawn' ? launch.argv : [];
 }
@@ -74,13 +76,13 @@ test('the_argv_ends_with_the_remote_login_shell_reading_stdin_after_the_destinat
   const ready = await readyOf();
   const prepared: PreparedForSpawn = { ...ready, entity: { ...ready.entity, sshKeyPath: '/keys/s1.key' }, env: undefined };
   const plan = planOf();
-  const launch = secretsLaunch(plan, prepared, false, NONCE);
+  const launch = secretsLaunch(plan, prepared, false, NONCE, KNOWS);
   assert.equal(launch.kind, 'spawn');
   if (launch.kind !== 'spawn') {
     return;
   }
   assert.equal(launch.argv[0], '-T', 'ssh is asked for no remote pty, first and by name (T1; also with RequestTTY force in the person\'s config)');
-  const expected = buildSshExecArgv(prepared.entity, '/keys/s1.key', secretsRemoteCommand(NONCE), 'key', { jump: prepared.jump, knownHostsFile: prepared.options.knownHostsFile, ownAgent: false, noTty: true });
+  const expected = buildSshExecArgv(prepared.entity, '/keys/s1.key', secretsRemoteCommand(NONCE), 'key', { jump: prepared.jump, knownHostsFile: testPin(prepared.options.knownHostsFile), ownAgent: false, noTty: true });
   assert.ok(expected !== undefined, 'the entity passes the host check');
   assert.deepEqual(launch.argv, expected);
   assert.equal(launch.argv[launch.argv.length - 1], secretsRemoteCommand(NONCE));
@@ -138,13 +140,13 @@ test('a_relay_prefix_or_a_client_program_is_refused_as_not_local', async () => {
   const ready = await readyOf();
   const expected = { kind: 'refused', reason: secretsLocalOnly('deploy') };
   assert.notEqual(expected.reason, '', 'the sentence exists');
-  assert.deepEqual(secretsLaunch(planOf(), { ...ready, prefix: "env SSH_AUTH_SOCK='/run/x.sock' " }, false, NONCE), expected);
-  assert.deepEqual(secretsLaunch(planOf(), { ...ready, options: { ...ready.options, program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe' } as PreparedForSpawn['options'] }, false, NONCE), expected);
+  assert.deepEqual(secretsLaunch(planOf(), { ...ready, prefix: "env SSH_AUTH_SOCK='/run/x.sock' " }, false, NONCE, KNOWS), expected);
+  assert.deepEqual(secretsLaunch(planOf(), { ...ready, options: { ...ready.options, program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe' } as PreparedForSpawn['options'] }, false, NONCE, KNOWS), expected);
 });
 
 test('an_entity_with_no_safe_host_is_refused_with_the_no_host_sentence', async () => {
   const ready = await readyOf();
-  const launch = secretsLaunch(planOf(), { ...ready, entity: { ...ready.entity, host: '-oProxyCommand=x' } }, false, NONCE);
+  const launch = secretsLaunch(planOf(), { ...ready, entity: { ...ready.entity, host: '-oProxyCommand=x' } }, false, NONCE, KNOWS);
   assert.deepEqual(launch, { kind: 'refused', reason: noHostSentence('prod box') });
 });
 
@@ -177,4 +179,43 @@ test('the_launch_warning_is_a_banner_line_before_the_secrets_text', () => {
   const plain = maskedOverSshBanner(described, undefined, target, SECRETS);
   assert.equal(plain, [described, secretsOverSshBanner(target, SECRETS)].join('\r\n'));
   assert.ok(!plain.includes('Note:'));
+});
+
+/* --- G1, E2.S2: the pin file that Connect's options wrote is checked before the argv is built (the plan's §3.10, §3.11; test 22) --- */
+
+const pinnedAt = (ready: PreparedForSpawn, file: string | undefined): PreparedForSpawn => ({ ...ready, options: { ...ready.options, knownHostsFile: file } });
+const sourcesOf = (argv: readonly string[]): string[] => argv.filter((word) => /^(VerifyHostKeyDNS|KnownHostsCommand|LogLevel)=/.test(word));
+
+test('G1: a pinned session gets the six pairs for a client that knows the option, and no KnownHostsCommand word for an older one; an unpinned one gets none', async () => {
+  const ready = await readyOf();
+  const older = secretsLaunch(planOf(), pinnedAt(ready, '/keys/kh-s1'), false, NONCE, { kind: 'older', token: 'OpenSSH_8.4' });
+  assert.deepEqual(sourcesOf(spawnArgv(planOf(), pinnedAt(ready, '/keys/kh-s1'))), ['VerifyHostKeyDNS=no', 'KnownHostsCommand=none', 'LogLevel=ERROR']);
+  assert.deepEqual(sourcesOf(older.kind === 'spawn' ? older.argv : ['refused']), ['VerifyHostKeyDNS=no', 'LogLevel=ERROR']);
+  assert.deepEqual(sourcesOf(spawnArgv(planOf(), pinnedAt(ready, undefined))), []);
+});
+
+test('G1: a pinned session whose ssh cannot be read, or was not asked, is refused with sentence F and gets no argv', async () => {
+  const ready = await readyOf();
+  const plan = planOf();
+  const NAME = plan.sshName;
+  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, { kind: 'unreadable', exitCode: 255 }), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (exit code 255), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` });
+  assert.deepEqual(secretsLaunch(plan, pinnedAt(ready, '/keys/kh-s1'), false, NONCE, undefined), { kind: 'refused', reason: `CredsForDevs could not read the version of the ssh program on this computer (it did not start, or did not end in time), so it did not start a connection that has to check the saved host key of "${NAME}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.` });
+});
+
+test('G1: a pinned session whose pin file has a path that ssh would not read as one file is refused with sentence E, which echoes no path; the path is asked before the client', async () => {
+  const ready = await readyOf();
+  const plan = planOf();
+  const NAME = plan.sshName;
+  const launch = secretsLaunch(plan, pinnedAt(ready, '/keys/100%/kh-s1'), false, NONCE, { kind: 'unreadable', exitCode: 1 });
+  assert.deepEqual(launch, { kind: 'refused', reason: `The saved host key of "${NAME}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.` });
+  assert.equal(launch.kind === 'refused' && launch.reason.includes('/keys'), false);
+  const quoted = spawnArgv(plan, pinnedAt(ready, "/keys/it's here/kh-s1"));
+  assert.ok(quoted.includes(`UserKnownHostsFile="/keys/it's here/kh-s1"`) && quoted.includes(`GlobalKnownHostsFile="/keys/it's here/kh-s1"`));
+});
+
+test('G1: an unpinned session is not asked: with no answer about the client it is spawned as before, with accept-new', async () => {
+  const ready = await readyOf();
+  const launch = secretsLaunch(planOf(), pinnedAt(ready, undefined), false, NONCE, undefined);
+  assert.equal(launch.kind, 'spawn');
+  assert.ok(launch.kind === 'spawn' && launch.argv.includes('StrictHostKeyChecking=accept-new'));
 });

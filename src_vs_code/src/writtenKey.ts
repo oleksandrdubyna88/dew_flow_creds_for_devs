@@ -1,3 +1,4 @@
+import type { CheckedPin } from './hostKeyPin';
 import { forgetMaterializedKey } from './keyInstaller';
 import type { ExecAuth } from './sshExecAuth';
 import type { SshExecAuth } from './sshExecCommand';
@@ -19,16 +20,23 @@ import type { SshExecAuth } from './sshExecCommand';
  * together ({@link CallAuth}). A road cannot hold a credential that is ready without a pin decision.</p>
  */
 
-/** What the pin writer of one call answers: no pin, a pin file written now, or a refusal with its sentence. It never throws. */
+/**
+ * What the pin writer of one call answers: no pin, a pin file written now and CHECKED (its path by the rule, its client by its version:
+ * `checkedPin`), or a refusal with its sentence. It never throws.
+ */
 export type PinOfCall =
-  | { readonly ok: true; readonly knownHostsFile?: string }
+  | { readonly ok: true; readonly knownHostsFile?: CheckedPin }
   | { readonly ok: false; readonly message: string };
 
-/** The pin writer of one call, bound to the call's storage folder and to its snapshot of the entry. `auth` is the login of the credential. */
-export type PinWriter = (auth: SshExecAuth) => PinOfCall;
+/**
+ * The pin writer of one call, bound to the call's storage folder and to its snapshot of the entry. `auth` is the login of the credential
+ * and `env` the environment its `ssh` will be started with. It is asynchronous since E2: before it writes, it asks the `ssh` program for
+ * its version, and that is a spawn.
+ */
+export type PinWriter = (auth: SshExecAuth, env: NodeJS.ProcessEnv) => Promise<PinOfCall>;
 
 /** The call may start `ssh`: the credential, and `knownHostsFile` when the entry is pinned. */
-export type ReadyCall = Extract<ExecAuth, { ok: true }> & { readonly knownHostsFile?: string };
+export type ReadyCall = Extract<ExecAuth, { ok: true }> & { readonly knownHostsFile?: CheckedPin };
 
 /** The call starts nothing: the refusal of the credential as it is, or the refusal of the pin in the same shape. */
 export interface RefusedCall {
@@ -65,16 +73,16 @@ interface Decided {
  * Decide the credential and the pin of one call together. The pin writer is called only for a credential that is `ok`. A refused
  * credential goes on as it is; a refused pin goes on as a refusal with the pin's sentence and the credential's warning.
  */
-function decide(credential: ExecAuth, writePin: PinWriter): Decided {
+async function decide(credential: ExecAuth, writePin: PinWriter): Promise<Decided> {
   if (!credential.ok) {
     return { call: credential };
   }
-  const pin = writePin(credential.auth);
+  const pin = await writePin(credential.auth, credential.env);
   if (!pin.ok) {
     return { call: { ok: false, message: pin.message, warning: credential.warning } };
   }
-  const pinFile = pin.knownHostsFile;
-  return pinFile === undefined ? { call: credential } : { call: { ...credential, knownHostsFile: pinFile }, pinFile };
+  const checked = pin.knownHostsFile;
+  return checked === undefined ? { call: credential } : { call: { ...credential, knownHostsFile: checked }, pinFile: checked.file };
 }
 
 /**
@@ -86,7 +94,7 @@ function decide(credential: ExecAuth, writePin: PinWriter): Decided {
 export async function withWrittenKey<T>(credential: ExecAuth, writePin: PinWriter, run: (call: CallAuth) => Promise<T>): Promise<T> {
   let pinFile: string | undefined;
   try {
-    const decided = decide(credential, writePin);
+    const decided = await decide(credential, writePin);
     pinFile = decided.pinFile;
     return await run(decided.call);
   } finally {
@@ -114,17 +122,24 @@ interface Started {
  * that throws leaves it false and the `finally` deletes; an attach that worked cannot be followed by a throw before the flag. So
  * exactly one of the two deletes runs, on every path, and it deletes both files. `start` is synchronous on purpose: no `await`
  * stands between the start and the attach.</p>
+ *
+ * <p><b>The one `await` of this guard</b> (E2) is the decision, BEFORE `start`: the pin writer asks the `ssh` program for its version.
+ * It stands inside the `try`, so while it waits both files are this guard's: a decision that rejects ends in the `finally`, which
+ * deletes what was written. A window that goes away while it waits does not end here: the guard goes on to `start` when the writer settles, and the manager, already disposed,
+ * spawns nothing and answers `undefined` (`SshBridgeManager.start`: the check stands BEFORE the spawn, so no `ssh` can connect after its owner is gone). `undefined` is the
+ * second case of the list above: `handed` stays false and the `finally` deletes both files at once. From `start` to the flag the
+ * guard is synchronous, as before.</p>
  */
-export function withWrittenKeyUntilExit<T extends Started>(
+export async function withWrittenKeyUntilExit<T extends Started>(
   credential: ExecAuth,
   writePin: PinWriter,
   start: (call: CallAuth) => T | undefined,
-): T | undefined {
+): Promise<T | undefined> {
   let pinFile: string | undefined;
   let handed = false;
   const forget = (): void => forgetBoth(credential, pinFile);
   try {
-    const decided = decide(credential, writePin);
+    const decided = await decide(credential, writePin);
     pinFile = decided.pinFile;
     const started = start(decided.call);
     if (started !== undefined) {

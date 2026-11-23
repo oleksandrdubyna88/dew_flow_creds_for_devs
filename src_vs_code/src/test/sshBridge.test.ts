@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testPin } from './pinnedArgv';
 import { test } from 'node:test';
 import { EntityMetadata } from '../types';
 import {
@@ -135,7 +136,7 @@ test('a port that cannot be a listening broker is refused', () => {
 });
 
 test('a pinned host key is enforced when one exists, and accept-new only when none does', () => {
-  const pinned = argv({ knownHostsFile: '/keys/known_hosts' });
+  const pinned = argv({ knownHostsFile: testPin('/keys/known_hosts') });
   assert.ok(pinned.includes('StrictHostKeyChecking=yes'));
   assert.ok(pinned.includes('UserKnownHostsFile=/keys/known_hosts'));
 
@@ -515,7 +516,7 @@ function tunnel(parts: TunnelParts): Tunnel {
       auth: parts.auth,
       extra: parts.extra,
       keyPath: parts.key ? '/keys/id_ed25519' : undefined,
-      knownHostsFile: parts.pin ? '/keys/known_hosts' : undefined,
+      knownHostsFile: testPin(parts.pin ? '/keys/known_hosts' : undefined),
     },
     SAFE,
   );

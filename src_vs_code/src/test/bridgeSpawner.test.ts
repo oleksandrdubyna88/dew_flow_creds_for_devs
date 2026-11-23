@@ -126,6 +126,7 @@ test('P6: a REAL program that does not exist ends its bridge: exited settles wit
 
   const bridge = manager.start('a1:e1', '/tmp/s.sock', missing, ['-N', '-i', '/storage/keys/1/call-real.key'], { ...process.env });
 
+  assert.ok(bridge !== undefined, 'P6: the manager of a live window started nothing');
   assert.equal(await bridge.process.exited, null);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(manager.isOpen('a1:e1'), false, 'P6: the row of a bridge whose ssh never started is still open');

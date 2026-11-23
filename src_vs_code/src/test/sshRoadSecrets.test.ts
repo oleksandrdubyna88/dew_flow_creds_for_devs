@@ -7,7 +7,7 @@ import type { ReadySsh } from '../sshSession';
 import type { CommandArg, EntityMetadata, TreeNode } from '../types';
 import { ArrowOptions, ArrowWorld, MaskedRecord, arrowWorld, runCommandsModule, vaultOf } from './arrowWorld';
 import { OUR_SOCKET } from './fakePaths';
-import { FakeRoad, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
+import { FakeRoad, KNOWS, RoadScript, fakeRoad, recordDialogs, sshNode } from './sshRoadWorld';
 import { hostOs, until } from './vpnWorld';
 import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
 
@@ -152,7 +152,7 @@ test('the_child_is_ssh_by_argv_with_no_value_in_argv_or_env', async () => {
   const r1 = only(road.readies);
   const run = theRun(aw);
   const spawn = only(road.launches);
-  const launch = secretsLaunch(PLAN, r1, spawn.kind === 'spawn' && spawn.ownAgent, nonceOf(run));
+  const launch = secretsLaunch(PLAN, r1, spawn.kind === 'spawn' && spawn.ownAgent, nonceOf(run), KNOWS);
   assert.equal(launch.kind, 'spawn');
   assert.deepEqual(run.argv, ['ssh', ...(launch.kind === 'spawn' ? launch.argv : [])]);
   assert.equal(run.commandLine, undefined);
@@ -492,4 +492,25 @@ test('an_unlinked_command_runs_here_as_before', async () => {
   assert.equal(run.argv, undefined);
   assert.equal(run.env.CREDS_REF_1, VALUE);
   assert.deepEqual(road.calls, []);
+});
+
+/* --- G1, E2.S2: the road asks the program of the spawn, for a pinned session, and a refusal starts nothing (the plan's §3.10; test 22) --- */
+
+test('g1_a_pinned_session_asks_the_program_and_the_folder_of_the_spawn_once_before_the_trust_question', async () => {
+  const { aw, road } = setup({ trusted: [['e1', BARE]] });
+  await aw.runWithSecrets(LINKED);
+  const spawn = only(road.launches);
+  assert.ok(spawn.kind === 'spawn');
+  assert.deepEqual(road.clientAsks, [{ program: spawn.program, cwd: spawn.cwd }]);
+  assert.equal(aw.masked.length, 1);
+});
+
+test('g1_a_client_that_cannot_be_read_spawns_nothing_says_sentence_f_and_cleans_the_session', async () => {
+  const { aw, road, vault } = setup({ trusted: [['e1', BARE]] });
+  road.client = { kind: 'unreadable', exitCode: 1 };
+  await aw.runWithSecrets(LINKED);
+  assert.deepEqual(aw.warnings, ['CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "' + PLAN.sshName + '". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.']);
+  assert.deepEqual(aw.masked, [], 'no masked run was made');
+  assert.deepEqual(vault.calls, [], 'nobody was asked and no value was read');
+  assert.deepEqual(road.cleanupCalls, ['s1#1'], 'the session, and with it the pin file that Connect\'s options wrote, is cleaned by its owner');
 });

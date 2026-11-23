@@ -2594,7 +2594,7 @@ three roads the answer of `resolveExecAuth` has no name: it is the first argumen
 key (none, an empty one, one of white space) writes nothing and runs as before. A saved host key that is there and cannot be
 used (the text is no host key, or the host forms no known_hosts line) is a refusal with a sentence in the form of the login:
 a key entry is sent to Connect SSH, a password entry is told that there is no safe repair yet. A pin file that cannot be
-written is a refusal too. On a refusal no `ssh` starts. The pin file is deleted where the key file is, by the same `finally`
+written is a refusal too. On a refusal no connection starts (a cold window runs the local `ssh -V` first). The pin file is deleted where the key file is, by the same `finally`
 and the same one continuation, whether or not a key file was written, and only a path that the writer returned in this call
 is deleted. Each of the four argv calls of these roads names the file (E1.S3, the paragraph B10). The bound that stays: a
 started `ssh` whose `kill()` fails and that never exits keeps its key file until the purge of the window's dispose or of the next
@@ -5365,25 +5365,95 @@ is not bridged, `buildBridgeArgv`). A bridged exec call (E1.6) is the other desi
 `-F` file holds the pin and `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`). With no
 pin file it answers `-o StrictHostKeyChecking=accept-new`. With a pin file it answers strict checking and that file as
 `UserKnownHostsFile` AND as `GlobalKnownHostsFile`, because the first replaces only the person's own files and `ssh` read the
-system-wide ones beside the pin. A path with white space goes in double quotes (both options take a list of files); a path that
-holds a double quote is not written, and both options then name `/dev/null`, so `ssh` refuses every host. Measured by hand
-against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and the results are in the docblock of the
-function. The line of a Connect terminal (`sshCommand.ts`) is not among them yet: it names the pin as the person's file only.
-`KnownHostsCommand` and `VerifyHostKeyDNS` of a person's config are not switched off.
+system-wide ones beside the pin. Measured by hand against a real `sshd` (OpenSSH 10.2p1, loopback, 2026-11-17): the conditions and
+the results are in the docblock of the function. The line of a Connect terminal (`sshCommand.ts`) is not among them: it names the pin
+as the person's file only (candidate C4 of the plan), and keeps asking a `KnownHostsCommand` and a `VerifyHostKeyDNS` of the config.
+E2 completes the words, and changes how the path is written: the next paragraph.
+
+**The complete words of a pinned call (G1, E2.S1 and E2.S2).** `hostKeyWords` takes one CHECKED value, `CheckedPin`
+(`hostKeyPin.ts`; the brand is not exported, so only `checkedPin(file, client)` makes one, and a raw path, a refused path or an
+unread client cannot reach the words). Its words: strict checking and the pin file as `UserKnownHostsFile` and `GlobalKnownHostsFile`
+(E1), then `VerifyHostKeyDNS=no`, `KnownHostsCommand=none` and `LogLevel=ERROR`: six pairs, or five for a client below OpenSSH 8.5,
+which has no `KnownHostsCommand` and ends at the word. They stand before every word of the entry and of a caller's `extra`, and
+`ssh` takes the FIRST value of an option, so a caller cannot turn one back on. Measured 2026-11-18, OpenSSH 10.2p1, `ssh -G`, the client
+alone (tests G1 to G3 of `pinWords.test.ts` ask it on every run): under a config with `KnownHostsCommand /bin/echo x`,
+`VerifyHostKeyDNS yes` and `LogLevel QUIET` these words resolve to `verifyhostkeydns false`, `loglevel ERROR` and no
+`knownhostscommand` line; without the `KnownHostsCommand` word that line stays. Asked, not observed against a server: that a login with
+another key is refused under them, that a config's command is not run and that no DNS record is trusted (the plan's E3). The sources of
+host keys in the manual (`man ssh_config`, read for E2): `UserKnownHostsFile`, `GlobalKnownHostsFile`, `KnownHostsCommand`,
+`VerifyHostKeyDNS`; `UpdateHostKeys`, `CheckHostIP` and `HostKeyAlias` are no source of trust. `LogLevel=ERROR` keeps the refusal
+line the roads read and drops what `ssh` prints only at `INFO` (a server's banner before the login: read, not measured).
+
+*The client.* `pinClient.ts` asks the `ssh` program that the call will start for its version (`ssh -V`, exit code 0, the token at the very
+start of stderr, read by the bridged road's one parser `versionTokenOf`) and reads one of three answers: `knows` (8.5 or newer),
+`older` (below 8.5, a success of its own) and `unreadable` (no version). It is asked of the same program word, folder and `PATH` as the
+call: the three roads of the person ask the bare `ssh` with the credential's environment, the agent's exec the program and environment of
+its launch, *Run with Secrets* the program and folder of `spawnLaunch` with `process.env`. Only the newer answer is kept (per program
+word, folder and `PATH`); an `older` and an `unreadable` answer are asked again by the next call, so a client replaced by a newer one is
+read as newer and never left without the word.
+
+*The rule of the path.* The pin file's path is written as it is (byte for byte, as before), or in double quotes when it holds white space, an
+apostrophe or an equals sign (OpenSSH 8.4 splits an unquoted known-hosts value at `=`, read in its source; 10.2p1 resolves the bare and the quoted
+spelling alike, measured 2026-11-23), or it is REFUSED with its kind, because `ssh` would read another file, two files or none from it (`ssh -G`, both options,
+OpenSSH 10.2p1): a control character (a tab splits a bare word; every control character is refused, as the bridged file's rule does),
+a double quote (`invalid quotes`), two backslashes in a row (read as one: a network path names another path), a backslash before an
+apostrophe (dropped), a backslash at its end (`invalid quotes` in double quotes), a percent sign (`%h` names two files, `%Z` ends the
+client), the characters `${` (expanded in the person's list only), a tilde at its start (expanded in the person's list only). The kinds are
+asked in this order and the first is the answer. No file stands in for a refused path any more (E1's `/dev/null` and `oneFileWord` are gone).
+A client older than 8.7 reads a value with another tokenizer, and Windows' `ssh.exe` was not run: not measured.
+
+*Sentences.* E: `The saved host key of "<name>" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor
+keeps the files of CredsForDevs has a path with <kind>, and ssh does not read a file under such a path as the one file it is. This is
+about this computer, not about the host or the saved key.` F: `CredsForDevs could not read the version of the ssh program on this computer
+(exit code <n>), so it did not start a connection that has to check the saved host key of "<name>". Nothing was sent to that host. The
+reason is the ssh program here, not the host.` (with `it did not start, or did not end in time` in the brackets when there is no exit code).
+Neither echoes a path or any output of the program but the exit code. On the three roads they stand behind the opening a road already
+writes (`Cannot reach "<name>": `, `Cannot bridge to "<name>": `, `socket check did not run: `); the agent's exec answers them as
+`409 no_credential`; *Run with Secrets* shows them as its warning.
+
+*The order of one decision* (`decidePinOfCall`, `pinOfCall.ts`): no saved host key, nothing is asked and the call is unpinned (`accept-new`,
+today's argv); then the rule of the WHOLE planned path (`knownHostsPath`, exported from `hostKeyTrust.ts`); then the client; and only then the
+write by `materializeKnownHosts`, unchanged, with the value made from the path that was written. So an entry whose saved key cannot be
+used and whose `ssh` cannot be read gets sentence F first, and sentence A (unusable) when the client can be read: both refuse, nothing is
+sent. Where it stands: the three roads (`writePersonPin`, asynchronous, in `writtenKey.ts`'s two guards: ONE `await` each, inside the `try`,
+before `run` and `start`; the bridge's handoff from `start` to `handed = true` has no `await`) and the agent's exec (`localPin` in
+`sshUseActions.ts`, before the pin file; the optional `SshUseDeps.pinClient`, and deps that name none refuse a pinned call as one whose
+client cannot be read) refuse BEFORE a pin file is written. *Run with Secrets* does not: Connect's options write its pin file before
+`secretsLaunch`, so there the file exists when the call is refused, no connection starts (at most the local `ssh -V`), and the owner's cleanup deletes the file
+(`checkExistingPin`; a pinned session whose client was not asked is refused as unreadable). The agent's exec still reads an unusable saved
+key as no pin and runs with `accept-new` (candidate C3), with one corner: such an entry in a storage folder that the rule refuses, or with
+an `ssh` that cannot be read, is now refused where it ran unchecked. Connect's terminal line has none of this (C4).
 
 **The three roads of the person (G1, E1.S3).** The bridge socket check, *Install creds on host* and *Open Remote Bridge…*
 (`commands/agentCommands.ts`) hand `ssh` the pin file of their call: each of their four argv calls names `knownHostsFile`,
 read from the ONE value that the guard hands the road (`CallAuth`, `writtenKey.ts`). An entry with no saved host key runs as
 on the agent's exec: `accept-new`, no file. An entry with one gets strict checking against a file of this call alone,
 `known_hosts-<entry id>-<uuid>`: both runs of the socket check read one file, the probe and the install run read one file,
-the tunnel reads its own until its `ssh` has ended. A host key that `ssh` refused is told to the person (sentence C,
-`refusedHostKeySentence`). The match is `hostKeyRefused` in `hostKeyPin.ts`: a pinned call whose `ssh` printed the whole line
-`Host key verification failed.`; `ssh` ends its lines with CR LF. The install shows the sentence for its probe, as an error
-in place of "the host did not answer the probe". The socket check shows it for the bridge, as an error message that opens
-with `The bridge to "<name>" is not open: `, and writes it to the log, because the tunnel's `ssh` has no stdio. A host that is
-down, a host that does not answer and a refused login keep the sentences of before. What the match cannot tell apart (a hop
-of the person's own `ProxyJump`, a host that prints the line itself) and what it misses (`LogLevel QUIET`) is in the docblock
-of the function, with the measurement. Windows' `ssh.exe` was not run.
+the tunnel reads its own until its `ssh` has ended. What a person is told when a pinned call ended with `ssh`'s line `Host key verification failed.` is decided by one function,
+`hostKeyTold` in `hostKeyPin.ts` (G1, E2.S3). **Sentence C** (`refusedHostKeySentence`: the entry's host did not present its
+saved key) is shown only on evidence: `ssh`'s own line `Offending <type> key in <file>:<n>`, with the pin file of THIS call as
+the whole name. Only the `ssh` that was handed that file reads it, and its name ends with a uuid of this call alone; the nested
+`ssh` of a jump host names the files of the person's own config, and a remote command never learns the name. `ssh` prints a
+name otherwise than it is (a path in double quotes with none, a backslash as two, a byte outside printable ASCII as a backslash
+and three octal digits), so the function is handed the path, not the word, and reads the printed name back. **Sentence D**
+(`unnamedHostKeySentence`) is shown for the verification line without that evidence: a jump host's refused key, an `ssh` config
+that gives the host another name or port, a remote text. It names no host as the cause and tells the person not to replace a
+saved key. It does not send the person to *Connect SSH* (the code gate of G1 E2, 2026-11-19; sentence C lost the same advice in the gate's second change, below): Connect's own line still accepts the
+person's other trust sources (C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), and sentence D is shown exactly
+when the call's `ssh` did not judge the saved key, so Connect could reach another host and send a password with the saved key never
+checked. It says what the person does outside the extension: check the host's key fingerprint with the server's owner, and check the
+own ssh config for a `HostName` or `Port` that renames the host and for a jump host. **Sentence C does not name *Connect SSH* either**
+(the code gate of G1 E2, second change, 2026-11-19, SECURITY). Connect's scan (`ssh-keyscan` of the entry's own host and port) can
+answer nothing, and then, for an entry that signs in with a password, Connect goes on without showing any fingerprint; and its own
+line still accepts the person's other trust sources (C4). Following the advice could send a password to another host. Sentence C says
+that the host did not present its saved key and that CredsForDevs did not connect, that nothing was sent to that host, that the saved
+key is not to be replaced because of this message, and, for a rebuilt server, to get its key fingerprint from the server's owner; it
+names no way in the product that could connect unchecked (the tests assert that it holds no *Connect*). The install shows either sentence for its probe, as an error in place of "the host did not answer the probe". The
+socket check shows it for the bridge, as an error message, and writes it to the log, because the tunnel's `ssh` has no stdio:
+`The bridge to "<name>" is not open: ` with sentence C, `The bridge to "<name>" could not be checked: ` with sentence D (the
+tunnel can be up). A host that is down, a host that does not answer, a refused login, a run with no text and every run of an
+entry with no saved host key keep the sentences of before. What was measured, and what the function cannot tell, is in its
+docblock. The text of `ssh.exe` was measured for the client alone; no login was made on Windows.
 
 Full record, deviations included: [PLAN_connection_manager.md](PLAN_connection_manager.md).
 

@@ -7,9 +7,11 @@
 // test world `out/test/personRoadsWorld.js`, with the real runner, the real bridge spawner, the real pin writer and the real deletes, and the
 // real `ssh` (through a shim first on PATH that records each start) against ONE `sshd -D -e` per leg, which serves every connection:
 //   leg 1  pinned to K1, K1 answers: the install reaches its question, the socket check reads the socket's mode, K1 logs one accepted
-//          login per start, every start carries the pin words, and no pin file and no client is left;
+//          login per connection, the question `ssh -V` of the real product starts once, before the connections, and every connection
+//          carries the pin words and E2's three pairs, and no pin file and no client is left;
 //   leg 2  still pinned to K1, K2 answers at the same address: every start ends with `Host key verification failed.`, K2 logs no login,
-//          the install shows sentence C and the bridge's check shows its message.
+//          the install shows sentence C and the bridge's check shows its message, the real client's `Offending` line names the pin file
+//          of the probe and of the mode check, and no sentence D is shown.
 // The control, by hand (`hostKeyWords` made to answer `accept-new`), turns leg 2 red: K2 then logs the logins.
 //
 // Linux only: the end of a server reads `/proc`. Where `CI=true` a missing sshd FAILS. The world's stand-ins that stay: `vscode`, and
@@ -36,13 +38,20 @@ const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 /** How many times `pattern` (a source, no flags) occurs in `text`. */
 const occurrences = (text, pattern) => (text.match(new RegExp(pattern, 'g')) ?? []).length;
 
+/** The pairs that E2 adds to every pinned connection, with the value for a client that knows `KnownHostsCommand` (the plan's §3.10, §3.12 part 1). */
+const NEW_PAIRS = { VerifyHostKeyDNS: 'no', KnownHostsCommand: 'none', LogLevel: 'ERROR' };
+
+/** Whether `stderr` holds the real client's evidence for sentence C: the whole line `Offending <type> key in <file>:<n>`, `file` being the pin file of that run. */
+const namesPinFile = (stderr, file) => file !== undefined && new RegExp(String.raw`^Offending \S+ key in ${literal(file)}:\d+\r?$`, 'm').test(stderr);
+
 /** The compiled modules this section reads, loaded ONCE before any world: `world()` evicts every module of `out/` from the require cache. */
 function productOf(out) {
   const load = (file) => require(path.join(out, file));
   return {
     ...load('sshBridge.js'), // sweepCommand, modeCheckCommand, interpretSocketProbe, isOwnerOnlyMode
     ...load('remoteCliInstall.js'), // probeCommand, interpretProbe, blockerFor, confirmationFor
-    ...load('hostKeyPin.js'), // parseHostKey, formatHostKey, knownHostsLine, refusedHostKeySentence (sentence C)
+    ...load('hostKeyPin.js'), // parseHostKey, formatHostKey, knownHostsLine, refusedHostKeySentence (sentence C), unnamedHostKeySentence (sentence D)
+    ...load('pinClient.js'), // pinClientOf: how the product reads `ssh -V` (E2.S1)
     ...load('materializedKeys.js'), // materializedKeysDir
     runner: load('sshExecRunner.js'),
     spawner: load('bridgeSpawner.js'),
@@ -324,6 +333,8 @@ function openLeg(rig, port) {
     hostKey: rig.pin,
     storageDir: rig.storage,
     realForget: true,
+    // The real asker of the client (E2): the product asks the real client `ssh -V` through the shim. Without it the world's stand-in answers `knows` and no question starts.
+    realClient: true,
     clicks: [credentialOf(rig), credentialOf(rig)],
     checks: [credentialOf(rig)],
     spawn: product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }),
@@ -367,8 +378,11 @@ const runOf = (leg, command) => leg.outcomes.find((one) => one.argv.at(-1) === c
 /** What a world array holds that it did not hold at `mark`. */
 const since = (list, mark) => list.slice(mark);
 
-/** Which run a recorded start is: by `-N` for the bridge, by its remote command for the three runs. */
+/** Which start a recorded one is: by `-V` alone for the question, by `-N` for the bridge, by its remote command for the three runs. */
 function kindOf(argv, commands) {
+  if (argv.length === 1 && argv[0] === '-V') {
+    return 'question';
+  }
   if (argv.includes('-N')) {
     return 'bridge';
   }
@@ -384,22 +398,43 @@ function pinOf(product, argv) {
   return one ? user[0].replace(/^"(.*)"$/, '$1') : undefined;
 }
 
+/** Whether a connection's argv lacks one of E2's three pairs, or says it other than once, or with another value. */
+const lacksNewPairs = (product, argv) => Object.entries(NEW_PAIRS).some(([name, value]) => {
+  const said = product.argv.valuesOf(argv, name);
+  return said.length !== 1 || said[0] !== value;
+});
+
+/**
+ * The starts of a leg, split by kind: the QUESTION `ssh -V` and the connections. The window's asker keeps the answer of a client that
+ * knows `KnownHostsCommand` for its life, one asker per leg (`world()` evicts the modules), and the three roads ask with one key, so per
+ * leg exactly ONE question starts: the install's, the first pinned call. The bridge and the socket check take the kept answer.
+ * Answers the connections.
+ */
 async function startsHoldThePin(check, rig, leg, label) {
   const { product } = rig;
   const starts = startsOf(rig, leg);
   const remote = remoteOf(starts.find((one) => one.argv.includes('-N'))?.argv ?? []) ?? '';
   const commands = { probe: product.probeCommand(), sweep: product.sweepCommand(me), mode: product.modeCheckCommand({ path: remote }) };
-  const kinds = starts.map((one) => kindOf(one.argv, commands)).sort();
-  check(`${label}: the shim recorded 4 starts of ssh, each whole: the probe, the bridge, the sweep and the mode check`, starts.every((one) => one.whole) && kinds.join(',') === 'bridge,mode,probe,sweep', JSON.stringify(kinds));
-  const pins = starts.map((one) => ({ kind: kindOf(one.argv, commands), file: pinOf(product, one.argv) }));
-  check(`${label}: every start says StrictHostKeyChecking=yes and names ONE file as both known-hosts files`, pins.length === 4 && pins.every((one) => one.file !== undefined), JSON.stringify(starts.map((one) => product.argv.valuesOf(one.argv, 'UserKnownHostsFile'))));
+  const kindsOf = (list) => list.map((one) => kindOf(one.argv, commands));
+  const questions = starts.filter((one) => kindOf(one.argv, commands) === 'question');
+  const connections = starts.filter((one) => kindOf(one.argv, commands) !== 'question');
+  const kinds = kindsOf(connections).sort();
+  check(`${label}: the shim recorded 5 starts of ssh, each whole: ONE question ssh -V (the window keeps the answer of a client that knows the option) and 4 connections, the probe, the bridge, the sweep and the mode check`, starts.every((one) => one.whole) && questions.length === 1 && kinds.join(',') === 'bridge,mode,probe,sweep', JSON.stringify({ questions: questions.length, connections: kinds }));
+  const firstConnection = Math.min(...connections.map((one) => Number(one.start)));
+  check(`${label}: the question did not start after the first connection (the start times the shim recorded)`, questions.length === 1 && connections.length > 0 && Number(questions[0].start) <= firstConnection, JSON.stringify(starts.map((one) => ({ kind: kindOf(one.argv, commands), start: one.start }))));
+  const pins = connections.map((one) => ({ kind: kindOf(one.argv, commands), file: pinOf(product, one.argv) }));
+  check(`${label}: every connection says StrictHostKeyChecking=yes and names ONE file as both known-hosts files`, pins.length === 4 && pins.every((one) => one.file !== undefined), JSON.stringify(connections.map((one) => product.argv.valuesOf(one.argv, 'UserKnownHostsFile'))));
+  // The values are those of the contract (NEW_PAIRS), not read from `hostKeyWords`; the NAMES are tied to the tests' own list.
+  const sameNames = JSON.stringify(Object.keys(NEW_PAIRS)) === JSON.stringify(product.argv.PIN_SOURCE_OPTIONS);
+  const lacking = connections.filter((one) => lacksNewPairs(product, one.argv)).map((one) => ({ kind: kindOf(one.argv, commands), words: product.argv.sourceWordsOf(one.argv) }));
+  check(`${label}: every connection says VerifyHostKeyDNS=no, KnownHostsCommand=none and LogLevel=ERROR, each once (the names those of pinnedArgv's PIN_SOURCE_OPTIONS)`, connections.length === 4 && sameNames && lacking.length === 0, JSON.stringify({ namesAgree: sameNames, names: product.argv.PIN_SOURCE_OPTIONS, lacking }));
   const keys = product.materializedKeysDir(rig.storage);
   const named = /^known_hosts-e1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   check(`${label}: each named file is a pin file of this window: ${keys}/known_hosts-e1-<uuid>`, pins.length === 4 && pins.every((one) => one.file !== undefined && path.dirname(one.file) === keys && named.test(path.basename(one.file))), JSON.stringify(pins));
   const of = (kind) => pins.find((one) => one.kind === kind)?.file;
   const distinct = new Set([of('probe'), of('bridge'), of('sweep')]);
   check(`${label}: the install, the bridge and the check named 3 distinct pin files; the check's two runs named the same one`, !distinct.has(undefined) && distinct.size === 3 && of('sweep') === of('mode'), JSON.stringify(pins));
-  return starts;
+  return connections;
 }
 
 async function nothingLeft(check, rig, leg, label) {
@@ -477,7 +512,7 @@ async function legOne(check, rig) {
     const starts = await startsHoldThePin(check, rig, leg, 'leg 1');
     await nothingLeft(check, rig, leg, 'leg 1');
     const accepted = occurrences(server.sshd.stderr, `Accepted publickey for ${literal(me)} from 127\\.0\\.0\\.1`);
-    check('leg 1: K1 logged one accepted login per start: 4', accepted === 4 && starts.length === 4, `${accepted} accepted\n${server.sshd.stderr.trim().split('\n').slice(-20).join('\n')}`);
+    check('leg 1: K1 logged one accepted login per connection: 4', accepted === 4 && starts.length === 4, `${accepted} accepted\n${server.sshd.stderr.trim().split('\n').slice(-20).join('\n')}`);
   } finally {
     leg.w.bridges.dispose();
     const { list, error } = await endServer(server, startsOf(rig, leg), taken);
@@ -496,6 +531,8 @@ async function installRefused(check, rig, leg) {
   check('leg 2: Install creds on host ended within 30 s, and asked no question', click.ended && w.asked.length === asked, click.error ?? JSON.stringify(since(w.asked, asked)));
   const probe = runOf(leg, product.probeCommand());
   check('leg 2: the install\'s probe was refused: exit 255 and "Host key verification failed."', probe?.outcome?.exitCode === 255 && probe.outcome.stderr.includes(VERIFY_FAILED), JSON.stringify(probe));
+  const probeFile = pinOf(product, probe?.argv ?? []);
+  check('leg 2: the real client named the pin file of the probe: its stderr holds "Offending <type> key in <that file>:<n>", the evidence of sentence C', namesPinFile(probe?.outcome?.stderr ?? '', probeFile), JSON.stringify({ file: probeFile, stderr: probe?.outcome?.stderr }));
   const shown = [...since(w.warnings, warned), ...since(w.errors, failed)];
   const sentence = sentenceC(product, product.world.ROW.node.name);
   const withC = shown.filter((text) => text.includes(sentence));
@@ -523,6 +560,8 @@ async function bridgeRefused(check, rig, leg) {
   const refused = (run) => run?.outcome?.exitCode === 255 && run.outcome.stderr.includes(VERIFY_FAILED);
   const sweep = runOf(leg, product.sweepCommand(me));
   check('leg 2: the socket check ran within 40 s: the sweep and the mode check, each exit 255 and "Host key verification failed."', ran && refused(sweep) && refused(mode()), JSON.stringify({ sweep, mode: mode() }));
+  const modeFile = pinOf(product, mode()?.argv ?? []);
+  check('leg 2: the real client named the pin file of the mode check: "Offending <type> key in <that file>:<n>"', namesPinFile(mode()?.outcome?.stderr ?? '', modeFile), JSON.stringify({ file: modeFile, stderr: mode()?.outcome?.stderr }));
   const expected = bridgeForm(product, product.world.ROW.node.name);
   const errors = since(w.errors, failed);
   check('leg 2: the bridge\'s check showed its message: exactly one error, "The bridge to \\"box\\" is not open: " and sentence C', errors.length === 1 && errors[0] === expected, JSON.stringify(errors));
@@ -543,12 +582,16 @@ async function legTwo(check, rig, port) {
   try {
     await installRefused(check, rig, leg);
     await bridgeRefused(check, rig, leg);
+    // Sentence D is read back from the product where the product has it, never typed; "could not be checked" is the bridge's opening of it.
+    const unnamed = typeof rig.product.unnamedHostKeySentence === 'function' ? rig.product.unnamedHostKeySentence(rig.product.world.ROW.node.name) : undefined;
+    const saidD = [...leg.w.infos, ...leg.w.warnings, ...leg.w.errors, ...leg.w.logs].filter((text) => text.includes('could not be checked') || (unnamed !== undefined && text.includes(unnamed)));
+    check('leg 2: no message and no log line said sentence D or "could not be checked": where it does, E2.S3\'s rule of evidence missed on the real client (a finding against E2.S3, not a repair of this script)', saidD.length === 0, JSON.stringify(saidD));
     taken = await descendantsOfListener(server);
     await startsHoldThePin(check, rig, leg, 'leg 2');
     await nothingLeft(check, rig, leg, 'leg 2');
     const log = server.sshd.stderr;
     const reached = occurrences(log, `Connection from 127\\.0\\.0\\.1 port \\d+ on 127\\.0\\.0\\.1 port ${port}`);
-    check('leg 2: K2 was reached: its log holds a connection from 127.0.0.1 per start (at least 4)', reached >= 4, `${reached} connections\n${log.trim().split('\n').slice(-20).join('\n')}`);
+    check('leg 2: K2 was reached: its log holds a connection from 127.0.0.1 per connection (at least 4)', reached >= 4, `${reached} connections\n${log.trim().split('\n').slice(-20).join('\n')}`);
     check('leg 2: K2 logged no accepted login and no authentication attempt', !AUTH_ATTEMPT.test(log), log.trim().split('\n').filter((line) => AUTH_ATTEMPT.test(line)).join('\n'));
   } finally {
     leg.w.bridges.dispose();
@@ -588,12 +631,23 @@ function rigOf(section, dir, out) {
   return rig;
 }
 
+/**
+ * What the real client says of itself, read by the product's own asker (E2.S1: `pinClientAsker` of `out/pinClient.js`, `ssh -V` under `runBounded`:
+ * a time limit, SIGTERM then SIGKILL of the child). The rig starts no launcher of its own. The words this smoke expects are those of a client that knows `KnownHostsCommand`.
+ */
+function clientAnswer(product, real) {
+  return product.pinClientAsker()({ program: real, env: process.env });
+}
+
 async function pinnedLegs(check, rig) {
   if (!(await makeKeys(check, rig))) {
     return;
   }
   writeClientConfig(rig);
-  check('the shim resolved the real ssh outside its own folder', installShim(rig) !== undefined, process.env.PATH);
+  const real = installShim(rig);
+  check('the shim resolved the real ssh outside its own folder', real !== undefined, process.env.PATH);
+  const client = real === undefined ? { kind: 'unreadable', exitCode: null } : await clientAnswer(rig.product, real);
+  check('the real ssh knows KnownHostsCommand (OpenSSH 8.5 or newer), read as the product reads ssh -V: the words this smoke expects are that client\'s', client.kind === 'knows', JSON.stringify(client));
   const pinned = { ...rig, pin: rig.product.formatHostKey(rig.product.parseHostKey(fs.readFileSync(`${rig.k1}.pub`, 'utf8')) ?? { algorithm: '', base64: '' }) };
   const port = await legOne(check, pinned);
   if (port !== undefined) {

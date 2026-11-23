@@ -46,7 +46,7 @@ interface Token {
   readonly windowsBuild: boolean;
 }
 
-function tokenOf(stderr: string): Token | undefined {
+export function versionTokenOf(stderr: string): Token | undefined {
   const found = VERSION_TOKEN.exec(stderr);
   return found === null ? undefined : { text: found[0], version: [Number(found[2]), Number(found[3])], windowsBuild: found[1] !== undefined };
 }
@@ -66,7 +66,7 @@ export function clientVerdict(exit: number | null, stdout: string, stderr: strin
 
 /** `clientVerdict` under a floor of the caller's: what a test says when it is about the rule and not about the constant. */
 export function clientVerdictUnder(floor: BridgedFloor, exit: number | null, _stdout: string, stderr: string, platform: NodeJS.Platform): ClientVerdict {
-  const token = exit === 0 ? tokenOf(stderr) : undefined;
+  const token = exit === 0 ? versionTokenOf(stderr) : undefined;
   if (token === undefined) {
     return { ok: false, sentence: sentences.clientNoVersion(exit) };
   }

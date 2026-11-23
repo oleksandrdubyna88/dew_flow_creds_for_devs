@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import { formatToken } from '../grantToken';
 import { materializedKeysDir } from '../materializedKeys';
 import { BridgeProcess, BridgeSpawner, SshBridgeManager } from '../sshBridgeManager';
+import type { PinClient, PinClientCall } from '../pinClient';
 import type { ExecAuth } from '../sshExecAuth';
 import type { SshExecOutcome } from '../sshExecRunner';
 import { loadWithVscode } from './vscodeStub';
@@ -13,7 +14,12 @@ import { loadWithVscode } from './vscodeStub';
  *
  * <p>Stand-ins, by the request string that `commands/agentCommands.ts` (or the module it imports) writes: `../sshExecAuth` (what a
  * resolve answers), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
- * `realForget`), and with `noExecArgv` `../sshExecCommand`.</p>
+ * `realForget`), `./pinClient` (the asker of the client of a pinned call; left out with `realClient`), and with `noExecArgv`
+ * `../sshExecCommand`.</p>
+ *
+ * <p>The question about the client (G1, E2: `ssh -V`, the plan's §3.10) is a kind of its own: it is recorded in `clientAsks` and never in
+ * `runs`, so every count of `runs` is a count of connections. `client` says what the client answers; the default is one that knows
+ * `KnownHostsCommand`. The question goes through `./pinClient`, not through `../sshExecRunner`, so the stand-in runner never sees it.</p>
  *
  * <p>The saved host key of the entry (G1): `hostKey` puts one on the entry, and `storageDir` is the window's storage folder. A pin
  * test gives a REAL folder and `realForget`, so `materializeKnownHosts` and `forgetMaterializedKey` are the real ones and the
@@ -98,6 +104,10 @@ export interface Parts {
   realForget?: boolean;
   /** `buildSshExecArgv` answers no argv. */
   noExecArgv?: boolean;
+  /** What the `ssh` program answers about its version: one answer for every question, or the answer of the n-th question (0-based) of the window. Default: {@link KNOWS}. */
+  client?: PinClient | ((index: number) => PinClient);
+  /** The real `./pinClient` asks (a real `ssh -V` through the real runner); `clientAsks` stays empty. */
+  realClient?: boolean;
   /** More stand-ins, by request string. */
   mocks?: Record<string, unknown>;
 }
@@ -112,6 +122,8 @@ export interface World {
   forgotten: string[];
   /** Every `ssh` run: its argv, how many paths were forgotten when it started, and the known-hosts file its argv names, read at that moment. */
   runs: { argv: readonly string[]; forgottenBefore: number; knownHosts: NamedKnownHosts | undefined }[];
+  /** Every question about the client of a pinned call, in order: what it was asked of, and how many pin files were on the disk and how many runs had started then. */
+  clientAsks: { call: PinClientCall; pinFilesBefore: number; runsBefore: number }[];
   /** Every modal question and quick pick: its text and how many paths were forgotten when it was shown. */
   asked: { message: string; forgottenBefore: number }[];
   /** `onEnded` of the manager: a bridge that ended by itself. */
@@ -160,7 +172,7 @@ function emptyWorld(parts: Parts): World {
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
+  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
@@ -216,6 +228,24 @@ function runnerOf(w: World, parts: Parts): Record<string, unknown> {
   };
 }
 
+/** The answer of a client that knows `KnownHostsCommand` (OpenSSH 8.5 or newer). */
+export const KNOWS: PinClient = { kind: 'knows', token: 'OpenSSH_10.2' };
+/** The answer of a client below 8.5: a success of its own. */
+export const OLDER: PinClient = { kind: 'older', token: 'OpenSSH_8.4' };
+/** The answer of a client whose version could not be read. */
+export const unreadable = (exitCode: number | null): PinClient => ({ kind: 'unreadable', exitCode });
+
+/** The stand-in of `./pinClient`: no `ssh -V` starts; each question is recorded, apart from the runs, and answered on a promise callback. */
+function clientOf(w: World, parts: Parts): Record<string, unknown> {
+  return {
+    windowPinClient: (call: PinClientCall): Promise<PinClient> => {
+      w.clientAsks.push({ call, pinFilesBefore: pinFiles(parts.storageDir ?? '/storage').length, runsBefore: w.runs.length });
+      const index = w.clientAsks.length - 1;
+      return Promise.resolve().then(() => (typeof parts.client === 'function' ? parts.client(index) : (parts.client ?? KNOWS)));
+    },
+  };
+}
+
 function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   const recorder = { './keyInstaller': { forgetMaterializedKey: (keyPath: string): void => void w.forgotten.push(keyPath) } };
   const noArgv = { '../sshExecCommand': { buildSshExecArgv: (): undefined => undefined } };
@@ -223,6 +253,7 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
     '../sshExecAuth': resolverOf(parts),
     '../sshExecRunner': runnerOf(w, parts),
     ...(parts.realForget === true ? {} : recorder),
+    ...(parts.realClient === true ? {} : { './pinClient': clientOf(w, parts) }),
     ...(parts.noExecArgv === true ? noArgv : {}),
     ...parts.mocks,
   };

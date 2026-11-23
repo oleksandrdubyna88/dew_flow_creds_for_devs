@@ -1,4 +1,5 @@
 import { keyFingerprintOf } from './sshKeyParse';
+import type { PinClient, ReadablePinClient } from './pinClient';
 import { DEFAULT_SSH_PORT, isSafeSshHost } from './sshCommand';
 
 /**
@@ -134,8 +135,97 @@ export function knownHostsLine(host: string, port: number | undefined, key: Host
   return `${target} ${key.algorithm} ${key.base64}\n`;
 }
 
-/** A known-hosts file that holds no key. It stands in for a pin file whose path cannot be written as one word: see {@link oneFileWord}. */
-const NO_KEY_FILE = '/dev/null';
+/**
+ * Why the path of a pin file cannot be written as the value of the two known-hosts options: the name of each kind, and the words that
+ * sentence E says for it. `ssh` reads the value of both options as a line of a config file, and each of these makes it read another
+ * file, two files, or no file at all.
+ */
+export const PIN_PATH_KINDS = {
+  control: 'a control character',
+  quote: 'a double quote',
+  doubleBackslash: 'two backslashes in a row (a network path)',
+  backslashApostrophe: 'a backslash before an apostrophe',
+  lastBackslash: 'a backslash at its end',
+  percent: 'a percent sign',
+  variable: 'the characters ${',
+  tilde: 'a tilde at its start',
+} as const;
+
+export type PinPathKind = keyof typeof PIN_PATH_KINDS;
+
+/** The refused kinds, in the order they are asked: the first that holds is the answer. */
+const REFUSED_PIN_PATHS: readonly (readonly [PinPathKind, (file: string) => boolean])[] = [
+  ['control', (file) => /[\u0000-\u001f\u007f]/.test(file)],
+  ['quote', (file) => file.includes('"')],
+  ['doubleBackslash', (file) => file.includes('\\\\')],
+  ['backslashApostrophe', (file) => file.includes("\\'")],
+  ['lastBackslash', (file) => file.endsWith('\\')],
+  ['percent', (file) => file.includes('%')],
+  ['variable', (file) => file.includes('${')],
+  ['tilde', (file) => file.startsWith('~')],
+];
+
+/**
+ * The rule of the path of a pin file (G1, §3.11), its refusing half: the kind of the first thing in `file` that keeps `ssh` from
+ * reading it as the one file it is, or `undefined` when the path can be written. It is asked BEFORE a pin file is written, of the
+ * whole path.
+ *
+ * <p><b>Measured 2026-11-18</b>, OpenSSH 10.2p1, `ssh -G -F /dev/null` with the word as both options, the client alone (no login).
+ * A double quote, bare or inside double quotes: `invalid quotes`, the client ends. Two backslashes are read as one, bare and in
+ * double quotes, so a network path names another path. A backslash before an apostrophe is dropped, bare and in double quotes. A
+ * backslash at the end of a word in double quotes: `invalid quotes`. `%h` and `${HOME}` are expanded in the person's list and not in
+ * the system-wide one, so the two words name two files, and `%Z` ends the client. A tilde at the start is expanded in the person's
+ * list only. A tab splits a bare word in two; every control character is refused, as the rule of the bridged file does
+ * (`unsafeSshConfigValue`). No spelling was found that every client reads as the one file in BOTH words, so such a path gets no
+ * word.</p>
+ *
+ * <p>Not measured: a login; a client older than 8.7, which reads such a value with another tokenizer; Windows' `ssh.exe` beyond the
+ * rows of the spec of E1.S1 (K8).</p>
+ */
+export function pinPathRefusal(file: string): PinPathKind | undefined {
+  return REFUSED_PIN_PATHS.find(([, holds]) => holds(file))?.[0];
+}
+
+declare const checkedPinBrand: unique symbol;
+
+/**
+ * The pin file of one call, CHECKED: the only thing the words of a pinned call are written from. Only {@link checkedPin} makes one
+ * (the brand is not exported), so a raw path cannot reach {@link hostKeyWords}, and a path that the rule refuses has no value to give.
+ */
+export interface CheckedPin {
+  readonly [checkedPinBrand]: true;
+  /** The path of the file as it was written to the disk: for the delete, and for the match of `ssh`'s own lines. Never a word of an argv. */
+  readonly file: string;
+  /** The path as the value of both known-hosts options: as it is, or in double quotes. */
+  readonly word: string;
+  /** Whether the client of this call knows `KnownHostsCommand` (OpenSSH 8.5 or newer). */
+  readonly knowsKnownHostsCommand: boolean;
+}
+
+export type PinCheck = { readonly ok: true; readonly pin: CheckedPin } | { readonly ok: false; readonly kind: PinPathKind };
+
+/**
+ * The rule of the path and the client's answer, made into the one value that the words take. A path that the rule refuses answers its
+ * kind and no value. A path with white space, an apostrophe or an equals sign goes in double quotes; every other path is written as it is, byte for
+ * byte. `client` is a version that was READ: a client that cannot be read is no argument of this function, so its call gets no words.
+ *
+ * <p><b>Measured 2026-11-18</b> as in {@link pinPathRefusal}. A pair of apostrophes, bare, resolves ANOTHER path in both lists (the
+ * apostrophes are dropped), and one apostrophe, bare, ends the client (`invalid quotes`). In double quotes both resolve to themselves,
+ * as do a path with a space, one with ` #`, and one with a space and an apostrophe together.</p>
+ *
+ * <p><b>The equals sign</b> is quoted for older clients, which are still supported: OpenSSH 8.4 reads a known-hosts value with `strdelim`, which
+ * splits an UNQUOTED value at `=`, so a path such as `/tmp/data=prod/keys/known_hosts-e1` would be two file names. Measured 2026-11-23 with
+ * OpenSSH 10.2p1: `ssh -G -o UserKnownHostsFile=/tmp/data=prod/k` and the quoted form both resolve to `/tmp/data=prod/k`, so the quotes cost a new client nothing
+ * (row `an equals sign` of `pinWords.test.ts`, G4). The 8.4 reading is from its source (`readconf.c`), not run here.</p>
+ */
+export function checkedPin(file: string, client: ReadablePinClient): PinCheck {
+  const kind = pinPathRefusal(file);
+  if (kind !== undefined) {
+    return { ok: false, kind };
+  }
+  const word = /[\s'=]/.test(file) ? `"${file}"` : file;
+  return { ok: true, pin: { file, word, knowsKnownHostsCommand: client.kind === 'knows' } as CheckedPin };
+}
 
 /**
  * The words that tell `ssh` how to check the host's key, on a call the extension starts with no terminal, OFF a bridge. The one place
@@ -143,85 +233,196 @@ const NO_KEY_FILE = '/dev/null';
  * `buildBridgeArgv`), and `hostKeyWords.test.ts` holds the list. A bridged exec call does not ask it: its `-F` file holds the pin and
  * says `GlobalKnownHostsFile none` (`bridgedSshConfig.ts`), and its argv carries the one word of strictness (`execHostKeyWords`).
  *
- * <p><b>No pin file:</b> `accept-new`, as before. <b>A pin file:</b> strict checking, and that file as the person's known-hosts
- * file AND as the system-wide one. The second is the point (G1, P1). `UserKnownHostsFile` replaces only the person's own files:
- * `ssh` still reads the system-wide ones (`/etc/ssh/ssh_known_hosts`), so a key that such a file lists for the host passed the
- * check beside the pin. The same path twice needs no second name for "no file", which differs between the platforms.</p>
+ * <p><b>No pin:</b> `accept-new`, as before, and no other word. <b>A checked pin:</b> the call ASKS `ssh` to take the pin file as its
+ * only source of host keys, and to print a refusal:</p>
  *
- * <p><b>Measured 2026-11-17</b>, OpenSSH 10.2p1 against a real `sshd` on the loopback, by hand. The pin file held ANOTHER key and
- * a config named a system-wide file with the host's real key: with the first two options the login was accepted; with all three,
- * `Host key verification failed.`, exit code 255. What a client resolves from these words is asked of the PATH's `ssh -G` in
- * `hostKeyWords.test.ts`; no test of the suite asks a real `sshd`.</p>
+ * <ul>
+ * <li>strict checking, and the pin file as the person's known-hosts file AND as the system-wide one (G1, P1): `UserKnownHostsFile`
+ *     alone leaves `/etc/ssh/ssh_known_hosts` read beside it;</li>
+ * <li>`VerifyHostKeyDNS=no`: with `yes` in a config, a key that matches a signed DNS record is trusted;</li>
+ * <li>`KnownHostsCommand=none`, for a client that knows the option (8.5 or newer): a config's command prints more keys. An older
+ *     client has no such option and ends at the word, so it gets none (`pinClient.ts`);</li>
+ * <li>`LogLevel=ERROR`: under a config's `LogLevel QUIET` a refused key prints nothing, and no caller could tell it from a host that
+ *     is down.</li>
+ * </ul>
  *
- * <p><b>What these words do NOT switch off:</b> the sources that only an `ssh` config turns on, `KnownHostsCommand` and
- * `VerifyHostKeyDNS` (candidate C2 of the plan). And the line of a Connect terminal (`sshCommand.ts`) writes its own words, the
- * pin as the person's file only (candidate C4).</p>
+ * <p><b>Measured.</b> 2026-11-17, OpenSSH 10.2p1 against a real `sshd` on the loopback, by hand: the pin file held ANOTHER key and a
+ * config named a system-wide file with the host's real key; with the first two options the login was accepted, with all three it
+ * ended with `Host key verification failed.`, exit code 255. 2026-11-18, `ssh -G` of the same client, under a config that says
+ * `KnownHostsCommand /bin/echo x`, `VerifyHostKeyDNS yes` and `LogLevel QUIET`: with these words it resolves `verifyhostkeydns false`,
+ * `loglevel ERROR` and no `knownhostscommand` line; without the `KnownHostsCommand` word that line stays. What a client resolves is
+ * asked of the PATH's `ssh -G` in the tests. No test of `npm test` asks a real `sshd`. Section 10 of `scripts/ssh-agent-itest.cjs`
+ * (`itestPinnedRoads.cjs`, 48 checks, E2.S4) does, on Linux: it runs the registered *Install creds on host* and *Open Remote Bridge…* (and the
+ * bridge's socket check) with the real `ssh` against a real `sshd` on the loopback. Pinned to that server's key, every connection carries these
+ * words and logs in; with ANOTHER key answering at the same address, every connection ends with `Host key verification failed.` and the server
+ * logs no login. <b>Limits of that smoke:</b> it is a loopback `sshd`, one OpenSSH client (the one first on the PATH, 8.5 or newer), and a client
+ * config that only empties the two known-hosts files; no config there names a `KnownHostsCommand` or a `VerifyHostKeyDNS yes`, so it does NOT
+ * show that a command or a signed DNS record is shut out on a login, and it does not run an agent's `ssh:exec`, *Run with Secrets* or a client
+ * older than 8.5. That a login is refused with DNS on, or with a command that lists the key, is the plan's E3 (M10, M8).</p>
  *
- * <p>It always answers words, and with a pin file always strict ones: there is no answer that a caller could read as "no pin".</p>
+ * <p><b>What these words do NOT reach:</b> the nested `ssh` of a jump host, which gets none of them; and the line of a Connect
+ * terminal (`sshCommand.ts`), which writes its own words, the pin as the person's file only (candidate C4 of the plan).</p>
+ *
+ * <p>It always answers words, and with a pin always strict ones: there is no answer that a caller could read as "no pin".</p>
  */
-export function hostKeyWords(pinFile: string | undefined): string[] {
-  if (pinFile === undefined) {
+export function hostKeyWords(pin: CheckedPin | undefined): string[] {
+  if (pin === undefined) {
     return ['-o', 'StrictHostKeyChecking=accept-new'];
   }
-  const file = oneFileWord(pinFile);
-  return ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${file}`, '-o', `GlobalKnownHostsFile=${file}`];
+  const command = pin.knowsKnownHostsCommand ? ['-o', 'KnownHostsCommand=none'] : [];
+  return [
+    '-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${pin.word}`, '-o', `GlobalKnownHostsFile=${pin.word}`,
+    '-o', 'VerifyHostKeyDNS=no', ...command, '-o', 'LogLevel=ERROR',
+  ];
 }
 
 /**
- * A path as the value of an option that takes a LIST of files, so that `ssh` reads one file.
- *
- * <p>`ssh` splits the value of both known-hosts options at white space. Measured 2026-11-17 against a real `sshd` (OpenSSH
- * 10.2p1, loopback): a pin file at a bare path with a space is two names, neither is the file, and the call ends with `Host key
- * verification failed.`; in double quotes it is one file and the login is accepted. `ssh -G` of OpenSSH_for_Windows 9.5p2
- * resolves the quoted word to one file too (the client alone; no login was made on Windows).</p>
- *
- * <p>A path with no white space is written as it is, byte for byte.</p>
- *
- * <p>A path that holds a double quote is not written at all. The quote would end the quoted word, two of them can split the path
- * in two, and an `ssh` older than 8.7 knows no escape for it (read, not measured). The answer is {@link NO_KEY_FILE}: with strict
- * checking and no key in either list `ssh` refuses every host (measured as above: `No ED25519 host key is known`, exit code
- * 255, also under a config that trusts the host's key). The call fails; it never trusts a file the pin did not name. Windows
- * allows no double quote in a path, so this is a POSIX case.</p>
+ * Sentence E: the path of the pin file cannot be written for `ssh`, so the call did not start. It names the kind and echoes no path, and it names one remedy: a storage (user data) folder
+ * of the editor at a path without that character (gate of G1 E2).
+ * The three roads of the person open it with `Cannot reach "<name>": ` or `Cannot bridge to "<name>": `; the agent's exec and Run
+ * with Secrets say it as it is.
  */
-function oneFileWord(file: string): string {
-  if (file.includes('"')) {
-    return NO_KEY_FILE;
-  }
-  return /\s/.test(file) ? `"${file}"` : file;
+export function pinPathSentence(name: string, kind: PinPathKind): string {
+  return `The saved host key of "${name}" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with ${PIN_PATH_KINDS[kind]}, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.`;
 }
 
-/** The line that `ssh` ends with when the host's key did not pass its check. */
+/**
+ * Sentence F: the `ssh` program could not be asked for its version, so the pinned call did not start. It holds the exit code and no
+ * other part of the program's output, and it names one remedy: look at which `ssh` is first on the PATH and that `ssh -V` answers (gate of G1 E2).
+ */
+export function pinClientSentence(name: string, exitCode: number | null): string {
+  const how = exitCode === null ? 'it did not start, or did not end in time' : `exit code ${exitCode}`;
+  return `CredsForDevs could not read the version of the ssh program on this computer (${how}), so it did not start a connection that has to check the saved host key of "${name}". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.`;
+}
+
+/** The pin of a call whose file was written BEFORE (Run with Secrets: Connect's options made it): the checked value, or sentence E or F. */
+export type ExistingPin = { readonly ok: true; readonly pin?: CheckedPin } | { readonly ok: false; readonly message: string };
+
+/** A pinned call whose client was not asked is refused as one that cannot be read. */
+const NOT_ASKED: PinClient = { kind: 'unreadable', exitCode: null };
+
+/**
+ * Check a pin file that exists already. No file: the call is unpinned, and `client` is not read. A file: the rule of its path first,
+ * then the client's answer (`undefined`, not asked, is refused as unreadable). Pure: it writes and deletes nothing; the caller's own
+ * cleanup deletes the file, as before.
+ */
+export function checkExistingPin(name: string, file: string | undefined, client: PinClient | undefined): ExistingPin {
+  if (file === undefined) {
+    return { ok: true };
+  }
+  const kind = pinPathRefusal(file);
+  return kind === undefined ? withClient(name, file, client ?? NOT_ASKED) : { ok: false, message: pinPathSentence(name, kind) };
+}
+
+function withClient(name: string, file: string, client: PinClient): ExistingPin {
+  if (client.kind === 'unreadable') {
+    return { ok: false, message: pinClientSentence(name, client.exitCode) };
+  }
+  const checked = checkedPin(file, client);
+  return checked.ok ? { ok: true, pin: checked.pin } : { ok: false, message: pinPathSentence(name, checked.kind) };
+}
+
+/** The line that `ssh` ends with when a host's key did not pass its check. */
 const HOST_KEY_REFUSED_LINE = 'Host key verification failed.';
 
+/** The line in which `ssh` names the known-hosts file, and the line of it, that holds the key the host's key does not fit. */
+const OFFENDING_KEY_LINE = /^Offending \S+ key in (.+):\d+$/;
+
+/** What `ssh` prints in place of one backslash (two of them) and in place of the bytes outside printable ASCII (each a backslash and three octal digits). */
+const PRINTED_ESCAPES = /\\\\|(?:\\[0-7]{3})+/g;
+
 /**
- * Whether one run of a PINNED call ended because `ssh` refused the host's key (G1, sentence C). Two things must both hold: the call
- * named a pin file, and `ssh` printed the line `Host key verification failed.` on its stderr, as a whole line.
- *
- * <p><b>Why "pinned" is half of it.</b> An unpinned call has no saved key to speak of: whatever its `ssh` printed, the person is
- * shown the sentences of before. A caller hands in the `knownHostsFile` of its call, which is there only for a pinned entry.</p>
- *
- * <p><b>Measured 2026-11-17</b>, OpenSSH 10.2p1 against a real `sshd` on the loopback, with the words of {@link hostKeyWords}. A
- * host with another key: exit code 255, 15 lines, the last one this line. A pin file that holds no key for the host: two lines, the
- * last one this line. `ssh` ends its own lines with CR LF, also on Linux, so the text is split at both. A host that is down
- * (`Connection refused`), a host that does not answer (`Connection timed out`) and a refused login (`Permission denied`) print no
- * such line. Windows' `ssh.exe` was not measured.</p>
- *
- * <p><b>What it cannot tell apart</b> (measured the same day): a hop of the person's own `ProxyJump` whose key `ssh` refused prints
- * the same line, and a host that passed the check can print it itself. Both read as a refused key of the entry. And it misses a
- * refusal when the person's config says `LogLevel QUIET`: `ssh` then prints nothing. A miss shows the sentences of before; it never
- * says that a host is the saved one.</p>
+ * A file name as it was before `ssh` printed it. `ssh` writes its messages through a filter: a backslash comes out as two, and a byte
+ * outside printable ASCII as a backslash and three octal digits, so `Jörg` is printed `J\303\266rg` and `C:\keys` is printed
+ * `C:\\keys`. Measured 2026-11-18: OpenSSH 10.2p1 on Linux (under `C.UTF-8` and under `LC_ALL=C`), and the backslash also with
+ * `ssh.exe` of OpenSSH_for_Windows 9.5p2.
  */
-export function hostKeyRefused(pinFile: string | undefined, stderr: string): boolean {
-  return pinFile !== undefined && stderr.split(/\r?\n/).includes(HOST_KEY_REFUSED_LINE);
+function unprinted(name: string): string {
+  return name.replace(PRINTED_ESCAPES, (escaped) => (escaped === '\\\\' ? '\\' : Buffer.from(escaped.split('\\').slice(1).map((octal) => Number.parseInt(octal, 8))).toString('utf8')));
+}
+
+/** Whether one line of a stderr is `ssh`'s own word that the key which does not fit stands in THIS file: the whole name, read back from what `ssh` prints. */
+function namesFile(line: string, file: string): boolean {
+  const named = OFFENDING_KEY_LINE.exec(line)?.[1];
+  return named !== undefined && unprinted(named) === file;
+}
+
+/** What a person is told about the host's key after one run of a pinned call: the text of *Install creds on host*, and the text of the bridge socket check. */
+export interface HostKeyTold {
+  readonly install: string;
+  readonly bridge: string;
 }
 
 /**
- * Sentence C: `ssh` refused the host's key on a pinned entry. *Install creds on host* shows it as it is; the bridge socket check
- * opens it with `The bridge to "<name>" is not open: `. Its advice cannot end in an unchecked connection: with a saved key that
- * parses, Connect SSH keeps enforcing it, and asks before it replaces it.
+ * What to tell the person when one run of a PINNED call ended with `ssh`'s line `Host key verification failed.` (G1, sentences C and D).
+ * `undefined`: nothing, the road shows the sentences of before. `pin` is the checked pin of THIS call, and its `file` is the pin
+ * file as it is on the disk; an unpinned call has none and is told nothing, whatever its `ssh` printed.
+ *
+ * <p><b>The rule: a sentence names a cause only when the call saw it.</b> The stderr of a run holds what the `ssh` of the call
+ * printed, what a nested `ssh` of a jump host printed, and what the remote command wrote. The verification line can come from each
+ * of the three. Sentence C says that the entry's host did not present its saved key, so it needs evidence that the `ssh` of THIS
+ * call judged the pin of this call: its line `Offending <type> key in <file>:<n>` with the pin file of the call as the whole name.
+ * Only the `ssh` that was handed that file reads it, and its name ends with a uuid of this call alone. The verification line
+ * without that line is sentence D, which names no host as the cause. Neither line, or the `Offending` line alone: nothing.</p>
+ *
+ * <p><b>Measured 2026-11-18</b>, OpenSSH 10.2p1, the words of a pinned call with `LogLevel=ERROR`, against public `sshd`s (the pin
+ * file held another key; no login was attempted). A host with another key: 15 lines, among them the `Offending` line with the whole
+ * path of the pin file (258 characters in one run) and `:1`, and the verification line last. A path that was written in double
+ * quotes is printed with none. The type in the line is the type of the SAVED key, also when the host presents a key of another
+ * type. `ssh` ends its lines with CR LF, also on Linux, so the text is split at both. The line `Add correct host key in` is cut at
+ * 100 characters and is no evidence. A jump host of a config's `ProxyJump` whose key the nested `ssh` refused: the same 15 lines,
+ * and they name the file that the nested `ssh` read, not the pin file. A config that gives the host another name or port:
+ * `No ED25519 host key is known for <that name>` and the verification line, with no `Offending` line. `ssh.exe` of
+ * OpenSSH_for_Windows 9.5p2: 13 lines, the same `Offending` line.</p>
+ *
+ * <p><b>What it cannot tell.</b> A run whose `ssh` printed nothing (a client that does not keep `LogLevel=ERROR`; a nested `ssh`
+ * under a config that says `LogLevel QUIET`, measured: exit code 255, no text) is told nothing. A remote command that wrote the
+ * verification line reads as sentence D whatever the run's exit code was. `ssh` cuts its own log line at 1024 bytes, and a byte outside
+ * printable ASCII is printed as four characters, so a pin path of about 250 such bytes or more loses the `:<n>` that ends its `Offending`
+ * line: the line then names no file, and a real key change shows sentence D (reported by the review of E2.S3; not run). A miss is
+ * sentence D or nothing; it is never sentence C.</p>
+ */
+export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: string): HostKeyTold | undefined {
+  const lines = stderr.split(/\r?\n/);
+  if (pin === undefined || !lines.includes(HOST_KEY_REFUSED_LINE)) {
+    return undefined;
+  }
+  if (lines.some((line) => namesFile(line, pin.file))) {
+    return { install: refusedHostKeySentence(name), bridge: `The bridge to "${name}" is not open: ${refusedHostKeySentence(name)}` };
+  }
+  return { install: unnamedHostKeySentence(name), bridge: `The bridge to "${name}" could not be checked: ${unnamedHostKeySentence(name)}` };
+}
+
+/**
+ * Sentence C: `ssh` refused the host's key on a pinned entry, and named the pin file of the call ({@link hostKeyTold}). *Install
+ * creds on host* shows it as it is; the bridge socket check opens it with `The bridge to "<name>" is not open: `.
+ *
+ * <p>It does NOT send the person to Connect SSH (the code gate of G1 E2, 2026-11-19; SECURITY; sentence D lost the same advice first). For an
+ * entry that signs in with a password, Connect can go on WITHOUT showing any fingerprint when its key scan (`ssh-keyscan` of the entry's own
+ * host and port, `hostKeyTrust.ts`) answers nothing, and the line Connect then starts (`sshCommand.ts`) names the pin as the person's
+ * known-hosts file ALONE (candidate C4): the system-wide file, `VerifyHostKeyDNS` and `KnownHostsCommand` of the person still count. So
+ * following the advice could send a password to another host. The sentence says what is true (the host did not present its saved key; nothing
+ * was sent), that the saved key is not to be replaced because of it, and what the person does outside the extension: get the server's key
+ * fingerprint from the server's owner. It names no way in the product that could connect unchecked.</p>
  */
 export function refusedHostKeySentence(name: string): string {
-  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. If this server was rebuilt, use Connect SSH on this entry: it shows the new key and asks before it replaces the saved one. If it was not, do not connect.`;
+  return `"${name}" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server's owner. If it was not, do not connect.`;
+}
+
+/**
+ * Sentence D: the run of a pinned call ended with the verification line, and `ssh` did not name the pin file of the call
+ * ({@link hostKeyTold}). It names no host as the one that changed and never tells the person to replace a saved key. The bridge
+ * socket check opens it with `The bridge to "<name>" could not be checked: `: the tunnel can be up.
+ *
+ * <p>It does NOT send the person to Connect SSH (the code gate of G1 E2, 2026-11-19; security). Connect's own line still accepts the
+ * person's other trust sources (candidate C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), and this sentence
+ * is shown exactly when the call's `ssh` did NOT judge the saved key of this entry (a jump host, a renamed host or port in the config, a
+ * remote text). Connect could then reach another host through one of those sources and, for an entry that signs in with a password,
+ * send it there with the saved key never checked. The advice is what the person can do outside the extension: the host's key fingerprint
+ * from the server's owner, and the person's own ssh config (a `HostName` or `Port` that renames the host, a jump host).</p>
+ */
+export function unnamedHostKeySentence(name: string): string {
+  return `The connection to "${name}" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Check this host's key fingerprint with the server's owner, and check your own ssh config for a HostName or Port that renames this host and for a jump host.`;
 }
 
 export type PinVerdict = 'first-contact' | 'match' | 'mismatch' | 'unreachable';
