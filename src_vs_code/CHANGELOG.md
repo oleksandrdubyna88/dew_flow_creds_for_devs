@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-11-23 — Security — a call without a terminal trusts only a saved host key; the search stays in reach and is green
+
 ### Added — the search stays in reach and its filter stays in view
 
 - The search is pinned in the title bar: a green magnifier opens *Filter Credentials…* from anywhere in the tree, and *Clear Filter* sits beside it while a filter is on.
