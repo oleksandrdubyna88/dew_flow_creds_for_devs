@@ -14,16 +14,17 @@
 //          of the probe and of the mode check, and no sentence D is shown.
 // The control, by hand (`hostKeyWords` made to answer `accept-new`), turns leg 2 red: K2 then logs the logins.
 //
-// Linux only: the end of a server reads `/proc`. Where `CI=true` a missing sshd FAILS. The world's stand-ins that stay: `vscode`, and
-// `resolveExecAuth`, which hands a key the run named by its path. Teardown, per leg: the bridges, then the server by the bounded recipe of
-// the stories document (its descendants listed while it lives, the clients, then the rest by pid and start time, then the listener), then the
-// forwarded socket by its exact path; the section's folder last.
+// Every server is started by the serving launcher of `itestServing.cjs`, with the run's sshd and config lines (`CREDS_ITEST_SSHD`,
+// `CREDS_ITEST_SSHD_CONFIG` of `lib/sshdRun.cjs`; with neither, the system's sshd, as CI runs it). Linux only: the end of a server reads
+// `/proc`. Where `CI=true` a missing sshd FAILS. The world's stand-ins that stay: `vscode`, and `resolveExecAuth`, which hands a key the run
+// named by its path. Teardown, per leg: the bridges, then the server by `endServer` (its descendants listed while it lives, the clients, then
+// the rest by pid and start time, then the listener), then the forwarded socket by its exact path; the section's folder last.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('node:child_process');
-const { SSHD, launch, endChild, freePort, listeningFailure } = require('./itestSshd.cjs');
+const { SSHD, endChild } = require('./itestSshd.cjs');
+const { startServingSshd, endServer, alive, descendantsOfListener } = require('./itestServing.cjs');
 const { tool, within, settledAfter } = require('./itestNoSharing.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
@@ -63,153 +64,6 @@ function productOf(out) {
 /** Sentence C of an entry's name, and the bridge's form of it: both are read back from the product (E1.S3), never typed here. */
 const sentenceC = (product, name) => product.refusedHostKeySentence(name);
 const bridgeForm = (product, name) => `The bridge to "${name}" is not open: ${product.refusedHostKeySentence(name)}`;
-
-/** The config of a serving sshd. `penalties` false leaves `PerSourcePenalties no` out, for an sshd older than 9.8, which has no penalties. */
-function servingConfig(rig, dir, hostKey, port, penalties) {
-  return [
-    `ListenAddress 127.0.0.1:${port}`,
-    `HostKey ${hostKey}`,
-    `AuthorizedKeysFile ${rig.authorizedKeys}`,
-    `PidFile ${path.join(dir, 'sshd.pid')}`,
-    'UsePAM no',
-    'StrictModes no',
-    'PasswordAuthentication no',
-    'KbdInteractiveAuthentication no',
-    // `Connection from …` is a VERBOSE line: it is how K2's log shows that leg 2 reached it (T37). `Accepted publickey` is there at any level.
-    'LogLevel VERBOSE',
-    // Measured on sshd 10.2 (2026-11-17): with the default, a run of refused host keys makes the listener refuse every next connection.
-    ...(penalties ? ['PerSourcePenalties no'] : []),
-    '',
-  ].join('\n');
-}
-
-/** One start of the listener, waited for (10 s) by its "Server listening" line. */
-async function startOnce(rig, dir, hostKey, port, penalties) {
-  const config = path.join(dir, 'sshd_config');
-  fs.writeFileSync(config, servingConfig(rig, dir, hostKey, port, penalties));
-  const sshd = launch(rig.scope, SSHD, ['-D', '-e', '-f', config]);
-  // The listener's identity, taken at once: the pid and the start time it has from the fork on. Once `sshd.exited` its pid may be another process's.
-  const identity = { pid: sshd.child.pid, start: startOf(sshd.child.pid) };
-  const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
-  return { sshd, identity, port, failure: await listeningFailure(sshd, listening, Date.now() + 10_000) };
-}
-
-/**
- * One `sshd -D -e` that serves EVERY connection to 127.0.0.1:`port` (a free port when none is given), in a folder `name` of its own: the
- * multi-connection mode of the stories document, a starter of this section because `startSshd` (`itestSshd.cjs`) runs `sshd -d`, which
- * serves one connection. Once more without `PerSourcePenalties no` when this sshd does not know the word, and once more after 300 ms when the
- * port is still held (K2 on K1's port: the same port; a free port taken here: a fresh one). `launch` registers the listener's end with the scope; `endServer` is the leg's own, first.
- */
-async function startServingSshd(rig, name, hostKey, port) {
-  const dir = path.join(rig.dir, name);
-  fs.mkdirSync(dir);
-  let chosen = port ?? (await freePort());
-  let penalties = true;
-  let started = await startOnce(rig, dir, hostKey, chosen, penalties);
-  if (started.failure !== undefined && /PerSourcePenalties/.test(started.sshd.stderr)) {
-    console.log(`info  ${name}: this sshd does not know PerSourcePenalties (before 9.8 it has none); started without the line`);
-    await endChild(started.sshd);
-    penalties = false;
-    started = await startOnce(rig, dir, hostKey, chosen, penalties);
-  }
-  if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
-    await endChild(started.sshd);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    chosen = port ?? (await freePort());
-    started = await startOnce(rig, dir, hostKey, chosen, penalties);
-  }
-  return started;
-}
-
-/** The start time of a running process (field 22 of `/proc/<pid>/stat`), or `undefined` when it does not run or is a zombie. */
-function startOf(pid) {
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' '); // fields[0] is field 3, the state
-    return fields[0] === 'Z' ? undefined : fields[19];
-  } catch {
-    return undefined;
-  }
-}
-
-/** Whether `one` (`{ pid, start }`) still runs as the SAME process: a reused pid has another start time. */
-const alive = (one) => one.start !== undefined && startOf(one.pid) === one.start;
-
-/** Every pid below `pid` in the table `children` (parent → its children), each once. */
-function below(children, pid) {
-  return (children.get(pid) ?? []).flatMap((child) => [child, ...below(children, child)]);
-}
-
-/**
- * Every process below `root` now, with its start time: `ps -e -o pid=,ppid=`, walked from `root`. Answers `{ list, error }`: a `ps` that
- * failed is an `error` (the list is then empty and proves nothing), never a quiet empty list.
- */
-async function descendantsOf(root) {
-  const table = await new Promise((resolve) => {
-    // The PATH lookup is on purpose, as `tool` does: `ps` of the machine the run is on.
-    execFile('ps', ['-e', '-o', 'pid=,ppid='], { timeout: 5_000 }, (error, stdout) => resolve(error ? { error: String(error) } : { text: String(stdout) })); // NOSONAR: a CI rig
-  });
-  if (table.error !== undefined) {
-    return { list: [], error: `ps failed: ${table.error}` };
-  }
-  const children = new Map();
-  for (const line of table.text.trim().split('\n')) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-    children.set(ppid, [...(children.get(ppid) ?? []), pid]);
-  }
-  return { list: below(children, root).map((pid) => ({ pid, start: startOf(pid) })).filter((one) => one.start !== undefined), error: undefined };
-}
-
-/** A signal to every one of `list` that still runs as the same process. */
-function signalAll(list, signal) {
-  for (const one of list.filter(alive)) {
-    try {
-      process.kill(one.pid, signal);
-    } catch {
-      // it ended between the look and the signal
-    }
-  }
-}
-
-const noneAlive = (ms, list) => within(ms, () => !list.some(alive));
-
-/**
- * What the listener of `server` forked, now, as `descendantsOf` answers: `{ list, error }`. Only while it is still the SAME listener: once its
- * `sshd` exited (its pid may be reused) nothing is listed, and a listener that was gone by the end of the `ps` snapshot (the table may then
- * be a foreign process's) gives an empty list too; the processes the leg recorded while it ran are the caller's `taken`.
- */
-async function descendantsOfListener(server) {
-  const same = () => !server.sshd.exited && alive(server.identity);
-  if (!same()) {
-    return { list: [], error: undefined };
-  }
-  const seen = await descendantsOf(server.identity.pid);
-  return same() ? seen : { list: [], error: seen.error }; // a changed listener lists nothing, but a failed `ps` stays a failure
-}
-
-/**
- * Ends a serving sshd and everything it forked, bounded: (a) its descendants are listed now (`descendantsOfListener`: never the descendants
- * of a pid that sshd no longer has), beside `taken` (a list made earlier, before a client was ended: afterwards a remote command is no
- * descendant any more); (b) the clients still running are ended by their recorded pids;
- * (c) at most 3 s for the rest to go with them; (d) TERM to what is left, at most 2 s, then KILL, at most 2 s, each only to a pid whose start
- * time is still the recorded one; (e) the listener, by `endChild`. `taken` is `{ list, error }` of an earlier `descendantsOf`. Answers
- * `{ list, error }`, for T21 and T39: an `error` of either listing makes the check fail. Never throws.
- */
-async function endServer(server, clients, taken) {
-  const now = await descendantsOfListener(server);
-  const list = [...taken.list, ...now.list];
-  const error = taken.error ?? now.error;
-  signalAll(clients, 'SIGTERM');
-  if (!(await noneAlive(3_000, list))) {
-    signalAll(list, 'SIGTERM');
-    if (!(await noneAlive(2_000, list))) {
-      signalAll(list, 'SIGKILL');
-      await noneAlive(2_000, list);
-    }
-  }
-  await endChild(server.sshd);
-  return { list, error };
-}
 
 /**
  * Removes the forwarded socket of a bridge by its EXACT path: `sshd` makes it where the product names it (`/tmp/creds-<user>-<id>.sock`,

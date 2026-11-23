@@ -3,14 +3,22 @@
 // starts one on a fresh loopback port, `endChild` ends a child by its pid, and `launch` is the spawn both use. `login`
 // (section 7's, added with E3.4) is one real `ssh` against its own run, answered from the stub's globals. POSIX only —
 // the callers skip on Windows.
+//
+// The `sshd` of every start here is the run's (G1, E3.S2): `RUN`, read ONCE when this module loads, from the two parameters of
+// `lib/sshdRun.cjs` (`CREDS_ITEST_SSHD`, `CREDS_ITEST_SSHD_CONFIG`); with neither it is the system's sshd and no line is added. Both
+// starters of the real runs write their config with that module: `startSshd` here (`sshd -d`), and the serving launcher of
+// `itestServing.cjs` (`sshd -D -e`), which imports `RUN` from here. `test/itestInstrument.test.ts` (test 33) holds it.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
+const { sshdRunOf, oneConnectionConfig } = require('./lib/sshdRun.cjs');
 
-const SSHD = '/usr/sbin/sshd';
+/** The run's sshd and the lines it adds to every config (`lib/sshdRun.cjs`). A parameter that cannot be used throws here, naming it. */
+const RUN = sshdRunOf(process.env);
+const SSHD = RUN.executable;
 
 /** The owned folder every child started here gets as its `TMPDIR`, `TEMP` and `TMP`; the harness sets it once, in `main`. */
 let childTemp;
@@ -88,8 +96,8 @@ function freePort() {
  *
  * <p>`options` (E1.6): `address` (default `127.0.0.1`; the bridged rig puts its destination on `127.0.0.2`, so two legs of one call have two hosts),
  * `port` (a fixed one, for a leg that starts a SECOND sshd on the address of the first), and `first`: config lines that go BEFORE the defaults,
- * because `sshd` keeps the first value of a keyword, so a rig that offers passwords says `PasswordAuthentication yes` there. `extraConfig` still
- * goes after them, as it always did. The known-hosts line names the address.</p>
+ * because `sshd` keeps the first value of a keyword, so a rig that offers passwords says `PasswordAuthentication yes` there. The lines of the
+ * run (`RUN.lines`, E3.S2) come after the defaults, and `extraConfig` after them, as it always did. The known-hosts line names the address.</p>
  */
 async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfig = [], options = {}) {
   const address = options.address ?? '127.0.0.1';
@@ -98,23 +106,9 @@ async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfi
   const hostPublic = fs.readFileSync(`${hostKeyPath}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
   fs.writeFileSync(knownHosts, `[${address}]:${port} ${hostPublic}\n`);
   const config = path.join(sshdDir, 'sshd_config');
-  // Absolute paths only: sshd refuses to start from a relative one.
-  fs.writeFileSync(
-    config,
-    [
-      `ListenAddress ${address}:${port}`,
-      ...(options.first ?? []),
-      `HostKey ${hostKeyPath}`,
-      `AuthorizedKeysFile ${authorizedKeys}`,
-      `PidFile ${path.join(sshdDir, 'sshd.pid')}`,
-      'UsePAM no',
-      'StrictModes no',
-      'PasswordAuthentication no',
-      'KbdInteractiveAuthentication no',
-      ...extraConfig,
-      '',
-    ].join('\n'),
-  );
+  // Absolute paths only: sshd refuses to start from a relative one. The text is `lib/sshdRun.cjs`'s, with the run's lines.
+  const given = { address, port, first: options.first ?? [], hostKeyPath, authorizedKeys, pidFile: path.join(sshdDir, 'sshd.pid'), extra: extraConfig };
+  fs.writeFileSync(config, oneConnectionConfig(RUN, given));
   const sshd = launch(scope, SSHD, ['-d', '-e', '-f', config]);
   const listening = new RegExp(`Server listening on ${regexpLiteral(address)} port ${port}`);
   const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
@@ -235,4 +229,4 @@ async function checkedPinOf(out, file) {
   return checked.pin;
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure, checkedPinOf };
+module.exports = { SSHD, RUN, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure, checkedPinOf };
