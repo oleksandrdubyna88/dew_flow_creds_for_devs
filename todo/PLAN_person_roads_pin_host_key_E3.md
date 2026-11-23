@@ -375,6 +375,12 @@ legs, Opus reviews.
   2. **The run.** The rows of the rig in ONE run of the script, and M10, M11 and M13 on the same commit, through the committed instrument, from
      a tree with no modified tracked file. The run records `git rev-parse HEAD`, the empty answer of
      `git status --porcelain --untracked-files=no`, and the identities of what ran. The commit is a descendant of E3.S1's and of E3.S2's.
+     **The run starts from a fresh checkout of that commit** (`git worktree add --detach <owned folder> <commit>`, then `npm ci` in its
+     `src_vs_code`), so an untracked file of a working tree cannot take part in it. The run also records the answer of
+     `git status --porcelain --untracked-files=all` in that checkout, which is empty (ignored files, such as `node_modules` and the
+     build's output, are made by `npm ci` and the build from the commit). What the run uses from outside the tree (the unpacked `sshd`,
+     the older client, the Windows client) is named by path, version and SHA-256 in the identities. (The plan round on this document,
+     finding 1: a check with `--untracked-files=no` alone does not see an untracked input.)
   3. **§10 in the parent**, before `## Epics`, per row: the four numbers of decision 15 where the row counts them, the date, the versions of the
      client and of the counterpart, the commit, the identities, and for M10, M11 and M13 where they ran. A row that was not measured is "not
      passed", and E3 is then not done.
@@ -399,6 +405,16 @@ decision 17's order holds. A code-gate fix that can affect the shipped extension
 After E3's merge: the feature review, once, from a checkout of `main` that holds E1, E2 and E3, with `baseRef` `4392a272` (§9, step 10); then
 the release of G1's next extension patch with the owner's word, only as §9, step 11 says (the tree of `src_vs_code` of the released commit is
 the tree that E3 measured, the vsix's hash named); then the promotion of the parent and its stories documents together.
+
+**What step 11 means for the release commit (the plan round on this document, finding 0; consult `e7464abb`).** The release commit of
+release-please always changes the tree of `src_vs_code` in more than the CHANGELOG: the release of 1.23.0 changed `RELEASES.md`,
+`package.json` and `package-lock.json` (`git diff --name-only extension-v1.23.0^ extension-v1.23.0 -- src_vs_code`, read 2026-11-23), and
+the extension reads its own version at run time (`extension.ts:916`). So the trees are never the same, and step 11's own clause applies every
+time: the whole set runs again on `main`. In this repository the merge of the release pull request does not cut the tag; the next run of
+`release-please.yml` does. So the order is: the release pull request is merged; the whole set runs once more, as E3.S10 runs it (a fresh
+checkout, the identities), on that merge commit of `main`; only when it passes is `release-please.yml` run again to cut the tag; and the
+release names that commit, the vsix's hash and the identities of that run. This is the existing clause of step 11, not a change of it; a
+release that skipped this run would need a change of the plan (an entry of the ledger) first.
 
 The commit that adds this document also updates the parent's `## Epics`, E3, *Stories* ("not written yet"), and adds this document's row to
 `todo/README.md` (`planning-docs.md`: each stories document gets its own row, committed with the file it links).
