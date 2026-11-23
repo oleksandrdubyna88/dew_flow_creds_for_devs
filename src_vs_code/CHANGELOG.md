@@ -21,7 +21,7 @@ printed: *Install creds on host* goes on to its question, and the socket check g
 ends with 255 when it refuses a host's key, and with the exit code of the remote command when that command ran (the manual,
 `ssh(1)`), so a run that ended with 0 was not refused. A run that did not end with 0 is told as in 1.23.0: a refused host key,
 and also a remote command that prints that line and ends with another code than 0, which still gets the second message. So is a
-run that has no exit code (the time limit ended it). An entry with no saved host key is told none of this, as before.
+run that has no exit code (a signal ended it, for example the time limit). An entry with no saved host key is told none of this, as before.
 
 Nothing that `ssh` is given changes: the same words, and the same one file with the saved key. So what `ssh` accepts and refuses
 is as in 1.23.0. What changes is one message, which was shown for a run that `ssh` had not refused.

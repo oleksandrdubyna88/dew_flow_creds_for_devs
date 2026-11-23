@@ -362,7 +362,7 @@ export interface HostKeyTold {
  *
  * <p><b>The exit code is asked first (C19; the plan's §3.12, part 4).</b> A run that ended with 0 is told NOTHING, whatever its text
  * holds, sentence C included, and the road goes on as for a run without the line. `ssh` ends with 255 when it refuses a host's key
- * (measured, below), and with the exit code of the remote command when that command ran (read in `ssh(1)`; not run for this function).
+ * (measured by hand: the plan's §3.5 and §3.12, E2.S3's J4; held by leg 2 of the smoke), and with the exit code of the remote command when that command ran (read in `ssh(1)`; not run for this function).
  * So a run that ended with 0 is one whose `ssh` took the host's key, logged in and ran the remote command to its end: a verification
  * line in its text was written by the remote side (a profile of the login, or the command), and no line of it is `ssh`'s refusal of
  * this call's pin. The order of the questions: no pin, nothing; exit code 0, nothing; no verification line, nothing; the evidence,
