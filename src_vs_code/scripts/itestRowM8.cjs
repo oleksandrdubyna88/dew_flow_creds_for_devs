@@ -88,4 +88,4 @@ async function rowM8(check, top) {
   await rig.runLeg(check, top, 'M8', SPEC.name);
 }
 
-module.exports = { rowM8, legs };
+module.exports = { rowM8, legs, writeCommand };

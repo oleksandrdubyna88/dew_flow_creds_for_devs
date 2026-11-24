@@ -51,9 +51,11 @@ const namesPinFile = (stderr, file) => file !== undefined && new RegExp(String.r
 /** The compiled modules this section reads, loaded ONCE before any world: `world()` evicts every module of `out/` from the require cache. */
 function productOf(out) {
   const load = (file) => require(path.join(out, file));
-  // `personPin.js` imports no `vscode` itself, but its chain does (`hostKeyTrust.js`): it is loaded under the stub, and FIRST, because that load evicts the modules of `out/`.
-  const { unusablePinSentence, pinWriteFailedSentence } = load(path.join('test', 'vscodeStub.js')).loadWithVscode('../personPin', {});
+  // `personPin.js` imports no `vscode` itself, but its chain does (`hostKeyTrust.js`): both are loaded under the stub, and FIRST, because that load evicts the modules of `out/`.
+  const [personPin, trust] = load(path.join('test', 'vscodeStub.js')).loadEachWithVscode(['../personPin', '../hostKeyTrust'], {});
+  const { unusablePinSentence, pinWriteFailedSentence } = personPin;
   return {
+    knownHostsPath: trust.knownHostsPath, // E3.S7 (D5): the complete pathname of a pin file, as the product makes it
     unusablePinSentence, // sentence A (E3.S4's record of §3.5)
     pinWriteFailedSentence, // sentence B
     ...load('sshBridge.js'), // sweepCommand, modeCheckCommand, interpretSocketProbe, isOwnerOnlyMode
@@ -524,6 +526,11 @@ async function pinnedLegs(check, rig) {
       await require('./itestRowM2.cjs').rowM2(check, top);
       await require('./itestRowM3.cjs').rowM3(check, top);
       await require('./itestRowM8.cjs').rowM8(check, top);
+      // E3.S7: the pin file's path (M7, M12) and the agent's exec (M14), then the scan of every recorded argv of the section for `/dev/null` as a known-hosts file.
+      await require('./itestRowM7.cjs').rowM7(check, top);
+      await require('./itestRowM12.cjs').rowM12(check, top);
+      await require('./itestRowM14.cjs').rowM14(check, top);
+      require('./itestRowM12.cjs').devNullScan(check, top);
     }
     await recordIdentities(check, pinned, real);
   }

@@ -201,9 +201,10 @@ const observedModule = (runner, questions) => ({ ...runner, runSshExec: observed
 /**
  * The gate (s 1.8): at the FIRST run of each call (a run that names a pin file not seen before) it takes a sample of the folder, which is the call's
  * arrival; with `hold` it then keeps that run from the real runner until the leg releases that pin file. It changes no argv, no environment and no
- * outcome, and a held run cannot time out: the runner's limit starts inside the real runner.
+ * outcome, and a held run cannot time out: the runner's limit starts inside the real runner. E3.S7 (D1): `notify` (the leg's `onPin`, once per distinct pin file) is called
+ * synchronously at that first run, BEFORE the real runner is called.
  */
-function makeGate(product, sampler, hold) {
+function makeGate(product, sampler, hold, notify = () => undefined) {
   const waiting = new Map();
   const seen = new Set();
   const arrivals = [];
@@ -214,6 +215,7 @@ function makeGate(product, sampler, hold) {
       if (pin !== undefined && !seen.has(pin)) {
         seen.add(pin);
         arrivals.push({ pin, at: sampler.take('call').t });
+        notify(pin);
         if (hold) {
           await new Promise((resolve) => waiting.set(pin, resolve));
         }
@@ -228,6 +230,17 @@ function makeGate(product, sampler, hold) {
     return resolve !== undefined;
   };
   return { wrap, arrivals, held: () => [...waiting.keys()], waitHeld: (count, ms) => within(ms, () => waiting.size >= count), release, releaseAll: () => [...waiting.keys()].forEach(release) };
+}
+
+/** The leg's `onPin` (E3.S7, D1), called ONCE per distinct pin file whichever of the gate and the spawner sees it first; with none, nothing is called. */
+function pinNotifier(onPin) {
+  const done = new Set();
+  return (pin) => {
+    if (onPin !== undefined && !done.has(pin)) {
+      done.add(pin);
+      onPin(pin);
+    }
+  };
 }
 
 /** What `<storage>/keys/<pid>/` holds: each name with its SHA-256 and text (in memory only: a stored key is there while a call lives). A file that went away meanwhile is not listed. */
@@ -259,8 +272,12 @@ function makeSampler(leg) {
 }
 
 /** Wraps the product's bridge spawner: records each bridge's argv, spawn and end times and exit code; the child itself is the product's, so `kill` works. */
-function recordingSpawner(leg, spawner, bridges, sampler) {
+function recordingSpawner(leg, spawner, bridges, sampler, notify = () => undefined) {
   return (command, argv, env) => {
+    const named = sec.pinOf(leg.product, argv);
+    if (named !== undefined) {
+      notify(named); // E3.S7 (D1): the leg's `onPin`, before the bridge's client starts
+    }
     const entry = { argv: [...argv], remote: sec.remoteOf(argv), spawnedAt: sampler.take('spawn').t, exitedAt: null, exitCode: null };
     bridges.push(entry);
     if (entry.remote !== undefined) {
@@ -276,14 +293,15 @@ function recordingSpawner(leg, spawner, bridges, sampler) {
  * A NEW world of the three roads for the leg (so the asker is cold): the real resolve over the vault, the real asker, the observer of the `-V`
  * runs, the recording spawner, the gate when asked. Answers `roads`: `w` (the world), `outcomes`, `bridges`, `questions`, `gate`, `sampler`, `marks`.
  */
-function openRoads(leg, port, { credential, answer, gate = false }) {
+function openRoads(leg, port, { credential, answer, gate = false, onPin }) {
   const { product } = leg;
   const questions = [];
   const bridges = [];
   const reported = [];
   const sampler = makeSampler(leg);
-  const gateOf = makeGate(product, sampler, gate);
-  const spawner = recordingSpawner(leg, product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }), bridges, sampler);
+  const notify = pinNotifier(onPin);
+  const gateOf = makeGate(product, sampler, gate, notify);
+  const spawner = recordingSpawner(leg, product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }), bridges, sampler, notify);
   const opened = sec.openLeg(leg, port, {
     realResolve: true,
     vault: vaultOf(leg, credential),
@@ -299,6 +317,22 @@ function openRoads(leg, port, { credential, answer, gate = false }) {
   leg.scope.after(() => gateOf.releaseAll());
   leg.scope.after(() => opened.w.bridges.dispose());
   leg.roads = { w: opened.w, outcomes: opened.outcomes, bridges, questions, reported, gate: gateOf, sampler, marks: [], credential, state: 'cold', port };
+  return leg.roads;
+}
+
+/**
+ * A NEW world of the agent's exec for the leg (E3.S7, D2; M14): the product's own `sshDepsFor` over the same host as the roads, the entry pinned to `leg.pin` at `port`, the person's key named by
+ * its path, `./sshExecRunner` observed (the `-V` runs timed, every other run's argv and outcome kept). Answers a `roads`-shaped object, so `mark`, `countsOf` and `evidence` take it as it is.
+ */
+function openExec(leg, port) {
+  const { product } = leg;
+  const questions = [];
+  const outcomes = [];
+  const recorded = sec.recordingRunner(product.runner, outcomes);
+  const runner = { ...product.runner, runSshExec: (argv, options) => (rec.isQuestion(argv) ? product.runner.runSshExec(argv, options) : recorded.runSshExec(argv, options)) };
+  const world = product.world.execWorld({ host: '127.0.0.1', user: me, port, hostKey: leg.pin, storageDir: leg.storage, vault: vaultOf(leg, 'named'), mocks: { './sshExecRunner': observedModule(runner, questions) } });
+  const sampler = makeSampler(leg);
+  leg.roads = { w: { said: world.said, asked: [], notes: world.notes }, outcomes, bridges: [], questions, reported: [], gate: { arrivals: [] }, sampler, marks: [], credential: 'named', state: 'cold', port, run: (command) => world.run(command) };
   return leg.roads;
 }
 
@@ -620,6 +654,7 @@ function evidence(leg, roads, servers, fields = {}) {
 const ROW_FILES = {
   M1: () => require('./itestRowM1.cjs'), M2: () => require('./itestRowM2.cjs'), M3: () => require('./itestRowM3.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'),
   M8: () => require('./itestRowM8.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs'),
+  M7: () => require('./itestRowM7.cjs'), M12: () => require('./itestRowM12.cjs'), M14: () => require('./itestRowM14.cjs'),
 };
 
 /** The rig of the leg, rebuilt in the leg process from `given.json` (the parent made the folder). */
@@ -660,7 +695,7 @@ async function legMain(folder) {
 }
 
 module.exports = {
-  runLeg, rowsTop, legRig, observedModule, counterpart, endCounterpart, openRoads, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, handConfig, viaReal, masterOf, masterCheck, endMaster, listeningNow, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
+  runLeg, rowsTop, legRig, observedModule, counterpart, endCounterpart, openRoads, openExec, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, handConfig, viaReal, masterOf, masterCheck, endMaster, listeningNow, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
   // what a row reads of section 10's helpers and of the stand-in of the install, so a row imports this file and no other of E3.S4
   sec, standIn, me, readFolder, within, tool, alive,
 };

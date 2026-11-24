@@ -64,7 +64,7 @@ async function leave(ctx, spec, given, roads, servers, counts, extra) {
   await roads.w.bridges.dispose();
   await rig.nothingLeft(ctx.check, leg.label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(ctx.check, leg, servers.at(-1), servers.at(-1).name.toUpperCase());
-  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, extra.config, counts, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null });
+  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, extra.config, counts, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null, ...extra.more });
 }
 
 /** M2.3: K2 logged a connection for each connection start, 0 accepted logins and 0 authentication attempts, and no line of the log is one that only a client past the key check causes. */
@@ -73,8 +73,11 @@ function k2Counts(ctx, label, counts, log) {
   ctx.check(`${label}: K2 logged a connection for each connection start, 0 accepted logins and 0 authentication attempts (M2.3)`, wanted > 0 && log.connections >= wanted && log.accepted.length === 0 && log.authAttempts === 0 && !log.lines.some((line) => rec.AUTH_ATTEMPT.test(line)), JSON.stringify({ connectionStarts: wanted, connections: log.connections, accepted: log.accepted, attempts: log.authAttempts }));
 }
 
-/** The mismatch (§2.2): K2 answers at the entry's address from the start; the three roads are refused. */
-async function mismatch(ctx, spec) {
+/**
+ * The mismatch (§2.2): K2 answers at the entry's address from the start; the three roads are refused. E3.S7 (D4): `more(ctx, roads, counts, servers)` is called after M2.5 and before the control;
+ * the fields it answers join the evidence. With none, the leg is as it was.
+ */
+async function mismatch(ctx, spec, more) {
   const { check, info } = ctx;
   const leg = ctx.rig;
   const label = leg.label;
@@ -93,12 +96,13 @@ async function mismatch(ctx, spec) {
   k2Counts(ctx, label, counts, counts.counterparts[0]);
   const socket = await shared.socketChecks(ctx, label, roads, 'M2.4', SOCKET_WORDS);
   shared.standInGuard(ctx, label, given, roads, 'M2.5');
+  const moreFields = more === undefined ? {} : await more(ctx, roads, counts, [k2]);
   const control = await controlOrWitness(ctx, spec, k2, k2.port);
-  await leave(ctx, spec, given, roads, [k2], counts, { ...made, ...control, bridgeStderr, socket });
+  await leave(ctx, spec, given, roads, [k2], counts, { ...made, ...control, bridgeStderr, socket, more: moreFields });
 }
 
-/** The switch (§2.3): K1 answers the probe, the install's question is held, K1 is ended whole and K2 takes its port; the install run is refused. */
-async function switchLeg(ctx, spec) {
+/** The switch (§2.3): K1 answers the probe, the install's question is held, K1 is ended whole and K2 takes its port; the install run is refused. E3.S7 (D4): `more` is called after M2.s6, as in `mismatch`. */
+async function switchLeg(ctx, spec, more) {
   const { check, info } = ctx;
   const leg = ctx.rig;
   const label = leg.label;
@@ -128,8 +132,9 @@ async function switchLeg(ctx, spec) {
   shared.standInGuard(ctx, label, given, roads, 'M2.s5', 'the stand-in\'s marker was not written');
   check(`${label}: the install's click ended within 60 s after the answer, and what it showed was recorded word for word (M2.s6)`, run.ended && run.shown.length >= 1, JSON.stringify(run.shown));
   info(`${label}: what the install showed after the answer: ${JSON.stringify(run.shown)}`);
+  const moreFields = more === undefined ? {} : await more(ctx, roads, counts, [k1, k2]);
   const control = await controlOrWitness(ctx, spec, k2, k1.port);
-  await leave(ctx, spec, given, roads, [k1, k2], counts, { ...made, ...control, shown: run.shown, switchMark: run.switchMark });
+  await leave(ctx, spec, given, roads, [k1, k2], counts, { ...made, ...control, shown: run.shown, switchMark: run.switchMark, more: moreFields });
 }
 
 const legs = Object.fromEntries(Object.values(SPECS).map((spec) => [spec.name, (ctx) => (spec.scenario === 'mismatch' ? mismatch(ctx, spec) : switchLeg(ctx, spec))]));
@@ -141,4 +146,4 @@ async function rowM2(check, top) {
   }
 }
 
-module.exports = { rowM2, legs };
+module.exports = { rowM2, legs, mismatch, switchLeg };

@@ -426,6 +426,57 @@ export function click(w: World, command: 'openRemoteBridge' | 'closeRemoteBridge
   return Promise.resolve(handler(ROW));
 }
 
+/** What the exec world needs of the product's `sshUseActions`: the deps that production assembles and the action's own `run`. */
+interface SshUseActions {
+  sshDepsFor(parts: Record<string, unknown>): unknown;
+  sshExecAction(deps: unknown): { run(ctx: Record<string, unknown>, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> };
+}
+
+/** The agent's exec over the host of {@link world} (G1, E3.S7, M14): the same entry, saved key and vault, and no registered command. */
+export interface ExecWorld {
+  /** The agent's `ssh:exec` through its own `run`, off a bridge (no `bridge` in the context): the status and the body that the broker would send. */
+  run(command: string): Promise<{ status: number; body: unknown }>;
+  /** Every line the agent's journal took (`deps.note`), and every line of the diagnostic log. */
+  notes: string[];
+  /** Every message, quick pick and log line, in the order it was shown. */
+  said: Said[];
+  /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey`. */
+  replaceHostKey(hostKey: string | undefined): void;
+}
+
+/**
+ * The agent's exec (G1, E3.S7, M14): the REAL `sshUseActions` is loaded under the stubbed `vscode`, its deps are assembled by the product's own
+ * `sshDepsFor` (as production does: the asker is the real `windowPinClient`, the resolve the real `resolveExecAuth`), over the SAME host as {@link world}
+ * (`detailsOf`, `storageOf`: the entry, its saved key and its vault). Only `mocks` (by request string, `./sshExecRunner` for a leg that times the question)
+ * stand in. `sshAgent` has no socket and `relays` is absent: it is read only on the terminal's road.
+ */
+export function execWorld(parts: Parts = {}): ExecWorld {
+  const w = emptyWorld(parts);
+  const entry = { details: detailsOf(parts) };
+  w.replaceHostKey = (hostKey) => {
+    entry.details = patched(entry.details, { hostKey });
+  };
+  const notes: string[] = [];
+  const say = (text: string): void => void (notes.push(text), w.said.push({ kind: 'log', text, at: performance.now() }));
+  const mod = loadWithVscode<SshUseActions>('../sshUseActions', vscodeStub(w, parts), parts.mocks ?? {});
+  const signal = new AbortController().signal;
+  const deps = mod.sshDepsFor({
+    storage: storageOf(w, parts, entry),
+    storageDir: parts.storageDir ?? '/storage',
+    agentServer: { signal, acquireExecSlot: (): (() => void) => () => undefined, note: say },
+    sshAgent: { socketPath: undefined, servesKeyForEntity: (): boolean => false },
+    log: { info: (_source: string, text: string): void => say(text), warn: (_source: string, text: string): void => say(text), error: (_source: string, text: string): void => say(text) },
+    onMutated: (): void => undefined,
+  });
+  const action = mod.sshExecAction(deps);
+  return {
+    run: (command) => action.run({ accountId: ROW.accountId, entityId: ROW.node.id, entityName: ROW.node.name, signal }, { command }),
+    notes,
+    said: w.said,
+    replaceHostKey: (hostKey) => w.replaceHostKey(hostKey),
+  };
+}
+
 /** Let every promise callback that is ready run: the stand-ins settle on promise callbacks, never on a timer. */
 export async function settled(): Promise<void> {
   for (let turn = 0; turn < 5; turn += 1) {
