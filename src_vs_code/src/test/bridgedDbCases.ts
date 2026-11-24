@@ -38,8 +38,6 @@ const CONSTRAINTS: Readonly<Record<string, (client: string) => string>> = {
   sslmode: () => 'it must be one of disable, allow, prefer, require, verify-ca or verify-full',
   connect_timeout: () => 'it must be one to four digits',
   application_name: () => 'it must be 1 to 63 letters, digits, spaces, "_", "." or "-"',
-  encrypt: () => 'it must be true, false or strict',
-  trustservercertificate: () => 'it must be true or false',
   'ssl-mode': () => 'it must be DISABLED, PREFERRED or REQUIRED',
   'connection timeout': () => 'it must be one to five digits',
 };
@@ -174,9 +172,9 @@ const FIELDS: Refused[] = [
 const dp11: Refused[] = [
   { id: 'DP11 mysql ssl-mode', dbType: 'mysql', stored: MYSQL('?ssl-mode={v}'), sentence: dr6('ssl-mode', 'mysql') },
   { id: 'DP11 mysql unknown key', dbType: 'mysql', stored: MYSQL('?x{v}=1'), sentence: dr2(UNKNOWN) },
-  { id: 'DP11 mssql uri query', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@db.example:1433/orders?encrypt=${v}`, sentence: dr6('encrypt', 'sqlcmd') },
-  { id: 'DP11 Encrypt', dbType: 'mssql', stored: KV(';Encrypt={v}'), sentence: dr6('encrypt', 'sqlcmd') },
-  { id: 'DP11 TrustServerCertificate', dbType: 'mssql', stored: KV(';TrustServerCertificate={v}'), sentence: dr6('trustservercertificate', 'sqlcmd') },
+  { id: 'DP11 mssql uri query', dbType: 'mssql', stored: (v) => `mssql://app:pw${v}@db.example:1433/orders?encrypt=${v}`, sentence: dr2('"encrypt"') },
+  { id: 'DP11 Encrypt', dbType: 'mssql', stored: KV(';Encrypt={v}'), sentence: dr2('"encrypt"') },
+  { id: 'DP11 TrustServerCertificate', dbType: 'mssql', stored: KV(';TrustServerCertificate={v}'), sentence: dr2('"trustservercertificate"') },
   { id: 'DP11 Connection Timeout', dbType: 'mssql', stored: KV(';Connection Timeout={v}'), sentence: dr6('connection timeout', 'sqlcmd') },
   { id: 'DP11 Integrated Security', dbType: 'mssql', stored: KV(';Integrated Security={v}'), sentence: dr2('"integrated security"') },
   { id: 'DP11 Trusted_Connection', dbType: 'mysql', stored: KV(';Trusted_Connection={v}'), sentence: dr2('"trusted_connection"') },

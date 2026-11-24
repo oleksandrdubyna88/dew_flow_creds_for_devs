@@ -256,18 +256,6 @@ const VENDOR_FLAGS: Readonly<Record<DbVendor, (absentFile: string) => readonly s
   'odbc-sqlcmd': () => [],
 };
 
-/** What each `sqlcmd` client was measured to take for `Encrypt` (PA1-f, CI run 44543740467): go-sqlcmd `-N true` and `-N strict`; the ODBC client `-N` alone, which it takes as `true`, and it refuses `-N strict`. A value not listed (`false` for both) is no flag. */
-const ENCRYPT_FLAGS: Readonly<Record<'go-sqlcmd' | 'odbc-sqlcmd', Readonly<Record<string, readonly string[] | undefined>>>> = {
-  'go-sqlcmd': { true: ['-N', 'true'], strict: ['-N', 'strict'] },
-  'odbc-sqlcmd': { true: ['-N'] },
-};
-
-/** The flags of a `sqlcmd` client for the settings that reach it (§S7.9): `Encrypt` as measured, `TrustServerCertificate=true` as `-C` (both clients), `false` as nothing (the default). `undefined` when no measured flag carries a setting. */
-function sqlcmdSettingFlags(vendor: 'go-sqlcmd' | 'odbc-sqlcmd', settings: Readonly<Record<string, string>>): readonly string[] | undefined {
-  const encrypt = settings.encrypt === undefined ? [] : ENCRYPT_FLAGS[vendor][settings.encrypt];
-  return encrypt === undefined ? undefined : [...encrypt, ...(settings.trustservercertificate === 'true' ? ['-C'] : [])];
-}
-
 /** Oracle's `--ssl-mode`, written straight after `--protocol=TCP`; MariaDB's client has no flag of that name, so a connection that asks for it makes no launch (a setting is never dropped silently). */
 const sslModeFlags = (vendor: 'oracle' | 'mariadb', settings: Readonly<Record<string, string>>): readonly string[] | undefined => {
   if (settings['ssl-mode'] === undefined) {
@@ -284,8 +272,9 @@ const SETTING_FLAGS: Readonly<Record<DbVendor, (settings: Readonly<Record<string
   postgresql: () => [],
   oracle: (settings) => sslModeFlags('oracle', settings),
   mariadb: (settings) => sslModeFlags('mariadb', settings),
-  'go-sqlcmd': (settings) => sqlcmdSettingFlags('go-sqlcmd', settings),
-  'odbc-sqlcmd': (settings) => sqlcmdSettingFlags('odbc-sqlcmd', settings),
+  // no key of the profile reaches `sqlcmd` yet: Encrypt and TrustServerCertificate are refused before the builder (§S7.9: a key comes back only with its CI leg)
+  'go-sqlcmd': () => [],
+  'odbc-sqlcmd': () => [],
 };
 
 /** Whether the client check's verdict names a vendor of this type's own client: a verdict of another client's vendor is no verdict. */

@@ -9,7 +9,7 @@ import { verdictOf } from './bridgedDbVerdicts';
 
 /**
  * The keys the E1.7 spec's §S7.9 adds to the profile (Q15 of the parent, V6), each for a pair that is served and with its leg: DK1 the keys of kind (a) (a transport-security key a client
- * can be made to honour by a measured flag), DK2 the keys of kind (b) (a key a client does not use, which changes neither who authenticates, which server is reached, nor how it is verified),
+ * can be made to honour by a measured flag; for `sqlcmd` none yet: Encrypt and TrustServerCertificate wait for their CI leg), DK2 the keys of kind (b) (a key a client does not use, which changes neither who authenticates, which server is reached, nor how it is verified),
  * DK3 the keys that stay refused. The values and the flags are what PA1-f measured on the clients CI recorded (run 44543740467): go-sqlcmd knows `-N true`, `-N strict` and `-C`; the ODBC client
  * knows `-N` and `-C` and refuses `-N strict`; Oracle's `mysql` takes `--ssl-mode`, MariaDB's has no flag of that name. The leg that watches what each flag does to a connection is a CI leg of the
  * database harnesses (§S7.9's last column); this file pins what the builder writes.
@@ -30,28 +30,18 @@ const refusalOf = (dbType: DbType, stored: string): string | undefined => {
   return answer.ok ? undefined : answer.sentence;
 };
 
-/** The two arguments that follow `flag` at its first place. */
-const after = (args: readonly string[] | undefined, flag: string): string | undefined => args?.[(args?.indexOf(flag) ?? -2) + 1];
-
 const WITHOUT = MSSQL('');
 
-test('DK1 (T72): Encrypt is written as the flag each client measured: go-sqlcmd -N true and -N strict, the ODBC client -N alone, and any value no client measured makes no launch', () => {
-  assert.deepEqual(argsOf('mssql', MSSQL(';Encrypt=true'), 'go-sqlcmd')?.slice(-5, -1), ['-b', '-x', '-N', 'true'], 'go-sqlcmd, true: after -b -x, before the authentication flag');
-  assert.equal(after(argsOf('mssql', MSSQL(';Encrypt=Strict'), 'go-sqlcmd'), '-N'), 'strict', 'a value is read in any letter case and written in one');
-  assert.equal(argsOf('mssql', MSSQL(';Encrypt=false'), 'go-sqlcmd'), undefined, 'false is not a spelling PA1-f measured: it is no launch, and above all it is not true');
-  const odbc = argsOf('mssql', MSSQL(';Encrypt=true'), 'odbc-sqlcmd');
-  assert.deepEqual(odbc?.slice(-3), ['-b', '-x', '-N'], 'the ODBC client takes -N alone');
-  assert.equal(argsOf('mssql', MSSQL(';Encrypt=strict'), 'odbc-sqlcmd'), undefined, 'the ODBC client refuses -N strict (PA1-f)');
-  assert.equal(argsOf('mssql', MSSQL(';Encrypt=false'), 'odbc-sqlcmd'), undefined);
-  assert.equal(after(argsOf('mssql', 'mssql://app:pw@db.example:1433/orders?encrypt=true', 'go-sqlcmd'), '-N'), 'true', 'the URI form of the key');
-});
-
-test('DK1 (T72): TrustServerCertificate true is -C for both clients and false is the default: the launch without the key', () => {
-  for (const vendor of ['go-sqlcmd', 'odbc-sqlcmd'] as const) {
-    assert.equal(argsOf('mssql', MSSQL(';TrustServerCertificate=true'), vendor)?.includes('-C'), true, vendor);
-    assert.deepEqual(argsOf('mssql', MSSQL(';TrustServerCertificate=false'), vendor), argsOf('mssql', WITHOUT, vendor), `${vendor}: false writes nothing`);
-    assert.equal(argsOf('mssql', MSSQL(';Trust Server Certificate=true'), vendor), undefined, `${vendor}: another spelling of the key is refused (DR2)`);
+test('DK1 (T72): Encrypt and TrustServerCertificate stay refused by name on a bridge (DR2), for both clients, until a CI leg shows what each does (§S7.9; run 45380823025 had none)', () => {
+  for (const part of ['Encrypt=true', 'Encrypt=strict', 'Encrypt=false', 'TrustServerCertificate=true', 'TrustServerCertificate=false']) {
+    const key = part.split('=')[0].toLowerCase();
+    assert.equal(refusalOf('mssql', MSSQL(`;${part}`)), dr2(`"${key}"`), part);
+    for (const vendor of ['go-sqlcmd', 'odbc-sqlcmd'] as const) {
+      assert.equal(argsOf('mssql', MSSQL(`;${part}`), vendor), undefined, `${vendor}: ${part} makes no launch`);
+    }
   }
+  assert.equal(refusalOf('mssql', 'mssql://app:pw@db.example:1433/orders?encrypt=true'), dr2('"encrypt"'), 'the URI form of the key');
+  assert.notEqual(argsOf('mssql', WITHOUT, 'odbc-sqlcmd'), undefined, 'the connection without the keys still launches');
 });
 
 function sslModesRefused(): void {
