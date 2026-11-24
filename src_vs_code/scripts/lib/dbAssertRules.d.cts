@@ -13,3 +13,5 @@ export interface Expectation {
 
 export function rulesFor(family: string, vendor: string, name: string): Expectation[];
 export function legsOf(family: string, vendor: string): string[];
+export function recordOnlyWhy(client: string, vendor: string, platform: string): string | undefined;
+export const RECORD_ONLY: ReadonlyArray<{ client: string; vendor: string; platform: string; why: string }>;

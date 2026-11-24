@@ -16,6 +16,7 @@ export interface ClientAssessment {
   tag: string;
   driver?: string;
   served: boolean;
+  recordOnly?: string;
   results: Result[];
   failed: Result[];
   blocking: Result[];
@@ -30,7 +31,7 @@ export function parseLine(line: string): Entry | undefined;
 export function ledgerOf(lines: string[]): Entry[];
 export function tapped<T>(run: () => Promise<T>): Promise<{ result: T; lines: string[] }>;
 export function judge(rule: Expectation, ledger: Entry[], statusOf: (id: string) => string): Result;
-export function judgeAll(rules: Expectation[], ledger: Entry[]): Result[];
+export function judgeAll(rules: Expectation[], ledger: Entry[], name?: string): Result[];
 export function assessFamily(family: string, ledger: Entry[]): Assessment;
 export function lockCheck(parts: {
   family: string;

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { BRIDGED_DB_PROFILES, type DbProfileRow, type DbServedClient } from '../bridgedDbProfile';
 import { assessFamily, judgeAll, ledgerOf, lockCheck, parseLine, report, shadowProblems } from '../../scripts/lib/dbAssert.cjs';
-import { rulesFor } from '../../scripts/lib/dbAssertRules.cjs';
+import { RECORD_ONLY, rulesFor } from '../../scripts/lib/dbAssertRules.cjs';
 import { tableWith } from '../../scripts/lib/dbCandidates.cjs';
 import { HARNESS_OF, SERVED_JOBS, hasJobStep, lockProblems } from '../../scripts/lib/dbServedJobs.cjs';
 
@@ -155,4 +155,44 @@ test('the lines the legs print are read as records, UNMEASURED, STOP, the table 
   assert.equal(parseLine('FAIL (r) rig')?.kind, 'rig');
   assert.deepEqual(parseLine('CANDIDATE sqlcmd odbc-sqlcmd 18.6.0001.1 "Linux" linux driver 18.6.1.1  (odbc-sqlcmd: /opt/mssql-tools18/bin/sqlcmd)'), { kind: 'table', mode: 'CANDIDATE', client: 'sqlcmd', vendor: 'odbc-sqlcmd', version: '18.6.0001.1', tag: 'Linux', platform: 'linux', driver: '18.6.1.1', name: 'odbc-sqlcmd' });
   assert.equal(judgeAll([], []).length, 0);
+});
+
+/* CI run 44561670901 (at 8ad910f1): the lines of a database-clients job with two Oracle builds and MariaDB's client, cut to what these tests read. */
+const MYSQL_TABLE = (mode: string, vendor: string, version: string, tag: string, name: string): string => `${mode} mysql ${vendor} ${version} "${tag}" linux  (${name}: /usr/bin/${name})`;
+const MYSQL_JOB = [
+  MYSQL_TABLE('CANDIDATE', 'oracle', '8.4.13', 'for Linux on x86_64 (MySQL Community Server - GPL)', 'oracle'),
+  MYSQL_TABLE('CANDIDATE', 'oracle', '8.4.13', '-0ubuntu0.26.04.2 for Linux on x86_64 ((Ubuntu))', 'oracle-distro'),
+  MYSQL_TABLE('CANDIDATE', 'mariadb', '11.8.6', ', client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper', 'mariadb'),
+  'UNMEASURED PK1-m1-oracle-distro: this build cannot load authentication_kerberos_client',
+  "record (PE1-6) mariadb on MySQL: under the profile (--plugin-dir=<the absent file>): the entry REFUSED (exit 1)",
+  'STOP (PE1-6): mariadb on MySQL: the entry did not log in under the profile',
+];
+
+type Assessed = ReturnType<typeof assessFamily>;
+const clientNamed = (assessed: Assessed, name: string): Assessed['clients'][number] => assessed.clients.filter((client: { name: string }) => client.name === name)[0];
+const resultNamed = (assessed: Assessed, name: string, id: string): { id: string; status: string; why: string } => clientNamed(assessed, name).results.filter((result: { id: string }) => result.id === id)[0];
+
+test('T83 (§S7.12): a pair the parent refused by a recorded STOP keeps record legs that assert nothing; a candidate that is not on that list still fails on a false assertion, and a served row is judged whatever the list says', () => {
+  const assessed = assessFamily('mysql', ledgerOf(MYSQL_JOB));
+  const mariadb = clientNamed(assessed, 'mariadb');
+  assert.match(String(mariadb.recordOnly), /PE1-6/);
+  assert.deepEqual([mariadb.failed.length, mariadb.blocking.length], [0, 0], 'a refused pair neither fails the job nor blocks a row');
+  assert.equal(resultNamed(assessed, 'mariadb', 'PE1-6-mysql').status, 'FAIL', 'its legs are still judged and printed');
+  const printed: string[] = [];
+  report('mysql', { ...assessed, clients: [mariadb] }, [], (line: string) => printed.push(line));
+  assert.match(printed.join('\n'), /RECORD ONLY mariadb: the legs below assert nothing/);
+  assert.deepEqual(RECORD_ONLY.map((pair: { vendor: string; platform: string }) => `${pair.vendor}/${pair.platform}`), ['mariadb/linux', 'go-sqlcmd/linux', 'go-sqlcmd/win32', 'oracle/win32']);
+  const servedMariadb = assessFamily('mysql', ledgerOf(MYSQL_JOB.map((line) => (line.includes('(mariadb:') ? line.replace(/^CANDIDATE/, 'PRODUCTION') : line))));
+  assert.equal(clientNamed(servedMariadb, 'mariadb').recordOnly, undefined, 'a served row is judged');
+  assert.equal(servedMariadb.failed, true);
+  const leaked = ALL_PASS.map((line) => (line.startsWith('record (U-enc-built): entry B') ? 'record (U-enc-built): entry B: IDENTITY OFFERED' : line));
+  assert.equal(assess([TABLE('CANDIDATE'), ...leaked]).failed, true, 'psql is not on the list: a false assertion of its candidate fails the run (T57-T62 rest on this)');
+});
+
+test('T84: an UNMEASURED line that names one client is that client\'s: the distribution\'s build does not explain Oracle\'s own build', () => {
+  const assessed = assessFamily('mysql', ledgerOf(MYSQL_JOB));
+  const why = (name: string): string => resultNamed(assessed, name, 'PK1-m1-control').why;
+  assert.match(String(why('oracle-distro')), /UNMEASURED PK1-m1-oracle-distro/);
+  assert.doesNotMatch(String(why('oracle')), /oracle-distro/, 'Oracle\'s own build has no record of its own: not run, not the other build\'s reason');
+  assert.match(resultNamed(assessFamily('psql', ledgerOf([TABLE('CANDIDATE'), 'UNMEASURED PE1 psql: no server'])), 'psql', 'PE1-1').why, /^UNMEASURED PE1 psql/, 'a group\'s line still explains the legs of the one client');
 });

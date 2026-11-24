@@ -14,7 +14,7 @@
 // Nothing here prints a credential: it reads what the legs printed, and prints their words back, clipped.
 const path = require('node:path');
 const { SERVED_JOBS, servedBuilds, keyOf, wordsOf } = require('./dbServedJobs.cjs');
-const { rulesFor, legsOf } = require('./dbAssertRules.cjs');
+const { rulesFor, legsOf, recordOnlyWhy } = require('./dbAssertRules.cjs');
 
 const TABLE = /^(CANDIDATE|PRODUCTION) (\S+) (\S+) (\S+) ("(?:[^"\\]|\\.)*") (\S+)(?: driver (\S+))?\s+\(([^:]+): /;
 const RECORD = /^record \(([^)]+)\):? ?(.*)$/;
@@ -75,8 +75,25 @@ function judge(rule, ledger, statusOf) {
   return ok ? { id: rule.id, status: 'pass', why: '' } : { id: rule.id, status: 'FAIL', why: `the record (${rule.leg}) does not say ${rule.match}: ${JSON.stringify(records.map((entry) => entry.text.slice(0, 120)))}` };
 }
 
-/** Every expectation of `rules` against `ledger`, in order; an expectation may name an earlier one as its control. */
-function judgeAll(rules, ledger) {
+/** The client a leg id names: the longest name of `names` it holds as a whole word (`PK1-m1-oracle-distro` names `oracle-distro`, not `oracle`), or `undefined` for a group's line. */
+function ownerOf(leg, names) {
+  const words = (text) => ` ${text.split(/[\s-]+/).join(' ')} `;
+  const holds = (name) => words(leg).includes(words(name));
+  return names.filter(holds).sort((one, two) => two.length - one.length)[0];
+}
+
+/** The ledger as one client reads it: an UNMEASURED or STOP line that names another client of the ledger is that client's, not this one's. */
+function ledgerFor(ledger, name) {
+  const names = [...new Set(ledger.filter((entry) => entry.kind === 'table').map((entry) => entry.name))];
+  if (name === undefined || names.length < 2) {
+    return ledger;
+  }
+  return ledger.filter((entry) => (entry.kind !== 'unmeasured' && entry.kind !== 'stop') || [undefined, name].includes(ownerOf(entry.leg, names)));
+}
+
+/** Every expectation of `rules` against `ledger`, in order; an expectation may name an earlier one as its control. With `name`, the lines of other clients are not this one's. */
+function judgeAll(rules, whole, name) {
+  const ledger = ledgerFor(whole, name);
   const results = new Map();
   const statusOf = (id) => results.get(id)?.status ?? 'not run';
   for (const rule of rules) {
@@ -97,7 +114,11 @@ function assessFamily(family, ledger) {
   const unique = [...new Map(seen.map((entry) => [`${entry.vendor}|${entry.version}|${entry.tag}|${entry.driver ?? ''}`, entry])).values()];
   const clients = unique.map((client) => {
     const served = seen.filter((entry) => keyOf(entry) === keyOf(client)).every((entry) => entry.mode === 'PRODUCTION');
-    const results = judgeAll(rulesFor(family, client.vendor, client.name), ledger);
+    const results = judgeAll(rulesFor(family, client.vendor, client.name), ledger, client.name);
+    const recordOnly = served ? undefined : recordOnlyWhy(family, client.vendor, client.platform);
+    if (recordOnly !== undefined) {
+      return { ...client, served, recordOnly, results, failed: [], blocking: [] };
+    }
     const failed = results.filter((result) => result.status === 'FAIL' || (served && result.status !== 'pass' && result.status !== 'n/a'));
     return { ...client, served, results, failed, blocking: results.filter((result) => result.status === 'not shown' || result.status === 'not run') };
   });
@@ -140,6 +161,9 @@ function shadowProblems(ledger, rows, ci) {
 function report(family, assessed, lock, log = console.log) {
   for (const client of assessed.clients) {
     log(`\nassertions (${family}, ${client.name}: ${client.vendor} ${client.version} ${JSON.stringify(client.tag)}${client.driver === undefined ? '' : ` driver ${client.driver}`}), table: ${client.served ? 'PRODUCTION (a served pair)' : 'CANDIDATE (not served yet)'}`);
+    if (client.recordOnly !== undefined) {
+      log(`RECORD ONLY ${client.name}: the legs below assert nothing, the pair is refused (${client.recordOnly})`);
+    }
     for (const result of client.results) {
       log(`  ${result.status.padEnd(9)} ${result.id}${result.why === '' ? '' : `: ${result.why}`}`);
     }

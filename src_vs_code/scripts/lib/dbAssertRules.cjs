@@ -90,6 +90,20 @@ function sqlcmdRules(name, vendor) {
 const UNMEASURED_OF = [[/^PE1/, /^PE1/], [/^PP1/, /^PP1/], [/^PS1/, /^PS1/], [/^PK1-/, /^PK1-m/]];
 const withUnmeasured = (rules) => rules.map((rule) => ({ ...rule, u: UNMEASURED_OF.find(([id]) => id.test(rule.id))?.[1] }));
 
+/**
+ * The pairs the parent's §7 has already refused by a recorded STOP (§S7.12: "a pair that is not served keeps its record legs. They assert nothing"). Under a candidate table their legs are printed and
+ * not judged, so a known refusal does not fail the job; a served row is judged whatever this list says. A pair leaves this list only by a decision of the lead, recorded in the parent's §7.
+ */
+const RECORD_ONLY = [
+  { client: 'mysql', vendor: 'mariadb', platform: 'linux', why: "parent §7, rows PE1 and PP1: MariaDB's client fails at MySQL's default plugin under --plugin-dir (PE1-6, a STOP on every image)" },
+  { client: 'sqlcmd', vendor: 'go-sqlcmd', platform: 'linux', why: 'parent §7, row PS1: SqlPassword does not stop the NTLM sign-in of a DOMAIN\\user name (PS1-8-flag, a STOP)' },
+  { client: 'sqlcmd', vendor: 'go-sqlcmd', platform: 'win32', why: 'parent §7, row PS1: SqlPassword does not stop the NTLM sign-in of a DOMAIN\\user name (PS1-8-flag, a STOP)' },
+  { client: 'mysql', vendor: 'oracle', platform: 'win32', why: "parent §7, row PK1: Windows authentication is built into Oracle's client on Windows and no candidate stops it (m6)" },
+];
+
+/** Why a pair keeps only its record legs, or `undefined` when its legs are assertions. */
+const recordOnlyWhy = (client, vendor, platform) => RECORD_ONLY.find((pair) => pair.client === client && pair.vendor === vendor && pair.platform === platform)?.why;
+
 /** The expectations of a family for one client of it (`name` is what the harness named it). */
 function rulesFor(family, vendor, name) {
   if (family === 'psql') {
@@ -101,4 +115,4 @@ function rulesFor(family, vendor, name) {
 /** The ids of the legs a build of this vendor must run (§S7.7: a job's list names them): what `rulesFor` holds, with no client's name in it. */
 const legsOf = (family, vendor) => rulesFor(family, vendor, vendor).map((rule) => rule.id);
 
-module.exports = { rulesFor, legsOf };
+module.exports = { rulesFor, legsOf, recordOnlyWhy, RECORD_ONLY };
