@@ -943,6 +943,11 @@ become contracts only by their probes, as §4.11 says; the gate before the dialo
 - **L10. A `psql` that is a launcher (N10, PA1-i).** From memory, and for the Ubuntu images the expected case. §S7.6 keeps no verdict for a
   launcher, and §S7.4 sends the row to the lead if a file under the home folder can make the version spawn and the query spawn start different
   programs. If the lead wants more (the check to follow the launcher to the program it starts), that is a new step.
+  **Decided by the owner, 2026-11-24 (the consultants could not be asked: the coai server was down):** psql on Linux stays
+  refused. The fourth run (45380823025) put a second major and a local cluster of it beside the first, and the wrapper started the newest
+  major for both spawns in every case: the control of PA1-i is not shown, so by R4 the pair is unmeasured. No plan change is made: a check
+  that resolves the wrapper to the real binary, or the newest-major observation taken as the control, would each be one. The first is parked
+  as a follow-up story after E1.7.
 - **L11. The driver under the ODBC `sqlcmd`.** No version answer names it and this client has no control to refuse on (§S7.7). The spec
   serves the recorded version line and writes the driver that ran into the record. The lead may hold an ODBC pair refused instead.
   **Decided by the lead, 2026-11-19, after a consult (3d062873; one consultant of two answered, gemini, for (1)):** the verdict of the ODBC
