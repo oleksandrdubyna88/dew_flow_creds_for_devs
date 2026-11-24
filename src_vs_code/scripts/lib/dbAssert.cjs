@@ -56,6 +56,9 @@ async function tapped(run) {
 /** What one expectation says of a ledger: `{ id, status, why }`, where status is `pass`, `FAIL`, `not shown`, `not run` or `n/a`. */
 function judge(rule, ledger, statusOf) {
   const legs = ledger.filter((entry) => entry.leg === rule.leg);
+  if (rule.pending !== undefined && legs.length === 0) {
+    return { id: rule.id, status: 'not shown', why: rule.pending };
+  }
   const records = legs.filter((entry) => entry.kind === 'record');
   if (rule.na !== undefined && ledger.some((entry) => entry.kind === 'record' && entry.leg === rule.na && /not this client's plugin/.test(entry.text))) {
     return { id: rule.id, status: 'n/a', why: "not this client's road" };
@@ -106,6 +109,14 @@ function judgeAll(rules, whole, name) {
 const clientsOf = (ledger) => ledger.filter((entry) => entry.kind === 'table');
 
 /**
+ * The records of leg (u) name no build (`record (U-enc-control): …`): where one job read more than one psql build, a record cannot be tied to the build that printed it, so no psql build passes
+ * on them (the judge of run 45380823025, F1: a launcher's build was credited with legs only the real files ran).
+ */
+const unboundRecords = (family, unique) => (family === 'psql' && unique.length > 1
+  ? [{ id: 'one-build', status: 'not shown', why: `this job read ${unique.length} psql builds (${unique.map((one) => `${one.version} ${one.name}`).join(', ')}), and the records of leg (u) do not name the build that printed them` }]
+  : []);
+
+/**
  * The verdict of a run for one family: the results of every client's legs, which mode each client ran in, what is blocking, and whether the run fails. A client whose mode is `PRODUCTION` is a served pair:
  * every expectation must pass. A `CANDIDATE` fails only on `FAIL`.
  */
@@ -119,6 +130,7 @@ function assessFamily(family, ledger) {
     if (recordOnly !== undefined) {
       return { ...client, served, recordOnly, results, failed: [], blocking: [] };
     }
+    results.push(...unboundRecords(family, unique));
     const failed = results.filter((result) => result.status === 'FAIL' || (served && result.status !== 'pass' && result.status !== 'n/a'));
     return { ...client, served, results, failed, blocking: results.filter((result) => result.status === 'not shown' || result.status === 'not run') };
   });

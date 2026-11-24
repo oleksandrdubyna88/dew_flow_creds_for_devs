@@ -11,7 +11,8 @@
 //   after  the id of the expectation that is the POSITIVE CONTROL of this one: while that is not shown, this one is not judged (R4: `not shown`);
 //   u      (derived) the UNMEASURED lines of a group that explain a leg with no record;
 //   na     the id of a record that says the leg is not this client's road (a plugin the parent's list does not name for MariaDB's client): the expectation is then not applicable;
-//   noStop a `STOP (<leg>)` line of the same leg is a failure.
+//   noStop a `STOP (<leg>)` line of the same leg is a failure;
+//   pending while no line of the leg is printed, it is `not shown` with these words (a decision of the spec says its control is not shown yet); a rig that shows it prints its record.
 // A leg whose control printed `UNMEASURED` is `not shown`, and one that printed nothing is `not run`. The words each `match` looks for are fixed words of the legs: a leg that stops saying them
 // turns its pair's assertions into `FAIL`, never into a pass.
 
@@ -42,6 +43,9 @@ const PSQL = [
   { id: 'PE1-4-control', leg: 'PE1-4', match: /server method trust, CONTROL: a wrong password with require_auth cut by hand: LOGGED IN/ },
   { id: 'PE1-4', leg: 'PE1-4', match: /server method trust, a wrong password, under the whole profile: REFUSED/, after: 'PE1-4-control' },
   { id: 'PP1-1', leg: 'PP1-1', match: /psql, the production launch .*over TCP/ },
+  // PA1-i's own question (not U-rc's): which major the wrapper starts under a file of the home folder. Its control was never shown (runs 44543740467 to 45380823025), and the owner decided
+  // (spec L10, 2026-11-24) that psql on Linux stays refused until a follow-up story: so it blocks every psql pair here, and fails one that is served.
+  { id: 'PA1-i-version-choice', leg: 'PA1-i-version-choice', match: SHOWN, pending: 'UNMEASURED PA1-i: the wrapper never followed the file, so its control is not shown; psql on Linux stays refused (spec L10, the owner, 2026-11-24)' },
 ];
 
 const PLUGINS = ['m1', 'm2', 'm3', 'm4', 'm5', 'm5b'];

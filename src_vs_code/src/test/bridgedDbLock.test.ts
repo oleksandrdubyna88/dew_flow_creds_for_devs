@@ -33,14 +33,14 @@ test('DP21: the production table, the jobs\' list and the workflow agree: with n
 
 const JOBS_OF_THE_WORKFLOW: ReadonlyArray<readonly [string, string]> = [
   ['database-clients-ubuntu-22.04', 'psql'], ['database-clients-ubuntu-24.04', 'mysql'], ['database-clients-ubuntu-latest', 'psql'], ['database-clients-ubuntu-latest', 'mysql'],
-  ['bridged-ps1-linux', 'sqlcmd'], ['bridged-ps1-windows', 'sqlcmd'],
+  ['bridged-ps1-linux-ubuntu-22.04', 'sqlcmd'], ['bridged-ps1-linux-ubuntu-24.04', 'sqlcmd'], ['bridged-ps1-linux-ubuntu-latest', 'sqlcmd'], ['bridged-ps1-windows', 'sqlcmd'],
 ];
 
 test('DP21: the workflow runs each assertion harness in the jobs that will name their builds: the database-clients matrix (psql and mysql, on Linux) and both PS1 jobs (sqlcmd); nothing else runs one', () => {
   for (const [job, family] of JOBS_OF_THE_WORKFLOW) {
     assert.equal(hasJobStep(WORKFLOW, job, HARNESS_OF[family]), true, `${job} runs ${HARNESS_OF[family]}`);
   }
-  assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux', HARNESS_OF.psql), false, 'and the PS1 jobs run only the sqlcmd one');
+  assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux-ubuntu-24.04', HARNESS_OF.psql), false, 'and the PS1 jobs run only the sqlcmd one');
 });
 
 test('DP21: a served build stands in a job\'s list with the legs of its vendor, and the job is a step of the workflow that sets its name and runs the family\'s harness; each way it is not, the lock says so', () => {
@@ -98,6 +98,7 @@ const ALL_PASS = [
   "record (PE1-3) psql, server method password, the entry's user and password, under the whole profile: LOGGED IN;", 'record (PE1-3) psql, server method password, a wrong password, under the whole profile: REFUSED (exit 2)',
   'record (PE1-4) psql, server method trust, CONTROL: a wrong password with require_auth cut by hand: LOGGED IN', 'record (PE1-4) psql, server method trust, a wrong password, under the whole profile: REFUSED (exit 2)',
   'record (PP1-1) psql, the production launch for an entry on localhost: exit 0; the login is pe1, over TCP; it said ""',
+  'record (PA1-i-version-choice): the wrapper followed a local-cluster file for both spawns (a rig that shows the control)',
 ];
 
 const assess = (lines: string[]): ReturnType<typeof assessFamily> => assessFamily('psql', ledgerOf(lines));
@@ -195,4 +196,20 @@ test('T84: an UNMEASURED line that names one client is that client\'s: the distr
   assert.match(String(why('oracle-distro')), /UNMEASURED PK1-m1-oracle-distro/);
   assert.doesNotMatch(String(why('oracle')), /oracle-distro/, 'Oracle\'s own build has no record of its own: not run, not the other build\'s reason');
   assert.match(resultNamed(assessFamily('psql', ledgerOf([TABLE('CANDIDATE'), 'UNMEASURED PE1 psql: no server'])), 'psql', 'PE1-1').why, /^UNMEASURED PE1 psql/, 'a group\'s line still explains the legs of the one client');
+});
+
+test('T85: PA1-i blocks every psql pair while its control is not shown (spec L10, the owner, 2026-11-24), and a job that read two psql builds passes neither on leg (u)\'s records, which name no build', () => {
+  const withoutPa1i = ALL_PASS.filter((line) => !line.startsWith('record (PA1-i-version-choice)'));
+  const candidate = assess([TABLE('CANDIDATE'), ...withoutPa1i]);
+  assert.equal(statusOf(candidate, 'PA1-i-version-choice'), 'not shown');
+  assert.match(candidate.clients[0].results.filter((result: { id: string }) => result.id === 'PA1-i-version-choice')[0].why, /spec L10/);
+  assert.equal(candidate.clients[0].blocking.length, 1, 'it is the one blocking leg');
+  assert.equal(assess([TABLE('PRODUCTION'), ...withoutPa1i]).failed, true, 'and a served psql pair fails on it');
+  const launcher = 'CANDIDATE psql postgresql 17.12 "(Ubuntu 17.12-1.pgdg24.04+1)" linux  (psql-launcher: /usr/bin/psql)';
+  const two = assess([TABLE('CANDIDATE'), launcher, ...ALL_PASS]);
+  assert.equal(two.clients.length, 2);
+  for (const client of two.clients) {
+    assert.equal(client.results.filter((result: { id: string }) => result.id === 'one-build')[0].status, 'not shown', `${client.version}: its records are not tied to it`);
+  }
+  assert.equal(assess([TABLE('CANDIDATE'), ...ALL_PASS]).clients[0].results.some((result: { id: string }) => result.id === 'one-build'), false, 'one build in the job: its records are its own');
 });

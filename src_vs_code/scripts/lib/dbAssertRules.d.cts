@@ -8,6 +8,7 @@ export interface Expectation {
   after?: string;
   na?: string;
   noStop?: boolean;
+  pending?: string;
   u?: RegExp;
 }
 

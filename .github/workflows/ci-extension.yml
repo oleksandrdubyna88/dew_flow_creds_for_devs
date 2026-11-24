@@ -729,7 +729,7 @@ jobs:
       - name: Assert leg (w), sqlcmd, through the real client check and the real builder
         env:
           BRIDGED_DB_SYSTEM_RIG: "1"
-          BRIDGED_DB_JOB: bridged-ps1-linux
+          BRIDGED_DB_JOB: bridged-ps1-linux-${{ matrix.os }}
         run: node scripts/bridged-sqlcmd-itest.cjs
 
   # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
