@@ -112,7 +112,7 @@ about the credential. The table is `OTHER_KEY_LEGS` of `lib/otherKeyRecord.cjs` 
 
 | Leg | Row | The entry is pinned to | The other source of trust | Counterparts, and how K2 is at the entry's address | Roads |
 |---|---|---|---|---|---|
-| `m2-mismatch-user` | M2 | K1 | (a) `<leg>/home/.ssh/known_hosts` holds K2's line; the handed config names it `UserKnownHostsFile` | K2 alone, from the start, at a port of its own; the entry names that port | the three |
+| `m2-mismatch-user` | M2 | K1 | (a) `.ssh/known_hosts` in the leg's HOME (`<leg>`, `home`) holds K2's line; the handed config names it `UserKnownHostsFile` | K2 alone, from the start, at a port of its own; the entry names that port | the three |
 | `m2-mismatch-global` | M2 | K1 | (b) `<leg>/known_hosts_global` holds K2's line; the handed config names it `GlobalKnownHostsFile` | as above | the three |
 | `m2-switch-user` | M2 | K1 | (a), as above | K1 at port P until the install's question is open; then K1 is ended WHOLE and K2 starts at P (`theSwitch`, `stop: 'whole'`) | the install |
 | `m2-switch-global` | M2 | K1 | (b), as above | as above | the install |
@@ -140,7 +140,7 @@ end of the run, at any depth (H17).
 
 | Leg | `userKnownHosts` | `globalKnownHosts` | `lines` |
 |---|---|---|---|
-| `m2-*-user` | `<leg>/home/.ssh/known_hosts` (folder `0700`, file `0600`) | `/dev/null` | none |
+| `m2-*-user` | `.ssh/known_hosts` in the leg's HOME (`<leg>`, `home`) (folder `0700`, file `0600`) | `/dev/null` | none |
 | `m2-*-global` | `/dev/null` | `<leg>/known_hosts_global` (`0600`) | none |
 | `m3-*` | `/dev/null` | `/dev/null` | `ControlMaster auto`, `ControlPath <leg>/cm`, `ControlPersist 120` |
 | `m8` | `/dev/null` | `/dev/null` | `KnownHostsCommand <leg>/khc/known_hosts_command`, `VerifyHostKeyDNS no` |
@@ -652,7 +652,7 @@ change in my reading; confirm.)
   never read by a row and never written." The brief of this story: the user file "in the leg's own HOME, never the person's real ~/.ssh".
 - What is so (H8): OpenSSH takes `~` from the password database, not from `HOME` (measured, S4.F23). So the client's compiled-in default,
   `~/.ssh/known_hosts`, is always in the person's real home. A leg cannot put a file there.
-- My reading (§1.2): the leg's file `<leg>/home/.ssh/known_hosts`, which the handed config names as `UserKnownHostsFile`: the file that this
+- My reading (§1.2): the leg's file `.ssh/known_hosts` in the leg's HOME (`<leg>`, `home`), which the handed config names as `UserKnownHostsFile`: the file that this
   client reads as the person's own when a call names none. M2.0 shows it by `ssh -G`. If the lead reads "default" as the compiled-in default,
   (a) cannot run as written without the person's `~/.ssh`, and that is decision 18 (a row that cannot run as written: a plan change).
 
@@ -673,7 +673,7 @@ change in my reading; confirm.)
 ## The answers (2026-11-24)
 
 - **A1 (Q1), the owner:** a faithful reading, not a plan change. M2 (a) is the user-file slot: the leg's own file
-  `<leg>/home/.ssh/known_hosts`, which the leg's handed config names as `UserKnownHostsFile`; M2.0 shows it by `ssh -G`. The person's real
+  `.ssh/known_hosts` in the leg's HOME (`<leg>`, `home`), which the leg's handed config names as `UserKnownHostsFile`; M2.0 shows it by `ssh -G`. The person's real
   `~/.ssh` is never read and never written. (The consultants could not be asked: coai refused every call, its data folder was not found.)
 - **A2 (Q2), the lead:** accepted, not a plan change. The shim sends only a stderr that the product IGNORES to a file of the run; the
   product's spawn, the client's argv, its environment and its exit code stay as they are. It is an instrument like the shim's record, and
