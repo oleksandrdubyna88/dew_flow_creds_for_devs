@@ -1,6 +1,6 @@
 # PLAN — G1, epic E3: the stories (the release gate: every claim is measured on the roads, against a real `sshd`)
 
-> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1-E3.S3 are built and reviewed (`a445af56`..`a07e4cac`); E3.S4 is built (`07a22de1`..`1ad5736b`), its review is next. The spec of E3.S5 is written (2026-11-24).** The stories document of epic E3 of
+> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1-E3.S3 are built and reviewed (`a445af56`..`a07e4cac`); E3.S4 (`07a22de1`..`1ad5736b`, review fixes `b061a030`..`1a015583`) and E3.S5 (`edda3461`..`c9d0279e`) are built and reviewed; CI green on `c9d0279e`. Next E3.S6.** The stories document of epic E3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E3; epoch 3, approved by the owner on 2026-11-23, with entry 3.1). It is
 > the epic's baseline, written when E3 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Ten stories, no cornerstone (the quota of two is spent: E1.S2, E2.S2). Built on
