@@ -16,7 +16,8 @@ const rec = require('./lib/rowRecord.cjs');
 const { sec, standIn, within, me } = rig;
 const VERIFY_FAILED = sec.VERIFY_FAILED;
 
-const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+/** The SHA-256 of a file's bytes, or `'absent'` when the file is gone: M6.8 then FAILS as a check (the person's key file was deleted) instead of the leg dying on the read. */
+const sha256 = (file) => (fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : 'absent');
 const base = (file) => path.basename(file);
 /** The calls' pin and key files named in a sample of `point`. */
 const sampleOf = (roads, point) => roads.sampler.samples().find((one) => one.point === point);
