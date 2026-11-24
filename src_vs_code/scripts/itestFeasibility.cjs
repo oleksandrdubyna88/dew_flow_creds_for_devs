@@ -6,7 +6,8 @@
 //
 //   node --import ./scripts/lower-priority.mjs scripts/itestFeasibility.cjs <probe>...
 //
-// The probes: `windows-client` (P5), `never-answers` (P7), `forced-zero` (P6), `jump-config` (P4), `install-stand-in` (P1). An unknown name ends
+// The probes: `windows-client` (P5), `never-answers` (P7), `forced-zero` (P6), `jump-config` (P4), `install-stand-in` (P1), `older-client` (P3; it needs
+// `CREDS_ITEST_OLD_SSH_DEBS`, the folder of its two packages). An unknown name ends
 // at once with exit 2 and names the legal ones. Each probe prints its checks (`ok`, `FAIL`; `info` is recorded and decides nothing), its record
 // of identities, and ONE last line: `probe <name>: worked`, or `probe <name>: FAILED — <its first failed check>`. The exit code is 0 when every
 // probe that ran printed `worked`, and 1 otherwise. One section scope and one owned folder per probe (`ownedDir` under `shortSocketRoot()`).
@@ -29,18 +30,20 @@ const { probeNeverAnswers } = require('./itestProbeNeverAnswers.cjs');
 const { probeForcedZero } = require('./itestProbeForced.cjs');
 const { probeJumpConfig } = require('./itestProbeJump.cjs');
 const { probeInstallStandIn } = require('./itestProbeInstall.cjs');
+const { probeOlderClient } = require('./itestProbeOlderClient.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const me = os.userInfo().username;
 const HEX40 = /^[0-9a-f]{40}$/;
 
-/** The probes by their names on the command line, in the order of the brief's batch A. */
+/** The probes by their names on the command line: the five of batch A in the brief's order, then `older-client` (P3). */
 const PROBES = {
   'windows-client': probeWindowsClient,
   'never-answers': probeNeverAnswers,
   'forced-zero': probeForcedZero,
   'jump-config': probeJumpConfig,
   'install-stand-in': probeInstallStandIn,
+  'older-client': probeOlderClient,
 };
 
 /** The SHA-256 of a file's bytes, or `null` (absent is not zero, and not the empty text). */
