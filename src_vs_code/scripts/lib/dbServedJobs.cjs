@@ -4,7 +4,6 @@
 // production table) names another build, or when one of the build's legs did not run, was skipped or printed `UNMEASURED` (PP1 excepted, as the parent says). A served build that no job lists, and an
 // entry of this list that no row serves, fail the unit test DP21, so a row is turned only by a commit that records its legs here too.
 //
-// While the production table serves no row, this list is empty and the lock passes vacuously; DP21 shows with a table that serves one that it would not.
 //
 // A job names itself with `BRIDGED_DB_JOB` in the step that runs the family's harness (`HARNESS_OF`); the harness reads this list under that name.
 
@@ -13,9 +12,15 @@ const HARNESS_OF = { psql: 'bridged-psql-assert-itest.cjs', mysql: 'bridged-mysq
 
 /**
  * Per job (the value of `BRIDGED_DB_JOB`): the served builds it must find. An entry is `{ client, platform, vendor, version, tag, driver?, legs }`: the row's client and platform, the build exactly as the
- * row records it, and the ids of its legs (`legsOf` in `dbAssertRules.cjs` for the vendor). Empty: no row is served yet.
+ * row records it, and the ids of its legs (`legsOf` in `dbAssertRules.cjs` for the vendor). The ODBC `sqlcmd` on Linux, turned on the record of run 45390171118: each image's job must find its build.
  */
-const SERVED_JOBS = {};
+const ODBC_LEGS = ['PS1-0', 'PS1-1', 'PS1-5', 'PE1-7', 'PS1-9-control', 'PS1-9', 'PS1-4-control', 'PS1-4'];
+const odbcLinux = (version, driver) => ({ client: 'sqlcmd', platform: 'linux', vendor: 'odbc-sqlcmd', version, tag: 'Linux', driver, legs: ODBC_LEGS });
+const SERVED_JOBS = {
+  'bridged-ps1-linux-ubuntu-22.04': [odbcLinux('17.11.0001.1', '17.11.1.1')],
+  'bridged-ps1-linux-ubuntu-24.04': [odbcLinux('18.7.0001.1', '18.7.1.1')],
+  'bridged-ps1-linux-ubuntu-latest': [odbcLinux('18.7.0001.1', '18.7.1.1')],
+};
 
 /** The builds a table serves, one entry each: client, platform, vendor, version, tag and (the ODBC client) driver. */
 function servedBuilds(rows) {

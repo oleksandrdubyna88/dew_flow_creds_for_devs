@@ -7,8 +7,8 @@ import type { DbVendor } from './bridgedDbClient';
  * The gate of a bridged database query (the E1.6 spec §S6.15 Z1; parent §4.11, Q18). Pure, no `vscode`.
  *
  * <p>A bridged `query` is a local subprocess under agent-written input, so it runs only for a client and a system whose behaviour was MEASURED. The table
- * below names every pair this code knows and says whether it is served. None is: E1.7 turns a row to served in the commit that records the probe runs of
- * its pair (parent §4.11), and until then every bridged query is refused before the stored connection is read and before any process starts.</p>
+ * below names every pair this code knows and says whether it is served. E1.7 turns a row to served in the commit that records the probe runs of its pair (parent
+ * §4.11, the E1.7 spec §S7.7); a pair that is not served is refused before the stored connection is read and before any process starts.</p>
  */
 
 export type DbClient = 'psql' | 'mysql' | 'sqlcmd';
@@ -42,8 +42,27 @@ export interface DbProfileRow {
 const CLIENTS: readonly DbClient[] = ['psql', 'mysql', 'sqlcmd'];
 const SYSTEMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin'];
 
-/** Every pair this code knows. None is served: E1.7 turns a row in the commit that records its probe runs (parent §4.11). A row names no vendor and no version range yet; E1.7 adds both with the database client check. */
-export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => ({ client, platform, served: false })));
+/**
+ * The served rows, each with the builds its legs ran on (E1.7 spec §S7.7): the record names the candidate run whose legs (w) were green on that build, never the run of the commit that turned it.
+ * The ODBC `sqlcmd` on Linux: run 45390171118 at 35d59423, one job per image (ubuntu-22.04: 17.11.0001.1 with the driver 17.11.1.1; ubuntu-24.04 and ubuntu-latest: 18.7.0001.1 with 18.7.1.1).
+ */
+const SERVED: readonly DbProfileRow[] = [
+  {
+    client: 'sqlcmd',
+    platform: 'linux',
+    served: true,
+    clients: [{
+      vendor: 'odbc-sqlcmd',
+      builds: [
+        { version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1', record: 'run 45390171118 at 35d59423' },
+        { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45390171118 at 35d59423' },
+      ],
+    }],
+  },
+];
+
+/** Every pair this code knows: the served rows above, and every other client and system refused. */
+export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => SERVED.find((row) => row.client === client && row.platform === platform) ?? { client, platform, served: false }));
 
 /** The client a type is launched as, when it has one a profile can name. */
 export function profileClientOf(dbType: DbType): DbClient | undefined {

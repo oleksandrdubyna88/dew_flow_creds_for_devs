@@ -1046,3 +1046,25 @@ For Opus, on the code; points 8-19 are Fable's authentication judgement at revie
 *Empty until the story is built.* The coder records here: the RED record of §S7.11; each probe's CI run, commit, version lines and results,
 with each prediction of §S7.4 beside what was observed; each pair's row as §S7.7 asks; each **[S]** that changed, with the reason; the
 mutations' runs; M11.
+
+**Served pair 1: the ODBC `sqlcmd`, Linux** (turned 2026-11-24 by the lead under §S7.7; the record is the candidate run 45390171118 at
+35d59423, one job per image, leg (w) green as assertions under the candidate table, 0 blocking legs).
+
+| Build | Image (job) | Driver file |
+|---|---|---|
+| 17.11.0001.1 `Linux` | ubuntu-22.04 (`bridged-ps1-linux-ubuntu-22.04`), image 20261116.365.1 | `libmsodbcsql-17.11.so.1.1` (17.11.1.1; packages msodbcsql17 and mssql-tools 17.11.1.1-1) |
+| 18.7.0001.1 `Linux` | ubuntu-24.04 and ubuntu-latest (`bridged-ps1-linux-ubuntu-24.04`, `…-ubuntu-latest`) | `libmsodbcsql-18.7.so.1.1` (18.7.1.1; packages msodbcsql18 and mssql-tools18 18.7.1.1-1) |
+
+| Leg | Its control, shown | As launched |
+|---|---|---|
+| PS1-0 / PS1-1 | no user, by hand, the realm's ticket in the default cache: an integrated attempt the server logged (SSPI handshake) | the entry's user and password: a SQL login as that user, nothing integrated |
+| PS1-5 | the same control | the same, with the ticket renewed just before: a SQL login, nothing integrated |
+| PS1-4 | `-D` with the rig home's `.odbc.ini` DSN reaches the file's server | the file's server saw 0 connections: the DSN is not read |
+| PS1-9 | without `-x`, by hand: `$(PS1XVAR)` was put in from the environment | with `-x`: the text stayed as written |
+| PE1-7 | — | the entry's own login made a SQL session (auth_scheme SQL); a wrong password made none |
+| PS1-8 | — | `RIGDOM\probe` with a password: a SQL login for the name as written |
+
+Every defence of §4.11's row ran (`-b`, `-x`; no `-X1` by change 4.1); PA1 read each build with its driver file (L11); no leg printed
+`UNMEASURED`. Encrypt and TrustServerCertificate stay refused (DR2) until their legs exist (§S7.9). go-sqlcmd on Linux stays refused
+(PS1-8-flag, a STOP); every other pair stays refused as §S7.4's forecast and the parent's §7 rows say. The production run on the turning
+commit is next (§S7.7).

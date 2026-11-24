@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
-import type { DbProfileRow } from '../bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, bridgedDbPair, type DbProfileRow } from '../bridgedDbProfile';
 import type { DbType } from '../types';
 import { LinksWorld, linksWorld } from './bridgeLinksWorld';
 import { Ask, Door, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
@@ -184,8 +184,10 @@ test('Q4b (E1.6, Y6): the environment of a bridged psql is the allow-list, its p
 const DR1_LINE = (client: string): string => `prod: A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${SYSTEM_WORD[process.platform] ?? process.platform} is not among them. (a Remote Bridge was told only that it could not be used)`;
 const SYSTEM_WORD: Partial<Record<NodeJS.Platform, string>> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
 
-test('DG1 (§S6.15 Z1): through the production table a bridged query on each client is refused with the generic sentence, DR1 is in the journal, nothing is spawned and the stored connection is not read', async () => {
-  for (const client of CLIENTS) {
+test('DG1 (§S6.15 Z1): through the production table a bridged query on each client the table does not serve on this system is refused with the generic sentence, DR1 is in the journal, nothing is spawned and the stored connection is not read', async () => {
+  const refused = CLIENTS.filter((client) => !bridgedDbPair(BRIDGED_DB_PROFILES, client.dbType, process.platform).served);
+  assert.notEqual(refused.length, 0, 'some client is refused on this system');
+  for (const client of refused) {
     for (const door of DOORS) {
       const what = `${client.dbType} through ${door}`;
       const qw = await queryWorld(client.dbType, client.connection);

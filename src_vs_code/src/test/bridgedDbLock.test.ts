@@ -22,10 +22,10 @@ const ENTRY = { client: 'psql', platform: 'linux', vendor: 'postgresql', version
 const legsOf = (client: string, vendor: string): string[] => rulesFor(client, vendor, vendor).map((rule: { id: string }) => rule.id);
 const STEP = (job: string, harness: string): string => `\n      - name: Assert the legs\n        env:\n          BRIDGED_DB_JOB: ${job}\n        run: node scripts/${harness}\n`;
 
-test('DP21: the production table, the jobs\' list and the workflow agree: with no row served the lock is vacuous, and every entry of the list is a job of the workflow', () => {
-  assert.equal(BRIDGED_DB_PROFILES.some((row) => row.served), false, 'no row is served');
+test('DP21: the production table, the jobs\' list and the workflow agree: every served build stands in a job of the workflow with every leg of its vendor, and every entry of the list is a served build', () => {
+  assert.deepEqual(BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => `${row.client}/${row.platform}`), ['sqlcmd/linux'], 'the turned rows');
   assert.deepEqual(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: WORKFLOW, legsOf }), []);
-  assert.deepEqual(Object.values(SERVED_JOBS).flat(), [], 'and the list is empty with it');
+  assert.deepEqual(Object.keys(SERVED_JOBS).sort(), ['bridged-ps1-linux-ubuntu-22.04', 'bridged-ps1-linux-ubuntu-24.04', 'bridged-ps1-linux-ubuntu-latest'], 'each Linux PS1 image\'s job finds its build');
   for (const harness of Object.values(HARNESS_OF) as string[]) {
     assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'scripts', harness)), true, `${harness} is a file of scripts/`);
   }
@@ -73,7 +73,12 @@ test('DP20 (T82): a candidate row has the production row\'s shape and names a bu
 test('DP20 (T82): the ODBC candidate lists its driver; a build the production table serves is read from it alone; under CI a candidate for a served build fails', () => {
   const build = { version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' };
   const odbc = tableWith(BRIDGED_DB_PROFILES, 'linux', 'odbc-sqlcmd', { version: '18.6.0001.1', tag: 'Linux', driver: '18.6.1.1' });
-  assert.deepEqual((rowIn(odbc.rows, 'sqlcmd').clients as DbServedClient[])[0].builds[0], { version: '18.6.0001.1', tag: 'Linux', driver: '18.6.1.1', record: 'candidate: this run' });
+  assert.equal(odbc.mode, 'CANDIDATE', 'a build the production table does not serve');
+  const odbcBuilds = (rowIn(odbc.rows, 'sqlcmd').clients as DbServedClient[])[0].builds;
+  assert.deepEqual(odbcBuilds.at(-1), { version: '18.6.0001.1', tag: 'Linux', driver: '18.6.1.1', record: 'candidate: this run' }, 'put in after the served builds');
+  assert.equal(odbcBuilds.length, 3, 'the two served builds stay');
+  assert.equal(tableWith(BRIDGED_DB_PROFILES, 'linux', 'odbc-sqlcmd', { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1' }).mode, 'PRODUCTION', 'a served build is read from the production table alone');
+  assert.equal(tableWith(BRIDGED_DB_PROFILES, 'linux', 'odbc-sqlcmd', { version: '18.7.0001.1', tag: 'Linux', driver: '18.6.1.1' }).mode, 'CANDIDATE', 'the same client over another driver is not the served build');
 
   const production = tableWith(SERVED_PSQL, 'linux', 'psql', build);
   assert.equal(production.mode, 'PRODUCTION');

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { parseAuditLine } from '../agentAuditLog';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
 import { statusForErrorCode } from '../brokerProtocol';
-import type { DbClient, DbProfileRow } from '../bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, bridgedDbPair, type DbClient, type DbProfileRow } from '../bridgedDbProfile';
 import { notStarted } from '../requestLife';
 import type { DbType } from '../types';
 import { code, message } from './bridgeDoorHarness';
@@ -283,8 +283,12 @@ async function refusedBeforeTheDialog(entry: (typeof ENTRIES)[number], door: 'to
   }
 }
 
+/** The entries whose pair the PRODUCTION table does not serve on this system: DG5 and DG6 are about those (a served pair goes past the gate, DG5b). */
+const REFUSED_HERE = (): typeof ENTRIES => ENTRIES.filter((entry) => !bridgedDbPair(BRIDGED_DB_PROFILES, entry.dbType, process.platform).served);
+
 test('DG5 (V5, T78, T79): a wall built by wallSuppliersOf over a table that serves no row for the client answers a bridged query by a token and by MCP before the dialog: the generic body, one journal line whose detail is DR1, no dialog, no read of the stored connection, nothing spawned, and the grant of the call is gone', async () => {
-  for (const entry of ENTRIES) {
+  assert.notEqual(REFUSED_HERE().length, 0, 'some pair is refused on this system');
+  for (const entry of REFUSED_HERE()) {
     await refusedBeforeTheDialog(entry, 'token');
     await refusedBeforeTheDialog(entry, 'mcp');
   }
@@ -292,7 +296,7 @@ test('DG5 (V5, T78, T79): a wall built by wallSuppliersOf over a table that serv
 
 test('DG6 (V5): DG5 under each consent policy of the entry: the same refusal, still before any dialog', async () => {
   for (const ask of ['always', 'every12h', 'never'] as const) {
-    for (const entry of ENTRIES) {
+    for (const entry of REFUSED_HERE()) {
       const qw = await queryWorld(entry.dbType, entry.connection);
       const ww = await wallWorld({ query: qw.action, e1Db: entry.dbType, consent: { ask, state: memento(), now: () => NOW } });
       try {
