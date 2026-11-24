@@ -181,7 +181,6 @@ async function refusedLeg(ctx, spec) {
   }
   check(`${label}: the click ended within 30 s`, click.ended, JSON.stringify(click));
   const counts = rig.countsOf(leg, roads, [k1]);
-  const atCounts = { ...k1, sshd: { stderr: k1.sshd.stderr } }; // the log as the counts read it: the control client's login is not one of the leg's connections
   const sentence = messageChecks(check, label, leg, roads, spec);
   const timing = countChecks(ctx, roads, spec, counts, sentence);
   if (spec.credential === 'password') {
@@ -193,7 +192,8 @@ async function refusedLeg(ctx, spec) {
   const kept = leftChecks(check, info, label, leg, roads, spec);
   const minted = spec.road === 'bridge' ? mintedRecord(info, label, roads, sentence) : null;
   await rig.endCounterpart(check, leg, k1, 'K1');
-  rig.evidence(leg, roads, [atCounts], { case: spec.case, road: spec.road, state: spec.state, writeProbe: unwritable?.probe ?? null, minted, leftByFailedWrite: kept, liveness: alive, questionMs: counts.question[0]?.ms ?? null, ...timing });
+  // The evidence line carries the counts as they were taken BEFORE the control client: its own login is in K1's log, and its `pinFileOf` asks the client `-V` through the shim.
+  rig.evidence(leg, roads, [k1], { ...counts, case: spec.case, road: spec.road, state: spec.state, writeProbe: unwritable?.probe ?? null, minted, leftByFailedWrite: kept, liveness: alive, questionMs: counts.question[0]?.ms ?? null, ...timing });
 }
 
 module.exports = { refusedLeg, driveRefused, foldersWriteRefused, liveness, keyText, toolOnPath, changeEntry, dismissAll };
