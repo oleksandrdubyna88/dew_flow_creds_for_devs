@@ -30,7 +30,7 @@ Held by the tests, on the texts that a real `ssh` printed: the same text is answ
 code alone decides. Not measured yet: a real `ssh` against a real `sshd` whose run ends with exit code 0 and holds that line,
 through these two commands. The real-road runs that follow measure it.
 
-## [1.23.0] — 2026-11-23 — Security — a call without a terminal trusts only a saved host key that can be used; the search stays in reach
+## [1.23.0] — 2026-11-23 — Security — a call without a terminal trusts only a saved host key; the search stays in reach and is green
 
 ### Added — the search stays in reach and its filter stays in view
 
