@@ -13,7 +13,7 @@ import { loadWithVscode } from './vscodeStub';
  * calls the handlers the extension registered. The bridges are the REAL `SshBridgeManager` over a spawner the test chooses.
  *
  * <p>Stand-ins, by the request string that `commands/agentCommands.ts` (or the module it imports) writes: `../sshExecAuth` (what a
- * resolve answers), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
+ * resolve answers; left out with `realResolve`), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
  * `realForget`), `./pinClient` (the asker of the client of a pinned call; left out with `realClient`), and with `noExecArgv`
  * `../sshExecCommand`.</p>
  *
@@ -27,6 +27,15 @@ import { loadWithVscode } from './vscodeStub';
  *
  * <p>The entry's `user` and `port` (E1.S4): the smoke of section 10 of `scripts/ssh-agent-itest.cjs` loads this world with a real runner
  * and a real spawner, and names the user that runs it and the port of its own `sshd`. Every suite leaves them out.</p>
+ *
+ * <p>The REAL resolve (G1, E3.S4: `realResolve`): the rows of E3 keep `vscode` as their only stand-in, and the stand-in of `../sshExecAuth`
+ * replaces that whole module, so a fault of the real `resolveExecAuth` (a stored key written with no `materialized`, so never deleted) stays
+ * green under it. With `realResolve` the registered commands call the product's resolve, which reads a disposable `vault` that the host's
+ * `storage` answers: a stored key, a key named by its path (the entry's `sshKeyPath`) or a password, all plain text, so no PIN is asked.
+ * The real resolve hands `ssh` the PROCESS's environment, so a row runs the world in a process whose environment is its own.</p>
+ *
+ * <p>`said` is every message, quick pick and log line in the order it was shown (the four arrays lose the order across kinds), and
+ * `replaceHostKey` makes the storage answer a NEW snapshot of the entry from the next read on (a leg that changes the pin in the same window).</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
@@ -108,8 +117,25 @@ export interface Parts {
   client?: PinClient | ((index: number) => PinClient);
   /** The real `./pinClient` asks (a real `ssh -V` through the real runner); `clientAsks` stays empty. */
   realClient?: boolean;
+  /** The product's own `resolveExecAuth` answers instead of the stand-in: `clicks`, `checks` and `resolveGate` are not read. Needs a `vault` and a real `storageDir`. */
+  realResolve?: boolean;
+  /** What the host's `storage` holds of the entry, for the real resolve: a stored key, a key file named by its path, a password. Plain text. Left out: the host has none of these. */
+  vault?: Vault;
   /** More stand-ins, by request string. */
   mocks?: Record<string, unknown>;
+}
+
+/** The disposable vault of the host (E3.S4): the three credentials the real resolve tells apart. At most one is given. */
+export interface Vault {
+  privateKey?: string;
+  keyPath?: string;
+  password?: string;
+}
+
+/** One thing a person was shown, in the order it was shown. */
+export interface Said {
+  kind: 'info' | 'warning' | 'error' | 'pick' | 'log';
+  text: string;
 }
 
 export interface World {
@@ -132,6 +158,10 @@ export interface World {
   warnings: string[];
   errors: string[];
   logs: string[];
+  /** Every message, quick pick and log line, in the order they were shown. */
+  said: Said[];
+  /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey` (the field is left out for `undefined`); the old snapshot is not changed. */
+  replaceHostKey(hostKey: string | undefined): void;
 }
 
 /** The known-hosts file that an argv names, and its text at the moment of the read (`undefined`: the file is not on the disk). */
@@ -172,13 +202,14 @@ function emptyWorld(parts: Parts): World {
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
+  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], replaceHostKey: () => undefined };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
-function dialog(w: World, parts: Parts, into: string[]): (message: string, ...rest: unknown[]) => Promise<string | undefined> {
+function dialog(w: World, parts: Parts, into: string[], kind: Said['kind']): (message: string, ...rest: unknown[]) => Promise<string | undefined> {
   return (message, ...rest) => {
     into.push(message);
+    w.said.push({ kind, text: message });
     const asks = rest.some((one) => typeof one === 'string');
     if (asks) {
       w.asked.push({ message, forgottenBefore: w.forgotten.length });
@@ -190,10 +221,10 @@ function dialog(w: World, parts: Parts, into: string[]): (message: string, ...re
 function vscodeStub(w: World, parts: Parts): Record<string, unknown> {
   return {
     window: {
-      showInformationMessage: dialog(w, parts, w.infos),
-      showWarningMessage: dialog(w, parts, w.warnings),
-      showErrorMessage: dialog(w, parts, w.errors),
-      showQuickPick: (items: readonly string[], options: { title: string }): Promise<string | undefined> => dialog(w, parts, w.infos)(options.title, ...items),
+      showInformationMessage: dialog(w, parts, w.infos, 'info'),
+      showWarningMessage: dialog(w, parts, w.warnings, 'warning'),
+      showErrorMessage: dialog(w, parts, w.errors, 'error'),
+      showQuickPick: (items: readonly string[], options: { title: string }): Promise<string | undefined> => dialog(w, parts, w.infos, 'pick')(options.title, ...items),
       withProgress: (_options: unknown, task: () => Promise<unknown>): Promise<unknown> => task(),
     },
     ProgressLocation: { Notification: 15 },
@@ -246,14 +277,17 @@ function clientOf(w: World, parts: Parts): Record<string, unknown> {
   };
 }
 
+/** The stand-ins a flag turns OFF: `mocks` unless the part's flag is `true`. */
+const unless = (flag: boolean | undefined, mocks: Record<string, unknown>): Record<string, unknown> => (flag === true ? {} : mocks);
+
 function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   const recorder = { './keyInstaller': { forgetMaterializedKey: (keyPath: string): void => void w.forgotten.push(keyPath) } };
   const noArgv = { '../sshExecCommand': { buildSshExecArgv: (): undefined => undefined } };
   return {
-    '../sshExecAuth': resolverOf(parts),
+    ...unless(parts.realResolve, { '../sshExecAuth': resolverOf(parts) }),
     '../sshExecRunner': runnerOf(w, parts),
-    ...(parts.realForget === true ? {} : recorder),
-    ...(parts.realClient === true ? {} : { './pinClient': clientOf(w, parts) }),
+    ...unless(parts.realForget, recorder),
+    ...unless(parts.realClient, { './pinClient': clientOf(w, parts) }),
     ...(parts.noExecArgv === true ? noArgv : {}),
     ...parts.mocks,
   };
@@ -261,7 +295,7 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
 
 /** The fields of the entry that a test chose and that have no default: a field left out is not in the snapshot. */
 function chosenFields(parts: Parts): Record<string, unknown> {
-  const fields: Record<string, unknown> = { hostKey: parts.hostKey, port: parts.port };
+  const fields: Record<string, unknown> = { hostKey: parts.hostKey, port: parts.port, sshKeyPath: parts.vault?.keyPath };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
 
@@ -270,12 +304,26 @@ function detailsOf(parts: Parts): Record<string, unknown> {
   return { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: parts.user ?? 'dev', ...chosenFields(parts) };
 }
 
+/** What the host's storage adds for the real resolve: the three values of the vault, and no rotation that waits (so no door is needed and no PIN is asked). Nothing without a vault. */
+function vaultOf(vault: Vault | undefined): Record<string, unknown> {
+  return vault === undefined
+    ? {}
+    : {
+        getPrivateKey: (): Promise<string | undefined> => Promise.resolve(vault.privateKey),
+        getPassword: (): Promise<string | undefined> => Promise.resolve(vault.password),
+        heldRotations: { listed: (): Promise<unknown[]> => Promise.resolve([]) },
+      };
+}
+
 /** Register the real agent commands over the stand-ins, and hand back what they registered and what they did. */
 export function world(parts: Parts = {}): World {
   const w = emptyWorld(parts);
-  const details = detailsOf(parts);
+  let details = detailsOf(parts);
+  w.replaceHostKey = (hostKey) => {
+    details = detailsOf({ ...parts, hostKey });
+  };
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', vscodeStub(w, parts), mocksOf(w, parts));
-  const say = (_area: string, text: string): void => void w.logs.push(text);
+  const say = (_area: string, text: string): void => void (w.logs.push(text), w.said.push({ kind: 'log', text }));
   // The host is an untyped record on purpose, as in forgetAgentConsents.test.ts: only the fields these three roads read are
   // supplied, and typing it would mean stubbing the whole extension (its provider, its stores, its servers) for nothing.
   mod.registerAgentCommands({
@@ -291,7 +339,7 @@ export function world(parts: Parts = {}): World {
     setAliasMap: (): Thenable<void> => Promise.resolve(),
     sshAgent: {},
     state: {},
-    storage: { getAccounts: () => [], getNodes: () => [], getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details }) },
+    storage: { getAccounts: () => [], getNodes: () => [], getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details }), ...vaultOf(parts.vault) },
     storageDir: parts.storageDir ?? '/storage',
     vaultKeys: {},
   });

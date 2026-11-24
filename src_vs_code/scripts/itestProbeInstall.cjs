@@ -206,4 +206,4 @@ async function probeInstallStandIn(ctx) {
   await ctx.recordWithListener(rig, real, probe);
 }
 
-module.exports = { probeInstallStandIn, installStandIn, listingOf };
+module.exports = { probeInstallStandIn, installStandIn, listingOf, tmpNames, startsIn, exactly, curlArgv, shArgv };

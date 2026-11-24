@@ -18,6 +18,8 @@ const { EXECUTABLE_VARIABLE, CONFIG_VARIABLE } = require('./lib/sshdRun.cjs');
 const REPO = path.resolve(__dirname, '..', '..');
 /** The config texts the run hands out, by file name: each counterpart's, and each client's. */
 const CONFIG_NAMES = new Set(['sshd_config', 'client_config']);
+/** The files a run's own shims are: every `ssh` in a folder named `shim`, at any depth (section 10's, and each leg's of the rows). */
+const SHIM_NAME = 'ssh';
 /** The lines of the run that name a helper program of sshd. */
 const HELPER = /^(SshdSessionPath|SshdAuthPath)\s+(\S+)$/i;
 
@@ -75,11 +77,12 @@ function filesNamed(dir, names) {
   return found.sort((a, b) => (a.file < b.file ? -1 : 1));
 }
 
-/** The JSON files `name` under the folders of `dir`, parsed, with the folder: what each counterpart recorded of itself. */
+/**
+ * The JSON files `name` at EVERY depth under `dir`, parsed, each with its counterpart: the folder that holds it, relative to `dir` (`k1`, and
+ * `m1/k1` for a counterpart of a leg of the rows, E3.S4): what each counterpart recorded of itself.
+ */
 function recorded(dir, name) {
-  return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(dir, entry.name, name)))
-    .map((entry) => ({ counterpart: entry.name, ...JSON.parse(fs.readFileSync(path.join(dir, entry.name, name), 'utf8')) }));
+  return filesNamed(dir, new Set([name])).map((one) => ({ counterpart: path.dirname(one.file), ...JSON.parse(fs.readFileSync(path.join(dir, one.file), 'utf8')) }));
 }
 
 /** The executables of the run: the sshd as named, the helpers its lines name, the programs the kernel answered, the real client. */
@@ -93,6 +96,9 @@ async function executablesOf(rig, real) {
   return [named, ...helpers, ...listeners, ...sessions, client];
 }
 
+/** Every shim of the run, at any depth: each file `ssh` in a folder named `shim`, as `{ file, sha256 }`. */
+const shimsOf = (dir) => filesNamed(dir, new Set([SHIM_NAME])).filter((one) => path.basename(path.dirname(one.file)) === 'shim');
+
 /** The record of this run: the tree, the parameters, the executables and the config texts. `real` is the real client's path. */
 async function identitiesOf(rig, real) {
   const configs = filesNamed(rig.dir, CONFIG_NAMES);
@@ -104,7 +110,7 @@ async function identitiesOf(rig, real) {
     conventions: await git(['rev-parse', 'HEAD:.agents/conventions']),
     parameters: { [EXECUTABLE_VARIABLE]: process.env[EXECUTABLE_VARIABLE] || null, [CONFIG_VARIABLE]: process.env[CONFIG_VARIABLE] || null },
     executables: await executablesOf(rig, real),
-    configs: [...configs, ...handed, { file: 'shim/ssh', sha256: sha256Of(path.join(rig.shimDir, 'ssh')) }],
+    configs: [...configs, ...handed, ...shimsOf(rig.dir)],
   };
 }
 
@@ -125,6 +131,9 @@ async function recordIdentities(check, rig, real) {
   check('every counterpart of the run ran one program: one SHA-256 of /proc/<pid>/exe', new Set(listeners.map((one) => one.sha256)).size === 1, JSON.stringify(listeners));
   // A wrapper that does not `exec` leaves the listener's pid to a shell: the listener-only stop would then end the shell and leave sshd.
   check('every listener ran an sshd itself (its /proc/<pid>/exe ends with /sshd): a wrapper hands over its pid by exec', listeners.length > 0 && listeners.every((one) => /\/sshd$/.test(one.path ?? '')), JSON.stringify(listeners));
+  // R7 (E3.S4): the record reads every depth. An independent walk counts the `program.json` files of the section's folder; each is a listener of the record.
+  const files = filesNamed(rig.dir, new Set(['program.json'])).length;
+  check('every program.json under the section\'s folder is a listener of the record: the walk of the record missed none', files === listeners.length && files > 0, JSON.stringify({ files, listeners: listeners.length }));
   return record;
 }
 

@@ -14,12 +14,15 @@
 //          of the probe and of the mode check, and no sentence D is shown.
 // The control, by hand (`hostKeyWords` made to answer `accept-new`), turns leg 2 red: K2 then logs the logins.
 //   leg 0  (E3.S2, `itestListenerStop.cjs`) the stop of the listener alone: a master connection outlives it and carries one more command.
+//   E3.S4: after leg 0, the rig's own proof (`itestRigProof.cjs`), M1 (`itestRowM1.cjs`) and M6 (`itestRowM6.cjs`), through the common rig of the real-road
+//          rows (`itestRowRig.cjs`): each of their legs runs in a LEG PROCESS of its own (the real resolve hands `ssh` the process's environment), with the
+//          product's real resolve over a vault, and only `vscode` a stand-in; this file's checks stay with the world's stand-in resolve (E1.S4's smoke, not a row).
 // Then the record of identities (E3.S2, `itestIdentities.cjs`): the commit, a tree with no modified tracked file, and what ran, by SHA-256.
 //
 // Every server is started by the serving launcher of `itestServing.cjs`, with the run's sshd and config lines (`CREDS_ITEST_SSHD`,
 // `CREDS_ITEST_SSHD_CONFIG` of `lib/sshdRun.cjs`; with neither, the system's sshd, as CI runs it). Linux only: the end of a server reads
-// `/proc`. Where `CI=true` a missing sshd FAILS. The world's stand-ins that stay: `vscode`, and `resolveExecAuth`, which hands a key the run
-// named by its path. Teardown, per leg: the bridges, then the server by `endServer` (its descendants listed while it lives, the clients, then
+// `/proc`. Where `CI=true` a missing sshd FAILS. The world's stand-ins that stay in legs 1 and 2: `vscode`, and `resolveExecAuth`, which hands a key the run
+// named by its path (the rows of E3.S4 run the real one). Teardown, per leg: the bridges, then the server by `endServer` (its descendants listed while it lives, the clients, then
 // the rest by pid and start time, then the listener), then the forwarded socket by its exact path; the section's folder last.
 const crypto = require('crypto');
 const fs = require('fs');
@@ -32,14 +35,10 @@ const { recordIdentities } = require('./itestIdentities.cjs');
 const { tool, within, settledAfter } = require('./itestNoSharing.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
+const { AUTH_ATTEMPT, kindOf, literal } = require('./lib/rowRecord.cjs');
 
 const me = os.userInfo().username;
 const VERIFY_FAILED = 'Host key verification failed.';
-/** A line of an sshd log that only a client past the key check can cause. */
-const AUTH_ATTEMPT = /Accepted |Failed |Postponed |Invalid user|authenticating user/;
-
-/** `text` as a regular expression that matches it literally. */
-const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 /** How many times `pattern` (a source, no flags) occurs in `text`. */
 const occurrences = (text, pattern) => (text.match(new RegExp(pattern, 'g')) ?? []).length;
 
@@ -52,7 +51,11 @@ const namesPinFile = (stderr, file) => file !== undefined && new RegExp(String.r
 /** The compiled modules this section reads, loaded ONCE before any world: `world()` evicts every module of `out/` from the require cache. */
 function productOf(out) {
   const load = (file) => require(path.join(out, file));
+  // `personPin.js` imports no `vscode` itself, but its chain does (`hostKeyTrust.js`): it is loaded under the stub, and FIRST, because that load evicts the modules of `out/`.
+  const { unusablePinSentence, pinWriteFailedSentence } = load(path.join('test', 'vscodeStub.js')).loadWithVscode('../personPin', {});
   return {
+    unusablePinSentence, // sentence A (E3.S4's record of §3.5)
+    pinWriteFailedSentence, // sentence B
     ...load('sshBridge.js'), // sweepCommand, modeCheckCommand, interpretSocketProbe, isOwnerOnlyMode
     ...load('remoteCliInstall.js'), // probeCommand, interpretProbe, blockerFor, confirmationFor
     ...load('hostKeyPin.js'), // parseHostKey, formatHostKey, knownHostsLine, refusedHostKeySentence (sentence C), unnamedHostKeySentence (sentence D)
@@ -162,26 +165,30 @@ function recordedStarts(rig) {
 /** The credential the world's resolver hands each click and the check: a key the run named by its path, so no key file is deleted. */
 const credentialOf = (rig) => ({ ok: true, keyPath: rig.userKey, env: rig.env, auth: 'key' });
 
-/** The real `runSshExec`, recording each run's argv and outcome. It changes nothing of what the product gets. */
+/** The real `runSshExec`, recording each run's argv, its outcome and its start and end times (`performance.now()`). It changes nothing of what the product gets. */
 function recordingRunner(runner, outcomes) {
   return {
-    runSshExec: (argv, options) =>
-      runner.runSshExec(argv, options).then(
+    runSshExec: (argv, options) => {
+      const startedAt = performance.now();
+      return runner.runSshExec(argv, options).then(
         (outcome) => {
-          outcomes.push({ argv, outcome });
+          outcomes.push({ argv, startedAt, endedAt: performance.now(), outcome });
           return outcome;
         },
         (error) => {
-          outcomes.push({ argv, error: String(error) });
+          outcomes.push({ argv, startedAt, endedAt: performance.now(), error: String(error) });
           throw error;
         },
-      ),
+      );
+    },
   };
 }
 
 /** The world of one leg: the real agent commands, the real runner and spawner, the real pin writer and deletes, the entry pinned to K1 at `port`. */
 function openLeg(rig, port, parts = {}) {
   const { product } = rig;
+  // `mocks` are more stand-ins by request string (E3.S4's observer of `./sshExecRunner`); `runnerOf` wraps the recording runner (E3.S4's gate). With neither, as before.
+  const { mocks = {}, runnerOf = (runner) => runner, ...rest } = parts;
   const outcomes = [];
   const reported = [];
   const w = product.world.world({
@@ -196,8 +203,8 @@ function openLeg(rig, port, parts = {}) {
     clicks: [credentialOf(rig), credentialOf(rig)],
     checks: [credentialOf(rig)],
     spawn: product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }),
-    mocks: { '../sshExecRunner': recordingRunner(product.runner, outcomes) },
-    ...parts,
+    mocks: { '../sshExecRunner': runnerOf(recordingRunner(product.runner, outcomes)), ...mocks },
+    ...rest,
   });
   return { w, outcomes, reported, before: new Set(recordedStarts(rig).map((one) => one.file)) };
 }
@@ -236,17 +243,6 @@ const runOf = (leg, command) => leg.outcomes.find((one) => one.argv.at(-1) === c
 
 /** What a world array holds that it did not hold at `mark`. */
 const since = (list, mark) => list.slice(mark);
-
-/** Which start a recorded one is: by `-V` alone for the question, by `-N` for the bridge, by its remote command for the three runs. */
-function kindOf(argv, commands) {
-  if (argv.length === 1 && argv[0] === '-V') {
-    return 'question';
-  }
-  if (argv.includes('-N')) {
-    return 'bridge';
-  }
-  return Object.keys(commands).find((kind) => commands[kind] === argv.at(-1)) ?? 'other';
-}
 
 /** The pin file a start names, when it names ONE file as both known-hosts files and says `yes`; else `undefined`. */
 function pinOf(product, argv) {
@@ -477,12 +473,12 @@ function knownHostsDigest() {
 }
 
 /** The rig in the section's owned folder. Its environment: ours without the person's agent, the shim first on PATH, the temp vars on the folder. */
-function rigOf(section, dir, out) {
+function rigOf(section, dir, out, product = productOf(out)) {
   const { SSH_AUTH_SOCK: _own, ...ours } = process.env;
   const shimDir = path.join(dir, 'shim');
   const env = harnessScope.tempEnv(dir, { ...ours, PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}` });
   const rig = {
-    dir, scope: section, out, env, shimDir, product: productOf(out),
+    dir, scope: section, out, env, shimDir, product,
     records: path.join(dir, 'records'), storage: path.join(dir, 'storage'), clientConfig: path.join(dir, 'client_config'),
     k1: path.join(dir, 'k1_key'), k2: path.join(dir, 'k2_key'), userKey: path.join(dir, 'user_key'), authorizedKeys: path.join(dir, 'authorized_keys'),
   };
@@ -514,6 +510,13 @@ async function pinnedLegs(check, rig) {
   }
   if (real !== undefined) {
     await listenerStopLeg(check, pinned, real);
+    // The rows of E3.S4: the rig's proof, M1 and M6, each leg in a leg process of its own (loaded here, not at the top: these files load this one).
+    const top = await require('./itestRowRig.cjs').rowsTop(check, pinned);
+    if (top !== undefined) {
+      await require('./itestRigProof.cjs').rigProof(check, top);
+      await require('./itestRowM1.cjs').rowM1(check, top);
+      await require('./itestRowM6.cjs').rowM6(check, top);
+    }
     await recordIdentities(check, pinned, real);
   }
 }
@@ -543,4 +546,8 @@ async function livePinnedRoads(check, out) {
   }
 }
 
-module.exports = { livePinnedRoads, productOf, realSsh, installShim, writeClientConfig, recordedStarts, openLeg, startsOf, finishes, makeKeys, knownHostsDigest, rigOf };
+module.exports = {
+  livePinnedRoads, productOf, realSsh, installShim, writeClientConfig, recordedStarts, openLeg, startsOf, finishes, makeKeys, knownHostsDigest, rigOf,
+  // widened for the rig of the real-road rows (E3.S4)
+  pinOf, remoteOf, removeSocket, isSocket, lacksNewPairs, NEW_PAIRS, namesPinFile, runOf, since, VERIFY_FAILED, literal, occurrences, recordingRunner,
+};
