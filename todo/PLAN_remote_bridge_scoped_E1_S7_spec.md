@@ -1069,3 +1069,37 @@ Every defence of §4.11's row ran (`-b`, `-x`; no `-X1` by change 4.1); PA1 read
 (PS1-8-flag, a STOP); every other pair stays refused as §S7.4's forecast and the parent's §7 rows say. **The production run:** CI run
 45397047469 on the turning commit d999e181, green: each image's job printed `PRODUCTION sqlcmd odbc-sqlcmd <version> "Linux" linux driver
 <driver>`, leg (w) held as a served pair with no candidate handed in, and the lock printed no `MISSING`.
+
+**The mutations of §S7.13 (V9), 2026-11-24, at 3ff967fe's code.** Each was applied to the source, compiled, its named tests run, and the
+file restored (a runner kept outside the repository; `git status` clean after each). Every one was killed by a test it names:
+
+| # | Killed by |
+|---|---|
+| T56 (no build; a build with no record) | DP1, DP21; DP1 |
+| T57, T58, T60, T61 | DP18 |
+| T59 (`gss`; `none`) | DP19, both |
+| T62 | Q2 |
+| T63 | Q13 |
+| T64 | DG7 |
+| T65 | DC5, DG8 |
+| T66 | DC6, DG7b |
+| T67 (another tag; another version of the tag) | DC3; DG8 |
+| T68 | DG5, BW3 |
+| T69 | DG1 |
+| T70 | DG9 |
+| T71 | DG10 |
+| T72 (Encrypt carried again, no leg) | DK1 |
+| T73 | Q11, DG2b |
+| T74 | DG7, DG10 |
+| T75 (identity changed; a launcher kept) | DC9; DC12 |
+| T76 | DG10 |
+| T77 | DC10 |
+| T78 | DG5 |
+| T79 | BW3, BW3b, DG5b |
+| T80 | DG11 |
+| T83 | Q3 |
+
+T81 and T82 are the engine's and the lock's unit tests (run by the V7 coder: each mutation failed its test); T83's (w) half, T57-T62's
+(u)/(v) halves are CI legs and were not mutated here. Four runner lines were first stopped by the compiler or did not apply; they were
+rewritten so that the code compiled and a test killed them (T56, T69, T75a, T76).
+
