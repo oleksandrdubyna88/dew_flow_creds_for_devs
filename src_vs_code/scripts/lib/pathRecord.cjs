@@ -103,11 +103,18 @@ function optionTexts(argv) {
   return words.flatMap((word, at) => (words[at - 1] === '-o' ? [word] : word.startsWith('-o') && word.length > 2 ? [word.slice(2)] : []));
 }
 
-/** The known-hosts options of an argv (before `--`) whose value is `/dev/null`, bare or in double quotes, the name in any case: `[{ option, value }]`. */
+/** The words of an option's value as ssh reads them: split at white space, a double-quoted word kept together (quotes kept). */
+const wordsOf = (value) => value.match(/(?:"[^"]*"|[^\s"])+/g) ?? [];
+
+/**
+ * The known-hosts options of an argv (before `--`) that name `/dev/null` as one of their files: `[{ option, value }]`, one per such word. ssh reads the name, then `=` or white space (also around the
+ * `=`), then a list of files split at white space, a double-quoted word kept together (measured 2026-11-24, OpenSSH 10.2p1), the name in any case; the forms `-o Name=v`, `-oName=v` and a word that holds
+ * `Name v` are all read.
+ */
 function devNullIn(argv) {
   return optionTexts(argv).flatMap((text) => {
-    const found = /^(UserKnownHostsFile|GlobalKnownHostsFile)=(.*)$/i.exec(text);
-    return found !== null && (found[2] === '/dev/null' || found[2] === '"/dev/null"') ? [{ option: found[1], value: found[2] }] : [];
+    const found = /^(UserKnownHostsFile|GlobalKnownHostsFile)(?:\s*=\s*|\s+)(.*)$/i.exec(text);
+    return found === null ? [] : wordsOf(found[2]).filter((word) => word.replaceAll('"', '') === '/dev/null').map((word) => ({ option: found[1], value: word }));
   });
 }
 

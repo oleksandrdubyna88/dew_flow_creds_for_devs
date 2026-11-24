@@ -48,9 +48,9 @@ function wordCheck(ctx, label, roads, spec) {
     const [user, global] = ['UserKnownHostsFile', 'GlobalKnownHostsFile'].map((option) => ctx.product.argv.valuesOf(start.argv, option));
     const name = path.basename((user[0] ?? '').replace(/^"|"$/g, ''));
     const file = path.join(keys, name);
-    const backslashes = file.split('\\').length - 1;
+    const backslashes = (user[0] ?? '').split('\\').length - 1;
     const right = user.length === 1 && global.length === 1 && named.test(name) && user[0] === pr.expectedWord(file, spec.word) && global[0] === user[0];
-    return { right: right && (spec.shape !== 'e' || (backslashes === 1 && !file.endsWith('\\'))), user, global };
+    return { right: right && (spec.shape !== 'e' || (backslashes === 1 && !(user[0] ?? '').endsWith('\\'))), user, global };
   });
   const how = spec.word === 'quoted' ? 'a path in double quotes' : 'a bare path';
   ctx.check(`${label}: every connection start names the pin file in both known-hosts options as ${how}: <storage>/keys/<pid>/known_hosts-e1-<uuid>${spec.shape === 'e' ? ', with one backslash inside and none at its end' : ''} (M7.w)`, read.length > 0 && read.every((one) => one.right), JSON.stringify(read.filter((one) => !one.right)));

@@ -7,9 +7,11 @@
 // A proving run of this file passes no row: its numbers are "seen when it was built".
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const rig = require('./itestRowRig.cjs');
 const pr = require('./lib/pathRecord.cjs');
+const rec = require('./lib/rowRecord.cjs');
 const shared = require('./itestRowOtherKey.cjs');
 const refused = require('./itestRowRefused.cjs');
 const paths = require('./itestRowPaths.cjs');
@@ -42,9 +44,11 @@ async function ruleLeg(ctx) {
   check(`${label}: (g), the control, the client alone: ssh -G -F /dev/null with the pathname in double quotes as both known-hosts options ends with 255 and says invalid quotes (M12.gc)`, gc.code === 255 && gc.stderr.includes('invalid quotes'), JSON.stringify(gc));
   const hc = await resolvedBy(ctx, h);
   const tilde = `~/known_hosts-e1-${uuid}`;
-  check(`${label}: (h), the control, the client alone: ssh -G -F /dev/null with ~/known_hosts-e1-<uuid> as both options resolves userknownhostsfile to a path that does not start with ~ and globalknownhostsfile to ~/known_hosts-e1-<uuid>: not the one pathname (M12.hc)`, hc.code === 0 && hc.user !== null && !hc.user.startsWith('~') && hc.user.endsWith(`/known_hosts-e1-${uuid}`) && hc.global === tilde, JSON.stringify(paths.homeAsTilde(hc)));
+  check(`${label}: (h), the control, the client alone: ssh -G -F /dev/null with ~/known_hosts-e1-<uuid> as both options resolves userknownhostsfile to a path that does not start with ~ and globalknownhostsfile to ~/known_hosts-e1-<uuid>: not the one pathname (M12.hc)`, hc.code === 0 && hc.user !== null && !hc.user.startsWith('~') && hc.user.endsWith(`/known_hosts-e1-${uuid}`) && hc.user === path.join(os.userInfo().homedir, `known_hosts-e1-${uuid}`) && hc.global === tilde, JSON.stringify(paths.homeAsTilde(hc)));
   info(`${label}: (g), (h): no road is driven for them: the rule and the client alone`);
-  paths.evidenceNone(leg, { rule: asked.map((one) => ({ ...one, pathname: shown[one.letter] })), coverage: { kinds, ...covered }, gc: { argv: gc.argv, code: gc.code, stderr: gc.stderr }, hc: { argv: hc.argv, code: hc.code, user: hc.user, global: hc.global }, drove: false });
+  const started = sec.recordedStarts(leg);
+  const counts = { starts: started.length, questions: started.filter((one) => rec.isQuestion(one.argv)).length, connectionStarts: started.filter((one) => rec.isConnectionStart(one.argv)).length, counterpartLog: null };
+  paths.evidenceNone(leg, { counts, rule: asked.map((one) => ({ ...one, pathname: shown[one.letter] })), coverage: { kinds, ...covered }, gc: { argv: gc.argv, code: gc.code, stderr: gc.stderr }, hc: { argv: hc.argv, code: hc.code, user: hc.user, global: hc.global }, drove: false });
 }
 
 /** The checks of the counts of a road leg: M12.0 (cold, before the click) is made by the caller; M12.1 to M12.4. */

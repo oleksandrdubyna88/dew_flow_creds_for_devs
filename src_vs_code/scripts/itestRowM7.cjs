@@ -95,6 +95,11 @@ function twinsCheck(ctx, label, roads, writer, port) {
   return twins;
 }
 
+/** M7.c0: cold, as M1.2 and M12.0: 0 runs of `ssh -V` and 0 starts of the client before the first click. */
+function coldCheck(ctx, roads) {
+  ctx.check(`${ctx.rig.label}: cold: 0 runs of ssh -V and 0 starts of the client before the first click (M7.c0)`, roads.questions.length === 0 && sec.recordedStarts(ctx.rig).length === 0, JSON.stringify({ questions: roads.questions.length }));
+}
+
 /** The check of a control or a witness that runs the bare words by the real client: its record for the evidence. */
 const recordOf = (controlled) => ({ argv: controlled.run.argv, code: controlled.run.code, stdout: controlled.run.stdout, stderr: controlled.run.stderr });
 
@@ -111,6 +116,7 @@ async function collisionK1(ctx, spec) {
   }
   const writer = paths.twinWriter(ctx, k1.port, leg.k2);
   const roads = rig.openRoads(leg, k1.port, { credential: 'named', answer: rig.installAnswer(leg), onPin: writer.onPin });
+  coldCheck(ctx, roads);
   info(`${label}: the roads' drive: ${JSON.stringify(await m1.driveFive(ctx, roads))}`);
   const k1log = await m1.acceptedOf(k1, 5);
   const twins = twinsCheck(ctx, label, roads, writer, k1.port);
@@ -139,10 +145,11 @@ async function collisionK2(ctx, spec) {
   const writer = paths.twinWriter(ctx, k2.port, leg.k2);
   const roads = rig.openRoads(leg, k2.port, { credential: 'named', answer: rig.installAnswer(leg), onPin: writer.onPin });
   rig.mark(leg, roads, [k2]);
+  coldCheck(ctx, roads);
   info(`${label}: cold: the roads' clicks: ${JSON.stringify(await shared.driveRefusedRoads(ctx, roads))}`);
   await shared.logsArrived(roads, [k2], shared.connectionStarts(leg, roads).length);
   const counts = rig.countsOf(leg, roads, [k2]);
-  const bridgeStderr = shared.refusedChecks(ctx, label, counts, 'M7.y');
+  const bridgeStderr = shared.refusedChecks(ctx, label, counts, 'M7.y1');
   paths.k2Counts(ctx, label, counts, 'M7.y2');
   const twins = twinsCheck(ctx, label, roads, writer, k2.port);
   paths.wordCheck(ctx, label, roads, spec);

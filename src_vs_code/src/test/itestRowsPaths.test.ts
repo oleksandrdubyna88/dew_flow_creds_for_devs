@@ -201,6 +201,17 @@ test('PT4: devNullIn finds a known-hosts option set to /dev/null (either form, t
   assert.deepEqual(find(['-F', '/dev/null', '-p', '1']), []);
   assert.deepEqual(find(['-p', '1', '--', '-o', 'UserKnownHostsFile=/dev/null']), [], 'after --');
   assert.deepEqual(find(['-o', 'UserKnownHostsFile=/dev/nullx']), []);
+  // The forms that ssh also accepts (measured 2026-11-24, OpenSSH 10.2p1; review of E3.S7): a space or white space around the equals sign, several files in one value, a quoted word beside a bare one.
+  assert.deepEqual(find(['-o', 'UserKnownHostsFile /dev/null']).map((one) => one.value), ['/dev/null'], 'a space in place of =');
+  assert.equal(find(['-oUserKnownHostsFile /dev/null']).length, 1, '-oName value');
+  assert.equal(find(['-o', 'UserKnownHostsFile = /dev/null']).length, 1, 'white space around =');
+  assert.equal(find(['-o', 'userknownhostsfile "/dev/null"']).length, 1, 'the name in any case, the value quoted, after a space');
+  assert.deepEqual(find(['-o', 'GlobalKnownHostsFile=/x/a /dev/null']).map((one) => one.value), ['/dev/null'], 'a list: the second file');
+  assert.deepEqual(find(['-o', 'UserKnownHostsFile="/x" /dev/null']).map((one) => one.value), ['/dev/null'], 'a quoted file and a bare one');
+  assert.deepEqual(find(['-o', 'UserKnownHostsFile=/dev/null "/x/a b"']).map((one) => one.value), ['/dev/null'], 'the first of a list');
+  assert.deepEqual(find(['-o', 'UserKnownHostsFile="/x/a b" /y']), [], 'a quoted word with a space is ONE word');
+  assert.deepEqual(find(['-o', 'UserKnownHostsFile="/x/dev/null"']), [], 'a path that only ends like it');
+  assert.deepEqual(find(['-o', 'IdentityFile /dev/null', '-o', 'KnownHostsCommand /dev/null']), [], 'other options');
 });
 
 test('PT5: e1WordsRaw writes the six words with the path as it is in both, and throws on white space or a double quote', () => {
