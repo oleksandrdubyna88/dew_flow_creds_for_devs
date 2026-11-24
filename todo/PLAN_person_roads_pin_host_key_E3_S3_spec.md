@@ -550,3 +550,23 @@ OpenSSH 8.2, not the 8.4 that Q1 read.
 - P3 uses a new run parameter, `CREDS_ITEST_OLD_SSH_DEBS`, in the way of E3.S2's two (a variable, no tracked file edited).
 - The local `sshd` (F1) is handed from `~/.cache`, outside an owned folder, as E3.S2's run handed it; only P3's unpacked client is unpacked
   into the owned folder at each run.
+
+## Notes for the row stories (the Opus review of E3.S3, 2026-11-24)
+
+The review approved E3.S3 (`6b38d5e1..9e417465`): every probe's pass line proves its instrument for its rows, and none of the
+deviations is a plan change (D1/D2 at `deb11u3`/`deb11u1`, because the newer files of the signed index answer 404; P2.5's repair
+`e6cb6532`, a fault of the probe's own set-up; the split of C3; the kept image's tag, which the rule's "never prefix what must
+survive the run" allows; the `--inside` flag). P4.3 is not decision 18: no row counts the nested client's start. These notes are
+for the specs of the row stories; none of them changes a pass criterion.
+
+- **L2 (M10, E3.S9).** P2.3's control left out only the `VerifyHostKeyDNS` and `LogLevel` pairs and kept `KnownHostsCommand=none`
+  (`itestProbeResolver.cjs:182-191`). M10's control sends E1's words: exactly the three pairs of the setup.
+- **L3 (M10, E3.S9, optional).** No run had the AD bit off. A zone flag that clears AD would show "insecure fingerprints" and
+  exit 255; M10 does not ask for it.
+- **L4 (M10, E3.S9).** The image was built a few minutes before its `Containerfile` was committed (`d9629402`), and its tag holds
+  the date (`itestProbeResolver.cjs:26`). Before E3.S9 measures, the image is built again from the committed file, or the build
+  records the `Containerfile`'s SHA-256 beside the image id. Its removal (`wslc rmi`) after E3's merge stays in *What grows*.
+- **L5 (M11, E3.S9).** No line of the counterpart names the client's version. M11's legs add the extra line `LogLevel DEBUG1` on
+  the counterpart and check `remote software version OpenSSH_8.4p1` in its log.
+- **P4.3's cause.** OpenSSH starts the nested client of a `ProxyJump` by its own absolute path (argv[0]), not through `PATH`;
+  a handed `ProxyCommand <shim>/ssh -W [%h]:%p <jump>` would count it, if a row ever needs that.
