@@ -202,7 +202,13 @@ interface FakeFile {
   mtimeMs: number;
   realPath?: string;
   launcher?: boolean;
+  dev?: number;
+  ino?: number;
+  ctimeMs?: number;
 }
+
+/** The device, inode and change time of a fake file, only where the test gave them. */
+const statOf = (found: FakeFile): Pick<FakeFile, 'dev' | 'ino' | 'ctimeMs'> => Object.fromEntries((['dev', 'ino', 'ctimeMs'] as const).filter((key) => found[key] !== undefined).map((key) => [key, found[key]]));
 
 /** A file system of named files: `identityOf` is what the walk reads of a file, the identity of the file behind a link. */
 function fakeFiles(files: Map<string, FakeFile>, texts: Map<string, string> = new Map(), onRead: (file: string) => void = () => undefined): DbFiles {
@@ -213,7 +219,7 @@ function fakeFiles(files: Map<string, FakeFile>, texts: Map<string, string> = ne
     },
     identityOf: (file) => {
       const found = files.get(file);
-      return found === undefined ? undefined : { realPath: found.realPath ?? file, size: found.size, mtimeMs: found.mtimeMs, launcher: found.launcher === true };
+      return found === undefined ? undefined : { realPath: found.realPath ?? file, size: found.size, mtimeMs: found.mtimeMs, ...statOf(found), launcher: found.launcher === true };
     },
   };
 }
@@ -393,6 +399,23 @@ test('DC9: a good verdict stands while the file is the same; another size, anoth
   assert.deepEqual(earlier.runs.map((run) => run.program), [PSQL_FILE, '/usr/bin/psql'], 'another file first on PATH: the new file is asked, not the old one');
 });
 
+test('DC9b: a file replaced at the same path with the same size and modification time is another file: another inode, device or change time costs one new version spawn', async (t) => {
+  const world = rig(t, [GOOD_PSQL]);
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, dev: 1, ino: 7, ctimeMs: 100 });
+  await world.check({ client: 'psql' });
+  await world.check({ client: 'psql' });
+  assert.equal(world.runs.length, 1, 'the same file: no spawn');
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, dev: 1, ino: 8, ctimeMs: 100 });
+  await world.check({ client: 'psql' });
+  assert.equal(world.runs.length, 2, 'another inode');
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, dev: 2, ino: 8, ctimeMs: 100 });
+  await world.check({ client: 'psql' });
+  assert.equal(world.runs.length, 3, 'another device');
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, dev: 2, ino: 8, ctimeMs: 101 });
+  await world.check({ client: 'psql' });
+  assert.equal(world.runs.length, 4, 'another change time');
+});
+
 /** A runner whose answer the test releases. */
 function deferred(): { run: () => ReturnType<ClientRunner>; release: (stdout: string) => void } {
   let release: (stdout: string) => void = () => undefined;
@@ -428,6 +451,21 @@ test('DC10: two calls for one file before the first verdict share one spawn; the
   const third = await bad.check({ client: 'psql' });
   assert.equal(bad.runs.length, 2, 'and a third call spawns again');
   assert.equal(third.ok, true);
+});
+
+test('DC10b: a call that finds another file at the path while the old file\'s spawn is in flight does not get the old file\'s verdict: it asks the file that is there now', async (t) => {
+  const gate = deferred();
+  const world = rig(t, [gate.run, GOOD_PSQL]);
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, ino: 7 });
+  const old = world.check({ client: 'psql' });
+  await new Promise((resolve) => setImmediate(resolve));
+  world.files.set(PSQL_FILE, { size: 10, mtimeMs: 100, ino: 8 });
+  const now = world.check({ client: 'psql' });
+  gate.release(LINES[0].stdout);
+  const [first, second] = await Promise.all([old, now]);
+  assert.equal(world.runs.length, 2, 'two spawns: one per file');
+  assert.equal(first.ok && first.file.ino, 7);
+  assert.equal(second.ok && second.file.ino, 8, 'the second verdict carries the file that is there now');
 });
 
 test('DC12: a file that begins with #! answers a recorded build: the verdict is good for that call and is not kept, so the next call spawns again', async (t) => {

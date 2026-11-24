@@ -30,6 +30,13 @@ export interface DbProgramFile {
   readonly realPath: string;
   readonly size: number;
   readonly mtimeMs: number;
+  /**
+   * The device, the inode and the change time of the file behind the path (Node's `stat`): a file replaced at the same path with the same size and modification time is still another
+   * file (CodeRabbit on #380). Absent only where a test's file system gives none; the walk on a real disk always reads them.
+   */
+  readonly dev?: number;
+  readonly ino?: number;
+  readonly ctimeMs?: number;
   /** The file begins with `#!`: it starts another program, which the identity does not cover. */
   readonly launcher: boolean;
 }
@@ -44,6 +51,13 @@ export interface DbDriverFile {
   readonly realPath: string;
   readonly size: number;
   readonly mtimeMs: number;
+  /**
+   * The device, the inode and the change time of the file behind the path (Node's `stat`): a file replaced at the same path with the same size and modification time is still another
+   * file (CodeRabbit on #380). Absent only where a test's file system gives none; the walk on a real disk always reads them.
+   */
+  readonly dev?: number;
+  readonly ino?: number;
+  readonly ctimeMs?: number;
   readonly version: string;
 }
 
@@ -193,7 +207,7 @@ export function dbClientVerdict(
 
 /** What the walk reads of a file: the identity of the file behind it, or `undefined` when there is no regular file. */
 export interface DbFiles {
-  identityOf(file: string): Pick<DbProgramFile, 'realPath' | 'size' | 'mtimeMs' | 'launcher'> | undefined;
+  identityOf(file: string): Pick<DbProgramFile, 'realPath' | 'size' | 'mtimeMs' | 'dev' | 'ino' | 'ctimeMs' | 'launcher'> | undefined;
   /** The text of a small configuration file (the ODBC configuration), or `undefined` when it is not there, not a regular file, or larger than a configuration file is. */
   readText?(file: string): string | undefined;
 }
@@ -250,7 +264,9 @@ export const nodeDbFiles: DbFiles = {
   identityOf(file) {
     try {
       const stat = fs.statSync(file);
-      return stat.isFile() ? { realPath: fs.realpathSync(file), size: stat.size, mtimeMs: stat.mtimeMs, launcher: beginsWithShebang(file) } : undefined;
+      return stat.isFile()
+        ? { realPath: fs.realpathSync(file), size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino, ctimeMs: stat.ctimeMs, launcher: beginsWithShebang(file) }
+        : undefined;
     } catch {
       return undefined;
     }
@@ -330,8 +346,11 @@ function driverFileOf(files: DbFiles, listed: string): DbDriverFile | DbDriverFa
   const version = driverVersionOf(identity.realPath);
   return version === undefined
     ? failure("the driver file's name holds no version (libmsodbcsql-<version>.so.<version> is the form read)")
-    : { path: listed, realPath: identity.realPath, size: identity.size, mtimeMs: identity.mtimeMs, version };
+    : { path: listed, ...withoutLauncher(identity), version };
 }
+
+/** The identity of a file without the launcher mark, which a driver does not have. */
+const withoutLauncher = ({ launcher: _launcher, ...identity }: NonNullable<ReturnType<DbFiles['identityOf']>>): Omit<DbDriverFile, 'path' | 'version'> => identity;
 
 /** The next step of a lookup, or the failure that ended it: a failure travels through the steps unchanged. */
 const then = <A, B>(value: A | DbDriverFailure, next: (found: A) => B | DbDriverFailure): B | DbDriverFailure => (isFailure(value) ? value : next(value));
@@ -348,9 +367,17 @@ export function odbcDriverOf(platform: NodeJS.Platform, files: DbFiles, clientVe
   return isFailure(file) ? file : { ok: true, driver: file };
 }
 
+/** The fields of a file's identity that a kept verdict is bound to: the path found, the real path behind it, the size, the modification and change times, the device and the inode. */
+const IDENTITY = ['path', 'realPath', 'size', 'mtimeMs', 'ctimeMs', 'dev', 'ino'] as const;
+
+/** Whether two readings name the very same file. */
+const sameIdentity = (kept: Pick<DbProgramFile, (typeof IDENTITY)[number]>, found: Pick<DbProgramFile, (typeof IDENTITY)[number]>): boolean => IDENTITY.every((field) => kept[field] === found[field]);
+
 /** The identity a kept verdict's driver is bound to. */
-const sameDriver = (kept: DbDriverFile, found: DbDriverFile): boolean =>
-  kept.path === found.path && kept.realPath === found.realPath && kept.size === found.size && kept.mtimeMs === found.mtimeMs;
+const sameDriver = (kept: DbDriverFile, found: DbDriverFile): boolean => sameIdentity(kept, found);
+
+/** A file's identity as one key: an answer in flight serves only a call that found the very same file (CodeRabbit on #380). */
+const identityKey = (file: DbProgramFile): string => IDENTITY.map((field) => String(file[field])).join('\u0000');
 
 /* ---------------------------------------------------------------------------------------------------------------
  * The spawn that asks, and what is kept
@@ -394,9 +421,8 @@ export interface DbClientCheckParts {
 type Resolved = Required<Omit<DbClientCheckParts, 'note'>> & Pick<DbClientCheckParts, 'note'>;
 
 
-/** The identity a kept verdict is bound to: the path found, the real path behind it, the size and the modification time. */
-const sameFile = (kept: DbProgramFile, found: DbProgramFile): boolean =>
-  kept.path === found.path && kept.realPath === found.realPath && kept.size === found.size && kept.mtimeMs === found.mtimeMs;
+/** The identity a kept verdict is bound to (`IDENTITY`). */
+const sameFile = (kept: DbProgramFile, found: DbProgramFile): boolean => sameIdentity(kept, found);
 
 /** Removes the folder; a failure is one journal note and never a throw that would hide the answer. */
 function removeFolder(parts: Pick<Resolved, 'note'>, what: string, dir: string): void {
@@ -501,16 +527,16 @@ function keep(state: State, verdict: DbClientVerdict): void {
 function start(state: State, file: DbProgramFile, call: DbClientCall): Promise<DbClientVerdict> {
   const tracked = askClient(state.parts, file, call.client, call.window).then(
     (verdict) => {
-      state.inflight.delete(file.path);
+      state.inflight.delete(identityKey(file));
       keep(state, verdict);
       return verdict;
     },
     (error: unknown) => {
-      state.inflight.delete(file.path);
+      state.inflight.delete(identityKey(file));
       throw error;
     },
   );
-  state.inflight.set(file.path, tracked);
+  state.inflight.set(identityKey(file), tracked);
   return tracked;
 }
 
@@ -549,7 +575,7 @@ function keptFor(state: State, file: DbProgramFile): DbClientOk | undefined {
 
 /** The kept verdict, or the version spawn already in flight for the file, or a new one. */
 const verdictOf = (state: State, file: DbProgramFile, call: DbClientCall): Promise<DbClientVerdict> | DbClientOk =>
-  keptFor(state, file) ?? untilEnded(state.inflight.get(file.path) ?? start(state, file, call), call.request);
+  keptFor(state, file) ?? untilEnded(state.inflight.get(identityKey(file)) ?? start(state, file, call), call.request);
 
 async function ask(state: State, call: DbClientCall): Promise<DbClientVerdict> {
   const { parts } = state;
