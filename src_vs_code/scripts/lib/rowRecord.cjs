@@ -125,14 +125,16 @@ const saysASentence = (text, sentences) => sentences.some((sentence) => text.inc
  * The client config the shim hands the real `ssh` in a row leg (`-F`, so the person's `~/.ssh/config` is not read): section 10's two lines (no
  * known-hosts file, so a call without the pin words is a first contact that writes nothing), and two more. `HOME` does not move the client's `~`
  * (it takes it from the password database; F23 of the spec), so without the `IdentityFile` line a password call looks for the person's own
- * `~/.ssh/id_*` (F7); the file named here is never made.
+ * `~/.ssh/id_*` (F7); the file named here is never made. E3.S6: an optional second parameter hands a leg another source of trust: the two known-hosts values go IN PLACE
+ * of `/dev/null` (the first value wins, E1.S1's fact K9, so a line added after it would change nothing), and `lines` stand inside the block after the five. With none, the text is as it was.
  */
-const handedClientConfig = (dir) => `${[
+const handedClientConfig = (dir, { userKnownHosts = '/dev/null', globalKnownHosts = '/dev/null', lines = [] } = {}) => `${[
   'Host *',
-  '  UserKnownHostsFile /dev/null',
-  '  GlobalKnownHostsFile /dev/null',
+  `  UserKnownHostsFile ${userKnownHosts}`,
+  `  GlobalKnownHostsFile ${globalKnownHosts}`,
   `  IdentityFile ${path.join(dir, 'no-default-identity')}`,
   '  IdentityAgent none',
+  ...lines.map((line) => `  ${line}`),
 ].join('\n')}\n`;
 
 /** The lines that turn password logins on in a counterpart: a `Match` block takes in every line after it, so nothing may follow them (F4, F5). */

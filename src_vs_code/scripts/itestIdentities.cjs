@@ -16,8 +16,8 @@ const { EXECUTABLE_VARIABLE, CONFIG_VARIABLE } = require('./lib/sshdRun.cjs');
 
 /** The repository root: `scripts/` is one folder below `src_vs_code`. */
 const REPO = path.resolve(__dirname, '..', '..');
-/** The config texts the run hands out, by file name: each counterpart's, and each client's. */
-const CONFIG_NAMES = new Set(['sshd_config', 'client_config']);
+/** The config texts the run hands out, by file name: each counterpart's, each client's, and the `KnownHostsCommand` that row M8 hands the client by its config (E3.S6, D13). */
+const CONFIG_NAMES = new Set(['sshd_config', 'client_config', 'known_hosts_command']);
 /** The files a run's own shims are: every `ssh` in a folder named `shim`, at any depth (section 10's, and each leg's of the rows). */
 const SHIM_NAME = 'ssh';
 /** The lines of the run that name a helper program of sshd. */
@@ -161,6 +161,10 @@ async function recordIdentities(check, rig, real) {
   const tools = record.executables.filter((one) => one.versionSource !== undefined);
   const named = filesNamed(rig.dir, new Set(['tool.json'])).length;
   check('every tool that a leg named (tool.json) is in the record, with its path, SHA-256 and version', named > 0 && tools.length === named && tools.every((one) => whole(one) && one.version !== null), JSON.stringify({ named, tools }));
+  // R9 (E3.S6): the recording command of M8 is a text that the run hands the client by its config; each is in the record with its SHA-256. An independent walk counts the files of that name.
+  const commands = filesNamed(rig.dir, new Set(['known_hosts_command'])).length;
+  const recorded = record.configs.filter((one) => path.basename(one.file) === 'known_hosts_command');
+  check('every known_hosts_command of the run is a config text of the record, with its SHA-256', commands > 0 && recorded.length === commands && recorded.every((one) => typeof one.sha256 === 'string'), JSON.stringify({ commands, recorded }));
   return record;
 }
 

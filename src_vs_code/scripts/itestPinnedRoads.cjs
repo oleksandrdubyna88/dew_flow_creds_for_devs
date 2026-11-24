@@ -127,9 +127,10 @@ function realSsh(shimDir) {
  * Writes `<shim>/ssh`: it records each start as `<records>/<pid>.argv` (its pid, its start time, how many words, then each word, every one ended
  * by a NUL byte: the probe's command holds newlines), then becomes the real client by `exec` (so the recorded pid IS the client's), with the
  * rig's config before the product's argv. `set -C`: a record that exists already is never overwritten, and that start fails with 97. Answers the real path, or `undefined`.
+ * E3.S6 (D2): a client that the product started with NO stderr (`stdio: 'ignore'` opens /dev/null: the bridge's) gets its stderr kept in `<records>/<pid>.stderr`; a stderr that
+ * the product reads (a pipe) is never taken. `real` is the client to wrap (the first outside the shim folder when not given): a test installs the shim over a stand-in client.
  */
-function installShim(rig) {
-  const real = realSsh(rig.shimDir);
+function installShim(rig, real = realSsh(rig.shimDir)) {
   if (real !== undefined) {
     const record = `${shQuote(rig.records)}/"$$".argv`;
     const lines = [
@@ -137,6 +138,7 @@ function installShim(rig) {
       '# The ssh of section 10 of ssh-agent-itest.cjs: it records this start, then becomes the real client. Written once, at install.',
       'set -C',
       `{ printf '%s\\0' "$$" "$(cut -d' ' -f22 /proc/$$/stat)" "$#"; printf '%s\\0' "$@"; } > ${record} || exit 97`,
+      `if [ "$(readlink /proc/$$/fd/2)" = /dev/null ]; then exec 2>${shQuote(rig.records)}/"$$".stderr; fi`,
       `exec ${shQuote(real)} -F ${shQuote(rig.clientConfig)} "$@"`,
       '',
     ];
@@ -510,7 +512,7 @@ async function pinnedLegs(check, rig) {
   }
   if (real !== undefined) {
     await listenerStopLeg(check, pinned, real);
-    // The rows of E3.S4 and E3.S5: the rig's proof, M1, M6, M4 and M9, each leg in a leg process of its own (loaded here, not at the top: these files load this one).
+    // The rows of E3.S4, E3.S5 and E3.S6: the rig's proof, M1, M6, M4, M9, M2, M3 and M8, each leg in a leg process of its own (loaded here, not at the top: these files load this one).
     const top = await require('./itestRowRig.cjs').rowsTop(check, pinned);
     if (top !== undefined) {
       await require('./itestRigProof.cjs').rigProof(check, top);
@@ -518,6 +520,10 @@ async function pinnedLegs(check, rig) {
       await require('./itestRowM6.cjs').rowM6(check, top);
       await require('./itestRowM4.cjs').rowM4(check, top);
       await require('./itestRowM9.cjs').rowM9(check, top);
+      // E3.S6: another key is refused whatever else would trust it: M2 (a known-hosts file), M3 (a master), M8 (a KnownHostsCommand).
+      await require('./itestRowM2.cjs').rowM2(check, top);
+      await require('./itestRowM3.cjs').rowM3(check, top);
+      await require('./itestRowM8.cjs').rowM8(check, top);
     }
     await recordIdentities(check, pinned, real);
   }

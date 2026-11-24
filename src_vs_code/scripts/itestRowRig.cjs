@@ -24,6 +24,7 @@ const sec = require('./itestPinnedRoads.cjs');
 const standIn = require('./itestProbeInstall.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 const rec = require('./lib/rowRecord.cjs');
+const other = require('./lib/otherKeyRecord.cjs');
 
 const me = os.userInfo().username;
 /** The limit of one leg process (s 1.2): then SIGTERM to its pid, SIGKILL 10 s later, each only while its start time is the recorded one. */
@@ -414,6 +415,52 @@ async function pinFileOf(leg, name, port, keyFile) {
   return await checkedPinOf(leg.out, file);
 }
 
+/** The leg's handed config with another source of trust (E3.S6, D1; `rec.handedClientConfig`'s options), written in the leg process before its world opens and before any start (H19); answers its SHA-256. */
+function handConfig(leg, options) {
+  const text = rec.handedClientConfig(leg.dir, options);
+  fs.writeFileSync(leg.clientConfig, text);
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+/** The real client by its path (never the shim: its starts belong to no road) under the leg's handed config. */
+const viaReal = (leg, argv) => runClient(leg, leg.clientConfig, argv, leg.env, leg.real);
+
+/** `ssh -O check` on the leg's control path (E3.S6, D3): `{ code, stdout, stderr }`. */
+const masterCheck = (leg) => viaReal(leg, ['-O', 'check', `${me}@127.0.0.1`]);
+
+/** The master's end (idempotent): `ssh -O exit`, then its pid while its start time is the recorded one; with a `check`, whether it and its control socket are gone. */
+async function endMaster(leg, master, check) {
+  await viaReal(leg, ['-O', 'exit', `${me}@127.0.0.1`]);
+  try {
+    if (alive(master)) {
+      process.kill(master.pid, 'SIGTERM');
+    }
+  } catch {
+    // it ended between the look and the signal
+  }
+  const gone = await within(5_000, () => !alive(master) && !fs.existsSync(path.join(leg.dir, 'cm')));
+  check?.(`${leg.label}: the master and its control socket are gone, by pid and start time`, gone, JSON.stringify(master));
+}
+
+/**
+ * A master connection to the counterpart at `port` through the leg's handed config (E3.S6, D3; the lines of the `m3-*` table, a control path `<leg>/cm`): the real client by its path, with E1's words
+ * of `pinFile` (a file of K1's line for the port) and the leg's key copy, then `ssh -O check` until it ends with 0 (10 s). Answers `{ pid, start }` (or `undefined`); its end is registered with the
+ * leg's scope at once, AFTER the counterpart's, so it runs first. It is no start of the shim and no road: it is in no count of the leg.
+ */
+async function masterOf(check, leg, port, pinFile) {
+  const dest = `${me}@127.0.0.1`;
+  const opened = await viaReal(leg, [...other.e1WordsFor(pinFile), '-i', leg.userKey, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-p', String(port), '-N', '-f', dest]);
+  let said = { code: null, stderr: '' };
+  const up = await within(10_000, async () => { said = await viaReal(leg, ['-O', 'check', '-p', String(port), dest]); return said.code === 0; });
+  const pid = Number(/Master running \(pid=(\d+)\)/.exec(said.stderr)?.[1]);
+  const master = Number.isInteger(pid) ? { pid, start: startOf(pid) } : undefined;
+  if (master !== undefined) {
+    leg.scope.after(() => endMaster(leg, master));
+  }
+  check(`${leg.label}: a master connection to K1 is up: ssh -O check on the leg's control path ends with 0 and names its pid`, up && master?.start !== undefined, JSON.stringify({ opened, said }));
+  return master;
+}
+
 /** The control client (the parent's setup): the REAL client by its path, never the shim, with E1's words of a checked pin; answers `{ argv, code, stdout, stderr }`. */
 async function controlClient(leg, { port, pin, words, command = 'true' }) {
   const { product } = leg;
@@ -566,7 +613,10 @@ function evidence(leg, roads, servers, fields = {}) {
 // ---------------------------------------------------------------- the entry of a leg process -------------------------------------------
 
 /** The files of the rows by their names: loaded when a leg of that row runs (the row files load this one). */
-const ROW_FILES = { M1: () => require('./itestRowM1.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs') };
+const ROW_FILES = {
+  M1: () => require('./itestRowM1.cjs'), M2: () => require('./itestRowM2.cjs'), M3: () => require('./itestRowM3.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'),
+  M8: () => require('./itestRowM8.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs'),
+};
 
 /** The rig of the leg, rebuilt in the leg process from `given.json` (the parent made the folder). */
 function legFromGiven(given, scope) {
@@ -606,7 +656,7 @@ async function legMain(folder) {
 }
 
 module.exports = {
-  runLeg, rowsTop, legRig, observedModule, counterpart, endCounterpart, openRoads, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
+  runLeg, rowsTop, legRig, observedModule, counterpart, endCounterpart, openRoads, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, handConfig, viaReal, masterOf, masterCheck, endMaster, listeningNow, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
   // what a row reads of section 10's helpers and of the stand-in of the install, so a row imports this file and no other of E3.S4
   sec, standIn, me, readFolder, within, tool, alive,
 };
