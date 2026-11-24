@@ -144,10 +144,11 @@ async function againstK2(ctx, setup) {
   const leg = ctx.rig;
   const { roads } = setup;
   await rig.press(leg, roads, 'installRemoteCli', 30_000);
+  const probe = sec.runOf(roads, product.probeCommand());
   await rig.press(leg, roads, 'openRemoteBridge', 30_000);
   const remote = roads.bridges[0]?.remote;
   const mode = remote !== undefined && (await within(40_000, () => modeRuns(product, roads) >= 1));
-  check(`${leg.label}: the install's probe was refused, the bridge's ssh ended by itself, and the check's mode run ended within 40 s`, mode && (await within(15_000, () => roads.bridges[0].exitedAt !== null)), JSON.stringify({ remote }));
+  check(`${leg.label}: the install's probe was refused (it ended with 255: the other host's key does not match the pin), the bridge's ssh ended by itself, and the check's mode run ended within 40 s`, mode && probe?.outcome?.exitCode === 255 && (await within(15_000, () => roads.bridges[0].exitedAt !== null)), JSON.stringify({ remote, probe: probe?.outcome?.exitCode ?? null }));
   return { expectedCalls: 3, points: [] };
 }
 

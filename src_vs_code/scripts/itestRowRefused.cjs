@@ -189,7 +189,7 @@ async function refusedLeg(ctx, spec) {
     check(`${label}: the counterpart's log shows no password attempt: no Failed password and no Accepted password after the mark (R.8)`, passwords.failed === 0 && passwords.accepted === 0, JSON.stringify(passwords));
   }
   const alive = await liveness(check, label, leg, k1);
-  await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, leg.product));
+  await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, leg.product), { also: spec.case === 'd' ? (name) => name.startsWith('known_hosts-') : undefined });
   const kept = leftChecks(check, info, label, leg, roads, spec);
   const minted = spec.road === 'bridge' ? mintedRecord(info, label, roads, sentence) : null;
   await rig.endCounterpart(check, leg, k1, 'K1');

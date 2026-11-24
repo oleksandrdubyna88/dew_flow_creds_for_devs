@@ -44,8 +44,12 @@ async function rowsTop(check, base) {
 function legRig(top, name, row, label) {
   const dir = path.join(top.dir, name);
   fs.mkdirSync(dir);
-  const rig = { ...sec.rigOf(top.scope, dir, top.out, top.product), k1: top.k1, k2: top.k2, userKey: top.userKey, storedKey: top.storedKey, pin: top.pin, password: top.password, name, row, label, home: path.join(dir, 'home') };
+  const rig = { ...sec.rigOf(top.scope, dir, top.out, top.product), k1: top.k1, k2: top.k2, storedKey: top.storedKey, pin: top.pin, password: top.password, name, row, label, home: path.join(dir, 'home') };
   fs.mkdirSync(rig.home);
+  // The person's key file of the leg is a copy of the section's own (`rigOf` named its place in the leg's folder): a defect that deletes "the person's file" in one leg cannot take it from the next (review of E3.S4).
+  fs.copyFileSync(top.userKey, rig.userKey);
+  fs.chmodSync(rig.userKey, 0o600);
+  fs.copyFileSync(`${top.userKey}.pub`, `${rig.userKey}.pub`);
   fs.writeFileSync(rig.clientConfig, rec.handedClientConfig(dir));
   fs.writeFileSync(rig.authorizedKeys, `${[rig.userKey, rig.storedKey].map((key) => fs.readFileSync(`${key}.pub`, 'utf8').trim()).join('\n')}\n`);
   rig.real = sec.installShim(rig);
@@ -280,6 +284,9 @@ function openRoads(leg, port, { credential, answer, gate = false }) {
     realClient: true,
     mocks: { './sshExecRunner': observedModule(product.runner, questions) },
     runnerOf: gateOf.wrap,
+    // The stand-ins of the resolve are never given a credential on a row's roads: a fall-back to them answers "no credential" and fails loudly (review of E3.S4).
+    clicks: [],
+    checks: [],
     spawn: spawner,
     ...(answer === undefined ? {} : { answer }),
   });
@@ -448,7 +455,7 @@ function pointsWrong(samples, calls, expected) {
     const done = calls.filter((call) => call.to !== null && call.to < sample.t);
     const live = calls.filter((call) => call.from <= sample.t && !done.includes(call));
     return [
-      ...(done.length < ended ? [`${point}: ${done.length} calls had ended, ${ended} expected`] : []),
+      ...(done.length !== ended ? [`${point}: ${done.length} calls had ended, ${ended} expected`] : []),
       ...done.filter((call) => holdsAny(sample, call)).map((call) => `${point}: the ended call ${nameOf(call.pin)} still has a file`),
       ...live.filter((call) => missingIn(sample, call).length > 0 || otherBytes(sample, call, expected).length > 0).map((call) => `${point}: the live call ${nameOf(call.pin)} lacks a file or its bytes`),
     ];
@@ -490,19 +497,25 @@ function listeningNow() {
 }
 
 /**
- * After the last end (5 s): none of these calls' files in the folder, no client of the leg alive; what else the folder holds is listed (M6.9, M6.10).
+ * After the last end (5 s): none of these calls' files in the folder, no client of the leg alive, and the folder holds ONLY what may be there: `known_hosts-e1` (the file of an entry
+ * this window does not own) and, in a password leg, the window's helper `askpass.sh` (the owner's answer A2); anything else fails (M6.9, review of E3.S4). `also` names a
+ * further kind that a row records on its own (E3.S5: the pin file that a failed write may leave, C14). What the folder holds is listed (M6.10).
  * With `sockets` (a row whose criterion asks it: M6.11) also: no bridge's socket is live (nothing listens on it, `ss -lx`; the owner's reading of
  * "no forwarded socket left", 2026-11-24: sshd leaves the dead file, which the next bridge sweeps). Every leg that opened a bridge also records, as info only and
  * judging nothing, (a) whether each bridge's socket FILE exists after the last end and (b) whether anything listens on it (`ss -lx`).
  */
-async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = false } = {}) {
+async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = false, also = () => false } = {}) {
   const names = calls.flatMap((call) => [call.pin, call.keyFile]).filter((file) => file !== undefined).map(nameOf);
   const dir = roads.sampler.dir;
   const left = () => Object.keys(readFolder(dir)).filter((name) => names.includes(name));
   const gone = await within(5_000, () => left().length === 0);
   roads.sampler.take('after the last end'); // a sample after the last end, so M6.5 has one to read
   check(`${label}: after the last end: 0 files of these calls in keys/<pid>/ (5 s)`, gone, JSON.stringify(left()));
-  Object.entries(readFolder(dir)).forEach(([name, file]) => console.log(`info  ${label}: the folder also holds ${name} (sha256 ${file.sha256}), which no call owns`));
+  const held = readFolder(dir);
+  Object.entries(held).forEach(([name, file]) => console.log(`info  ${label}: the folder also holds ${name} (sha256 ${file.sha256}), which no call owns`));
+  const allowed = ['known_hosts-e1', ...(roads.credential === 'password' ? ['askpass.sh'] : [])];
+  const stray = Object.keys(held).filter((name) => !allowed.includes(name) && !also(name));
+  check(`${label}: after the last end: keys/<pid>/ holds nothing but ${allowed.join(' and ')} (the closed list)`, stray.length === 0, JSON.stringify(stray));
   const clients = sec.recordedStarts(leg);
   const living = await within(5_000, () => !clients.some(alive)).then((none) => (none ? [] : clients.filter(alive).map((one) => one.pid)));
   check(`${label}: after the last end: 0 client processes alive, by the recorded pids and start times (${clients.length} recorded)`, clients.length > 0 && living.length === 0, JSON.stringify(living));
@@ -513,7 +526,7 @@ async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = 
     const live = (listed) => sockets.filter((remote) => listed.includes(remote));
     let listed = await listeningNow();
     const quiet = listed !== null && (await within(5_000, async () => { listed = await listeningNow(); return listed !== null && live(listed).length === 0; }));
-    check(`${label}: after the last end: no forwarded socket is live — nothing listens on any of the ${sockets.length} bridge sockets (ss -lx) (M6.11)`, quiet, listed === null ? 'ss -lx could not be run' : JSON.stringify(live(listed)));
+    check(`${label}: after the last end: no forwarded socket is live: nothing listens on any of the ${sockets.length} bridge sockets (ss -lx) (M6.11)`, quiet, listed === null ? 'ss -lx could not be run' : JSON.stringify(live(listed)));
   }
   const listening = sockets.length === 0 ? '' : await listeningNow();
   sockets.forEach((remote) => console.log(`info  ${label}: bridge socket ${path.basename(remote)} after the last end: (a) the file ${sec.isSocket(remote) ? 'exists' : 'is gone'}; (b) ${listening === null ? 'ss -lx could not be run' : listening.includes(remote) ? 'something listens on it' : 'nothing listens on it'}`));
@@ -563,7 +576,12 @@ async function legMain(folder) {
   const section = harnessScope.sectionScope();
   const leg = legFromGiven(given, section);
   setChildTemp(leg.dir);
-  const check = (name, ok, detail) => console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok || detail === undefined ? '' : ` — ${oneLine(detail)}`}`);
+  const check = (name, ok, detail) => {
+    if (name.includes(' — ')) {
+      throw new Error(`a check name holds " — ", which splits a FAIL line there: ${name}`); // `legLine` reads the name up to the first one
+    }
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok || detail === undefined ? '' : ` — ${oneLine(detail)}`}`);
+  };
   try {
     const here = process.env.PATH?.startsWith(`${leg.shimDir}${path.delimiter}`) === true && process.env.HOME === leg.home;
     check(`${leg.label}: the leg process: PATH starts with the leg's shim folder, and HOME is the leg's home folder`, here, JSON.stringify({ path: process.env.PATH?.split(path.delimiter)[0], home: process.env.HOME }));

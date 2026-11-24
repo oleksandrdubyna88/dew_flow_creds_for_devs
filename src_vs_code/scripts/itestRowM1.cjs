@@ -95,7 +95,10 @@ async function recordChecks(ctx, label, roads, k1) {
   check(`${label}: the shim recorded 6 starts, each whole: ONE question ssh -V, and 5 connection starts: the probe, the install run, the bridge, the sweep, the mode check (M1.8)`, list.length === 6 && list.every((one) => one.whole) && counts.starts.questions === 1 && kinds.join(',') === 'bridge,install,mode,probe,sweep', JSON.stringify({ total: list.length, questions: counts.starts.questions, kinds }));
   const question = list.find((one) => one.kind === 'question');
   const firstConnection = Math.min(...list.filter((one) => one.connection).map((one) => Number(one.start)));
-  check(`${label}: the question started before the first connection start (the start times the shim recorded), and the observer timed exactly one run of it (M1.9)`, question !== undefined && Number(question.start) <= firstConnection && counts.question.length === 1, JSON.stringify({ question, firstConnection, timed: counts.question }));
+  // The shim's start times are ticks of 10 ms, so the order is also read from the observers' own clock: the question ENDED before the first connection started (a run's `startedAt`, a bridge's `spawnedAt`).
+  const firstStarted = Math.min(...roads.outcomes.slice(rig.markOf(roads).outcomes).map((one) => one.startedAt), ...counts.bridges.map((one) => one.spawnedAt));
+  const questionEnd = counts.question.length === 1 ? counts.question[0].startedAt + counts.question[0].ms : null;
+  check(`${label}: the question started before the first connection start (the start times the shim recorded) and ENDED before it (the observers' clock), and the observer timed exactly one run of it (M1.9)`, question !== undefined && Number(question.start) <= firstConnection && counts.question.length === 1 && questionEnd !== null && questionEnd <= firstStarted, JSON.stringify({ question, firstConnection, timed: counts.question, questionEnd, firstStarted }));
   info(`${label}: the question ssh -V took ${counts.question[0]?.ms.toFixed(1)} ms (C20, the wait of a normal run)`);
   const connections = sec.recordedStarts(leg).filter((one) => rec.isConnectionStart(one.argv));
   const sloppy = connections.filter((one) => sec.pinOf(product, one.argv) === undefined || sec.lacksNewPairs(product, one.argv) || product.argv.valuesOf(one.argv, 'StrictHostKeyChecking').length !== 1);
