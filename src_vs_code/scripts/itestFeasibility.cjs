@@ -7,8 +7,8 @@
 //   node --import ./scripts/lower-priority.mjs scripts/itestFeasibility.cjs <probe>...
 //
 // The probes: `windows-client` (P5), `never-answers` (P7), `forced-zero` (P6), `jump-config` (P4), `install-stand-in` (P1), `older-client` (P3; it needs
-// `CREDS_ITEST_OLD_SSH_DEBS`, the folder of its two packages). An unknown name ends
-// at once with exit 2 and names the legal ones. Each probe prints its checks (`ok`, `FAIL`; `info` is recorded and decides nothing), its record
+// `CREDS_ITEST_OLD_SSH_DEBS`, the folder of its two packages), `resolver` (P2; the host part starts a `wslc` container, and `--inside` is the part that runs
+// in it). An unknown name ends at once with exit 2 and names the legal ones. Each probe prints its checks (`ok`, `FAIL`; `info` is recorded and decides nothing), its record
 // of identities, and ONE last line: `probe <name>: worked`, or `probe <name>: FAILED — <its first failed check>`. The exit code is 0 when every
 // probe that ran printed `worked`, and 1 otherwise. One section scope and one owned folder per probe (`ownedDir` under `shortSocketRoot()`).
 //
@@ -31,12 +31,14 @@ const { probeForcedZero } = require('./itestProbeForced.cjs');
 const { probeJumpConfig } = require('./itestProbeJump.cjs');
 const { probeInstallStandIn } = require('./itestProbeInstall.cjs');
 const { probeOlderClient } = require('./itestProbeOlderClient.cjs');
+const { probeResolver } = require('./itestProbeResolver.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const me = os.userInfo().username;
 const HEX40 = /^[0-9a-f]{40}$/;
 
-/** The probes by their names on the command line: the five of batch A in the brief's order, then `older-client` (P3). */
+/** The probes by their names on the command line: the five of batch A in the brief's order, then `older-client` (P3) and `resolver` (P2; with `--inside` it is the part that runs in
+// the container, started by the host part). */
 const PROBES = {
   'windows-client': probeWindowsClient,
   'never-answers': probeNeverAnswers,
@@ -44,6 +46,7 @@ const PROBES = {
   'jump-config': probeJumpConfig,
   'install-stand-in': probeInstallStandIn,
   'older-client': probeOlderClient,
+  resolver: probeResolver,
 };
 
 /** The SHA-256 of a file's bytes, or `null` (absent is not zero, and not the empty text). */
@@ -146,9 +149,19 @@ function wholeProbe(check, probe) {
   check('the probe\'s own record is whole: every executable it names has its path and SHA-256, and every config its SHA-256', ok, JSON.stringify(probe));
 }
 
+/** The two checks of the record that need `git`: the image of P2 has none, so inside its container they are answered on the host and shown as `info`. */
+const NEEDS_GIT = ['the run is a run of its commit', 'the record names the commit'];
+
+/** `ctx.check`, or inside the container of P2 (`--inside`) the same with R1 and R2 turned into `info` lines (the host part answers them from the same commit). */
+function insideAware(ctx) {
+  return ctx.flags.includes('--inside')
+    ? (name, ok, detail) => (NEEDS_GIT.some((start) => name.startsWith(start)) ? ctx.info(`${name}: answered on the host, the image has no git (here: ${ok ? 'ok' : 'not answerable'})`) : ctx.check(name, ok, detail))
+    : ctx.check;
+}
+
 /** A probe that started a counterpart: R1 to R6 of E3.S2, then the probe's own part, written beside it and printed as `probe-record`. */
 async function recordWithListener(ctx, rig, real, probe) {
-  const record = await recordIdentities(ctx.check, rig, real);
+  const record = await recordIdentities(insideAware(ctx), rig, real);
   fs.writeFileSync(path.join(rig.dir, 'identities.json'), `${JSON.stringify({ ...record, probe }, null, 2)}\n`);
   console.log(`probe-record ${JSON.stringify(probe)}`);
   wholeProbe(ctx.check, probe);
@@ -165,14 +178,14 @@ async function recordWithoutListener(ctx, rig, real, probe) {
 }
 
 /** Runs one probe in a section of its own and says its last line. Answers whether it worked. */
-async function runProbe(name) {
+async function runProbe(name, flags) {
   const section = harnessScope.sectionScope();
   const dir = ownedDir(section, 'probe', { parent: shortSocketRoot() });
   setChildTemp(dir);
   const state = { failed: undefined };
   const check = checkOf(state);
   const ctx = {
-    name, out: OUT, section, dir, check, info: (text) => console.log(`info  ${text}`), run, pinFor, clientArgv, executableOf, sha256Of,
+    name, flags, out: OUT, section, dir, check, info: (text) => console.log(`info  ${text}`), run, pinFor, clientArgv, executableOf, sha256Of,
     accepted: acceptedIn, connections: connectionsIn, settle,
     serve: (...given) => serve(ctx, ...given),
     stopServing: (...given) => stopServing(ctx, ...given),
@@ -192,8 +205,18 @@ async function runProbe(name) {
   return state.failed === undefined;
 }
 
+/** The flags of the command line: only `--inside`, only with `resolver` alone (the container's own start of P2 runs it). */
+const FLAGS = ['--inside'];
+
 async function main() {
-  const names = process.argv.slice(2);
+  const given = process.argv.slice(2);
+  const flags = given.filter((word) => word.startsWith('--'));
+  const names = given.filter((word) => !word.startsWith('--'));
+  const badFlag = flags.find((flag) => !FLAGS.includes(flag)) ?? (flags.length > 0 && names.join() !== 'resolver' ? '--inside with another probe than resolver' : undefined);
+  if (badFlag !== undefined) {
+    console.error(`itestFeasibility: ${badFlag} is not allowed; the one flag is ${FLAGS.join(', ')}, and only with the probe resolver alone`);
+    return 2;
+  }
   const unknown = names.filter((name) => !Object.hasOwn(PROBES, name));
   if (names.length === 0 || unknown.length > 0) {
     console.error(`itestFeasibility: ${names.length === 0 ? 'no probe named' : `unknown probe ${unknown.join(', ')}`}; the probes are: ${Object.keys(PROBES).join(', ')}`);
@@ -205,7 +228,7 @@ async function main() {
   }
   const worked = [];
   for (const name of names) {
-    worked.push(await runProbe(name));
+    worked.push(await runProbe(name, flags));
   }
   return worked.every(Boolean) ? 0 : 1;
 }
