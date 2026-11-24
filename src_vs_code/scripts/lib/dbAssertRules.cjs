@@ -76,6 +76,8 @@ function sqlcmdRules(name, vendor) {
     { id: 'PS1-1', leg: `PS1-1-${name}`, match: SHOWN, after: 'PS1-0', noStop: true },
     { id: 'PS1-5', leg: `PS1-5-${name}`, match: SHOWN, after: 'PS1-0', noStop: true },
     { id: 'PE1-7', leg: `PE1-7-${name}`, match: /logged in, auth_scheme SQL; a wrong password refused/, noStop: true },
+    { id: 'PS1-9-control', leg: `PS1-9-control-${name}`, match: /SUBSTITUTED/ },
+    { id: 'PS1-9', leg: `PS1-9-${name}`, match: /LITERAL/, after: 'PS1-9-control', noStop: true },
   ];
   const go = [
     { id: 'PS1-3-control', leg: `PS1-3-control-${name}`, match: SHOWN },

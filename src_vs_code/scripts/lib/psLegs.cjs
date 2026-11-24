@@ -34,16 +34,16 @@ const SCHEME = /\b(SQL|NTLM|KERBEROS)\b/;
 const ABSENT_ADDRESS = '127.0.0.1';
 
 /** The launch of the builder for entry A, then what a leg does to it by hand. `host` replaces the `-S` value, `user` the entry's user, `flags` are added last. */
-function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {} } = {}) {
+function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {}, query = ctx.q.query, withoutX = false } = {}) {
   const { product, q } = ctx;
   const encoded = encodeURIComponent(user);
-  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, q.query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
+  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
   if (built === undefined) {
     throw new Error('buildDbQueryLaunch refused the entry of a PS1 leg that must launch (it stores a user and a password and names only the profile, under a good verdict of the real client check)');
   }
   // The control (no user) is the launch as it was built until §S6.15: no user, no password and no candidate flag. go-sqlcmd with `--authentication-method=SqlPassword` and no user asks for a password on a
   // terminal and ends before it connects (the third run's `liner: function not supported in this terminal`), so the flag stays out of the control; a candidate is a leg's own to add, by hand.
-  const args = built.args.filter((arg) => !(nouser && /^--authentication-method=/.test(arg)));
+  const args = built.args.filter((arg) => !(nouser && /^--authentication-method=/.test(arg)) && !(withoutX && arg === '-x'));
   if (host !== undefined) {
     args[args.indexOf('-S') + 1] = host;
   }
@@ -70,7 +70,7 @@ async function observe(ctx, client, options) {
   const who = row === undefined ? undefined : row.replace(scheme, '').trim().replaceAll(/\s+/g, ' ').slice(0, 80);
   const made = lines.map((line) => MADE.exec(line)).find((found) => found !== null);
   return {
-    ended: run.ended, code: run.code, scheme, who, lines, integrated: lines.some(isIntegrated), said: oneLine(`${run.stderr} ${scheme === undefined ? run.stdout : ''}`, 200), launched,
+    ended: run.ended, code: run.code, stdout: run.stdout, scheme, who, lines, integrated: lines.some(isIntegrated), said: oneLine(`${run.stderr} ${scheme === undefined ? run.stdout : ''}`, 200), launched,
     madeAs: made === undefined ? undefined : `${made[1]} (${made[2]} authentication)`, rigDefect: RIG_DEFECT.exec(`${run.stderr}\n${run.stdout}`)?.[0],
   };
 }
@@ -376,6 +376,33 @@ async function oneClient(ctx, client) {
   await legBuilt(ctx, client, made.shown, 'PS1-5');
   await legHosts(ctx, client, made.shown);
   await legAccount(ctx, client, made.shown);
+  await legScripting(ctx, client);
+}
+
+/** The scripting variable of PS1-9: a name and a value of the rig's own, set in the client's environment. */
+const SCRIPTING_NAME = 'PS1XVAR';
+const SCRIPTING_VALUE = 'ps1x-substituted';
+
+/**
+ * PS1-9 (the parent's §4.11, the `sqlcmd` row's `-x`): a query that holds `$(PS1XVAR)`, with that name set in the environment. The control drops `-x` by hand, and the client puts the value in;
+ * as launched, with `-x`, the text stays as written. A control that puts nothing in is UNMEASURED; a launch that puts the value in is a STOP.
+ */
+async function legScripting(ctx, client) {
+  const options = { query: `select '$(${SCRIPTING_NAME})' as v`, extraEnv: { [SCRIPTING_NAME]: SCRIPTING_VALUE } };
+  const control = await observe(ctx, client, { ...options, withoutX: true });
+  const built = await observe(ctx, client, options);
+  const shown = control.stdout.includes(SCRIPTING_VALUE);
+  const literal = built.stdout.includes(`$(${SCRIPTING_NAME})`) && !built.stdout.includes(SCRIPTING_VALUE);
+  const controlText = `without -x, by hand: ${shown ? 'SUBSTITUTED' : 'nothing put in'} (exit ${control.code}; the client said ${JSON.stringify(control.said)})`;
+  if (shown) {
+    record(`PS1-9-control-${client.name}`, 'shown', controlText);
+  } else {
+    unmeasured(`PS1-9-control-${client.name}`, `the client put no scripting variable in without -x: ${controlText}`);
+  }
+  say(`PS1-9-${client.name}`, shown, `as launched (-x): ${literal ? 'LITERAL, the text stayed as written' : 'the value was put in or nothing came back'} (exit ${built.code}; the client said ${JSON.stringify(built.said)})`, built);
+  if (shown && !literal && built.rigDefect === undefined) {
+    stop(`PS1-9-${client.name}`, 'the launch as built put a scripting variable of the environment into the query (parent §4.11, the sqlcmd row: -x)');
+  }
 }
 
 /** PS1 for every client the harness found. `clients` is `[{ name, exe }]`; `ctx.q` is the receiver. */
