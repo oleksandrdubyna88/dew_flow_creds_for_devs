@@ -206,6 +206,24 @@ test('RF3: the message a refused leg expects is the product\'s own function: A w
   assert.equal(messageMatches('Cannot reach "box": EACCES', write), false, 'EACCES alone is not B');
 });
 
+test('RF3b: a password leg also holds the form apart from the key form: the expected text is not the key form, and the shown text never offers Trust and connect (HC6)', () => {
+  const expectedMessage = exportOf<(product: Product, spec: Spec, name: string) => Expected & { keyForm?: string }>(LIB, 'expectedMessage');
+  const passwordFormOk = exportOf<(shown: string, expected: Expected & { keyForm?: string }) => boolean>(LIB, 'passwordFormOk');
+  const password = expectedMessage(PRODUCT, { ...COLD, credential: 'password' }, 'box');
+  assert.equal(password.keyForm, A_KEY, 'the key form is carried, read from the product');
+  assert.ok(passwordFormOk(`${password.prefix}${A_PASSWORD}`, password), 'the password form passes');
+  assert.equal(passwordFormOk(`${password.prefix}${A_KEY}`, password), false, 'the key form shown to a password entry fails');
+  assert.equal(passwordFormOk(`${password.prefix}${A_PASSWORD} Trust and connect`, password), false, 'an offer of Trust and connect fails');
+  const blind = { unusablePinSentence: () => A_KEY, pinWriteFailedSentence: PRODUCT.pinWriteFailedSentence } as unknown as Product;
+  const mutated = expectedMessage(blind, { ...COLD, credential: 'password' }, 'box');
+  assert.equal(passwordFormOk(`${mutated.prefix}${A_KEY}`, mutated), false, 'a product whose sentence ignores the login gives the expected text the key form: caught, though shown equals expected');
+  const same = { unusablePinSentence: () => 'the same words for both forms', pinWriteFailedSentence: PRODUCT.pinWriteFailedSentence } as unknown as Product;
+  const alike = expectedMessage(same, { ...COLD, credential: 'password' }, 'box');
+  assert.equal(passwordFormOk(`${alike.prefix}${alike.text}`, alike), false, 'the expected text equal to the key form fails even when it never says Trust and connect');
+  assert.equal(expectedMessage(PRODUCT, COLD, 'box').keyForm, undefined, 'a key entry carries no key form to compare');
+  assert.ok(passwordFormOk(`Cannot reach "box": ${A_KEY}`, expectedMessage(PRODUCT, COLD, 'box')), 'and nothing else is asked of it');
+});
+
 const TEST_KEY = (() => {
   const blob = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from('ssh-ed25519'), Buffer.from([0, 0, 0, 32]), createHash('sha256').update('RF-test-key').digest()]);
   return { algorithm: 'ssh-ed25519', base64: blob.toString('base64') };

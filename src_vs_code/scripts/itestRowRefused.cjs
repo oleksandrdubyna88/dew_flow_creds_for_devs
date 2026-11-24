@@ -101,13 +101,18 @@ function messageChecks(check, label, leg, roads, spec) {
   const others = said.filter((one) => !errors.includes(one) && rec.saysASentence(one.text, sentences));
   const what = expected.code === undefined ? 'sentence A in the login\'s form, word for word' : `sentence B with ${expected.code}`;
   check(`${label}: exactly ONE error message after the mark: the road's prefix and ${what}; nothing else holds a sentence of §3.5 (R.6)`, errors.length === 1 && refused.messageMatches(errors[0].text, expected) && others.length === 0, JSON.stringify({ errors: errors.map((one) => one.text), others: others.map((one) => one.text) }));
+  if (expected.keyForm !== undefined) {
+    const shown = errors.map((one) => one.text).join(' | ');
+    check(`${label}: the password form is held apart from the key form: the expected text is not the key form, and the shown text never offers Trust and connect (R.6b)`, refused.passwordFormOk(shown, expected), JSON.stringify({ shown, expectedIsKeyForm: expected.text === expected.keyForm }));
+  }
   return errors[0];
 }
 
 /** R.7 (M4): after the last end `keys/<pid>/` holds no file; in (d) a pin file that a sample saw and that is still there is the one exception (C14), named. */
 function leftChecks(check, info, label, leg, roads, spec) {
   const left = Object.keys(rig.readFolder(roads.sampler.dir));
-  const seen = new Set(roads.sampler.samples().flatMap((sample) => Object.keys(sample.files)));
+  const since = rig.markOf(roads).t; // only the samples of the leg itself, not those of the warming call
+  const seen = new Set(roads.sampler.samples().filter((sample) => sample.t >= since).flatMap((sample) => Object.keys(sample.files)));
   const kept = spec.case === 'd' ? left.filter((name) => name.startsWith('known_hosts-') && seen.has(name)) : [];
   const owed = left.filter((name) => !kept.includes(name));
   if (spec.row === 'M4') {

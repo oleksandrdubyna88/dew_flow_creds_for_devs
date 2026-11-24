@@ -351,9 +351,11 @@ async function warm(check, leg, roads, servers = []) {
   const probe = sec.runOf(roads, leg.product.probeCommand());
   check(`${leg.label}: warm: the warming call started ONE question ssh -V and its probe ran`, click.ended && questions.length === 1 && probe?.outcome !== undefined, JSON.stringify({ click, questions: questions.length, probe: probe?.outcome?.exitCode }));
   roads.state = 'warm';
-  // The counterparts' logs arrive through a pipe, a moment after the login: the mark waits for each login of the warming call to be in them.
+  // The counterparts' logs arrive through a pipe, a moment after the login: the mark waits for each login of the warming call to be in them (a password leg is refused, so it
+  // waits for the attempt, not for an accepted login).
   const logins = sec.recordedStarts(leg).filter((start) => rec.isConnectionStart(start.argv)).length;
-  await Promise.all(servers.map((server) => within(3_000, () => rec.logCounts(server.sshd.stderr, me).accepted.length >= logins)));
+  const arrived = (log) => (roads.credential === 'password' ? log.authAttempts : log.accepted.length) >= logins;
+  await Promise.all(servers.map((server) => within(3_000, () => arrived(rec.logCounts(server.sshd.stderr, me)))));
   await new Promise((resolve) => setTimeout(resolve, 200));
   return mark(leg, roads, servers);
 }

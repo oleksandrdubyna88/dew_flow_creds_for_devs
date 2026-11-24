@@ -635,13 +635,6 @@ never a result.
     `buildSshExecArgv(` or `buildBridgeArgv(`; test 33's patterns; no raw temp call; every script ≤ 800 lines.
 12. The documents: "seen when it was built", not §10; hand checks as hand checks; `~` and `<user>`.
 
-> **Notes added 2026-11-24 (the Opus review of E3.S4, built with E3.S5; `research/module_tests.md`, *E3.S4 review fixes*).** (1) §12's expected-red column for HC1 is wrong:
-> `accept-new` still refuses a CHANGED key, so M6.14 and RP1 to RP4 stay green under it; HC1's own legs are M1.10 and M1.11, and the hand check of M6.14 and of RP1 to
-> RP4 is HC1b (`StrictHostKeyChecking=no`). (2) The hand checks of E3.S4 ran in the story's tree, not in a scratch worktree as §12 and §3 say; no product file was in the
-> range of the commits. HC5 was run again in a scratch worktree after the review's fixes (a key pair of its own for the rows, copied into each leg's folder): M6.8 red in the
-> `m6-named-*` legs. (3) The review's fixes changed no pass criterion: the rows' key file, the stand-ins' credentials, M1.9 by the observers' clock, the closed list of
-> `keys/<pid>/`, M6.6 exact, no " — " in a check name, the probe of M6 (d).
-
 ## What grows
 
 | What | How much (projected) | Who retires it | When it is interrupted |

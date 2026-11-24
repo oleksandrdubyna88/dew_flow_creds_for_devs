@@ -7,6 +7,7 @@
 //   runs of M1 in the same world, cold, on the entry that Connect wrote ("the repair of sentence A" is that repair by the person, as the key form advises it: no product change);
 //   `m9-password-connect` (C1): Connect's options with the scan given no answer; recorded, nothing connects.
 // Connect's options never go on to a connection. A proving run of this file passes no row: its numbers are "seen when it was built".
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const rig = require('./itestRowRig.cjs');
@@ -43,14 +44,22 @@ function answerOf(leg, fingerprint, seen) {
   };
 }
 
+/** What K1's `.pub` says, apart from the product: its first two fields, and the fingerprint `ssh-keygen -lf` prints (bounded, exe + argv). */
+function pubFacts(pubFile) {
+  const fields = fs.readFileSync(pubFile, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
+  const printed = execFileSync('ssh-keygen', ['-lf', pubFile], { encoding: 'utf8', timeout: 10_000 });
+  return { fields, fingerprint: /SHA256:\S+/.exec(printed)?.[0] ?? null };
+}
+
 /** R9.r1 to R9.r4 of Connect's repair: the one question, the one update, Connect's file, the client asked nothing. Answers Connect's file. */
 function repairChecks(ctx, label, roads, seen, options, fingerprint) {
   const { check, product } = ctx;
   const leg = ctx.rig;
   const { w } = roads;
   const k1Text = refusedLeg.keyText(product, `${leg.k1}.pub`);
-  check(`${label}: Connect showed ONE question, it holds K1's fingerprint, and its button is Trust and connect (R9.r1)`, seen.length === 1 && seen[0].message.includes(fingerprint) && seen[0].buttons.includes(TRUST), JSON.stringify(seen));
-  check(`${label}: the storage got ONE update, its hostKey is K1's <algorithm> <base64> as K1's .pub holds it, and the world's snapshot holds it now (R9.r2)`, w.updates.length === 1 && w.updates[0].hostKey === k1Text && w.snapshot().hostKey === k1Text, JSON.stringify({ updates: w.updates.map((one) => one.hostKey), snapshot: w.snapshot().hostKey, k1: k1Text }));
+  const pub = pubFacts(`${leg.k1}.pub`); // not from the product: the file's own two fields, and what ssh-keygen prints
+  check(`${label}: Connect showed ONE question, it holds K1's fingerprint (the product's, and the one ssh-keygen -lf prints of K1's .pub), and its button is Trust and connect (R9.r1)`, seen.length === 1 && fingerprint === pub.fingerprint && seen[0].message.includes(fingerprint) && seen[0].buttons.includes(TRUST), JSON.stringify({ seen, keygen: pub.fingerprint }));
+  check(`${label}: the storage got ONE update, its hostKey is K1's <algorithm> <base64> as K1's .pub holds it (its first two fields, and the product's reading of them), and the world's snapshot holds it now (R9.r2)`, w.updates.length === 1 && k1Text === pub.fields && w.updates[0].hostKey === pub.fields && w.snapshot().hostKey === pub.fields, JSON.stringify({ updates: w.updates.map((one) => one.hostKey), snapshot: w.snapshot().hostKey, pub: pub.fields }));
   const file = options?.knownHostsFile;
   const line = product.knownHostsLine('127.0.0.1', roads.port, product.parseHostKey(k1Text));
   const text = file !== undefined && fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;

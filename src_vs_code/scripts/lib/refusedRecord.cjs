@@ -54,7 +54,15 @@ function expectedMessage(product, spec, name) {
   if (spec.case === 'd') {
     return { prefix, text: openingOf(product.pinWriteFailedSentence(name, new Error(CAUSE_MARK)), CAUSE_MARK), code: 'EACCES' };
   }
-  return { prefix, text: product.unusablePinSentence(name, spec.credential === 'password' ? 'askpass' : 'key') };
+  const password = spec.credential === 'password';
+  const text = product.unusablePinSentence(name, password ? 'askpass' : 'key');
+  // A password entry also carries the key form, read from the product: the two forms must differ (a change of the sentence function itself that gave the password form the key form would make the expected text equal what is shown).
+  return password ? { prefix, text, keyForm: product.unusablePinSentence(name, 'key') } : { prefix, text };
+}
+
+/** The password form held apart from the key form (HC6): the expected text is not the key form, and the shown text never offers Trust and connect. A key entry is asked nothing here. */
+function passwordFormOk(shown, expected) {
+  return expected.keyForm === undefined || (expected.text !== expected.keyForm && !shown.includes('Trust and connect'));
 }
 
 /** Whether `text` is the expected message: A whole; B up to its opening and then the code, so the cause is the one the leg made. */
@@ -93,4 +101,4 @@ function refusedChecks(counts, spec, timing) {
   ];
 }
 
-module.exports = { UNUSABLE_TEXT, UNSAFE_HOST, ABSENT_TEXTS, M4_LEGS, M9_LEGS, expectedMessage, messageMatches, refusedChecks };
+module.exports = { UNUSABLE_TEXT, UNSAFE_HOST, ABSENT_TEXTS, M4_LEGS, M9_LEGS, expectedMessage, messageMatches, passwordFormOk, refusedChecks };
