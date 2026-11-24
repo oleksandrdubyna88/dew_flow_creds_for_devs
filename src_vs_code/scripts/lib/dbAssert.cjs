@@ -175,6 +175,10 @@ function report(family, assessed, lock, log = console.log) {
     log(`\nassertions (${family}, ${client.name}: ${client.vendor} ${client.version} ${JSON.stringify(client.tag)}${client.driver === undefined ? '' : ` driver ${client.driver}`}), table: ${client.served ? 'PRODUCTION (a served pair)' : 'CANDIDATE (not served yet)'}`);
     if (client.recordOnly !== undefined) {
       log(`RECORD ONLY ${client.name}: the legs below assert nothing, the pair is refused (${client.recordOnly})`);
+      // what failed beside the recorded refusal is said too, for the lead: a refused pair hides nothing (the judge of run 45380823025, F4)
+      for (const failed of client.results.filter((result) => result.status === 'FAIL')) {
+        log(`NOTE ${client.name} ${failed.id} (the lead reads it against the recorded refusal): ${failed.why}`);
+      }
     }
     for (const result of client.results) {
       log(`  ${result.status.padEnd(9)} ${result.id}${result.why === '' ? '' : `: ${result.why}`}`);

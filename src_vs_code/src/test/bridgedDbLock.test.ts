@@ -182,6 +182,7 @@ test('T83 (§S7.12): a pair the parent refused by a recorded STOP keeps record l
   const printed: string[] = [];
   report('mysql', { ...assessed, clients: [mariadb] }, [], (line: string) => printed.push(line));
   assert.match(printed.join('\n'), /RECORD ONLY mariadb: the legs below assert nothing/);
+  assert.match(printed.join('\n'), /NOTE mariadb PE1-6-mysql \(the lead reads it against the recorded refusal\)/, 'what failed is still said');
   assert.deepEqual(RECORD_ONLY.map((pair: { vendor: string; platform: string }) => `${pair.vendor}/${pair.platform}`), ['mariadb/linux', 'go-sqlcmd/linux', 'go-sqlcmd/win32', 'oracle/win32']);
   const servedMariadb = assessFamily('mysql', ledgerOf(MYSQL_JOB.map((line) => (line.includes('(mariadb:') ? line.replace(/^CANDIDATE/, 'PRODUCTION') : line))));
   assert.equal(clientNamed(servedMariadb, 'mariadb').recordOnly, undefined, 'a served row is judged');
