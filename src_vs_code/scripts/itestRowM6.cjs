@@ -75,8 +75,7 @@ async function installs(ctx, setup) {
   check(`${leg.label}: both installs ended: ${keyLeg ? 'a key leg ran both to their end (two install runs with 0, the product\'s message for an installed creds twice)' : 'a password leg ended each at its probe (255, the product\'s "Cannot install" warning twice): the counterpart cannot check a password'} (M6.12)`, both && (keyLeg
     ? installed.length === 2 && installed.every((one) => one.outcome?.exitCode === 0) && roads.w.infos.filter((text) => text === done).length === 2
     : probes.length === 2 && probes.every((one) => one.outcome?.exitCode === 255) && installed.length === 0 && warned.length === 2), JSON.stringify({ both, installed: installed.map((one) => one.outcome?.exitCode), probes: probes.map((one) => one.outcome?.exitCode), warned }));
-  const alone = keyLeg ? 0 : 1; // the password entry's bridge, ended by itself before O2
-  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 + alone }, { point: 'O3', ended: 2 }] };
+  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 }, { point: 'O3', ended: 2 }] };
 }
 
 /** (b) A bridge with its check: O1 the check is held at its sweep, O2 its mode outcome, O3 the bridge closed. */
@@ -105,7 +104,8 @@ async function bridge(ctx, setup) {
   const ended = await within(5_000, () => first?.exitedAt !== null);
   roads.sampler.take('O3');
   check(`${leg.label}: the check's mode run ended within 40 s, and the bridge's ssh ended within 5 s of Close Remote Bridge (or by itself)`, mode && ended, JSON.stringify({ mode, ended }));
-  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 }, { point: 'O3', ended: 2 }] };
+  const alone = keyLeg ? 0 : 1; // the password entry's bridge, ended by itself before O2
+  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 + alone }, { point: 'O3', ended: 2 }] };
 }
 
 /** (c) A bridge replaced by a second: two clicks in the same tick; O1 both checks held, O2 the first released, O3 the second, O4 the second bridge closed. */
