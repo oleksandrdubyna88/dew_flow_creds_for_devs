@@ -13,6 +13,7 @@
 // `runLeg`, `rowsTop` and `legRig` run in section 10's process; everything else runs in the leg process. A row file calls only what this
 // file exports, and never starts a counterpart, a world or a server itself. It names no stand-in of the resolve or of the asker.
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -476,8 +477,18 @@ function callFilesHold(check, label, leg, roads, calls, expected) {
   check(`${label}: ${kept.name} has its bytes in every sample (M6.7)`, samples.length > 0 && changed === 0, JSON.stringify({ samples: samples.length, different: changed }));
 }
 
-/** After the last end (5 s): none of these calls' files in the folder, no client of the leg alive, no bridge's socket left; what else the folder holds is listed (M6.9 to M6.11). */
-async function nothingLeft(check, label, leg, roads, calls) {
+/** What `ss -lx` lists as listening now (the product's own liveness test of a bridge socket, `sweepCommand`), or `null` when `ss` could not be run. */
+function listeningNow() {
+  // The PATH lookup of `ss` is on purpose, as `ps` of the end of a server: the machine's own.
+  return new Promise((resolve) => execFile('ss', ['-lx'], { timeout: 5_000 }, (error, stdout) => resolve(error ? null : String(stdout)))); // NOSONAR: a CI rig
+}
+
+/**
+ * After the last end (5 s): none of these calls' files in the folder, no client of the leg alive; what else the folder holds is listed (M6.9, M6.10).
+ * With `sockets` (a row whose criterion asks it: M6.11) also: no bridge's socket is left. Every leg that opened a bridge also records, as info only and
+ * judging nothing, (a) whether each bridge's socket FILE exists after the last end and (b) whether anything listens on it (`ss -lx`).
+ */
+async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = false } = {}) {
   const names = calls.flatMap((call) => [call.pin, call.keyFile]).filter((file) => file !== undefined).map(nameOf);
   const dir = roads.sampler.dir;
   const left = () => Object.keys(readFolder(dir)).filter((name) => names.includes(name));
@@ -489,8 +500,12 @@ async function nothingLeft(check, label, leg, roads, calls) {
   const living = await within(5_000, () => !clients.some(alive)).then((none) => (none ? [] : clients.filter(alive).map((one) => one.pid)));
   check(`${label}: after the last end: 0 client processes alive, by the recorded pids and start times (${clients.length} recorded)`, clients.length > 0 && living.length === 0, JSON.stringify(living));
   const sockets = roads.bridges.map((one) => one.remote).filter((remote) => remote !== undefined);
-  const stranded = await within(5_000, () => !sockets.some(sec.isSocket)).then((none) => (none ? [] : sockets.filter(sec.isSocket)));
-  check(`${label}: after the last end: no forwarded socket is left (${sockets.length} bridge sockets named)`, stranded.length === 0, JSON.stringify(stranded));
+  if (judged) {
+    const stranded = await within(5_000, () => !sockets.some(sec.isSocket)).then((none) => (none ? [] : sockets.filter(sec.isSocket)));
+    check(`${label}: after the last end: no forwarded socket is left (${sockets.length} bridge sockets named) (M6.11)`, stranded.length === 0, JSON.stringify(stranded));
+  }
+  const listening = sockets.length === 0 ? '' : await listeningNow();
+  sockets.forEach((remote) => console.log(`info  ${label}: bridge socket ${path.basename(remote)} after the last end: (a) the file ${sec.isSocket(remote) ? 'exists' : 'is gone'}; (b) ${listening === null ? 'ss -lx could not be run' : listening.includes(remote) ? 'something listens on it' : 'nothing listens on it'}`));
 }
 
 /** No message and no log line after the mark holds a sentence of §3.5 (read from the product's functions). */

@@ -162,7 +162,7 @@ async function finish(ctx, setup, scenario) {
   check(`${leg.label}: the calls are ${scenario.expectedCalls} (${callCount} counted by their first runs and bridges) and their pin paths are distinct, as many as the calls (M6.2)`, callCount === scenario.expectedCalls && calls.length === callCount && new Set(calls.map((call) => call.pin)).size === callCount, JSON.stringify({ callCount, calls: calls.map((call) => base(call.pin)) }));
   const stored = setup.credential === 'stored';
   check(`${leg.label}: ${stored ? 'every call of a stored key names a key file of its own in keys/<pid>/' : 'no call names a key file in keys/<pid>/: the key is the person\'s own file or there is none'}`, calls.length > 0 && calls.every((call) => (call.keyFile !== undefined) === stored), JSON.stringify(calls.map((call) => call.keyFile ?? null)));
-  await rig.nothingLeft(check, leg.label, leg, roads, calls);
+  await rig.nothingLeft(check, leg.label, leg, roads, calls, { sockets: true });
   rig.callFilesHold(check, leg.label, leg, roads, calls, { pinLine: setup.pinLine, keyText: setup.keyText, knownHosts: setup.known, points: scenario.points });
   check(`${leg.label}: the person's own key file has the same bytes after (M6.8)`, sha256(leg.userKey) === setup.personKey, setup.personKey);
   return { counts };
