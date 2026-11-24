@@ -75,7 +75,8 @@ async function installs(ctx, setup) {
   check(`${leg.label}: both installs ended: ${keyLeg ? 'a key leg ran both to their end (two install runs with 0, the product\'s message for an installed creds twice)' : 'a password leg ended each at its probe (255, the product\'s "Cannot install" warning twice): the counterpart cannot check a password'} (M6.12)`, both && (keyLeg
     ? installed.length === 2 && installed.every((one) => one.outcome?.exitCode === 0) && roads.w.infos.filter((text) => text === done).length === 2
     : probes.length === 2 && probes.every((one) => one.outcome?.exitCode === 255) && installed.length === 0 && warned.length === 2), JSON.stringify({ both, installed: installed.map((one) => one.outcome?.exitCode), probes: probes.map((one) => one.outcome?.exitCode), warned }));
-  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 }, { point: 'O3', ended: 2 }] };
+  const alone = keyLeg ? 0 : 1; // the password entry's bridge, ended by itself before O2
+  return { expectedCalls: 2, points: [{ point: 'O2', ended: 1 + alone }, { point: 'O3', ended: 2 }] };
 }
 
 /** (b) A bridge with its check: O1 the check is held at its sweep, O2 its mode outcome, O3 the bridge closed. */
@@ -97,6 +98,8 @@ async function bridge(ctx, setup) {
   check(`${leg.label}: a bridge with its check: Open Remote Bridge… ended within 30 s, the check is held at its sweep, and at O1 ${keyLeg ? "the check's and the bridge's pin files are both on the disk, the bridge is alive and its socket is there" : "the check's pin file is on the disk"} (M6.3)`, click.ended && held && pins.length === 1 && holdsPins(roads, 'O1', keyLeg ? [...pins, bridgePin] : pins) && (!keyLeg || (w.bridges.isOpen(product.world.KEY) && bound)), JSON.stringify({ click, held: pins.map(base), bridgePin: bridgePin === undefined ? null : base(bridgePin), bound }));
   roads.gate.release(pins[0]);
   const mode = await within(40_000, () => modeRuns(product, roads) >= 1);
+  // A password entry's bridge ends by itself (its login is refused): it is a call that ended, so O2 is taken after its end and the count of M6.6 is exact.
+  await within(5_000, () => keyLeg || first?.exitedAt !== null);
   roads.sampler.take('O2');
   await rig.press(leg, roads, 'closeRemoteBridge', 5_000);
   const ended = await within(5_000, () => first?.exitedAt !== null);
@@ -125,6 +128,8 @@ async function replaced(ctx, setup) {
   check(`${leg.label}: both checks are held at their sweep, and at O1 both check pin files${keyLeg ? " and the second bridge's" : ''} are on the disk (M6.3)`, held && pins.length === 2 && holdsPins(roads, 'O1', keyLeg ? [...pins, secondPin] : pins), JSON.stringify({ held: pins.map(base) }));
   roads.gate.release(pins[0]);
   await within(40_000, () => modeRuns(product, roads) >= 1);
+  // A password entry's bridges end by themselves (their login is refused): they are calls that ended, so O2 is taken after both ends and the count of M6.6 is exact.
+  await within(5_000, () => keyLeg || roads.bridges.every((one) => one.exitedAt !== null));
   roads.sampler.take('O2');
   roads.gate.release(pins[1]);
   await within(40_000, () => modeRuns(product, roads) >= 2);
@@ -135,7 +140,8 @@ async function replaced(ctx, setup) {
   const firstMode = roads.outcomes.find((one) => first?.remote !== undefined && one.argv.at(-1) === product.modeCheckCommand({ path: first.remote }));
   info(`${leg.label}: seen, not judged: the first spawned bridge is the one named ${first?.remote === undefined ? '?' : base(first.remote)} (exit ${first?.exitCode}), and its check's mode run answered ${JSON.stringify(firstMode?.outcome?.stdout ?? null)} with exit ${firstMode?.outcome?.exitCode ?? null}`);
   check(`${leg.label}: both checks ended their mode run, and the second bridge's ssh ended within 5 s of Close Remote Bridge (or by itself)`, modeRuns(product, roads) >= 2 && ended, JSON.stringify({ modes: modeRuns(product, roads), ended }));
-  return { expectedCalls: 4, points: [{ point: 'O2', ended: 2 }, { point: 'O3', ended: 3 }, { point: 'O4', ended: 4 }] };
+  const alone = keyLeg ? 0 : 1; // the password entry's second bridge, ended by itself before O2 (the first ended at the second start in both)
+  return { expectedCalls: 4, points: [{ point: 'O2', ended: 2 + alone }, { point: 'O3', ended: 3 + alone }, { point: 'O4', ended: 4 }] };
 }
 
 /** (d) The password entry against K2: no gate; the three roads once. */
