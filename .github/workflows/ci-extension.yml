@@ -368,7 +368,7 @@ jobs:
         run: |
           set -eu
           key="$RUNNER_TEMP/ACCC4CF8.asc"
-          curl -fsSL --retry 3 -o "$key" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$key" https://www.postgresql.org/media/keys/ACCC4CF8.asc
           # The keyring apt trusts is the whole file, so the file must hold the project's key and nothing else: exactly one primary key, with that fingerprint.
           primaries="$(gpg --show-keys --with-colons "$key" | grep -c '^pub:' || true)"
           test "$primaries" = "1"
@@ -406,7 +406,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$HOME/go-sqlcmd"
-          curl -fsSL -o "$HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
           echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" | sha256sum -c -
           tar -xjf "$HOME/go-sqlcmd/sqlcmd-linux-amd64.tar.bz2" -C "$HOME/go-sqlcmd"
           echo "BRIDGED_SQLCMD_GO=$HOME/go-sqlcmd/sqlcmd" >> "$GITHUB_ENV"
@@ -418,7 +418,7 @@ jobs:
         continue-on-error: true
         run: |
           set -eu
-          curl -fsSL -o "$RUNNER_TEMP/microsoft.asc" https://packages.microsoft.com/keys/microsoft.asc
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/microsoft.asc" https://packages.microsoft.com/keys/microsoft.asc
           echo "2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6  $RUNNER_TEMP/microsoft.asc" | sha256sum -c -
           sudo gpg --dearmor --yes -o /usr/share/keyrings/microsoft-prod.gpg "$RUNNER_TEMP/microsoft.asc"
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/mssql-release.list
@@ -435,7 +435,7 @@ jobs:
           set -eu
           mysql_name=mysql-8.4.13-linux-glibc2.28-x86_64.tar.xz
           for url in "https://cdn.mysql.com/Downloads/MySQL-8.4/$mysql_name" "https://cdn.mysql.com/archives/mysql-8.4/$mysql_name"; do
-            curl -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
+            curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/$mysql_name" "$url" && break
           done
           echo "e32f82598aef1384d2bbb8e57a1c684f9b7734409ae8028b363fb913e56b8e92  $RUNNER_TEMP/$mysql_name" | sha256sum -c -
           sudo mkdir -p /usr/local/mysql
@@ -707,14 +707,14 @@ jobs:
           put_policy_back
           trap - EXIT
           mkdir -p "$HOME/go-sqlcmd"
-          curl -fsSL -o "$HOME/go-sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$HOME/go-sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
           echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd.tar.bz2" | sha256sum -c -
           tar -xjf "$HOME/go-sqlcmd.tar.bz2" -C "$HOME/go-sqlcmd"
           echo "BRIDGED_SQLCMD_GO=$HOME/go-sqlcmd/sqlcmd" >> "$GITHUB_ENV"
           # The ODBC sqlcmd: the image's own when it has one on PATH (22.04: 17.11), else mssql-tools18 from Microsoft's repository, as the `database clients` job installs it.
           odbc="$(command -v sqlcmd || true)"
           if [ -z "$odbc" ]; then
-            curl -fsSL -o "$RUNNER_TEMP/microsoft.asc" https://packages.microsoft.com/keys/microsoft.asc
+            curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/microsoft.asc" https://packages.microsoft.com/keys/microsoft.asc
             echo "2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6  $RUNNER_TEMP/microsoft.asc" | sha256sum -c -
             sudo gpg --dearmor --yes -o /usr/share/keyrings/microsoft-prod.gpg "$RUNNER_TEMP/microsoft.asc"
             echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/mssql-release.list

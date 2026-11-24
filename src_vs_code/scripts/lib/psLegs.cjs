@@ -94,7 +94,8 @@ async function control(ctx, client) {
   if (process.platform === 'win32') {
     const own = (process.env.USERNAME ?? '').toLowerCase();
     const shown = seen.scheme !== undefined && seen.scheme !== 'SQL' && own !== '' && (seen.who ?? '').toLowerCase().includes(own);
-    return { shown, text: `no user, by hand: ${wordsOf(seen)}${shown ? '' : ` (the runner's own logon, ${own || 'unknown'}, was not the name the server logged)`}`, seen };
+    // The logon name of the environment is compared, never printed: a record holds no value read from the environment (the server's own logged name is in the words above).
+    return { shown, text: `no user, by hand: ${wordsOf(seen)}${shown ? '' : ` (the runner's own logon${own === '' ? ' is not named in the environment' : ' was not the name the server logged'})`}`, seen };
   }
   const where = ctx.realm?.ok === true ? "with the realm's ticket in the default cache" : `with no ticket (${ctx.realm?.why ?? 'no realm'})`;
   if (ctx.realm?.ok === true && !seen.integrated && client.name === 'go-sqlcmd') {

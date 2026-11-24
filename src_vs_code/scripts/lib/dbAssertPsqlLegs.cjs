@@ -59,7 +59,7 @@ async function road(ctx, name, controlOptions) {
   record(`U-${name}-control`, 'shown', LEAKED(`the built string with the three keywords cut: ${wordsOf(control)}`));
   for (const [leg, extra] of [[`U-${name}-built`, {}], [`U-${name}-env`, { envSet: OPPOSITE }]]) {
     for (const entry of ['A', 'B']) {
-      const seen = await observe(ctx, name, { ...extra, entry, ...(name === 'auth' ? {} : {}) });
+      const seen = await observe(ctx, name, { ...extra, entry });
       check(`(${leg}) entry ${entry} ended in time`, seen.ended, JSON.stringify(seen));
       record(leg, 'shown', `entry ${entry}${extra.envSet === undefined ? ', as launched' : ', against PGGSSENCMODE=prefer PGREQUIREAUTH=gss PGSSLCERTMODE=allow'}: ${seen.offered ? 'IDENTITY OFFERED' : 'HELD'}; ${wordsOf(seen)}`);
     }
