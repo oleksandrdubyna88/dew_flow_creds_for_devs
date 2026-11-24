@@ -1066,5 +1066,6 @@ mutations' runs; M11.
 
 Every defence of §4.11's row ran (`-b`, `-x`; no `-X1` by change 4.1); PA1 read each build with its driver file (L11); no leg printed
 `UNMEASURED`. Encrypt and TrustServerCertificate stay refused (DR2) until their legs exist (§S7.9). go-sqlcmd on Linux stays refused
-(PS1-8-flag, a STOP); every other pair stays refused as §S7.4's forecast and the parent's §7 rows say. The production run on the turning
-commit is next (§S7.7).
+(PS1-8-flag, a STOP); every other pair stays refused as §S7.4's forecast and the parent's §7 rows say. **The production run:** CI run
+45397047469 on the turning commit d999e181, green: each image's job printed `PRODUCTION sqlcmd odbc-sqlcmd <version> "Linux" linux driver
+<driver>`, leg (w) held as a served pair with no candidate handed in, and the lock printed no `MISSING`.
