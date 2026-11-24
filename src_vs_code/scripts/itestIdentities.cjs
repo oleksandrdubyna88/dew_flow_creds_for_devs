@@ -85,6 +85,28 @@ function recorded(dir, name) {
   return filesNamed(dir, new Set([name])).map((one) => ({ counterpart: path.dirname(one.file), ...JSON.parse(fs.readFileSync(path.join(dir, one.file), 'utf8')) }));
 }
 
+/** `dpkg -S` of a file: the Debian package that holds it, or `null`. */
+async function packageOf(file) {
+  const said = await answer('dpkg', ['-S', file]);
+  const found = said.code === 0 ? /^([^:\s]+)(?::\S+)?: /.exec(said.out) : null;
+  return found === null ? null : found[1];
+}
+
+/**
+ * A program that a leg named in `tool.json` (E3.S5: `ssh-keyscan`, which has no `-V`): its real path, its SHA-256, and the version of the Debian package that holds it
+ * (`dpkg -S` of the real path, or of the named one, then `dpkg-query`), with `versionSource: "dpkg"`; or `null` with the reason. Bounded.
+ */
+async function toolEntry(one) {
+  const real = typeof one.path === 'string' ? realOf(one.path) : null;
+  const entry = { role: `${one.role}, named by the leg ${one.counterpart}`, path: real ?? one.path ?? null, real, sha256: real === null ? null : sha256Of(real), version: null, versionSource: null, versionReason: null };
+  const pkg = real === null ? null : ((await packageOf(real)) ?? (await packageOf(one.path)));
+  if (pkg === null) {
+    return { ...entry, versionReason: real === null ? 'the path names no file' : 'no Debian package holds the file (dpkg -S)' };
+  }
+  const said = await answer('dpkg-query', ['-W', '-f', '${Version}', pkg]);
+  return said.code === 0 && said.out.trim() !== '' ? { ...entry, package: pkg, version: said.out.trim(), versionSource: 'dpkg' } : { ...entry, package: pkg, versionReason: 'dpkg-query gave no version' };
+}
+
 /** The executables of the run: the sshd as named, the helpers its lines name, the programs the kernel answered, the real client. */
 async function executablesOf(rig, real) {
   const named = { role: 'sshd, as the run names it', path: RUN.executable, real: realOf(RUN.executable), version: await versionOf(RUN.executable), sha256: sha256Of(RUN.executable) };
@@ -93,7 +115,8 @@ async function executablesOf(rig, real) {
   const listeners = recorded(rig.dir, 'program.json').map((one) => ({ role: `the program the listener of ${one.counterpart} ran`, path: one.exe, sha256: one.sha256 }));
   const sessions = recorded(rig.dir, 'session-programs.json').flatMap((one) => one.programs.map((program) => ({ role: `a program the listener of ${one.counterpart} forked for a session`, path: program.exe, sha256: program.sha256 })));
   const client = { role: 'ssh, the real client', path: real, version: await versionOf(real), sha256: sha256Of(real) };
-  return [named, ...helpers, ...listeners, ...sessions, client];
+  const tools = await Promise.all(recorded(rig.dir, 'tool.json').map(toolEntry));
+  return [named, ...helpers, ...listeners, ...sessions, client, ...tools];
 }
 
 /** Every shim of the run, at any depth: each file `ssh` in a folder named `shim`, as `{ file, sha256 }`. */
@@ -134,6 +157,10 @@ async function recordIdentities(check, rig, real) {
   // R7 (E3.S4): the record reads every depth. An independent walk counts the `program.json` files of the section's folder; each is a listener of the record.
   const files = filesNamed(rig.dir, new Set(['program.json'])).length;
   check('every program.json under the section\'s folder is a listener of the record: the walk of the record missed none', files === listeners.length && files > 0, JSON.stringify({ files, listeners: listeners.length }));
+  // R8 (E3.S5): every program that a leg named in a `tool.json` is in the record, with its path, SHA-256 and version; an independent walk counts the files.
+  const tools = record.executables.filter((one) => one.versionSource !== undefined);
+  const named = filesNamed(rig.dir, new Set(['tool.json'])).length;
+  check('every tool that a leg named (tool.json) is in the record, with its path, SHA-256 and version', named > 0 && tools.length === named && tools.every((one) => whole(one) && one.version !== null), JSON.stringify({ named, tools }));
   return record;
 }
 

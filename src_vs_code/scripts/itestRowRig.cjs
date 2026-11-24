@@ -183,6 +183,12 @@ function observed(runner, questions) {
 }
 
 /**
+ * The module that the world gets for `./sshExecRunner` (the request that `pinClient` and `hostKeyTrust` write): the REAL module, every export of it, with
+ * `runSshExec` observed. `hostKeyTrust` is in the same graph and reads `runBounded` from it, so Connect's scan of M9 (E3.S5, D1) is the real scan.
+ */
+const observedModule = (runner, questions) => ({ ...runner, runSshExec: observed(runner, questions) });
+
+/**
  * The gate (s 1.8): at the FIRST run of each call (a run that names a pin file not seen before) it takes a sample of the folder, which is the call's
  * arrival; with `hold` it then keeps that run from the real runner until the leg releases that pin file. It changes no argv, no environment and no
  * outcome, and a held run cannot time out: the runner's limit starts inside the real runner.
@@ -272,7 +278,7 @@ function openRoads(leg, port, { credential, answer, gate = false }) {
     realResolve: true,
     vault: vaultOf(leg, credential),
     realClient: true,
-    mocks: { './sshExecRunner': { ...product.runner, runSshExec: observed(product.runner, questions) } },
+    mocks: { './sshExecRunner': observedModule(product.runner, questions) },
     runnerOf: gateOf.wrap,
     spawn: spawner,
     ...(answer === undefined ? {} : { answer }),
@@ -318,13 +324,13 @@ function pressNow(leg, roads, command) {
 function mark(leg, roads, servers = []) {
   const one = {
     t: performance.now(), starts: new Set(sec.recordedStarts(leg).map((start) => start.file)), questions: roads.questions.length, outcomes: roads.outcomes.length,
-    bridges: roads.bridges.length, said: roads.w.said.length, logs: Object.fromEntries(servers.map((server) => [server.name, server.sshd.stderr.length])),
+    bridges: roads.bridges.length, said: roads.w.said.length, asked: roads.w.asked.length, logs: Object.fromEntries(servers.map((server) => [server.name, server.sshd.stderr.length])),
   };
   roads.marks.push(one);
   return one;
 }
 
-const markOf = (roads) => roads.marks.at(-1) ?? { t: 0, starts: new Set(), questions: 0, outcomes: 0, bridges: 0, said: 0, logs: {} };
+const markOf = (roads) => roads.marks.at(-1) ?? { t: 0, starts: new Set(), questions: 0, outcomes: 0, bridges: 0, said: 0, asked: 0, logs: {} };
 
 /** Warm (s 1.7): ONE pinned call to K1 in the same world (its question dismissed), then the mark. Check: it started one question and its probe ran. */
 async function warm(check, leg, roads, servers = []) {
@@ -540,7 +546,7 @@ function evidence(leg, roads, servers, fields = {}) {
 // ---------------------------------------------------------------- the entry of a leg process -------------------------------------------
 
 /** The files of the rows by their names: loaded when a leg of that row runs (the row files load this one). */
-const ROW_FILES = { M1: () => require('./itestRowM1.cjs'), M6: () => require('./itestRowM6.cjs'), rig: () => require('./itestRigProof.cjs') };
+const ROW_FILES = { M1: () => require('./itestRowM1.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs') };
 
 /** The rig of the leg, rebuilt in the leg process from `given.json` (the parent made the folder). */
 function legFromGiven(given, scope) {
@@ -575,7 +581,7 @@ async function legMain(folder) {
 }
 
 module.exports = {
-  runLeg, rowsTop, legRig, counterpart, endCounterpart, openRoads, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
+  runLeg, rowsTop, legRig, observedModule, counterpart, endCounterpart, openRoads, installAnswer, press, pressNow, warm, mark, markOf, countsOf, theSwitch, pinFileOf, controlClient, callsOf, callFilesHold, nothingLeft, noSentence, evidence,
   // what a row reads of section 10's helpers and of the stand-in of the install, so a row imports this file and no other of E3.S4
   sec, standIn, me, readFolder, within, tool, alive,
 };

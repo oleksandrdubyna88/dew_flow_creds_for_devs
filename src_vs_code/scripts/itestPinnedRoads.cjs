@@ -510,12 +510,14 @@ async function pinnedLegs(check, rig) {
   }
   if (real !== undefined) {
     await listenerStopLeg(check, pinned, real);
-    // The rows of E3.S4: the rig's proof, M1 and M6, each leg in a leg process of its own (loaded here, not at the top: these files load this one).
+    // The rows of E3.S4 and E3.S5: the rig's proof, M1, M6, M4 and M9, each leg in a leg process of its own (loaded here, not at the top: these files load this one).
     const top = await require('./itestRowRig.cjs').rowsTop(check, pinned);
     if (top !== undefined) {
       await require('./itestRigProof.cjs').rigProof(check, top);
       await require('./itestRowM1.cjs').rowM1(check, top);
       await require('./itestRowM6.cjs').rowM6(check, top);
+      await require('./itestRowM4.cjs').rowM4(check, top);
+      await require('./itestRowM9.cjs').rowM9(check, top);
     }
     await recordIdentities(check, pinned, real);
   }

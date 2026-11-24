@@ -34,8 +34,14 @@ import { loadWithVscode } from './vscodeStub';
  * `storage` answers: a stored key, a key named by its path (the entry's `sshKeyPath`) or a password, all plain text, so no PIN is asked.
  * The real resolve hands `ssh` the PROCESS's environment, so a row runs the world in a process whose environment is its own.</p>
  *
- * <p>`said` is every message, quick pick and log line in the order it was shown (the four arrays lose the order across kinds), and
- * `replaceHostKey` makes the storage answer a NEW snapshot of the entry from the next read on (a leg that changes the pin in the same window).</p>
+ * <p>`said` is every message, quick pick and log line in the order it was shown (the four arrays lose the order across kinds), each with its time
+ * (`at`, `performance.now()` of this process: the clock of the observers of a leg process, G1 E3.S5), and `replaceHostKey` and `replaceHost` make the
+ * storage answer a NEW snapshot of the entry from the next read on (a leg that changes the pin, or the host, in the same window).</p>
+ *
+ * <p>Connect's repair (G1, E3.S5, M9): `connectOptions` is the product's own `connectionOptions`, taken from the graph this world loaded (so it is bound to
+ * this world's `vscode` and mocks), called with the current snapshot; it never connects. `updateDetailsFields` of the host's storage records what Connect
+ * saved in `updates` and makes the storage answer it from the next read on. `shares` is every token the *Open Remote Bridge…* command minted, with the time
+ * and how many things had been said then.</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
@@ -136,6 +142,8 @@ export interface Vault {
 export interface Said {
   kind: 'info' | 'warning' | 'error' | 'pick' | 'log';
   text: string;
+  /** `performance.now()` of this process when it was shown. */
+  at: number;
 }
 
 export interface World {
@@ -162,6 +170,19 @@ export interface World {
   said: Said[];
   /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey` (the field is left out for `undefined`); the old snapshot is not changed. */
   replaceHostKey(hostKey: string | undefined): void;
+  /**
+   * From the next read on the storage answers a NEW snapshot of the entry with this `host`; the old snapshot is not changed. M4 (c): a saved key on a host that cannot form a
+   * known-hosts line, in the window that a warming call used.
+   */
+  replaceHost(host: string): void;
+  /** The snapshot of the entry that the storage answers now. */
+  snapshot(): Record<string, unknown>;
+  /** Every token the host's `agentServer.share` minted, in order: when, and how many things had been said before it answered. */
+  shares: { at: number; saidBefore: number }[];
+  /** Every `updateDetailsFields` of the host's storage: the entry as it was saved. */
+  updates: Record<string, unknown>[];
+  /** Connect's options of the entry (the product's `connectionOptions`, no start gate), with the current snapshot. Connect's repair of M9; it never connects. */
+  connectOptions(): Promise<unknown>;
 }
 
 /** The known-hosts file that an argv names, and its text at the moment of the read (`undefined`: the file is not on the disk). */
@@ -202,14 +223,17 @@ function emptyWorld(parts: Parts): World {
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], replaceHostKey: () => undefined };
+  return {
+    handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], shares: [], updates: [],
+    replaceHostKey: () => undefined, replaceHost: () => undefined, snapshot: () => ({}), connectOptions: () => Promise.resolve(undefined),
+  };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
 function dialog(w: World, parts: Parts, into: string[], kind: Said['kind']): (message: string, ...rest: unknown[]) => Promise<string | undefined> {
   return (message, ...rest) => {
     into.push(message);
-    w.said.push({ kind, text: message });
+    w.said.push({ kind, text: message, at: performance.now() });
     const asks = rest.some((one) => typeof one === 'string');
     if (asks) {
       w.asked.push({ message, forgottenBefore: w.forgotten.length });
@@ -315,20 +339,67 @@ function vaultOf(vault: Vault | undefined): Record<string, unknown> {
       };
 }
 
+/** The entry as the storage answers it, a copy that holds `patch` (a field whose value is `undefined` is left out). */
+function patched(details: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries({ ...details, ...patch }).filter(([, value]) => value !== undefined));
+}
+
+type ConnectionOptionsOf = (accountId: string, entity: Record<string, unknown>, storage: unknown, storageDir: string, startGate: undefined) => Promise<unknown>;
+
+/** Connect's options from the graph the world just loaded: the same `vscode` stand-in and mocks. A graph that does not hold the module makes the call fail, saying so. */
+function connectionOptionsOfGraph(): ConnectionOptionsOf {
+  const loaded = require.cache[require.resolve('../connectionOptions')]?.exports as { connectionOptions?: ConnectionOptionsOf } | undefined;
+  return loaded?.connectionOptions ?? (() => Promise.reject(new Error('connectionOptions.js is not in the graph that this world loaded')));
+}
+
+/** The host's storage of the world: the entry's snapshot as `entry.details` (replaced, never changed), what Connect saved in `updates`, and the vault. */
+function storageOf(w: World, parts: Parts, entry: { details: Record<string, unknown> }): Record<string, unknown> {
+  return {
+    getAccounts: () => [],
+    getNodes: () => [],
+    getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details: entry.details }),
+    updateDetailsFields: (_accountId: string, _nodeId: string, updated: Record<string, unknown>): Promise<void> => {
+      w.updates.push(updated);
+      entry.details = { ...updated };
+      return Promise.resolve();
+    },
+    ...vaultOf(parts.vault),
+  };
+}
+
+/** The host's `agentServer`: the token it mints is recorded in `shares`. */
+function agentServerOf(w: World): Record<string, unknown> {
+  return {
+    setFolderHooks: (): void => undefined,
+    share: (): Promise<string> => {
+      w.shares.push({ at: performance.now(), saidBefore: w.said.length });
+      return Promise.resolve(formatToken(4242, 'c2VjcmV0'));
+    },
+    signal: undefined,
+  };
+}
+
 /** Register the real agent commands over the stand-ins, and hand back what they registered and what they did. */
 export function world(parts: Parts = {}): World {
   const w = emptyWorld(parts);
-  let details = detailsOf(parts);
+  const entry = { details: detailsOf(parts) };
   w.replaceHostKey = (hostKey) => {
-    details = detailsOf({ ...parts, hostKey });
+    entry.details = patched(entry.details, { hostKey });
   };
+  w.replaceHost = (host) => {
+    entry.details = patched(entry.details, { host });
+  };
+  w.snapshot = () => entry.details;
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', vscodeStub(w, parts), mocksOf(w, parts));
-  const say = (_area: string, text: string): void => void (w.logs.push(text), w.said.push({ kind: 'log', text }));
+  const connectionOptionsOf = connectionOptionsOfGraph();
+  const say = (_area: string, text: string): void => void (w.logs.push(text), w.said.push({ kind: 'log', text, at: performance.now() }));
+  const storage = storageOf(w, parts, entry);
+  w.connectOptions = () => connectionOptionsOf(ROW.accountId, entry.details, storage, parts.storageDir ?? '/storage', undefined);
   // The host is an untyped record on purpose, as in forgetAgentConsents.test.ts: only the fields these three roads read are
   // supplied, and typing it would mean stubbing the whole extension (its provider, its stores, its servers) for nothing.
   mod.registerAgentCommands({
     MACHINES: [],
-    agentServer: { setFolderHooks: (): void => undefined, share: (): Promise<string> => Promise.resolve(formatToken(4242, 'c2VjcmV0')), signal: undefined },
+    agentServer: agentServerOf(w),
     aliasMap: () => ({}),
     bridges: w.bridges,
     log: { info: say, warn: say },
@@ -339,7 +410,7 @@ export function world(parts: Parts = {}): World {
     setAliasMap: (): Thenable<void> => Promise.resolve(),
     sshAgent: {},
     state: {},
-    storage: { getAccounts: () => [], getNodes: () => [], getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details }), ...vaultOf(parts.vault) },
+    storage,
     storageDir: parts.storageDir ?? '/storage',
     vaultKeys: {},
   });

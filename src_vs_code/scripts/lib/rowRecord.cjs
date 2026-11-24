@@ -163,4 +163,4 @@ function legLine(line) {
   return failed === null ? { kind: 'print', text: line } : { kind: 'check', ok: false, name: failed[1], detail: failed[2] };
 }
 
-module.exports = { AUTH_ATTEMPT, literal, kindOf, isQuestion, isConnectionStart, roadOf, logCounts, sentencesOf, saysASentence, handedClientConfig, PASSWORD_LINES, e1Words, legLine };
+module.exports = { AUTH_ATTEMPT, CAUSE_MARK, openingOf, literal, kindOf, isQuestion, isConnectionStart, roadOf, logCounts, sentencesOf, saysASentence, handedClientConfig, PASSWORD_LINES, e1Words, legLine };
