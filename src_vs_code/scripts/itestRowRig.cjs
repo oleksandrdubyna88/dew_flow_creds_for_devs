@@ -32,12 +32,17 @@ const oneLine = (text) => String(text).replaceAll(/\r?\n/g, ' | ');
 
 // ---------------------------------------------------------------- section 10's process: the legs ---------------------------------------
 
-/** Once per section: the stored key of the rows, and the run's password. Answers `top`, a new object; `undefined` when the key could not be made. */
+/**
+ * Once per section: the stored key of the rows, the person's key file of the rows, and the run's password. Answers `top`, a new object; `undefined` when a key could not be made.
+ * The rows' person's key is a pair of its own, never the section's (`base.userKey`): legs 1 and 2 of the section use that one, and a defect that deletes "the person's file"
+ * there must not take the rows' (review of E3.S4: HC5). Each leg then copies it into its own folder.
+ */
 async function rowsTop(check, base) {
   const storedKey = path.join(base.dir, 'stored_key');
-  const failed = await tool('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', storedKey]);
-  check('the rows\' stored key was generated', failed === undefined, failed);
-  return failed === undefined ? { ...base, storedKey, password: `not-a-password-${crypto.randomUUID()}` } : undefined;
+  const userKey = path.join(base.dir, 'rows_user_key');
+  const failed = (await tool('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', storedKey])) ?? (await tool('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', userKey]));
+  check('the rows\' stored key and person\'s key were generated', failed === undefined, failed);
+  return failed === undefined ? { ...base, storedKey, userKey, password: `not-a-password-${crypto.randomUUID()}` } : undefined;
 }
 
 /** The rig of one leg, in `<top.dir>/<name>/`: its own shim, records, storage, home, handed client config and `authorized_keys`. */
