@@ -17,7 +17,7 @@ const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const probe = require('./lib/dbProbe.cjs');
 const { realVersion } = require('./lib/dbProbeClients.cjs');
-const { startRealm } = require('./lib/pkKrbRig.cjs');
+const { startRealm, putBackSystemFiles } = require('./lib/pkKrbRig.cjs');
 const { startSqlServer } = require('./lib/psSqlServer.cjs');
 const { ps1Legs } = require('./lib/psLegs.cjs');
 const { tapped, conclude } = require('./lib/dbAssert.cjs');
@@ -71,7 +71,14 @@ async function main(scope) {
     console.log('FAIL the product is compiled (npm run compile): out/dbCliLauncher.js is missing');
     return 1;
   }
-  const { lines } = await tapped(() => legs(scope));
+  // The rig's changes outside its folder are put back before the legs are judged, so a failed put-back is a FAIL line of the ledger (a rig failure), not a warning after the verdict.
+  const { lines } = await tapped(async () => {
+    try {
+      return await legs(scope);
+    } finally {
+      putBackSystemFiles();
+    }
+  });
   return conclude('sqlcmd', lines);
 }
 

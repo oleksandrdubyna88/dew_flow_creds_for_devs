@@ -227,3 +227,17 @@ test('T86: a job name the list does not hold is MISSING for a family the product
   assert.equal(typo.length, 2, 'both served builds of the row');
   assert.deepEqual(lockCheck({ family: 'psql', platform: 'linux', job: 'database-clients-ubuntu-24.04', ci: true, rows: BRIDGED_DB_PROFILES, assessed: assessFamily('psql', ledgerOf([])), ledger: [] }), [], 'psql on Linux is not served: a job with no list is fine');
 });
+
+test('T87: PS1-4 of the ODBC client fails when the launch as built reached the server of the driver manager\'s data source file (a STOP), as PS1-3 does for go-sqlcmd\'s configuration file', () => {
+  const name = 'odbc-sqlcmd';
+  const lines = [
+    `PRODUCTION sqlcmd odbc-sqlcmd 18.7.0001.1 "Linux" linux driver 18.7.1.1  (${name}: /opt/mssql-tools18/bin/sqlcmd)`,
+    `record (PS1-4-control-${name}): positive control, -D with the DSN of the rig home's .odbc.ini: the client went to the file's server (1 connection(s) there)`,
+    `record (PS1-4-${name}): the launch as built with .odbc.ini in the rig home: the file's server saw 0 connection(s); a SQL login`,
+  ];
+  const held = resultNamed(assessFamily('sqlcmd', ledgerOf(lines)), name, 'PS1-4');
+  assert.equal(held.status, 'pass', 'no connection to the file\'s server: the leg holds');
+  const stopped = resultNamed(assessFamily('sqlcmd', ledgerOf([...lines, `STOP (PS1-4-${name}): the driver manager's data source file was read although -S named the server`])), name, 'PS1-4');
+  assert.equal(stopped.status, 'FAIL');
+  assert.match(stopped.why, /^STOP \(PS1-4-odbc-sqlcmd\)/);
+});

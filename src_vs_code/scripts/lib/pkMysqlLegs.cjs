@@ -8,6 +8,7 @@
 // control: the leg is `UNMEASURED` on that build, and the pair stays refused on it (a build that lacks a plugin of the list, L1).
 //
 // The record is words and numbers: the length of an answer and, where a plugin sends the entry's own word, whether the answer WAS that word. No answer's bytes are kept.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -195,10 +196,19 @@ async function control(ctx, client, plugin, pluginName, controlFlags) {
   }
   if (plugin.kind === 'ticket' || plugin.kind === 'file') {
     ctx.takeAway(plugin.kind);
-    const without = await observe(ctx, client, plugin, pluginName, base);
-    ctx.putBack(plugin.kind);
+    let without;
+    try {
+      without = await observe(ctx, client, plugin, pluginName, base);
+    } finally {
+      // Put back on every way out, and checked: a leg after this one must not run as a measurement with the identity still away.
+      ctx.putBack(plugin.kind);
+    }
     if (without.offered) {
       return { shown: false, text: `the client answered just the same with the identity taken away, so the answer is not the identity's: ${without.words}` };
+    }
+    if (!without.ended || !without.switched) {
+      // No answer counts as the identity's absence only from a run that ended and reached the server's switch to the plugin: one that hung or left before it said nothing either way.
+      return { shown: false, text: `with the ${plugin.kind === 'ticket' ? 'ticket' : 'key file'} taken away the client ${without.ended ? 'never reached the switch to the plugin' : 'did not end in time'}, so its silence shows nothing: ${without.words}` };
     }
     return { shown: true, text: `${withIdentity.words}; with the ${plugin.kind === 'ticket' ? 'ticket' : 'key file'} taken away: ${without.words}` };
   }
@@ -247,17 +257,21 @@ async function pluginLeg(ctx, client, plugin) {
       const seen = await observe(ctx, client, plugin, pluginName, { entry, add: candidate.flags });
       const verdict = seen.refusedFlag ? 'the flag is UNKNOWN TO THIS CLIENT (it was refused before connecting: it stopped nothing and offered nothing)' : (seen.offered ? 'IDENTITY OFFERED' : 'identity not offered');
       record(`${tag}-${candidate.what.split(' ')[0].replaceAll('-', '')}-${entry}`, 'shown', `${candidate.what}, entry ${entry}: ${verdict}; ${seen.words}`);
-      offeredUnder.push({ what: candidate.what, entry, offered: seen.offered, unknown: seen.refusedFlag });
+      offeredUnder.push({ what: candidate.what, entry, offered: seen.offered, unknown: seen.refusedFlag, switched: seen.switched, ended: seen.ended });
     }
   }
   // A flag the client refused before connecting is not a control that stopped a road: it is not one of this client's flags, and it is left out of the decision.
   const known = candidates.filter((candidate) => offeredUnder.some((row) => row.what === candidate.what && !row.unknown));
   const unknown = candidates.filter((candidate) => !known.includes(candidate)).map((candidate) => candidate.what);
-  const stoppers = known.filter((candidate) => offeredUnder.filter((row) => row.what === candidate.what).every((row) => !row.offered)).map((candidate) => candidate.what);
+  // A candidate stopped the road only when EVERY run of it reached the switch to the plugin, ended, was a flag the client knew, and offered nothing: a run that never got to the switch said nothing.
+  const stoppers = known.filter((candidate) => offeredUnder.filter((row) => row.what === candidate.what).every((row) => row.switched && row.ended && !row.unknown && !row.offered)).map((candidate) => candidate.what);
   if (known.length === 0) {
     record(`${tag}-decision`, 'shown', `${plugin.kind === 'ntlm' ? 'no candidate control is known for this plugin on this client (spec §S7.5): it is built into the client, and --plugin-dir names a folder it never opens' : 'every candidate control was refused by this client before it connected, so none was shown to stop the plugin'}${unknown.length === 0 ? '' : `; the client does not know: ${unknown.join('; ')}`}: the pair stays refused`);
   } else if (stoppers.length === 0 && offeredUnder.some((row) => row.offered)) {
     stop(`${tag}-decision`, `${plugin.label} is offered under every candidate (parent §7, row PK1: the pair stays refused, Q18)`);
+  } else if (stoppers.length === 0) {
+    const short = offeredUnder.filter((row) => !row.unknown && (!row.switched || !row.ended)).map((row) => `${row.what} (entry ${row.entry}): ${row.ended ? 'never reached the switch to the plugin' : 'did not end in time'}`);
+    unmeasured(`${tag}-decision`, `no candidate was shown to stop the plugin: a run that did not reach the switch says nothing either way (${short.join('; ') || 'no run of a known candidate reached it'})`);
   } else {
     record(`${tag}-decision`, 'shown', `stopped in every leg of it by: ${stoppers.join('; ') || 'nothing was offered under any candidate'}${unknown.length === 0 ? '' : `; unknown to this client, not counted: ${unknown.join('; ')}`}`);
   }
@@ -347,28 +361,36 @@ async function keyFileSite(ctx, client, plugin, pluginName) {
  */
 function makeKeyFile(ctx, site) {
   const folder = site.folder;
-  const aside = `${folder}.pk1-aside`;
+  // Both side paths are new for this run: a `.oci.pk1-aside` or `.oci.away` that was there before is not the rig's, and is never moved over or removed.
+  const runTag = crypto.randomBytes(6).toString('hex');
+  const aside = `${folder}.pk1-aside-${runTag}`;
+  const away = `${folder}.pk1-away-${runTag}`;
   const had = fs.existsSync(folder);
-  let restored = false;
+  // Each step is marked done only once it has succeeded, so a later call (the scope's) does what is left and never removes the old folder once it is back.
+  const done = { movedAside: false, made: false, oursRemoved: false, back: false };
   const restore = () => {
-    if (restored) {
-      return;
+    if (!done.oursRemoved) {
+      if (done.made) {
+        fs.rmSync(folder, { recursive: true, force: true });
+        fs.rmSync(away, { recursive: true, force: true });
+      }
+      done.oursRemoved = true;
     }
-    restored = true;
-    fs.rmSync(folder, { recursive: true, force: true });
-    fs.rmSync(`${folder}.away`, { recursive: true, force: true });
-    if (had && fs.existsSync(aside)) {
+    if (done.movedAside && !done.back) {
       fs.renameSync(aside, folder);
+      done.back = true;
     }
   };
+  ctx.scope.after(restore);
   if (had) {
     fs.renameSync(folder, aside);
+    done.movedAside = true;
   }
-  ctx.scope.after(restore);
   fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+  done.made = true;
   rigRun('openssl', ['genrsa', '-out', path.join(folder, 'oci_api_key.pem'), '2048']);
   fs.writeFileSync(path.join(folder, 'config'), ['[DEFAULT]', 'user=ocid1.user.oc1..rigfake', 'fingerprint=00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff', `key_file=${path.join(folder, 'oci_api_key.pem')}`, 'tenancy=ocid1.tenancy.oc1..rigfake', 'region=rig-test-1', ''].join('\n'), { mode: 0o600 });
-  return { folder, restore };
+  return { folder, away, restore };
 }
 
 /** PK1-m3 on one client: the cloud plugin. The file is written where the client says it reads (see `keyFileSite`), then the leg runs as every other. */
@@ -383,7 +405,7 @@ async function fileLeg(ctx, client, plugin, keyFolder) {
   let made;
   if (site.why === undefined) {
     made = makeKeyFile(ctx, site);
-    keyFolder.current = made.folder;
+    keyFolder.current = made;
     console.log(`rig: the cloud plugin of ${client.name} reads ${site.file} (the account's home by the passwd entry, ${site.home}; the bridged HOME is ${ctx.home} and does not move it): a throwaway key and configuration are there for this leg and are put back`);
   } else {
     console.log(`rig: no key file is written for ${tag}: ${site.why}`);
@@ -412,14 +434,15 @@ async function mysqlLegs(ctx, clients) {
     if (kind === 'ticket') {
       check('rig K: the ticket is destroyed for the half of the control that takes it away', ctx.realm.destroy() && !ctx.realm.ticketInReach(), 'kdestroy left a ticket');
     } else if (keyFolder.current !== undefined) {
-      fs.renameSync(keyFolder.current, `${keyFolder.current}.away`);
+      fs.renameSync(keyFolder.current.folder, keyFolder.current.away);
     }
   };
   base.putBack = (kind) => {
     if (kind === 'ticket') {
-      ctx.realm.renew();
+      // A ticket that is not back is a rig failure: every later leg that needs one would be measured without it.
+      check('rig K: the ticket is made again after the half of the control that took it away', ctx.realm.renew() && ctx.realm.ticketInReach(), 'kinit left no ticket in the default cache');
     } else if (keyFolder.current !== undefined) {
-      fs.renameSync(`${keyFolder.current}.away`, keyFolder.current);
+      fs.renameSync(keyFolder.current.away, keyFolder.current.folder);
     }
   };
   for (const client of clients) {

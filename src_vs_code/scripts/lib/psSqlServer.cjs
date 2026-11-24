@@ -130,7 +130,8 @@ async function startSqlServer(scope, dir, adminClient) {
   const loginWord = throwawayWord();
   // The query the legs run through the client under test reads `sys.dm_exec_connections`, which needs `VIEW SERVER STATE` (the first run: Msg 300, VIEW SERVER PERFORMANCE STATE denied, so no leg
   // could read how its session was made). The grant is the rig's, to the one throwaway login; it changes nothing of how that login signs in.
-  const made = admin(handle, `if not exists (select 1 from sys.server_principals where name = '${SQL_LOGIN}') create login ${SQL_LOGIN} with password = '${loginWord}', check_policy = off; grant view server state to ${SQL_LOGIN};`);
+  // A login left by an earlier run on the same Express instance (Windows: the instance outlives the harness) takes this run's password, so the legs never sign in with an old one.
+  const made = admin(handle, `if not exists (select 1 from sys.server_principals where name = '${SQL_LOGIN}') create login ${SQL_LOGIN} with password = '${loginWord}', check_policy = off; else alter login ${SQL_LOGIN} with password = '${loginWord}', check_policy = off; grant view server state to ${SQL_LOGIN};`);
   check('rig Q: the administrator made the SQL login of the legs and let it read its own session', made.ok, oneLine(made.text, 300));
   if (!made.ok) {
     return { ok: false, why: 'the SQL login could not be made' };

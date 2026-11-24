@@ -19,7 +19,7 @@ const { ownedDir } = require('./lib/leftovers.cjs');
 const rig = require('./lib/dbProbeRig.cjs');
 const probe = require('./lib/dbProbe.cjs');
 const { discover, realVersion } = require('./lib/dbProbeClients.cjs');
-const { startRealm } = require('./lib/pkKrbRig.cjs');
+const { startRealm, putBackSystemFiles } = require('./lib/pkKrbRig.cjs');
 const { startPgServer } = require('./lib/pkPgServer.cjs');
 const pe1 = require('./lib/dbPe1Legs.cjs');
 const pp1 = require('./lib/dbPp1Legs.cjs');
@@ -64,7 +64,14 @@ async function main(scope) {
     console.log('FAIL the product is compiled (npm run compile): out/dbCliLauncher.js is missing');
     return 1;
   }
-  const { lines } = await tapped(() => legs(scope));
+  // The rig's changes outside its folder are put back before the legs are judged, so a failed put-back is a FAIL line of the ledger (a rig failure), not a warning after the verdict.
+  const { lines } = await tapped(async () => {
+    try {
+      return await legs(scope);
+    } finally {
+      putBackSystemFiles();
+    }
+  });
   return conclude('psql', lines);
 }
 

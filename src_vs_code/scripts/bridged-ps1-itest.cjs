@@ -21,7 +21,7 @@ const path = require('path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const probe = require('./lib/dbProbe.cjs');
-const { startRealm } = require('./lib/pkKrbRig.cjs');
+const { startRealm, putBackSystemFiles } = require('./lib/pkKrbRig.cjs');
 const { startSqlServer } = require('./lib/psSqlServer.cjs');
 const { ps1Legs } = require('./lib/psLegs.cjs');
 
@@ -89,6 +89,7 @@ async function main(scope) {
       console.log(`UNMEASURED PS1: no receiver (${q.why})`);
     }
   }
+  putBackSystemFiles(); // before the count: a failed put-back is a failed rig check, not a warning after it
   buildsRecord([go, odbc].filter((entry) => entry !== undefined).map((entry) => ({ ...entry, family: entry.name })));
   probe.printTable('PS1');
   const failures = probe.failureCount();

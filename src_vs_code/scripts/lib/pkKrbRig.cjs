@@ -84,7 +84,38 @@ function kdcConfig(dir, port) {
   ].join('\n');
 }
 
-/** Puts `text` in `/etc/krb5.conf` with `sudo`, keeping the old file for the scope to put back. */
+/**
+ * What the rig changed outside its owned folder, each with the step that puts it back, in the order they are put back (the last change first). A step that has succeeded is not run again; one that
+ * failed is tried again by a later call. The shared scope only warns when a callback fails, so the harness calls `putBackSystemFiles` itself before it judges, and a failed step is a FAIL of the
+ * rig's check (a runner left with the rig's profile or without the user's ticket is a rig defect, never a quiet one). The scope calls it again on every way out, as the last resort.
+ */
+const changes = [];
+
+/** Runs the steps not yet done, newest first; `check` records each one that failed. Returns whether everything is back. */
+function putBackSystemFiles() {
+  for (const change of changes.toReversed()) {
+    if (change.done) {
+      continue;
+    }
+    try {
+      change.putBack();
+      change.done = true;
+    } catch (error) {
+      check(`rig K: ${change.what} is put back as it was`, false, `${oneLine(String(error?.message ?? error), 300)}${change.kept === undefined ? '' : `; the old one is kept at ${change.kept} until the scope removes the rig's folder`}`);
+    }
+  }
+  return changes.every((change) => change.done);
+}
+
+/** Registers a change of the rig (`{ what, putBack, kept? }`); the first registration also hands the scope its last-resort call. */
+function remember(scope, change) {
+  if (changes.length === 0) {
+    scope.after(() => putBackSystemFiles());
+  }
+  changes.push({ ...change, done: false });
+}
+
+/** Puts `text` in `/etc/krb5.conf` with `sudo`, keeping the old file to put back. */
 function installSystemConfig(scope, dir, text) {
   const target = '/etc/krb5.conf';
   const kept = path.join(dir, 'krb5.conf.system');
@@ -92,19 +123,42 @@ function installSystemConfig(scope, dir, text) {
   if (had) {
     execFileSync('sudo', ['-n', 'cp', '-p', target, kept], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
   }
-  scope.after(() => {
-    try {
-      if (had) {
-        execFileSync('sudo', ['-n', 'cp', '-p', kept, target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
-      } else {
-        execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
-      }
-    } catch (error) {
-      console.log(`rig: /etc/krb5.conf was NOT put back (${error.message})`);
-    }
+  remember(scope, {
+    what: target,
+    kept: had ? kept : undefined,
+    putBack: () => (had
+      ? execFileSync('sudo', ['-n', 'cp', '-p', kept, target], { stdio: 'pipe' }) // NOSONAR: the CI runner's own sudo
+      : execFileSync('sudo', ['-n', 'rm', '-f', target], { stdio: 'pipe' })), // NOSONAR: the CI runner's own sudo
   });
   execFileSync('sudo', ['-n', 'tee', target], { input: text, stdio: ['pipe', 'ignore', 'pipe'] }); // NOSONAR: the CI runner's own sudo
   execFileSync('sudo', ['-n', 'chmod', '644', target], { stdio: 'pipe' }); // NOSONAR: the CI runner's own sudo
+}
+
+/**
+ * The default ticket cache of this user (`default_ccache_name` of the profile, the MIT default): a ticket the runner's user already had there would be replaced by `kinit` and removed by
+ * `kdestroy`, so a copy is kept in the owned folder and put back after the rig's ticket is destroyed. The cache stays the default one: a client finds the rig's ticket with no variable (R2).
+ */
+function keepUserCache(scope, dir, destroy) {
+  const cache = `/tmp/krb5cc_${process.getuid()}`; // NOSONAR: the MIT default cache, the one the profile names
+  const kept = path.join(dir, 'krb5cc.user');
+  const had = fs.existsSync(cache);
+  if (had) {
+    fs.copyFileSync(cache, kept);
+    fs.chmodSync(kept, 0o600);
+  }
+  remember(scope, {
+    what: had ? `the user's own ticket cache ${cache}` : `the rig's ticket in ${cache}`,
+    kept: had ? kept : undefined,
+    putBack: () => {
+      if (!destroy() && fs.existsSync(cache)) {
+        throw new Error('kdestroy under the bridged environment failed and the cache is still there');
+      }
+      if (had) {
+        fs.copyFileSync(kept, cache);
+        fs.chmodSync(cache, 0o600);
+      }
+    },
+  });
 }
 
 /** Whether something accepts a TCP connection on `port` of the loopback. */
@@ -210,7 +264,7 @@ async function startRealm(scope, dir, home) {
     fs.rmSync(copy, { force: true });
     return { ok: answer.status === 0, said: oneLine(`${answer.stdout ?? ''} ${answer.stderr ?? ''}`, 240), trace: tail(traceFile, 25) };
   };
-  scope.after(() => handle.destroy());
+  keepUserCache(scope, dir, handle.destroy);
   // Not a rig fault: a client that finds no ticket by default leaves every leg that needs one without its positive control (spec §S7.17), and those legs say so.
   const found = handle.renew() && handle.ticketInReach();
   console.log(`rig K: kinit under PATH and HOME alone ${found ? 'put a ticket in the default cache, and klist under the same finds it' : 'did NOT leave a ticket that klist finds under the same environment'}`);
@@ -226,4 +280,4 @@ async function startRealm(scope, dir, home) {
   return handle;
 }
 
-module.exports = { startRealm, REALM, USER, MYSQL_SPN };
+module.exports = { startRealm, putBackSystemFiles, REALM, USER, MYSQL_SPN };

@@ -369,6 +369,9 @@ jobs:
           set -eu
           key="$RUNNER_TEMP/ACCC4CF8.asc"
           curl -fsSL --retry 3 -o "$key" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          # The keyring apt trusts is the whole file, so the file must hold the project's key and nothing else: exactly one primary key, with that fingerprint.
+          primaries="$(gpg --show-keys --with-colons "$key" | grep -c '^pub:' || true)"
+          test "$primaries" = "1"
           fingerprint="$(gpg --show-keys --with-colons "$key" | awk -F: '$1 == "fpr" { print $10; exit }')"
           test "$fingerprint" = "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
           sudo gpg --dearmor --yes -o /usr/share/keyrings/postgresql-pgdg.gpg "$key"

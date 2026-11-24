@@ -215,10 +215,10 @@ async function legConfig(ctx, client, shown) {
     return;
   }
   const other = await listener();
-  const home = windows ? process.env.USERPROFILE : path.join(ctx.dir, 'ps3 home');
-  const otherWord = throwawayWord();
-  placeFile(ctx.scope, ctx.dir, path.join(home, '.sqlcmd', 'sqlconfig'), sqlconfigText(other.port, otherWord));
   try {
+    const home = windows ? process.env.USERPROFILE : path.join(ctx.dir, 'ps3 home');
+    const otherWord = throwawayWord();
+    placeFile(ctx.scope, ctx.dir, path.join(home, '.sqlcmd', 'sqlconfig'), sqlconfigText(other.port, otherWord));
     const noHost = launchFor(ctx, { home });
     const idx = noHost.args.indexOf('-S');
     const withoutS = [...noHost.args.slice(0, idx), ...noHost.args.slice(idx + 2)];
@@ -283,20 +283,19 @@ async function legOdbc(ctx, client, shown) {
     return;
   }
   const other = await listener();
-  const home = path.join(ctx.dir, 'ps4 home');
-  fs.mkdirSync(home, { recursive: true });
-  // Where the driver manager reads the user's data sources is asked of the driver manager (`odbcinst -j`, under the same bridged environment), never assumed: the second run wrote `.odbc.ini` in the
-  // rig home and the manager did not find the data source, so the file is where the manager says it is (and, if that is outside the rig home, in the account's own home, R3).
-  const driver = await driverNameOf(ctx, client);
-  const site = odbcUserFile(ctx, home);
-  if (site.file === undefined) {
-    await other.close();
-    unmeasured(`PS1-4-${client.name}`, site.why);
-    return;
-  }
-  placeFile(ctx.scope, ctx.dir, site.file, ['[ps1dsn]', `Driver=${driver}`, `Server=${ABSENT_ADDRESS},${other.port}`, 'Trusted_Connection=yes', 'Encrypt=no', ''].join('\n'));
-  console.log(`rig: the driver manager reads user data sources from ${site.file} (${site.how}); the data source names the driver ${JSON.stringify(driver)}, which is the driver the client ran`);
   try {
+    const home = path.join(ctx.dir, 'ps4 home');
+    fs.mkdirSync(home, { recursive: true });
+    // Where the driver manager reads the user's data sources is asked of the driver manager (`odbcinst -j`, under the same bridged environment), never assumed: the second run wrote `.odbc.ini` in the
+    // rig home and the manager did not find the data source, so the file is where the manager says it is (and, if that is outside the rig home, in the account's own home, R3).
+    const driver = await driverNameOf(ctx, client);
+    const site = odbcUserFile(ctx, home);
+    if (site.file === undefined) {
+      unmeasured(`PS1-4-${client.name}`, site.why);
+      return;
+    }
+    placeFile(ctx.scope, ctx.dir, site.file, ['[ps1dsn]', `Driver=${driver}`, `Server=${ABSENT_ADDRESS},${other.port}`, 'Trusted_Connection=yes', 'Encrypt=no', ''].join('\n'));
+    console.log(`rig: the driver manager reads user data sources from ${site.file} (${site.how}); the data source names the driver ${JSON.stringify(driver)}, which is the driver the client ran`);
     const launched = launchFor(ctx, { home });
     const dsnArgs = ['-D', '-S', 'ps1dsn', '-Q', 'select 1', '-b'];
     const run = await runClient(ctx.scope, client.exe, dsnArgs, launched.env, { ms: 30_000 });
@@ -308,9 +307,13 @@ async function legOdbc(ctx, client, shown) {
     }
     const before = other.state.connections;
     const seen = await observe(ctx, client, { home });
-    const text = `the launch as built with .odbc.ini in the rig home: the file's server saw ${other.state.connections - before} connection(s); ${wordsOf(seen)}`;
+    const reached = other.state.connections - before;
+    const text = `the launch as built with .odbc.ini in the rig home: the file's server saw ${reached} connection(s); ${wordsOf(seen)}`;
     if (controlShown) {
       record(`PS1-4-${client.name}`, shown ? 'shown' : 'not shown', text);
+      if (shown && reached > 0) {
+        stop(`PS1-4-${client.name}`, "the driver manager's data source file was read although -S named the server (parent §7, row PS1: that client stays refused until a flag is shown to stop it)");
+      }
     } else {
       unmeasured(`PS1-4-${client.name}`, `no control that the file is read; without one: ${text}`);
     }

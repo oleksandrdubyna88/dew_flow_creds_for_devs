@@ -6,9 +6,10 @@
 //
 // Two markers, because the third run's marker named a REMOTE cluster (`<major> <host>:<port> <db>`) and the wrapper started the newest major whatever it named (it follows a file for the
 // cluster of this machine, not for a remote one): the remote marker stays, as the steering matrix needs it (which of host, port and database a file fills in); the control of the wrapper's
-// choice is a marker that names a LOCAL cluster of the other installed major (`<major> pa1ilocal postgres`), a real cluster made with that major's own `pg_createcluster` under the system
+// choice is a marker that names a LOCAL cluster of the other installed major (`<major> pa1i<random> postgres`), a real cluster made with that major's own `pg_createcluster` under the system
 // rig (`CI=true` and `BRIDGED_DB_SYSTEM_RIG=1`) and dropped by the scope. The program each of the two spawns started (`psql --version`, and the query) is printed with and without the marker. A wrapper
 // that does not follow the file for a local cluster either is `UNMEASURED`, with the reason.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -143,8 +144,11 @@ async function steeringMatrix(scope, rig, word, major) {
   }
 }
 
-/** The name of the local cluster the rig makes: the packaging's `pg_wrapper` finds a cluster by its version and its name under `/etc/postgresql`. */
-const CLUSTER_NAME = 'pa1ilocal';
+/**
+ * A name for the local cluster the rig makes, new for each run: the packaging's `pg_wrapper` finds a cluster by its version and its name under `/etc/postgresql`, and the scope drops by that
+ * name, so a name a cluster already had on the runner is never made nor dropped.
+ */
+const clusterName = () => `pa1i${crypto.randomBytes(6).toString('hex')}`;
 
 /** The program a process runs, by `/proc/<pid>/exe`, or `undefined` (it ended, or the link cannot be read). */
 function exeOfProcess(pid) {
@@ -158,7 +162,7 @@ function exeOfProcess(pid) {
 /**
  * A real LOCAL cluster of `major`, for the wrapper to be pointed at by name (R3: a cluster is made under `/etc/postgresql` and under `/var/run/postgresql`, with `sudo`, only on a CI runner whose step
  * says so). The major's own `pg_createcluster` makes it, owned by the runner's user, its data and socket folders in the owned folder of the harness, the packaging's `peer` login on the socket (the owner is the OS user), on a free port; its own
- * `pg_ctlcluster` starts it. The scope drops it (`pg_dropcluster --stop`) on every way out. `{ ok, why, port, sock, activity }`: `activity()` is how many sessions of the held query the cluster has.
+ * `pg_ctlcluster` starts it. The scope drops it (`pg_dropcluster --stop`) on every way out. `{ ok, why, name, port, sock, activity }`: `activity()` is how many sessions of the held query the cluster has.
  */
 async function makeLocalCluster(scope, rig, major) {
   if (!mayWriteSystem()) {
@@ -178,12 +182,16 @@ async function makeLocalCluster(scope, rig, major) {
   const taken = await holdingListener();
   const port = taken.port;
   await taken.close();
-  scope.after(() => runSync('sudo', ['-n', drop, '--stop', major, CLUSTER_NAME], process.env, 120_000));
-  const made = runSync('sudo', ['-n', create, major, CLUSTER_NAME, '-u', os.userInfo().username, '-d', data, '-s', sock, '-p', String(port), '--start-conf', 'manual', '--locale', 'C', '-e', 'UTF8'], process.env, 180_000);
-  if (made.code !== 0) {
-    return { ok: false, why: `pg_createcluster ${major} ${CLUSTER_NAME} failed (exit ${made.code}): ${oneLine(made.text, 300)}` };
+  const name = clusterName();
+  if (fs.existsSync(`/etc/postgresql/${major}/${name}`)) {
+    return { ok: false, why: `a cluster ${major}/${name} is already on this runner: it is not the rig's, so it is neither made nor dropped` };
   }
-  const started = runSync('sudo', ['-n', control, '--skip-systemctl-redirect', major, CLUSTER_NAME, 'start'], process.env, 120_000);
+  scope.after(() => runSync('sudo', ['-n', drop, '--stop', major, name], process.env, 120_000));
+  const made = runSync('sudo', ['-n', create, major, name, '-u', os.userInfo().username, '-d', data, '-s', sock, '-p', String(port), '--start-conf', 'manual', '--locale', 'C', '-e', 'UTF8'], process.env, 180_000);
+  if (made.code !== 0) {
+    return { ok: false, why: `pg_createcluster ${major} ${name} failed (exit ${made.code}): ${oneLine(made.text, 300)}` };
+  }
+  const started = runSync('sudo', ['-n', control, '--skip-systemctl-redirect', major, name, 'start'], process.env, 120_000);
   const env = bridgedEnv(rig.product, path.join(rig.dir, 'pa1i local home'));
   const own = (query) => runSync(path.join(server, 'psql'), ['-X', '-w', '-h', sock, '-p', String(port), '-d', 'postgres', '-Atc', query], env);
   let up = own('select 1');
@@ -192,9 +200,9 @@ async function makeLocalCluster(scope, rig, major) {
     up = own('select 1');
   }
   if (up.stdout.trim() !== '1') {
-    return { ok: false, why: `the cluster ${major}/${CLUSTER_NAME} did not answer (pg_ctlcluster start: exit ${started.code}, ${oneLine(started.text, 200)}; its own psql said ${oneLine(up.text, 200)})` };
+    return { ok: false, why: `the cluster ${major}/${name} did not answer (pg_ctlcluster start: exit ${started.code}, ${oneLine(started.text, 200)}; its own psql said ${oneLine(up.text, 200)})` };
   }
-  return { ok: true, port, sock, activity: () => Number(own("select count(*) from pg_stat_activity where query like 'select pg_sleep(30)%' and pid <> pg_backend_pid()").stdout.trim()) };
+  return { ok: true, name, port, sock, activity: () => Number(own("select count(*) from pg_stat_activity where query like 'select pg_sleep(30)%' and pid <> pg_backend_pid()").stdout.trim()) };
 }
 
 /**
@@ -244,19 +252,19 @@ async function localClusterLeg(scope, rig, word, majors, first, versionPlain) {
   }
   const home = path.join(rig.dir, 'pa1i local home');
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(path.join(home, '.postgresqlrc'), `${other} ${CLUSTER_NAME} postgres\n`);
+  fs.writeFileSync(path.join(home, '.postgresqlrc'), `${other} ${cluster.name} postgres\n`);
   const env = bridgedEnv(rig.product, home);
   const version = runSync(word, ['--version'], env);
   const versionMajor = majorOfLine(firstLine(version.stdout));
   const query = await heldClusterStart(scope, word, env, cluster);
   const queryMajor = majorOfExe(query.program);
-  console.log(`record (PA1-i) a LOCAL-cluster marker ~/.postgresqlrc "${other} ${CLUSTER_NAME} postgres" (a real cluster of major ${other}, made by its own pg_createcluster, up on port ${cluster.port}): with no file the version spawn started major ${majorOfLine(versionPlain) ?? '?'}; with the file the version spawn \`psql --version\` started major ${versionMajor ?? '?'} (by its own line ${JSON.stringify(oneLine(version.text))}) and the query spawn started ${query.program ?? 'a program that could not be read (it ended first)'} (major ${queryMajor ?? '?'}); the cluster ${query.sessions > 0 ? 'ANSWERED the query spawn (a session of the held query is in it)' : 'had no session of the held query'}${query.said === '' ? '' : `; the query spawn said ${JSON.stringify(query.said)}`}`);
+  console.log(`record (PA1-i) a LOCAL-cluster marker ~/.postgresqlrc "${other} ${cluster.name} postgres" (a real cluster of major ${other}, made by its own pg_createcluster, up on port ${cluster.port}): with no file the version spawn started major ${majorOfLine(versionPlain) ?? '?'}; with the file the version spawn \`psql --version\` started major ${versionMajor ?? '?'} (by its own line ${JSON.stringify(oneLine(version.text))}) and the query spawn started ${query.program ?? 'a program that could not be read (it ended first)'} (major ${queryMajor ?? '?'}); the cluster ${query.sessions > 0 ? 'ANSWERED the query spawn (a session of the held query is in it)' : 'had no session of the held query'}${query.said === '' ? '' : `; the query spawn said ${JSON.stringify(query.said)}`}`);
   const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
   if (queryMajor === other) {
     console.log(`record (PA1-i) control, the wrapper starts the other version for a local cluster: SHOWN (the file named major ${other}; the query spawn ran it${versionMajor === other ? ' and so did the version spawn' : `, and the version spawn ran major ${versionMajor ?? '?'}`})`);
     noteLeg('PA1-i psql local-cluster marker', true, `the version spawn ran major ${versionMajor ?? '?'}, the query spawn major ${queryMajor}; the two ${differs ? 'DIFFER' : 'agree'}`);
   } else {
-    unmeasured('PA1-i local-cluster marker', `the wrapper never followed the file for a local cluster either: the file named major ${other} (cluster ${CLUSTER_NAME}, up and answering) and the query spawn started ${query.program ?? 'a program that could not be read'} (major ${queryMajor ?? '?'}), the version spawn major ${versionMajor ?? '?'}; the cluster ${query.sessions > 0 ? 'was reached' : 'was not reached'}`);
+    unmeasured('PA1-i local-cluster marker', `the wrapper never followed the file for a local cluster either: the file named major ${other} (cluster ${cluster.name}, up and answering) and the query spawn started ${query.program ?? 'a program that could not be read'} (major ${queryMajor ?? '?'}), the version spawn major ${versionMajor ?? '?'}; the cluster ${query.sessions > 0 ? 'was reached' : 'was not reached'}`);
   }
   return { differs };
 }

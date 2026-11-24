@@ -29,7 +29,7 @@ const path = require('path');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { ownedDir } = require('./lib/leftovers.cjs');
 const probe = require('./lib/dbProbe.cjs');
-const { startRealm } = require('./lib/pkKrbRig.cjs');
+const { startRealm, putBackSystemFiles } = require('./lib/pkKrbRig.cjs');
 const { startPgServer } = require('./lib/pkPgServer.cjs');
 const { psqlLinux } = require('./lib/pkPsqlLegs.cjs');
 const { psqlWindows } = require('./lib/pkPsqlWin.cjs');
@@ -124,6 +124,7 @@ async function main(scope) {
   fs.mkdirSync(home, { recursive: true });
   const product = probe.productOf();
   await (process.platform === 'win32' ? windows : linux)(scope, dir, home, product);
+  putBackSystemFiles(); // before the count: a failed put-back is a failed rig check, not a warning after it
   console.log(`record (R1) the builds every leg of this job ran: ${ran.join('; ') || 'no client'}`);
   probe.printTable('PK1');
   const failures = probe.failureCount();

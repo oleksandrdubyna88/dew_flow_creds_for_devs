@@ -51,6 +51,21 @@ function check(name, ok, detail) {
   }
 }
 
+/**
+ * A production leg that was not measured: `UNMEASURED` is no check, so the run never ends as a pass while one stands. On CI it FAILS (the candidate table names the runner's builds, so a client the
+ * real check refuses there is a defect, as a missing client is); off CI it is a printed skip, and the last line says the run did not pass.
+ */
+let unmeasuredLegs = 0;
+function unmeasuredLeg(text) {
+  console.log(`UNMEASURED ${text}`);
+  unmeasuredLegs += 1;
+  if (process.env.CI === 'true') {
+    check(`${text.split(':')[0]} was measured (UNMEASURED is not a pass)`, false, 'on CI the candidate table names this runner\'s builds: a refusal here is a defect of the rig or the table');
+  } else {
+    console.log(`skip  ${text.split(':')[0]}: off CI an unmeasured leg is a printed skip, never a pass`);
+  }
+}
+
 const versionOf = (exe) => {
   try {
     return execFileSync(exe, ['--version'], { encoding: 'utf8' }).trim(); // NOSONAR: an absolute path chosen by the rig
@@ -97,7 +112,7 @@ async function legM(scope, dir, name, exe, product, verdict) {
     check('(m) oracle control: an option file with load-data-local-dir and --local-infile=0 but no --no-defaults still sends the bytes', !gap.timedOut && gap.bytes === MARKER_TEXT, JSON.stringify(gap));
   }
   if (verdict === undefined) {
-    console.log(`UNMEASURED (m) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    unmeasuredLeg(`(m) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
     return;
   }
   const productionBuild = (port) => {
@@ -169,7 +184,7 @@ function assertLoginFileClosed(dir, clients, home, product, verdicts) {
   // The environment of the production launch is the same for both clients; it is built under the verdict of the first client whose check answered.
   const verdict = clients.map(([name]) => verdicts.get(name)).find((one) => one !== undefined);
   if (verdict === undefined) {
-    console.log('UNMEASURED (m) the login file: the real client check refused every client under the candidate table, so the builder launches nothing');
+    unmeasuredLeg('(m) the login file: the real client check refused every client under the candidate table, so the builder launches nothing');
     return;
   }
   const launchOf = product.buildDbQueryLaunch('mysql', 'mysql://u:pw@127.0.0.1:1/db', 'select 1', { bridged: true, absentFile, verdict });
@@ -286,7 +301,7 @@ const T_USER = 'ttuser';
 /** (t) on one client: the arguments and the environment the builder and `bridgedSshEnv` give a bridged client, for an entry that stores a user and a password. */
 async function legT(scope, dir, name, exe, product, verdict) {
   if (verdict === undefined) {
-    console.log(`UNMEASURED (t) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
+    unmeasuredLeg(`(t) ${name}: the real client check refused this client under the candidate table (the finding is printed above), so the builder launches nothing`);
     return;
   }
   const home = path.join(dir, `t ${name} home`);
@@ -362,7 +377,11 @@ async function main(scope) {
     check('(PD1) both clients are present, so the record leg ran', process.env.CI !== 'true', 'a client is missing: PD1 asks each one');
   }
   await recordProtocol(scope, dir, present, product, verdicts);
-  console.log(failures === 0 ? '\nall bridged mysql checks passed' : `\n${failures} check(s) failed`);
+  if (failures > 0) {
+    console.log(`\n${failures} check(s) failed`);
+  } else {
+    console.log(unmeasuredLegs === 0 ? '\nall bridged mysql checks passed' : `\nno check failed, but ${unmeasuredLegs} production leg(s) were NOT measured (above): this run is no pass of (m) and (t)`);
+  }
   return failures === 0 ? 0 : 1;
 }
 

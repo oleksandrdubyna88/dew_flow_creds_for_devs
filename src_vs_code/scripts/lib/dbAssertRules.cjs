@@ -87,7 +87,7 @@ function sqlcmdRules(name, vendor) {
   ];
   const odbc = [
     { id: 'PS1-4-control', leg: `PS1-4-control-${name}`, match: SHOWN },
-    { id: 'PS1-4', leg: `PS1-4-${name}`, match: SHOWN, after: 'PS1-4-control' },
+    { id: 'PS1-4', leg: `PS1-4-${name}`, match: SHOWN, after: 'PS1-4-control', noStop: true },
   ];
   return [...common, ...(vendor === 'go-sqlcmd' ? go : odbc)];
 }

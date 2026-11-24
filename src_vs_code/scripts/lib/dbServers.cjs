@@ -18,15 +18,19 @@ const { runSync, pause, resolveProgram, mayWriteSystem } = require('./dbProbeRig
 /** A value made at run time for a rig account: hex, so it needs no quoting in SQL or in a connection string. */
 const throwaway = () => crypto.randomBytes(12).toString('hex');
 
-/** Polls `ready()` every 200 ms for `ms`; resolves with whether it held. */
+/**
+ * Polls `ready(left)` every 200 ms until `ms` of wall time have passed; resolves with whether it held. `left` is what is left of the budget, so a check that blocks (a client run with a
+ * timeout of its own) is handed no more than that: the time a check takes counts against the budget.
+ */
 async function until(ready, ms) {
-  for (let waited = 0; waited < ms; waited += 200) {
-    if (ready()) {
+  const deadline = Date.now() + ms;
+  for (let left = ms; left > 0; left = deadline - Date.now()) {
+    if (ready(left)) {
       return true;
     }
-    await pause(200);
+    await pause(Math.max(0, Math.min(200, deadline - Date.now())));
   }
-  return ready();
+  return false;
 }
 
 /** The folder of the PostgreSQL binaries (`initdb`, `postgres`, `psql`): `BRIDGED_PG_BIN`, else the newest `/usr/lib/postgresql/<n>/bin` that has `initdb`. */
@@ -109,8 +113,8 @@ async function startMysqld(scope, label, socket, client) {
     ...common, `--socket=${socket}`, `--port=${port}`, '--bind-address=127.0.0.1', '--mysqlx=OFF', '--skip-name-resolve', `--pid-file=${path.join(folder, 'mysqld.pid')}`,
     '--plugin-load-add=auth_socket.so', ...(process.env.BRIDGED_MYSQL_PLUGIN_DIR === undefined ? [] : [`--plugin-dir=${process.env.BRIDGED_MYSQL_PLUGIN_DIR}`]),
   ], { env: serverEnv() });
-  const admin = (sql) => runSync(client, ['--no-defaults', '-S', socket, '-u', 'root', '-e', sql], serverEnv(), 60_000);
-  const up = await until(() => server.exited || (fs.existsSync(socket) && admin('select 1').code === 0), 90_000);
+  const admin = (sql, ms = 60_000) => runSync(client, ['--no-defaults', '-S', socket, '-u', 'root', '-e', sql], serverEnv(), Math.min(ms, 60_000));
+  const up = await until((left) => server.exited || (fs.existsSync(socket) && admin('select 1', left).code === 0), 90_000);
   if (!up || server.exited) {
     throw new Error(`mysqld did not come up: ${server.stderr.slice(-300)} ${readTail(path.join(folder, 'error.log'))}`);
   }
@@ -173,8 +177,8 @@ async function startMariadbContainer(scope, label, image, client) {
   if (started.status !== 0) {
     throw new Error(`the MariaDB container could not be started: ${String(started.stderr).slice(0, 300)}`);
   }
-  const admin = (sql) => runSync(client, ['--no-defaults', '--protocol=TCP', '-h', '127.0.0.1', '-P', String(port), '-u', 'root', '-e', sql], { PATH: process.env.PATH, HOME: process.env.HOME, MYSQL_PWD: rootValue }, 60_000);
-  const up = await until(() => admin('select 1').code === 0, 120_000);
+  const admin = (sql, ms = 60_000) => runSync(client, ['--no-defaults', '--protocol=TCP', '-h', '127.0.0.1', '-P', String(port), '-u', 'root', '-e', sql], { PATH: process.env.PATH, HOME: process.env.HOME, MYSQL_PWD: rootValue }, Math.min(ms, 60_000));
+  const up = await until((left) => admin('select 1', left).code === 0, 120_000);
   if (!up) {
     throw new Error(`the MariaDB container did not answer: ${spawnSync(docker, ['logs', '--tail', '20', name], { encoding: 'utf8' }).stderr?.slice(-400)}`); // NOSONAR: the rig's own docker, an argument list
   }
