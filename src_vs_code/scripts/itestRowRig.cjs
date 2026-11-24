@@ -654,7 +654,7 @@ function evidence(leg, roads, servers, fields = {}) {
 const ROW_FILES = {
   M1: () => require('./itestRowM1.cjs'), M2: () => require('./itestRowM2.cjs'), M3: () => require('./itestRowM3.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'),
   M8: () => require('./itestRowM8.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs'),
-  M7: () => require('./itestRowM7.cjs'), M12: () => require('./itestRowM12.cjs'), M14: () => require('./itestRowM14.cjs'),
+  M7: () => require('./itestRowM7.cjs'), M12: () => require('./itestRowM12.cjs'), M14: () => require('./itestRowM14.cjs'), M5: () => require('./itestRowM5.cjs'),
 };
 
 /** The rig of the leg, rebuilt in the leg process from `given.json` (the parent made the folder). */

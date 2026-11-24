@@ -530,6 +530,8 @@ async function pinnedLegs(check, rig) {
       await require('./itestRowM7.cjs').rowM7(check, top);
       await require('./itestRowM12.cjs').rowM12(check, top);
       await require('./itestRowM14.cjs').rowM14(check, top);
+      // E3.S8: what the person is told, as the call saw it: M5 (a)-(h), after M14 and before the scan, so the scan reads M5's argvs too.
+      await require('./itestRowM5.cjs').rowM5(check, top);
       require('./itestRowM12.cjs').devNullScan(check, top);
     }
     await recordIdentities(check, pinned, real);
