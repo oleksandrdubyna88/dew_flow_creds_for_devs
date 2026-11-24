@@ -53,7 +53,10 @@ async function legSspi(ctx) {
     for (const entry of ['A', 'B']) {
       const seen = await observeSspi(ctx, { ...options, entry });
       const text = `${what}, entry ${entry}: ${seen.offered ? 'IDENTITY OFFERED' : 'identity not offered'}; ${seen.words}`;
-      if (shown) {
+      if (shown && !seen.offered && !seen.ended) {
+        // "Not offered" is read only from a run that ended: one that hung before its token says nothing either way.
+        unmeasured(`${leg}-${entry}`, `the run did not end in time, so whether the logon is offered is not shown: ${text}`);
+      } else if (shown) {
         record(`${leg}-${entry}`, 'shown', text);
         if (seen.offered && options.add !== undefined) {
           stop(`${leg}-${entry}`, 'SSPI is offered with require_auth written last: that control does not stop the road (parent §7, row PK1)');
@@ -106,7 +109,7 @@ function placeProfileFiles(scope, dir, files) {
     if (fs.existsSync(target)) {
       fs.copyFileSync(target, path.join(kept, name));
     }
-    fs.writeFileSync(target, content);
+    // Registered before the write: a write that fails half way (the old file already cut) is put back too.
     scope.after(() => {
       const copy = path.join(kept, name);
       if (fs.existsSync(copy)) {
@@ -115,6 +118,7 @@ function placeProfileFiles(scope, dir, files) {
         fs.rmSync(target, { force: true });
       }
     });
+    fs.writeFileSync(target, content);
   }
 }
 
@@ -142,6 +146,8 @@ async function legProfileFiles(ctx, systemRig) {
   const tlsMaterial = { key: fs.readFileSync(server.key), cert: fs.readFileSync(server.cert) };
   const keywords = [/ passfile='[^']*'/g, / sslcert='[^']*'/g, / sslkey='[^']*'/g];
   const variables = ['PGPASSFILE', 'PGSSLCERT', 'PGSSLKEY'];
+  // Whether the control showed all three markers: the launch as built is a measurement only beside it (the control runs first).
+  let controlShown = false;
   for (const [label, control] of [['control (the three keywords, their variables and -X cut)', true], ['launch as built', false]]) {
     // Entry B (no password): a launch that carries the entry's own password never asks the password file, so the second run's control could not send its marker (the entry's word went instead).
     const options = (extra) => ({ user: 'pdprobe', host: '127.0.0.1', entry: 'B', ...extra, ...(control ? { control: true, cut: keywords, dropArgs: ['-X'] } : {}) });
@@ -163,13 +169,19 @@ async function legProfileFiles(ctx, systemRig) {
     const text = `${label}: pgpass.conf marker ${sentMarker ? 'SENT' : `not sent (the fake got: ${rig.labelled(fileRun.state.sent)})`}; client certificate marker ${sentCert ? 'OFFERED' : 'not offered'}; psqlrc.conf ${readRc ? 'READ' : `not read (${control ? '%APPDATA% given' : 'the bridged environment carries no %APPDATA%'}; exit ${echoed.code}; stdout ${JSON.stringify(oneLine(echoed.stdout, 100))}; stderr ${JSON.stringify(oneLine(echoed.stderr, 140))})`}`;
     if (control) {
       const shown = sentMarker && sentCert && readRc;
+      controlShown = shown;
       if (shown) {
         record('PK1-w3-control', 'shown', text);
       } else {
         unmeasured('PK1-w3-control', `the control sent not every marker (${text}); psql said ${JSON.stringify(oneLine(`${fileRun.stderr} ${certificate.stderr} ${echoed.stderr}`, 200))}`);
       }
     } else {
-      record('PK1-w3', 'shown', text);
+      if (controlShown) {
+        record('PK1-w3', 'shown', text);
+      } else {
+        unmeasured('PK1-w3', `no positive control showed all three markers, so the launch as built measures nothing here: ${text}`);
+      }
+      // A marker that reached the receiver is seen with or without a control: it is said either way.
       if (sentMarker || sentCert || readRc) {
         stop('PK1-w3', 'a file of the runner\'s %APPDATA%\\postgresql reached the receiver with the launch as built (parent §4.11: the person\'s files are closed by Y6, which has no Windows control yet)');
       }

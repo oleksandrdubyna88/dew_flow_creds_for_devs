@@ -66,7 +66,9 @@ test('DG7b (V4, T66): the version spawn holds no password variable, no user vari
       await send(viaBridge(ww.bridge), query());
 
       const [version, run] = qw.runs;
-      assert.deepEqual(Object.keys(version.env).sort(), process.platform === 'win32' ? Object.keys(version.env).sort() : ['HOME', 'PATH'], `${entry.client}: the bridged names and nothing else`);
+      // The fixture's source holds PATH, HOME, a password variable and a secret: on win32 the bridged environment keeps PATH and asks for the three logon names as empty strings, elsewhere PATH and HOME.
+      const expected = process.platform === 'win32' ? ['LOGONSERVER', 'PATH', 'USERDOMAIN', 'USERNAME'] : ['HOME', 'PATH'];
+      assert.deepEqual(Object.keys(version.env).sort(), expected, `${entry.client}: the bridged names and nothing else`);
       for (const name of ['PGPASSWORD', 'MYSQL_PWD', 'SQLCMDPASSWORD', 'SQLCMDUSER', 'PGPASSFILE', 'MYSQL_TEST_LOGIN_FILE', 'BRIDGE_TEST_SECRET']) {
         assert.equal(name in version.env, false, `${entry.client}: ${name} is not in the version spawn's environment`);
       }
@@ -180,7 +182,12 @@ test('DG10 (V4, T71, T74, T76): the query spawn of a served pair starts the path
   await through(entry, SERVED_BUILDS, { check: 'real', onQuery: ended }, async (qw, ww) => {
     const asking = sendAbortable(viaBridge(ww.bridge), query());
     asking.reply.catch(() => undefined);
-    await started.wait;
+    // The query must start before any answer comes: an early refusal, an error or nothing at all within the bound fails here with what happened, instead of waiting for the runner's timeout.
+    const bound = new Promise<string>((resolve) => {
+      setTimeout(() => resolve('neither a start nor an answer within 10 s'), 10_000).unref();
+    });
+    const first = await Promise.race([started.wait.then(() => 'started'), asking.reply.then((reply) => `answered ${reply.status} before the query started`, (error: unknown) => `failed before the query started: ${String(error)}`), bound]);
+    assert.equal(first, 'started');
     assert.deepEqual(qw.spawns.map((spawn) => spawn.folder), [{ existed: true, files: [] }], 'the query was running in its folder');
     asking.abort();
 

@@ -66,12 +66,13 @@ function judge(rule, ledger, statusOf) {
   if (rule.after !== undefined && statusOf(rule.after) !== 'pass' && statusOf(rule.after) !== 'n/a') {
     return { id: rule.id, status: 'not shown', why: `its positive control ${rule.after} is ${statusOf(rule.after)}` };
   }
+  // A STOP is a failure whether or not the leg also printed a record: a leg that printed only its STOP has not "not run".
+  if (rule.noStop === true && legs.some((entry) => entry.kind === 'stop')) {
+    return { id: rule.id, status: 'FAIL', why: `STOP (${rule.leg}): ${legs.find((entry) => entry.kind === 'stop').text.slice(0, 160)}` };
+  }
   if (records.length < (rule.min ?? 1)) {
     const missing = ledger.find((entry) => entry.kind === 'unmeasured' && (entry.leg === rule.leg || rule.leg.startsWith(`${entry.leg}-`) || entry.leg.startsWith(rule.leg) || rule.u?.test(entry.leg) === true));
     return missing === undefined ? { id: rule.id, status: 'not run', why: `no record (${rule.leg}) was printed` } : { id: rule.id, status: 'not shown', why: `UNMEASURED ${missing.leg}: ${missing.text.slice(0, 140)}` };
-  }
-  if (rule.noStop === true && legs.some((entry) => entry.kind === 'stop')) {
-    return { id: rule.id, status: 'FAIL', why: `STOP (${rule.leg}): ${legs.find((entry) => entry.kind === 'stop').text.slice(0, 160)}` };
   }
   const says = (entry) => rule.match.test(entry.text);
   const ok = rule.mode === 'all' ? records.every(says) : records.some(says);

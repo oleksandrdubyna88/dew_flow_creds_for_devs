@@ -173,7 +173,14 @@ async function legRc(ctx) {
     const production = launch('');
     await runClient(ctx.scope, production.exe, production.args, production.env, { ms: 8000 });
     const steered = marker.state.connections > before.marker;
-    record('U-rc', 'shown', `a marker ~/.postgresqlrc names another host, port and database: the control (host, port, dbname cut) reached the marker; the builder's string reached the entry's listener ${entry.state.connections > before.entry ? 'yes' : 'NO'} and the marker ${steered ? 'YES: IDENTITY OFFERED (steered)' : 'no: HELD'}`);
+    const reachedEntry = entry.state.connections > before.entry;
+    const words = `a marker ~/.postgresqlrc names another host, port and database: the control (host, port, dbname cut) reached the marker; the builder's string reached the entry's listener ${reachedEntry ? 'yes' : 'NO'} and the marker ${steered ? 'YES' : 'no'}`;
+    if (!steered && !reachedEntry) {
+      // HELD is said only of a launch that went where the entry says: one that reached neither listener shows nothing of the file.
+      unmeasured('U-rc', `${words}: the launch as built reached no listener, so whether the file is held off is not shown`);
+      return;
+    }
+    record('U-rc', 'shown', `${words}${steered ? ': IDENTITY OFFERED (steered)' : ': HELD'}`);
   } finally {
     await entry.close();
     await marker.close();

@@ -51,10 +51,11 @@ const majorOfExe = (exe) => /\/postgresql\/(\d+)\/bin\//.exec(exe ?? '')?.[1];
 
 /** The database a start-up message names (its first bytes: a length, a protocol code, then NUL-ended names and values); a request for encryption names none. */
 function databaseOf(chunk) {
-  if (chunk === undefined || chunk.length < 8) {
+  // The start-up message, whole: its first four bytes are its length. A part of one, or the 8-byte request for TLS or GSS encryption that comes before it, names no database: undefined.
+  if (chunk === undefined || chunk.length < 8 || chunk.length < chunk.readUInt32BE(0) || chunk.readUInt32BE(4) !== 196_608) {
     return undefined;
   }
-  const fields = chunk.subarray(8).toString('utf8').split('\0');
+  const fields = chunk.subarray(8, chunk.readUInt32BE(0)).toString('utf8').split('\0');
   const at = fields.indexOf('database');
   return at >= 0 ? fields[at + 1] : '(none named)';
 }
@@ -71,6 +72,11 @@ async function heldStart(scope, exe, env, connection, listeners) {
   try {
     const reached = () => listeners.some((listener) => listener.state.connections > 0);
     for (let waited = 0; waited < 10_000 && !reached() && !child.exited; waited += 100) {
+      await pause(100);
+    }
+    // Then a moment for the whole start-up message, so that the database it names can be read; a start that sends none (it waits for an answer to a TLS request) leaves the field unread.
+    const whole = () => listeners.some((listener) => listener.state.connections > 0 && databaseOf(listener.state.first) !== undefined);
+    for (let waited = 0; waited < 2000 && reached() && !whole() && !child.exited; waited += 100) {
       await pause(100);
     }
     let program;
@@ -95,6 +101,7 @@ function startWords(start, named, marker) {
 function reset(listener) {
   listener.state.connections = 0;
   listener.state.first = undefined;
+  listener.state.firstOwner = undefined;
   listener.state.addresses = [];
 }
 
@@ -128,16 +135,26 @@ async function steeringMatrix(scope, rig, word, major) {
       console.log(`record (PA1-i) steering run ${mask + 1} of 8: the string names ${Object.entries(names).filter(([, on]) => on).map(([key]) => key).join(', ') || 'none of host, port, dbname'}: the start ${row.reached === 'none' ? `reached NO listener (it said ${JSON.stringify(row.said)})` : `reached the ${row.reached === 'named' ? "string's" : "marker file's"} listener, on address ${row.address} (the string says 127.0.0.1, the file 127.0.0.2), database ${row.database}`}`);
     }
     const steered = { host: (row) => row.address === '127.0.0.2', port: (row) => row.reached === 'marker', dbname: (row) => row.database === 'pa1imarker' };
+    // A start tells a field only where the field was read: the address and the port of a start that reached a listener, the database of a whole start-up message.
+    const read = { host: (row) => row.address !== undefined, port: (row) => row.reached !== 'none', dbname: (row) => row.database !== undefined && row.database !== '(none named)' };
+    let unread = false;
     const words = Object.keys(steered).map((field) => {
       const verdict = (named_) => {
         const group = rows.filter((row) => row.names[field] === named_);
-        const hits = group.filter((row) => row.reached !== 'none' && steered[field](row)).length;
-        return hits === 0 ? `NOT steered (0 of ${group.length} starts took the file's value)` : `STEERED (${hits} of ${group.length} starts took the file's value)`;
+        const seen = group.filter((row) => read[field](row));
+        const hits = seen.filter((row) => steered[field](row)).length;
+        const gap = group.length - seen.length;
+        if (seen.length === 0) {
+          unread = true;
+          return `NOT MEASURED (none of ${group.length} starts gave this field)`;
+        }
+        const tail = gap === 0 ? '' : `; ${gap} start(s) gave no reading`;
+        return hits === 0 ? `NOT steered (0 of ${seen.length} starts read took the file's value${tail})` : `STEERED (${hits} of ${seen.length} starts read took the file's value${tail})`;
       };
       return `${field}: when the string omits it, ${verdict(false)}; when the string names it, ${verdict(true)}`;
     });
     console.log(`record (PA1-i) the file \`${major} 127.0.0.2:<port> pa1imarker\` in the home folder steers: ${words.join(' | ')}`);
-    noteLeg('PA1-i steering', true, words.join(' | '));
+    noteLeg('PA1-i steering', !unread, words.join(' | '));
   } finally {
     await named.close();
     await marker.close();
@@ -149,6 +166,14 @@ async function steeringMatrix(scope, rig, word, major) {
  * name, so a name a cluster already had on the runner is never made nor dropped.
  */
 const clusterName = () => `pa1i${crypto.randomBytes(6).toString('hex')}`;
+
+/** How two majors compare: `agree` and `DIFFER` only when both were read; a major that was not read is no agreement. */
+const comparedWords = (a, b) => {
+  if (a === undefined || b === undefined) {
+    return 'were NOT COMPARED (a major was not read)';
+  }
+  return a === b ? 'agree' : 'DIFFER';
+};
 
 /** The program a process runs, by `/proc/<pid>/exe`, or `undefined` (it ended, or the link cannot be read). */
 function exeOfProcess(pid) {
@@ -261,15 +286,18 @@ async function localClusterLeg(scope, rig, word, majors, first, versionPlain) {
   console.log(`record (PA1-i) a LOCAL-cluster marker ~/.postgresqlrc "${other} ${cluster.name} postgres" (a real cluster of major ${other}, made by its own pg_createcluster, up on port ${cluster.port}): with no file the version spawn started major ${majorOfLine(versionPlain) ?? '?'}; with the file the version spawn \`psql --version\` started major ${versionMajor ?? '?'} (by its own line ${JSON.stringify(oneLine(version.text))}) and the query spawn started ${query.program ?? 'a program that could not be read (it ended first)'} (major ${queryMajor ?? '?'}); the cluster ${query.sessions > 0 ? 'ANSWERED the query spawn (a session of the held query is in it)' : 'had no session of the held query'}${query.said === '' ? '' : `; the query spawn said ${JSON.stringify(query.said)}`}`);
   const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
   if (queryMajor === other) {
-    console.log(`record (PA1-i) control, the wrapper starts the other version for a local cluster: SHOWN (the file named major ${other}; the query spawn ran it${versionMajor === other ? ' and so did the version spawn' : `, and the version spawn ran major ${versionMajor ?? '?'}`})`);
-    noteLeg('PA1-i psql local-cluster marker', true, `the version spawn ran major ${versionMajor ?? '?'}, the query spawn major ${queryMajor}; the two ${differs ? 'DIFFER' : 'agree'}`);
+    console.log(`record (PA1-i) control, the wrapper starts the other version for a local cluster: SHOWN (the file named major ${other}; the query spawn ran it${versionMajor === other ? ' and so did the version spawn' : `, and the version spawn ran major ${versionMajor ?? 'that was NOT READ'}`})`);
+    noteLeg('PA1-i psql local-cluster marker', true, `the version spawn ran major ${versionMajor ?? '?'}, the query spawn major ${queryMajor}; the two ${comparedWords(versionMajor, queryMajor)}`);
   } else {
     unmeasured('PA1-i local-cluster marker', `the wrapper never followed the file for a local cluster either: the file named major ${other} (cluster ${cluster.name}, up and answering) and the query spawn started ${query.program ?? 'a program that could not be read'} (major ${queryMajor ?? '?'}), the version spawn major ${versionMajor ?? '?'}; the cluster ${query.sessions > 0 ? 'was reached' : 'was not reached'}`);
   }
   return { differs };
 }
 
-/** PA1-i on Debian and Ubuntu; elsewhere a printed fact. `psqlWord` is the file the bridged `PATH` resolves the program word to. */
+/**
+ * PA1-i on Debian and Ubuntu; elsewhere a printed fact. `psqlWord` is the file the bridged `PATH` resolves the program word to. The client it ran (`{ name, family, exe, via }`), or `undefined`
+ * when it ran none: the word on `PATH` can be another file than the psql the other legs ran (`BRIDGED_PSQL`), and the job's builds line must name both.
+ */
 async function legI(scope, rig) {
   const word = resolveProgram('psql');
   if (word === undefined) {
@@ -314,7 +342,7 @@ async function legI(scope, rig) {
     const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
     console.log(`record (PA1-i) remote-cluster marker, does the wrapper start the major it names: ${twoVersions ? (queryMajor === other ? 'YES (the marker named it and it ran)' : `NO (the marker named ${other} and ${queryMajor ?? 'none'} ran: the wrapper does not follow a file for a remote cluster, so this marker is no control of its choice; the local-cluster marker below is)`) : 'not measured (one psql version is installed)'}`);
     console.log(`record (PA1-i) the wrapper's choice with the remote-cluster marker, by the program each start runs (the majors installed: ${majors.join(' ') || 'none'}): with no file, \`psql --version\` is major ${majorOfLine(versionPlain) ?? '?'} and the query start is major ${majorOfExe(plain.program) ?? '?'}; with a ~/.postgresqlrc that names major ${other ?? first}, \`psql --version\` is major ${versionMajor ?? '?'} and the query start is major ${queryMajor ?? '?'}${twoVersions ? '' : ' (only one major is installed, so the file names the one there is and shows nothing of the wrapper\'s choice)'}`);
-    noteLeg('PA1-i psql remote-cluster marker', true, `the version start and the query start ${differs ? 'DIFFER' : 'agree'} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`);
+    noteLeg('PA1-i psql remote-cluster marker', true, `the version start and the query start ${comparedWords(versionMajor, queryMajor)} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`);
     await steeringMatrix(scope, rig, word, other ?? first);
     const local = await localClusterLeg(scope, rig, word, majors, first, versionPlain);
     if (differs || local.differs) {
@@ -324,6 +352,7 @@ async function legI(scope, rig) {
     await named.close();
     await marker.close();
   }
+  return { name: 'psql (PATH, PA1-i)', family: 'psql', exe: word, via: 'PATH (PA1-i)' };
 }
 
 module.exports = { legH, legI };

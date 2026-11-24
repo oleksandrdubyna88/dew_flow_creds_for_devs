@@ -90,11 +90,14 @@ async function main(scope) {
   for (const client of found) {
     await legsOf(scope, client, shared);
   }
+  let ranByWord;
   if (process.platform === 'linux' && families.includes('psql')) {
     await psql.legG(scope, shared);
-    await wrapper.legI(scope, shared);
+    ranByWord = await wrapper.legI(scope, shared);
   }
-  buildsRecord(found);
+  // PA1-i runs the word on PATH, which can be another file than the psql the other legs ran: then it is named too, as a client of its own.
+  const another = ranByWord !== undefined && !found.some((client) => client.family === 'psql' && client.exe === ranByWord.exe);
+  buildsRecord([...found, ...(another ? [ranByWord] : [])]);
   return rig.finish('bridged db PA1');
 }
 

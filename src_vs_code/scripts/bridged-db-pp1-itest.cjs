@@ -39,16 +39,15 @@ async function main(scope) {
   const psql = byFamily('psql');
   if (psql === undefined) {
     rig.check('the psql client is installed', process.env.CI !== 'true', 'no psql client was found: install postgresql-client — a skipped leg on the runner proves nothing');
-  } else {
-    await legs.legPsql(scope, psql, shared);
   }
+  const psqlRan = psql !== undefined && (await legs.legPsql(scope, psql, shared));
   const oracle = byFamily('oracle');
   if (oracle === undefined) {
     rig.check("Oracle's mysql client is installed", process.env.CI !== 'true', 'no Oracle mysql client was found: install mysql-client — a skipped leg on the runner proves nothing');
-  } else {
-    await legs.legMysql(scope, oracle, found.filter((client) => ['oracle', 'mariadb'].includes(client.family) && client !== oracle), shared);
   }
-  buildsRecord(found.filter((one) => ['psql', 'oracle', 'mariadb'].includes(one.family)));
+  const mysqlRan = oracle === undefined ? [] : await legs.legMysql(scope, oracle, found.filter((client) => ['oracle', 'mariadb'].includes(client.family) && client !== oracle), shared);
+  // Only the clients a leg launched: the job's file of builds lists what ran, never what the runner merely has.
+  buildsRecord([...(psqlRan ? [psql] : []), ...mysqlRan]);
   return rig.finish('bridged db PP1');
 }
 

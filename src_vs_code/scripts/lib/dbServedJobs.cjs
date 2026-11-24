@@ -35,17 +35,30 @@ const wordsOf = (build) => `${build.client} ${build.vendor} ${build.version} ${J
 /** The steps of a workflow file: the text from one `- name:` line to the next. */
 const stepsOf = (workflow) => workflow.split(/\n\s*- name:/).slice(1);
 
-/** `${{ matrix.os }}` of a job name in the workflow: any one image name of the job's matrix. */
+/** `${{ matrix.os }}` of a job name in the workflow: each image name of that job's own matrix, and no other. */
 const MATRIX_OS = '${{ matrix.os }}';
 
-/** The pattern a `BRIDGED_DB_JOB: <name>` of a step stands for: the name itself, with `${{ matrix.os }}` for any one image name. */
-const patternOf = (name) => new RegExp(`^${name.split(MATRIX_OS).map((part) => part.replaceAll(/\W/g, (char) => `\\${char}`)).join('[A-Za-z0-9._-]+')}$`);
+/**
+ * The jobs of a workflow file, `{ steps, images }`: the text under `jobs:` cut at each job's two-space key, its steps, and the images of its `os: [ ... ]` matrix (none when it has no such list). A text with
+ * no `jobs:` (a test's fragment) is one job with no matrix.
+ */
+function jobsOf(workflow) {
+  const start = workflow.search(/^jobs:[ \t]*$/m);
+  const body = start === -1 ? `\n  fragment:\n${workflow}` : workflow.slice(start);
+  return body.split(/\n {2}[A-Za-z0-9_-]+:[ \t]*(?=\r?\n)/).slice(1).map((text) => ({
+    steps: stepsOf(text),
+    images: (/\n\s+os: \[([^\]]*)\]/.exec(text)?.[1] ?? '').split(',').map((image) => image.trim()).filter((image) => image !== ''),
+  }));
+}
 
-/** The job names a step sets. */
-const namesOfStep = (step) => [...step.matchAll(/BRIDGED_DB_JOB: ([^\r\n]+)/g)].map((found) => patternOf(found[1].trim()));
+/** The job names a step sets, with `${{ matrix.os }}` put in for each image of the step's own job: a name for an image the matrix does not run is no name. */
+const namesOfStep = (step, images) => [...step.matchAll(/BRIDGED_DB_JOB: ([^\r\n]+)/g)].flatMap((found) => {
+  const name = found[1].trim();
+  return name.includes(MATRIX_OS) ? images.map((image) => name.replaceAll(MATRIX_OS, image)) : [name];
+});
 
-/** Whether the workflow has a step that sets `BRIDGED_DB_JOB: <job>` (a matrix name names each of its images) and runs `scripts/<harness>`. */
-const hasJobStep = (workflow, job, harness) => stepsOf(workflow).some((step) => step.includes(`scripts/${harness}`) && namesOfStep(step).some((name) => name.test(job)));
+/** Whether the workflow has a step that sets `BRIDGED_DB_JOB: <job>` (a matrix name names each image of its job's matrix) and runs `scripts/<harness>`. */
+const hasJobStep = (workflow, job, harness) => jobsOf(workflow).some(({ steps, images }) => steps.some((step) => step.includes(`scripts/${harness}`) && namesOfStep(step, images).includes(job)));
 
 /**
  * The problems of the lock, as sentences (DP21): every served build stands in at least one job's list; every entry of a list is a served build, with the legs of its vendor and no others; every job a list

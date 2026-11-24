@@ -11,4 +11,4 @@ const ran = ranClients();
 if (ran === undefined) {
   console.log('record (R1) no harness of this job wrote the clients its legs ran (BRIDGED_BUILDS_FILE is not named, or holds none): every client the runner has is listed instead, and not all of them ran a leg');
 }
-buildsRecord(ran ?? discover(), { register: false });
+buildsRecord(ran ?? discover(), { register: false, inventory: ran === undefined });

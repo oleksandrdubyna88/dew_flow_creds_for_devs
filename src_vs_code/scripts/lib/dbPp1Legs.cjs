@@ -24,7 +24,7 @@ async function legPsql(scope, client, shared) {
   const under = await candidates.verdictFor(client, shared);
   if (!under.ok) {
     unmeasured('PP1 psql', 'the real check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
-    return;
+    return false;
   }
   candidates.say('PP1-1 psql', under);
   const rig = { ...shared, verdict: under.verdict };
@@ -32,7 +32,7 @@ async function legPsql(scope, client, shared) {
   const pg = await servers.startPostgres(scope, 'pp1-pg', hba);
   if (pg.missing !== undefined) {
     unmeasured('PP1 psql', pg.missing);
-    return;
+    return false;
   }
   const entryValue = servers.throwaway();
   check('(PP1) the rig made the entry role', pg.admin(`create role ${ENTRY_USER} login password '${entryValue}'`).code === 0, 'create role failed');
@@ -55,6 +55,7 @@ async function legPsql(scope, client, shared) {
     stop('PP1-1 psql', 'the production launch logged in over the socket (parent §7, row PP1: back to the lead)');
   }
   noteLeg('PP1 psql', asRunner, `production: ${row === null ? 'no login' : `${ENTRY_USER} over ${overTcp ? 'TCP' : 'the SOCKET'}`}`);
+  return true;
 }
 
 /** The first result row of a `mysql -e` answer (a header line, then the row), as the words of that row. */
@@ -83,6 +84,7 @@ function canonicalSocket(socket) {
  */
 async function legMysql(scope, oracle, others, rig) {
   const clients = [oracle, ...others];
+  const ran = [];
   const groups = [];
   for (const client of clients) {
     const socket = servers.defaultSocketOf(client.exe, envOf(rig));
@@ -99,8 +101,9 @@ async function legMysql(scope, oracle, others, rig) {
       unmeasured(`PP1 mysql ${group.clients.map((client) => client.name).join(' ')}`, "the client names no default socket path in its own words");
       continue;
     }
-    await mysqlGroup(scope, oracle, group, index, rig);
+    ran.push(...(await mysqlGroup(scope, oracle, group, index, rig)));
   }
+  return ran;
 }
 
 /** One server on one default socket path, and the clients that name that path. */
@@ -109,12 +112,12 @@ async function mysqlGroup(scope, oracle, group, index, rig) {
   const names = group.clients.map((client) => client.name).join(' ');
   if (!servers.ensureSocketFolder(socket)) {
     unmeasured(`PP1 mysql ${names}`, `the default socket folder ${path.dirname(socket)} is not writable by this user, and the system rig is off (CI=true and BRIDGED_DB_SYSTEM_RIG=1 make it)`);
-    return;
+    return [];
   }
   const my = await servers.startMysqld(scope, index === 0 ? 'pp1-my' : `pp1-my${index + 1}`, socket, oracle.exe);
   if (my.missing !== undefined) {
     unmeasured(`PP1 mysql ${names}`, my.missing);
-    return;
+    return [];
   }
   const entryValue = servers.throwaway();
   const runner = os.userInfo().username;
@@ -125,15 +128,18 @@ async function mysqlGroup(scope, oracle, group, index, rig) {
     check(`(PP1) the rig made the entry account with the default plugin on ${socket}`, my.admin(`create user '${ENTRY_USER}'@'127.0.0.1' identified by '${entryValue}'`).code === 0, 'create user failed');
   }
   check(`(PP1) the rig granted the entry account its database on ${socket}`, my.admin(`grant all on pp1db.* to '${ENTRY_USER}'@'127.0.0.1'`).code === 0, 'grant failed');
+  const ran = [];
   for (const client of group.clients) {
     const under = await candidates.verdictFor(client, rig);
     if (under.ok) {
       candidates.say(`PP1-1 ${client.name}`, under);
       await mysqlClient(client, { ...rig, verdict: under.verdict }, my, entryValue, plugin ?? 'the default plugin');
+      ran.push(client);
     } else {
       unmeasured(`PP1-1 ${client.name}`, 'the real check refused this client under the candidate table (the finding is printed above), so the builder launches nothing');
     }
   }
+  return ran;
 }
 
 /** PP1-0 and PP1-1 for one `mysql` client against the server of `legMysql`. */

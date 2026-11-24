@@ -113,7 +113,10 @@ async function road(ctx, name, controlLeg, variants) {
     for (const variant of variants.slice(entry === 'A' ? 1 : 0)) {
       const seen = await observe(ctx, name, { ...variant.options, entry });
       const text = `${variant.what}, entry ${entry}: ${seen.offered ? 'IDENTITY OFFERED' : 'identity not offered'}; ${wordsOf(seen)}`;
-      if (shown) {
+      if (shown && !seen.offered && !seen.ended) {
+        // "Not offered" is read only from a run that ended: one that hung before its token says nothing either way.
+        unmeasured(`${variant.leg}-${entry}`, `the run did not end in time, so whether the identity is offered is not shown: ${text}`);
+      } else if (shown) {
         record(`${variant.leg}-${entry}`, 'shown', text);
         if (variant.controls && seen.offered) {
           stop(`${variant.leg}-${entry}`, `the identity is offered with ${variant.controls}, written last: that control does not stop the ${name === 'enc' ? 'GSS encryption' : 'GSSAPI authentication'} road (parent §7, row PK1: offered under every candidate keeps the pair refused)`);
@@ -202,6 +205,9 @@ async function legCertificate(ctx) {
       } else {
         unmeasured('PK1-p5-control', `the marker certificate was not offered with every control taken out (TLS ${run.state.secured >= 1 ? 'completed' : 'did not complete'}; psql said ${JSON.stringify(run.stderr)})`);
       }
+    } else if (shown && !offered && !(run.ended && run.state.secured >= 1)) {
+      // "No certificate" is read only from a run that completed TLS and ended: one that hung or failed before it says nothing either way.
+      unmeasured(`PK1-p5-${index}`, `${what}: the run ${run.ended ? 'did not complete TLS' : 'did not end in time'}, so whether the marker certificate is offered is not shown; psql said ${JSON.stringify(run.stderr)}`);
     } else if (shown) {
       record(`PK1-p5-${index}`, 'shown', `${what}: ${offered ? 'CERTIFICATE OFFERED' : 'no marker certificate offered'}; a certificate of any kind ${peer.offered ? 'was offered' : 'was not offered'}; psql said ${JSON.stringify(run.stderr)}`);
       if (offered && index >= 2) {

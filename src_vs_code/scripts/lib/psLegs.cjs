@@ -183,8 +183,7 @@ function placeFile(scope, dir, target, text) {
   if (had) {
     fs.copyFileSync(target, kept);
   }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, text);
+  // Registered before the write: a write that fails half way (the old file already cut) is put back too.
   scope.after(() => {
     if (had) {
       fs.copyFileSync(kept, target);
@@ -192,6 +191,8 @@ function placeFile(scope, dir, target, text) {
       fs.rmSync(target, { force: true });
     }
   });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, text);
 }
 
 /**
@@ -405,15 +406,22 @@ async function legScripting(ctx, client) {
   const control = await observe(ctx, client, { ...options, withoutX: true });
   const built = await observe(ctx, client, options);
   const shown = control.stdout.includes(SCRIPTING_VALUE);
-  const literal = built.stdout.includes(`$(${SCRIPTING_NAME})`) && !built.stdout.includes(SCRIPTING_VALUE);
+  // Three outcomes, kept apart: the value came back (put in), the text came back as written (kept out), or no row came back (not measured).
+  const substituted = built.stdout.includes(SCRIPTING_VALUE);
+  const literal = built.stdout.includes(`$(${SCRIPTING_NAME})`) && !substituted;
   const controlText = `without -x, by hand: ${shown ? 'SUBSTITUTED' : 'nothing put in'} (exit ${control.code}; the client said ${JSON.stringify(control.said)})`;
   if (shown) {
     record(`PS1-9-control-${client.name}`, 'shown', controlText);
   } else {
     unmeasured(`PS1-9-control-${client.name}`, `the client put no scripting variable in without -x: ${controlText}`);
   }
-  say(`PS1-9-${client.name}`, shown, `as launched (-x): ${literal ? 'LITERAL, the text stayed as written' : 'the value was put in or nothing came back'} (exit ${built.code}; the client said ${JSON.stringify(built.said)})`, built);
-  if (shown && !literal && built.rigDefect === undefined) {
+  const words = `(exit ${built.code}; the client said ${JSON.stringify(built.said)})`;
+  if (!literal && !substituted && built.rigDefect === undefined) {
+    unmeasured(`PS1-9-${client.name}`, `as launched (-x): no row came back, so whether -x kept the variable out is not shown ${words}`);
+    return;
+  }
+  say(`PS1-9-${client.name}`, shown, `as launched (-x): ${literal ? 'LITERAL, the text stayed as written' : 'SUBSTITUTED, the value was put in'} ${words}`, built);
+  if (shown && substituted && built.rigDefect === undefined) {
     stop(`PS1-9-${client.name}`, 'the launch as built put a scripting variable of the environment into the query (parent §4.11, the sqlcmd row: -x)');
   }
 }

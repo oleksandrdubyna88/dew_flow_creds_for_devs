@@ -68,13 +68,15 @@ function fakePg({ mode, gssenc = 'G' }) {
     socket.once('close', () => open.delete(socket));
     let pending = Buffer.alloc(0);
     let phase = 'first';
+    // Each connection starts its own exchange: the kind of its own first token decides whether it gets a challenge. `state` only collects the results.
+    const conn = { firstTokenKind: undefined };
     socket.on('error', () => undefined);
     socket.on('data', (chunk) => {
       pending = Buffer.concat([pending, chunk]);
       let at = nextMessage(pending, phase);
       while (at !== undefined && phase !== 'done') {
         pending = pending.subarray(at.size);
-        phase = step(socket, phase, at, state, mode, gssenc);
+        phase = step(socket, phase, at, state, mode, gssenc, conn);
         at = nextMessage(pending, phase);
       }
     });
@@ -91,7 +93,7 @@ function fakePg({ mode, gssenc = 'G' }) {
 }
 
 /** One message of the client; the next phase. */
-function step(socket, phase, incoming, state, mode, gssenc) {
+function step(socket, phase, incoming, state, mode, gssenc, conn) {
   if (phase === 'gsstoken') {
     state.gssencTokenBytes += incoming.body.length;
     socket.end();
@@ -105,7 +107,7 @@ function step(socket, phase, incoming, state, mode, gssenc) {
     return 'done'; // a Terminate, or a message this receiver did not ask for
   }
   state.answers.push(incoming.body.length);
-  return mode === 'sspi' ? sspiAnswer(socket, incoming.body, state) : endAfter(socket);
+  return mode === 'sspi' ? sspiAnswer(socket, incoming.body, state, conn) : endAfter(socket);
 }
 
 /** The first message of a connection: an SSL request, a GSS-encryption request, or the start-up message. */
@@ -135,10 +137,11 @@ function endAfter(socket) {
 }
 
 /** An answer to request 9: the first token is met with a challenge, the second is read for the names it holds. */
-function sspiAnswer(socket, body, state) {
-  if (state.firstTokenKind === undefined) {
-    state.firstTokenKind = kindOfFirst(body);
-    if (state.firstTokenKind === 'ntlm1') {
+function sspiAnswer(socket, body, state, conn) {
+  if (conn.firstTokenKind === undefined) {
+    conn.firstTokenKind = kindOfFirst(body);
+    state.firstTokenKind ??= conn.firstTokenKind;
+    if (conn.firstTokenKind === 'ntlm1') {
       socket.write(backend('R', Buffer.concat([Buffer.from([0, 0, 0, 8]), answerTo(body, 'BRIDGE', 'RIGFAKE')])));
       return 'msg';
     }

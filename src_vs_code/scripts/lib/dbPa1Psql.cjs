@@ -44,7 +44,10 @@ async function legB(scope, client, rig) {
   const all = await candidateRun(scope, client, rig, 'PA1-b', 'the three together, as V3 will write them', V3_PAIRS);
   const needGss = await candidateRun(scope, client, rig, 'PA1-c', "gssencmode='require' (does this build do GSSAPI at all?)", [['gssencmode', 'require']]);
   noteLeg('PA1-b psql', base.reached, `${V3_PAIRS.map(([key]) => `${key} ${known[key] ? 'known' : 'refused'}`).join('; ')}; all three: ${all.reached ? 'goes on' : 'refused'}; an invented keyword: ${invented.reached ? 'IGNORED' : 'refused'}`);
-  noteLeg('PA1-c psql', base.reached, `gssencmode=require: ${needGss.reached ? 'the client tried (it reached the listener)' : 'the client refused before connecting'}`);
+  // A refusal before connecting has two causes: a build without GSSAPI (it says so: "not compiled in") and a build with it but no credential in reach. Only the first answers PA1-c.
+  const compiledOut = !needGss.reached && /not compiled in|GSSAPI support is not/i.test(needGss.run.said);
+  const gssWords = needGss.reached ? 'the client tried (it reached the listener): this build does GSSAPI' : (compiledOut ? 'this build cannot do GSSAPI (its own words: not compiled in)' : 'refused before connecting, and its words do not say the build lacks GSSAPI (no credential in reach is the other cause): not shown');
+  noteLeg('PA1-c psql', base.reached && (needGss.reached || compiledOut), `gssencmode=require: ${gssWords}`);
 }
 
 /** The libpq file each installed `psql` loads (N3): `ldd` of the binary, then the real name of the library (it carries the version). Linux only. */
@@ -78,7 +81,8 @@ const FIRST_LIBPQ_WITH_CONTROLS = 16;
  * took `require_auth` as a new client does. `{ file, major, package }`, or `{ why }`.
  */
 function libpqOfImage(docker, image) {
-  const script = String.raw`p=$(ls /usr/lib/postgresql/*/bin/psql 2>/dev/null | head -n 1); l=$(ldd "$p" 2>/dev/null | sed -n 's/.*libpq[.]so[.]5 => \([^ ]*\) .*/\1/p' | head -n 1); echo "libpq=$(readlink -f "$l" 2>/dev/null) psql=$p package=$(dpkg-query -W libpq5 2>/dev/null | tr "\t" " ")"`;
+  // The newest major's binary (what the packaging's wrapper starts with no cluster): the runs below start this very path, so the libpq read here is the one they load.
+  const script = String.raw`p=$(ls /usr/lib/postgresql/*/bin/psql 2>/dev/null | sort -V | tail -n 1); l=$(ldd "$p" 2>/dev/null | sed -n 's/.*libpq[.]so[.]5 => \([^ ]*\) .*/\1/p' | head -n 1); echo "libpq=$(readlink -f "$l" 2>/dev/null) psql=$p package=$(dpkg-query -W libpq5 2>/dev/null | tr "\t" " ")"`;
   const answer = runSync(docker, ['run', '--rm', image, 'sh', '-c', script], process.env, 60_000);
   const file = /libpq=\S*?(libpq\.so\.5\.(\d+))/.exec(answer.stdout);
   if (file === null) {
@@ -123,33 +127,43 @@ async function olderClient(scope, docker, image, rig) {
     scope.after(() => spawnSync(docker, ['rm', '-f', name], { stdio: 'ignore' })); // NOSONAR: the rig's own docker, an argument list
     return name;
   };
-  const versionAnswer = runSync(docker, ['run', '--rm', image, 'psql', '--version'], process.env, 60_000);
   const libpq = libpqOfImage(docker, image);
+  // One absolute path for the version, the libpq and every run; the word `psql` only when no binary was found (the libpq is then unread, and the leg says so below).
+  const program = libpq.psql ?? 'psql';
+  const versionAnswer = runSync(docker, ['run', '--rm', image, program, '--version'], process.env, 60_000);
   const loaded = libpq.why === undefined ? `loads the libpq file ${libpq.file} (package ${libpq.package}; ${libpq.psql})` : `the libpq it loads could not be read (${libpq.why})`;
   console.log(`record (R1) older psql ${image}: ${oneLine(versionAnswer.text)}; ${loaded}; node ${process.version}; ${process.platform}/${process.arch}`);
   console.log(`record (PA1-a) older psql ${image}: ${loaded}`);
   const client = { exe: docker, versionWord: `(older, ${image.slice(0, 40)}, libpq ${libpq.file ?? 'unread'})` };
   const run = (label, extra) => R.psqlRun(scope, docker, {
     prepare: () => undefined,
-    build: (port) => ({ args: ['run', '--rm', '--network', 'host', '--name', nameOfRun(), '-e', 'PGCONNECT_TIMEOUT=10', image, 'psql', ...argsOf(port, extra)], env: { PATH: process.env.PATH, HOME: process.env.HOME } }),
+    build: (port) => ({ args: ['run', '--rm', '--network', 'host', '--name', nameOfRun(), '-e', 'PGCONNECT_TIMEOUT=10', image, program, ...argsOf(port, extra)], env: { PATH: process.env.PATH, HOME: process.env.HOME } }),
   }).then((answer) => {
     const reached = reachedOf(answer);
     console.log(`record (PA1-g) ${client.versionWord} ${label}: the listener ${reached ? 'got a connection' : 'got NO connection'}; exit ${answer.code}; the client said ${R.said(answer)}`);
-    return reached;
+    // A refusal is read only from libpq's own words about the string, in a run that ended: a container that did not start (docker's exit 125-127) or a run past its bound refuses nothing.
+    const refusedByLibpq = !reached && answer.ended && /invalid connection option|invalid (?:\w+ )?value for (?:parameter|option)/i.test(answer.said);
+    return { reached, refusedByLibpq, words: `exit ${answer.code}${answer.ended ? '' : ', past its bound'}; the client said ${R.said(answer)}` };
   });
-  const base = await run('control, no candidate', []);
+  const base = (await run('control, no candidate', [])).reached;
   check('(PA1-g) older psql control: the string with no candidate reaches the listener', base, `${image}`);
   const did = [];
   for (const [key, value] of V3_PAIRS) {
-    did.push(`${key} ${(await run(`${key}='${value}'`, [[key, value]])) ? 'known' : 'refused'}`);
+    const one = await run(`${key}='${value}'`, [[key, value]]);
+    did.push(`${key} ${one.reached ? 'known' : (one.refusedByLibpq ? 'refused' : 'not answered (no refusal of libpq seen)')}`);
   }
-  const whole = await run('the three together, as V3 will write them', V3_PAIRS);
+  const wholeRun = await run('the three together, as V3 will write them', V3_PAIRS);
+  const whole = wholeRun.reached;
   if (libpq.major === undefined || libpq.major >= FIRST_LIBPQ_WITH_CONTROLS) {
     // A rig that produced no older client says so: this is no answer of an older client, and no STOP.
     unmeasured(`PA1-g ${client.versionWord}`, `the rig did not produce an older libpq (${libpq.major === undefined ? 'the libpq could not be read' : `${libpq.file} knows the controls: libpq ${FIRST_LIBPQ_WITH_CONTROLS} is the first that does`}); what it did: ${did.join('; ')}; all three: ${whole ? 'goes on' : 'refused'}`);
     return;
   }
-  noteLeg(`PA1-g ${client.versionWord}`, base, `${did.join('; ')}; all three: ${whole ? 'GOES ON (an older client does not fail closed on this string)' : 'refused (fails closed)'}`);
+  if (!whole && !wholeRun.refusedByLibpq) {
+    unmeasured(`PA1-g ${client.versionWord}`, `the string V3 will write reached no listener, and no refusal of libpq was seen (${wholeRun.words}): fails closed is not shown; what the candidates did: ${did.join('; ')}`);
+    return;
+  }
+  noteLeg(`PA1-g ${client.versionWord}`, base, `${did.join('; ')}; all three: ${whole ? 'GOES ON (an older client does not fail closed on this string)' : 'refused by libpq (fails closed)'}`);
   if (whole) {
     console.log('STOP (PA1-g): an older client goes on with the string V3 will write: the client check is its only lock, and the row says so (parent §7, row PA1)');
   }

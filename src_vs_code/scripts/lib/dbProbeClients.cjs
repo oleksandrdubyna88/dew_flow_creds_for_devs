@@ -58,7 +58,9 @@ function libpqFileOf(exe, number) {
     }
   })();
   const major = /\/postgresql\/(\d+)\/bin\//.exec(real)?.[1] ?? /^(\d+)/.exec(number ?? '')?.[1];
-  const candidates = [major === undefined ? undefined : `/usr/lib/postgresql/${major}/bin/psql`, real].filter((file) => file !== undefined && fs.existsSync(file));
+  // The file the word really is comes first; the major's binary only when that file is the packaging's wrapper (a script that `ldd` cannot read), so a separate psql of the same major is never
+  // named by the system's library.
+  const candidates = [real, major === undefined ? undefined : `/usr/lib/postgresql/${major}/bin/psql`].filter((file) => file !== undefined && fs.existsSync(file));
   for (const target of candidates) {
     const line = runSync('ldd', [target], process.env).stdout.split('\n').find((text) => text.includes('libpq.so'));
     const library = /=>\s*(\S+)/.exec(line ?? '')?.[1];
@@ -130,7 +132,7 @@ function ranClients() {
  * loaded, and the image the job ran on. A row of the parent's table names ONE build per client, and the jobs of one run do not always share it (an image label moves while it is rolled out): the line is
  * how a reader checks that the build a row names is the build its legs ran. `register` is false for the job's last line, which names what the harnesses wrote and adds nothing.
  */
-function buildsRecord(clients, { register = true } = {}) {
+function buildsRecord(clients, { register = true, inventory = false } = {}) {
   if (register) {
     registerRan(clients);
   }
@@ -147,7 +149,9 @@ function buildsRecord(clients, { register = true } = {}) {
     return `${client.name ?? client.family} ${read.number ?? 'no version read'} [${details.join('; ')}]`;
   });
   console.log(`record (R1) the runner image of this job: ${runnerImage()}`);
-  console.log(`record (R1) the builds every leg of this job ran: ${parts.join('; ') || 'no client'}${packageVersions(clients)}`);
+  // An inventory (no harness named what ran) is said to be one: its heading never claims that a leg ran.
+  const heading = inventory ? 'the clients this runner has (an inventory: NOT the builds the legs of this job ran)' : 'the builds every leg of this job ran';
+  console.log(`record (R1) ${heading}: ${parts.join('; ') || 'no client'}${packageVersions(clients)}`);
 }
 
 /** `mysql` and `sqlcmd` are two clients each: the family of a file is what its own words say. */

@@ -78,9 +78,11 @@ const versionOf = (exe) => {
 async function received(scope, exe, build, markerPath) {
   const { server, state, drained } = fakeServer(markerPath);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { args, env } = build(server.address().port);
-  const client = launch(scope, exe, args, { env });
+  // The builder is called inside the try: one that throws (or answers nothing) still closes the server in the finally below.
+  let client;
   try {
+    const { args, env } = build(server.address().port);
+    client = launch(scope, exe, args, { env });
     // A client that hangs after the LOCAL INFILE request must FAIL the leg, not pass it with empty bytes: the timeout is reported.
     // The result is read only after the client's pipes have CLOSED (`closed`, which follows `done` and the last chunk of its output) and the server
     // has read each of its connections to the end: no fixed delay stands in for either. A connection still open after its bound (`drained` false)
@@ -89,7 +91,9 @@ async function received(scope, exe, build, markerPath) {
     const read = await drained(2000);
     return { bytes: Buffer.concat(state.received).toString('utf8'), requested: state.requested, timedOut: !ended || !read, stderr: client.stderr };
   } finally {
-    await endChild(client);
+    if (client !== undefined) {
+      await endChild(client);
+    }
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -222,14 +226,17 @@ async function pm1Run(scope, exe, build) {
     v6.once('error', () => resolve(false));
     v6.listen(port, '::1', () => resolve(true));
   });
-  const { args, env } = build(port);
-  const client = launch(scope, exe, args, { env });
+  let client;
   try {
+    const { args, env } = build(port);
+    client = launch(scope, exe, args, { env });
     const ended = await within(client.closed.then(() => true), 20_000, false);
     await within(new Promise((resolve) => setTimeout(resolve, 300)), 1000, undefined); // a login the server read is in `state` by now: the client has ended
     return { state, ended, onV6, code: client.child.exitCode, said: (client.stderr + client.stdout).trim().replaceAll(/\s*\n\s*/g, ' | ').slice(0, 300) };
   } finally {
-    await endChild(client);
+    if (client !== undefined) {
+      await endChild(client);
+    }
     await new Promise((resolve) => server.close(resolve));
     if (onV6) {
       await new Promise((resolve) => v6.close(resolve));

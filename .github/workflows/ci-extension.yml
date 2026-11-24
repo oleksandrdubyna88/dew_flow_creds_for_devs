@@ -386,10 +386,16 @@ jobs:
           if [ -z "$other_server" ]; then
             echo "no server of a major older than the newest ($newest): installing postgresql-17 with no cluster of its own"
             if [ -f /etc/postgresql-common/createcluster.conf ]; then sudo sed -i 's/^#\?create_main_cluster.*/create_main_cluster = false/' /etc/postgresql-common/createcluster.conf; fi
+            # The policy that keeps packages' services from starting is put back as it was on every way out of the step (a trap), and at once after the install.
+            policy_kept="$RUNNER_TEMP/policy-rc.d.kept.$$"
+            if [ -e /usr/sbin/policy-rc.d ]; then sudo cp -p /usr/sbin/policy-rc.d "$policy_kept"; fi
+            put_policy_back() { if [ -e "$policy_kept" ]; then sudo cp -p "$policy_kept" /usr/sbin/policy-rc.d && sudo rm -f "$policy_kept"; else sudo rm -f /usr/sbin/policy-rc.d; fi; }
+            trap put_policy_back EXIT
             printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
             sudo chmod +x /usr/sbin/policy-rc.d
             sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-17
-            sudo rm -f /usr/sbin/policy-rc.d
+            put_policy_back
+            trap - EXIT
             if pg_lsclusters -h | grep -q '^17 main '; then sudo pg_dropcluster --stop 17 main; fi
           fi
           ls /usr/lib/postgresql/*/bin/initdb
@@ -528,11 +534,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -eu
+          # The policy that keeps packages' services from starting is put back as it was on every way out of the step (a trap), and at once after the install.
+          policy_kept="$RUNNER_TEMP/policy-rc.d.kept.$$"
+          if [ -e /usr/sbin/policy-rc.d ]; then sudo cp -p /usr/sbin/policy-rc.d "$policy_kept"; fi
+          put_policy_back() { if [ -e "$policy_kept" ]; then sudo cp -p "$policy_kept" /usr/sbin/policy-rc.d && sudo rm -f "$policy_kept"; else sudo rm -f /usr/sbin/policy-rc.d; fi; }
+          trap put_policy_back EXIT
           printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
           sudo chmod +x /usr/sbin/policy-rc.d
           sudo apt-get -o Acquire::Retries=3 update
           sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user openssl libsasl2-modules-gssapi-mit
-          sudo rm -f /usr/sbin/policy-rc.d
+          put_policy_back
+          trap - EXIT
           mkdir -p "$HOME/mariadb-gssapi/deb"
           (cd "$HOME/mariadb-gssapi/deb" && apt-get -o Acquire::Retries=3 download mariadb-plugin-gssapi-client && for deb in ./*.deb; do dpkg-deb -x "$deb" "$HOME/mariadb-gssapi"; done)
           plugins=/usr/lib/x86_64-linux-gnu/libmariadb3/plugin
@@ -683,11 +695,17 @@ jobs:
       - name: Install the Kerberos tools, go-sqlcmd (pinned, checked) and the ODBC sqlcmd of this image
         run: |
           set -eu
+          # The policy that keeps packages' services from starting is put back as it was on every way out of the step (a trap), and at once after the install.
+          policy_kept="$RUNNER_TEMP/policy-rc.d.kept.$$"
+          if [ -e /usr/sbin/policy-rc.d ]; then sudo cp -p /usr/sbin/policy-rc.d "$policy_kept"; fi
+          put_policy_back() { if [ -e "$policy_kept" ]; then sudo cp -p "$policy_kept" /usr/sbin/policy-rc.d && sudo rm -f "$policy_kept"; else sudo rm -f /usr/sbin/policy-rc.d; fi; }
+          trap put_policy_back EXIT
           printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
           sudo chmod +x /usr/sbin/policy-rc.d
           sudo apt-get -o Acquire::Retries=3 update
           sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user openssl unixodbc
-          sudo rm -f /usr/sbin/policy-rc.d
+          put_policy_back
+          trap - EXIT
           mkdir -p "$HOME/go-sqlcmd"
           curl -fsSL -o "$HOME/go-sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
           echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd.tar.bz2" | sha256sum -c -
@@ -739,7 +757,8 @@ jobs:
 
   # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
   # Microsoft's installer against its own SHA-256; the package file itself is checked here against a SHA-512 written in this workflow), mixed mode so that a SQL login exists. The control is the
-  # runner's own logon (a sysadmin through BUILTIN\Administrators). If the install or the TCP switch does not hold, every `sqlcmd` pair on Windows is unmeasured: the harness says so.
+  # runner's own logon (a sysadmin through BUILTIN\Administrators). An install that fails (a checksum, or choco's own exit code) fails the step and so the job: a rig failure, not a result. If the TCP
+  # switch does not hold, every `sqlcmd` pair on Windows is unmeasured: the harness says so.
   bridged-ps1-windows:
     name: bridged PS1 (what sqlcmd signs in with) · windows
     runs-on: windows-latest
@@ -809,13 +828,29 @@ jobs:
             choco install sql-server-express --source $feed --version $version -y --no-progress --params "'/ConfigurationFile:$ini'"
             if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) { throw "choco install failed: $LASTEXITCODE" }
           } else { Write-Host 'an SQLEXPRESS instance is already on this image: it is used as it is' }
-          $key = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp\IPAll'
-          Set-ItemProperty -Path $key -Name TcpPort -Value $port
-          Set-ItemProperty -Path $key -Name TcpDynamicPorts -Value ''
+          # TCP on the loopback address only: the IP entry of 127.0.0.1 takes the fixed port, every other entry is switched off, and the instance stops listening on all addresses. An instance with no
+          # entry for 127.0.0.1 falls back to the port on every address (IPAll), and says so; the addresses it listens on are printed after the restart.
+          $tcp = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp'
+          $entries = @(Get-ChildItem $tcp | Where-Object { $_.PSChildName -ne 'IPAll' })
+          $loop = $entries | Where-Object { (Get-ItemProperty $_.PSPath).IpAddress -eq '127.0.0.1' } | Select-Object -First 1
+          if ($null -ne $loop) {
+            $entries | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name Enabled -Value 0 }
+            Set-ItemProperty -Path $loop.PSPath -Name Enabled -Value 1
+            Set-ItemProperty -Path $loop.PSPath -Name TcpPort -Value $port
+            Set-ItemProperty -Path $loop.PSPath -Name TcpDynamicPorts -Value ''
+            Set-ItemProperty -Path $tcp -Name ListenOnAllIPs -Value 0
+            Write-Host "TCP on 127.0.0.1:$port only (the entry $($loop.PSChildName))"
+          } else {
+            Set-ItemProperty -Path "$tcp\IPAll" -Name TcpPort -Value $port
+            Set-ItemProperty -Path "$tcp\IPAll" -Name TcpDynamicPorts -Value ''
+            Write-Host "no IP entry for 127.0.0.1 on this instance: TCP on port $port of every address (IPAll)"
+          }
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name LoginMode -Value 2
           # AuditLevel 3: failed AND successful logins go to the error log, with how each connection was made (the legs of PS1 read that line; the first run logged failures only). Read at the start below.
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name AuditLevel -Value 3 -Type DWord
           Restart-Service 'MSSQL$SQLEXPRESS' -Force
+          $bound = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | ForEach-Object { $_.LocalAddress })
+          Write-Host "the instance listens on port $port at: $(if ($bound.Count -eq 0) { 'no address (yet)' } else { $bound -join ', ' })"
           "BRIDGED_MSSQL_PORT=$port" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "BRIDGED_MSSQL_ERRORLOG=C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Log\ERRORLOG" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 

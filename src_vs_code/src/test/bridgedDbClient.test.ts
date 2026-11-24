@@ -205,6 +205,7 @@ interface FakeFile {
   dev?: number;
   ino?: number;
   ctimeMs?: number;
+  runnable?: boolean;
 }
 
 /** The device, inode and change time of a fake file, only where the test gave them. */
@@ -217,6 +218,7 @@ function fakeFiles(files: Map<string, FakeFile>, texts: Map<string, string> = ne
       onRead(file);
       return texts.get(file);
     },
+    runnable: (file) => files.get(file)?.runnable !== false,
     identityOf: (file) => {
       const found = files.get(file);
       return found === undefined ? undefined : { realPath: found.realPath ?? file, size: found.size, mtimeMs: found.mtimeMs, ...statOf(found), launcher: found.launcher === true };
@@ -239,6 +241,9 @@ test('DC11: the walk takes the first file for the word in an absolute folder of 
   assert.equal(walk('psql', '/elsewhere:bin', 'linux'), undefined, 'no file in an absolute folder');
   assert.equal(walk('psql', undefined, 'linux'), undefined, 'no PATH');
   assert.equal(walk('psql', '.:', 'linux'), undefined, 'an empty entry and a dot are relative');
+  const blocked = new Map<string, FakeFile>([['/first/psql', { size: 1, mtimeMs: 1, runnable: false }], ['/later/psql', { size: 2, mtimeMs: 2 }]]);
+  assert.equal(walk('psql', '/first:/later', 'linux', blocked)?.path, '/later/psql', 'off Windows a file that cannot run is passed over, as the shell does');
+  assert.equal(walk('psql', '/first', 'linux', blocked), undefined, 'and with no runnable file the word is no program');
   const win = new Map<string, FakeFile>([['C:\\tools\\psql.exe', { size: 3, mtimeMs: 4 }], ['bin\\psql.exe', { size: 5, mtimeMs: 6 }]]);
   assert.deepEqual(walk('psql', 'bin;C:\\tools', 'win32', win), { program: 'psql', path: 'C:\\tools\\psql.exe', realPath: 'C:\\tools\\psql.exe', size: 3, mtimeMs: 4, launcher: false }, 'on win32 the word with .exe, the folders split at a semicolon');
 });
@@ -557,9 +562,13 @@ test('DC14c: a changed driver file (another size, another time, a link that poin
   await world.check({ client: 'sqlcmd' });
   assert.equal(world.runs.length, 3, 'another time of the driver');
 
-  world.files.set(DRIVER_18, { size: 501, mtimeMs: 51, realPath: '/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1.bak' });
-  await world.check({ client: 'sqlcmd' });
+  // The link points to a file of a good driver name in another folder, so the verdict after it is good and kept: the change of the configuration below must drop a KEPT verdict.
+  world.files.set(DRIVER_18, { size: 501, mtimeMs: 51, realPath: '/opt/microsoft/msodbcsql18/lib64/older/libmsodbcsql-18.6.so.1.1' });
+  const linked = await world.check({ client: 'sqlcmd' });
   assert.equal(world.runs.length, 4, 'a link that points elsewhere');
+  assert.equal(driverOfAnswer(linked)?.version, '18.6.1.1', 'and the verdict over the new link is good');
+  await world.check({ client: 'sqlcmd' });
+  assert.equal(world.runs.length, 4, 'and kept: nothing changed asks nothing');
 
   world.files.set('/opt/other/libmsodbcsql-18.6.so.1.1', { size: 7, mtimeMs: 7 });
   world.texts.set(ODBCINST, iniOf('/opt/other/libmsodbcsql-18.6.so.1.1'));

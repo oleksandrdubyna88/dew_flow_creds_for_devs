@@ -26,18 +26,21 @@ function outcomeOf(run, user) {
 }
 const loggedIn = (run, user) => run.code === 0 && run.stdout.includes(user);
 
+/** The runs that did not complete (a spawn error or the bound: `runSync` gives a string code then), in words. Neither a login nor a refusal is read from such a run. */
+const notCompleted = (runs) => runs.filter((run) => typeof run.code === 'string').map((run) => run.code);
+
 /** The `method=` words of the server's log lines since `from`, for the user: what the server says decided the login. */
 async function methodsSince(pg, from, user) {
   const lines = (await pg.log()).slice(from).split('\n').filter((line) => line.includes(`"${user}"`) && /authenticated/.test(line));
   return lines.map((line) => /method=(\S+)/.exec(line)?.[1] ?? 'no method named').join(', ') || 'no "connection authenticated" line';
 }
 
-/** PE1-1 to PE1-4 for `psql`. */
+/** PE1-1 to PE1-4 for `psql`. Whether a leg launched the client (the job's file of builds names only a client a leg ran). */
 async function legPsql(scope, client, shared) {
   const under = await candidates.verdictFor(client, shared);
   if (!under.ok) {
     unmeasured('PE1 psql', 'the real check refused this psql under the candidate table (the finding is printed above), so the builder launches nothing');
-    return;
+    return false;
   }
   candidates.say('PE1-1 to PE1-4 psql', under);
   const rig = { ...shared, verdict: under.verdict };
@@ -45,7 +48,7 @@ async function legPsql(scope, client, shared) {
   const pg = await servers.startPostgres(scope, 'pe1-pg', hba);
   if (pg.missing !== undefined) {
     unmeasured('PE1 psql', pg.missing);
-    return;
+    return false;
   }
   const good = servers.throwaway();
   const wrong = servers.throwaway();
@@ -60,6 +63,7 @@ async function legPsql(scope, client, shared) {
   for (const [leg, method, database, user] of cases) {
     await psqlMethod(pg, client, rig, { leg, method, database, user, good, wrong });
   }
+  return true;
 }
 
 /** One `pg_hba` method: the entry's right credential, a wrong one, and the control that shows what the profile changed. */
@@ -75,11 +79,18 @@ async function psqlMethod(pg, client, rig, { leg, method, database, user, good, 
     unmeasured(`${leg} psql ${method}`, `this psql does not know a control of the profile (PA1-b): ${oneLine(right.stderr, 140)}`);
     return;
   }
-  console.log(`record (${leg}) psql, server method ${method}, the entry's user and password, under the whole profile: ${profileRight}; the server's log names: ${await methodsSince(pg, from, user)}`);
+  const rightMethods = await methodsSince(pg, from, user);
   const mark = (await pg.log()).length;
   const bad = ask(undefined, { ...built.env, PGPASSWORD: wrong });
-  console.log(`record (${leg}) psql, server method ${method}, a wrong password, under the whole profile: ${outcomeOf(bad, user)}; the server's log names: ${await methodsSince(pg, mark, user)}`);
+  const badMethods = await methodsSince(pg, mark, user);
   const control = ask(REQUIRE_AUTH_KEYWORD, { ...built.env, PGPASSWORD: wrong });
+  const broken = notCompleted([right, bad, control]);
+  if (broken.length > 0) {
+    unmeasured(`${leg} psql ${method}`, `a run did not complete (${broken.join('; ')}): no login and no refusal is read from it`);
+    return;
+  }
+  console.log(`record (${leg}) psql, server method ${method}, the entry's user and password, under the whole profile: ${profileRight}; the server's log names: ${rightMethods}`);
+  console.log(`record (${leg}) psql, server method ${method}, a wrong password, under the whole profile: ${outcomeOf(bad, user)}; the server's log names: ${badMethods}`);
   console.log(`record (${leg}) psql, server method ${method}, CONTROL: a wrong password with require_auth cut by hand: ${outcomeOf(control, user)}`);
   if (method === 'trust') {
     // PE1-4: the server asks for nothing, so under the profile the CLIENT refuses (even with the right credential), and the control, with require_auth cut by hand, logs in with a wrong one.
@@ -107,6 +118,11 @@ function mysqlLogin(client, rig, server, label, verdict) {
   const right = ask(true, built.env);
   const bad = ask(true, { ...built.env, MYSQL_PWD: wrong });
   const control = ask(false, built.env);
+  const broken = notCompleted([right, bad, control]);
+  if (broken.length > 0) {
+    unmeasured(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, `a run did not complete (${broken.join('; ')}): no login and no refusal is read from it`);
+    return;
+  }
   console.log(`record (PE1-${client.family === 'oracle' ? '5' : '6'}) ${client.name} on ${label}: under the profile (${flags.join(' ').replace(rig.absentFile, '<the absent file>')}): the entry ${outcomeOf(right, user)}; a wrong password ${outcomeOf(bad, user)}; CONTROL, the same launch with no control flag: the entry ${outcomeOf(control, user)}`);
   if (!loggedIn(right, user) && loggedIn(control, user)) {
     stop(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, 'the entry\'s own login fails under the profile and succeeds without its controls: the pair is not served by this control (parent §7, row PE1: back to the lead)');
@@ -114,12 +130,13 @@ function mysqlLogin(client, rig, server, label, verdict) {
   noteLeg(`PE1 ${client.name} on ${label}`, loggedIn(control, user), `entry under the profile: ${loggedIn(right, user) ? 'in' : 'REFUSED'}; wrong password: ${loggedIn(bad, user) ? 'IN' : 'refused'}`);
 }
 
-/** PE1-5 and PE1-6: MySQL's server and MariaDB's, each at its default plugin, for each client present. */
+/** PE1-5 and PE1-6: MySQL's server and MariaDB's, each at its default plugin, for each client present. The clients a leg launched. */
 async function legMysql(scope, clients, rig, mariadbImage) {
+  const ran = new Set();
   const oracle = clients.find((client) => client.family === 'oracle');
   if (oracle === undefined) {
     unmeasured('PE1-5/6', "no Oracle mysql client: the rig's own administration needs one");
-    return;
+    return [];
   }
   const mysqlServer = await servers.startMysqld(scope, 'pe1-my', path.join(ownedDir(scope, 'pe1-mysock'), 'my.sock'), oracle.exe);
   const targets = [];
@@ -145,11 +162,13 @@ async function legMysql(scope, clients, rig, mariadbImage) {
       if (under.ok) {
         candidates.say(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, under);
         mysqlLogin(client, rig, server, label, under.verdict);
+        ran.add(client);
       } else {
         unmeasured(`PE1-${client.family === 'oracle' ? '5' : '6'} ${client.name} on ${label}`, 'the real check refused this client under the candidate table (the finding is printed above), so the builder launches nothing');
       }
     }
   }
+  return [...ran];
 }
 
 /** An account at the server's DEFAULT plugin (no plugin named), with its throwaway credential, and a database it may use. */

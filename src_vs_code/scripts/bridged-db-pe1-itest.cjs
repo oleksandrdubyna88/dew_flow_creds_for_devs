@@ -35,12 +35,12 @@ async function main(scope) {
   const psql = found.find((client) => client.family === 'psql');
   if (psql === undefined) {
     rig.check('the psql client is installed', process.env.CI !== 'true', 'no psql client was found: install postgresql-client — a skipped leg on the runner proves nothing');
-  } else {
-    await legs.legPsql(scope, psql, shared);
   }
-  await legs.legMysql(scope, found.filter((client) => client.family !== 'psql'), shared, process.env.PE1_MARIADB_IMAGE);
+  const psqlRan = psql !== undefined && (await legs.legPsql(scope, psql, shared));
+  const mysqlRan = await legs.legMysql(scope, found.filter((client) => client.family !== 'psql'), shared, process.env.PE1_MARIADB_IMAGE);
   console.log('record (PE1-7) SQL Server is measured where rig Q is: the PS1 jobs (bridged-ps1-linux and bridged-ps1-windows) print PE1-7-go-sqlcmd and PE1-7-odbc-sqlcmd; this harness has no SQL Server');
-  buildsRecord(found);
+  // Only the clients a leg launched: the job's file of builds lists what ran, never what the runner merely has.
+  buildsRecord([...(psqlRan ? [psql] : []), ...mysqlRan]);
   return rig.finish('bridged db PE1');
 }
 

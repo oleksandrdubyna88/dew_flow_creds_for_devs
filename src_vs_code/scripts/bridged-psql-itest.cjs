@@ -83,13 +83,15 @@ const entryUri = (port, query = '') => `postgresql://pdprobe:${R.PQ2_STORED_PASS
  * alone keeps a client certificate from being offered, so a control that left it in would not show the person's certificate). `gssencmode` and `require_auth` stay: they are no road of these two legs. A path of the rig holds no quote.
  */
 const withoutControls = (text) => text.replace(/ passfile='[^']*' sslcert='[^']*' sslkey='[^']*'/, '').replace(/ sslcertmode='[^']*'/, '');
+/** The string with `sslcertmode` alone taken out: what isolates the `sslcert` and `sslkey` keywords (PD3's keyword case and its control differ by them alone). */
+const withoutCertMode = (text) => text.replace(/ sslcertmode='[^']*'/, '');
 
 /**
  * The production launch of `psql` for `uri`: the builder's arguments and, through `bridgedSshEnv`, the environment a bridged client gets, under `home`.
  * `without` names variables left out of that environment and `bare` leaves the three control keywords out of the string: the two ways (r) isolates one control
  * from another (the keyword alone; the variable alone is Q4b's and the PD legs'). A refusal by the builder is the rig's own fault, named.
  */
-function productionLaunch(product, verdict, uri, home, absentFile, { without = [], bare = false } = {}) {
+function productionLaunch(product, verdict, uri, home, absentFile, { without = [], bare = false, noCertMode = false } = {}) {
   const launchOf = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile, verdict });
   if (launchOf === undefined) {
     throw new Error('buildDbQueryLaunch refused the entry of a leg that must launch (it stores a password and names only the profile, under a good verdict of the real client check)');
@@ -99,7 +101,8 @@ function productionLaunch(product, verdict, uri, home, absentFile, { without = [
     delete env[name];
   }
   const last = launchOf.args.length - 1;
-  return { args: bare ? launchOf.args.map((arg, at) => (at === last ? withoutControls(arg) : arg)) : launchOf.args, env };
+  const cut = bare ? withoutControls : (noCertMode ? withoutCertMode : undefined);
+  return { args: cut === undefined ? launchOf.args : launchOf.args.map((arg, at) => (at === last ? cut(arg) : arg)), env };
 }
 
 /**
@@ -166,14 +169,16 @@ async function legPD3(scope, exe, dir, product, verdict) {
 /**
  * (r), PD3's case, after Z2: the entry stores a password and names `sslmode=require`, under the rig home with the marker certificate.
  *   production      the built launch offers no client certificate, the marker's included;
- *   keyword alone   the built string with PGSSLCERT and PGSSLKEY taken out of the environment: the `sslcert` and `sslkey` keywords at the absent file still offer none;
- *   its control     the same with the three controls out of the string: the person's certificate is offered, so the rig can make the bad thing happen.
+ *   keyword alone   the built string with PGSSLCERT and PGSSLKEY taken out of the environment AND `sslcertmode` taken out: the `sslcert` and `sslkey` keywords at the absent file
+ *                   alone still offer none (with `sslcertmode='disable'` left in, this run would pass without them);
+ *   its control     the same with the three controls out of the string: the person's certificate is offered, so the rig can make the bad thing happen. The two differ by
+ *                   the `sslcert` and `sslkey` keywords alone.
  */
 async function legR3(scope, exe, dir, home, tlsMaterial, product, verdict) {
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
   const cases = [
     ['production', {}],
-    ['keyword alone: no PGSSLCERT and no PGSSLKEY in the environment, the built string', { without: ['PGSSLCERT', 'PGSSLKEY'] }],
+    ['keyword alone: no PGSSLCERT and no PGSSLKEY in the environment, the built string with sslcertmode taken out', { without: ['PGSSLCERT', 'PGSSLKEY'], noCertMode: true }],
     ['keyword alone, control: no PGSSLCERT and no PGSSLKEY, and the three controls out of the string', { without: ['PGSSLCERT', 'PGSSLKEY'], bare: true }],
   ];
   const peers = [];
@@ -200,12 +205,12 @@ async function main(scope) {
   if (version === undefined) {
     check('the psql client is installed', process.env.CI !== 'true', `${exe} is missing (the postgresql-client package) — a skipped leg on the runner proves nothing`);
   } else {
-    registerRan([{ name: 'psql', family: 'psql', exe, via: 'BRIDGED_PSQL' }]); // the job's last line lists the clients whose legs ran (BRIDGED_BUILDS_FILE)
     const dir = ownedDir(scope, 'bridged-psql');
     const product = { ...require(path.join(OUT, 'dbCliLauncher.js')), ...require(path.join(OUT, 'bridgedSshEnv.js')), ...require(path.join(OUT, 'materializedKeys.js')) };
     // Every production launch below is built under the verdict of the REAL database client check, asked of this very client under the candidate table (§S7.7, §S7.12).
     const under = await candidates.verdictFor({ family: 'psql', exe, name: 'psql' }, { dir, home: dir });
     if (under.ok) {
+      registerRan([{ name: 'psql', family: 'psql', exe, via: 'BRIDGED_PSQL' }]); // the job's last line lists the clients whose legs ran (BRIDGED_BUILDS_FILE): only once the check let them run
       candidates.say('(r) PD2, PD3, PQ2 and (s)', under);
       await legPD2(scope, exe, dir, product, under.verdict);
       await legPD3(scope, exe, dir, product, under.verdict);

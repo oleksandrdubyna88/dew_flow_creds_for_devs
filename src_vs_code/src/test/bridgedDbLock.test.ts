@@ -240,4 +240,23 @@ test('T87: PS1-4 of the ODBC client fails when the launch as built reached the s
   const stopped = resultNamed(assessFamily('sqlcmd', ledgerOf([...lines, `STOP (PS1-4-${name}): the driver manager's data source file was read although -S named the server`])), name, 'PS1-4');
   assert.equal(stopped.status, 'FAIL');
   assert.match(stopped.why, /^STOP \(PS1-4-odbc-sqlcmd\)/);
+  const onlyStop = resultNamed(assessFamily('sqlcmd', ledgerOf([lines[0], lines[1], `STOP (PS1-4-${name}): the driver manager's data source file was read`])), name, 'PS1-4');
+  assert.equal(onlyStop.status, 'FAIL', 'a leg that printed only its STOP fails; it is not "not run"');
+});
+
+test('T88 (DP21): the lock reads the driver of the ODBC client: the served version over another driver is MISSING; a job name with ${{ matrix.os }} names only the images of its own job\'s matrix', () => {
+  const name = 'odbc-sqlcmd';
+  const line = (driver: string): string => `PRODUCTION sqlcmd odbc-sqlcmd 18.7.0001.1 "Linux" linux driver ${driver}  (${name}: /opt/mssql-tools18/bin/sqlcmd)`;
+  const otherDriver = ledgerOf([line('18.6.1.1')]);
+  const args = { family: 'sqlcmd', platform: 'linux', job: 'bridged-ps1-linux-ubuntu-24.04', ci: true, rows: BRIDGED_DB_PROFILES, assessed: assessFamily('sqlcmd', otherDriver), ledger: otherDriver };
+  assert.match(lockCheck(args).join('\n'), /MISSING sqlcmd odbc-sqlcmd 18\.7\.0001\.1 "Linux" on linux with the driver 18\.7\.1\.1: no client on this image was read by the real check/, 'the same client over another driver is not the served build');
+  const servedDriver = ledgerOf([line('18.7.1.1')]);
+  assert.doesNotMatch(lockCheck({ ...args, assessed: assessFamily('sqlcmd', servedDriver), ledger: servedDriver }).join('\n'), /no client on this image was read/, 'control: over the served driver the build is found (its legs are judged apart)');
+
+  assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux-ubuntu-22.04', HARNESS_OF.sqlcmd), true);
+  const without2204 = WORKFLOW.replace('os: [ubuntu-22.04, ubuntu-24.04, ubuntu-latest]', 'os: [ubuntu-24.04, ubuntu-latest]');
+  assert.notEqual(without2204, WORKFLOW, 'the PS1 matrix line is where the test expects it');
+  assert.equal(hasJobStep(without2204, 'bridged-ps1-linux-ubuntu-22.04', HARNESS_OF.sqlcmd), false, 'an image dropped from the matrix is no job');
+  assert.match(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: without2204, legsOf }).join('\n'), /job bridged-ps1-linux-ubuntu-22\.04 is no step of the workflow/);
+  assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux-windows-latest', HARNESS_OF.sqlcmd), false, 'an image of another job\'s matrix is no name of this one');
 });

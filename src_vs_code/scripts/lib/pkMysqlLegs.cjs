@@ -101,6 +101,8 @@ async function observe(ctx, client, plugin, pluginName, options) {
   return {
     state, said, refusedFlag, ended: fake.result.ended, switched: state.switched, answered: first !== undefined,
     offered: first !== undefined && first.length > 0 && first.label !== 'empty',
+    // NTLM: whether the final answer was read and names a user. A first token alone still counts as offered (the safe reading for a candidate), but a positive control needs the name.
+    named: state.ntlm !== undefined && typeof state.ntlm.user === 'string' && state.ntlm.user !== '',
     lacks: !state.switched ? false : first === undefined && LOAD_FAILURE.test(fake.result.stderr),
     words: refusedFlag ? `the client refused a flag before connecting (it said ${JSON.stringify(said)}): UNKNOWN TO THIS CLIENT` : first === undefined ? `no answer after the switch to ${pluginName}; the client said ${JSON.stringify(said)}` : `answered with ${first.length} byte(s) (${first.label})${state.ntlm === undefined ? '' : `; the NTLM answer names user ${JSON.stringify(state.ntlm.user)} of ${JSON.stringify(state.ntlm.domain)} on ${JSON.stringify(state.ntlm.workstation)}`}`,
   };
@@ -182,6 +184,9 @@ async function control(ctx, client, plugin, pluginName, controlFlags) {
   if (plugin.kind === 'device') {
     return { shown: false, text: `a security key needs a device and an answer made with it (spec L1): none can be made on this runner; the client with the plugin: ${withIdentity.words}` };
   }
+  if (plugin.kind === 'ntlm' && withIdentity.offered && !withIdentity.named) {
+    return { shown: false, text: `the client began Windows authentication but no final answer naming the user was read: ${withIdentity.words}` };
+  }
   if (!withIdentity.offered) {
     let extra = '';
     if (ticketKind) {
@@ -254,7 +259,8 @@ async function pluginLeg(ctx, client, plugin) {
     const asBuilt = await observe(ctx, client, plugin, pluginName, { entry });
     record(`${tag}-built-${entry}`, 'shown', `as launched, entry ${entry}: ${asBuilt.offered ? 'IDENTITY OFFERED' : 'identity not offered'}; ${asBuilt.words}`);
     for (const candidate of candidates) {
-      const seen = await observe(ctx, client, plugin, pluginName, { entry, add: candidate.flags });
+      // Built from the control (every candidate flag of the builder taken out) plus this candidate's own flags: each run differs from the control by its own flag alone (the header; PK1-p3's "each candidate alone").
+      const seen = await observe(ctx, client, plugin, pluginName, { entry, control: true, add: candidate.flags });
       const verdict = seen.refusedFlag ? 'the flag is UNKNOWN TO THIS CLIENT (it was refused before connecting: it stopped nothing and offered nothing)' : (seen.offered ? 'IDENTITY OFFERED' : 'identity not offered');
       record(`${tag}-${candidate.what.split(' ')[0].replaceAll('-', '')}-${entry}`, 'shown', `${candidate.what}, entry ${entry}: ${verdict}; ${seen.words}`);
       offeredUnder.push({ what: candidate.what, entry, offered: seen.offered, unknown: seen.refusedFlag, switched: seen.switched, ended: seen.ended });
@@ -312,11 +318,14 @@ async function legPath(ctx, client) {
   if (process.platform !== 'win32' && fs.existsSync(privateLibs) && !fs.existsSync(path.join(rigRoot, 'lib', 'private'))) {
     fs.symlinkSync(fs.realpathSync(privateLibs), path.join(rigRoot, 'lib', 'private'));
   }
-  const withFlags = (extra) => [...extra, ...flags];
-  let shown = await observe(ctx, client, plugin, loaded, { control: true, add: withFlags([`--plugin-dir=${rigFolder}`]) });
+  // The path probes run with the flags of the control that answered: a client that refused the carrier's flag answered the control without it, and must not be handed it again below.
+  let controlFlags = flags;
+  let shown = await observe(ctx, client, plugin, loaded, { control: true, add: [`--plugin-dir=${rigFolder}`, ...controlFlags] });
   if (!shown.offered) {
+    controlFlags = [];
     shown = await observe(ctx, client, plugin, loaded, { control: true, add: [`--plugin-dir=${rigFolder}`] });
   }
+  const withFlags = (extra) => [...extra, ...controlFlags];
   if (!shown.offered) {
     unmeasured(tag, `the control (the copy's folder as --plugin-dir, ${loaded} named bare) did not load and answer: ${shown.words}`);
     return;
@@ -327,7 +336,13 @@ async function legPath(ctx, client) {
     for (const [what, name] of [['a name with ../ steps', steps], ['the absolute path', path.join(rigFolder, loaded)]]) {
       const options = where.startsWith('as launched') ? { control: true, add: withFlags([]) } : { control: true, add: withFlags([`--plugin-dir=${empty}`]) };
       const seen = await observe(ctx, client, plugin, name, options);
-      record(`${tag}-${what.startsWith('a name') ? 'dotdot' : 'absolute'}-${where.startsWith('as launched') ? 'default' : 'empty'}`, 'shown', `${what}, ${where}: ${seen.offered ? 'THE COPY WAS OPENED AND ANSWERED' : 'the copy was not opened'}; ${seen.words}`);
+      const leg = `${tag}-${what.startsWith('a name') ? 'dotdot' : 'absolute'}-${where.startsWith('as launched') ? 'default' : 'empty'}`;
+      if (!seen.offered && (!seen.switched || !seen.ended)) {
+        // "Not opened" is read only from a run that reached the switch to the named plugin and ended: one that stopped before it says nothing of the path.
+        unmeasured(leg, `${what}, ${where}: the run ${seen.ended ? 'never reached the switch to the plugin' : 'did not end in time'}, so whether the copy is opened is not shown; ${seen.words}`);
+        continue;
+      }
+      record(leg, 'shown', `${what}, ${where}: ${seen.offered ? 'THE COPY WAS OPENED AND ANSWERED' : 'the copy was not opened'}; ${seen.words}`);
       if (seen.offered) {
         stop(tag, `the client followed a path in a plugin name (${what}; N13 says both clients refuse one): a path in the server's plugin name reaches a file of the person's disk`);
       }

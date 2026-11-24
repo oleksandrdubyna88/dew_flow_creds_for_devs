@@ -49,7 +49,9 @@ const words = (verdict) => `${verdict.vendor} ${verdict.version} ${JSON.stringif
  */
 function folderFor(exe, family, dir) {
   const { word } = FAMILIES[family];
-  if (path.basename(exe).toLowerCase().replace(/\.exe$/, '') === word) {
+  // Windows names a file in any letter case; elsewhere `MYSQL` is another file than `mysql`, and the walk would find the other one.
+  const named = path.basename(exe).replace(/\.exe$/i, '');
+  if ((IS_WINDOWS ? named.toLowerCase() : named) === word) {
     return path.dirname(exe);
   }
   const folder = path.join(dir, `client-${family}`);

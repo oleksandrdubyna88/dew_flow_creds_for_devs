@@ -210,6 +210,8 @@ export interface DbFiles {
   identityOf(file: string): Pick<DbProgramFile, 'realPath' | 'size' | 'mtimeMs' | 'dev' | 'ino' | 'ctimeMs' | 'launcher'> | undefined;
   /** The text of a small configuration file (the ODBC configuration), or `undefined` when it is not there, not a regular file, or larger than a configuration file is. */
   readText?(file: string): string | undefined;
+  /** Whether this user may run the file (POSIX: the execute bit). Absent, every file is taken as runnable. */
+  runnable?(file: string): boolean;
 }
 
 const WALKS = {
@@ -226,11 +228,15 @@ function candidatesOf(word: string, pathValue: string | undefined, platform: Nod
     .map((folder) => walk.flavour.join(folder, `${word}${walk.suffix}`));
 }
 
-/** The first file for `word` in an absolute folder of `pathValue`, with its identity: the file a bare program word would be, which every spawn of the call then starts by its path. */
+/**
+ * The first file for `word` in an absolute folder of `pathValue` that this user may run, with its identity: the file a bare program word would be, which every spawn of the call then starts by its
+ * path. Off Windows a file without the execute bit is passed over, as the shell's own search does, so a readable copy that cannot run does not hide the runnable one after it.
+ */
 export function resolveDbProgram(word: string, pathValue: string | undefined, platform: NodeJS.Platform, files: DbFiles): DbProgramFile | undefined {
+  const mayRun = (candidate: string): boolean => platform === 'win32' || files.runnable?.(candidate) !== false;
   for (const candidate of candidatesOf(word, pathValue, platform)) {
     const identity = files.identityOf(candidate);
-    if (identity !== undefined) {
+    if (identity !== undefined && mayRun(candidate)) {
       return { program: word, path: candidate, ...identity };
     }
   }
@@ -253,12 +259,40 @@ function beginsWithShebang(file: string): boolean {
 /** The largest configuration file `readText` reads: an ODBC configuration is a few lines. */
 const CONFIG_LIMIT = 256 * 1024;
 
+/** Opened without waiting where the system has the flag: a FIFO with no writer opens at once instead of blocking the extension host, and is then refused as no regular file. */
+const OPEN_FOR_CONFIG = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0);
+
+/** The text of an opened file: the type and the size are read of the file that was opened, and no more than the limit is read even if it grows meanwhile. */
+function textOfOpened(handle: number): string | undefined {
+  const stat = fs.fstatSync(handle);
+  if (!stat.isFile() || stat.size > CONFIG_LIMIT) {
+    return undefined;
+  }
+  const buffer = Buffer.alloc(CONFIG_LIMIT + 1);
+  const read = fs.readSync(handle, buffer, 0, buffer.length, 0);
+  return read > CONFIG_LIMIT ? undefined : buffer.subarray(0, read).toString('utf8');
+}
+
 export const nodeDbFiles: DbFiles = {
   readText(file) {
+    let handle: number | undefined;
     try {
-      return fs.statSync(file).size <= CONFIG_LIMIT ? fs.readFileSync(file, 'utf8') : undefined;
+      handle = fs.openSync(file, OPEN_FOR_CONFIG);
+      return textOfOpened(handle);
     } catch {
       return undefined;
+    } finally {
+      if (handle !== undefined) {
+        fs.closeSync(handle);
+      }
+    }
+  },
+  runnable(file) {
+    try {
+      fs.accessSync(file, fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
     }
   },
   identityOf(file) {

@@ -1,6 +1,7 @@
 # PLAN — E1.7 spec: the database execution profiles — what a bridged database client may log in with, per client and system
 
 > Status: **spec, 2026-11-17, by Fable, written as a security spec (authentication: what a database client may answer a server with) before its code. Nothing of it is built, and no probe of it has run.** Revised on 2026-11-18 with the findings accepted at its plan gate round and at the Opus judge's review (§S7.16, *Decided at the review*).
+> Status now (2026-11-24): **built on PR #380, unmerged.** The probes ran; one pair is served, the ODBC `sqlcmd` on Linux (turned at d999e181, its production run green), and every other pair stays refused (§S7.20). Still owed before merge: M11 on the owner's Windows host (§S7.14) and the code review. The status above is kept as it was written.
 > Story E1.7 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md):
 > *Reading this plan* (the ninth and the tenth lesson), §2.1 Q15-Q18, §4.9 rows 7-13, §4.11 whole, §5 step 3f, §7 (the probes PK1, PS1, PP1, PA1
 > and PE1, legs (u)-(w), *The database profile*, M11), §8, §9 (the database line and the invariant line), `## Epics` E1). The parent is approved
@@ -590,7 +591,7 @@ The parent leaves this to E1.7 (§4.11): the refusal needs only the entry's type
 - the journal holds one line for the call, and its detail is DR1, not the generic sentence;
 - no dialog was shown (`w.dialogs.length === 0`), the stored connection was not read (the storage stub's count is 0), and nothing was spawned
   (`runs` is empty);
-- **the grant is dropped**, as `usable` drops it on every refusal (G3): a second call with that token is answered as a token nobody knows.
+- **the grant is dropped**, as `usable` drops it on every refusal (G3): ~~a second call with that token is answered as a token nobody knows~~ the dropped grant is the call's own and the token survives, so a second call with that token is refused the same way, DR1 again (DG5 pins it; corrected 2026-11-24 after review).
   The refusal in `run`, after an Allow, leaves the grant as any failed run does; this one does not. Nothing is lost by it: the table is a
   constant of the build, so that pair is refused for the token's whole life.
 
@@ -962,6 +963,7 @@ become contracts only by their probes, as §4.11 says; the gate before the dialo
 **Owed to the parent, by the lead, from this story's results:** the probe table's rows PK1, PS1, PP1, PA1, PE1 and M11; §4.11's table (which
 pairs are served, with their ranges and builds); §4.9's row 10; *Not established here* in §4.11, for every cell a probe settled. And, in
 E2's stories document when E2 starts, §S7.8's note on the wall's wiring.
+Added 2026-11-24 (a review of PR #380): §8's line *The database profile* still says "in production no pair is served", as of E1.6; with the ODBC `sqlcmd` on Linux served (§S7.20) that sentence holds for every other pair only. Its wording is the parent's, so it is the lead's to change (a change of the parent's text at epoch 11), not this spec's.
 
 ## S7.17 — Not verified by this spec
 

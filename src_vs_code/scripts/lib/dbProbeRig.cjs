@@ -30,7 +30,10 @@ function loadProduct() {
 }
 
 /** The environment a bridged client gets (rule R2): `PATH` and `HOME` (the seven names on Windows) and the names the launch adds, never the harness's own. */
-const bridgedEnv = (product, home, extra = {}) => product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, process.platform, extra);
+// As the product builds it (and as `dbProbe.bridgedEnv` does): on Windows from the whole environment, whose system names the bridged list keeps (SYSTEMROOT, PROGRAMDATA, ...); elsewhere PATH and the rig's HOME.
+const bridgedEnv = (product, home, extra = {}) => (process.platform === 'win32'
+  ? product.bridgedSshEnv(process.env, 'win32', extra)
+  : product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, process.platform, extra));
 
 /** One client, run to its end under `env`, bounded. The answer is what the client printed; a client that could not start is a code that says so. */
 function runSync(exe, args, env, timeoutMs = 20_000) {
@@ -125,8 +128,12 @@ async function holdingListener(bindHost = '127.0.0.1') {
     open.add(socket);
     socket.on('error', () => undefined);
     socket.once('close', () => open.delete(socket));
-    socket.once('data', (chunk) => {
-      state.first ??= chunk;
+    // `state.first` gathers the bytes of the first connection (up to 64 KiB): a start-up message can arrive in more than one chunk, and a reader of a field needs all of it.
+    socket.on('data', (chunk) => {
+      state.firstOwner ??= socket;
+      if (state.firstOwner === socket && (state.first?.length ?? 0) < 65_536) {
+        state.first = state.first === undefined ? chunk : Buffer.concat([state.first, chunk]);
+      }
     });
   });
   await new Promise((resolve) => server.listen(0, bindHost, resolve));

@@ -59,6 +59,8 @@ function fakeMysql({ plugin, data = Buffer.alloc(0), entryWord, ntlm = false }) 
     socket.once('close', () => open.delete(socket));
     let pending = Buffer.alloc(0);
     let phase = 'login';
+    // What this connection has said: each connection starts its own exchange (a second connection gets its own challenge); `state` only collects the results.
+    const conn = { replies: 0 };
     socket.on('error', () => undefined);
     socket.write(packet(0, GREETING));
     socket.on('data', (chunk) => {
@@ -66,7 +68,7 @@ function fakeMysql({ plugin, data = Buffer.alloc(0), entryWord, ntlm = false }) 
       let at = parsePacket(pending);
       while (at !== undefined && phase !== 'done') {
         pending = pending.subarray(at.size);
-        phase = step(socket, phase, at, state, { plugin, data, entryWord, ntlm });
+        phase = step(socket, phase, at, state, { plugin, data, entryWord, ntlm }, conn);
         at = parsePacket(pending);
       }
     });
@@ -82,7 +84,7 @@ function fakeMysql({ plugin, data = Buffer.alloc(0), entryWord, ntlm = false }) 
 }
 
 /** One packet of the client; the next phase. */
-function step(socket, phase, incoming, state, options) {
+function step(socket, phase, incoming, state, options, conn) {
   if (phase === 'login') {
     state.logins.push({ user: userOf(incoming.payload) });
     state.switched = true;
@@ -91,7 +93,8 @@ function step(socket, phase, incoming, state, options) {
   }
   const answered = labelOf(incoming.payload, options.entryWord);
   state.replies.push(answered);
-  if (options.ntlm && state.replies.length === 1 && kindOfFirst(incoming.payload) === 'ntlm1') {
+  conn.replies += 1;
+  if (options.ntlm && conn.replies === 1 && kindOfFirst(incoming.payload) === 'ntlm1') {
     socket.write(packet(incoming.sequence + 1, Buffer.concat([Buffer.from([0x01]), answerTo(incoming.payload, 'BRIDGE', 'RIGFAKE')])));
     return 'reply';
   }

@@ -53,11 +53,27 @@ async function startPgServer(scope, dir, { roles, keytab }) {
   ];
   fs.appendFileSync(path.join(data, 'postgresql.conf'), `\n${settings.join('\n')}\n`);
   const hbaFile = path.join(data, 'pg_hba.conf');
-  /** Rewrites `pg_hba.conf` and reloads it; the reload is a signal, so the caller waits a moment before the next connection. */
+  /**
+   * Rewrites `pg_hba.conf` and reloads it. `pg_ctl reload` only sends a signal, so the server's own log is read until it says it reloaded (a fixed pause could let the next connection meet the old
+   * rules). A reload the server rejected, or none seen within the bound, is a rig failure: no leg runs on rules it cannot name.
+   */
   const setHba = async (lines) => {
+    const mark = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
     fs.writeFileSync(hbaFile, `${lines.join('\n')}\n`);
     rigRun(exe('pg_ctl'), ['-D', data, 'reload']);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const since = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile).subarray(mark).toString('utf8') : '');
+    for (let waited = 0; waited < 10_000; waited += 100) {
+      const said = since();
+      if (/pg_hba\.conf was not reloaded|could not load .*pg_hba\.conf/i.test(said)) {
+        throw new Error(`the server did not take the new pg_hba.conf: ${said.trim().slice(-300)}`);
+      }
+      if (/received SIGHUP, reloading configuration files/.test(said)) {
+        await new Promise((resolve) => setTimeout(resolve, 100)); // the line is written as the reload starts; the backends read the file at their start, after it
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error('the server did not say within 10 s that it reloaded pg_hba.conf');
   };
   fs.writeFileSync(hbaFile, 'host all all 127.0.0.1/32 trust\n');
   // Registered BEFORE the start, so that a start that timed out still stops the server it began (a running server holds its folder, and the scope could not remove it).
