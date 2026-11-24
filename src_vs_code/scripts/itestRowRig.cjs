@@ -485,7 +485,8 @@ function listeningNow() {
 
 /**
  * After the last end (5 s): none of these calls' files in the folder, no client of the leg alive; what else the folder holds is listed (M6.9, M6.10).
- * With `sockets` (a row whose criterion asks it: M6.11) also: no bridge's socket is left. Every leg that opened a bridge also records, as info only and
+ * With `sockets` (a row whose criterion asks it: M6.11) also: no bridge's socket is live (nothing listens on it, `ss -lx`; the owner's reading of
+ * "no forwarded socket left", 2026-11-24: sshd leaves the dead file, which the next bridge sweeps). Every leg that opened a bridge also records, as info only and
  * judging nothing, (a) whether each bridge's socket FILE exists after the last end and (b) whether anything listens on it (`ss -lx`).
  */
 async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = false } = {}) {
@@ -501,8 +502,12 @@ async function nothingLeft(check, label, leg, roads, calls, { sockets: judged = 
   check(`${label}: after the last end: 0 client processes alive, by the recorded pids and start times (${clients.length} recorded)`, clients.length > 0 && living.length === 0, JSON.stringify(living));
   const sockets = roads.bridges.map((one) => one.remote).filter((remote) => remote !== undefined);
   if (judged) {
-    const stranded = await within(5_000, () => !sockets.some(sec.isSocket)).then((none) => (none ? [] : sockets.filter(sec.isSocket)));
-    check(`${label}: after the last end: no forwarded socket is left (${sockets.length} bridge sockets named) (M6.11)`, stranded.length === 0, JSON.stringify(stranded));
+    // M6.11, as the owner read it on 2026-11-24: no LIVE forward is left — nothing listens on a bridge's socket (`ss -lx`, the product's own
+    // liveness test). The dead FILE is the product's documented leftover (`sshBridge.ts`, swept by the next bridge) and is recorded below as info.
+    const live = (listed) => sockets.filter((remote) => listed.includes(remote));
+    let listed = await listeningNow();
+    const quiet = listed !== null && (await within(5_000, async () => { listed = await listeningNow(); return listed !== null && live(listed).length === 0; }));
+    check(`${label}: after the last end: no forwarded socket is live — nothing listens on any of the ${sockets.length} bridge sockets (ss -lx) (M6.11)`, quiet, listed === null ? 'ss -lx could not be run' : JSON.stringify(live(listed)));
   }
   const listening = sockets.length === 0 ? '' : await listeningNow();
   sockets.forEach((remote) => console.log(`info  ${label}: bridge socket ${path.basename(remote)} after the last end: (a) the file ${sec.isSocket(remote) ? 'exists' : 'is gone'}; (b) ${listening === null ? 'ss -lx could not be run' : listening.includes(remote) ? 'something listens on it' : 'nothing listens on it'}`));
