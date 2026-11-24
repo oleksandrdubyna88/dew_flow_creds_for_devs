@@ -162,7 +162,9 @@ test('OT3: the words of the controls and the witnesses are literal, and none is 
   assert.equal(moved.length, 12);
   assert.deepEqual(moved.filter((word) => word.includes('KnownHostsFile=')), ['UserKnownHostsFile=/o/pins/k1', 'GlobalKnownHostsFile=/o/pins/k1']);
   assert.deepEqual(moved.filter((word) => !word.includes('KnownHostsFile=')), words.filter((word) => !word.includes('KnownHostsFile=')), 'every other word is the road\'s own');
-  assert.throws(() => withFile(['-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/o/k'], '/o/pins/k1'), /GlobalKnownHostsFile/);
+  assert.deepEqual(withFile(['-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/o/k'], '/o/pins/k1'), ['-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=/o/pins/k1'], 'the option that is there is replaced; a missing one is no exception');
+  assert.deepEqual(withFile(['-oGlobalKnownHostsFile=/o/k', '-o', 'LogLevel=ERROR'], '/o/pins/k1'), ['-oGlobalKnownHostsFile=/o/pins/k1', '-o', 'LogLevel=ERROR'], 'the one-word spelling too');
+  assert.throws(() => withFile(['-o', 'StrictHostKeyChecking=yes'], '/o/pins/k1'), /no UserKnownHostsFile/);
 
   assert.deepEqual(sharingWordsOf(NO_CONNECTION_SHARING), g2, 'the product\'s G2 options are the two words');
   assert.deepEqual(sharingWordsOf(words), [], 'the twelve words hold none');

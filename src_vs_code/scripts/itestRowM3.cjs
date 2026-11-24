@@ -34,16 +34,26 @@ function g2Bad(starts) {
 
 /**
  * A call that WOULD ride the master (the witness of `m3-mismatch`, the control of `m3-switch`): the real client by its path with the road's own recorded words (`argv`, the six options of E1 and E2) and the path of
- * the two known-hosts options replaced by `pinFile`, no G2 option, running `echo <nonce> "$PATH"` against `server`. Answers `{ run, nonce, argvOk, printed, onStandInPath }`.
+ * the two known-hosts options replaced by `pinFile`, no G2 option, running `echo <nonce> "$PATH"` against `server`. Answers `{ run, nonce, error, argvOk, sixOk, sixCounts, printed, onStandInPath }`:
+ * `argvOk` is "no G2 option", `sixOk` "the six options of E1 and E2, each once" (its own named check: a road that lost one is a defect of the road, not of this call). A call that could not be
+ * made (the words name no known-hosts file) answers an `error` and a `run` with no code, so the leg's checks go red by name and the leg goes on to its end.
  */
 async function ride(ctx, given, argv, pinFile, server) {
   const { product } = ctx;
-  const words = ok.withFile([...product.argv.hostKeyWordsOf(argv), ...product.argv.sourceWordsOf(argv)], pinFile);
-  const nonce = crypto.randomUUID();
-  const run = await shared.login(ctx, server, words, `echo ${nonce} "$PATH"`);
-  const argvOk = ok.sharingWordsOf(run.argv).length === 0 && SIX.every((name) => product.argv.valuesOf(run.argv, name).length === 1);
-  return { run, nonce, argvOk, printed: run.stdout.startsWith(`${nonce} `), onStandInPath: run.stdout.startsWith(`${nonce} ${given.stand.bin}:`) };
+  const nothing = { code: null, stdout: '', stderr: '', argv: [], before: { accepted: 0, connections: 0, sessions: 0 }, after: { accepted: 0, connections: 0, sessions: 0 } };
+  try {
+    const words = ok.withFile([...product.argv.hostKeyWordsOf(argv), ...product.argv.sourceWordsOf(argv)], pinFile);
+    const nonce = crypto.randomUUID();
+    const run = await shared.login(ctx, server, words, `echo ${nonce} "$PATH"`);
+    const sixCounts = Object.fromEntries(SIX.map((name) => [name, product.argv.valuesOf(run.argv, name).length]));
+    return { run, nonce, error: undefined, argvOk: ok.sharingWordsOf(run.argv).length === 0, sixOk: Object.values(sixCounts).every((n) => n === 1), sixCounts, printed: run.stdout.startsWith(`${nonce} `), onStandInPath: run.stdout.startsWith(`${nonce} ${given.stand.bin}:`) };
+  } catch (error) {
+    return { run: nothing, nonce: '', error: String(error?.message ?? error), argvOk: false, sixOk: false, sixCounts: null, printed: false, onStandInPath: false };
+  }
 }
+
+/** The record of a ride for the evidence: its argv, code, output, and the error when it could not be made. */
+const recordOf = (one) => ({ argv: one.run.argv, code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr, error: one.error ?? null });
 
 /** What a ride adds to K1's log: exactly one new session of kind `command`, no new accepted login, no new connection. */
 function rodeIt(run) {
@@ -57,6 +67,7 @@ const installArgvOf = (ctx, leg, roads) => shared.connectionStarts(leg, roads).f
 async function leave(ctx, spec, roads, servers, counts, made) {
   const { check } = ctx;
   const leg = ctx.rig;
+  shared.stderrFilesCheck(ctx, leg.label);
   await roads.w.bridges.dispose();
   await rig.nothingLeft(check, leg.label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   if (made.master !== undefined) {
@@ -66,7 +77,7 @@ async function leave(ctx, spec, roads, servers, counts, made) {
     await rig.endCounterpart(check, leg, server, server.name.toUpperCase());
   }
   const source = { control: path.relative(leg.dir, path.join(leg.dir, 'cm')), persist: 120, master: { pid: made.master?.pid ?? null, checks: made.checks ?? [] } };
-  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(leg, spec, made.config, {}), source, bridgeStderr: made.bridgeStderr ?? null, socket: made.socket ?? null, [made.kind ?? 'control']: made.record ?? null, installShown: made.shown ?? null, switchMark: made.switchMark ?? null });
+  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, made.config, counts, {}), source, bridgeStderr: made.bridgeStderr ?? null, socket: made.socket ?? null, [made.kind ?? 'control']: made.record ?? null, installShown: made.shown ?? null, switchMark: made.switchMark ?? null });
 }
 
 /** The mismatch (§3.1): the entry is pinned to K2, K1 answers, a master to K1 is up; the three roads are refused and never ride the master. */
@@ -100,10 +111,11 @@ async function mismatch(ctx, spec) {
   const alive = await rig.masterCheck(leg);
   check(`${label}: the master is still up after the last run: ssh -O check ends with 0 (M3.6)`, alive.code === 0, JSON.stringify(alive));
   const one = await ride(ctx, given, probeArgvOf(ctx, leg, roads), shared.writePin(leg, 'witness-k2', k1.port, leg.k2), k1);
-  check(`${label}: the witness: the real client with the probe's own pin words (pinned to K2, its file replaced by a file of K2's line) and without G2's two options rode the master: exit 0, it printed the nonce, and K1's log shows one new session and no new connection (M3.7)`, one.run.code === 0 && one.printed && one.argvOk && rodeIt(one.run), JSON.stringify({ code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr, before: one.run.before, after: one.run.after, argvOk: one.argvOk }));
+  check(`${label}: the witness: the real client with the probe's own pin words (pinned to K2, its file replaced by a file of K2's line) and without G2's two options rode the master: exit 0, it printed the nonce, and K1's log shows one new session and no new connection (M3.7)`, one.run.code === 0 && one.printed && one.argvOk && rodeIt(one.run), one.error ?? JSON.stringify({ code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr, before: one.run.before, after: one.run.after, argvOk: one.argvOk }));
+  check(`${label}: the witness's own argv holds the six options of E1 and E2, each once (M3.7a)`, one.error === undefined && one.sixOk, one.error ?? JSON.stringify(one.sixCounts));
   shared.standInGuard(ctx, label, given, roads, 'M3.8');
   check(`${label}: a session through the master gets the stand-in's PATH: the witness printed a PATH that starts with <standin>/bin (M3.8)`, one.onStandInPath, one.run.stdout);
-  await leave(ctx, spec, roads, [k1], counts, { ...made, bridgeStderr, socket, kind: 'witness', record: { argv: one.run.argv, code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr }, checks: [0, alive.code] });
+  await leave(ctx, spec, roads, [k1], counts, { ...made, bridgeStderr, socket, kind: 'witness', record: recordOf(one), checks: [made.master.code, alive.code] });
 }
 
 /** The switch (§3.2): K1 answers the probe; the question is held; K1's listener alone is ended and K2 takes its port; the install run is refused; the control rides the master that survived. */
@@ -133,11 +145,11 @@ async function switchLeg(ctx, spec) {
   await within(3_000, () => rec.logCounts(k2.sshd.stderr, me).connections >= 1);
   const counts = rig.countsOf(leg, roads, [k1, k2]);
   const k2log = counts.counterparts[1];
-  check(`${label}: the master is alive directly before the question is answered: ssh -O check ends with 0 (M3.s2)`, before?.code === 0, JSON.stringify(before));
+  check(`${label}: the master is alive directly before the question is answered: ssh -O check ends with 0 and names the master's pid (M3.s2)`, before?.code === 0 && before.pid === made.master.pid, JSON.stringify({ before, master: made.master.pid }));
   const installs = counts.runs.filter((one) => one.kind === 'install');
   const installStart = shared.connectionStarts(leg, roads).filter((start) => start.argv.at(-1) === ctx.product.installCommand());
   check(`${label}: the install run started once and ended with exit code 255 and the verification line; it carried G2's two options; K2 logged a connection for it (M3.s3)`, run.ended && installs.length === 1 && installs[0].exitCode === 255 && ok.hasLine(installs[0].stderr) && installStart.length === 1 && g2Bad(installStart).length === 0 && k2log.connections >= 1, JSON.stringify({ ended: run.ended, installs, starts: installStart.length, connections: k2log.connections }));
-  check(`${label}: the master is alive directly after the install run has ended: ssh -O check ends with 0 (M3.s4)`, after.code === 0, JSON.stringify(after));
+  check(`${label}: the master is alive directly after the install run has ended: ssh -O check ends with 0 and names the master's pid (M3.s4)`, after.code === 0 && after.pid === made.master.pid, JSON.stringify({ after, master: made.master.pid }));
   const sessions = ok.sessionsOf(k1.sshd.stderr.slice(run.switchMark.k1), me);
   const accepted = rec.logCounts(k1.sshd.stderr.slice(run.switchMark.k1), me).accepted;
   check(`${label}: between the switch and the end of that run K1's log shows no new session or command: 0 Starting session lines and 0 accepted logins between the switch mark and the click's end (M3.s5)`, sessions.length === 0 && accepted.length === 0, JSON.stringify({ sessions, accepted }));
@@ -147,11 +159,12 @@ async function switchLeg(ctx, spec) {
   const one = await ride(ctx, given, installArgvOf(ctx, leg, roads), shared.writePin(leg, 'control-k1', k1.port, leg.k1), k1);
   const k2After = rec.logCounts(k2.sshd.stderr, me).connections;
   const sessionKinds = ok.sessionsOf(k1.sshd.stderr, me).slice(one.run.before.sessions).map((session) => session.kind);
-  check(`${label}: the control client with the same pin words (the install run's six pairs, its pin file replaced by a file of K1's line) and without G2's two options ended with 0 through the master that survived: it printed the nonce, K1's log shows one new command session and no new accepted login, and K2 logged no new connection (M3.s7)`, one.run.code === 0 && one.printed && one.argvOk && rodeIt(one.run) && sessionKinds.join() === 'command' && k2After === k2Before, JSON.stringify({ code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr, before: one.run.before, after: one.run.after, sessionKinds, k2Connections: [k2Before, k2After] }));
+  check(`${label}: the control client with the same pin words (the install run's six pairs, its pin file replaced by a file of K1's line) and without G2's two options ended with 0 through the master that survived: it printed the nonce, K1's log shows one new command session and no new accepted login, and K2 logged no new connection (M3.s7)`, one.run.code === 0 && one.printed && one.argvOk && rodeIt(one.run) && sessionKinds.join() === 'command' && k2After === k2Before, one.error ?? JSON.stringify({ code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr, before: one.run.before, after: one.run.after, sessionKinds, k2Connections: [k2Before, k2After] }));
+  check(`${label}: the control's own argv holds the six options of E1 and E2, each once (M3.s7a)`, one.error === undefined && one.sixOk, one.error ?? JSON.stringify(one.sixCounts));
   shared.standInGuard(ctx, label, given, roads, 'M3.s8');
   check(`${label}: the control's PATH, through the master, starts with <standin>/bin (M3.s8)`, one.onStandInPath, one.run.stdout);
   info(`${label}: the install run's argv: ${JSON.stringify(installArgvOf(ctx, leg, roads))}; the control's argv: ${JSON.stringify(one.run.argv)}`);
-  await leave(ctx, spec, roads, [k1, k2], counts, { ...made, kind: 'control', record: { argv: one.run.argv, code: one.run.code, stdout: one.run.stdout, stderr: one.run.stderr }, checks: [before?.code ?? null, after.code], shown: run.shown, switchMark: run.switchMark });
+  await leave(ctx, spec, roads, [k1, k2], counts, { ...made, kind: 'control', record: recordOf(one), checks: [before?.code ?? null, after.code], shown: run.shown, switchMark: run.switchMark });
 }
 
 const legs = Object.fromEntries(Object.values(SPECS).map((spec) => [spec.name, (ctx) => (spec.scenario === 'mismatch' ? mismatch(ctx, spec) : switchLeg(ctx, spec))]));

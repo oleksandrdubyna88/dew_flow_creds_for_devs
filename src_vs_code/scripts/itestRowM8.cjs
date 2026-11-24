@@ -73,11 +73,12 @@ async function m8(ctx) {
   const log = counts.counterparts[0];
   check(`${label}: K2 logged a connection for each connection start, 0 accepted logins and 0 authentication attempts after the mark (M8.4)`, counts.starts.connectionStarts > 0 && log.connections >= counts.starts.connectionStarts && log.accepted.length === 0 && log.authAttempts === 0 && !log.lines.some((line) => rec.AUTH_ATTEMPT.test(line)), JSON.stringify({ connectionStarts: counts.starts.connectionStarts, connections: log.connections, accepted: log.accepted, attempts: log.authAttempts }));
   shared.standInGuard(ctx, label, given, roads, 'M8.5');
+  shared.stderrFilesCheck(ctx, label);
   await roads.w.bridges.dispose();
   await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(check, leg, k2, 'K2');
   const source = { command: path.relative(leg.dir, command), sha256: shared.sha256(command), records: { beforeMark, afterMark: afterMark.length }, ppids: control.starts.map((one) => one.ppid) };
-  rig.evidence(leg, roads, [k2], { ...counts, ...shared.commonEvidence(leg, SPEC, config, {}), source, bridgeStderr, control: control.record, socket: null, installShown: null, switchMark: null });
+  rig.evidence(leg, roads, [k2], { ...counts, ...shared.commonEvidence(SPEC, config, counts, {}), source, bridgeStderr, control: control.record, socket: null, installShown: null, switchMark: null });
 }
 
 const legs = { m8 };

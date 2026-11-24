@@ -60,10 +60,11 @@ async function controlOrWitness(ctx, spec, server, port) {
 /** The leaving checks, then the evidence: a bridge that a defect left open is closed first, so its files and its process do not redden checks that are not about it. */
 async function leave(ctx, spec, given, roads, servers, counts, extra) {
   const leg = ctx.rig;
+  shared.stderrFilesCheck(ctx, leg.label);
   await roads.w.bridges.dispose();
   await rig.nothingLeft(ctx.check, leg.label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(ctx.check, leg, servers.at(-1), servers.at(-1).name.toUpperCase());
-  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(leg, spec, extra.config, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null });
+  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, extra.config, counts, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null });
 }
 
 /** M2.3: K2 logged a connection for each connection start, 0 accepted logins and 0 authentication attempts, and no line of the log is one that only a client past the key check causes. */
@@ -125,7 +126,7 @@ async function switchLeg(ctx, spec) {
   check(`${label}: after the switch the install run started once and ended with exit code 255 and the verification line, and K2 logged a connection for it (M2.s3)`, run.ended && started === 1 && installs.length === 1 && installs[0].exitCode === 255 && ok.hasLine(installs[0].stderr) && k2log.connections >= 1, JSON.stringify({ ended: run.ended, started, installs, connections: k2log.connections }));
   check(`${label}: K2 logged 0 accepted logins and 0 authentication attempts (M2.s4)`, k2log.accepted.length === 0 && k2log.authAttempts === 0, JSON.stringify({ accepted: k2log.accepted, attempts: k2log.authAttempts }));
   shared.standInGuard(ctx, label, given, roads, 'M2.s5', 'the stand-in\'s marker was not written');
-  check(`${label}: the install's click ended within 60 s after the answer, and what it showed was recorded word for word (M2.s6)`, run.ended, JSON.stringify(run.shown));
+  check(`${label}: the install's click ended within 60 s after the answer, and what it showed was recorded word for word (M2.s6)`, run.ended && run.shown.length >= 1, JSON.stringify(run.shown));
   info(`${label}: what the install showed after the answer: ${JSON.stringify(run.shown)}`);
   const control = await controlOrWitness(ctx, spec, k2, k1.port);
   await leave(ctx, spec, given, roads, [k1, k2], counts, { ...made, ...control, shown: run.shown, switchMark: run.switchMark });

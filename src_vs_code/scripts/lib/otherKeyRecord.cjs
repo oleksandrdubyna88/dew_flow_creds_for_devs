@@ -57,8 +57,9 @@ function optionTexts(argv) {
 }
 
 /**
- * The recorded words of a road's run with the value of `UserKnownHostsFile=` and of `GlobalKnownHostsFile=` replaced by `file`; every other word as it was. Throws unless
- * exactly one of each was replaced (a control with other words would show nothing about the road).
+ * The recorded words of a road's run with the value of each `UserKnownHostsFile=` and `GlobalKnownHostsFile=` that is there replaced by `file`; every other word as it was. Throws only
+ * when NONE is there (words that name no known-hosts file are no pin words of a road). That the six options of E1 and E2 are all there is the caller's own check: a road that lost one
+ * (a hand check of the product) must show as a named check of its own, not as an exception that ends the leg.
  */
 function withFile(words, file) {
   const done = { user: 0, global: 0 };
@@ -71,8 +72,8 @@ function withFile(words, file) {
     return `${found[1]}=${bare(file)}`;
   };
   const moved = words.map((word, at) => (words[at - 1] === '-o' ? replace(word) : word.startsWith('-o') && word.length > 2 ? `-o${replace(word.slice(2))}` : word));
-  if (done.user !== 1 || done.global !== 1) {
-    throw new Error(`the words must hold exactly one UserKnownHostsFile and one GlobalKnownHostsFile; replaced ${done.user} and ${done.global}: ${JSON.stringify(words)}`);
+  if (done.user + done.global === 0) {
+    throw new Error(`the words name no UserKnownHostsFile and no GlobalKnownHostsFile: ${JSON.stringify(words)}`);
   }
   return moved;
 }

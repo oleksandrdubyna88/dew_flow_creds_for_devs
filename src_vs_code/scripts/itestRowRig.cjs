@@ -425,8 +425,12 @@ function handConfig(leg, options) {
 /** The real client by its path (never the shim: its starts belong to no road) under the leg's handed config. */
 const viaReal = (leg, argv) => runClient(leg, leg.clientConfig, argv, leg.env, leg.real);
 
-/** `ssh -O check` on the leg's control path (E3.S6, D3): `{ code, stdout, stderr }`. */
-const masterCheck = (leg) => viaReal(leg, ['-O', 'check', `${me}@127.0.0.1`]);
+/** `ssh -O check` on the leg's control path (E3.S6, D3): `{ code, stdout, stderr, pid }`, `pid` being the one that `Master running (pid=<n>)` names (`null` when it names none). */
+async function masterCheck(leg) {
+  const said = await viaReal(leg, ['-O', 'check', `${me}@127.0.0.1`]);
+  const pid = /Master running \(pid=(\d+)\)/.exec(said.stderr)?.[1];
+  return { ...said, pid: pid === undefined ? null : Number(pid) };
+}
 
 /** The master's end (idempotent): `ssh -O exit`, then its pid while its start time is the recorded one; with a `check`, whether it and its control socket are gone. */
 async function endMaster(leg, master, check) {
@@ -453,7 +457,7 @@ async function masterOf(check, leg, port, pinFile) {
   let said = { code: null, stderr: '' };
   const up = await within(10_000, async () => { said = await viaReal(leg, ['-O', 'check', '-p', String(port), dest]); return said.code === 0; });
   const pid = Number(/Master running \(pid=(\d+)\)/.exec(said.stderr)?.[1]);
-  const master = Number.isInteger(pid) ? { pid, start: startOf(pid) } : undefined;
+  const master = Number.isInteger(pid) ? { pid, start: startOf(pid), code: said.code } : undefined;
   if (master !== undefined) {
     leg.scope.after(() => endMaster(leg, master));
   }

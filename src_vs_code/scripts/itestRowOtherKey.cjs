@@ -11,7 +11,6 @@ const path = require('node:path');
 const rig = require('./itestRowRig.cjs');
 const rec = require('./lib/rowRecord.cjs');
 const ok = require('./lib/otherKeyRecord.cjs');
-const { acceptedOf } = require('./itestRowM1.cjs');
 
 const { sec, standIn, within, me } = rig;
 /** After the last run: a start that a defect would add (the check of a bridge waits 1.5 s) is in the record by then. */
@@ -165,11 +164,27 @@ async function login(ctx, server, words, command = 'true') {
 const wordsOf = (argv) => argv.slice(0, argv.indexOf('-i'));
 
 /** The accepted logins of `server`, read once its log holds one more than `from` (or after 5 s). */
-const acceptedAfter = (server, from) => acceptedOf(server, from + 1);
+async function acceptedAfter(server, from) {
+  await within(5_000, () => rec.logCounts(server.sshd.stderr, me).accepted.length >= from + 1);
+  return rec.logCounts(server.sshd.stderr, me);
+}
+
+/**
+ * The A2 check (the lead's answer A2): every `<pid>.stderr` file in the leg's records belongs to a recorded start that is a bridge (`-N`): the shim takes only a stderr that the product
+ * ignored, and the product ignores only the bridge's. A leg with no bridge has none. Answers the files that belong to no bridge.
+ */
+function stderrFilesCheck(ctx, label) {
+  const leg = ctx.rig;
+  const bridges = new Set(sec.recordedStarts(leg).filter((start) => start.argv.includes('-N')).map((start) => String(start.pid)));
+  const files = fs.readdirSync(leg.records).filter((name) => name.endsWith('.stderr'));
+  const strays = files.filter((name) => !bridges.has(name.slice(0, -'.stderr'.length)));
+  ctx.check(`${label}: every <pid>.stderr file in the records belongs to a start of the bridge: the shim took no stderr that the product reads (A2)`, strays.length === 0, JSON.stringify({ files: files.length, bridges: bridges.size, strays }));
+  return strays;
+}
 
 /** The fields of the evidence that every leg shares (§1.9). */
-const commonEvidence = (leg, spec, hash, fields) => ({ scenario: spec.scenario, cold: true, config: hash, ...fields });
+const commonEvidence = (spec, hash, counts, fields) => ({ scenario: spec.scenario, cold: counts.starts.questions === 1, config: hash, ...fields });
 
 module.exports = {
-  standing, writePin, writeSource, optionsOf, whichFiles, khcRecords, driveRefusedRoads, driveSwitch, bridgeStderrOf, logsArrived, connectionStarts, refusedChecks, socketChecks, standInGuard, login, wordsOf, acceptedAfter, commonEvidence, SETTLE_MS, sha256, sleep,
+  standing, writePin, writeSource, optionsOf, whichFiles, khcRecords, driveRefusedRoads, driveSwitch, bridgeStderrOf, logsArrived, connectionStarts, stderrFilesCheck, refusedChecks, socketChecks, standInGuard, login, wordsOf, acceptedAfter, commonEvidence, SETTLE_MS, sha256, sleep,
 };
