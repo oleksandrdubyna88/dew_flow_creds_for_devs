@@ -18,6 +18,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { rigOf, installShim, writeClientConfig, makeKeys, openLeg, startsOf, finishes } = require('./itestPinnedRoads.cjs');
 const { checkedPinOf, SSHD } = require('./itestSshd.cjs');
+const { installStandIn } = require('./itestProbeInstall.cjs');
 const { ownedName, ownedPattern, formatOwner, runRecord } = require('./lib/leftovers.cjs');
 
 const me = os.userInfo().username;
@@ -63,7 +64,7 @@ async function removeContainer(name) {
 
 /** The names of every container `wslc list -a` shows, one per row (the last column). */
 async function containerNames() {
-  const said = await runBounded(WSLC, ['list', '-a'], 30_000);
+  const said = await runBounded(WSLC, ['list', '-a', '--no-trunc'], 30_000); // without --no-trunc a long name is cut with an ellipsis, and a match on it proves nothing
   return said.code === 0 ? said.stdout.split('\n').slice(1).map((line) => line.trim().split(/\s+/).at(-1)).filter((name) => name) : undefined;
 }
 
@@ -77,10 +78,16 @@ async function imageId() {
   }
 }
 
-/** The line of `wslc list` (running containers) for `name`, or `undefined`. */
-async function runningRow(name) {
-  const said = await runBounded(WSLC, ['list'], 30_000);
-  return said.stdout.split('\n').find((line) => line.trim().endsWith(name));
+/** What `wslc inspect` says of the RUNNING container `name`: `{ image, name, labels }`, or `undefined` while it does not run. */
+async function inspectRunning(name) {
+  const said = await runBounded(WSLC, ['inspect', name], 30_000);
+  try {
+    const parsed = JSON.parse(said.stdout);
+    const one = Array.isArray(parsed) ? parsed[0] : parsed;
+    return { image: one.Image, name: one.Name, labels: one.Config?.Labels ?? one.Labels ?? {} };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Prints the container's output as the harness's inside lines, each prefixed, and counts what the inside part said. */
@@ -117,10 +124,10 @@ async function hostPart(ctx) {
   let outcome;
   let finished = false;
   let seen;
-  // While the container runs, `wslc list` (running containers only) is asked until it shows the container: what the runtime itself says of it.
+  // While the container runs, the runtime is asked what it says of it (`wslc inspect`, by the exact name) until it answers once.
   const watching = (async () => {
     while (!finished && seen === undefined) {
-      seen = await runningRow(name);
+      seen = await inspectRunning(name);
       if (seen === undefined) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
@@ -133,11 +140,11 @@ async function hostPart(ctx) {
     await watching;
     ctx.info(`wslc rm -f -v ${name}: ${JSON.stringify(await removeContainer(name))}`);
   }
-  ctx.info(`wslc list while it ran: ${JSON.stringify(seen ?? null)}`);
+  ctx.info(`wslc inspect while it ran: ${JSON.stringify(seen ?? null)}`);
   const after = await containerNames();
   const report = insideReport(ctx, `${outcome.stdout}${outcome.stderr === '' ? '' : `\nstderr: ${outcome.stderr}`}`);
-  ctx.check(`P2.1 the container ran from the image ${id.slice(0, 19)}… with --rm, the owner-form name ${ownedPattern().test(name) ? 'and' : 'WITHOUT'} the owner label; after the probe wslc list -a shows no container of that name`,
-    ownedPattern().test(name) && run.includes('--rm') && run.includes(id) && run.includes(label) && after !== undefined && !after.includes(name), JSON.stringify({ name, after }));
+  ctx.check(`P2.1 the container ran from the image ${id.slice(0, 19)}… (inspect while it ran: that image id, the name ${name}, the owner label), started with --rm and the owner-form name; after the probe wslc list -a --no-trunc shows no container of that name`,
+    ownedPattern().test(name) && run.includes('--rm') && seen?.image === id && seen?.name === `/${name}` && seen?.labels?.['testsToDelete.owner'] === label.replace(/^testsToDelete\.owner=/, '') && after !== undefined && !after.includes(name), JSON.stringify({ name, seen, after }));
   ctx.info(`wslc list -a after the run: ${JSON.stringify(after)}`);
   ctx.check('the inside part ran to its end: exit 0, no FAIL line, and its last line is "probe resolver: worked"', outcome.code === 0 && report.failed.length === 0 && report.last === 'probe resolver: worked', JSON.stringify({ code: outcome.code, failed: report.failed, last: report.last }));
 }
@@ -271,7 +278,10 @@ async function insidePart(ctx) {
   await ctx.stopServing(rig, k2, 'K2');
   // P2.5: the harness of the roads runs inside, on K1.
   writeClientConfig(rig);
-  const k1 = await ctx.serve(rig, 'k1', rig.k1);
+  // The image has no curl and no wget (D4 allows none), so the install's probe would answer a blocker, not a question. P1's stand-in (its `curl`, found first on
+  // the login's PATH by the `SetEnv` line of `extra`) is the downloader that the probe's host answers; the install itself is not run here.
+  const standIn = installStandIn(rig, crypto.randomUUID());
+  const k1 = await ctx.serve(rig, 'k1', rig.k1, standIn.extra);
   if (k1 !== undefined) {
     await installReachesItsQuestion(ctx, rig, k1);
     await ctx.stopServing(rig, k1, 'K1');
@@ -285,11 +295,13 @@ async function insidePart(ctx) {
       executable('ssh, the client inside', '/usr/bin/ssh', await versionLine(ctx, '/usr/bin/ssh')),
       executable('the image\'s sshd (the default of lib/sshdRun.cjs: no CREDS_ITEST_SSHD inside)', SSHD, await versionLine(ctx, SSHD)),
       executable('the resolver (itestResolverServer.cjs, root)', path.join(__dirname, 'itestResolverServer.cjs')),
+      executable('the stand-in curl of P1 (P2.5: the probe\'s downloader; it fetches nothing)', standIn.files.curl),
     ],
     configs: [
       { file: 'client_config, P2.3 (handed)', sha256: crypto.createHash('sha256').update(configYes).digest('hex'), text: configYes },
       { file: 'client_config, P2.4 (handed)', sha256: crypto.createHash('sha256').update(configNo).digest('hex'), text: configNo },
       { file: '/etc/resolv.conf inside', sha256: crypto.createHash('sha256').update(resolvConf).digest('hex'), text: resolvConf },
+      { file: 'extra of K1 (P2.5)', sha256: crypto.createHash('sha256').update(standIn.extra.join('\n')).digest('hex'), text: standIn.extra.join('\n') },
       { file: 'zone.json', sha256: ctx.sha256Of(path.join(CONTROL, 'zone.json')), text: fs.readFileSync(path.join(CONTROL, 'zone.json'), 'utf8') },
     ],
   };
