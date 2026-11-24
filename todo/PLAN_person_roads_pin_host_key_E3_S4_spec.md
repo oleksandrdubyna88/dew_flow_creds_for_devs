@@ -446,7 +446,7 @@ process's) with K1's line for `[127.0.0.1]:<port>` BEFORE its first click, and r
 | M6.8 | `top.userKey` has the same SHA-256 after the leg (the person's own key file; the named-key legs hand it to every call) | "the person's own key file the same bytes after" |
 | M6.9 | after the last end: 0 pin files and 0 key files of these calls in `keys/<pid>/`; what else is there is listed by name and SHA-256 (`askpass.sh` in a password leg, the window's helper: the lead's answer A2) | "0 files of these calls in `keys/<pid>/`" |
 | M6.10 | after the last end: 0 clients of the leg alive, by the shim's pids and start times | "0 client processes alive (by the recorded pids, not by name)" |
-| M6.11 | after the last end: no bridge's socket is left (each bridge's remote path) | "no forwarded socket left" |
+| M6.11 | after the last end: no bridge's socket is LIVE, nothing listens on it (`ss -lx`; the owner's answer A3); the dead file is an info line | "no forwarded socket left" |
 | M6.12 | (a), key legs: both install runs ended with 0 and showed the product's message for an installed `creds` | "two installs" |
 | M6.13 | password legs with K1: K1's log holds at least one password line for the run's user, and each password line is `Failed password` or `Accepted password`; `info  M6 <leg>: the counterpart logged <f> Failed password and <a> Accepted password (<c> connection starts)` — the result says which (expected: `Failed password`, F5, F22) | "with K1 the counterpart's log shows that the password attempt arrived (accepted, or `Failed password` …; the result says which)" |
 | M6.14 | (d): K2 logged a `Connection from` for each connection start of the leg, and 0 authentication attempts (no line matches `AUTH_ATTEMPT`); each run that started ended with 255 and the verification line | "with K2 it shows 0 authentication attempts" |
@@ -683,6 +683,8 @@ file to delete", `:396` "owns both files of a call", and §3.7, `:626` "each del
 call owns: its key file and its pin file (M6.9). The leg lists `askpass.sh` by name and SHA-256. Deleting it at the end of each call would
 be NEW behaviour, and it could break the overlap of two calls: one password call's end would take the script that another call, still
 running, hands to its `ssh` as `SSH_ASKPASS`. Not a plan change.
+
+**A3 · M6.11 means no LIVE forward (the owner, 2026-11-24).** The proving runs of `0f8081b7` showed that `sshd` leaves the dead `-R` socket file after the client ends (`StreamLocalBindUnlink no`, measured also apart from the harness), which the product documents and the next bridge sweeps (`sshBridge.ts:356-372`, `agentCommands.ts:204-208`). The consultants could not be asked (the coai server refused every tool: its data folder was missing), so the lead asked the owner, who chose the reading "no LIVE socket": M6.11 passes when nothing listens on any bridge socket of the leg after the last end (`ss -lx`, the product's own liveness test; a missing `ss` fails it), and the dead file is recorded as an info line. Not a plan change (the owner's ruling on the reading). Built in `1ad5736b`; a hand control showed that `ss -lx` lists a live unix socket by its full path and does not list it after close. In the same story the rig's end check judges the socket only where a row asks (M6), not in M1, whose criterion has no such clause (`0f8081b7`).
 
 ## Questions for the lead
 
