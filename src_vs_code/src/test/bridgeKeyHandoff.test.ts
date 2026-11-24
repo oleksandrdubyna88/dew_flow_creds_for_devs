@@ -122,6 +122,25 @@ test('B5: a host that gives no argv starts nothing, and the key file is deleted 
   assert.deepEqual(w.forgotten, [FIRST], 'B5: no bridge was started and the key file stays');
 });
 
+test('B5b: a window that is gone before the bridge starts: no ssh is spawned, and the key file is deleted at once', async () => {
+  // G1 E2, gate finding: the manager used to spawn and then kill; a bridge could connect in between. It answers undefined first.
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const w = world({ clicks: [writtenKey(FIRST)], resolveGate: gate });
+  const clicked = click(w, 'openRemoteBridge');
+  await settled();
+  w.bridges.dispose();
+  release();
+  await clicked;
+  await settled();
+
+  assert.equal(w.children.length, 0, 'B5b: an ssh was spawned although the window was gone');
+  assert.equal(w.bridges.isOpen(KEY), false);
+  assert.deepEqual(w.forgotten, [FIRST], 'B5b: nothing started and the key file stays');
+});
+
 test('B6: a throw while the argv is built deletes the key file, and the same error reaches the caller', async () => {
   const failure = new Error('the argv could not be built');
   const throwing = { ...realBridge, buildBridgeArgv: (): never => { throw failure; } };

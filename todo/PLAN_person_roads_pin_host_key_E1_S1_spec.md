@@ -1,6 +1,6 @@
 # PLAN — E1.S1 spec: the words of a pinned call come from one function (SECURITY)
 
-> Status: **built 2026-11-17/18 (91bd94a7) on `fix/g1-person-roads-pin`, in PR #379, unmerged. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
+> Status: **built 2026-11-17/18 (91bd94a7) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its rule of the path (the bare apostrophe, `/dev/null` for a double quote) is replaced in epoch 2 by the parent's §3.11, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: E1.S2 holds it). Story E1.S1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.9, the tests 12, 13 and 14 of its §5 and the two
 > mutation checks of item 15 that name `GlobalKnownHostsFile` and a bare path) and of its stories document

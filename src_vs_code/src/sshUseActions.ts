@@ -18,7 +18,9 @@ import { resolveJumpHops } from './sshOptions';
 import { BridgedSshConfigWriter, bridgedSshConfigWriter } from './bridgedSshCall';
 import { BridgedClientCheck, bridgedSshClientCheck } from './bridgedSshClient';
 import { BridgedFiles, Launch, bridgedLaunch, isResult } from './bridgedSshRoad';
-import { materializeKnownHosts } from './hostKeyTrust';
+import type { CheckedPin } from './hostKeyPin';
+import { PinClientAsk, windowPinClient } from './pinClient';
+import { decidePinOfCall } from './pinOfCall';
 import { runSshExec } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { E3_INHERITED_DROP, envWithout, hasAgentSocket, sshSpawnLaunch } from './sshProgram';
@@ -93,6 +95,12 @@ export interface SshUseDeps {
    * reason `bridgedSshConfig` is: a bridged call with none is refused before any slot, key or spawn (`unguardedBridge`), so no bridged `ssh` runs unchecked.
    */
   bridgedClient?: BridgedClientCheck;
+  /**
+   * The asker of a PINNED call off a bridge (G1, §3.10): what the `ssh` the call will start says of its version. Production's is `windowPinClient`
+   * (`sshDepsFor`). Optional for the reason `bridgedSshConfig` is: a pinned call with no asker is refused as one whose client cannot be read
+   * (`NO_PIN_CLIENT`), so no pinned `ssh` runs unasked and no test world starts a real `ssh -V` by leaving it out. An unpinned call is never asked.
+   */
+  pinClient?: PinClientAsk;
 }
 
 export type { BridgedSshConfigWriter };
@@ -227,13 +235,37 @@ async function prepareAuth(
  * matters for an unattended call.</p>
  */
 function connectionArgvOptions(
-  deps: SshUseDeps,
-  entity: EntityMetadata,
+  pin: CheckedPin | undefined,
   jump: string | undefined,
   bridged: boolean,
-): { jump?: string; knownHostsFile?: string; bridged: boolean } {
+): { jump?: string; knownHostsFile?: CheckedPin; bridged: boolean } {
   // On a bridge the pin is written into the per-call file (`bridgedSshCall.ts`), and no word of the argv names a known-hosts file.
-  return { jump, knownHostsFile: bridged ? undefined : materializeKnownHosts(deps.storageDir, entity), bridged };
+  return { jump, knownHostsFile: bridged ? undefined : pin, bridged };
+}
+
+/** The pin of a call off a bridge, decided before its file is written, or the refusal of sentence E or F (`pinOfCall.ts`). */
+type LocalPin = { readonly ok: true; readonly pin?: CheckedPin } | { readonly ok: false; readonly message: string };
+
+/** What stands in for an asker that the deps do not name: the client was not asked, so it cannot be read, and a pinned call is refused (sentence F). */
+const NO_PIN_CLIENT: PinClientAsk = () => Promise.resolve({ kind: 'unreadable', exitCode: null });
+
+/** The asker of the client: the one the deps name. */
+const askerOf = (deps: SshUseDeps): PinClientAsk => deps.pinClient ?? NO_PIN_CLIENT;
+
+/**
+ * Decide the pin of a call off a bridge. `launch` is how the call's `ssh` will be started, so the client that is asked is the one that will run.
+ * An entry with no saved host key, and one whose saved key cannot be used, run with no pin, as before (the plan's C3 stays as it is). A write
+ * that failed goes on as its error, as before. The file is the entry's own, `known_hosts-<id>`: other calls read it, so nothing here deletes it.
+ */
+async function localPin(deps: SshUseDeps, entity: EntityMetadata, launch: { program: string; env: NodeJS.ProcessEnv }): Promise<LocalPin> {
+  const decided = await decidePinOfCall({ storageDir: deps.storageDir, entity, ask: askerOf(deps) }, { program: launch.program, env: launch.env });
+  if (decided.kind === 'unwritten') {
+    throw decided.error;
+  }
+  if (decided.kind === 'refused') {
+    return { ok: false, message: decided.message };
+  }
+  return decided.kind === 'pinned' ? { ok: true, pin: decided.pin } : { ok: true };
 }
 
 /**
@@ -261,15 +293,15 @@ function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
  * is the only one this call may forward (E3's linked run); `noTty` puts `-T` first (parent D16, D17 (b)).
  */
 function execArgv(
-  deps: SshUseDeps,
   ctx: UseActionContext,
   call: OverSshCall,
   prepared: { keyPath?: string; auth: SshExecAuth },
   jump: string | undefined,
   socket: string | undefined,
+  pin: CheckedPin | undefined,
 ): string[] {
   return buildSshExecArgv(call.ssh, prepared.keyPath, call.remoteCommand, prepared.auth, {
-    ...connectionArgvOptions(deps, call.ssh, jump, ctx.bridge !== undefined),
+    ...connectionArgvOptions(pin, jump, ctx.bridge !== undefined),
     ownAgent: call.ownAgentOnly ? hasAgentSocket(socket) : undefined,
     noTty: call.noTty,
   }) as string[]; // the host was checked by the caller
@@ -280,11 +312,18 @@ function childEnv(call: OverSshCall, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   return call.ownAgentOnly ? envWithout(env, E3_INHERITED_DROP, process.platform) : env;
 }
 
-/** The launch of a call off a bridge: the lines this road has always run. */
-function localLaunch(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, prepared: { keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth }, jump: string | undefined): Launch {
+/**
+ * The launch of a call off a bridge, or the refusal of its pin (sentence E or F: nothing is written and no `ssh` starts). The program and the
+ * environment are decided first, because the pin's question about the client is asked of that program.
+ */
+async function localLaunch(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, prepared: { keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth }, jump: string | undefined, refuse: Refuse): Promise<Launch | UseActionResult> {
   const socket = deps.agentSocket(); // read ONCE: the argv and the environment below are decided from this one answer
-  const argv = execArgv(deps, ctx, call, prepared, jump, socket);
-  return { argv, ...agentAwareLaunch(deps, call.ssh, socket, childEnv(call, prepared.env)) };
+  const launch = agentAwareLaunch(deps, call.ssh, socket, childEnv(call, prepared.env));
+  const pin = await localPin(deps, call.ssh, launch);
+  if (!pin.ok) {
+    return refuse('no_credential', pin.message);
+  }
+  return { argv: execArgv(ctx, call, prepared, jump, socket, pin.pin), ...launch };
 }
 
 /** The sentences J1 and J2 about first contact, written after the run whatever the run did; a journal that will not take a line costs nothing else. */
@@ -321,7 +360,7 @@ async function runCall(
   if (!chain.ok) {
     return refuse('no_credential', chain.reason, chain.second);
   }
-  const launch = ctx.bridge === undefined ? localLaunch(deps, ctx, call, prepared, chain.value) : await bridgedLaunch({ ...bridgedParts(deps, ctx), ctx, call, prepared, chain, refuse }, held);
+  const launch = ctx.bridge === undefined ? await localLaunch(deps, ctx, call, prepared, chain.value, refuse) : await bridgedLaunch({ ...bridgedParts(deps, ctx), ctx, call, prepared, chain, refuse }, held);
   if (isResult(launch)) {
     return launch;
   }
@@ -553,6 +592,8 @@ export function sshDepsFor(parts: {
     bridgedSshConfig: bridgedSshConfigWriter({ storage: parts.storage, storageDir: parts.storageDir, home: os.homedir(), note: parts.agentServer.note }),
     // The client check of a bridged call (§S6.14 Y3): one per window, so a good answer is asked once for the window's life.
     bridgedClient: bridgedSshClientCheck({ storageDir: parts.storageDir, note: parts.agentServer.note }),
+    // The asker of a pinned call off a bridge (G1, §3.10): the window's one; a version that was read is kept, an older answer is asked again on every call.
+    pinClient: windowPinClient,
   };
   return { ...deps, overSsh: execOverSsh(deps) };
 }

@@ -214,4 +214,25 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure };
+/**
+ * The pin file of a rig's sshd as the argv builders take it: a CHECKED pin, made as the product makes one. The real client says what it is
+ * through the product's own asker (`pinClientAsker` of `out/pinClient.js`: `ssh -V` under `runBounded`, a time limit, SIGTERM then SIGKILL — no
+ * second launcher of the rig's own), and `checkedPin` of `out/hostKeyPin.js` applies the rule of the path. A client that cannot be read, or a path
+ * that the rule refuses, throws: a rig must not build words that the product would not. A plain string is no pin, and the builders refuse it
+ * (`CheckedPin`); `itestCallers.test.ts` scans every script that calls them. Async: the question is a child, awaited.
+ */
+async function checkedPinOf(out, file) {
+  const { pinClientAsker } = require(path.join(out, 'pinClient.js'));
+  const { checkedPin } = require(path.join(out, 'hostKeyPin.js'));
+  const client = await pinClientAsker()({ program: 'ssh', env: process.env });
+  if (client.kind === 'unreadable') {
+    throw new Error(`the rig could not read the version of ssh (exit code ${client.exitCode})`);
+  }
+  const checked = checkedPin(file, client);
+  if (!checked.ok) {
+    throw new Error(`the rule of the path refuses the pin file of the rig: ${checked.kind}`);
+  }
+  return checked.pin;
+}
+
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login, freePort, listeningFailure, checkedPinOf };

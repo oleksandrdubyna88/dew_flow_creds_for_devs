@@ -4,6 +4,7 @@ import { EntityMetadata } from './types';
 import { PrepareOptions, PreparedSsh, ReadySsh, RefusedSsh, prepareSshSession, windowOf } from './sshSession';
 import { offerTheFix } from './sshConnect';
 import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
+import { PinClientAsk, windowPinClient } from './pinClient';
 import { sshReaderShell } from './pinnedTerminal';
 import { AGENT_SOCKET_ENV, E3_INHERITED_DROP, type EnvDrop, NO_SSH_TO_SPAWN, spawnableSshProgram, sshSpawnLaunch } from './sshProgram';
 import { NodeLookup, RemotePlan, SshLink, TypedLine, sshLinkOf, trustLineFor, typedLine } from './remoteLaunch';
@@ -45,6 +46,11 @@ export interface SshRoad {
    */
   spawnLaunch(ssh: EntityMetadata, env: Readonly<Record<string, string>> | undefined): SpawnLaunch;
   /**
+   * What the `ssh` program of a spawn says of its version (G1, §3.10): asked by Run with Secrets for a PINNED session only, of the program
+   * and the folder `spawnLaunch` answered. Production's is `windowPinClient`; a test's fake answers what the test says.
+   */
+  pinClient: PinClientAsk;
+  /**
    * SSH Connect's own refusal modal, with its remedy button and NO retry: the person runs the entry again (parent §4.3).
    * Nothing is prepared again.
    */
@@ -73,6 +79,7 @@ export function sshRoadOf(deps: SshRoadDeps): SshRoad {
       await offerTheFix(refused, ssh, windowOf(optionsFor(ssh, 'terminal')));
     },
     spawnLaunch: (ssh, env) => spawnLaunchOf(deps, ssh, env),
+    pinClient: windowPinClient,
   };
 }
 

@@ -31,7 +31,7 @@ const net = require('node:net');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, launch, startSshd, endChild } = require('./itestSshd.cjs');
+const { SSHD, launch, startSshd, endChild, checkedPinOf } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -129,17 +129,17 @@ function wrongPin(rig, started, name) {
 }
 
 /** The production argv of a tunnel to `started`, whose forward ends at the test's listener. */
-function tunnelArgv(rig, started, remote, parts = {}) {
+async function tunnelArgv(rig, started, remote, parts = {}) {
   const { buildBridgeArgv } = require(path.join(rig.out, 'sshBridge.js'));
   const { isSafeSshTarget } = require(path.join(rig.out, 'sshCommand.js'));
-  const options = { port: rig.listenerPort, remote: { path: remote }, keyPath: parts.key ?? rig.userKey, knownHostsFile: parts.pin ?? started.knownHosts, auth: 'key' };
+  const options = { port: rig.listenerPort, remote: { path: remote }, keyPath: parts.key ?? rig.userKey, knownHostsFile: await checkedPinOf(rig.out, parts.pin ?? started.knownHosts), auth: 'key' };
   return buildBridgeArgv(entityOn(started.port), options, isSafeSshTarget);
 }
 
 /** The production argv of a run off a bridge on `started`: a key entry, as *Run with Secrets* and an agent's `ssh:exec` build it. */
-function runArgv(rig, started, key) {
+async function runArgv(rig, started, key) {
   const { buildSshExecArgv } = require(path.join(rig.out, 'sshExecCommand.js'));
-  return buildSshExecArgv(entityOn(started.port), key, 'printenv SSH_CONNECTION', 'key', { knownHostsFile: started.knownHosts });
+  return buildSshExecArgv(entityOn(started.port), key, 'printenv SSH_CONNECTION', 'key', { knownHostsFile: await checkedPinOf(rig.out, started.knownHosts) });
 }
 
 /**
@@ -189,7 +189,7 @@ async function controlDetachedMaster(check, rig) {
   }
   const { config, control } = sharingConfig(rig, 'k-a');
   const remote = path.join(rig.dir, 'k-a.sock');
-  const tunnel = startTunnel(rig, config, withoutTheTwo(tunnelArgv(rig, started, remote)), remote);
+  const tunnel = startTunnel(rig, config, withoutTheTwo(await tunnelArgv(rig, started, remote)), remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
     check('K-A control: without the two options the spawned ssh exits with 0 while the bridge is wanted', String(tunnel.exit()) === '0', `exit ${tunnel.exit()}\n${sshdTail(started)}`);
@@ -212,7 +212,7 @@ async function controlDetachedMaster(check, rig) {
  */
 async function tunnelLivesAndDies(check, rig, name, config, started, control) {
   const remote = path.join(rig.dir, `${name}.sock`);
-  const tunnel = startTunnel(rig, config, tunnelArgv(rig, started, remote), remote);
+  const tunnel = startTunnel(rig, config, await tunnelArgv(rig, started, remote), remote);
   const up = await within(10_000, () => tunnel.exit() !== 'running' || served(remote));
   check(`${name}: the production tunnel serves the forward while its ssh runs`, up && tunnel.exit() === 'running' && (await served(remote)), `exit ${tunnel.exit()}; read ${JSON.stringify(await readThrough(remote))}\n${sshdTail(started)}`);
   check(`${name}: it logged in by itself: its sshd accepted the key`, ACCEPTED.test(started.sshd.stderr), sshdTail(started));
@@ -258,7 +258,7 @@ async function controlRidesMaster(check, group) {
     return;
   }
   const remote = path.join(rig.dir, 'k-c.sock');
-  const argv = withoutTheTwo(tunnelArgv(rig, b, remote, { key: rig.wrongKey, pin: wrongPin(rig, b, 'k-c') }));
+  const argv = withoutTheTwo(await tunnelArgv(rig, b, remote, { key: rig.wrongKey, pin: wrongPin(rig, b, 'k-c') }));
   const tunnel = startTunnel(rig, mux.config, argv, remote);
   try {
     await settledAfter(tunnel.exited, 10_000);
@@ -295,7 +295,7 @@ async function productionRefuses(check, group, name, parts, expected) {
   }
   try {
     const wrong = parts.pin === 'wrong' ? { pin: wrongPin(rig, b, name.toLowerCase()) } : { key: rig.wrongKey };
-    const result = await runClient(rig, mux.config, tunnelArgv(rig, b, path.join(rig.dir, `${name.toLowerCase()}.sock`), wrong));
+    const result = await runClient(rig, mux.config, await tunnelArgv(rig, b, path.join(rig.dir, `${name.toLowerCase()}.sock`), wrong));
     check(`${name}: with a master up, the production tunnel with ${parts.what} fails: exit 255 and \`${expected.source}\``, result.code === 255 && expected.test(result.stderr), JSON.stringify(result));
     check(`${name}: and it reached the sshd it named`, CONNECTED.test(b.sshd.stderr), sshdTail(b));
   } finally {
@@ -310,7 +310,7 @@ async function oneRun(check, group, name, key, options = {}) {
     return undefined;
   }
   try {
-    const argv = runArgv(group.rig, b, key);
+    const argv = await runArgv(group.rig, b, key);
     const result = await runClient(group.rig, group.mux.config, options.takeOut ? withoutTheTwo(argv) : argv, options.env);
     return { ...result, port: b.port, connected: CONNECTED.test(b.sshd.stderr), accepted: ACCEPTED.test(b.sshd.stderr), tail: sshdTail(b) };
   } finally {

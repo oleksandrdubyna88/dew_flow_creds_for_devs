@@ -9,7 +9,7 @@ import { RemotePlan, planLaunch, secretsLaunch, secretsStdin, sshLinkOf } from '
 import { E3_INHERITED_DROP, type EnvDrop } from '../sshProgram';
 import { EntityMetadata } from '../types';
 import { NONCE, writeFakeSsh } from './remoteShellHarness';
-import { fakeRoad, sshNode } from './sshRoadWorld';
+import { KNOWS, fakeRoad, sshNode } from './sshRoadWorld';
 import { StubEventEmitter, loadWithVscode } from './vscodeStub';
 import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { HOST_SOCKET, OUR_SOCKET } from './fakePaths';
@@ -523,7 +523,7 @@ async function launchArgv(password: boolean): Promise<readonly string[]> {
   await road.prepare('a1', S1.details as EntityMetadata);
   const plan = planLaunch(LINKED, sshLinkOf(LINKED, (id) => (id === 's1' ? S1 : undefined)), { stayOpen: false });
   assert.equal(plan.kind, 'remote');
-  const launch = secretsLaunch(plan as RemotePlan, road.readies[0], false, NONCE);
+  const launch = secretsLaunch(plan as RemotePlan, road.readies[0], false, NONCE, KNOWS);
   assert.equal(launch.kind, 'spawn');
   return launch.kind === 'spawn' ? launch.argv : [];
 }

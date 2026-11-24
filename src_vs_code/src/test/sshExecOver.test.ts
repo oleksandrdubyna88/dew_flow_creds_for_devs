@@ -1,4 +1,6 @@
 import * as assert from 'node:assert/strict';
+import type { PinClient } from '../pinClient';
+import { testPin } from './pinnedArgv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
@@ -51,6 +53,10 @@ interface World {
   readonly knownHosts: string;
   /** How many times `deps.agentSocket()` was read. */
   readonly socketReads: () => number;
+  /** Every question about the client of a pinned call (G1, §3.10): the program it was asked of. */
+  readonly pinAsks: string[];
+  /** How many times `materializeKnownHosts` was called. */
+  readonly pinWrites: () => number;
 }
 
 /** The SSH entry of this file: `sshNode` is built against the real link validator at load (testing.md), so no cast stands in for the type. */
@@ -60,7 +66,8 @@ function sshEntity(extra: Partial<EntityMetadata> = {}): EntityMetadata {
   return details;
 }
 
-const SSH = sshEntity();
+/** A saved host key: the world's stand-in of `./hostKeyTrust` answers the pin file for it, and an entry with none is not asked (G1, §3.10). */
+const SSH = sshEntity({ hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKNOWNKEY' });
 
 const KEY = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY BODY' };
 const CTX: UseActionContext = { accountId: 'a1', entityId: 't1', entityName: 'deploy', signal: new AbortController().signal };
@@ -71,6 +78,16 @@ interface Parts {
   readonly agentSocket?: string;
   /** The answers of the first, second, … read of `deps.agentSocket()`; a read past the list answers nothing (an agent that went away between two reads). */
   readonly agentSocketReads?: readonly (string | undefined)[];
+  /** What the `ssh` program answers about its version. Default: a client that knows `KnownHostsCommand`. */
+  readonly client?: PinClient;
+  /** The path `knownHostsPath` plans for the pin file. Default: the path the write answers. */
+  readonly plannedPin?: string;
+  /** `materializeKnownHosts` answers none: the saved host key is there and cannot be used. */
+  readonly unusablePin?: boolean;
+  /** The deps name no asker at all. */
+  readonly noAsker?: boolean;
+  /** The path the write answers, when it is not the one the test reads back as `knownHosts`. */
+  readonly writtenPin?: string;
 }
 
 async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Promise<World> {
@@ -79,6 +96,8 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
   const materialised: string[] = [];
   const notes: string[] = [];
   const knownHosts = path.join(storageDir, 'known_hosts-s1');
+  const pinAsks: string[] = [];
+  let pinWrites = 0;
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const writeKey = (dir: string, id: string, content: string): string => {
     const keyPath = path.join(dir, `${id}.key`);
@@ -93,7 +112,10 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
       materializeCallKey: (dir: string, content: string): string => writeKey(dir, callKeyName(), content),
       writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
     },
-    './hostKeyTrust': { materializeKnownHosts: (): string => knownHosts },
+    './hostKeyTrust': {
+      knownHostsPath: (): string => parts.plannedPin ?? knownHosts,
+      materializeKnownHosts: (): string | undefined => ((pinWrites += 1), parts.unusablePin === true ? undefined : (parts.writtenPin ?? knownHosts)),
+    },
     './sshExecRunner': {
       runSshExec: (argv: string[], o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string }): Promise<unknown> => {
         runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs, keyOnDisk: materialised.some((file) => fs.existsSync(file)) });
@@ -124,12 +146,14 @@ async function world(parts: Parts, seeded: readonly EntityMetadata[] = []): Prom
     note: (message: string): void => {
       notes.push(message);
     },
+    pinClient: (call) => (pinAsks.push(call.program), Promise.resolve(parts.client ?? { kind: 'knows', token: 'OpenSSH_test' })),
     agentSocket: (): string | undefined => {
       socketReads += 1;
       return parts.agentSocketReads === undefined ? parts.agentSocket : parts.agentSocketReads[socketReads - 1];
     },
   };
-  return { mod, deps, runs, materialised, notes, slots, knownHosts, socketReads: () => socketReads };
+  const wired: SshUseDeps = parts.noAsker === true ? { ...deps, pinClient: undefined } : deps;
+  return { mod, deps: wired, runs, materialised, notes, slots, knownHosts, socketReads: () => socketReads, pinAsks, pinWrites: () => pinWrites };
 }
 
 function callOf(over: Partial<OverSshCall> = {}): OverSshCall {
@@ -147,7 +171,7 @@ test('the_argv_is_buildSshExecArgv_with_the_snapshots_jump_and_pin', async () =>
   assert.equal(w.runs.length, 1, `the spawn recorder was called ${w.runs.length} times; the answer was ${JSON.stringify(answer.body)}`);
   assert.equal(answer.status, 200);
   assert.equal(w.materialised.length, 1, 'the stored key was written once, for this call');
-  const expected = buildSshExecArgv(SSH, w.materialised[0], 'echo linked', 'key', { jump: 'hop@jump.example', knownHostsFile: w.knownHosts, bridged: false, ownAgent: false });
+  const expected = buildSshExecArgv(SSH, w.materialised[0], 'echo linked', 'key', { jump: 'hop@jump.example', knownHostsFile: testPin(w.knownHosts), bridged: false, ownAgent: false });
   assert.deepEqual(w.runs[0].argv, expected);
   assert.equal(w.runs[0].program, sshSpawnLaunch(SSH, undefined, process.platform).program);
   assert.equal(w.runs[0].timeoutMs, clampExecTimeout(undefined));
@@ -253,7 +277,7 @@ test('the_linked_run_says_no_tty_and_ssh_exec_does_not', async () => {
 
   assert.equal(linked.runs[0].argv[0], '-T', linked.runs[0].argv.join(' '));
   assert.equal(linked.runs[0].argv.filter((arg) => arg === '-T').length, 1, 'exactly one -T');
-  const without = buildSshExecArgv(SSH, linked.materialised[0], 'echo linked', 'key', { jump: undefined, knownHostsFile: linked.knownHosts, bridged: false, ownAgent: false });
+  const without = buildSshExecArgv(SSH, linked.materialised[0], 'echo linked', 'key', { jump: undefined, knownHostsFile: testPin(linked.knownHosts), bridged: false, ownAgent: false });
   assert.deepEqual(linked.runs[0].argv.slice(1), without, 'the option adds one word and moves nothing: the rest is the same call without noTty');
 
   // The GUARD half: ssh:exec (no noTty) keeps today's argv. Green before and after the build.
@@ -337,4 +361,102 @@ test('an_empty_agent_socket_is_no_agent_for_the_argv_as_it_is_for_the_environmen
   assert.ok(empty.runs[0].argv.includes('ForwardAgent=no'), empty.runs[0].argv.join(' '));
   assert.ok(!('SSH_AUTH_SOCK' in empty.runs[0].env), 'an empty socket is not laid in the environment');
   assert.ok(empty.notes.some((note) => note.includes(NO_AGENT_TO_FORWARD)), empty.notes.join(' | '));
+});
+
+/* --- G1, E2.S2: the pin of a call off a bridge is decided before its file is written (the plan's §3.10, §3.11; test 22) --- */
+
+const SENTENCE_F = 'CredsForDevs could not read the version of the ssh program on this computer (exit code 1), so it did not start a connection that has to check the saved host key of "prod box". Nothing was sent to that host. The reason is the ssh program here, not the host. Check which ssh program is first on your PATH and that it prints its version when run with -V.';
+const SENTENCE_E = 'The saved host key of "prod box" cannot be handed to ssh, so nothing was sent to that host. The folder where this editor keeps the files of CredsForDevs has a path with a percent sign, and ssh does not read a file under such a path as the one file it is. This is about this computer, not about the host or the saved key. To go on, move the storage (user data) folder of the editor to a path without it, or point the editor at another user-data folder.';
+
+test('g1_a_pinned_call_asks_the_program_it_will_start_once_before_the_pin_file_is_written', async () => {
+  const w = await world({ source: KEY });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 200);
+  assert.deepEqual(w.pinAsks, [sshSpawnLaunch(SSH, undefined, process.platform).program]);
+  assert.equal(w.pinWrites(), 1);
+  assert.equal(w.runs[0].program, w.pinAsks[0], 'the program that was asked is the program that ran');
+  assert.ok(w.runs[0].argv.includes('KnownHostsCommand=none') && w.runs[0].argv.includes('VerifyHostKeyDNS=no') && w.runs[0].argv.includes('LogLevel=ERROR'));
+});
+
+test('g1_an_older_client_runs_without_the_knownhostscommand_word', async () => {
+  const w = await world({ source: KEY, client: { kind: 'older', token: 'OpenSSH_8.4' } });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 200);
+  assert.equal(w.runs[0].argv.some((word) => word.startsWith('KnownHostsCommand')), false);
+  assert.ok(w.runs[0].argv.includes('StrictHostKeyChecking=yes') && w.runs[0].argv.includes('VerifyHostKeyDNS=no') && w.runs[0].argv.includes('LogLevel=ERROR'));
+});
+
+test('g1_a_client_that_cannot_be_read_is_refused_with_sentence_f_before_any_pin_file_and_nothing_is_spawned', async () => {
+  const w = await world({ source: KEY, client: { kind: 'unreadable', exitCode: 1 } });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, { error: { code: 'no_credential', message: SENTENCE_F } });
+  assert.equal(w.pinWrites(), 0, 'the pin file was written for a refused call');
+  assert.equal(w.runs.length, 0);
+  assert.equal(fs.existsSync(w.materialised[0]), false, 'the key file of the call was removed');
+});
+
+test('g1_a_pin_path_that_ssh_would_not_read_as_one_file_is_refused_with_sentence_e_before_the_client_is_asked', async () => {
+  const w = await world({ source: KEY, plannedPin: '/storage/100%/keys/1/known_hosts-s1' });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, { error: { code: 'no_credential', message: SENTENCE_E } });
+  assert.equal(JSON.stringify(answer.body).includes('/storage'), false, 'the answer echoes the path');
+  assert.deepEqual(w.pinAsks, []);
+  assert.equal(w.pinWrites(), 0);
+  assert.equal(w.runs.length, 0);
+});
+
+test('g1_an_entry_with_no_saved_host_key_is_asked_nothing_and_runs_with_accept_new', async () => {
+  const w = await world({ source: KEY, client: { kind: 'unreadable', exitCode: 1 }, plannedPin: '/storage/100%/known_hosts-s1' });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf({ ssh: sshEntity() }))) as Answer;
+
+  assert.equal(answer.status, 200);
+  assert.deepEqual(w.pinAsks, []);
+  assert.equal(w.pinWrites(), 0);
+  assert.ok(w.runs[0].argv.includes('StrictHostKeyChecking=accept-new'));
+  assert.equal(w.runs[0].argv.some((word) => /^(VerifyHostKeyDNS|KnownHostsCommand|LogLevel|UserKnownHostsFile)=/.test(word)), false);
+});
+
+test('g1_a_saved_host_key_that_cannot_be_used_still_runs_with_accept_new_as_before_c3', async () => {
+  const w = await world({ source: KEY, unusablePin: true });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 200);
+  assert.equal(w.pinWrites(), 1, 'the usable-or-not question is materializeKnownHosts\'s, unchanged');
+  assert.ok(w.runs[0].argv.includes('StrictHostKeyChecking=accept-new'));
+  assert.equal(w.runs[0].argv.some((word) => /^(VerifyHostKeyDNS|KnownHostsCommand|LogLevel)=/.test(word)), false);
+});
+
+test('g1_deps_that_name_no_asker_refuse_a_pinned_call_and_start_no_ssh_at_all_not_even_for_its_version', async () => {
+  const w = await world({ source: KEY, noAsker: true });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, { error: { code: 'no_credential', message: SENTENCE_F.replace('exit code 1', 'it did not start, or did not end in time') } });
+  assert.equal(w.runs.length, 0, 'the stand-in runner saw a start: the real asker ran');
+  assert.equal(w.pinWrites(), 0);
+});
+
+test('g1_a_written_path_of_a_refused_kind_is_refused_with_sentence_e_and_the_entrys_own_file_is_not_deleted', async () => {
+  // The planned path passes the rule and the write answers another one: the value is made from the written path, and this
+  // file is the entry's own (no suffix), which other calls read. The world gives `./keyInstaller` no `forgetMaterializedKey`: a delete would throw.
+  const w = await world({ source: KEY, writtenPin: '/storage/100%/known_hosts-s1' });
+
+  const answer = (await w.mod.execOverSsh(w.deps)(CTX, callOf())) as Answer;
+
+  assert.equal(answer.status, 409);
+  assert.deepEqual(answer.body, { error: { code: 'no_credential', message: SENTENCE_E } });
+  assert.equal(w.runs.length, 0);
 });

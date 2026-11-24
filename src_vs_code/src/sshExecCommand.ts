@@ -1,4 +1,4 @@
-import { hostKeyWords } from './hostKeyPin';
+import { CheckedPin, hostKeyWords } from './hostKeyPin';
 import { EntityMetadata } from './types';
 import { DEFAULT_SSH_PORT, isSafeSshTarget } from './sshCommand';
 import { sshOptionArgv } from './sshOptions';
@@ -7,7 +7,8 @@ import { BRIDGED_ASKPASS_OPTIONS, bridgedHostWord, bridgedKeyPathProblem, unsafe
 /** The vault-resolved half, identical in meaning to `SshCommandOptions` on the human path. */
 export interface SshExecOptions {
   jump?: string;
-  knownHostsFile?: string;
+  /** The pin file of the call, CHECKED (`checkedPin`, G1 §3.10-§3.11): absent for an unpinned call. A raw path is not taken. */
+  knownHostsFile?: CheckedPin;
   /** A bridged call: ONE fresh connection that carries the command and nothing else, whatever the entry or a config file says (Amendment 3, C.1-C.2). */
   bridged?: boolean;
   /** Ask ssh for no remote pty: `-T` is the FIRST word of the argv (E3's two roads, parent D16). Absent or `false`: today's argv. */

@@ -23,8 +23,8 @@ import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
 import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
-import { writePersonPin } from '../personPin';
-import { hostKeyRefused, refusedHostKeySentence } from '../hostKeyPin';
+import { personPinWriter } from '../personPin';
+import { hostKeyTold } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
 import { parseToken } from '../grantToken';
@@ -166,7 +166,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   async function sweepDeadSockets(
     entity: EntityMetadata,
     keyPath: string | undefined,
-    knownHostsFile: string | undefined,
+    knownHostsFile: ReadyCall['knownHostsFile'],
     user: string,
     auth: SshExecAuth = 'key',
     sweepEnv: NodeJS.ProcessEnv = process.env,
@@ -191,7 +191,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       if (storageDir === undefined) {
         return;
       }
-      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), (auth) => writePersonPin(storageDir, entity, auth), async (credential) => {
+      await withWrittenKey(await resolveExecAuth(storage, accountId, entity, storageDir), personPinWriter(storageDir, entity), async (credential) => {
         if (!credential.ok) {
           log.info('bridge', `socket check did not run: ${credential.message}`);
           return;
@@ -213,11 +213,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           timeoutMs: 15_000,
           signal: agentServer.signal,
         });
-        if (hostKeyRefused(credential.knownHostsFile, outcome.stderr)) {
-          // The ssh of the bridge has no stdio, so this check is the one place that can say why the bridge is not open (G1, P3).
-          const text = `The bridge to "${entity.name}" is not open: ${refusedHostKeySentence(entity.name)}`;
-          log.info('bridge', text);
-          void vscode.window.showErrorMessage(text);
+        const told = hostKeyTold(credential.knownHostsFile, outcome.stderr, entity.name);
+        if (told !== undefined) {
+          // The ssh of the bridge has no stdio, so this check is the one place that can say what the host key check of the bridge came to (G1, P3).
+          log.info('bridge', told.bridge);
+          void vscode.window.showErrorMessage(told.bridge);
           return;
         }
         const probe = interpretSocketProbe(outcome.stdout ?? '');
@@ -270,7 +270,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), async (credential) => {
+    await withWrittenKey(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), personPinWriter(storageDir, details), async (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }
@@ -280,9 +280,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       }
 
       const facts = await runRemote(details, credential, probeCommand(), 20_000);
-      if (hostKeyRefused(credential.knownHostsFile, facts.stderr)) {
-        void vscode.window.showErrorMessage(refusedHostKeySentence(node.name));
-        return;
+      const told = hostKeyTold(credential.knownHostsFile, facts.stderr, node.name);
+      if (told !== undefined) {
+        return void vscode.window.showErrorMessage(told.install);
       }
       if (facts.timedOut) {
         void vscode.window.showWarningMessage(
@@ -426,7 +426,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     // N16, G1: the key file and the pin file of this call are this command's to delete until the bridge's ssh holds them; then that ssh's end deletes them.
-    const bridge = withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), (auth) => writePersonPin(storageDir, details, auth), (credential) => {
+    const bridge = await withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), personPinWriter(storageDir, details), (credential) => {
       if (credential.warning !== undefined) {
         void vscode.window.showWarningMessage(credential.warning);
       }

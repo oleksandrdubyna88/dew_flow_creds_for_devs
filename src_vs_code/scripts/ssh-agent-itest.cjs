@@ -41,7 +41,7 @@
 //
 // Section 10 (Linux only, `itestPinnedRoads.cjs`) is G1's smoke on real input: *Install creds on host* and *Open Remote Bridge…*, run as the
 // extension registers them, with the real `ssh` against one `sshd -D -e` that serves every connection. Pinned to that server's key, every
-// start carries the pin words and logs in; when another key answers at the same address, every start is refused, the server logs no login,
+// connection carries the pin words and logs in; when another key answers at the same address, every connection is refused, the server logs no login,
 // and the person is told so.
 const crypto = require('crypto');
 const fs = require('fs');

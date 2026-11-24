@@ -42,6 +42,8 @@ export interface OpenBridge {
 
 export class SshBridgeManager {
   private readonly open = new Map<string, OpenBridge>();
+  /** Set by `dispose()`: a start that comes after the window is gone spawns nothing (it answers `undefined`). */
+  private disposed = false;
 
   constructor(
     private readonly spawn: BridgeSpawner,
@@ -67,8 +69,16 @@ export class SshBridgeManager {
    * <p>Replacing rather than refusing: the common reason to ask twice is that the first one
    * died and the person cannot tell. Refusing would leave them with a bridge that looks open
    * and is not, which is worse than a moment's churn.</p>
+   *
+   * <p>After `dispose()` NOTHING is spawned and `undefined` is returned: the bridge guard awaits the pin question before it starts, and
+   * a window that closed meanwhile has already run `dispose`. The check stands BEFORE the spawn, not after it: an `ssh` that is spawned
+   * and killed at once can still connect in between, and a bridge may not connect after its owner is gone. The caller reads `undefined`
+   * as "nothing started" and deletes the key file and the pin file of the call at once (`withWrittenKeyUntilExit`, `writtenKey.ts`).</p>
    */
-  start(key: string, remotePath: string, command: string, argv: readonly string[], env: NodeJS.ProcessEnv): OpenBridge {
+  start(key: string, remotePath: string, command: string, argv: readonly string[], env: NodeJS.ProcessEnv): OpenBridge | undefined {
+    if (this.disposed) {
+      return undefined;
+    }
     this.stop(key);
     const bridge: OpenBridge = { key, remotePath, process: this.spawn(command, argv, env) };
     this.open.set(key, bridge);
@@ -96,6 +106,7 @@ export class SshBridgeManager {
 
   /** Every bridge goes with the window. */
   dispose(): void {
+    this.disposed = true;
     for (const key of [...this.open.keys()]) {
       this.stop(key);
     }

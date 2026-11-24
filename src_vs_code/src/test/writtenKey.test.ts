@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { testPin } from './pinnedArgv';
 import { test } from 'node:test';
 import type { ExecAuth } from '../sshExecAuth';
 import type { CallAuth, PinWriter } from '../writtenKey';
@@ -21,11 +24,11 @@ const REFUSED: ExecAuth = { ok: false, reason: 'no_credential', message: 'nothin
 
 const PIN_FILE = '/storage/keys/1/known_hosts-e1-unit';
 /** The pin writer of an unpinned entry: nothing is written. */
-const NO_PIN: PinWriter = () => ({ ok: true });
+const NO_PIN: PinWriter = () => Promise.resolve({ ok: true });
 /** The pin writer of a pinned entry: the path of the file it wrote. */
-const PINNED: PinWriter = () => ({ ok: true, knownHostsFile: PIN_FILE });
+const PINNED: PinWriter = () => Promise.resolve({ ok: true, knownHostsFile: testPin(PIN_FILE) });
 /** The pin writer of an entry whose saved host key cannot be used. */
-const BAD_PIN: PinWriter = () => ({ ok: false, message: 'the saved host key cannot be used' });
+const BAD_PIN: PinWriter = () => Promise.resolve({ ok: false, message: 'the saved host key cannot be used' });
 
 function guards(): { mod: Guards; forgotten: string[] } {
   const forgotten: string[] = [];
@@ -93,7 +96,7 @@ test('U4: withWrittenKeyUntilExit deletes nothing while the process runs, and on
   const exited = held<number | null>();
   const started = { process: { exited: exited.promise } };
 
-  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => started), started, 'the started thing was not handed back');
+  assert.equal(await mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => started), started, 'the started thing was not handed back');
   await turn();
   assert.deepEqual(forgotten, [], 'the key file was deleted while its process runs');
 
@@ -102,23 +105,23 @@ test('U4: withWrittenKeyUntilExit deletes nothing while the process runs, and on
   assert.deepEqual(forgotten, [KEY_FILE]);
 });
 
-test('U5: withWrittenKeyUntilExit deletes at once when nothing was started, and when the start throws (the same error)', () => {
+test('U5: withWrittenKeyUntilExit deletes at once when nothing was started, and when the start throws (the same error)', async () => {
   const { mod, forgotten } = guards();
   const failure = new Error('spawn EACCES');
 
-  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => undefined), undefined);
+  assert.equal(await mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => undefined), undefined);
   assert.deepEqual(forgotten, [KEY_FILE]);
 
-  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => { throw failure; }), (error) => error === failure);
+  await assert.rejects(() => mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => { throw failure; }), (error) => error === failure);
   assert.deepEqual(forgotten, [KEY_FILE, KEY_FILE]);
 });
 
-test('U6: a continuation that cannot be attached deletes the key file once, at once, and the error goes on', () => {
+test('U6: a continuation that cannot be attached deletes the key file once, at once, and the error goes on', async () => {
   const { mod, forgotten } = guards();
   // What a broken spawner could hand back: a process with no `exited`. The attach throws; the finally is then the one delete.
   const broken = { process: { get exited(): Promise<unknown> { throw new TypeError('no exited'); } } };
 
-  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => broken), TypeError);
+  await assert.rejects(() => mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => broken), TypeError);
   assert.deepEqual(forgotten, [KEY_FILE]);
 });
 
@@ -129,7 +132,7 @@ test('U7: an exited that REJECTS deletes the key file too, and leaves no unhandl
   const note = (reason: unknown): void => void unhandled.push(reason);
   process.on('unhandledRejection', note);
   try {
-    mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => ({ process: { exited: exited.promise } }));
+    await mod.withWrittenKeyUntilExit(WRITTEN, NO_PIN, () => ({ process: { exited: exited.promise } }));
     exited.reject(new Error('the wait failed'));
     await turn();
     await turn();
@@ -144,10 +147,10 @@ test('U7: an exited that REJECTS deletes the key file too, and leaves no unhandl
 test('U8: withWrittenKeyUntilExit deletes nothing for a key file of the person, a password credential or a refusal, at the start and at the end', async () => {
   const { mod, forgotten } = guards();
 
-  mod.withWrittenKeyUntilExit(OWN_FILE, NO_PIN, () => ({ process: { exited: Promise.resolve(0) } }));
-  mod.withWrittenKeyUntilExit(OWN_FILE, NO_PIN, () => undefined);
-  mod.withWrittenKeyUntilExit(REFUSED, NO_PIN, () => undefined);
-  mod.withWrittenKeyUntilExit(PASSWORD, NO_PIN, () => ({ process: { exited: Promise.resolve(0) } }));
+  await mod.withWrittenKeyUntilExit(OWN_FILE, NO_PIN, () => ({ process: { exited: Promise.resolve(0) } }));
+  await mod.withWrittenKeyUntilExit(OWN_FILE, NO_PIN, () => undefined);
+  await mod.withWrittenKeyUntilExit(REFUSED, NO_PIN, () => undefined);
+  await mod.withWrittenKeyUntilExit(PASSWORD, NO_PIN, () => ({ process: { exited: Promise.resolve(0) } }));
   await turn();
 
   assert.deepEqual(forgotten, []);
@@ -157,13 +160,13 @@ test('U9: withWrittenKey calls the pin writer once, with the login of the creden
   const { mod, forgotten } = guards();
   const order: string[] = [];
   const run = held<string>();
-  const writer: PinWriter = (auth) => (order.push(`pin:${auth}`), { ok: true, knownHostsFile: PIN_FILE });
+  const writer: PinWriter = (auth) => (order.push(`pin:${auth}`), Promise.resolve({ ok: true, knownHostsFile: testPin(PIN_FILE) }));
   let got: CallAuth | undefined;
 
   const result = mod.withWrittenKey(WRITTEN, writer, (call) => (order.push('run'), (got = call), run.promise));
   await turn();
   assert.deepEqual(order, ['pin:key', 'run']);
-  assert.deepEqual(got, { ...WRITTEN, knownHostsFile: PIN_FILE });
+  assert.deepEqual(got, { ...WRITTEN, knownHostsFile: testPin(PIN_FILE) });
   assert.deepEqual(forgotten, [], 'a file of the call was deleted while the run was going');
 
   run.resolve('done');
@@ -175,11 +178,11 @@ test('U10: an unpinned call hands the run the credential as it is; a refused cre
   const { mod, forgotten } = guards();
   const got: CallAuth[] = [];
   let written = 0;
-  const counting: PinWriter = () => ((written += 1), { ok: true, knownHostsFile: PIN_FILE });
+  const counting: PinWriter = () => ((written += 1), Promise.resolve({ ok: true, knownHostsFile: testPin(PIN_FILE) }));
 
   await mod.withWrittenKey(PASSWORD, NO_PIN, (call) => (got.push(call), Promise.resolve()));
   await mod.withWrittenKey(REFUSED, counting, (call) => (got.push(call), Promise.resolve()));
-  mod.withWrittenKeyUntilExit(REFUSED, counting, (call) => (got.push(call), undefined));
+  await mod.withWrittenKeyUntilExit(REFUSED, counting, (call) => (got.push(call), undefined));
 
   assert.equal(got[0], PASSWORD, 'the run of an unpinned call did not get the credential itself');
   assert.equal(got[1], REFUSED, 'the run did not get the refusal of the credential itself');
@@ -194,7 +197,7 @@ test('U11: a refused pin reaches the run as a refusal with the sentence of the p
   const got: CallAuth[] = [];
 
   await mod.withWrittenKey(warned, BAD_PIN, (call) => (got.push(call), Promise.resolve()));
-  mod.withWrittenKeyUntilExit(warned, BAD_PIN, (call) => (got.push(call), undefined));
+  await mod.withWrittenKeyUntilExit(warned, BAD_PIN, (call) => (got.push(call), undefined));
 
   const refusal = { ok: false, message: 'the saved host key cannot be used', warning: 'this key is old' };
   assert.deepEqual(got, [refusal, refusal]);
@@ -219,7 +222,7 @@ test('U13: a pin writer that throws (it must not) is inside the guarded span: th
   let ran = 0;
 
   await assert.rejects(mod.withWrittenKey(WRITTEN, throwing, () => ((ran += 1), Promise.resolve())), (error) => error === failure);
-  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, throwing, () => ((ran += 1), undefined)), (error) => error === failure);
+  await assert.rejects(() => mod.withWrittenKeyUntilExit(WRITTEN, throwing, () => ((ran += 1), undefined)), (error) => error === failure);
 
   assert.equal(ran, 0, 'the run or the start was called after the pin writer threw');
   assert.deepEqual(forgotten, [KEY_FILE, KEY_FILE]);
@@ -230,13 +233,13 @@ test('U14: withWrittenKeyUntilExit hands both files to the process: nothing is d
   const exited = held<number | null>();
   const started = { process: { exited: exited.promise } };
   const order: string[] = [];
-  const writer: PinWriter = (auth) => (order.push(`pin:${auth}`), { ok: true, knownHostsFile: PIN_FILE });
+  const writer: PinWriter = (auth) => (order.push(`pin:${auth}`), Promise.resolve({ ok: true, knownHostsFile: testPin(PIN_FILE) }));
   let got: CallAuth | undefined;
 
-  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, writer, (call) => (order.push('start'), (got = call), started)), started);
+  assert.equal(await mod.withWrittenKeyUntilExit(WRITTEN, writer, (call) => (order.push('start'), (got = call), started)), started);
   await turn();
   assert.deepEqual(order, ['pin:key', 'start']);
-  assert.deepEqual(got, { ...WRITTEN, knownHostsFile: PIN_FILE });
+  assert.deepEqual(got, { ...WRITTEN, knownHostsFile: testPin(PIN_FILE) });
   assert.deepEqual(forgotten, [], 'a file of the call was deleted while its process runs');
 
   exited.resolve(null);
@@ -244,18 +247,18 @@ test('U14: withWrittenKeyUntilExit hands both files to the process: nothing is d
   assert.deepEqual(forgotten, [KEY_FILE, PIN_FILE]);
 });
 
-test('U15: withWrittenKeyUntilExit deletes both files at once when nothing was started, when the start throws, and when the continuation cannot be attached', () => {
+test('U15: withWrittenKeyUntilExit deletes both files at once when nothing was started, when the start throws, and when the continuation cannot be attached', async () => {
   const { mod, forgotten } = guards();
   const failure = new Error('spawn EACCES');
   const broken = { process: { get exited(): Promise<unknown> { throw new TypeError('no exited'); } } };
 
-  assert.equal(mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => undefined), undefined);
+  assert.equal(await mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => undefined), undefined);
   assert.deepEqual(forgotten, [KEY_FILE, PIN_FILE]);
 
-  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => { throw failure; }), (error) => error === failure);
+  await assert.rejects(() => mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => { throw failure; }), (error) => error === failure);
   assert.deepEqual(forgotten, [KEY_FILE, PIN_FILE, KEY_FILE, PIN_FILE]);
 
-  assert.throws(() => mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => broken), TypeError);
+  await assert.rejects(() => mod.withWrittenKeyUntilExit(WRITTEN, PINNED, () => broken), TypeError);
   assert.deepEqual(forgotten, [KEY_FILE, PIN_FILE, KEY_FILE, PIN_FILE, KEY_FILE, PIN_FILE]);
 });
 
@@ -266,7 +269,7 @@ test('U16: an exited that REJECTS deletes both files too, once, and leaves no un
   const note = (reason: unknown): void => void unhandled.push(reason);
   process.on('unhandledRejection', note);
   try {
-    mod.withWrittenKeyUntilExit(PASSWORD, PINNED, () => ({ process: { exited: exited.promise } }));
+    await mod.withWrittenKeyUntilExit(PASSWORD, PINNED, () => ({ process: { exited: exited.promise } }));
     exited.reject(new Error('the wait failed'));
     await turn();
     await turn();
@@ -284,8 +287,8 @@ test('U17: two calls keep their own pin files: the end of one process deletes th
   const second = held<number | null>();
   const other = '/storage/keys/1/known_hosts-e1-other';
 
-  mod.withWrittenKeyUntilExit(PASSWORD, PINNED, () => ({ process: { exited: first.promise } }));
-  mod.withWrittenKeyUntilExit(PASSWORD, () => ({ ok: true, knownHostsFile: other }), () => ({ process: { exited: second.promise } }));
+  await mod.withWrittenKeyUntilExit(PASSWORD, PINNED, () => ({ process: { exited: first.promise } }));
+  await mod.withWrittenKeyUntilExit(PASSWORD, () => Promise.resolve({ ok: true, knownHostsFile: testPin(other) }), () => ({ process: { exited: second.promise } }));
 
   second.resolve(0);
   await turn();
@@ -294,4 +297,66 @@ test('U17: two calls keep their own pin files: the end of one process deletes th
   first.resolve(0);
   await turn();
   assert.deepEqual(forgotten, [other, PIN_FILE]);
+});
+
+/* --- E2.S2: the pin writer is asynchronous; the one await of each guard stands before the run or the start --- */
+
+test('U18: both guards hand the pin writer the login AND the environment of the credential', async () => {
+  const { mod } = guards();
+  const env = { PATH: '/opt/bin', CREDS_SSH_PASSWORD: 'a-secret' };
+  const credential: ExecAuth = { ok: true, env, auth: 'askpass' };
+  const got: unknown[][] = [];
+  const writer: PinWriter = (...args) => (got.push(args), Promise.resolve({ ok: true }));
+
+  await mod.withWrittenKey(credential, writer, () => Promise.resolve());
+  await mod.withWrittenKeyUntilExit(credential, writer, () => undefined);
+
+  assert.deepEqual(got, [['askpass', env], ['askpass', env]]);
+  assert.equal(got[0][1], env);
+});
+
+test('U19: withWrittenKeyUntilExit starts nothing and deletes nothing while the pin writer has not answered; when it answers, the start gets the decided call', async () => {
+  const { mod, forgotten } = guards();
+  const answer = held<{ ok: true; knownHostsFile: ReturnType<typeof testPin> }>();
+  const exited = held<number | null>();
+  const order: string[] = [];
+
+  const result = mod.withWrittenKeyUntilExit(WRITTEN, () => answer.promise, (call) => (order.push(call.ok ? 'start:ready' : 'start:refused'), { process: { exited: exited.promise } }));
+  await turn();
+  assert.deepEqual(order, [], 'the start ran before the pin was decided');
+  assert.deepEqual(forgotten, [], 'a file was deleted while the decision waited');
+
+  answer.resolve({ ok: true, knownHostsFile: testPin(PIN_FILE) });
+  await result;
+  assert.deepEqual(order, ['start:ready']);
+  assert.deepEqual(forgotten, [], 'the files are the process\'s now');
+  exited.resolve(0);
+  await turn();
+  assert.deepEqual(forgotten, [KEY_FILE, PIN_FILE]);
+});
+
+test('U20: a pin writer whose promise REJECTS (it must not) is inside the guarded span of both guards: the key file is deleted, the same error goes on, nothing is run or started', async () => {
+  const { mod, forgotten } = guards();
+  const failure = new Error('the asker broke');
+  const rejecting: PinWriter = () => Promise.reject(failure);
+  let ran = 0;
+
+  await assert.rejects(mod.withWrittenKey(WRITTEN, rejecting, () => ((ran += 1), Promise.resolve())), (error) => error === failure);
+  await assert.rejects(mod.withWrittenKeyUntilExit(WRITTEN, rejecting, () => ((ran += 1), undefined)), (error) => error === failure);
+
+  assert.equal(ran, 0);
+  assert.deepEqual(forgotten, [KEY_FILE, KEY_FILE]);
+});
+
+test('U21: in the source of withWrittenKeyUntilExit the one await is the decision, before the start; from the start to the flag no await stands', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'writtenKey.ts'), 'utf8');
+  const body = source.slice(source.indexOf('export async function withWrittenKeyUntilExit'));
+  const start = body.indexOf('const started = start(decided.call);');
+  const flag = body.indexOf('handed = true;');
+
+  assert.ok(start > 0 && flag > start, 'the scan does not find the start and the flag of the guard');
+  assert.deepEqual(body.match(/\bawait\b/g), ['await'], 'the guard has more than one await, or none');
+  assert.ok(body.indexOf('await decide(credential, writePin)') > 0 && body.indexOf('await decide(credential, writePin)') < start);
+  assert.equal(/\bawait\b/.test(body.slice(start, flag)), false, 'an await stands between the start and the flag');
+  assert.match(body.slice(start, flag), /void started\.process\.exited\.then\(forget, forget\);/);
 });

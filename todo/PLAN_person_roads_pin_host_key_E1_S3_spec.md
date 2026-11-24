@@ -1,6 +1,6 @@
 # PLAN — E1.S3 spec: the three roads name the pin file, and a refused host key is told (SECURITY)
 
-> Status: **built 2026-11-18 (4dca4bd0 the product and the tests, 5dc8139e the documents) on `fix/g1-person-roads-pin`, in PR #379, unmerged. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
+> Status: **built 2026-11-18 (4dca4bd0 the product and the tests, 5dc8139e the documents) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its condition of sentence C (the verification line anywhere in the stderr) is replaced in epoch 2 by the parent's §3.12, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: E1.S2 holds it). Story E1.S3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.3, §3.4, sentence C of §3.5, §3.6, the tests 2,
 > 3, 4, 9 and 11 of its §5 and the mutation checks of item 15 that name the four argv calls, one file per run, the bridge's pin

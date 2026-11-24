@@ -1,6 +1,6 @@
 # PLAN — G1, epic E1: the stories (the three roads enforce the saved pin of one call)
 
-> Status: **Epic 1 built 2026-11-17/18 in PR #379 (E1.S1 to E1.S4), unmerged; the stories document was written 2026-11-17.** The stories document of epic E1 of
+> Status: **Epic 1 built 2026-11-17/18 (E1.S1 to E1.S4), merged (#379, `f3e9887d`), not released; the re-review of epoch 2 replaces two of its rules (E1.S1's rule of the path by the parent's §3.11, E1.S3's condition of sentence C by §3.12); the stories document was written 2026-11-17.** The stories document of epic E1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E1). It is the epic's baseline,
 > written when E1 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It keeps no
 > change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E1.S2). Built on its own

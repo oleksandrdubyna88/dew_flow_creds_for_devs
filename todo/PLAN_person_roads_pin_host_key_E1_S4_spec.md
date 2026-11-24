@@ -1,6 +1,6 @@
 # PLAN — E1.S4 spec: the smoke on real input (section 10 of `ssh-agent-itest.cjs`)
 
-> Status: **built 2026-11-18 (abd43690) on `fix/g1-person-roads-pin`, in PR #379, unmerged: 40 of 40 checks locally on OpenSSH 10.2p1; CI is the first run on the runner's sshd. Spec written 2026-11-17, by Opus.** A test harness, not a security judgement (the row *Judge* of
+> Status: **built 2026-11-18 (abd43690) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released: 40 of 40 checks locally on OpenSSH 10.2p1, and section 10 passed in CI on the merge commit (`ci · extension`, run 44362280657, both legs). Spec written 2026-11-17, by Opus.** A test harness, not a security judgement (the row *Judge* of
 > `subagent-models.md`: test scenarios and the brief). Story E1.S4 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its E1 *Done when*, the smoke; §5, P4; §3.7, its last row) and of its stories document
 > [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (`## E1.S4`, with its feasibility probe). This file is
