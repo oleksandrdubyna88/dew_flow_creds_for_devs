@@ -219,3 +219,11 @@ test('T85: PA1-i blocks every psql pair while its control is not shown (spec L10
   }
   assert.equal(assess([TABLE('CANDIDATE'), ...ALL_PASS]).clients[0].results.some((result: { id: string }) => result.id === 'one-build'), false, 'one build in the job: its records are its own');
 });
+
+test('T86: a job name the list does not hold is MISSING for a family the production table serves on this system, and nothing for one it does not serve', () => {
+  const assessed = assessFamily('sqlcmd', ledgerOf([]));
+  const typo = lockCheck({ family: 'sqlcmd', platform: 'linux', job: 'bridged-ps1-linux-ubuntu-2204', ci: true, rows: BRIDGED_DB_PROFILES, assessed, ledger: [] });
+  assert.match(typo.join('\n'), /MISSING sqlcmd odbc-sqlcmd[\s\S]*is not in the list of dbServedJobs\.cjs/);
+  assert.equal(typo.length, 2, 'both served builds of the row');
+  assert.deepEqual(lockCheck({ family: 'psql', platform: 'linux', job: 'database-clients-ubuntu-24.04', ci: true, rows: BRIDGED_DB_PROFILES, assessed: assessFamily('psql', ledgerOf([])), ledger: [] }), [], 'psql on Linux is not served: a job with no list is fine');
+});

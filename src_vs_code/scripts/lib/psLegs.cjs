@@ -32,6 +32,8 @@ const UNKNOWN_FLAG = /unknown (?:flag|shorthand flag|option)|unrecognized option
 const MADE = /Login succeeded for user '([^']*)'\.\s*Connection made using ([a-z ]+?) authentication/i;
 const SCHEME = /\b(SQL|NTLM|KERBEROS)\b/;
 const ABSENT_ADDRESS = '127.0.0.1';
+/** What SQL Server's log and both clients say for a login it refused: `Login failed for user 'x'`. */
+const LOGIN_FAILED = /Login failed for user/i;
 
 /** The launch of the builder for entry A, then what a leg does to it by hand. `host` replaces the `-S` value, `user` the entry's user, `flags` are added last. */
 function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {}, query = ctx.q.query, withoutX = false } = {}) {
@@ -158,7 +160,15 @@ async function legEntry(ctx, client) {
     return;
   }
   const loggedIn = right.scheme === 'SQL' && (right.who ?? '').includes(ctx.q.login);
-  const refused = wrong.scheme === undefined;
+  // a wrong password is refused only when no session was made by either account of it (the query's row, the server's log) AND the server or the client said the login failed;
+  // a run that shows neither is not a refusal (CodeRabbit on #380)
+  const madeWrong = wrong.scheme !== undefined || wrong.madeAs !== undefined;
+  const failedWrong = LOGIN_FAILED.test(`${wrong.lines.join('\n')}\n${wrong.said}`);
+  if (!madeWrong && !failedWrong) {
+    unmeasured(leg, `the wrong password made no session and no line said the login failed, so the refusal is not shown: ${text}`);
+    return;
+  }
+  const refused = !madeWrong;
   record(leg, 'shown', `${loggedIn ? 'logged in, auth_scheme SQL' : 'did NOT log in as a SQL login'}; a wrong password ${refused ? 'refused' : 'made a session'}: ${text}`);
   if (!loggedIn || !refused) {
     stop(leg, `${loggedIn ? 'a wrong password made a session' : "the entry's own SQL login did not make a SQL session"} under the launch as built (parent §7, row PE1: the pair is not served by this client)`);

@@ -147,6 +147,10 @@ function lockCheck({ family, platform, job, ci, rows, jobs = SERVED_JOBS, assess
   if (job === undefined || job === '') {
     return ci && servedHere.length > 0 ? servedHere.map((build) => `MISSING ${wordsOf(build)}: this harness runs with CI=true and no BRIDGED_DB_JOB, and the production table serves it`) : [];
   }
+  if (!Object.hasOwn(jobs, job) && servedHere.length > 0) {
+    // a name the list does not hold (a typo) would make the lock vacuous for a family the production table serves here (CodeRabbit on #380)
+    return servedHere.map((build) => `MISSING ${wordsOf(build)}: the job ${JSON.stringify(job)} is not in the list of dbServedJobs.cjs, and the production table serves this family on this system`);
+  }
   const expected = (jobs[job] ?? []).filter((build) => build.client === family && build.platform === platform);
   return expected.flatMap((build) => {
     const line = clientsOf(ledger).find((entry) => entry.mode === 'PRODUCTION' && entry.client === build.client && entry.vendor === build.vendor && entry.version === build.version && entry.tag === build.tag && entry.driver === build.driver);
