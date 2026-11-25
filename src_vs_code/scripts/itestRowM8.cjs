@@ -78,7 +78,7 @@ async function m8(ctx) {
   await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(check, leg, k2, 'K2');
   const source = { command: path.relative(leg.dir, command), sha256: shared.sha256(command), records: { beforeMark, afterMark: afterMark.length }, ppids: control.starts.map((one) => one.ppid) };
-  rig.evidence(leg, roads, [k2], { ...counts, ...shared.commonEvidence(SPEC, config, counts, {}), source, bridgeStderr, control: control.record, socket: null, installShown: null, switchMark: null });
+  rig.evidence(leg, roads, [k2], { ...counts, ...shared.commonEvidence(SPEC, config, roads, {}), source, bridgeStderr, control: control.record, socket: null, installShown: null, switchMark: null });
 }
 
 const legs = { m8 };

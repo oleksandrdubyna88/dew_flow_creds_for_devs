@@ -182,8 +182,8 @@ function stderrFilesCheck(ctx, label) {
   return strays;
 }
 
-/** The fields of the evidence that every leg shares (§1.9). */
-const commonEvidence = (spec, hash, counts, fields) => ({ scenario: spec.scenario, cold: counts.starts.questions === 1, config: hash, ...fields });
+/** The fields of the evidence that every leg shares (§1.9). `cold` is the state the leg's roads were made in and kept (the check M1.2 and M7.c0 read), not a count: the older client asks one question per call. */
+const commonEvidence = (spec, hash, roads, fields) => ({ scenario: spec.scenario, cold: roads.state === 'cold', config: hash, ...fields });
 
 module.exports = {
   standing, writePin, writeSource, optionsOf, whichFiles, khcRecords, driveRefusedRoads, driveSwitch, bridgeStderrOf, logsArrived, connectionStarts, stderrFilesCheck, refusedChecks, socketChecks, standInGuard, login, wordsOf, acceptedAfter, commonEvidence, SETTLE_MS, sha256, sleep,

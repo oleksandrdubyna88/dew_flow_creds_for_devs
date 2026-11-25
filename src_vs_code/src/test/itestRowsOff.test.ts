@@ -86,6 +86,7 @@ test('TX2 questionsOk: an older client is asked once per pinned call, before its
   assert.equal(questionsOk('older', calls, [each[0]]), false, 'one question and three calls');
   assert.equal(questionsOk('older', [calls[0]], [each[0], { startedAt: 30, ms: 10 }]), false, 'two questions before one call');
   assert.equal(questionsOk('older', calls, [each[0], each[1], { startedAt: 490, ms: 20 }]), false, 'a question that ended after its call\'s first run');
+  assert.equal(questionsOk('older', calls, [each[0], { startedAt: 30, ms: 20 }, each[2]]), false, 'two questions before the first call and none before the second');
   assert.equal(questionsOk('older', [], []), false, 'an empty list');
   assert.equal(questionsOk('older', calls, [...each, { startedAt: 600, ms: 5 }]), false, 'a question after the last call');
   assert.equal(questionsOk('newer', calls, [each[0]]), true);

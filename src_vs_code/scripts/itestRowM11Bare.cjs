@@ -158,12 +158,21 @@ async function eqDashG(ctx, parser, file, twin, second) {
 /** The control of the equals-sign pair against `server`, after the counts: E1's words with the path BARE; its twin is the leg's own file `<leg>/st/data` (D20). */
 const controlEq = (ctx, server) => paths.controlBare(ctx, server, EQ_SPEC.folder, { twinOf: off.twinOfEquals });
 
+/** M11.eT: the roads open, and the clock taken just before they do says the twin was written first and still holds K2's line. Answers `{ roads, openedAt }`. */
+function openAfterTwin(ctx, server, twin) {
+  const leg = ctx.rig;
+  const openedAt = performance.now();
+  const roads = rig.openRoads(leg, server.port, { credential: 'named', answer: rig.installAnswer(leg) });
+  ctx.check(`${leg.label}: the twin ${path.relative(leg.dir, twin.file)} holds K2's line, written before the world opened (M11.eT)`, read(twin.file) === twin.line && twin.at < openedAt, JSON.stringify({ twin: read(twin.file), twinAt: twin.at, openedAt }));
+  return { roads, openedAt };
+}
+
 /** The K1 legs of the pair: the roads read the pin file; on the newer client the bare words against K1 end with 0 (M11.e7). */
-async function eqRoadsK1(ctx, parser, server, fields) {
+async function eqRoadsK1(ctx, parser, server, twin, fields) {
   const { check, info } = ctx;
   const leg = ctx.rig;
   const label = leg.label;
-  const roads = rig.openRoads(leg, server.port, { credential: 'named', answer: rig.installAnswer(leg) });
+  const { roads, openedAt } = openAfterTwin(ctx, server, twin);
   m7.coldCheck(ctx, roads);
   info(`${label}: the roads' drive: ${JSON.stringify(await m1.driveFive(ctx, roads))}`);
   fiveAccepted(ctx, roads, await m1.acceptedOf(server, 5), 'M11.e1');
@@ -178,15 +187,15 @@ async function eqRoadsK1(ctx, parser, server, fields) {
   shared.stderrFilesCheck(ctx, label);
   await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(check, leg, server, 'K1');
-  rig.evidence(leg, roads, [server], { ...fields, control: control === undefined ? null : recordOf(control.run) });
+  rig.evidence(leg, roads, [server], { ...fields, openedAt, control: control === undefined ? null : recordOf(control.run) });
 }
 
 /** The K2 legs of the pair: the roads are refused; the control with E1's bare words is ACCEPTED (older: it read the twin) or REFUSED (newer: no collision). */
-async function eqRoadsK2(ctx, parser, server, given, fields, [first, second]) {
+async function eqRoadsK2(ctx, parser, server, given, twin, fields) {
   const { check, info } = ctx;
   const leg = ctx.rig;
   const label = leg.label;
-  const roads = rig.openRoads(leg, server.port, { credential: 'named', answer: rig.installAnswer(leg) });
+  const { roads, openedAt } = openAfterTwin(ctx, server, twin);
   rig.mark(leg, roads, [server]);
   m7.coldCheck(ctx, roads);
   info(`${label}: cold: the roads' clicks: ${JSON.stringify(await shared.driveRefusedRoads(ctx, roads))}`);
@@ -202,8 +211,9 @@ async function eqRoadsK2(ctx, parser, server, given, fields, [first, second]) {
   if (parser === 'older') {
     check(`${label}: K2: the control client with E1's words (the path BARE) ended with 0 (M11.e5)`, eqWordsOk(control) && run.code === 0, JSON.stringify(recordOf(run)));
     check(`${label}: K2 logged one more accepted login with a command session for the control: it read the twin (M11.e5c)`, acceptedOnce(run), JSON.stringify({ before: run.before, after: run.after, session: run.session }));
-    const named = path.resolve(process.cwd(), second);
-    check(`${label}: the second name of the split, read from the control's working folder, names no file, so the twin is the only file that the control could read (M11.e5r)`, !fs.existsSync(named) && first === off.twinOfEquals(control.file), JSON.stringify({ second, named, exists: fs.existsSync(named) }));
+    const [, ctlSecond] = off.splitAtEquals(control.file);
+    const named = path.resolve(process.cwd(), ctlSecond);
+    check(`${label}: the second name of the split of the control's own path, read from the control's working folder, names no file, so the twin is the only file that the control could read (M11.e5r)`, !fs.existsSync(named) && twin.file === off.twinOfEquals(control.file), JSON.stringify({ second: ctlSecond, named, exists: fs.existsSync(named) }));
   } else {
     check(`${label}: the control with E1's bare words ended with 255 and the verification line (M11.e6)`, eqWordsOk(control) && run.code === 255 && ok.hasLine(run.stderr), JSON.stringify(recordOf(run)));
     check(`${label}: K2 logged 0 authentication attempts and 0 accepted logins for the control (M11.e6c)`, run.after.authAttempts === run.before.authAttempts && run.after.accepted === run.before.accepted, JSON.stringify({ before: run.before, after: run.after }));
@@ -212,7 +222,7 @@ async function eqRoadsK2(ctx, parser, server, given, fields, [first, second]) {
   await roads.w.bridges.dispose();
   await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(check, leg, server, 'K2');
-  rig.evidence(leg, roads, [server], { ...counts, ...fields, control: recordOf(run), bridgeStderr });
+  rig.evidence(leg, roads, [server], { ...counts, ...fields, openedAt, control: recordOf(run), bridgeStderr });
 }
 
 /** One leg of the equals-sign pair: M11.e0, the twin written once before the world opens (M11.eT), `-G`, then the K1 or K2 roads. */
@@ -232,14 +242,12 @@ async function eqLeg(ctx, spec) {
     return;
   }
   const [first, second] = off.splitAtEquals(file);
-  const twinLine = lineOf(server, leg.k2);
-  fs.writeFileSync(first, twinLine, { mode: 0o600 });
-  const twinAt = performance.now();
+  const line = lineOf(server, leg.k2);
+  fs.writeFileSync(first, line, { mode: 0o600 });
+  const twin = { file: first, line, at: performance.now() };
   const dash = await eqDashG(ctx, parser, file, first, second);
-  const openedAt = performance.now();
-  check(`${label}: the twin ${path.relative(leg.dir, first)} holds K2's line, written before the world opened (M11.eT)`, read(first) === twinLine && twinAt < openedAt, JSON.stringify({ twin: read(first), twinAt, openedAt }));
-  const fields = { shape: 'eq', folder: path.relative(leg.dir, leg.storage), twin: path.relative(leg.dir, first), twinAt, dash, collision: off.collisionOf(parser, 'equals') };
-  await (isK1 ? eqRoadsK1(ctx, parser, server, fields) : eqRoadsK2(ctx, parser, server, given, fields, [first, second]));
+  const fields = { shape: 'eq', folder: path.relative(leg.dir, leg.storage), twin: path.relative(leg.dir, first), twinAt: twin.at, dash, collision: off.collisionOf(parser, 'equals') };
+  await (isK1 ? eqRoadsK1(ctx, parser, server, twin, fields) : eqRoadsK2(ctx, parser, server, given, twin, fields));
 }
 
 const eqSpec = (name) => off.M11_LEGS.find((one) => one.name === name);

@@ -103,8 +103,7 @@ function oneConnectionConfig(run, { address, port, first = [], hostKeyPath, auth
 /**
  * The config of a serving `sshd -D -e` (the serving launcher). `penalties` false leaves `PerSourcePenalties no` out, for an sshd older than
  * 9.8, which has no penalties. With a run of no lines and no `extra` it is, byte for byte, what `servingConfig` of
- * `itestPinnedRoads.cjs` wrote before E3.S2. E3.S9 (D4): `logLevel` is `VERBOSE` (the default, the text as before) or `DEBUG1`, written IN PLACE of the one `LogLevel` line (a counterpart
- * that logs `remote software version`, which is a `debug1` line, M11.v); any other value throws.
+ * `itestPinnedRoads.cjs` wrote before E3.S2. E3.S9 (D4): `logLevel` is `VERBOSE` (the default) or `DEBUG1` (M11.v: `remote software version` is a `debug1` line), written IN PLACE of the one `LogLevel` line; any other value throws.
  */
 const LOG_LEVELS = ['VERBOSE', 'DEBUG1'];
 function servingConfig(run, { port, hostKey, authorizedKeys, pidFile, penalties, extra = [], logLevel = 'VERBOSE' }) {

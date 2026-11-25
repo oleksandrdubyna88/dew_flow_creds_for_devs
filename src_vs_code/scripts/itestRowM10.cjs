@@ -103,7 +103,7 @@ async function m10(ctx) {
   await rig.nothingLeft(check, label, leg, roads, rig.callsOf(leg, roads, product));
   await rig.endCounterpart(check, leg, k2, 'K2');
   const asked = (list) => list.map((one) => `${one.type} ${one.answer}`);
-  rig.evidence(leg, roads, [k2], { ...counts, bridgeStderr, config, resolver: { control: asked(control.asked), afterMark: asked(questions().slice(before)), ad: asked(noAd.asked), sshfpAfterMark: sshfp.length } });
+  rig.evidence(leg, roads, [k2], { ...counts, bridgeStderr, config, resolver: { before: asked(questions().slice(0, before)), control: asked(control.asked), afterMark: asked(questions().slice(before)), ad: asked(noAd.asked), sshfpAfterMark: sshfp.length } });
 }
 
 const legs = { m10 };

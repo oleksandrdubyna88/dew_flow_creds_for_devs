@@ -106,9 +106,9 @@ async function k7Control(check, ctx, one, ssh) {
   const bare = await ssh(['-G', '-F', 'none', ...bareOf(words, file), '-p', '22', 'probe-host']);
   const text = `${bare.stdout}${bare.stderr}`;
   const quotedWhole = quoted.code === 0 && linesOf(quoted.stdout).includes(`userknownhostsfile ${file}`) && linesOf(quoted.stdout).includes(`globalknownhostsfile ${file}`);
-  const expect = apostrophe ? { word: 'invalid quotes', test: /invalid quotes/ } : { word: 'a tilde_expand line', test: /tilde_expand/ };
+  const expect = apostrophe ? /invalid quotes/ : /tilde_expand/;
   check(`M13.x4 (${one.letter}): ${apostrophe ? 'the bare word ended with 255 and invalid quotes' : "K7's control: under the twin folder (' ~' after the space) the product's word ended with 0 and the path whole, the bare word ended with 255 and a tilde_expand line"}`,
-    (apostrophe || quotedWhole) && bare.code === 255 && expect.test.test(text), JSON.stringify({ twin, quoted: { code: quoted.code, stderr: quoted.stderr }, bare: { code: bare.code, text } }));
+    (apostrophe || quotedWhole) && bare.code === 255 && expect.test(text), JSON.stringify({ twin, quoted: { code: quoted.code, stderr: quoted.stderr }, bare: { code: bare.code, text } }));
   return { k7: { quoted: quoted.code, bare: bare.code } };
 }
 

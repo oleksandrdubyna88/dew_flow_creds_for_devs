@@ -140,10 +140,7 @@ async function identitiesOf(rig, real) {
 const HEX40 = /^[0-9a-f]{40}$/;
 const whole = (one) => typeof one.sha256 === 'string' && typeof one.path === 'string';
 
-/**
- * Writes the record into the section's folder, prints it as one line, and checks it. E3.S9 (D9): a run that has no `tool.json` (R8) or no `known_hosts_command` (R9) says `tools: false` or `commands: false`, and
- * that item is printed as `info  R8 not asked: …`, never as a pass; section 10's call is unchanged.
- */
+/** Writes the record into the section's folder, prints it as one line, and checks it. E3.S9 (D9): `tools: false` (R8) or `commands: false` (R9) prints that item as `info  … not asked`, never as a pass; section 10's call is unchanged. */
 async function recordIdentities(check, rig, real, { tools = true, commands = true } = {}) {
   const record = await identitiesOf(rig, real);
   fs.writeFileSync(path.join(rig.dir, 'identities.json'), `${JSON.stringify(record, null, 2)}\n`);

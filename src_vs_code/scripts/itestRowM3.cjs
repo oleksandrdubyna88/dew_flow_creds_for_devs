@@ -77,7 +77,7 @@ async function leave(ctx, spec, roads, servers, counts, made) {
     await rig.endCounterpart(check, leg, server, server.name.toUpperCase());
   }
   const source = { control: path.relative(leg.dir, path.join(leg.dir, 'cm')), persist: 120, master: { pid: made.master?.pid ?? null, checks: made.checks ?? [] } };
-  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, made.config, counts, {}), source, bridgeStderr: made.bridgeStderr ?? null, socket: made.socket ?? null, [made.kind ?? 'control']: made.record ?? null, installShown: made.shown ?? null, switchMark: made.switchMark ?? null });
+  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, made.config, roads, {}), source, bridgeStderr: made.bridgeStderr ?? null, socket: made.socket ?? null, [made.kind ?? 'control']: made.record ?? null, installShown: made.shown ?? null, switchMark: made.switchMark ?? null });
 }
 
 /** The mismatch (§3.1): the entry is pinned to K2, K1 answers, a master to K1 is up; the three roads are refused and never ride the master. */

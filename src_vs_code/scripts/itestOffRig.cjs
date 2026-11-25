@@ -24,6 +24,7 @@ const { devNullScan } = require('./itestRowM12.cjs');
 const { runInContainer } = require('./itestProbeResolver.cjs');
 const { rowM11 } = require('./itestRowM11.cjs');
 const { rowM13 } = require('./itestRowM13.cjs');
+const { SSH_EXE } = require('./itestProbeWindows.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const NAMES = ['m10', 'm11', 'm13', 'unit-older'];
@@ -196,7 +197,7 @@ async function m13(ctx) {
   const product = sec.productOf(OUT);
   const result = await rowM13(check, info, { out: OUT, product, dir });
   const rig = { dir };
-  const identities = { ...(await identitiesOf(rig, '/mnt/c/Windows/System32/OpenSSH/ssh.exe')), offRig: result };
+  const identities = { ...(await identitiesOf(rig, SSH_EXE)), offRig: result };
   fs.writeFileSync(path.join(dir, 'identities.json'), `${JSON.stringify(identities, null, 2)}\n`);
   console.log(`identities ${JSON.stringify(identities)}`);
   check('the run is a run of its commit: git status --porcelain --untracked-files=no answered, and it is empty', identities.trackedChanges === '', JSON.stringify(identities.trackedChanges));
@@ -214,6 +215,8 @@ async function unitOlder(ctx) {
   const facts = await clientFacts(product, unpacked.wrapper);
   check('U.0 the wrapper -V ended with 0 and printed OpenSSH_8.4p1, and the lib reads its parser as older', facts.code === 0 && facts.line?.startsWith('OpenSSH_8.4p1 ') === true && facts.parser === 'older', JSON.stringify(facts));
   const env = { ...process.env, PATH: `${path.dirname(unpacked.wrapper)}${path.delimiter}${process.env.PATH ?? ''}` };
+  const seen = await run('ssh', ['-V'], { env, timeoutMs: 10_000 });
+  check('U.0b ssh -V with the child\'s own environment (the wrapper\'s folder first on PATH) printed OpenSSH_8.4p1: the child finds the older client by name', seen.code === 0 && seen.stderr.startsWith('OpenSSH_8.4p1 '), JSON.stringify({ code: seen.code, said: seen.stderr.trim() }));
   const child = launch(section, process.execPath, ['--import', './scripts/lower-priority.mjs', 'scripts/run-tests.mjs', 'out/test/pinWords.test.js'], { cwd: path.join(__dirname, '..'), env });
   let rest = '';
   child.child.stdout.on('data', (chunk) => {

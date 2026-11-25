@@ -64,7 +64,7 @@ async function leave(ctx, spec, given, roads, servers, counts, extra) {
   await roads.w.bridges.dispose();
   await rig.nothingLeft(ctx.check, leg.label, leg, roads, rig.callsOf(leg, roads, ctx.product));
   await rig.endCounterpart(ctx.check, leg, servers.at(-1), servers.at(-1).name.toUpperCase());
-  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, extra.config, counts, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null, ...extra.more });
+  rig.evidence(leg, roads, servers, { ...counts, ...shared.commonEvidence(spec, extra.config, roads, {}), source: extra.source, bridgeStderr: extra.bridgeStderr ?? null, socket: extra.socket ?? null, [extra.kind]: extra.record, installShown: extra.shown ?? null, switchMark: extra.switchMark ?? null, ...extra.more });
 }
 
 /** M2.3: K2 logged a connection for each connection start, 0 accepted logins and 0 authentication attempts, and no line of the log is one that only a client past the key check causes. */

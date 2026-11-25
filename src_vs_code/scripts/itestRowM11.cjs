@@ -85,10 +85,12 @@ function evidenceAlone(ctx, fields) {
   return paths.evidenceNone(ctx.rig, { ...(ctx.rig.evidenceExtra ?? {}), ...fields });
 }
 
-/** The four counts of a client-alone leg (decision 15): `runs` starts of the client, `connectionStarts`, and the counterpart's log after `from` (authentication attempts, accepted logins with their session). */
-function countsAlone(server, from, runs, connectionStarts) {
-  const log = rec.logCounts(server.sshd.stderr.slice(from), me);
-  return { starts: runs, connectionStarts, connections: log.connections, authAttempts: log.authAttempts, accepted: log.accepted };
+/**
+ * The four counts of a client-alone leg (decision 15): the starts of the client and the connection starts among them, both read from the argvs of the runs that the leg made (the client is started by its path,
+ * so the shim records none; an argv that is not the question `-V` is a start that connects), and the counterpart's `log` of the same span (`rec.logCounts`: connections, authentication attempts, accepted logins).
+ */
+function countsAlone(log, argvs) {
+  return { starts: argvs.length, connectionStarts: argvs.filter((argv) => !rec.isQuestion(argv)).length, connections: log.connections, authAttempts: log.authAttempts, accepted: log.accepted };
 }
 
 // ---- (a): the client alone -----------------------------------------------------------------------------------------------------------
@@ -96,16 +98,17 @@ function countsAlone(server, from, runs, connectionStarts) {
 const A_LEGS = { 'm11-a-unknown': { unknown: true }, 'm11-a-ignored': { unknown: false } };
 
 /** One login of the leg's own client with the product's words for it, pinned to K1, to K2's port. */
-function pinnedRun(ctx, words, port) {
-  return rig.viaReal(ctx.rig, [...words, '-i', ctx.rig.userKey, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-p', String(port), `${me}@127.0.0.1`, 'true']);
+async function pinnedRun(ctx, words, port) {
+  const argv = [...words, '-i', ctx.rig.userKey, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-p', String(port), `${me}@127.0.0.1`, 'true'];
+  return { argv, ...(await rig.viaReal(ctx.rig, argv)) };
 }
 
-/** The witness (M11.a1w, M11.aw): the same client with E1's literal words of a file of K2's line, under the leg's config as it now is; accepted by K2. Answers `{ run, ok }`. */
+/** The witness (M11.a1w, M11.aw): the same client with E1's literal words of a file of K2's line, under the leg's config as it now is; accepted by K2. Answers its own record, with the counts of the log before and after it. */
 async function witness(ctx, id, words, server, text) {
   const run = await shared.login(ctx, server, words);
   const good = run.code === 0 && run.after.accepted === run.before.accepted + 1;
   ctx.check(`${ctx.rig.label}: ${text} ended with 0 and K2 logged one more accepted login (${id})`, good, JSON.stringify({ code: run.code, stderr: run.stderr, before: run.before, after: run.after }));
-  return { argv: run.argv, code: run.code, stdout: run.stdout, stderr: run.stderr };
+  return { argv: run.argv, code: run.code, stdout: run.stdout, stderr: run.stderr, before: run.before, after: run.after };
 }
 
 /** M11 (a): `m11-a-unknown` (a `KnownHostsCommand` line and no `IgnoreUnknown`: the client ends before it connects) and `m11-a-ignored` (the config's own `IgnoreUnknown` for it: the login is refused by the pin). */
@@ -140,7 +143,7 @@ async function aLeg(ctx, spec) {
   }
   info(`${label}: M11.ak: the recording command was started ${ok.khcStarts(shared.khcRecords(records)).length} times (expected 0: this client does not know the option)`);
   await rig.endCounterpart(check, leg, k2, 'K2');
-  evidenceAlone(ctx, { ...countsAlone(k2, from, 1, 1), part: 'a', unknown: spec.unknown, run: said, witness: proof, words });
+  evidenceAlone(ctx, { ...countsAlone(log, [run.argv]), part: 'a', unknown: spec.unknown, run: said, witness: proof, words });
 }
 
 // ---- (b): the runs of M1, M2 (b) the mismatch and M7's shapes on the older client -------------------------------------------------------
