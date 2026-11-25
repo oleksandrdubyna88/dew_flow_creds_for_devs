@@ -1811,7 +1811,7 @@ plan it writes the one release exception and adds the item of this re-review. No
 
 > Written by E3.S10 on 2026-11-25 from the logs of ONE run of the whole set. It is a draft for the Opus judge (`E3.S10`, *Model*): the judge reads every
 > row against its last column, every control and every count. A number below was read from a log of that run; a value that was not read is `null`.
-> A row that is marked "(judge)" is one that the drafter is unsure of.
+> A row that is marked "(judge: …)" carries the Opus judge's ruling in a few words. A value that no kept log holds says where it was read, or is `null`.
 
 ### 10.1 The run
 
@@ -1821,10 +1821,12 @@ plan it writes the one release exception and adds the item of this re-review. No
   that the runs load is part of that pin).
 - **A fresh checkout.** `git worktree add --detach <owned folder> 50da30ad`, then `npm ci --offline` in its `src_vs_code` (from the npm cache alone; nothing
   was downloaded) and `npm run compile`. The shared rules were put into `.agents/conventions` by a local clone of the conventions repository at the pinned
-  commit (no network). In that checkout, before the first run and again before every later one: `git status --porcelain --untracked-files=no` answered
-  empty and `git status --porcelain --untracked-files=all` answered empty (ignored files, `node_modules` and `out/`, are made by `npm ci` and the build).
-  The checkout was removed after the last run (`git worktree remove --force`, `git worktree prune`).
-- **The date and the runs** (all on 2026-11-25, UTC; each run once, each with exit code 0):
+  commit (no network). In that checkout, before the first run, `git rev-parse HEAD` answered `50da30ad…`, the conventions folder `cd19c173…`, `git status --porcelain --untracked-files=no`
+  answered empty and `git status --porcelain --untracked-files=all` answered empty (ignored files, `node_modules` and `out/`, are made by `npm ci` and the build); after each of the four
+  runs after the rig, both answers were empty again. **Source of these answers:** `status-records.txt`, the run operator's records taken from the operator agent's session transcript, each
+  with its timestamp (HEAD, conventions, `status no: []` and `status all: []` at 18:47:16.963 before the rig; `tracked: [] all: []` at 18:55:07.472, 18:56:59.561, 18:57:06.165 and 18:57:15.965 after M10,
+  M11, M13 and `unit-older`). The rig's own after-run answer is not a separate record (`null`). The path of the checkout is in no kept log (`null`); it was an owned folder, removed after the last run (`git worktree remove --force`, `git worktree prune`).
+- **The date and the runs** (all on 2026-11-25, UTC; each run once; exit code 0 for each of the four after the rig, `null` for the rig, see below the table):
 
   | run | the command, in `src_vs_code` | from | to | its last line |
   |---|---|---|---|---|
@@ -1835,7 +1837,12 @@ plan it writes the one release exception and adds the item of this re-review. No
   | test 34, the older client first on `PATH` | `CREDS_ITEST_OLD_SSH_DEBS=<abs>/deb node --import ./scripts/lower-priority.mjs scripts/itestOffRig.cjs unit-older` | 18:57:10 | 18:57:11 | `off-rig unit-older: 8 ok, 0 FAIL` (the child: tests 21, pass 18, fail 0, skipped 3) |
 
   `<abs>` is the absolute path of a folder under `~/.cache` (the unpacked `sshd` and its wrapper, `creds-itest-sshd`; the two `.deb` files of the older
-  client, `creds-itest-oldssh/deb`). Node 26.12.1, Linux 6.18 (WSL2). **Total: 2465 ok lines in the five logs, 0 FAIL** (1735 + 41 + 656 + 25 + 8). After
+  client, `creds-itest-oldssh/deb`). **Where the table's values were read.** The last lines are in each run's log. The exit codes: `status-records.txt` holds `exit 0` for M10, M11, M13 and
+  `unit-older` (each after the run, with its timestamp above); the rig's own exit code is in no kept log (`null`; its log ends with `all agent integration checks passed`). The times in the
+  *from* and *to* columns were read by the operator in its shell while the runs went and are in no kept log, except that `status-records.txt` fixes the ends of M10, M11 and M13 to the
+  second (18:55:07, 18:56:59, 18:57:06) and shows the record after `unit-older` at 18:57:15.965 (the table's 18:57:11 is the end that the shell showed); the rig's times: `null` beyond the record
+  at 18:47:16.963 that precedes its start. The Node version of the whole set's runs: `null` (not in a kept log); `v26.12.1` is the version of the second checkout of test 34 on the newer client
+  (`test34-newer.log`), on the same machine. Linux 6.18 (WSL2) is this machine's kernel, read when this section was written. **Total: 2465 ok lines in the five logs, 0 FAIL** (1735 + 41 + 656 + 25 + 8). After
   each run: no `/tmp/creds-*` and no `testsToDelete-*` folder of the run, no process of the run, no container of the run (`wslc list -a` showed only other
   work's containers), and the checkout's two status answers were empty.
 - **The client and the counterpart, by row.**
@@ -1855,7 +1862,8 @@ plan it writes the one release exception and adds the item of this re-review. No
     `60e2ba89f7c0b60d6abbcb2978b1888117f5d8002e77a56f94ecc7ed1fe78cea`). The package is the distribution's `openssh-server 1:10.2p1-2ubuntu3.8`, unpacked as data, nothing installed (`module_tests.md`, *The counterpart of the
     real runs*).
   - `ssh-keyscan` of M9's two legs that scan: `/usr/bin/ssh-keyscan`, `1:10.2p1-2ubuntu3.8`, SHA-256 `1d4db24a1a24c276c81b3ac184ac7d72a29b68d3e604240e7140dc5334d5d1bc`.
-  - the older client of M11 and of test 34: `OpenSSH_8.4p1 Debian-5+deb11u3, OpenSSL 1.1.1w  11 Sep 2023`. The unpacked `usr/bin/ssh` SHA-256 `19269e22521f8e5aacbb47ec9b868abe8214fe4cfad7c36de3a7cadf2d1f7cc4`; its wrapper `oldssh/bin/ssh`
+  - the older client of M11 and of test 34 (`unit-older.log` holds no `identities` record and no commit record of its own: its commit is the run's, the same checkout, whose HEAD and status are in
+    `status-records.txt`; its client is known through M11.0d, the check of the two `.deb` files' hashes, and U.0, the wrapper's `-V`): `OpenSSH_8.4p1 Debian-5+deb11u3, OpenSSL 1.1.1w  11 Sep 2023`. The unpacked `usr/bin/ssh` SHA-256 `19269e22521f8e5aacbb47ec9b868abe8214fe4cfad7c36de3a7cadf2d1f7cc4`; its wrapper `oldssh/bin/ssh`
     `bc8bc16ca72df792027a329bb318c1edba75fe89ef98699cd132e693b957717d`; `libcrypto.so.1.1` `cde898ee0dcd5e27350f40f4419c7745eb4a3356f4456bdc2b373d6ba97ed20a`; `libssl.so.1.1`
     `f39abf7f23a10dbcbfb4b7a9da2746167ea53e99a84f377d11020d3ca106b5be`. The packages (`~/.cache/creds-itest-oldssh/deb`, each checked against its `SHA256SUMS` line by the run):
     `openssh-client_8.4p1-5+deb11u3_amd64.deb` `489e329b8045b2bcdac3a68359b173e47722a7eaa503ad98829e84371f96dac3`, `libssl1.1_1.1.1w-0+deb11u1_amd64.deb`
@@ -1871,8 +1879,9 @@ plan it writes the one release exception and adds the item of this re-review. No
 - **Where M10, M11 and M13 ran** (the parent's setup, *Where the rows run*): M10 in a `wslc` container that the run started and removed (the resolver, the counterpart and the client are the container's; the repository is
   mounted); M11 on this machine, with the unpacked 8.4p1 first on `PATH` and the counterparts of the rig; M13 from this machine against the owner's `ssh.exe` (the client alone); the rig's rows on this machine against
   unpacked `sshd` listeners on the loopback. Counterpart of the Linux rows: this machine's loopback, not a remote host.
-- **What was not in this run.** CI's `ci · extension` runs on the head sha of the PR, not here. `npm test` (the unit suite, with test 34 on the newer client first on `PATH`) was not part of this run: it is run by CI and was
-  run by the stories (*seen when built*, `module_tests.md`). The identities of `npm`, the compiler and the base libraries are not recorded.
+- **What was not in this run.** CI's `ci · extension` runs on the head sha of the PR, not here. `npm test` (the unit suite) was not part of this run: it is run by CI and was
+  run by the stories (*seen when built*, `module_tests.md`). Test 34 on the newer client first on `PATH` was run once on its own, after the whole set, in a second fresh checkout of the same commit: see 10.2, last
+  paragraph (`test34-newer.log`). The identities of `npm`, the compiler and the base libraries are not recorded.
 
 ### 10.2 The rows
 
@@ -1880,7 +1889,7 @@ How to read the tables. *starts* are the starts of the client that the shim reco
 the starts whose argv names a destination (the sweep, the mode check, the probe, the install run, the bridge); the counterpart cell is `connections / authentication attempts / accepted logins` of its own log (decision 15: the four
 numbers are four). The numbers are the leg's record at the point the leg writes it: for M5 they are the numbers `countsAtChecks` holds (before the witness or the control); in the other legs a witness
 or a control against K1 that was accepted adds its login (M7 (c) collision-k1, M11 (c) twin-k1 and the two K1 equals-sign legs: the check named in the row's text judges that login), and one against K2 is judged by its
-own check and is not in the cell. Where the row's record has no counterpart (M5 (d), whose destination is a silent listener of the leg) the cell is `0`. A leg whose asker is `warm` was warmed by one pinned call to K1 whose own starts
+own check and is not in the cell. Where the row's record has no counterpart (M5 (d), whose destination is a silent listener of the leg; M9's `m9-password-connect`, which starts no client) the cell is `null`. A leg whose asker is `warm` was warmed by one pinned call to K1 whose own starts
 are not counted. **Every leg of every table below ended with all its checks `ok` and no `FAIL`; each leg's records and checks are in the log of its run (kept in the session's scratch folder, which a reboot clears; they hold
 the person's user name and paths, so they are not committed).**
 
@@ -1906,7 +1915,7 @@ the person's user name and paths, so they are not committed).**
 | m3-mismatch | cold | 5 | 1 | 4 | k1 4/0/0 | 255,255,255 |
 | m3-switch | cold | 3 | 1 | 2 | k1 1/1/1; k2 1/0/0 | 0,255 |
 
-**M4** (rig; 265 checks labelled M4). (a): the 5 connection starts, 5 accepted logins, no known-hosts file, no question (0 starts of `ssh -V` cold). (b), (c), (d): cold, exactly ONE start (the question) and 0 connection starts; warm, 0 starts; 0 connections and 0 authentication attempts in K1's log. "No connection starts" of the CHANGELOG is backed by these 12 legs (W7).
+**M4** (rig; 265 checks labelled M4). (a): the 5 connection starts, 5 accepted logins, no known-hosts file, no question (0 starts of `ssh -V` cold). (b), (c), (d): cold, exactly ONE start (the question) and 0 connection starts; warm, 0 starts; 0 connections and 0 authentication attempts in K1's log. "No connection starts" of the CHANGELOG is backed by these 12 legs (W7). C9: in all six bridge legs of (b), (c), (d) (cold and warm) the bridge's command minted 1 token before the refusal message (the log line says "the first before the refusal message: yes"). C14: in all four legs of (d) (the install and the bridge, cold and warm) the pin files that the failed write left: `none`.
 
 | leg | asker | starts | of them questions | connection starts | counterpart: connections / authentication attempts / accepted logins | exit codes of the runs that start |
 |---|---|---|---|---|---|---|
@@ -1926,7 +1935,7 @@ the person's user name and paths, so they are not committed).**
 | m4-d-bridge-cold | cold | 1 | 1 | 0 | k1 0/0/0 |  |
 | m4-d-bridge-warm | warm | 0 | 0 | 0 | k1 0/0/0 |  |
 
-**M5** (rig; 180 checks labelled M5; eleven legs, five of them with an unpinned twin). Numbers are `countsAtChecks` (before the control of (e) and the witness of (f)). In (g) K1 logged the logins as accepted and sentence D was shown (255); in (h) the same line was printed and the run ended with 0, and neither sentence was shown, the install reached its question and the socket check read the mode (M5.h1-M5.h6, M5.hc). The sentences are quoted word for word in the log.
+**M5** (rig; 180 checks labelled M5; eleven legs, five of them with an unpinned twin). Numbers are `countsAtChecks` (before the control of (e) and the witness of (f)). In (g) K1 logged the logins as accepted and sentence D was shown (255); in (h) the same line was printed and the run ended with 0, and neither sentence was shown, the install reached its question and the socket check read the mode (M5.h1-M5.h6, M5.hc). The sentences are quoted word for word in the log. (a): the order of the messages was the install's error (sentence C) first, then the info "Bridge open to …", then the socket check's error "The bridge to … is not open: …" (the same order in (e)). (e): `ssh -G` under the handed config printed `SILENT` for the config's `LogLevel QUIET` (M5.e0), and the control M5.ec, E1's words under the same config, ended with 255 and an empty stderr.
 
 | leg | asker | starts | of them questions | connection starts | counterpart: connections / authentication attempts / accepted logins | exit codes of the runs that start |
 |---|---|---|---|---|---|---|
@@ -1939,8 +1948,8 @@ the person's user name and paths, so they are not committed).**
 | m5-b-unpinned | cold | 4 | 0 | 4 | k1 0/0/0 | 255,255,255 |
 | m5-c | cold | 5 | 1 | 4 | k1 4/4/0 | 255,255,255 |
 | m5-c-unpinned | cold | 4 | 0 | 4 | k1 4/4/0 | 255,255,255 |
-| m5-d | cold | 5 | 1 | 4 | 0 | 255,255,255 |
-| m5-d-unpinned | cold | 4 | 0 | 4 | 0 | 255,255,255 |
+| m5-d | cold | 5 | 1 | 4 | null (no sshd; the silent listener accepted 4 TCP connections) | 255,255,255 |
+| m5-d-unpinned | cold | 4 | 0 | 4 | null (no sshd; the silent listener accepted 4 TCP connections) | 255,255,255 |
 
 **M6** (rig; 176 checks labelled M6). The password legs: K1 cannot check a password, so its log shows the password attempt arrived and failed (M6.13: `Failed password`), and the table's accepted-login cell is 0 there; with K2 0 authentication attempts (M6.14). M6.11 (no live forward after the last end) was read as the owner read it on 2026-11-24: nothing listens on a bridge socket; the dead socket file that `sshd` leaves is recorded and not judged.
 
@@ -1998,7 +2007,7 @@ the person's user name and paths, so they are not committed).**
 | m9-password-bridge-cold | cold | 1 | 1 | 0 | k1 0/0/0 |  |
 | m9-password-bridge-warm | warm | 0 | 0 | 0 | k1 0/0/0 |  |
 | m9-key-repair | cold | 6 | 1 | 5 | k1 5/5/5 | 0,0,0,0 |
-| m9-password-connect | cold | 0 | 0 | 0 | 0 |  |
+| m9-password-connect | cold | 0 | 0 | 0 | null |  |
 
 **M10** (inside the container of the image above; 41 ok, 0 FAIL: 9 on the host, 32 inside). The control first: E1's words, accepted by K2 (exit 0, one more accepted login with a command session), and the resolver recorded the `SSHFP` question (M10.c, M10.cq). The roads: four runs that start, each 255 and the verification line, each argv `VerifyHostKeyDNS=no` once (M10.1.1, M10.2); the resolver was asked `A` for the name after the mark and `SSHFP` 0 times (M10.3, M10.3a); K2 0 accepted logins and 0 authentication attempts (M10.4). `M10.ad` (a record that decides nothing): with the AD bit off the same control ended with 255. The client of this row is OpenSSH 9.2p1 (the image's), not the rig's.
 
@@ -2046,7 +2055,7 @@ M11 (b), the equals-sign pair (the storage folder's path holds one equals sign; 
 
 M11's words (the run's own `info M11.words`, decision 22): *on `OpenSSH_8.4p1 Debian-5+deb11u3` the row does not show the collision of a pair of apostrophes, which that client does not have (M7 shows it on a client from 8.7 on); it shows the collision of a bare equals sign and its repair by the double quotes; on `OpenSSH_10.2p1 Ubuntu-2ubuntu3.8` the same pair shows no collision of that kind; no row ran a client of 8.5 or 8.6 (C21).*
 
-**M12** (rig; 164 checks labelled M12, 13 legs; the coverage check read the kinds from the product: M12.cov). (a)-(f) on each of the two roads that can be driven: 0 starts of the client of any kind (the question included), 0 connections, nothing written, no bridged row, sentence E with the kind. (g) and (h): the rule refuses with its kind and no road is driven; the controls with `ssh -G` (M12.gc, M12.hc). The scan of the whole run's argvs found no `/dev/null` as a known-hosts file (M12.z: 342 argvs read in 94 records folders). The socket check has no start of any kind after a refused bridge (Q3).
+**M12** (rig; 164 checks labelled M12, 13 legs; the coverage check read the kinds from the product: M12.cov). (a)-(f) on each of the two roads that can be driven: 0 starts of the client of any kind (the question included), 0 connections, nothing written, no bridged row, sentence E with the kind. (g) and (h): the rule refuses with its kind and no road is driven; the controls with `ssh -G` (M12.gc, M12.hc). The scan of the whole run's argvs found no `/dev/null` as a known-hosts file (M12.z: 342 argvs read in 94 records folders in the rig's run). The other runs scanned their own: M10 5 argvs in 2 folders (`m10.log`, M12.z inside the container), M11 152 in 30 (`m11.run.log`), and M13.z (`m13.log`: the line says no argv of the run names `/dev/null`, with no count). The socket check has no start of any kind after a refused bridge (Q3).
 
 | leg | asker | starts | of them questions | connection starts | counterpart: connections / authentication attempts / accepted logins | exit codes of the runs that start |
 |---|---|---|---|---|---|---|
@@ -2064,7 +2073,7 @@ M11's words (the run's own `info M11.words`, decision 22): *on `OpenSSH_8.4p1 De
 | m12-f-install | cold | 0 | 0 | 0 | k1 0/0/0 |  |
 | m12-f-bridge | cold | 0 | 0 | 0 | k1 0/0/0 |  |
 
-**M13** (this machine, the client alone; `ssh.exe` `OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2`; 25 ok, 0 FAIL; run from WSL, so WSL's interop built the Windows command line). The run starts only `ssh.exe -V` (one start: M13.0; the asker answered `knows`), `ssh.exe -G` and `where.exe ssh`. The run does not count its `-G` starts; the starts of the client, the connection starts, the authentication attempts and the logins of this row are therefore: starts: `null` (not counted by the run; `-V` once and `-G` per case, read from the entry), connection starts 0 (by design: no login is made), authentication attempts and accepted logins 0 (no counterpart ran). (a) a space, (b) an apostrophe, (c) a space and an apostrophe in the user folder: each resolves strict checking, `verifyhostkeydns false`, no `knownhostscommand` line, `loglevel ERROR`, and both lists the intended path whole (M13.x2, M13.x3 for the exec's and the bridge's argv); for (a) K7's control told one file from two: the product's word ended with 0 and the path whole, the bare word ended with 255 and a `tilde_expand` line (M13.x4 (a)); for (b) and (c) the bare word ended with 255 and `invalid quotes` (entry 4.1: M13.x4 (b), (c)). The UNC folder: the rule refuses it with `doubleBackslash` (M13.u1); `decidePinOfCall` answered refused with sentence E and its asker started `ssh.exe` 0 more times (M13.u2); no file was written (M13.u3); the control: `ssh.exe -G` with the bare and with the quoted UNC word resolved another path, not the intended one (M13.uc). No login on Windows (C6).
+**M13** (this machine, the client alone; `ssh.exe` `OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2`; 25 ok, 0 FAIL; run from WSL, so WSL's interop built the Windows command line). The run starts only `ssh.exe -V` (one start: M13.0; the asker answered `knows`), `ssh.exe -G` and `where.exe ssh`. The run does not count its `-G` starts; the starts of the client, the connection starts, the authentication attempts and the logins of this row are therefore: starts: `null` (not counted by the run; `-V` once and `-G` per case, read from the entry); connection starts, authentication attempts, accepted logins: `null` (no login made, no counterpart). (a) a space, (b) an apostrophe, (c) a space and an apostrophe in the user folder: each resolves strict checking, `verifyhostkeydns false`, no `knownhostscommand` line, `loglevel ERROR`, and both lists the intended path whole (M13.x2, M13.x3 for the exec's and the bridge's argv); for (a) K7's control told one file from two: the product's word ended with 0 and the path whole, the bare word ended with 255 and a `tilde_expand` line (M13.x4 (a)); for (b) and (c) the bare word ended with 255 and `invalid quotes` (entry 4.1: M13.x4 (b), (c)). The UNC folder: the rule refuses it with `doubleBackslash` (M13.u1); `decidePinOfCall` answered refused with sentence E and its asker started `ssh.exe` 0 more times (M13.u2); no file was written (M13.u3); the control: `ssh.exe -G` with the bare and with the quoted UNC word resolved another path, not the intended one (M13.uc). No login on Windows (C6).
 
 **M14** (rig; 40 checks labelled M14): the agent's `ssh:exec` through the action's own `run`, off a bridge.
 
@@ -2077,7 +2086,9 @@ M11's words (the run's own `info M11.words`, decision 22): *on `OpenSSH_8.4p1 De
 
 (a) one accepted login, the argv holds the six pairs of M1 (M14.a3). (b), (c): exit 255 and the verification line; K2 0 accepted logins and 0 authentication attempts; for (c) `KnownHostsCommand=none` once and the command's record 0 starts after the mark (M14.c3), the witness first accepted. (d): 0 starts of the client of any kind, the question included, cold (M14.d1); the agent's answer names the field and holds no path (M14.d2, d3).
 
-**Test 34 on the older client** (`unit-older`: `pinWords.test.ts` as ONE child with the older client first on `PATH`; U.0 and U.0b: the wrapper's `-V` printed `OpenSSH_8.4p1`, in the parent's and in the child's environment): the child ran tests 21, pass 18, fail 0, skipped 3 (G1 to G3, which need a client that knows `KnownHostsCommand`); 8 ok, 0 FAIL. It is evidence of the rule of the path on the older parser, no row. G5 (the control of the client's parser) and G6 (the refused rows: recorded on an older client, asserted on a newer one) ran there; their per-test lines are in the child's output, which the run prints only as the counts above (the per-test result is not in this record: `null`). **Test 34 on the newer client first on `PATH` was not part of this run** (see 10.1, *What was not in this run*): its record is `npm test`, `pinWords.test.ts` 21 of 21 when it was built.
+**Test 34 on the older client** (`unit-older`: `pinWords.test.ts` as ONE child with the older client first on `PATH`; U.0 and U.0b: the wrapper's `-V` printed `OpenSSH_8.4p1`, in the parent's and in the child's environment): the child ran tests 21, pass 18, fail 0, skipped 3 (G1 to G3, which need a client that knows `KnownHostsCommand`); 8 ok, 0 FAIL. It is evidence of the rule of the path on the older parser, no row. The per-test result is readable in `unit-older.log`: G5 (the control of the client's parser) and G6 (the refused rows: recorded on an older client, asserted on a newer one) passed (the child's lines are in the log); G1-G3 skipped (older than 8.5), each with the child's reason "the local ssh is older than 8.5: it has no KnownHostsCommand"; the child's exit code is 0 (its line in the log).
+
+**Test 34 on the newer client first on `PATH`** was not part of the whole set's run (see 10.1, *What was not in this run*). It ran once on its own (`test34-newer.log`, 2026-11-25 19:15:00Z to 19:15:01Z), in a **second fresh detached checkout of the same commit**, after the whole set: HEAD `50da30ad9d47d20222008ffaf8955bec82096847`, conventions `cd19c17365782a740571e2b8a18571c9fea241f0`; `git status --porcelain --untracked-files=no` and `--untracked-files=all` empty before, and `--untracked-files=all` (which lists the tracked changes too) empty after (the log holds that one after-answer). The client: `ssh` is `/usr/bin/ssh`, `OpenSSH_10.2p1 Ubuntu-2ubuntu3.8, OpenSSL 3.5.5 27 Jan 2026`, SHA-256 `af809334cc71603f0e27a53e2234e15bd3c36503b3af7d367d103d2db2ffc15f`; Node `v26.12.1`. `node --test out/test/pinWords.test.js`: tests 21, pass 21, fail 0, skipped 0, exit 0; G1, G2 and G3 ran and passed (not skipped), and so did G4-G6. It is evidence of the rule of the path and the words on the newer parser, no row.
 
 ### 10.3 The limits of the results, in words (decision 22)
 
@@ -2095,7 +2106,7 @@ M11's words (the run's own `info M11.words`, decision 22): *on `OpenSSH_8.4p1 De
 6. **M13 per entry 4.1.** K7's two-file proof (the bare word's `tilde_expand` against the quoted word's whole path) is for (a) only. For (b) and (c) the bare word is refused (255, `invalid quotes`: the apostrophe is read before any tilde) and the
    product's word resolves the path whole; there is no twin there. A login on Windows was not made (C6).
 7. **Native Windows Node's argument quoting is not measured.** M13 ran from WSL: WSL's interop built the Windows command line for `ssh.exe`. How native Windows Node quotes an argument that holds a space or an apostrophe was not run (A4).
-8. **Test 34's result on the older client stands beside M11** (10.2, last paragraph): 21 tests, 18 pass, 0 fail, 3 skipped.
+8. **Test 34's result on the older client stands beside M11** (10.2, last paragraphs): 21 tests, 18 pass, 0 fail, 3 skipped. On the newer client it is 21 tests, 21 pass, 0 fail, 0 skipped, in a second fresh checkout of the same commit, run after the whole set.
 9. **The install is a stand-in.** The counterpart is this machine's loopback; *Install creds on host* ran to its end through a stand-in for the downloaded installer (the four conditions of the setup held in M1-M3, M5-M8 and M11: the places that the real installer writes are the same before and after,
    the real download program did not start). The published installer was not run on a real remote host.
 10. **What is not in the run:** CI's second run of the rig on the runner's `sshd` (the head sha's step), the unit suite (`npm test`), a real remote host, a jump host's key under `LogLevel QUIET` together with a hop (M5 has (e) and (f), no leg with both), a config that renames the host or port (C18), the banner that `LogLevel=ERROR` may hide (read in the manual), *Run with Secrets* over SSH (tests 22, 23 only).
@@ -2103,21 +2114,21 @@ M11's words (the run's own `info M11.words`, decision 22): *on `OpenSSH_8.4p1 De
 ### 10.4 The CHANGELOG table
 
 The start is the claim list CL1-CL32 of E2.S4 (`d0ae4b3c`, in the squash message of `4799f9d7`), read again against the entry **as shipped in 1.23.0** (`src_vs_code/CHANGELOG.md`, `## [1.23.0]`, not edited: Q2) and against the entry under `[Unreleased]`. "Test" is a test of §5 or of the suite; "row" is a row of
-10.2 (this run). The last column says what the new entry under `[Unreleased]` does with the claim. A row marked "(judge)" is one that the drafter is unsure of. `NM` is "not measured".
+10.2 (this run). The last column says what the new entry under `[Unreleased]` does with the claim. A row marked "(judge: …)" carries the Opus judge's ruling in a few words (CL33 and CL34 were accepted as drafted). `NM` is "not measured".
 
 | # | The claim (1.23.0's words, shortened) | Test (§5 or the suite) | Row, this run | What the new entry says |
 |---|---|---|---|---|
 | CL1 | every call without a terminal for a saved key checks the host against that key: the tunnel, its socket check, the install | `personRoadsHostKey.test.ts` T1 (all five runs), T2, T3, T4a | M1; M2; M3; M8; M10 (each road's argv, 5 accepted logins; the other key refused) | measured on 10.2p1 (OpenSSH 10.2p1 here) |
-| CL2 | … and an agent's `ssh:exec` and its run over SSH | `sshExecOver.test.ts` `the_argv_is_buildSshExecArgv_with_the_snapshots_jump_and_pin`, `g1_a_pinned_call_asks_the_program_it_will_start_once_before_the_pin_file_is_written`; `agentKeyPath.test.ts` G5; `pinWords.test.ts` W6 | M14 (a)-(d): the exec only | the exec is measured; "its run over SSH" has the suite alone (judge: the entry's words "its run over SSH" name no row) |
+| CL2 | … and an agent's `ssh:exec` and its run over SSH | `sshExecOver.test.ts` `the_argv_is_buildSshExecArgv_with_the_snapshots_jump_and_pin`, `g1_a_pinned_call_asks_the_program_it_will_start_once_before_the_pin_file_is_written`; `agentKeyPath.test.ts` G5; `pinWords.test.ts` W6 | M14 (a)-(d): the exec only | the exec is measured; "its run over SSH" has the suite alone, and the entry says so in one sentence (judge: table stands, the entry gets the sentence) |
 | CL3 | … and *Run with Secrets* over SSH | `secretsLaunch.test.ts` `a_pinned_host_is_enforced`, `G1: a pinned session gets the six pairs …` | none (M14 leaves it out: it needs a terminal's launch) | NM on the roads; "held by the tests" |
 | CL4 | this holds for a saved key that can be used; one that cannot is refused by the bridge and the install | `personRoadsPin.test.ts` Q6 | M4 (b), (c), (d); M9 | measured |
 | CL5 | the agent's `ssh:exec` and *Run with Secrets* read an unusable key as no saved key and run with `accept-new` (C3) | none | none | stays as a limit: read, not measured |
-| CL6 | *Connect via SSH* does not change | `hostKeyWords.test.ts` (the known-hosts options are spelled in one function, at the reviewed places of Connect's line); `pinWords.test.ts` S3 | M9: `m9-key-repair` R9.r3 and `m9-password-connect` (Connect's options name `known_hosts-e1` for a key entry and no pin file for a password entry: `connect.file` null) | measured for the options of the two Connect calls; the terminal's own line: read (judge) |
+| CL6 | *Connect via SSH* does not change | `hostKeyWords.test.ts` (the known-hosts options are spelled in one function, at the reviewed places of Connect's line); `pinWords.test.ts` S3 | M9: `m9-key-repair` R9.r3 and `m9-password-connect` (Connect's options name `known_hosts-e1` for a key entry and no pin file for a password entry: `connect.file` null) | held by the tests and a reading; M9 records Connect's options; Connect's own line not run (judge: re-worded) |
 | CL7 | an entry with no saved key connects as before, on every call | `personRoadsPin.test.ts` Q1; `personRoadsPinRefusals.test.ts` A3; `pinWords.test.ts` W3; `secretsLaunch.test.ts` `G1: an unpinned session is not asked …` | M4 (a): 5 accepted logins with `accept-new`, no known-hosts file, 0 starts of `ssh -V` | measured |
-| CL8 | before: the three ran with `accept-new` against the person's `known_hosts`; a first contact was accepted | none (the state of before) | M2 (b) control: the client with the two pairs of before E1 (no `GlobalKnownHostsFile`) was ACCEPTED by K2 | read at `ca99cd91`; the hole of before is shown for the system-wide file by M2.6 (judge: the first-contact claim for the user's own file is read, E1.S4's control by hand) |
+| CL8 | before: the three ran with `accept-new` against the person's `known_hosts`; a first contact was accepted | none (the state of before) | none (the claim is about the state before E1) | read at `ca99cd91`; it describes the state before, and no row of this run measured it (judge: M2.6 dropped, it backs CL22) |
 | CL9 | now: `StrictHostKeyChecking=yes` and one file with the saved key alone, written for the call, deleted when the call has ended | `personRoadsHostKey.test.ts` T1-T4d; `personRoadsPin.test.ts` Q5, Q5b, Q8a, Q8b | M1 (3 distinct paths); M6 (each call's own files, deleted at its end, 0 left) | measured |
 | CL10 | a host that presents another key is refused before any login | none | M2 (a), (b); M3; M7; M8; M10; M5 (a): K2 0 authentication attempts, 0 accepted logins | measured |
-| CL11 | measured on a real `sshd`, here and on the CI runner | the smoke (section 10) | the whole rig on `50da30ad`, 10.2p1; the CI runner's `sshd`: the head sha's step, NOT in this run | "here" is measured (this run); the CI part is CI's, named at the PR (judge) |
+| CL11 | measured on a real `sshd`, here and on the CI runner | the smoke (section 10) | the whole rig on `50da30ad`, 10.2p1; the CI runner's `sshd`: the head sha's step, NOT in this run | the shipped text stays; "here" is measured (this run); the CI half is backed only by the head sha's CI step, to be named in the PR (judge: shipped text stays, CI half named at the PR) |
 | CL12 | the install shows sentence C when `ssh` names the saved key of this entry | `hostKeyTold.test.ts` S1, X1; `personRoadsHostKey.test.ts` T9a | M5 (a); M7 mismatch legs | measured |
 | CL13 | the socket check shows `The bridge to "<name>" is not open: ` and sentence C | `hostKeyTold.test.ts` X5; `personRoadsHostKey.test.ts` T9b | M5 (a) | measured |
 | CL14 | the verification line without that evidence shows sentence D, word for word | `hostKeyTold.test.ts` S2, S5, S6, X2 | M5 (f), (g) | measured |
@@ -2129,7 +2140,7 @@ The start is the claim list CL1-CL32 of E2.S4 (`d0ae4b3c`, in the squash message
 | CL20 | these calls state `LogLevel=ERROR`, so `ssh` prints a refused key under `LogLevel QUIET` too | `pinWords.test.ts` W1, G1; `personRoadsPinRefusals.test.ts` W1 | M5 (e) (the roads showed sentence C under the quiet config; the control ended with 255 and an empty stderr); `LogLevel=ERROR` in each argv of M1 | measured |
 | CL21 | may cost lines printed only at `INFO`, a banner | none | none | stays NM (read in the manual) |
 | CL22 | a key in a system-wide file is no longer accepted beside the saved one | `hostKeyWords.test.ts` `G1: under a config that names other known-hosts files …` | M2 (b): `m2-mismatch-global`, `m2-switch-global` (K2 refused though the system-wide slot trusts it); control accepted | measured for the slot that the handed config names (decision 22: nothing about the compiled-in default) |
-| CL23 | these calls say `VerifyHostKeyDNS=no`; `ssh -G` resolves it to off | `pinWords.test.ts` W1, W2, G1, G2 | M10: no bypass through a secure `SSHFP` record: control accepted by K2, roads refused, 0 `SSHFP` questions; client 9.2p1 in a container | measured; "a login against a signed DNS zone" is no longer "not measured" (the client of M10 is 9.2p1, not 10.2p1) |
+| CL23 | these calls say `VerifyHostKeyDNS=no`; `ssh -G` resolves it to off | `pinWords.test.ts` W1, W2, G1, G2 | M10: no bypass through a secure `SSHFP` record: control accepted by K2, roads refused, 0 `SSHFP` questions; client 9.2p1 in a container | measured with a secure answer, not a signed zone: the run's resolver marked the `SSHFP` answer secure; no DNSSEC-signed zone (the client of M10 is 9.2p1, not 10.2p1) (judge: re-worded, no signed zone) |
 | CL24 | `KnownHostsCommand=none` for OpenSSH 8.5 or newer; a command-listed key fails the check | `pinWords.test.ts` W1, G1, G3; `pinClient.test.ts` V1, V2; `personRoadsPinRefusals.test.ts` W1 | M8 (control accepted; the roads refused; the command started 0 times); M14 (c) | measured on 10.2p1 |
 | CL25 | an older `ssh` gets no such word, and no config can switch the source on there | `pinWords.test.ts` W2, G3; `pinClient.test.ts` V2, A3; `sshExecOver.test.ts` `g1_an_older_client_runs_without_the_knownhostscommand_word`; `secretsLaunch.test.ts` | M11 (a), (b) on `OpenSSH_8.4p1 Debian-5+deb11u3` | measured on 8.4p1 alone; 8.5 and 8.6 NM; "read, not run: no ssh older than 8.5 was tried" is replaced |
 | CL26 | the extension asks `ssh -V` before such a call; a version that cannot be read starts nothing and shows sentence F | `pinClient.test.ts` V4, V5, A1, A4, A6, R1; `personRoadsPinRefusals.test.ts` F1-F4, A1; `pinWords.test.ts` P5 | M11 (c), (d) (exit 0 with a text that is no version: 23.8 ms and 19.6 ms; no answer: 10.009 s); M1 (one question before the first connection) | measured, with the time of the wait in (d) |
@@ -2141,8 +2152,8 @@ The start is the claim list CL1-CL32 of E2.S4 (`d0ae4b3c`, in the squash message
 | CL32 | not covered: on Windows no login; the Windows `ssh` asked only how it reads a path | none | M13 (the client alone) | stays: no login; `-G` measured on `ssh.exe` 9.5p2 from WSL |
 | CL33 | (new, C19) a run that ended with exit code 0 is told nothing about a host key, whatever it printed; one that did not end with 0 or has no exit code is told as in 1.23.0 | `hostKeyTold.test.ts` S7-S11, X9-X14, the typed fixture of test 30 | M5 (h) (exit 0, the line printed: no sentence, the install reaches its question, the mode is read) and (g) (255: D) | measured; "Not measured yet" is replaced; a run with no exit code: the suite alone (X14) |
 | CL34 | (1.23.0, the refusals) "No connection starts (at most the local `ssh -V` that reads the version runs first)" | `personRoadsPin.test.ts` Q6 | M4 (b)-(d) and M9: cold exactly ONE start (the question) and 0 connection starts, warm 0 starts; M12: 0 starts of any kind | measured; W7 is settled |
-| CL35 | (1.23.0) for the agent's two refusals "No connection starts then (for the second, only the `ssh -V` that could not be read ran)" | `sshExecOver.test.ts` the sentence-E and sentence-F tests | M14 (d): 0 starts of any kind for sentence E | measured for E; for F the suite alone (judge) |
-| CL36 | (1.23.0) "Not measured before this release: an `ssh` older than 8.5, the install to its end on a real host, and a login on Windows" | none | M11, M1, M13 | rewritten from 10.2-10.3: the older client (8.4p1) and the install to its end through the stand-in are measured; a login on Windows, a client of 8.5 or 8.6, the real installer on a real host are NM |
+| CL35 | (1.23.0) for the agent's two refusals "No connection starts then (for the second, only the `ssh -V` that could not be read ran)" | `sshExecOver.test.ts` the sentence-E and sentence-F tests | M14 (d): 0 starts of any kind for sentence E | measured for E; for F the suite alone; the entry says "The agent's refusal of an unreadable version, and its run over SSH, are held by the tests." (judge: as drafted, with that sentence) |
+| CL36 | (1.23.0) "Not measured before this release: an `ssh` older than 8.5, the install to its end on a real host, and a login on Windows" | none | M11, M1, M13 | rewritten from 10.2-10.3: the older client (8.4p1) and the install to its end through the stand-in are measured; a login on Windows, a client of 8.5 or 8.6, the real installer on a real host are NM; the entry says the install ran to its end on the test machine's loopback through a stand-in for the installer, not on a remote host (judge: accepted with that wording) |
 
 No claim of the list was taken out; CL3, CL5, CL17, CL21, CL31 and the second half of CL2 and of CL30 stand on the suite or on a reading alone and are said so in the entry. The rows CL33-CL36 were added from the entry as it stands (C19, E2's later fixes and the shipped "not measured" sentence); they are not in the list of E2.S4.
 
