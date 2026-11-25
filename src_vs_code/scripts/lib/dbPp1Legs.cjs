@@ -42,7 +42,7 @@ async function legPsql(scope, client, shared) {
   const entry = `postgresql://${ENTRY_USER}:${entryValue}@localhost:${pg.port}/postgres`;
   const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who, inet_client_addr() is not null as over_tcp', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check('(PP1-1) the builder launched an entry that names localhost and stores a user and a password', built !== undefined, 'buildDbQueryLaunch answered undefined');
-  const production = runSync(client.exe, built.args, envOf(rig, built.env));
+  const production = runSync(built.exe, built.args, envOf(rig, built.env)); // the file the builder launches
   const row = new RegExp(String.raw`${ENTRY_USER}\s*\|\s*([tf])`).exec(production.stdout);
   const overTcp = row?.[1] === 't';
   console.log(`record (PP1-1) psql, the production launch for an entry on localhost: exit ${production.code}; ${row === null ? 'NO row came back' : `the login is ${ENTRY_USER}, over ${overTcp ? 'TCP' : 'the SOCKET'}`}; it said ${wordsOf(production.stderr)}`);
@@ -157,7 +157,7 @@ async function mysqlClient(client, rig, my, entryValue, plugin) {
   const entry = `mysql://${ENTRY_USER}:${entryValue}@localhost:${my.port}/pp1db`;
   const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who, user() as asked', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check(`(PP1-1) ${client.name}: the builder launched an entry that names localhost and stores a user and a password`, built !== undefined, 'buildDbQueryLaunch answered undefined');
-  const production = runSync(client.exe, built.args, envOf(rig, built.env));
+  const production = runSync(built.exe, built.args, envOf(rig, built.env)); // the file the builder launches
   const row = rowOf(production.stdout);
   const overTcp = row !== undefined && row.includes('@127.0.0.1');
   console.log(`record (PP1-1) ${client.name}, the production launch for an entry on localhost (the account's plugin: ${plugin}): exit ${production.code}; ${row === undefined ? 'NO row came back' : `the login is ${JSON.stringify(row)} (${overTcp ? 'TCP' : 'not by TCP'})`}; it said ${wordsOf(production.stderr)}`);

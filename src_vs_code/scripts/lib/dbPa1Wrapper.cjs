@@ -342,7 +342,13 @@ async function legI(scope, rig) {
     const differs = versionMajor !== undefined && queryMajor !== undefined && versionMajor !== queryMajor;
     console.log(`record (PA1-i) remote-cluster marker, does the wrapper start the major it names: ${twoVersions ? (queryMajor === other ? 'YES (the marker named it and it ran)' : `NO (the marker named ${other} and ${queryMajor ?? 'none'} ran: the wrapper does not follow a file for a remote cluster, so this marker is no control of its choice; the local-cluster marker below is)`) : 'not measured (one psql version is installed)'}`);
     console.log(`record (PA1-i) the wrapper's choice with the remote-cluster marker, by the program each start runs (the majors installed: ${majors.join(' ') || 'none'}): with no file, \`psql --version\` is major ${majorOfLine(versionPlain) ?? '?'} and the query start is major ${majorOfExe(plain.program) ?? '?'}; with a ~/.postgresqlrc that names major ${other ?? first}, \`psql --version\` is major ${versionMajor ?? '?'} and the query start is major ${queryMajor ?? '?'}${twoVersions ? '' : ' (only one major is installed, so the file names the one there is and shows nothing of the wrapper\'s choice)'}`);
-    noteLeg('PA1-i psql remote-cluster marker', true, `the version start and the query start ${comparedWords(versionMajor, queryMajor)} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`);
+    const remoteWords = `the version start and the query start ${comparedWords(versionMajor, queryMajor)} under a file in the home folder; the file ${portSteered ? 'STEERS the port of a string that names none' : 'did not steer the port'}`;
+    if (versionMajor === undefined || queryMajor === undefined) {
+      // A start that ended before its program was read (or a version line that names no major) shows nothing: no control is counted as shown on it.
+      unmeasured('PA1-i remote-cluster marker', `a major was not read, so the marker's control is not shown: ${remoteWords}`);
+    } else {
+      noteLeg('PA1-i psql remote-cluster marker', true, remoteWords);
+    }
     await steeringMatrix(scope, rig, word, other ?? first);
     const local = await localClusterLeg(scope, rig, word, majors, first, versionPlain);
     if (differs || local.differs) {

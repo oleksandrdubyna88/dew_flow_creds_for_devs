@@ -26,8 +26,11 @@ function outcomeOf(run, user) {
 }
 const loggedIn = (run, user) => run.code === 0 && run.stdout.includes(user);
 
-/** The runs that did not complete (a spawn error or the bound: `runSync` gives a string code then), in words. Neither a login nor a refusal is read from such a run. */
-const notCompleted = (runs) => runs.filter((run) => typeof run.code === 'string').map((run) => run.code);
+/**
+ * The runs that did not complete, in words: a spawn error or the bound (`runSync` gives a string code then), or an end by a signal (a null status). Neither a login nor a refusal is read from
+ * such a run; a numeric exit, 0 or not, is a measured answer.
+ */
+const notCompleted = (runs) => runs.filter((run) => typeof run.code === 'string' || run.code === null).map((run) => (run.code === null ? 'ended by a signal' : run.code));
 
 /** The `method=` words of the server's log lines since `from`, for the user: what the server says decided the login. */
 async function methodsSince(pg, from, user) {
@@ -71,7 +74,8 @@ async function psqlMethod(pg, client, rig, { leg, method, database, user, good, 
   const entry = `postgresql://${user}:${good}@127.0.0.1:${pg.port}/${database}`;
   const built = rig.product.buildDbQueryLaunch('postgres', entry, 'select current_user as who', { bridged: true, absentFile: rig.absentFile, verdict: rig.verdict });
   check(`(${leg}) ${method}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
-  const ask = (cut, env) => runSync(client.exe, psqlArgs(built.args, cut), bridgedEnv(rig.product, rig.home, env));
+  // The file the builder launches (the check's own file, a link or a copy the candidate rig made), for the production run and for its controls alike: they differ by their arguments only.
+  const ask = (cut, env) => runSync(built.exe, psqlArgs(built.args, cut), bridgedEnv(rig.product, rig.home, env));
   const from = (await pg.log()).length;
   const right = ask(undefined, built.env);
   const profileRight = right.stderr.includes('invalid connection option') ? undefined : outcomeOf(right, user);
@@ -114,7 +118,7 @@ function mysqlLogin(client, rig, server, label, verdict) {
   const built = rig.product.buildDbQueryLaunch('mysql', entry, 'select current_user() as who', { bridged: true, absentFile: rig.absentFile, verdict });
   check(`(PE1-5/6) ${client.name} on ${label}: the builder launched the entry`, built !== undefined, 'buildDbQueryLaunch answered undefined');
   const flags = built.args.filter((arg) => CONTROL_FLAG.test(arg));
-  const ask = (withFlags, env) => runSync(client.exe, withFlags ? built.args : built.args.filter((arg) => !CONTROL_FLAG.test(arg)), bridgedEnv(rig.product, rig.home, env));
+  const ask = (withFlags, env) => runSync(built.exe, withFlags ? built.args : built.args.filter((arg) => !CONTROL_FLAG.test(arg)), bridgedEnv(rig.product, rig.home, env));
   const right = ask(true, built.env);
   const bad = ask(true, { ...built.env, MYSQL_PWD: wrong });
   const control = ask(false, built.env);

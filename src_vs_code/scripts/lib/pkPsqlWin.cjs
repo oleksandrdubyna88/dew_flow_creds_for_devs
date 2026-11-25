@@ -176,7 +176,11 @@ async function legProfileFiles(ctx, systemRig) {
         unmeasured('PK1-w3-control', `the control sent not every marker (${text}); psql said ${JSON.stringify(oneLine(`${fileRun.stderr} ${certificate.stderr} ${echoed.stderr}`, 200))}`);
       }
     } else {
-      if (controlShown) {
+      // A marker that did not reach the receiver counts as kept out only from runs that ended: a run past its bound may not have got to sending it.
+      const unfinished = [['the password run', fileRun], ['the certificate run', certificate], ['the psqlrc run', echoed]].filter(([, run]) => run.ended === false).map(([name]) => name);
+      if (controlShown && unfinished.length > 0 && !(sentMarker || sentCert || readRc)) {
+        unmeasured('PK1-w3', `${unfinished.join(', ')} did not end in time, so the markers it did not send show nothing: ${text}`);
+      } else if (controlShown) {
         record('PK1-w3', 'shown', text);
       } else {
         unmeasured('PK1-w3', `no positive control showed all three markers, so the launch as built measures nothing here: ${text}`);

@@ -60,7 +60,9 @@ function libpqFileOf(exe, number) {
   const major = /\/postgresql\/(\d+)\/bin\//.exec(real)?.[1] ?? /^(\d+)/.exec(number ?? '')?.[1];
   // The file the word really is comes first; the major's binary only when that file is the packaging's wrapper (a script that `ldd` cannot read), so a separate psql of the same major is never
   // named by the system's library.
-  const candidates = [real, major === undefined ? undefined : `/usr/lib/postgresql/${major}/bin/psql`].filter((file) => file !== undefined && fs.existsSync(file));
+  // The system's binary of that major only when the word is the packaging's wrapper (a script): a separate psql whose own file names no libpq (a static build) is not given the system's.
+  const wrapper = fs.existsSync(real) && fs.readFileSync(real).subarray(0, 2).toString('latin1') === '#!';
+  const candidates = [real, major === undefined || !wrapper ? undefined : `/usr/lib/postgresql/${major}/bin/psql`].filter((file) => file !== undefined && fs.existsSync(file));
   for (const target of candidates) {
     const line = runSync('ldd', [target], process.env).stdout.split('\n').find((text) => text.includes('libpq.so'));
     const library = /=>\s*(\S+)/.exec(line ?? '')?.[1];

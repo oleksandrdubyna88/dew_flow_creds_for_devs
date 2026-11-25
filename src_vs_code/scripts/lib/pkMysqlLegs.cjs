@@ -244,9 +244,12 @@ async function pluginLeg(ctx, client, plugin) {
     return;
   }
   const flags = plugin.kind === 'word' ? ['--enable-cleartext-plugin'] : [];
-  let ready = await control(ctx, client, plugin, pluginName, flags);
+  // The flags of the control that answered are kept: each candidate run below is that very control plus the candidate's own flags (as `legPath` does), so it changes nothing else.
+  let controlFlags = flags;
+  let ready = await control(ctx, client, plugin, pluginName, controlFlags);
   if (!ready.shown && flags.length > 0 && /never logged in|did not|unknown option|unrecognized/i.test(ready.text)) {
-    ready = await control(ctx, client, plugin, pluginName, []);
+    controlFlags = [];
+    ready = await control(ctx, client, plugin, pluginName, controlFlags);
   }
   if (!ready.shown) {
     unmeasured(tag, ready.text);
@@ -260,7 +263,7 @@ async function pluginLeg(ctx, client, plugin) {
     record(`${tag}-built-${entry}`, 'shown', `as launched, entry ${entry}: ${asBuilt.offered ? 'IDENTITY OFFERED' : 'identity not offered'}; ${asBuilt.words}`);
     for (const candidate of candidates) {
       // Built from the control (every candidate flag of the builder taken out) plus this candidate's own flags: each run differs from the control by its own flag alone (the header; PK1-p3's "each candidate alone").
-      const seen = await observe(ctx, client, plugin, pluginName, { entry, control: true, add: candidate.flags });
+      const seen = await observe(ctx, client, plugin, pluginName, { entry, control: true, add: [...controlFlags, ...candidate.flags] });
       const verdict = seen.refusedFlag ? 'the flag is UNKNOWN TO THIS CLIENT (it was refused before connecting: it stopped nothing and offered nothing)' : (seen.offered ? 'IDENTITY OFFERED' : 'identity not offered');
       record(`${tag}-${candidate.what.split(' ')[0].replaceAll('-', '')}-${entry}`, 'shown', `${candidate.what}, entry ${entry}: ${verdict}; ${seen.words}`);
       offeredUnder.push({ what: candidate.what, entry, offered: seen.offered, unknown: seen.refusedFlag, switched: seen.switched, ended: seen.ended });
