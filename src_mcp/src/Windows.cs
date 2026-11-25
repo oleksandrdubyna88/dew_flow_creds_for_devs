@@ -42,7 +42,19 @@ internal static class Windows
     /// stays the one place that knows how to find a window.
     /// </remarks>
     internal static Task<WindowRead> ReadAllAsync(BrokerContract contract, string route, CancellationToken ct = default) =>
-        ReadAllInAsync(contract, Endpoints.DirectoryHere(), route, ct);
+        BrokerClient.BridgedEndpoint() is { } bridged
+            ? ReadBridgedAsync(contract, bridged, route, ct)
+            : ReadAllInAsync(contract, Endpoints.DirectoryHere(), route, ct);
+
+    /// <summary>
+    /// A host that reaches its broker through a forwarded socket (a Remote Bridge's note, or <c>CREDS_BROKER_SOCKET</c>) has no announcement
+    /// folder: the bridge IS the one window (change 11.1, S1; cause D1 was the early return on an empty folder).
+    /// </summary>
+    private static async Task<WindowRead> ReadBridgedAsync(BrokerContract contract, Endpoint bridged, string route, CancellationToken ct)
+    {
+        using var client = BrokerClient.Create(contract);
+        return await ReadFromAsync(client, [bridged], route, ct);
+    }
 
     /// <summary>
     /// <see cref="ReadAllAsync"/> over an announcement folder the caller names — the seam a test points at a folder of its own.
@@ -118,7 +130,16 @@ internal static class Windows
     /// window after one would raise a second consent modal for a call already decided.</para>
     /// </remarks>
     internal static Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json, CancellationToken ct = default) =>
-        PostInAsync(contract, Endpoints.DirectoryHere(), route, json, ct);
+        BrokerClient.BridgedEndpoint() is { } bridged
+            ? PostBridgedAsync(contract, bridged, route, json, ct)
+            : PostInAsync(contract, Endpoints.DirectoryHere(), route, json, ct);
+
+    /// <summary>The post of a bridged host: the one window is the bridge (see <see cref="ReadBridgedAsync"/>).</summary>
+    private static async Task<BrokerReply?> PostBridgedAsync(BrokerContract contract, Endpoint bridged, string route, string json, CancellationToken ct)
+    {
+        using var client = BrokerClient.Create(contract);
+        return await PostToAsync(client, [bridged], route, json, ct);
+    }
 
     /// <summary><see cref="PostAsync"/> over a named announcement folder, through <see cref="Endpoints.ReadLive"/> like the read.</summary>
     internal static async Task<BrokerReply?> PostInAsync(BrokerContract contract, string? directory, string route, string json, CancellationToken ct)

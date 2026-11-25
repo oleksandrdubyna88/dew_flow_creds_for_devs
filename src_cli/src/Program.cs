@@ -180,8 +180,8 @@ internal static class Program
         // On a Remote-SSH host there are no endpoint files: they live on the laptop at the other
         // end of the bridge. The forwarded socket IS the endpoint, and there is exactly one, so
         // discovery is skipped rather than made to fail and then be worked around.
-        var endpoints = BrokerClient.SocketPath() is not null
-            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+            ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
         if (endpoints.Count == 0)
@@ -300,8 +300,8 @@ internal static class Program
             return contract.Exit("usage");
         }
 
-        var endpoints = BrokerClient.SocketPath() is not null
-            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+            ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
         if (endpoints.Count == 0)
@@ -352,8 +352,8 @@ internal static class Program
 
     private static async Task<int> ListAsync(BrokerContract contract)
     {
-        var endpoints = BrokerClient.SocketPath() is not null
-            ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
+        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+            ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
         using var client = BrokerClient.Create(contract);
