@@ -1,7 +1,7 @@
 # PLAN — E1.7 spec: the database execution profiles — what a bridged database client may log in with, per client and system
 
 > Status: **spec, 2026-11-17, by Fable, written as a security spec (authentication: what a database client may answer a server with) before its code. Nothing of it is built, and no probe of it has run.** Revised on 2026-11-18 with the findings accepted at its plan gate round and at the Opus judge's review (§S7.16, *Decided at the review*).
-> Status now (2026-11-24): **built on PR #380, unmerged.** The probes ran; one pair is served, the ODBC `sqlcmd` on Linux (turned at d999e181, its production run green), and every other pair stays refused (§S7.20). Still owed before merge: M11 on the owner's Windows host (§S7.14) and the code review. The status above is kept as it was written.
+> Status now (2026-11-24): **built on PR #380, unmerged.** The probes ran; one pair is served, the ODBC `sqlcmd` on Linux (turned at d999e181, its production run green), and every other pair stays refused (§S7.20). M11 recorded on the owner's Windows host 2026-11-25 (no served row, §S7.20) and the coai code gate passed (2026-11-25). The status above is kept as it was written.
 > Story E1.7 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md):
 > *Reading this plan* (the ninth and the tenth lesson), §2.1 Q15-Q18, §4.9 rows 7-13, §4.11 whole, §5 step 3f, §7 (the probes PK1, PS1, PP1, PA1
 > and PE1, legs (u)-(w), *The database profile*, M11), §8, §9 (the database line and the invariant line), `## Epics` E1). The parent is approved
@@ -1105,3 +1105,18 @@ T81 and T82 are the engine's and the lock's unit tests (run by the V7 coder: eac
 (u)/(v) halves are CI legs and were not mutated here. Four runner lines were first stopped by the compiler or did not apply; they were
 rewritten so that the code compiled and a test killed them (T56, T69, T75a, T76).
 
+**M11, run 2026-11-25 by the lead, with the owner's word (§S7.14).** The owner's Windows host, under VS Code's own runtime (Code.exe with
+`ELECTRON_RUN_AS_NODE=1`: Electron 43.8.9, node 24.22.1, win32/x64), on the branch's compiled code at acf9d353, from a temporary folder that
+was removed after the run. The driver called `bridgedDbClientCheck` from `out/` for each client word; it masked the account's name, the home
+folder and the host's name; no database was started or touched. No database query was made, so no login and no entry with its user taken out
+were tried: there was no served pair to try them on.
+
+| Client | The production table | The check under a table of the driver's own (the pair served, no build) |
+|---|---|---|
+| `psql` | DR1 (*psql on Windows is not among them*), 0 spawns: no served row | no file for `psql` in an absolute folder of the bridged `PATH` (DR7, exit unknown) |
+| `mysql` | DR1, 0 spawns: no served row | no file for `mysql` on the bridged `PATH` (DR7) |
+| `sqlcmd` | DR1, 0 spawns: no served row | no file for `sqlcmd` on the bridged `PATH` (DR7) |
+
+The same three words are on no folder of the host's machine and user `PATH` either (read from the registry, and by `where`): this host has
+no database client on its `PATH`. **The record is the decision written before the run: no client on that host lands in a served row.** As
+§S7.3 forecast, no pair is served on the owner's host; §9's database line waits for E4.2's question to the owner. M11 turns no row.
