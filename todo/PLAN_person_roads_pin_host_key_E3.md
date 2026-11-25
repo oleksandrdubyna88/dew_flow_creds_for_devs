@@ -1,6 +1,6 @@
 # PLAN — G1, epic E3: the stories (the release gate: every claim is measured on the roads, against a real `sshd`)
 
-> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1-E3.S3 are built and reviewed (`a445af56`..`a07e4cac`); E3.S4 (`07a22de1`..`1ad5736b`, review fixes `b061a030`..`1a015583`) , E3.S5 (`edda3461`..`c9d0279e`) and E3.S6 (`3c2ebef2`..`62251613`) are built and reviewed; CI green on `62251613`. E3.S7 is built and reviewed (CI green on `97752998`); E3.S8 is built (`ab375f29`, `3d3eab44`), not reviewed; the E3.S9 spec is written. **The plan stopped for re-review on 2026-11-25 (change 3.2 in the parent: M11 (b) cannot run as written on an `ssh` older than 8.5).**** The stories document of epic E3 of
+> Status: **Stories document written 2026-11-23, the baseline of epic E3. E3.S1-E3.S3 are built and reviewed (`a445af56`..`a07e4cac`); E3.S4 (`07a22de1`..`1ad5736b`, review fixes `b061a030`..`1a015583`) , E3.S5 (`edda3461`..`c9d0279e`) and E3.S6 (`3c2ebef2`..`62251613`) are built and reviewed; CI green on `62251613`. E3.S7 is built and reviewed (CI green on `97752998`); E3.S8 is built (`ab375f29`, `3d3eab44`), not reviewed; the E3.S9 spec is written, not built. The plan is stopped for re-review since 2026-11-25 (change 3.2 in the parent: M11 (b) cannot run as written, because an `ssh` older than 8.7 keeps the apostrophes of a bare word). The parent is revised for epoch 4 (2026-11-25), and with it this document's E3.S9 and E3.S10 (*Settled by the re-review for epoch 4*, below). The re-review is narrowed: the judge, the coai round on the revised plan and the owner's approval come before any new code, and no story is built or reviewed until the parent has its line of epoch 4.** The stories document of epic E3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E3; epoch 3, approved by the owner on 2026-11-23, with entry 3.1). It is
 > the epic's baseline, written when E3 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Ten stories, no cornerstone (the quota of two is spent: E1.S2, E2.S2). Built on
@@ -93,6 +93,38 @@ same thing, settled item 5 says so.
    (`itestNoSharing.cjs:424`). A container, if E3.S3 chooses one, is started with `--rm`, the owned name prefix and the owner label of
    `test-leftovers.md` § 5, which the janitor sweeps (`janitor.sh`). A container runtime that the janitor does not read would leave a
    container that nobody sweeps: E3.S3 says so if it chooses one, and it is then a question for the lead.
+
+## Settled by the re-review for epoch 4 (2026-11-25)
+
+The parent stopped on its second change of epoch 3 (entry 3.2) and was revised as a whole (its `### Re-review for epoch 4`, §1.3 and
+decisions 19-22). This document follows the revised parent. It keeps its ten stories and their order. What the re-review changes is the
+baseline of the parent's next epoch, not a change of this document that anybody counts.
+
+1. **Two parsers, and a fixed expectation for each** (the parent's decision 19; §3.11, *Two parsers*). An OpenSSH client before 8.7 keeps the
+   apostrophes of a word that is not in double quotes; a client from 8.7 on takes them out. Measured with `ssh -G` on 8.4p1 and on 10.2p1
+   (`research/module_tests.md`, *The apostrophes of a bare word on an older client*). The boundary of `KnownHostsCommand` stays 8.5. A
+   control about a bare word says what must come out for the parser of the client that it runs, and the run takes that expectation by the
+   client's version, never by the outcome.
+2. **M11 (b) is revised in the parent.** It keeps the runs of M1, of M2 (b) the mismatch and of M7 (a)-(e) with both legs of M2 (b) for each
+   shape. In place of M7's collision it has *the twin of (c), on the older client*: both bare-word outcomes of M7's collision the other way
+   round. E3.S9 below says what that means for the story. This also answers Q2 of the E3.S9 spec ("the switch legs too?"): yes.
+3. **Test 34 is new in the parent's §5, and E3.S9 builds it.** It gives the control of test 21 (the unit test G5,
+   `test/pinWords.test.ts:324`) a fixed expectation per parser. Why E3.S9: it is the story that brings up the older client, so it can watch
+   G5 fail on that client first and then pass on both. It is test code; no product file changes.
+4. **M7 is built as the parent now says it.** The parent's row names the collision as the expectation of a client from 8.7 on, and names
+   the witness of the K1 leg, which E3.S7 built (its check M7.x2). No leg of E3.S7 changes by it: the row has the expectation of the newer
+   parser alone, its collision fails on an older client, and the record of identities names the client's version (the legs hold no check of
+   the version of their own; read at `17694426`). E3.S10's judge reads that version beside the collision's result.
+5. **M2 (a), M5 (e) and M6 are said in the parent as they were built** (the owner's readings of 2026-11-24 for M2 (a) and M6.11; the
+   measurement of E3.S8 for `loglevel SILENT`). No leg changes. E3.S10 writes the limit of M2 (a) into §10 in words (the parent's
+   decision 22).
+6. **The answers of epoch 3 are records** (the parent's `## Epics`, E3, *How the rows are read*): the lead's answers in the specs of E3.S4
+   to E3.S8, and Q1-Q5 below. None is a plan change.
+7. **1.23.0 is the one release that did not wait for E3** (the parent's decision 21). *The epic's end* below already says how the next
+   release runs the whole set again; nothing of it changes.
+8. **The spec of E3.S9 (2026-11-24) is written against the row of epoch 3.** It is not built and its questions Q1-Q7 are not answered. It
+   is written again, by Opus, against the revised M11 (b) and with test 34, after the parent has its line of epoch 4 and before any code of
+   the story. Its questions Q3-Q7 go to the lead with the new spec.
 
 ## The cornerstone
 
@@ -220,7 +252,7 @@ The parent leaves the split of M1-M14 to this document (§9, step 9). Six row-st
 | E3.S6 | M2, M3, M8 | another key is refused, whatever else would trust it: another known-hosts file, a live master, a `KnownHostsCommand` |
 | E3.S7 | M7, M12, M14 | the pin file's path: the paths that need double quotes, the refused kinds, and the agent's exec |
 | E3.S8 | M5 | what the person is told, as the call saw it |
-| E3.S9 | M10, M11, M13 | the rows off the rig: DNS, an older client and a client that never answers, Windows |
+| E3.S9 | M10, M11, M13; test 34 | the rows off the rig: DNS, an older client and a client that never answers, Windows; and, since the re-review for epoch 4, the control of test 21 per parser |
 
 **Building a row is not measuring it.** A row-story builds the legs of its rows, their controls and their evidence, and it PROVES them: it runs
 them on its own head and shows that they can pass and that each control shows what it is there for. Such a run is a proving run. Its numbers
@@ -346,22 +378,63 @@ legs, Opus reviews.
 - **Depends on.** E3.S4.
 - **Done when.** The shared done-when above. The pass criteria are M5's last column, for each of (a)-(h).
 
-## E3.S9 · The rows off the rig (M10, M11, M13)
+## E3.S9 · The rows off the rig (M10, M11, M13), and the control of test 21 per parser (test 34)
+
+Revised by the re-review for epoch 4 (2026-11-25): M11 (b) as the parent now has it, and test 34. M10, M11 (a), (c), (d) and M13 are as
+they were. The spec of 2026-11-24 is written against the row of epoch 3; it is written again before the story is built (*Settled by the
+re-review for epoch 4*, item 8).
 
 - **Why here.** They need the three instruments that E3.S3 probed and that are not the rig's: the resolver, the older client, Windows. M11 (b)
-  runs the runs of M1, M2 (b) and M7 (E3.S4, E3.S6, E3.S7).
-- **Rows.** M10, M11, M13.
+  runs the runs of M1, M2 (b) and M7 (E3.S4, E3.S6, E3.S7). Test 34 is here because this story brings up the older client, and the test's
+  RED can be watched only on that client.
+- **Rows.** M10, M11, M13. **Test.** 34 (the parent's §5).
 - **Instruments.** For M10, the resolver as E3.S3 found it (probe 2). For M11, the older client (probe 3) and the program that never answers
-  (probe 7), with the margin fixed in E3.S3 (5 s). For M13, the Windows client (probe 5).
+  (probe 7), with the margin fixed in E3.S3 (5 s). For M13, the Windows client (probe 5). For test 34, the older client of probe 3, first on
+  `PATH` for one run of the `-G` tests of `test/pinWords.test.ts`.
 - **Scope.**
   - **M10**: the control first, then the roads. If the control is not accepted, the row is not passed.
   - **M11** (a)-(d). In (b) the roads run under a config of their own that names no `KnownHostsCommand`, and the count of the question is one
     per pinned call (three). In (c) and (d) see Q3 (which roads "each road" means). The result names the client's version, and for C20 the two
     times per road and what the person was shown while waiting.
+  - **M11 (b), as revised.**
+    - *The client's version first.* Before the legs of (b) the run reads the version of the client that it put first on `PATH`, checks that
+      the product reads it as older and that it is below 8.7, and fails the legs when it is not or cannot be read. The record of identities
+      names it.
+    - *What stays, with every check of the row code:* the runs of M1; M2 (b), the mismatch; and for each of M7's five shapes (a)-(e) the runs
+      of M1 and both legs of M2 (b). These hold the product's own word (in double quotes in (a)-(d), bare with a backslash in (e)), the
+      `Offending` line of the mismatch leg, the words of an older client (no `KnownHostsCommand` pair) and one question `ssh -V` before the
+      connections of each pinned call.
+    - *What goes:* M7's two legs of the collision, run on the older client with M7's expectation. They cannot pass there.
+    - *What comes in their place: the twin of (c), two legs.* The storage folder of M7 (c), a pair of apostrophes. The pin file of each call
+      (the intended file) holds K1's line; the twin, the file at the path with the apostrophes taken out, holds K2's line, and it is written
+      when the call's pin file is known and before that call's client starts, as E3.S7 built it for M7. First `ssh -G` on this client, as
+      both known-hosts options, for the bare word and for the word in double quotes: each resolves to itself in both lists. Then:
+      - **K1 is the counterpart.** The roads log 5 accepted logins. Then the witness, the control client with E1's words and the path bare,
+        ends with 0, and K1 logs one more accepted login with its command.
+      - **K2 is the counterpart.** Each of the four runs that start ends with 255 and the verification line; K2 logs 0 accepted logins and 0
+        authentication attempts. Then the control, the control client with E1's words and the path bare, ends with 255 and the verification
+        line, and K2 logs 0 authentication attempts and 0 accepted logins for it.
+      The K1 leg rules out that the client found neither file. The K2 leg rules out that it found the twin. A bare-word outcome the other
+      way round, in either leg, fails the row. The expectations of these two legs are constants of the older parser in the story's own
+      code: they are not M7's expectations with a switch, and they are never chosen by what the run shows.
+    - *What the result says in words* (the parent's decision 22): this row does not show the collision, which is a fact of a client from 8.7
+      on, and no row ran a client of 8.5 or 8.6.
+  - **Test 34: the code of the unit test G5** (`test/pinWords.test.ts:324`; and `test/pinnedArgv.ts` if the choice of the parser lives beside
+    `sshKnowsKnownHostsCommand`, `:20`). RED first: with the older client first on `PATH`, G5 as it stands fails at its first assertion; the
+    story watches that and records the message (it is inferred from the lead's `ssh -G` measurement and was never run). Then the `-G` tests
+    read the client's version with the product's reader and take the expectation of its parser, as the parent's test 34 lists them: G4 on
+    both parsers; the control of the newer parser as today; the control of the older parser (the bare pair resolves itself, and a bare
+    equals sign does not); the refused rows asserted on the newer parser and recorded on the older one. GREEN twice: the suite as CI runs it,
+    and one run with the older client first on `PATH`. A written path that the older client resolves to another one is a defect of the rule
+    on that client. The coder does not repair it in this story: the coder stops and tells the lead. The repair (the kind moves to "refused",
+    which the parent's §3.11 allows) changes the product, so it is a repair inside E3 with its own spec and its test RED first (*What a
+    proving run that fails asks for*).
   - **M13** (a)-(c) and the UNC folder, the client alone. The result names the client's version.
-- **Depends on.** E3.S7.
+- **Docs.** `research/module_tests.md`: M10, M11 and M13 as seen when they were built, and test 34 with its counts on both clients.
+- **Depends on.** E3.S7; and the parent's line of epoch 4.
 - **Done when.** The shared done-when above (CI does not run these rows; their proving runs are local and on the owner's Windows for M13). The
-  pass criteria are M10's, M11's and M13's last columns.
+  pass criteria are M10's, M11's and M13's last columns, M11 (b) as revised for epoch 4. Test 34 was watched RED on the older client and
+  is green on both clients; no file of `src_vs_code/src` outside `src/test/` changed.
 
 ## E3.S10 · The one run of the whole set, §10, and the CHANGELOG entry (no row of its own)
 
@@ -381,14 +454,21 @@ legs, Opus reviews.
      build's output, are made by `npm ci` and the build from the commit). What the run uses from outside the tree (the unpacked `sshd`,
      the older client, the Windows client) is named by path, version and SHA-256 in the identities. (The plan round on this document,
      finding 1: a check with `--untracked-files=no` alone does not see an untracked input.)
+     **Since the re-review for epoch 4:** with M11, on the same commit and from the same checkout, the `-G` tests of test 34 run once with
+     the older client first on `PATH`. Their result is evidence of the rule of the path on the older parser. It is no row.
   3. **§10 in the parent**, before `## Epics`, per row: the four numbers of decision 15 where the row counts them, the date, the versions of the
      client and of the counterpart, the commit, the identities, and for M10, M11 and M13 where they ran. A row that was not measured is "not
-     passed", and E3 is then not done.
+     passed", and E3 is then not done. **Since the re-review for epoch 4, §10 also says these limits in words** (the parent's decision 22
+     and §6): M2 (a) proves the user-file slot that the handed config names and claims nothing about the compiled-in default path, and no
+     run read or wrote the person's real `~/.ssh`; M7's collision is the result of a client from 8.7 on, with that client's version beside
+     it; M11 (b) shows on the older client, by its version, that the intended file alone supplied trust, and it shows no collision; no row
+     ran a client of 8.5 or 8.6; the result of test 34 on the older client stands beside M11.
   4. **The CHANGELOG table in §10.** Each sentence of the entry that claims a behaviour, with the test of §5 or the row behind it. The start is
      the claim list CL1-CL32 that E2.S4 wrote (the body of `d0ae4b3c`, carried in the squash message of `4799f9d7`), read again against the
      entry as it stands, because E2's later fixes changed it (settled item 4). A claim with nothing behind it is taken out of the entry or said as
      "not measured". "No connection starts" is backed by M4 (W7). The sentence "Not measured before this release" (`CHANGELOG.md:105-106`) is
-     written again from §10. Where this lands in the CHANGELOG is Q2.
+     written again from §10. Where this lands in the CHANGELOG is Q2. Since the re-review for epoch 4: the new entry under `[Unreleased]`
+     carries the limits of item 3 in the person's words, and what it says of "an `ssh` older than 8.5" names the version that M11 ran.
   5. **`research/module_tests.md`**, the real runs (§6, *E3 writes*): where the counterpart lives, the exact command, M1-M14 marked as
      measured, and what they do not prove.
 - **Depends on.** E3.S1-E3.S9.
