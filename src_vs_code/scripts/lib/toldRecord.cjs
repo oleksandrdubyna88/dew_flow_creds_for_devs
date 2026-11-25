@@ -5,7 +5,7 @@
 //
 // Nothing is read when this module is loaded: no variable, no file, no process (as `rowRecord.cjs`). It imports no module of the product.
 const { handedClientConfig } = require('./rowRecord.cjs');
-const { VERIFY_FAILED } = require('./otherKeyRecord.cjs');
+const { VERIFY_FAILED, hasLine } = require('./otherKeyRecord.cjs');
 
 const LEG_LIST = [
   { name: 'm5-a', letter: 'a', pinned: true, target: 'k2' },
@@ -136,14 +136,27 @@ function controlOfH(g, h) {
   if (typeof g.forced?.line !== 'string' || g.forced.line !== h.forced?.line) {
     problems.push(`the forced line of (g) and (h) is not one text that was read: ${JSON.stringify(g.forced?.line ?? null)} and ${JSON.stringify(h.forced?.line ?? null)}`);
   }
-  if (g.told?.d?.install !== 1) {
-    problems.push('(g) did not show sentence D once on the install');
+  // The text that the product really read, not the script on the disk (review of E3.S8): each probe and mode check holds the verification line as a whole line and no `Offending` line, and (g)'s and (h)'s are one text.
+  for (const kind of ['probe', 'mode']) {
+    const read = [['(g)', g], ['(h)', h]].map(([name, record]) => [name, record.runs?.find((one) => one.kind === kind)?.stderr]);
+    for (const [name, stderr] of read) {
+      if (typeof stderr !== 'string' || !hasLine(stderr) || /^Offending /m.test(stderr)) {
+        problems.push(`${name}'s ${kind} stderr was not read, holds no whole verification line, or holds an Offending line: ${JSON.stringify(stderr ?? null)}`);
+      }
+    }
+    const [one, other] = read.map(([, stderr]) => (typeof stderr === 'string' ? stderr.replaceAll('\r\n', '\n') : null));
+    if (one === null || one !== other) {
+      problems.push(`the ${kind} stderr of (g) and (h) is not one text that was read: ${JSON.stringify(one)} and ${JSON.stringify(other)}`);
+    }
+  }
+  if (g.told?.d?.install !== 1 || g.toldParts?.install?.d?.install !== 1) {
+    problems.push('(g) did not show sentence D once on the install (the whole screen and the install\'s road)');
   }
   if (g.told?.d?.bridge !== 1) {
     problems.push('(g) did not show sentence D once in the bridge\'s form');
   }
   for (const which of ['c', 'd']) {
-    if (h.told === undefined || h.told === null || shows(h.told, which)) {
+    if (h.told === undefined || h.told === null || h.toldParts?.install === undefined || shows(h.told, which) || shows(h.toldParts.install, which)) {
       problems.push(`(h) showed sentence ${which.toUpperCase()}, or its told counts were not read`);
     }
   }

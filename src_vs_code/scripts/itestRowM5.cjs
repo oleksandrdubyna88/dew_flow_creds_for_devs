@@ -48,7 +48,11 @@ async function fieldsOf(ctx, spec, roads, run, more) {
   const { drive, counts, screen } = run;
   return {
     case: spec.letter, pinned: spec.pinned, shown: screen.shown, logs: screen.logs, told: screen.all, toldParts: { install: screen.install, bridge: screen.bridge }, order: screen.order,
-    runs: t.runsRecord(counts), bridge: await t.bridgeRecord(ctx, roads), times: drive.times, c7: screen.logs, ...more,
+    runs: t.runsRecord(counts), bridge: await t.bridgeRecord(ctx, roads), times: drive.times, c7: screen.logs,
+    // What the checks judged (taken before any control or witness login); the counts at the top level of the record are the leg's END counts, which in (e) and (f) also hold that login.
+    countsAtChecks: { starts: { total: counts.starts.total, connectionStarts: counts.starts.connectionStarts }, counterparts: counts.counterparts.map((one) => ({ name: one.name, connections: one.connections, authAttempts: one.authAttempts, accepted: one.accepted })) },
+    endCountsAre: 'the top-level starts, question, bridges and counterparts are read at the leg\'s end, after the control\'s (e) or the witness\'s (f) login',
+    ...more,
   };
 }
 
@@ -80,7 +84,8 @@ async function refusedKey(ctx, spec) {
     config = rig.handConfig(leg, { lines: ['LogLevel QUIET'] });
     const said = await t.resolvedBy(ctx, ['-p', String(k2.port), `${me}@127.0.0.1`]);
     // `ssh -G` prints the level of `LogLevel QUIET` as SILENT, OpenSSH's own first name of that level (measured 2026-11-24, 10.2p1).
-    check(`${label}: ssh -G under the leg's config, with no word of a call, resolves loglevel QUIET (printed by ssh as ${said.value('loglevel')}) (M5.e0)`, said.code === 0 && /^(QUIET|SILENT)$/.test(said.value('loglevel') ?? ''), JSON.stringify({ code: said.code, loglevel: said.value('loglevel') }));
+    const line = fs.readFileSync(leg.clientConfig, 'utf8').split('\n').map((one) => one.trim()).includes('LogLevel QUIET');
+    check(`${label}: the handed config holds the whole line LogLevel QUIET, and ssh -G under it, with no word of a call, resolves loglevel QUIET (printed by ssh as ${said.value('loglevel')}) (M5.e0)`, line && said.code === 0 && /^(QUIET|SILENT)$/.test(said.value('loglevel') ?? ''), JSON.stringify({ line, code: said.code, loglevel: said.value('loglevel') }));
   }
   const roads = openWorld(ctx, spec, k2.port, [k2]);
   const run = await driven(ctx, roads, [k2], [k2], { bridgeEnds: true });
@@ -92,7 +97,7 @@ async function refusedKey(ctx, spec) {
   t.noBridgedRow(ctx, label, roads, drive, `M5.${id}3`);
   t.bridgeForm(ctx, label, screen, 'c', 'exactly one error message is "The bridge to "box" is not open: " and the product\'s sentence C, with C\'s pinned words; no message holds "could not be checked: "', `M5.${id}4`);
   t.offendingCheck(ctx, label, roads, `M5.${id}5`);
-  t.bridgeOpenCheck(ctx, label, screen, 'c', `M5.${id}6`);
+  t.bridgeOpenCheck(ctx, label, screen, `M5.${id}6`);
   t.reachedNotAuthenticated(ctx, label, counts, 0, counts.starts.connectionStarts, `M5.${id}7`, 'K2');
   const control = spec.quiet ? await quietControl(ctx, label, k2) : null;
   const fields = await fieldsOf(ctx, spec, roads, run, { config, bridgeStderr, control });
@@ -201,7 +206,7 @@ function socketModeCheck(ctx, label, roads, screen) {
   const mode = t.runWith(roads, remote === undefined ? undefined : product.modeCheckCommand({ path: remote }));
   const read = product.interpretSocketProbe(mode?.outcome?.stdout ?? '');
   const errors = screen.shown.filter((one, at) => one.kind === 'error' && screen.order[at].at >= screen.bridgeAt);
-  ctx.check(`${label}: the socket check showed no error message, and the mode check's stdout, read by interpretSocketProbe, is a mode, owner only (M5.h5)`, errors.length === 0 && read.kind === MODE && product.isOwnerOnlyMode(read.mode), JSON.stringify({ errors, read, stdout: mode?.outcome?.stdout ?? null }));
+  ctx.check(`${label}: the socket check showed no error message, and the mode check's stdout, read by interpretSocketProbe, is a mode, owner only, and the trimmed stdout is the literal 600 or 0600 (M5.h5)`, errors.length === 0 && read.kind === MODE && product.isOwnerOnlyMode(read.mode) && /^0?600$/.test((mode?.outcome?.stdout ?? '').trim()), JSON.stringify({ errors, read, stdout: mode?.outcome?.stdout ?? null }));
 }
 
 /** (g) and (h) (sections 2.3 and 2.4): K1 logs the logins as accepted, the remote side writes the verification line, and ends with 255 (`fail`) or runs the asked command to 0 (`zero`). */
@@ -272,7 +277,7 @@ async function caseOf(ctx, spec) {
 }
 
 /** M5.b4, M5.c4, M5.d4: what the case is, in the counts. Answers `{ silent }` for the evidence. */
-function caseCounts(ctx, spec, label, counts, silent) {
+function caseCounts(ctx, spec, label, counts, silent, ended) {
   const id = `M5.${spec.letter}4`;
   const runs = Object.values(t.runsByKind(counts));
   const bridge = counts.bridges[0];
@@ -284,6 +289,8 @@ function caseCounts(ctx, spec, label, counts, silent) {
     ctx.check(`${label}: K1 logged an authentication attempt for each connection start and 0 accepted logins: the key check passed and the login was refused (${id})`, wanted === 4 && log.attemptPorts.length === wanted && log.accepted.length === 0, JSON.stringify({ starts: wanted, attemptPorts: log.attemptPorts, accepted: log.accepted }));
   } else {
     const seen = silent.snapshot();
+    // The bridge ended as in (b): by itself, with 255, and its own stderr file was read (review of E3.S8); the file's text goes into the evidence.
+    ctx.check(`${label}: the bridge's ssh ended by itself with 255 and its stderr file was read (M5.${spec.letter}5)`, ended.bridgeEnded === true && bridge?.exitCode === 255 && ended.bridgeStderr !== null, JSON.stringify({ bridgeEnded: ended.bridgeEnded, exitCode: bridge?.exitCode ?? null, stderrRead: ended.bridgeStderr !== null }));
     runs.forEach((one) => ctx.info(`${label}: a run of ${one?.kind}: exit ${one?.exitCode}, timedOut ${one?.timedOut}, ended by ${one?.timedOut ? 'the runner\'s limit' : 'the client itself'}, stderr: ${JSON.stringify(String(one?.stderr ?? '').trim().split('\n').slice(-2))}`));
     ctx.check(`${label}: the silent listener accepted a connection for each connection start and wrote 0 bytes; each run ended with 255 or by the runner's limit (${id})`, wanted === 4 && seen.accepted >= wanted && seen.bytesOut === 0 && runs.every((one) => one !== undefined && (one.exitCode === 255 || one.timedOut === true)), JSON.stringify({ starts: wanted, ...seen }));
   }
@@ -303,9 +310,10 @@ async function notReached(ctx, spec) {
   t.argvCheck(ctx, spec, label);
   t.toldNever(ctx, label, screen, 'both', 'sentences C and D were shown 0 times on both roads: no message and no log line equals or holds either, their pinned words, or a bridge prefix', `M5.${spec.letter}2`);
   ctx.check(`${label}: what was shown is recorded word for word: at least one message after the mark, each in the evidence with its kind and text, in order (M5.${spec.letter}3)`, screen.shown.length >= 1, JSON.stringify(screen.shown));
-  caseCounts(ctx, spec, label, counts, made.silent);
+  const bridgeStderr = shared.bridgeStderrOf(leg, counts);
+  caseCounts(ctx, spec, label, counts, made.silent, { bridgeEnded: run.drive.bridgeEnded, bridgeStderr });
   ctx.info(`${label}: the log lines of the socket check, as seen (C7): ${JSON.stringify(screen.logs)}`);
-  const fields = await fieldsOf(ctx, spec, roads, run, { silent: made.silent === undefined ? null : { ...made.silent.snapshot(), port: made.silent.port } });
+  const fields = await fieldsOf(ctx, spec, roads, run, { bridgeStderr, bridgeExitCode: counts.bridges[0]?.exitCode ?? null, silent: made.silent === undefined ? null : { ...made.silent.snapshot(), port: made.silent.port } });
   await t.leave(ctx, roads, made.servers, fields, made.silent);
 }
 

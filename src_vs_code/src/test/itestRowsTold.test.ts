@@ -203,10 +203,12 @@ test('TT7: pinLines finds a line that holds the file, a CR LF line and a line wi
 
 /** An evidence record as (g) or (h) leaves it: the runs, the forced line and what was told. */
 function record(code: number, told: Told): Record<string, unknown> {
+  const stderr = `${VERIFY}\n`;
   return {
-    runs: [{ kind: 'probe', exitCode: code }, { kind: 'sweep', exitCode: code }, { kind: 'mode', exitCode: code }],
+    runs: [{ kind: 'probe', exitCode: code, stderr }, { kind: 'sweep', exitCode: code, stderr }, { kind: 'mode', exitCode: code, stderr }],
     forced: { line: VERIFY },
     told,
+    toldParts: { install: told },
   };
 }
 const NONE: Counts = { install: 0, bridge: 0, log: 0 };
@@ -234,6 +236,21 @@ test('TT8: controlOfH is ok for a pair as (g) and (h) leave it; each of a null g
   bad(control(g, { ...h, forced: { line: 'another line' } }), /forced line/, 'two different forced lines');
   bad(control({ ...g, forced: { line: null } }, { ...h, forced: { line: null } }), /forced line/, 'no forced line read');
   bad(control({ ...g, runs: [] }, h), /probe/, 'a g with no run read');
+  // The stderr that the product really read (review of E3.S8): each probe and mode check holds the verification line as a whole line and no Offending line, and (g)'s and (h)'s are one text.
+  const withStderr = (record: Record<string, unknown>, kind: string, stderr: unknown): Record<string, unknown> => ({
+    ...record,
+    runs: (record.runs as { kind: string }[]).map((run) => (run.kind === kind ? { ...run, stderr } : run)),
+  });
+  bad(control(withStderr(g, 'probe', null), h), /stderr/, 'g\'s probe stderr not read');
+  bad(control(withStderr(g, 'mode', 'something else\n'), h), /stderr/, 'g\'s mode stderr holds no verification line');
+  bad(control(g, withStderr(h, 'probe', '')), /stderr/, 'h\'s probe stderr is empty');
+  bad(control(withStderr(g, 'probe', `Offending ED25519 key in /a/pin:1\n${VERIFY}\n`), h), /Offending/, 'g\'s probe stderr holds an Offending line');
+  bad(control(g, withStderr(h, 'mode', `${VERIFY}\nand a second line\n`)), /not one text|equal/, 'g\'s and h\'s mode stderr differ');
+  assert.deepEqual(control(withStderr(g, 'probe', `${VERIFY}\r\n`), withStderr(h, 'probe', `${VERIFY}\r\n`)), { ok: true, problems: [] }, 'CR LF in both is still one text');
+  // The install's road alone counts the sentence once (review of E3.S8).
+  bad(control({ ...g, toldParts: { install: ZERO } }, h), /install/, 'g showed D on the whole screen but not on the install\'s road');
+  bad(control(g, { ...h, toldParts: { install: SHOWED_D } }), /\(h\)/, 'h showed D on the install\'s road');
+  bad(control({ ...g, toldParts: undefined }, h), /install/, 'g\'s install part not read');
 });
 
 /** What `ssh -G` resolves under `-F file` for `args`, with a home of its own (nothing is read or written there). */

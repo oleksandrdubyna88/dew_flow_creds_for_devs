@@ -56,7 +56,7 @@ async function silentListener(leg) {
   };
   leg.scope.after(close);
   const snapshot = () => ({ accepted: connections.length, bytesIn: sockets.reduce((sum, one) => sum + one.bytesRead, 0), bytesOut: sockets.reduce((sum, one) => sum + one.bytesWritten, 0) });
-  return { port: server.address().port, connections, snapshot, listening: () => server.listening && server.address()?.address === '127.0.0.1', close, sockets: () => sockets.length };
+  return { port: server.address().port, connections, snapshot, listening: () => server.listening && server.address()?.address === '127.0.0.1', close, sockets: () => sockets.length, destroyed: () => sockets.every((one) => one.destroyed) };
 }
 
 /** (f) (section 1.4): `<leg>/jump_known_hosts` (mode 0600) with K2's line for J's port, and the jump config in `leg.clientConfig`. Answers `{ jumpFile, config, sha256 }`. */
@@ -146,8 +146,8 @@ function toldOnce(ctx, label, screen, which, text, id) {
   const all = screen.all;
   const other = which === 'c' ? all.holds.dWords : all.holds.cWords;
   const silent = screen.shown.filter((one) => one.text.includes('did not answer the probe')).length;
-  const found = { once: all[which].install, wordsHeld: screen.words[which].includes(WORDS_OF[which]), otherWords: other, didNotAnswer: silent };
-  ctx.check(`${label}: ${text} (${id})`, found.once === 1 && found.wordsHeld && found.otherWords === 0 && silent === 0, JSON.stringify({ ...found, shown: screen.shown }));
+  const found = { once: all[which].install, onInstallRoad: screen.install[which].install, wordsHeld: screen.words[which].includes(WORDS_OF[which]), otherWords: other, didNotAnswer: silent };
+  ctx.check(`${label}: ${text} (${id})`, found.once === 1 && found.onInstallRoad === 1 && found.wordsHeld && found.otherWords === 0 && silent === 0, JSON.stringify({ ...found, shown: screen.shown }));
 }
 
 /** "Sentence `which` 0 times" (`which` is `c`, `d` or `both`) over `part` of the screen (`all`, `install` or `bridge`): no message and no log line equals or holds the sentence, its pinned words or its opening. */
@@ -225,10 +225,12 @@ function offendingCheck(ctx, label, roads, id) {
   ctx.check(`${label}: the stderr of the probe and of the mode check each holds the Offending line of ssh with the pin file of its own call, as ssh prints it (${id})`, found.probe.whole && found.mode.whole && found.probe.file !== found.mode.file, JSON.stringify(found));
 }
 
-/** The bridge's info message `Bridge open to "box".` once after the bridge's click, beside the check's error (M5.a6). */
-function bridgeOpenCheck(ctx, label, screen, which, id) {
-  const opened = screen.shown.filter((one) => one.kind === 'info' && one.text.startsWith(`Bridge open to "${screen.name}".`)).length;
-  ctx.check(`${label}: the screen showed "Bridge open to "${screen.name}"." once after the bridge's click, beside the check's error (${id})`, opened === 1 && screen.all[which].bridge === 1, JSON.stringify({ opened, errors: screen.all[which].bridge }));
+/** The bridge's info message `Bridge open to "box".` once on the whole screen, and that once came after the bridge's click (`at >= bridgeAt`, the clock of `said`). It does not repeat M5.a4's count of the bridge's error (review of E3.S8). */
+function bridgeOpenCheck(ctx, label, screen, id) {
+  const opening = (one) => one.kind === 'info' && one.text.startsWith(`Bridge open to "${screen.name}".`);
+  const total = screen.shown.filter(opening).length;
+  const after = screen.shown.filter((one, at) => opening(one) && screen.order[at].at >= screen.bridgeAt).length;
+  ctx.check(`${label}: the screen showed "Bridge open to "${screen.name}"." once, after the bridge's click (${id})`, total === 1 && after === 1, JSON.stringify({ total, after, bridgeAt: screen.bridgeAt }));
 }
 
 /** The counterpart's log: a connection for each connection start, 0 accepted logins and 0 authentication attempts (M5.a7, M5.f2's J). */
@@ -284,7 +286,7 @@ async function leave(ctx, roads, servers, fields, silent) {
   }
   if (silent !== undefined) {
     await silent.close();
-    ctx.check(`${leg.label}: the silent listener is closed and holds no socket`, !silent.listening(), JSON.stringify({ listening: silent.listening(), sockets: silent.sockets() }));
+    ctx.check(`${leg.label}: the silent listener is closed and holds no socket: it no longer listens and every accepted socket is destroyed`, !silent.listening() && silent.destroyed(), JSON.stringify({ listening: silent.listening(), sockets: silent.sockets(), destroyed: silent.destroyed() }));
   }
   return rig.evidence(leg, roads, servers, fields);
 }
