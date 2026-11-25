@@ -20,8 +20,8 @@ import { McpRung } from './mcpAccess';
  * this needs anything on it.</p>
  */
 
-/** The code and the sentence of a refusal, before a door decides how to write it. */
-export type Refusal = { readonly code: ErrorCode; readonly message: string };
+/** The code and the sentence of a refusal, before a door decides how to write it; `detail` is what the journal holds when it must differ from what the caller reads (E1.7 spec §S7.8). */
+export type Refusal = { readonly code: ErrorCode; readonly message: string; readonly detail?: string };
 
 /** What an agent is told about a token that is not live and is not its business: unknown, missing, or out of scope. */
 export const UNKNOWN_TOKEN = 'Unknown or missing grant token.';

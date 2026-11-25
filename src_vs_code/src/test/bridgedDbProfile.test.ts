@@ -12,16 +12,26 @@ import { DR5, ENTRY, REFUSED, SENTINEL, dr2, dr4, dr6, dr6q, stored } from './br
 const CLIENT_OF = { postgres: 'psql', mysql: 'mysql', mssql: 'sqlcmd' } as const;
 const SYSTEMS = ['linux', 'win32', 'darwin'] as const;
 
-test('DP1: the table has a row for each client on linux, win32 and darwin, and none is served', () => {
+/** The rows E1.7 has turned (§S7.7), as `client/platform`: each in the commit that recorded its candidate run. */
+const SERVED_PAIRS = ['sqlcmd/linux'];
+
+test('DP1: the table has a row for each client on linux, win32 and darwin, and exactly the turned rows are served, each with the builds its legs ran on', () => {
   for (const client of Object.values(CLIENT_OF)) {
     for (const platform of SYSTEMS) {
       const rows = BRIDGED_DB_PROFILES.filter((row) => row.client === client && row.platform === platform);
       assert.equal(rows.length, 1, `${client} on ${platform}: exactly one row`);
-      assert.equal(rows[0].served, false, `${client} on ${platform}: not served`);
+      assert.equal(rows[0].served, SERVED_PAIRS.includes(`${client}/${platform}`), `${client} on ${platform}`);
     }
   }
   assert.equal(BRIDGED_DB_PROFILES.length, 9, 'no row for anything else');
-  assert.equal(BRIDGED_DB_PROFILES.some((row) => row.served), false);
+  const sqlcmd = BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => ({ ...row, clients: row.clients }));
+  assert.deepEqual(sqlcmd, [{
+    client: 'sqlcmd', platform: 'linux', served: true,
+    clients: [{ vendor: 'odbc-sqlcmd', builds: [
+      { version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1', record: 'run 45390171118 at 35d59423' },
+      { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45390171118 at 35d59423' },
+    ] }],
+  }], 'the ODBC sqlcmd on Linux, the two builds of the candidate run, each with its driver; go-sqlcmd is not served');
 });
 
 /** The production table with exactly one row served. */
@@ -230,24 +240,56 @@ function readKeywords(text: string): Array<[string, string]> {
 
 const ABSENT = '/k/keys/1/no-client-file';
 
-test('DP14 (T55): the psql string holds the fields in order, quoted so a reader gets them back, no password keyword, and ends with passfile, sslcert and sslkey at the absent file', () => {
+/** The three keywords the builder ends the psql string with (E1.7 §S7.5; probes PK1, PE1 of 2026-11-19), in their order. */
+const POLICY: ReadonlyArray<[string, string]> = [['gssencmode', 'disable'], ['sslcertmode', 'disable'], ['require_auth', 'password,md5,scram-sha-256']];
+
+test('DP14 (T55, V3): the psql string holds the fields in order, quoted so a reader gets them back, no password keyword, and ends with passfile, sslcert and sslkey at the absent file, then the three policy keywords', () => {
   const answer = built('postgres', 'postgresql://o%27brien:pw@db.example:5432/a%20b%5Cc%27d?sslmode=require&connect_timeout=7&application_name=my%20app');
   const pairs = readKeywords(bridgedPsqlString(answer, ABSENT));
   assert.deepEqual(pairs, [
     ['host', 'db.example'], ['port', '5432'], ['dbname', "a b\\c'd"], ['user', "o'brien"],
     ['sslmode', 'require'], ['connect_timeout', '7'], ['application_name', 'my app'],
-    ['passfile', ABSENT], ['sslcert', ABSENT], ['sslkey', ABSENT],
+    ['passfile', ABSENT], ['sslcert', ABSENT], ['sslkey', ABSENT], ...POLICY,
   ]);
   assert.equal(pairs.some(([key]) => key === 'password'), false, 'there is no password keyword, ever');
   assert.equal(bridgedPsqlString(answer, ABSENT).includes('pw'), false, 'and the password is not in the string');
-  assert.deepEqual(pairs.slice(-3).map(([key, value]) => [key, value]), [['passfile', ABSENT], ['sslcert', ABSENT], ['sslkey', ABSENT]]);
+  assert.deepEqual(pairs.slice(-6, -3).map(([key, value]) => [key, value]), [['passfile', ABSENT], ['sslcert', ABSENT], ['sslkey', ABSENT]]);
 });
 
-test('DP14b: with no port, no database and no settings the string holds host and user and the three controls; an IPv6 host is written without its brackets; the absent file is quoted like any value', () => {
+test('DP14b (V3): with no port and no database the string still names host, port 5432 and dbname (the user name, libpq\'s own default), for ~/.postgresqlrc fills any of the three it is not told; an IPv6 host is written without its brackets; the absent file is quoted like any value', () => {
   const answer = built('postgres', 'postgresql://u:p@[::1]/');
   assert.deepEqual(readKeywords(bridgedPsqlString(answer, "/k/it's\\x")), [
-    ['host', '::1'], ['user', 'u'], ['passfile', "/k/it's\\x"], ['sslcert', "/k/it's\\x"], ['sslkey', "/k/it's\\x"],
+    ['host', '::1'], ['port', '5432'], ['dbname', 'u'], ['user', 'u'], ['passfile', "/k/it's\\x"], ['sslcert', "/k/it's\\x"], ['sslkey', "/k/it's\\x"], ...POLICY,
   ]);
+});
+
+test('DP18 (V3, T57, T58, T60, T61): the psql string ends with passfile, sslcert, sslkey and then the three policy keywords, and nothing the entry gave stands after them, whatever settings it carried', () => {
+  const settings = 'postgresql://alice:pw@db.example:6543/orders?sslmode=require&connect_timeout=7&application_name=x';
+  for (const text of [settings, 'postgresql://alice:pw@db.example/', 'postgresql://alice:pw@db.example/orders']) {
+    const pairs = readKeywords(bridgedPsqlString(built('postgres', text), ABSENT));
+    assert.deepEqual(pairs.slice(-6), [['passfile', ABSENT], ['sslcert', ABSENT], ['sslkey', ABSENT], ...POLICY], text);
+    assert.deepEqual(pairs.slice(0, 4).map(([key]) => key), ['host', 'port', 'dbname', 'user'], `${text}: the three libpq would fill from ~/.postgresqlrc stand in every string`);
+    for (const [key] of POLICY) {
+      assert.equal(pairs.filter(([given]) => given === key).length, 1, `${text}: ${key} is written once, by the builder`);
+    }
+  }
+});
+
+test('DP18b (V3): host, port and dbname are explicit when the entry names none: port 5432, and the database the user name', () => {
+  const pairs = readKeywords(bridgedPsqlString(built('postgres', 'postgresql://alice:pw@db.example/'), ABSENT));
+  assert.deepEqual(pairs.slice(0, 4), [['host', 'db.example'], ['port', '5432'], ['dbname', 'alice'], ['user', 'alice']]);
+  const named = readKeywords(bridgedPsqlString(built('postgres', 'postgresql://alice:pw@db.example:6543/orders'), ABSENT));
+  assert.deepEqual(named.slice(0, 4), [['host', 'db.example'], ['port', '6543'], ['dbname', 'orders'], ['user', 'alice']], 'a value the entry names is the value written');
+});
+
+test('DP19 (V3, T59): require_auth names password methods and nothing else; gss, sspi and none are not in it, and the three methods PE1 logged in with are', () => {
+  const pairs = readKeywords(bridgedPsqlString(built('postgres', 'postgresql://alice:pw@db.example/'), ABSENT));
+  const methods = (pairs.find(([key]) => key === 'require_auth')?.[1] ?? '').split(',');
+  assert.deepEqual(methods, ['password', 'md5', 'scram-sha-256']);
+  for (const word of ['gss', 'sspi', 'none', 'cert', 'oauth', 'ldap']) {
+    assert.equal(methods.includes(word), false, `${word} is not a method the entry's own password can answer`);
+    assert.equal(methods.includes('!' + word), false);
+  }
 });
 
 test('DP15: a field refusal says the constraint the field did not meet, in fixed words, and never the stored value', () => {
