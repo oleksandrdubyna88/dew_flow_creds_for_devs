@@ -1,6 +1,6 @@
 # PLAN — The scoped remote bridge, E1: the authorization boundary. Nothing reaches a person.
 
-> Status: **in progress on `feat/remote-bridge-e1`, unmerged, 2026-11-05: E1.1-E1.3 built (with the S3 spec's Amendments 2-3), E1.4 saved unfinished on `wip/remote-bridge-e14-before-stop`, E1.5 and E1.6 added by the parent's revision for epoch 4 (the amendment at the end); the parent is stopped for re-review and epoch 4 opened on 2026-11-06, so E1.4 is finished and the closing commit built next.** **As of 2026-11-06 (epoch 6's re-review): E1.3's closing commit `88befcd`, its fix `a04ca33` and the fix-forward (`6cde254`, `e057b5e`, `1065e91`) are built and pushed, unmerged, as PR #307 (partial E1), which waits for epoch 6 to open; E1.4 stays on its wip branch; E1.5 and E1.6 are not started; the amendments for epochs 5 and 6 are at the end.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §4.9 for the exec legs, §4.10, §5 steps 1-3 and 3a-3c, §7, `## Epics` E1).
+> Status: **IMPLEMENTED, 2026-11-25: epic E1 is merged (E1.1-E1.7; E1.7 last, PR #380, squash 4d40697c); moved to `research/` with the parent still open in `todo/` (E2-E4).** The status as it stood: **Now, 2026-11-25: E1.1-E1.7 are merged, E1.7 last (PR #380, squash 4d40697c). What follows is the history.** **In progress on `feat/remote-bridge-e1`, unmerged, 2026-11-05: E1.1-E1.3 built (with the S3 spec's Amendments 2-3), E1.4 saved unfinished on `wip/remote-bridge-e14-before-stop`, E1.5 and E1.6 added by the parent's revision for epoch 4 (the amendment at the end); the parent is stopped for re-review and epoch 4 opened on 2026-11-06, so E1.4 is finished and the closing commit built next.** **As of 2026-11-06 (epoch 6's re-review): E1.3's closing commit `88befcd`, its fix `a04ca33` and the fix-forward (`6cde254`, `e057b5e`, `1065e91`) are built and pushed, unmerged, as PR #307 (partial E1), which waits for epoch 6 to open; E1.4 stays on its wip branch; E1.5 and E1.6 are not started; the amendments for epochs 5 and 6 are at the end.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §4.9 for the exec legs, §4.10, §5 steps 1-3 and 3a-3c, §7, `## Epics` E1).
 > Scope: `src_vs_code/src` (new modules, the broker, one wiring argument), `src_vs_code/scripts/emit-contract.mjs`, `contract/broker-v1.json`, `src_vs_code/scripts/itestForwardAgent.cjs` and `itestSshd.cjs` (E1.6). No client, no UI, no publisher, no server change. Branch `feat/remote-bridge-e1`; the PR shape is the epoch 4 amendment's, not "one PR".
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on commit c6800b8.
@@ -20,7 +20,7 @@ name the server from the context (E1.4). E2 is what first opens a listener for a
 |---|---|---|---|---|---|
 | E1.1 | Export guard, `Set env` warning, M4 | Opus, this document | Sonnet | Opus | not needed: no authentication or authorisation decision |
 | E1.2 | Listener, third door, key, `BridgeContext` | Opus, this document | Sonnet | Opus | **Fable, at review, outside the quota** (authentication: the key) |
-| **E1.3 — cornerstone, `model: fable` on its spec** | Allow-list, note schema, scope wall | **Fable**: `todo/PLAN_remote_bridge_scoped_E1_S3_spec.md`, written from the section below, with its own `todo/README.md` row | Sonnet | Opus | Fable, at review, outside the quota |
+| **E1.3 — cornerstone, `model: fable` on its spec** | Allow-list, note schema, scope wall | **Fable**: `research/PLAN_remote_bridge_scoped_E1_S3_spec.md`, written from the section below, with its own `todo/README.md` row | Sonnet | Opus | Fable, at review, outside the quota |
 | E1.4 | Per-server consent, modal line, audit line | Opus, this document | Sonnet | Opus | **Fable, at review, outside the quota** (authorisation: what silences a prompt) |
 
 The parent's ledger reads `Cornerstones: 1 of 2`. E1.3 is the one mark in E1, because it owns what nothing downstream catches: `BridgeContext` as the
@@ -263,7 +263,7 @@ Commands: the common block, with `<name>` = `bridgeBoundary`, `brokerBridgeDoor`
 
 ## E1.3 — The allow-list, the note schema, the scope wall. **Cornerstone: `model: fable` on the spec.**
 
-Depends on E1.2. This section is the input to Fable's spec, `todo/PLAN_remote_bridge_scoped_E1_S3_spec.md`; where the spec differs, the spec wins and says why. Sonnet codes from the spec.
+Depends on E1.2. This section is the input to Fable's spec, `research/PLAN_remote_bridge_scoped_E1_S3_spec.md`; where the spec differs, the spec wins and says why. Sonnet codes from the spec.
 
 ### How it is built, given the code
 
@@ -520,8 +520,8 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
 
    | Story | Area | Spec and scenarios | Code and tests | Review | Security judgement |
    |---|---|---|---|---|---|
-   | E1.5 | The consent lifecycle: the one place owned by the dialog until a person's act, never by a timer; the 504 sentence; the late-answer line; `Deny` first on a bridged modal; the ownership in its own module when a file would be squeezed | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S5_spec.md`, from the parent's §4.10, when the story starts | Sonnet | Opus | Fable, at review, outside the quota (authorisation: what frees the place) |
-   | E1.6 | SSH execution containment: the per-call `-F` file with per-hop blocks and the lock-down, per-leg identities and the hop refusals, the environment allow-list, the host-key rules, itest legs (a)-(g) of the parent's §7 (since the parent's revision for epoch 9: legs (a)-(i), and the bridged half of §4.11, the database clients' flags and environment; see the amendment for epoch 9 at the end) | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`, from the parent's §4.9, when the story starts and **after M8 is recorded** | Sonnet | Opus | Fable, at review, outside the quota (authentication: what a leg offers and to whom) |
+   | E1.5 | The consent lifecycle: the one place owned by the dialog until a person's act, never by a timer; the 504 sentence; the late-answer line; `Deny` first on a bridged modal; the ownership in its own module when a file would be squeezed | **Fable**, `research/PLAN_remote_bridge_scoped_E1_S5_spec.md`, from the parent's §4.10, when the story starts | Sonnet | Opus | Fable, at review, outside the quota (authorisation: what frees the place) |
+   | E1.6 | SSH execution containment: the per-call `-F` file with per-hop blocks and the lock-down, per-leg identities and the hop refusals, the environment allow-list, the host-key rules, itest legs (a)-(g) of the parent's §7 (since the parent's revision for epoch 9: legs (a)-(i), and the bridged half of §4.11, the database clients' flags and environment; see the amendment for epoch 9 at the end) | **Fable**, `research/PLAN_remote_bridge_scoped_E1_S6_spec.md`, from the parent's §4.9, when the story starts and **after M8 is recorded** | Sonnet | Opus | Fable, at review, outside the quota (authentication: what a leg offers and to whom) |
 
    Each spec gets its own `todo/README.md` row in the commit that creates it. E1.6's spec may reuse Amendment 4's D.1 mechanics that
    still stand (the `-F` file, `-J`'s child inheriting it, the hop leg's `BatchMode yes` / `PasswordAuthentication no` /
@@ -690,7 +690,7 @@ differ. E1.4 is built on `feat/remote-bridge-e14` (PR #312, stacked on #307), wi
 
 The parent's revision for epoch 9 (`### Re-review for epoch 9`, PR #354) widened E1.6 and this document did not follow it at the time. E1.6 builds
 itest legs (a)-(i) of the parent's §7, not (a)-(g), and the bridged half of §4.11: the database clients' first flags (`-X` for psql,
-`--no-defaults` for mysql) and their environment allow-list. Its spec is `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`. This
+`--no-defaults` for mysql) and their environment allow-list. Its spec is `research/PLAN_remote_bridge_scoped_E1_S6_spec.md`. This
 restates the parent; it adds no scope.
 
 ## Amendment for epoch 11 (2026-11-17)

@@ -1,4 +1,4 @@
-// PE1 of the E1.7 spec (`todo/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.4; parent §7's probe table): the entry's own login still works under the pair's whole profile, and
+// PE1 of the E1.7 spec (`research/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.4; parent §7's probe table): the entry's own login still works under the pair's whole profile, and
 // nothing else decided it. Linux.
 //
 //   npm run compile && node scripts/bridged-db-pe1-itest.cjs        (`npm run itest:bridged-db-pe1`)

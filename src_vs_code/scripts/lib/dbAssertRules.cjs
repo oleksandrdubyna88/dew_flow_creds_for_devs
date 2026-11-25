@@ -1,5 +1,5 @@
 'use strict';
-// The assertions of legs (u), (v) and (w) of the E1.7 spec (`todo/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.12, §S7.7 item 5): what each leg of a pair must show, as data over the lines the legs
+// The assertions of legs (u), (v) and (w) of the E1.7 spec (`research/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.12, §S7.7 item 5): what each leg of a pair must show, as data over the lines the legs
 // print. The probe legs (`pkPsqlLegs.cjs`, `pkMysqlLegs.cjs`, `psLegs.cjs`, `dbPe1Legs.cjs`, `dbPp1Legs.cjs`) and the direct psql legs (`dbAssertPsqlLegs.cjs`) build every launch through the REAL
 // `buildDbQueryLaunch` under the verdict of the REAL client check (`dbCandidates.cjs`); `dbAssert.cjs` reads what they printed and judges it against the expectations below.
 //

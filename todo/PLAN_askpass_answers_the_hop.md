@@ -2,7 +2,7 @@
 
 > Status: **plan only, nothing implemented yet, 2026-11-05 (revised the same day with the parent's epoch 4 revision; its roads and priority updated 2026-11-10 by the terminal-over-SSH plan's re-review).** Scope: `src_vs_code` (`sshAskpass.ts`, `sshExecAuth.ts`, `sshExecCommand.ts`,
 > `sshConnect.ts`, `sshCommand.ts`). Found by the review of E1.3's Amendment 3 and judged in Amendment 4 (D.1) of
-> [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md). The **bridged** legs are fixed by the parent's SSH contract
+> [PLAN_remote_bridge_scoped_E1_S3_spec.md](../research/PLAN_remote_bridge_scoped_E1_S3_spec.md). The **bridged** legs are fixed by the parent's SSH contract
 > ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.9, story E1.6); the two paths below are outside that plan's scope (its §8 row)
 > and wait for a plan of their own.
 

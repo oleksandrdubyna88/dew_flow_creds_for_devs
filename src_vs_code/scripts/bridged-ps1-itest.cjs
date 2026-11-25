@@ -1,4 +1,4 @@
-// PS1 of the remote bridge's E1.7 (the spec todo/PLAN_remote_bridge_scoped_E1_S7_spec.md §S7.4; parent §7, the probe table row PS1): what a bridged `sqlcmd` signs in with.
+// PS1 of the remote bridge's E1.7 (the spec research/PLAN_remote_bridge_scoped_E1_S7_spec.md §S7.4; parent §7, the probe table row PS1): what a bridged `sqlcmd` signs in with.
 //
 //   npm run compile && node scripts/bridged-ps1-itest.cjs        (`npm run itest:bridged-ps1`)
 //

@@ -1,4 +1,4 @@
-// Leg (v) of the E1.7 spec (`todo/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.12): the probe cases of PK1 (each plugin leg m1-m7), PP1 and PE1 for each `mysql` client (Oracle's and MariaDB's) as ASSERTIONS,
+// Leg (v) of the E1.7 spec (`research/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.12): the probe cases of PK1 (each plugin leg m1-m7), PP1 and PE1 for each `mysql` client (Oracle's and MariaDB's) as ASSERTIONS,
 // through the REAL builder and the REAL database client check.
 //
 //   npm run compile && node scripts/bridged-mysql-assert-itest.cjs        (`npm run itest:bridged-mysql-assert`)

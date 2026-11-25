@@ -133,7 +133,7 @@ of `buildSshExecArgv` themselves (C and D were run with the tunnel's argv; that 
 2. **Jump hosts** (codex's answer): the guarantee covers the connection the extension spawns, and no hop. `-J` makes
    `ssh` start a nested `ssh` for each hop with `-l`, `-p`, `-F` and `-W` only: it inherits `-F` and the environment, and
    none of the outer's `-o` options (recorded in
-   [PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md), D.1, `:2167-2190`; measured there
+   [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md), D.1, `:2167-2190`; measured there
    with `ssh -v` and `ssh -G` on OpenSSH 10.2). A hop leg can still join or create a master. The hop case is a
    follow-up (§9), not built here.
 3. **Order:** this plan first, then G1 (`todo/PLAN_person_roads_pin_host_key.md`). The reason is run C: while a call can
