@@ -435,7 +435,7 @@ through ONE function that records its argv and answer (`execFile`, 10 s). No leg
 | M13.x1 | `the product's rule answers no refusal for the pathname of (x)` | (the case reaches the words) |
 | M13.x2 | `ssh.exe -G with the exec argv ended with 0: stricthostkeychecking true, verifyhostkeydns false, no knownhostscommand line, loglevel ERROR, both lists the intended path, whole` (CR removed) | "(a)-(c): the client resolves …" |
 | M13.x3 | the same with the bridge argv | as above |
-| M13.x4 | (a), (c): `K7's control: under the twin folder (" ~" after the space) the product's word ended with 0 and the path whole, the bare word ended with 255 and a tilde_expand line`; (b): `the bare word ended with 255 and invalid quotes` | "one file is told from two by the control of K7" |
+| M13.x4 | (a): `K7's control: under the twin folder (" ~" after the space) the product's word ended with 0 and the path whole, the bare word ended with 255 and a tilde_expand line`; (b), (c): `the bare word ended with 255 and invalid quotes` (entry 4.1 of the parent: (c)'s apostrophe is refused before any tilde on `ssh.exe` 9.5p2, so K7's twin cannot show two files there) | "for (a) one file is told from two by the control of K7; for (b) and (c) the bare word is refused" |
 | M13.u1 | `the product's rule refuses the pathname under \\server.example\share\creds with doubleBackslash` | "the rule refuses it" |
 | M13.u2 | `decidePinOfCall answered refused with the product's sentence E for doubleBackslash, and its asker started ssh.exe 0 times` | "no `ssh.exe` is started for it" |
 | M13.u3 | `no file was written for it: the owned folder holds no keys folder after the step` | (the refusal stands before the write) |

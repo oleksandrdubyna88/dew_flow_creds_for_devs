@@ -96,18 +96,19 @@ async function caseOf(check, ctx, one, ssh) {
   return { ...(await k7Control(check, ctx, one, ssh)), letter: one.letter, user: one.user, file, exec: execSaid.code, bridge: bridgeSaid.code };
 }
 
-/** M13.x4, K7's control: under the twin folder (` ~` after the space) the product's word ended with 0 and the path whole and the bare word ended with 255 and a `tilde_expand` line; for (b), the bare word ended with 255 and `invalid quotes`. */
+/** M13.x4, K7's control: under the twin folder (` ~` after the space) the product's word ended with 0 and the path whole and the bare word ended with 255 and a `tilde_expand` line; for (b) and (c), the bare word ended with 255 and `invalid quotes` (entry 4.1: an apostrophe is refused before any tilde, so K7's twin shows two files for (a) only). */
 async function k7Control(check, ctx, one, ssh) {
-  const twin = one.letter === 'b' ? one.user : off.k7Twin(one.user);
+  const apostrophe = one.letter !== 'a';
+  const twin = apostrophe ? one.user : off.k7Twin(one.user);
   const file = pinPathIn(windowsStorage(twin), crypto.randomUUID());
   const words = ctx.product.hostKeyWords(await checkedPinOf(ctx.out, file, SSH_EXE));
   const quoted = await ssh(['-G', '-F', 'none', ...words, '-p', '22', 'probe-host']);
   const bare = await ssh(['-G', '-F', 'none', ...bareOf(words, file), '-p', '22', 'probe-host']);
   const text = `${bare.stdout}${bare.stderr}`;
   const quotedWhole = quoted.code === 0 && linesOf(quoted.stdout).includes(`userknownhostsfile ${file}`) && linesOf(quoted.stdout).includes(`globalknownhostsfile ${file}`);
-  const expect = one.letter === 'b' ? { word: 'invalid quotes', test: /invalid quotes/ } : { word: 'a tilde_expand line', test: /tilde_expand/ };
-  check(`M13.x4 (${one.letter}): K7's control: ${one.letter === 'b' ? 'the bare word ended with 255 and invalid quotes' : "under the twin folder (' ~' after the space) the product's word ended with 0 and the path whole, the bare word ended with 255 and a tilde_expand line"}`,
-    (one.letter === 'b' || quotedWhole) && bare.code === 255 && expect.test.test(text), JSON.stringify({ twin, quoted: { code: quoted.code, stderr: quoted.stderr }, bare: { code: bare.code, text } }));
+  const expect = apostrophe ? { word: 'invalid quotes', test: /invalid quotes/ } : { word: 'a tilde_expand line', test: /tilde_expand/ };
+  check(`M13.x4 (${one.letter}): ${apostrophe ? 'the bare word ended with 255 and invalid quotes' : "K7's control: under the twin folder (' ~' after the space) the product's word ended with 0 and the path whole, the bare word ended with 255 and a tilde_expand line"}`,
+    (apostrophe || quotedWhole) && bare.code === 255 && expect.test.test(text), JSON.stringify({ twin, quoted: { code: quoted.code, stderr: quoted.stderr }, bare: { code: bare.code, text } }));
   return { k7: { quoted: quoted.code, bare: bare.code } };
 }
 
