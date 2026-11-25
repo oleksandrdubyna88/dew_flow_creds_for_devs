@@ -1,5 +1,5 @@
 'use strict';
-// The shared part of the database probe harnesses of E1.7 (the spec `todo/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.3, rules R1-R6): the product's
+// The shared part of the database probe harnesses of E1.7 (the spec `research/PLAN_remote_bridge_scoped_E1_S7_spec.md` §S7.3, rules R1-R6): the product's
 // own launch and environment, one client run under the bridged environment, the files a program word is, and the ledger every probe ends with.
 //
 // A probe is a RECORD. It prints what the client did, each beside its positive control, and it fails only for the rig's own faults (a missing tool, a

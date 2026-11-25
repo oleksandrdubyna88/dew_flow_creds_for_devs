@@ -74,7 +74,7 @@ Each was settled by the lead on 2026-11-18, before this spec was written; D1 to 
 - **D6. The bridge's probing conventions are used:** the runner with a time limit (`runSshExec`, `CLIENT_CHECK_TIMEOUT_MS`), the
   token anchored at the start of stderr, and exit code 0 required.
 - **D7. The anchored rule stays, and the bridged tests stay green.** `CV1` to `CV7` of `test/bridgedSshClient.test.ts` pass
-  before and after, unchanged. The mutation T42 of the bridge's spec (`todo/PLAN_remote_bridge_scoped_E1_S6_spec.md:1226`: drop the
+  before and after, unchanged. The mutation T42 of the bridge's spec (`research/PLAN_remote_bridge_scoped_E1_S6_spec.md:1226`: drop the
   `^` of the token, and CV7 is red) still turns CV7 red (M8 of this spec).
 - **D8. This story writes no sentence and refuses nothing.** Sentence F and the refusal are E2.S2's.
 

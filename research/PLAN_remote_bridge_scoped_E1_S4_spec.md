@@ -1,7 +1,7 @@
 # PLAN — E1.4 spec: per-server consent, the modal line, the audit line
 
-> Status: **built on `feat/remote-bridge-e14`, unmerged, 2026-11-07 (§S4.12 is the As built); written 2026-11-04 as a security spec by Fable (authorisation: what silences a prompt), before its code. Where §S4.2-§S4.10 differ from §S4.12 on the modal sentences, §S4.12 and the E1 document's epoch 4 amendment, item 9, win.**
-> Story E1.4 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.2
+> Status: **IMPLEMENTED, 2026-11-25: epic E1 is merged (E1.1-E1.7; E1.7 last, PR #380, squash 4d40697c); moved to `research/` with the parent still open in `todo/` (E2-E4).** The status as it stood: **built on `feat/remote-bridge-e14`, unmerged, 2026-11-07 (§S4.12 is the As built); written 2026-11-04 as a security spec by Fable (authorisation: what silences a prompt), before its code. Where §S4.2-§S4.10 differ from §S4.12 on the modal sentences, §S4.12 and the E1 document's epoch 4 amendment, item 9, win.**
+> Story E1.4 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) §4.2
 > *"Never ask" and "every 12 hours"*, *Modal and journal*). Shorter on purpose: the E1 document settles the `stampKey` tag, the four
 > sentences, `bridgeAuditName`, and scenarios C1–C15; this file carries what E1 left open, the exact interplay with E1.3's
 > `BridgeGrant`, and what it overturns. Depends on E1.3 ([PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md)).

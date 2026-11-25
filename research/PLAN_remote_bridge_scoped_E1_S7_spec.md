@@ -1,9 +1,9 @@
 # PLAN — E1.7 spec: the database execution profiles — what a bridged database client may log in with, per client and system
 
-> Status: **spec, 2026-11-17, by Fable, written as a security spec (authentication: what a database client may answer a server with) before its code. Nothing of it is built, and no probe of it has run.** Revised on 2026-11-18 with the findings accepted at its plan gate round and at the Opus judge's review (§S7.16, *Decided at the review*).
+> Status: **IMPLEMENTED, 2026-11-25: epic E1 is merged (E1.1-E1.7; E1.7 last, PR #380, squash 4d40697c); moved to `research/` with the parent still open in `todo/` (E2-E4).** The status as it stood: **spec, 2026-11-17, by Fable, written as a security spec (authentication: what a database client may answer a server with) before its code. Nothing of it is built, and no probe of it has run.** Revised on 2026-11-18 with the findings accepted at its plan gate round and at the Opus judge's review (§S7.16, *Decided at the review*).
 > Merged 2026-11-25 by PR #380 (squash 4d40697c), with the owner's word.
 > Status before the merge (2026-11-24): **built on PR #380, unmerged.** The probes ran; one pair is served, the ODBC `sqlcmd` on Linux (turned at d999e181, its production run green), and every other pair stays refused (§S7.20). M11 recorded on the owner's Windows host 2026-11-25 (no served row, §S7.20) and the coai code gate passed (2026-11-25). The status above is kept as it was written.
-> Story E1.7 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md):
+> Story E1.7 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md):
 > *Reading this plan* (the ninth and the tenth lesson), §2.1 Q15-Q18, §4.9 rows 7-13, §4.11 whole, §5 step 3f, §7 (the probes PK1, PS1, PP1, PA1
 > and PE1, legs (u)-(w), *The database profile*, M11), §8, §9 (the database line and the invariant line), `## Epics` E1). The parent is approved
 > at epoch 11, which has no entry, and is not edited here. This spec changes no scope, contract, decision or merge condition of the parent

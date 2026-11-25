@@ -1,8 +1,8 @@
 # PLAN — E1.3 spec: the allow-list, the note schema, the scope wall (CORNERSTONE)
 
-> Status: **built 2026-11-05 on branch `feat/remote-bridge-e1` (see §S3.12 *As built*); spec by Fable, 2026-11-04, written before its code.**
+> Status: **IMPLEMENTED, 2026-11-25: epic E1 is merged (E1.1-E1.7; E1.7 last, PR #380, squash 4d40697c); moved to `research/` with the parent still open in `todo/` (E2-E4).** The status as it stood: **built 2026-11-05 on branch `feat/remote-bridge-e1` (see §S3.12 *As built*); spec by Fable, 2026-11-04, written before its code.**
 > Story E1.3 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent
-> [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.1, §4.2, §4.3 schema only, §4.6 reference rule, `## Epics` E1).
+> [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) §4.1, §4.2, §4.3 schema only, §4.6 reference rule, `## Epics` E1).
 > Its own file because the stories document goes whole to the review gate and must stay short; it is promoted with E1's.
 > Where this spec differs from the E1 document, this spec wins and §S3.1 says why.
 >

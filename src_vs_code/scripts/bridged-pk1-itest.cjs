@@ -1,4 +1,4 @@
-// PK1 of the remote bridge's E1.7 (the spec todo/PLAN_remote_bridge_scoped_E1_S7_spec.md §S7.4; parent §7, the probe table row PK1): does a bridged database client offer an identity
+// PK1 of the remote bridge's E1.7 (the spec research/PLAN_remote_bridge_scoped_E1_S7_spec.md §S7.4; parent §7, the probe table row PK1): does a bridged database client offer an identity
 // that is not the entry's?
 //
 //   npm run compile && node scripts/bridged-pk1-itest.cjs        (`npm run itest:bridged-pk1`)

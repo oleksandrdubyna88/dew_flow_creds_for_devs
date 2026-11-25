@@ -2884,7 +2884,7 @@ person already has; it does not say no secret leaves the vault's computer (a per
 server) and does not promise that a `creds://` reference works in such a window (E3.S1's Run with Secrets over SSH is for a local window only). `exportRefused.test.ts` drives
 it through the real broker on `/v1/use/exec`, `/v1/alias/exec` and the real `exportEnv` routes, and
 `exportWiring.test.ts` reads `extension.ts` to hold that the window passes `vscode.env.remoteName` to both. Whether the persisted collection reaches
-new remote terminals at all is the M4 measurement in `todo/PLAN_remote_bridge_scoped_E1.md`, taken by a
+new remote terminals at all is the M4 measurement in `research/PLAN_remote_bridge_scoped_E1.md`, taken by a
 person and not yet recorded. The form's row
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
 row: written into every integrated terminal opened after saving, in this window only, never to a file,
@@ -3852,7 +3852,7 @@ platforms, which is also the first unit test that ever opened it. Record:
 [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
 
 **A third door, for a Remote Bridge listener, that needs a key** (E1.2 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S2_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
+[PLAN_remote_bridge_scoped_E1_S2_spec.md](PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
 the extension calls it yet* — `openBridgeListener` has no caller until E2.2, and a test reads
 every non-test source but the broker's own to keep it so). `BridgeListeners` (`brokerBridgeListeners.ts`) opens one
 loopback listener per open bridge, each with its own port and a key of 32 random bytes minted at that open,
@@ -3871,7 +3871,7 @@ reconnect cannot leave the earlier port and key usable, `close()` ends kept-aliv
 `dispose()` closes every bridge listener and refuses later opens, before the broker starts anything for them.
 
 **The allow-list, the note schema and the scope wall of a Remote Bridge** (E1.3 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
+[PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
 extension opens a bridge* — `extension.ts` passes no `bridgeWall`, and without one `openBridgeListener` rejects, so
 a door with no wall cannot exist). Three things stand behind the third door.
 
@@ -3965,7 +3965,7 @@ key file that cannot be removed (Amendment 3, C.6: `removeKeyFile` catches the `
 `ssh:exec — the key file could not be removed: …` to the journal, and the exec slot comes back in the same `finally`; the finished
 result stands, and the leftover file is the person's own, in a folder only they can read).
 
-**The bridged `ssh:exec` road (E1.6 of the scoped remote bridge; spec `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`).** A bridged call no longer runs
+**The bridged `ssh:exec` road (E1.6 of the scoped remote bridge; spec `research/PLAN_remote_bridge_scoped_E1_S6_spec.md`).** A bridged call no longer runs
 under the laptop's `ssh_config`: it runs under ONE file written for the call, with an environment built new, and what each leg offers and to whom is
 decided by the code before the spawn. Nothing here is reachable by a user while `test/bridgeBoundary.test.ts` R1 keeps every bridge door closed (E4.1
 flips it). The pieces, in the order a call meets them:
@@ -4250,7 +4250,7 @@ authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for an
 bridge refuses the route. The plan records it as a todo (§8 of the scoped remote bridge plan), not as part of E1.
 
 *What silences a prompt on a bridge* (E1.4 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S4_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S4_spec.md); still nothing in the extension opens a
+[PLAN_remote_bridge_scoped_E1_S4_spec.md](PLAN_remote_bridge_scoped_E1_S4_spec.md); still nothing in the extension opens a
 bridge). **A call through a bridge asks every time unless that server's `quiet` switch is on, and the switch speaks for the MCP door
 only.** `quiet` is a field of the server's scope file (`bridgeScopeStore.ts`), read from a fresh `Scope` by `DoorView.resolveUse`
 (`bridgeScope.ts`, `usableIn`) at the lookup and copied onto the grant by `grantFor()` at mint for the dialog's coverage line;

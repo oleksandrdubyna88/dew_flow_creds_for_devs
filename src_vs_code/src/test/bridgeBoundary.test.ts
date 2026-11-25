@@ -11,7 +11,7 @@ import { share, world } from './brokerWorld';
 
 /**
  * The scenarios that hold for the whole of epic E1, written in E1.2 and kept to the end
- * (todo/PLAN_remote_bridge_scoped_E1.md, "Scenarios that hold for the whole epic").
+ * (research/PLAN_remote_bridge_scoped_E1.md, "Scenarios that hold for the whole epic").
  *
  * <p>R3 was written FIRST and watched GREEN on untouched code: the expected answers below are
  * literals recorded from the broker before the third door existed, and no later story edits them.</p>

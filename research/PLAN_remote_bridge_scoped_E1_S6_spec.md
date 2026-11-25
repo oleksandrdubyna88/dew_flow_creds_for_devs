@@ -1,10 +1,10 @@
 # PLAN — E1.6 spec: SSH execution containment — what each leg of a bridged `ssh` offers, and to whom
 
-> Status: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward. Epoch 10 opened on 2026-11-16; §S6.14 is built on this PR the same day (As built for epoch 10: §S6.13), M9 passed again on it. The parent stopped again on 2026-11-17 (its change 10.2: a bridged `psql` URI's libpq parameters read the person's files); not merged. Amended on 2026-11-17 for the parent's epoch 11: §S6.15 is the second fix-forward (the gate, the connection built from the entry's fields, the refusals); nothing of it is built before epoch 11 opens. Epoch 11 opened on 2026-11-17 (by the owner); §S6.15 is next, its probes PQ2 and PM1 first.**
+> Status: **IMPLEMENTED, 2026-11-25: epic E1 is merged (E1.1-E1.7; E1.7 last, PR #380, squash 4d40697c); moved to `research/` with the parent still open in `todo/` (E2-E4).** The status as it stood: **spec, 2026-11-12, by Fable, written as a security spec (authentication: what a leg offers and to whom) before its code. Built 2026-11-13 in PR #365 (As built: §S6.13); M9 began on the owner's Windows host on 2026-11-15 and stopped the parent plan (its change 9.2: `ssh.exe` does not start without `ProgramData`); not merged. Amended on 2026-11-15 for the parent's epoch 10: §S6.14 is the fix-forward. Epoch 10 opened on 2026-11-16; §S6.14 is built on this PR the same day (As built for epoch 10: §S6.13), M9 passed again on it. The parent stopped again on 2026-11-17 (its change 10.2: a bridged `psql` URI's libpq parameters read the person's files); not merged. Amended on 2026-11-17 for the parent's epoch 11: §S6.15 is the second fix-forward (the gate, the connection built from the entry's fields, the refusals); nothing of it is built before epoch 11 opens. Epoch 11 opened on 2026-11-17 (by the owner); §S6.15 is next, its probes PQ2 and PM1 first.**
 > **Revised the same day after two reviews of `a30faed7` (an Opus judge and a Fable security judge):** the user rule, the host rule and the
 > equal `Host` words, first contact that cannot be written, the `%` rule, the pin line's spelling, and the tests and mutations for them. The
 > decisions of that day are in §S6.10.
-> Story E1.6 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md):
+> Story E1.6 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md):
 > §4.9 whole, §4.2's two in-scope answers and N7, §4.11's bridged half, §5 step 3c, §6, §7 *The SSH contract* legs (a)-(i), *The file writer refuses
 > injection*, *In scope, visible or not*, *Links*, M8 and M9, §8, §9, `## Epics` E1, ledger entries 8.2 and 9.1). The parent is approved at epoch 9
 > and is not edited here. Where this spec found the parent silent or inexact, the point is in §S6.10 with its evidence, and the spec builds the
@@ -716,7 +716,7 @@ For Opus, on the code; points 9-15 are Fable's authentication judgement at revie
    - added: *a call with an unpinned key leg cannot open `bridges/known_hosts` for writing*.
 2. **§6:** a row for the per-call pin files: at most (1 + 4) × 8 files, under 1 KB each, removed in the call's `finally`; the purge covers a killed window (P6).
 3. **§7, the M9 row:** the first-contact measurements, the default-identity measurement and the `%` check of §S6.9.
-4. **The stories document** (`todo/PLAN_remote_bridge_scoped_E1.md:524`, `:571-572`): legs (a)-(i), and the bridged half of §4.11 (P7).
+4. **The stories document** (`research/PLAN_remote_bridge_scoped_E1.md:524`, `:571-572`): legs (a)-(i), and the bridged half of §4.11 (P7).
 5. **Stale line numbers of §4.11:** `agentUseActions.ts:342`, `:369`, `:372` are `:602`, `:629`, `:628` on this tree (H11).
 
 **Disposed on 2026-11-15 by the parent's revision for epoch 10** (its §4.9, the table *What was owed to this review, disposed*): the FIDO-PIN risk and
