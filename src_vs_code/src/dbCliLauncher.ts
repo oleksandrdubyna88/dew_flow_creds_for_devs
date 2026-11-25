@@ -1,6 +1,7 @@
 import { DbType } from './types';
 import { parseDbConnectionString, withoutPassword } from './dbConnString';
 import { BridgedDbConnection, bridgedDbConnection, bridgedPsqlString } from './bridgedDbProfile';
+import { DbClientOk, DbVendor, VENDORS_OF } from './bridgedDbClient';
 
 /**
  * Handing a query to a database CLI with the password never on a command line.
@@ -243,10 +244,48 @@ export interface DbQueryLaunch {
 }
 
 /**
+ * The authentication flags each vendor's client is given (E1.7 spec §S7.5), and only that vendor: a flag a client does not know ends it before it connects (PA1-d, PA1-f), so
+ * Oracle's `--skip-enable-cleartext-plugin` is never written for MariaDB's client, which knows neither it nor `--restricted-auth`, and `--authentication-method` is go-sqlcmd's alone.
+ * `psql`'s controls stand in its keyword string (`bridgedPsqlString`); the ODBC `sqlcmd` has none whose acceptance could be asked.
+ */
+const VENDOR_FLAGS: Readonly<Record<DbVendor, (absentFile: string) => readonly string[]>> = {
+  postgresql: () => [],
+  oracle: (absentFile) => [`--plugin-dir=${absentFile}`, '--skip-enable-cleartext-plugin'],
+  mariadb: (absentFile) => [`--plugin-dir=${absentFile}`],
+  'go-sqlcmd': () => ['--authentication-method=SqlPassword'],
+  'odbc-sqlcmd': () => [],
+};
+
+/** Oracle's `--ssl-mode`, written straight after `--protocol=TCP`; MariaDB's client has no flag of that name, so a connection that asks for it makes no launch (a setting is never dropped silently). */
+const sslModeFlags = (vendor: 'oracle' | 'mariadb', settings: Readonly<Record<string, string>>): readonly string[] | undefined => {
+  if (settings['ssl-mode'] === undefined) {
+    return [];
+  }
+  return vendor === 'oracle' ? [`--ssl-mode=${settings['ssl-mode']}`] : undefined;
+};
+
+/**
+ * The flags each vendor's client is given for the settings of the connection that reach it (E1.7 spec §S7.9, Q15 kind (a)), or `undefined` when the client has no measured flag for one it was asked:
+ * the call then makes no launch (DR9), and never one that quietly leaves the setting out. `psql`'s settings are keywords of its own string.
+ */
+const SETTING_FLAGS: Readonly<Record<DbVendor, (settings: Readonly<Record<string, string>>) => readonly string[] | undefined>> = {
+  postgresql: () => [],
+  oracle: (settings) => sslModeFlags('oracle', settings),
+  mariadb: (settings) => sslModeFlags('mariadb', settings),
+  // no key of the profile reaches `sqlcmd` yet: Encrypt and TrustServerCertificate are refused before the builder (§S7.9: a key comes back only with its CI leg)
+  'go-sqlcmd': () => [],
+  'odbc-sqlcmd': () => [],
+};
+
+/** Whether the client check's verdict names a vendor of this type's own client: a verdict of another client's vendor is no verdict. */
+const verdictFits = (dbType: DbType, verdict: DbClientOk | undefined): verdict is DbClientOk => verdict !== undefined && (VENDORS_OF[dbType] ?? []).includes(verdict.vendor);
+
+/**
  * The launch of a BRIDGED query (the E1.6 spec §S6.15 Z2): built from the fields `bridgedDbConnection` checked, never from the stored string, which no bridged client is handed.
  * The password rides the client's own variable, the person's files are closed by `closing` (Y6), and an entry the profile refuses answers `undefined`. `psql` gets one
- * keyword string after `--`; `mysql` gets `--no-defaults` first and `--protocol=TCP` straight after it, then the connection flags and the three pins; `sqlcmd` gets today's arguments
- * with its user always named.
+ * keyword string after `--`; `mysql` gets `--no-defaults` first and `--protocol=TCP` straight after it, then its vendor's flags, the connection flags and the three pins; `sqlcmd` gets
+ * today's arguments with its user always named, then its vendor's flag. The program is the file the client check asked (E1.7 §S7.6 item 3), and a call with no good verdict of this
+ * client's own vendor answers `undefined`.
  */
 function bridgedLaunch(
   cli: DbCli & { passwordEnv: string },
@@ -254,25 +293,42 @@ function bridgedLaunch(
   stored: string,
   query: string,
   closing: Record<string, string>,
-  absentFile: string,
+  options: { readonly absentFile: string; readonly verdict?: DbClientOk },
 ): DbQueryLaunch | undefined {
   const connection = bridgedDbConnection(dbType, stored, '');
+  const { verdict } = options;
+  return connection.ok && verdictFits(dbType, verdict) ? bridgedLaunchOf(cli, dbType, connection, query, closing, { absentFile: options.absentFile, verdict }) : undefined;
+}
+
+/** The launch of a built connection under a verdict that fits its client. */
+function bridgedLaunchOf(
+  cli: DbCli & { passwordEnv: string },
+  dbType: DbType,
+  connection: BuiltConnection,
+  query: string,
+  closing: Record<string, string>,
+  options: { readonly absentFile: string; readonly verdict: DbClientOk },
+): DbQueryLaunch | undefined {
   const args = BRIDGED_ARGS[dbType];
-  if (!connection.ok || args === undefined) {
+  const { verdict } = options;
+  if (args === undefined) {
     return undefined;
   }
   const userEnv = BRIDGED_USER_ENV[dbType];
   const user = userEnv === undefined ? {} : { [userEnv]: connection.user };
-  return { exe: cli.exe, args: args(connection, query, absentFile), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
+  const settingFlags = SETTING_FLAGS[verdict.vendor](connection.settings);
+  return settingFlags === undefined
+    ? undefined
+    : { exe: verdict.file.path, args: args(connection, query, options.absentFile, VENDOR_FLAGS[verdict.vendor](options.absentFile), settingFlags), env: { [cli.passwordEnv]: connection.password, ...closing, ...user } };
 }
 
 type BuiltConnection = Extract<BridgedDbConnection, { ok: true }>;
 
 /** The arguments of each client for a built connection. The ONE leading space on psql's -c is the first-character rule of `buildDbQueryLaunch`; `-X`: no `.psqlrc` of the person's (E1.6, parent §4.11). */
-const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string) => string[]>> = {
+const BRIDGED_ARGS: Partial<Record<DbType, (connection: BuiltConnection, query: string, absentFile: string, controls: readonly string[], settingFlags: readonly string[]) => string[]>> = {
   postgres: (connection, query, absentFile) => ['-X', '-c', ' ' + query, '--', bridgedPsqlString(connection, absentFile)],
-  mysql: (connection, query) => bridgedMysqlArgs(connection, query),
-  mssql: (connection, query) => bridgedMssqlArgs(connection, query),
+  mysql: (connection, query, _absentFile, controls, settingFlags) => bridgedMysqlArgs(connection, query, controls, settingFlags),
+  mssql: (connection, query, _absentFile, controls, settingFlags) => bridgedMssqlArgs(connection, query, controls, settingFlags),
 };
 
 /** The variable that carries the user, for the client that has no flag for it (`sqlcmd`): always set, since a user is required. */
@@ -280,22 +336,22 @@ const BRIDGED_USER_ENV: Partial<Record<DbType, string>> = { mssql: 'SQLCMDUSER' 
 
 /**
  * No option file at all: `--no-defaults` first, because it is honoured only there and Oracle's `load-data-local-dir` in an option file survives `--local-infile=0`. Then `--protocol=TCP`
- * straight after it (PM1: both clients take it there); `-h` is always named, so `localhost` means TCP and never the socket file (Q17).
+ * straight after it (PM1: both clients take it there), then the vendor's authentication flags; `-h` is always named, so `localhost` means TCP and never the socket file (Q17).
  */
-function bridgedMysqlArgs(connection: BuiltConnection, query: string): string[] {
+function bridgedMysqlArgs(connection: BuiltConnection, query: string, controls: readonly string[], settingFlags: readonly string[]): string[] {
   const flags = [
     ['-h', connection.host],
     ...(connection.port === undefined ? [] : [['-P', connection.port]]),
     ['-u', connection.user],
     ...(connection.database === undefined ? [] : [['-D', connection.database]]),
   ].flat();
-  return ['--no-defaults', '--protocol=TCP', ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
+  return ['--no-defaults', '--protocol=TCP', ...settingFlags, ...controls, ...flags, '--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query];
 }
 
-/** Today's `sqlcmd` arguments for the built fields: `-S host[,port]`, `-d`, `-Q`, `-b` and `-x` (scripting variables off: `$(SQLCMDPASSWORD)` is text). */
-function bridgedMssqlArgs(connection: BuiltConnection, query: string): string[] {
+/** Today's `sqlcmd` arguments for the built fields: `-S host[,port]`, `-d`, `-Q`, `-b` and `-x` (scripting variables off: `$(SQLCMDPASSWORD)` is text), then the vendor's flag, last. */
+function bridgedMssqlArgs(connection: BuiltConnection, query: string, controls: readonly string[], settingFlags: readonly string[]): string[] {
   const server = connection.port === undefined ? connection.host : `${connection.host},${connection.port}`;
-  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x'];
+  return ['-S', server, ...(connection.database === undefined ? [] : ['-d', connection.database]), '-Q', query, '-b', '-x', ...settingFlags, ...controls];
 }
 
 /**
@@ -314,7 +370,7 @@ export function buildDbQueryLaunch(
   dbType: DbType,
   connectionString: string,
   query: string,
-  options: { readonly bridged?: boolean; readonly absentFile?: string } = {},
+  options: { readonly bridged?: boolean; readonly absentFile?: string; readonly verdict?: DbClientOk } = {},
 ): DbQueryLaunch | undefined {
   const bridged = options.bridged === true;
   const closing = bridged ? clientFileNames(dbType, options.absentFile) : {};
@@ -331,7 +387,7 @@ export function buildDbQueryLaunch(
     return undefined;
   }
   if (bridged) {
-    return bridgedLaunch({ ...cli, passwordEnv: cli.passwordEnv }, dbType, connectionString, query, closing, options.absentFile ?? '');
+    return bridgedLaunch({ ...cli, passwordEnv: cli.passwordEnv }, dbType, connectionString, query, closing, { absentFile: options.absentFile ?? '', verdict: options.verdict });
   }
   const parts = parseDbConnectionString(connectionString);
   const env: Record<string, string> = {};

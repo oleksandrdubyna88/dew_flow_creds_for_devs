@@ -607,7 +607,7 @@ of this document.
       no sentence there describes something that does not run.
 - [ ] The six neighbour rows were read again; the neighbour search was run again; the two bridge files have no
       difference (`git diff --stat b15a5410 -- todo/PLAN_remote_bridge_scoped.md
-      todo/PLAN_remote_bridge_scoped_E1_S3_spec.md` is empty).
+      research/PLAN_remote_bridge_scoped_E1_S3_spec.md` is empty).
 - [ ] `plan-lifecycle.mjs` is clean; `pin-check.mjs` passes; each link of the changed files resolves.
 - [ ] `npm run typecheck`, `npm test` and `npm run lint` are green with a clean `tsc` read first; `npm run contract`
       leaves no difference; `npm run itest:mcp` is green with no `SKIP`, or the summary says why not and who runs it.

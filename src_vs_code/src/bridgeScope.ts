@@ -54,8 +54,10 @@ export interface BridgeWallSource {
   /** The snippet's supplier for ONE account: `visibleConfigDetails(accountOnlyVault(storage, accountId), entityId)`. */
   visibleConfigOf(accountId: string, entityId: string): EntityMetadata | undefined;
   /**
-   * Why this entry cannot be used through a bridge at all, asked before anybody is: E2 wires
-   * `details.agentForward === true ? { code: 'denied', message: AGENT_FORWARD_REFUSED(name) } : undefined`.
+   * Why this entry cannot be used through a bridge at all, asked before anybody is: E2 wires `wallSuppliersOf(vault, { profiles, platform })` (`bridgeWallSource.ts`), whose
+   * answer is the agent-forwarding refusal, `{ code: 'denied', message: AGENT_FORWARD_REFUSED(name) }`, or, for a database entry whose client has no served row on this system, the refusal of the
+   * gate: `{ code: 'not_supported', message: BRIDGE_USE_REFUSED(name), detail: DR1 }`. `detail` is what the journal holds when it must differ from what the agent reads; `entryBarred` hands the
+   * refusal on whole, so `usable` writes it and drops the grant (E1.7 spec §S7.8).
    */
   entryRefusal(accountId: string, entityId: string): Refusal | undefined;
 }

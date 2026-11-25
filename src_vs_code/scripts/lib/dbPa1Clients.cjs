@@ -1,0 +1,205 @@
+'use strict';
+// PA1, the legs of the `mysql` and `sqlcmd` clients (E1.7 spec §S7.4: PA1-a, PA1-d, PA1-e, PA1-f). RECORD legs: each prints what the client did beside its
+// positive control (the same run with no candidate) and its negative control (a flag that does not exist), and fails only for the rig's own faults.
+// The legs of `psql` are in `dbPa1Psql.cjs`.
+const fs = require('node:fs');
+const path = require('node:path');
+const { launch, endChild } = require('../itestSshd.cjs');
+const crypto = require('node:crypto');
+const net = require('node:net');
+const { fakeServer, within } = require('./mysqlFake.cjs');
+const { check, bridgedEnv, runSync, oneLine, firstLine, buildTagOf, versionOfClient, reachedRun, noteLeg, unmeasured, installPluginFolder, IS_WINDOWS } = require('./dbProbeRig.cjs');
+
+const INVENTED_FLAG = '--pa1-not-a-flag';
+const ABSENT_PLUGIN = 'pa1_absent_plugin';
+/** What a client says of a flag it does not know: it ends before it connects, and the flag stopped nothing (it was never a control of this client). */
+const UNKNOWN_FLAG = /unknown (?:variable|option|flag|shorthand flag)|unrecognized option|invalid option|cannot take an argument|Unknown Option|ambiguous option/i;
+
+/**
+ * PA1-a: the version flag, under the bridged environment: the whole line, its stream, the exit code, the build tag. The version itself is read where the client's own family puts it
+ * (`mysql  Ver 8.4.13`, `Distrib 10.6.23-MariaDB`, `Version: v1.10.0`), never as the first dotted number of the line: a path (Oracle's client on Windows) or the client protocol number
+ * (MariaDB 10.x) has one, and neither `sqlcmd` has a version on its first line. The line goes to R1.
+ */
+function legA(client, rig) {
+  const env = bridgedEnv(rig.product, rig.home);
+  // `sqlcmd` answers its version in its help, `-?`, which both of its clients take and which is the flag the product's check asks; `--version` is asked beside it only as a record: go-sqlcmd prints its
+  // help for it and the ODBC client refuses it as an unknown option (an error line is its answer, not a version).
+  const flags = client.family.endsWith('sqlcmd') ? ['-?', '--version'] : ['--version'];
+  let versionLine;
+  for (const flag of flags) {
+    const answer = runSync(client.exe, [flag], env);
+    const line = firstLine(answer.stdout !== '' ? answer.stdout : answer.stderr);
+    if (flag === '--version') {
+      versionLine = line;
+    }
+    const read = versionOfClient(client.family, answer.text);
+    const said = read === undefined ? 'the answer holds no version of this family\'s kind' : `the version it says: ${read.number}, from the line ${JSON.stringify(read.line)}`;
+    const own = client.family.endsWith('sqlcmd') && flag === '--version' ? ' (not the version flag of sqlcmd: the check asks -?)' : '';
+    console.log(`record (PA1-a) ${client.name} ${flag}${own}: exit ${answer.code}; the first line came on ${answer.stdout !== '' ? 'stdout' : 'stderr'}: ${JSON.stringify(line)}; ${said}; the build tag (everything after the version): ${JSON.stringify(buildTagOf(read === undefined ? line : read.line, client.family))}`);
+  }
+  return versionLine;
+}
+
+/** A loopback port nothing listens on: bound, read, let go. */
+function closedPort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/** The driver names an ODBC client prints in its own error lines: `Microsoft ODBC Driver 18 for SQL Server`, `SQL Server Native Client 11.0`. */
+const DRIVER_WORDS = /(?:Microsoft )?ODBC Driver \d+ for SQL Server|SQL Server Native Client(?: \d+(?:\.\d+)?)?/i;
+
+/**
+ * The driver the ODBC client RAN with (N16), not every driver the runner has installed (the second run listed them all, and a reader could not tell which one the client used). A client run at a port that
+ * refuses, under the bridged environment, names its driver in its own error line; on Linux the driver file that name stands for is then read from `odbcinst` (its file name carries the build, `libmsodbcsql-18.6.so.1.1`).
+ * A client that names none in its words is said to have named none, and the installed list is printed under that label and no other.
+ * Returns the driver library's real file name (`libmsodbcsql-18.7.so.1.1`, the build in it), or `undefined`: the verdict of an ODBC `sqlcmd` is bound to the driver it loads as well as to its own build (spec L11).
+ */
+async function odbcDriver(client, rig) {
+  const port = await closedPort();
+  const env = bridgedEnv(rig.product, rig.home, { SQLCMDPASSWORD: `probe-${crypto.randomBytes(6).toString('hex')}` });
+  const answer = runSync(client.exe, ['-S', `127.0.0.1,${port}`, '-U', 'pa1', '-Q', 'select 1', '-l', '5'], env, 40_000);
+  const named = DRIVER_WORDS.exec(answer.text)?.[0];
+  if (named === undefined) {
+    const listed = IS_WINDOWS
+      ? runSync('powershell', ['-NoProfile', '-Command', 'Get-OdbcDriver | ForEach-Object { $_.Name }'], process.env)
+      : runSync('odbcinst', ['-q', '-d'], process.env);
+    console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: the client's own words name none (exit ${answer.code}; it said ${JSON.stringify(oneLine(answer.text, 200))}); the drivers the runner lists, none of them shown to have run: ${JSON.stringify(oneLine(listed.text, 300))}`);
+    noteLeg('PA1-a odbc-sqlcmd driver', true, 'the client named no driver');
+    return undefined;
+  }
+  let file = '';
+  let driverFile;
+  if (IS_WINDOWS) {
+    const found = windowsDriverFile(named);
+    driverFile = found?.file;
+    file = found === undefined ? '; the registry names no driver file for that name' : `; its Driver= path is ${found.path}, the file is ${found.file}, version ${found.version}`;
+  } else {
+    const entry = runSync('odbcinst', ['-q', '-d', '-n', named.replace(/^Microsoft /, '')], process.env).stdout;
+    const library = /^Driver\s*=\s*(\S+)/m.exec(entry)?.[1];
+    const real = library !== undefined && fs.existsSync(library) ? fs.realpathSync(library) : undefined;
+    driverFile = real === undefined ? undefined : path.basename(real);
+    file = library === undefined ? '; odbcinst names no driver file for that name' : `; its Driver= path is ${library}, the real file is ${real ?? 'not on disk'}, the driver library is ${driverFile ?? 'not read'}`;
+  }
+  console.log(`record (PA1-a) odbc-sqlcmd, the driver that ran: ${JSON.stringify(named)} (named by the client's own error line, exit ${answer.code})${file}`);
+  noteLeg('PA1-a odbc-sqlcmd driver', true, driverFile === undefined ? named : `${named}, ${driverFile}`);
+  return driverFile;
+}
+
+/** On Windows: the `Driver` path of a named ODBC driver (the registry's own word, by `Get-OdbcDriver`), its file name and the file's version. `undefined` when it names none. */
+function windowsDriverFile(named) {
+  const wanted = named.replace(/^Microsoft /, '');
+  if (!/^[\w .-]+$/.test(wanted)) {
+    return undefined;
+  }
+  const answer = runSync('powershell', ['-NoProfile', '-Command', `$d = Get-OdbcDriver -Name '${wanted}' -ErrorAction SilentlyContinue | Select-Object -First 1; if ($null -ne $d) { $p = $d.Attribute['Driver']; $v = (Get-Item -LiteralPath $p).VersionInfo.FileVersion; Write-Output ($p + '|' + $v) }`], process.env);
+  const [driverPath, version] = answer.stdout.trim().split('|');
+  return driverPath === undefined || driverPath === '' ? undefined : { path: driverPath, file: path.basename(driverPath), version: version ?? 'unknown' };
+}
+
+/** The arguments that connect a client to the listener at `port`, with one candidate among them: `mysql` by TCP, `sqlcmd` with a SQL login named. */
+const connectArgs = (client, port, candidate) => (client.family === 'oracle' || client.family === 'mariadb'
+  ? ['--no-defaults', '--protocol=TCP', '-h', '127.0.0.1', '-P', String(port), '-u', 'pa1', ...candidate, '-e', 'select 1']
+  : ['-S', `127.0.0.1,${port}`, '-U', 'pa1', '-Q', 'select 1', ...candidate]);
+
+/**
+ * The shared shape of PA1-d and PA1-f. A flag is KNOWN when the client read every flag and went on to connect: the run's listener holds the connection, and the
+ * client is ended. (A version flag is no test: both `mysql` clients print their version at `--version` and read no flag after it.) The positive control is the run
+ * with no candidate, which must connect; the negative control is a flag that does not exist, which the client refuses in its own words.
+ */
+async function flagLegs(scope, leg, client, rig, candidates) {
+  const sealed = `probe-${crypto.randomBytes(6).toString('hex')}`; // a throwaway for the SQL login the `sqlcmd` run names; the listener never reads it
+  const env = bridgedEnv(rig.product, rig.home, client.family.endsWith('sqlcmd') ? { SQLCMDPASSWORD: sealed } : {});
+  const run = (candidate) => reachedRun(scope, client.exe, (port) => connectArgs(client, port, candidate), env);
+  const control = await run([]);
+  console.log(`record (${leg}) ${client.name} control, no candidate: ${control.reached ? 'the client connected' : 'the client did NOT connect'}; exit ${control.code}; it said ${JSON.stringify(control.said)}`);
+  check(`(${leg}) ${client.name} control: the run with no candidate connects to the listener (without it a refusal below proves nothing)`, control.reached, JSON.stringify(control));
+  const invented = await run([INVENTED_FLAG]);
+  console.log(`record (${leg}) ${client.name} a flag that does not exist (${INVENTED_FLAG}): ${invented.reached ? 'it went ON and connected (the client ignores an unknown flag)' : 'refused, no connection'}; exit ${invented.code}; it said ${JSON.stringify(invented.said)}`);
+  noteLeg(`${leg} ${client.name} control`, control.reached, `an unknown flag: ${invented.reached ? 'IGNORED' : 'refused'}`);
+  if (control.reached && invented.reached) {
+    console.log(`STOP (${leg}, ${client.name}): the client ignores a flag it does not know and goes on — the database client check is then its only lock (parent §7, row PA1)`);
+  }
+  for (const candidate of candidates) {
+    const answer = await run(candidate);
+    const unknown = !answer.reached && UNKNOWN_FLAG.test(answer.said);
+    console.log(`record (${leg}) ${client.name} ${candidate.join(' ')}: ${answer.reached ? 'KNOWN (the client read it and connected)' : (unknown ? 'UNKNOWN TO THIS CLIENT (it refused the flag in its own words before connecting: the flag is no control of this client)' : 'not known, or refused before connecting')}; exit ${answer.code}; it said ${JSON.stringify(answer.said)}`);
+    noteLeg(`${leg} ${client.name} ${candidate.join(' ')}`, control.reached, answer.reached ? 'known' : (unknown ? 'unknown to this client' : 'not known or refused'));
+  }
+}
+
+/** PA1-d: `--plugin-dir` at a path nothing writes, `--skip-enable-cleartext-plugin`, and (MariaDB's client) `--restricted-auth` with a list. */
+function legD(scope, client, rig) {
+  const candidates = [[`--plugin-dir=${rig.absentFile}`], ['--skip-enable-cleartext-plugin']];
+  if (client.family === 'mariadb') {
+    candidates.push(['--restricted-auth=mysql_native_password,caching_sha2_password']);
+  }
+  return flagLegs(scope, 'PA1-d', client, rig, candidates);
+}
+
+/** PA1-f: each candidate flag of the spec's §S7.5 and §S7.9 on a `sqlcmd`. */
+function legF(scope, client, rig) {
+  const candidates = [['--authentication-method=SqlPassword'], ['-N'], ['-N', 'true'], ['-N', 'strict'], ['-C'], ['-l', '5'], ['-b'], ['-x']];
+  return flagLegs(scope, 'PA1-f', client, rig, candidates);
+}
+
+/** The folder the client names when the server switches its login to a plugin that is not there (Oracle's client); `undefined` when the client says nothing of the kind. */
+async function folderByWords(scope, client, rig) {
+  const { server } = fakeServer(undefined, { switchTo: ABSENT_PLUGIN });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const args = ['--no-defaults', '--protocol=TCP', '-h', '127.0.0.1', '-P', String(server.address().port), '-u', 'pa1', '-e', 'select 1'];
+  const child = launch(scope, client.exe, args, { env: bridgedEnv(rig.product, rig.home) });
+  try {
+    await within(child.closed.then(() => true), 8_000, false);
+    const found = new RegExp(String.raw`((?:[A-Za-z]:)?[\\/][^'":\r\n]*?)[\\/]+${ABSENT_PLUGIN}`).exec(child.stderr + child.stdout);
+    return { folder: found?.[1], said: oneLine(child.stderr + child.stdout, 300) };
+  } finally {
+    await endChild(child);
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+/** The folder compiled into the client or into the client library it loads (MariaDB's client waits for the server after a switch to a missing plugin and says nothing): the program's own strings, then `ldd`'s library. Linux only. */
+function folderByLibrary(client) {
+  if (IS_WINDOWS) {
+    return undefined;
+  }
+  const line = runSync('ldd', [client.exe], process.env).stdout.split('\n').find((text) => /libmariadb\.so|libmysqlclient\.so/.test(text));
+  const library = /=>\s*(\S+)/.exec(line ?? '')?.[1];
+  const files = [client.exe, ...(library !== undefined && fs.existsSync(library) ? [library] : [])];
+  const strings = files.flatMap((file) => fs.readFileSync(file).toString('latin1').match(/\/[A-Za-z0-9_./-]*\/plugin(?=\0)/g) ?? []); // NOSONAR: a bounded read of a client's own binary, for a path string
+  return strings.find((text) => fs.existsSync(text));
+}
+
+/** PA1-e: the files of the client's own plugin folder are the loadable authentication plugins of that build (a plugin linked into the client is no file, N11). */
+async function legE(scope, client, rig) {
+  const byWords = await folderByWords(scope, client, rig);
+  const layout = IS_WINDOWS ? installPluginFolder(client.exe) : undefined;
+  const folder = byWords.folder !== undefined && fs.existsSync(byWords.folder) ? byWords.folder : (layout === undefined ? folderByLibrary(client) : layout.folder);
+  let how = 'the folder string compiled into the client library';
+  if (folder === byWords.folder) {
+    how = "the client's own words when the server switched the login to a plugin that is not there";
+  } else if (layout !== undefined) {
+    how = "the install's layout (the Windows build says only 'The specified module could not be found', and names no folder; the folder is the one beside the client's bin folder)";
+  }
+  if (folder === undefined && byWords.folder !== undefined) {
+    console.log(`record (PA1-e) ${client.name}: the client looked for a plugin in ${byWords.folder}, which does not exist on this runner: it has no loadable authentication plugin file there`);
+    noteLeg(`PA1-e ${client.name}`, true, 'the plugin folder the client named does not exist');
+    return;
+  }
+  if (folder === undefined) {
+    unmeasured(`PA1-e ${client.name}`, `neither the client's words${layout === undefined ? ' nor its library' : ' nor the layout of its install'} named a plugin folder that exists (it said ${JSON.stringify(byWords.said)}${layout === undefined ? '' : `; looked in: ${layout.looked.join(', ')}`})`);
+    return;
+  }
+  const names = fs.readdirSync(folder).sort((a, b) => a.localeCompare(b));
+  console.log(`record (PA1-e) ${client.name}: the plugin folder, found by ${how}: ${folder}; ${names.length} file(s): ${names.join(' ') || '(none)'}`);
+  noteLeg(`PA1-e ${client.name}`, true, `${names.length} file(s) in ${path.basename(path.dirname(folder))}/${path.basename(folder)}`);
+}
+
+module.exports = { legA, odbcDriver, legD, legE, legF };

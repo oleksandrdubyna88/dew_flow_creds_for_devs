@@ -39,6 +39,8 @@ const { ownedDir } = require('./lib/leftovers.cjs');
 const R = require('./lib/psqlRig.cjs');
 const { check, failureCount } = require('./lib/psqlCheck.cjs');
 const { legPQ2 } = require('./lib/psqlProbeLegs.cjs');
+const candidates = require('./lib/dbCandidates.cjs');
+const { registerRan } = require('./lib/dbProbeClients.cjs');
 const { PD2_PASSWORD_MARKER, PD3_MARKER_CN, holdsMarker, described, versionOf, psqlRun, throwawayCertificate } = R;
 
 const OUT = path.join(__dirname, '..', 'out');
@@ -49,7 +51,7 @@ const reached = (name, run) => check(`${name}: the client reached the fake serve
 const writePgpass = (home) => (port) => fs.writeFileSync(path.join(home, '.pgpass'), `127.0.0.1:${port}:*:pdprobe:${PD2_PASSWORD_MARKER}\n`, { mode: 0o600 });
 
 /** PD2: the person's `.pgpass`, with no `PGPASSFILE` and with one that names a path that does not exist. */
-async function legPD2(scope, exe, dir, product) {
+async function legPD2(scope, exe, dir, product, verdict) {
   const home = path.join(dir, 'pd2 home');
   const absent = path.join(dir, 'pd2-pgpass-that-never-exists');
   fs.mkdirSync(home, { recursive: true });
@@ -70,31 +72,37 @@ async function legPD2(scope, exe, dir, product) {
     }
   }
   check('(PD2) the path given as PGPASSFILE does not exist', !fs.existsSync(absent), absent);
-  await legR2(scope, exe, dir, home, product);
+  await legR2(scope, exe, dir, home, product, verdict);
 }
 
 /** The entry of every (r) production launch: it stores its own password (Q16 refuses one that does not) and names nothing but the profile. */
 const entryUri = (port, query = '') => `postgresql://pdprobe:${R.PQ2_STORED_PASSWORD}@127.0.0.1:${port}/pdprobe${query}`;
 
-/** The libpq keywords the builder writes last: the three controls at the absent file. A path of the rig holds no quote. */
-const withoutControls = (text) => text.replace(/ passfile='[^']*' sslcert='[^']*' sslkey='[^']*'$/, '');
+/**
+ * The controls of the two roads this leg isolates, cut out of the built string: the three keywords at the absent file (`passfile`, `sslcert`, `sslkey`) and `sslcertmode` (E1.7 V3 writes it after them, and it
+ * alone keeps a client certificate from being offered, so a control that left it in would not show the person's certificate). `gssencmode` and `require_auth` stay: they are no road of these two legs. A path of the rig holds no quote.
+ */
+const withoutControls = (text) => text.replace(/ passfile='[^']*' sslcert='[^']*' sslkey='[^']*'/, '').replace(/ sslcertmode='[^']*'/, '');
+/** The string with `sslcertmode` alone taken out: what isolates the `sslcert` and `sslkey` keywords (PD3's keyword case and its control differ by them alone). */
+const withoutCertMode = (text) => text.replace(/ sslcertmode='[^']*'/, '');
 
 /**
  * The production launch of `psql` for `uri`: the builder's arguments and, through `bridgedSshEnv`, the environment a bridged client gets, under `home`.
  * `without` names variables left out of that environment and `bare` leaves the three control keywords out of the string: the two ways (r) isolates one control
  * from another (the keyword alone; the variable alone is Q4b's and the PD legs'). A refusal by the builder is the rig's own fault, named.
  */
-function productionLaunch(product, uri, home, absentFile, { without = [], bare = false } = {}) {
-  const launchOf = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile });
+function productionLaunch(product, verdict, uri, home, absentFile, { without = [], bare = false, noCertMode = false } = {}) {
+  const launchOf = product.buildDbQueryLaunch('postgres', uri, 'select 1', { bridged: true, absentFile, verdict });
   if (launchOf === undefined) {
-    throw new Error('buildDbQueryLaunch refused the entry of a leg that must launch (it stores a password and names only the profile)');
+    throw new Error('buildDbQueryLaunch refused the entry of a leg that must launch (it stores a password and names only the profile, under a good verdict of the real client check)');
   }
   const env = product.bridgedSshEnv({ PATH: process.env.PATH, HOME: home }, 'linux', launchOf.env);
   for (const name of without) {
     delete env[name];
   }
   const last = launchOf.args.length - 1;
-  return { args: bare ? launchOf.args.map((arg, at) => (at === last ? withoutControls(arg) : arg)) : launchOf.args, env };
+  const cut = bare ? withoutControls : (noCertMode ? withoutCertMode : undefined);
+  return { args: cut === undefined ? launchOf.args : launchOf.args.map((arg, at) => (at === last ? cut(arg) : arg)), env };
 }
 
 /**
@@ -105,7 +113,7 @@ function productionLaunch(product, uri, home, absentFile, { without = [], bare =
  *                   .pgpass, and the marker still does not arrive;
  *   its control     the same with the three controls taken out of the string: the marker arrives, so the rig can make the bad thing happen.
  */
-async function legR2(scope, exe, dir, home, product) {
+async function legR2(scope, exe, dir, home, product, verdict) {
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
   const cases = [
     ['production', {}],
@@ -114,7 +122,7 @@ async function legR2(scope, exe, dir, home, product) {
   ];
   const sent = [];
   for (const [label, options] of cases) {
-    const run = await psqlRun(scope, exe, { prepare: writePgpass(home), build: (port) => productionLaunch(product, entryUri(port), home, absentFile, options) });
+    const run = await psqlRun(scope, exe, { prepare: writePgpass(home), build: (port) => productionLaunch(product, verdict, entryUri(port), home, absentFile, options) });
     reached(`(r) PD2 ${label}`, run);
     sent.push(run.state.sent);
     console.log(`record (r) PD2 ${label}: exit ${run.code}; the password message: ${R.labelled(run.state.sent)}`);
@@ -125,7 +133,7 @@ async function legR2(scope, exe, dir, home, product) {
 }
 
 /** PD3: the person's client certificate, with no `PGSSLCERT` and `PGSSLKEY` and with both at paths that do not exist. */
-async function legPD3(scope, exe, dir, product) {
+async function legPD3(scope, exe, dir, product, verdict) {
   const home = path.join(dir, 'pd3 home');
   const material = path.join(dir, 'pd3 material');
   const absent = { cert: path.join(dir, 'pd3-client-cert-that-never-exists.crt'), key: path.join(dir, 'pd3-client-key-that-never-exists.key') };
@@ -155,25 +163,27 @@ async function legPD3(scope, exe, dir, product) {
     }
   }
   check('(PD3) the paths given as PGSSLCERT and PGSSLKEY do not exist', !fs.existsSync(absent.cert) && !fs.existsSync(absent.key), JSON.stringify(absent));
-  await legR3(scope, exe, dir, home, tlsMaterial, product);
+  await legR3(scope, exe, dir, home, tlsMaterial, product, verdict);
 }
 
 /**
  * (r), PD3's case, after Z2: the entry stores a password and names `sslmode=require`, under the rig home with the marker certificate.
  *   production      the built launch offers no client certificate, the marker's included;
- *   keyword alone   the built string with PGSSLCERT and PGSSLKEY taken out of the environment: the `sslcert` and `sslkey` keywords at the absent file still offer none;
- *   its control     the same with the three controls out of the string: the person's certificate is offered, so the rig can make the bad thing happen.
+ *   keyword alone   the built string with PGSSLCERT and PGSSLKEY taken out of the environment AND `sslcertmode` taken out: the `sslcert` and `sslkey` keywords at the absent file
+ *                   alone still offer none (with `sslcertmode='disable'` left in, this run would pass without them);
+ *   its control     the same with the three controls out of the string: the person's certificate is offered, so the rig can make the bad thing happen. The two differ by
+ *                   the `sslcert` and `sslkey` keywords alone.
  */
-async function legR3(scope, exe, dir, home, tlsMaterial, product) {
+async function legR3(scope, exe, dir, home, tlsMaterial, product, verdict) {
   const absentFile = product.materializedKeyPath(dir, 'no-client-file');
   const cases = [
     ['production', {}],
-    ['keyword alone: no PGSSLCERT and no PGSSLKEY in the environment, the built string', { without: ['PGSSLCERT', 'PGSSLKEY'] }],
+    ['keyword alone: no PGSSLCERT and no PGSSLKEY in the environment, the built string with sslcertmode taken out', { without: ['PGSSLCERT', 'PGSSLKEY'], noCertMode: true }],
     ['keyword alone, control: no PGSSLCERT and no PGSSLKEY, and the three controls out of the string', { without: ['PGSSLCERT', 'PGSSLKEY'], bare: true }],
   ];
   const peers = [];
   for (const [label, options] of cases) {
-    const run = await psqlRun(scope, exe, { prepare: () => undefined, tlsMaterial, build: (port) => productionLaunch(product, entryUri(port, '?sslmode=require'), home, absentFile, options) });
+    const run = await psqlRun(scope, exe, { prepare: () => undefined, tlsMaterial, build: (port) => productionLaunch(product, verdict, entryUri(port, '?sslmode=require'), home, absentFile, options) });
     check(`(r) PD3 ${label}: the client reached the fake server, completed TLS and ended in time`, run.ended && run.state.secured >= 1, JSON.stringify({ ...run.state, ended: run.ended, code: run.code, stderr: run.stderr }));
     const peer = run.state.peer ?? { offered: false };
     peers.push(peer);
@@ -185,6 +195,7 @@ async function legR3(scope, exe, dir, home, tlsMaterial, product) {
 }
 
 async function main(scope) {
+  let unmeasuredLegs = false;
   if (process.platform === 'win32') {
     console.log('skip  the bridged psql harness — Linux only');
     return 0;
@@ -197,12 +208,29 @@ async function main(scope) {
   } else {
     const dir = ownedDir(scope, 'bridged-psql');
     const product = { ...require(path.join(OUT, 'dbCliLauncher.js')), ...require(path.join(OUT, 'bridgedSshEnv.js')), ...require(path.join(OUT, 'materializedKeys.js')) };
-    await legPD2(scope, exe, dir, product);
-    await legPD3(scope, exe, dir, product);
-    await legPQ2(scope, exe, dir, product, version);
+    // Every production launch below is built under the verdict of the REAL database client check, asked of this very client under the candidate table (§S7.7, §S7.12).
+    const under = await candidates.verdictFor({ family: 'psql', exe, name: 'psql' }, { dir, home: dir });
+    if (under.ok) {
+      registerRan([{ name: 'psql', family: 'psql', exe, via: 'BRIDGED_PSQL' }]); // the job's last line lists the clients whose legs ran (BRIDGED_BUILDS_FILE): only once the check let them run
+      candidates.say('(r) PD2, PD3, PQ2 and (s)', under);
+      await legPD2(scope, exe, dir, product, under.verdict);
+      await legPD3(scope, exe, dir, product, under.verdict);
+      await legPQ2(scope, exe, dir, product, version, under.verdict);
+    } else {
+      console.log('UNMEASURED (r) PD2, PD3, PQ2 and (s): the real check refused this psql under the candidate table, so the builder launches nothing (the finding is printed above)');
+      unmeasuredLegs = true;
+      // UNMEASURED is no pass: on CI the candidate table names this runner's build, so a refusal there is a defect (as a missing client is); off CI it is a printed skip.
+      if (process.env.CI === 'true') {
+        check('(r) PD2, PD3, PQ2 and (s) were measured (UNMEASURED is not a pass)', false, 'on CI the candidate table names this runner\'s psql: a refusal here is a defect of the rig or the table');
+      }
+    }
   }
   const failures = failureCount();
-  console.log(failures === 0 ? '\nall bridged psql checks passed' : `\n${failures} check(s) failed`);
+  if (failures > 0) {
+    console.log(`\n${failures} check(s) failed`);
+  } else {
+    console.log(unmeasuredLegs ? '\nno check failed, but the production legs (r), PD2, PD3, PQ2 and (s) were NOT measured (above): this run is no pass of them' : '\nall bridged psql checks passed');
+  }
   return failures === 0 ? 0 : 1;
 }
 

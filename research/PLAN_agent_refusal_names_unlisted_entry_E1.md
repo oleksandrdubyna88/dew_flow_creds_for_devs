@@ -591,7 +591,7 @@ the last section of this document.
 - [x] The three places of `research/module_extension.md` and the section of `research/module_tests.md` are written;
       no sentence there describes something that does not run.
 - [x] Each of the six neighbours has its row; the two bridge files have no difference
-      (`git diff --stat bf39ea05 -- todo/PLAN_remote_bridge_scoped.md todo/PLAN_remote_bridge_scoped_E1_S3_spec.md`
+      (`git diff --stat bf39ea05 -- todo/PLAN_remote_bridge_scoped.md research/PLAN_remote_bridge_scoped_E1_S3_spec.md`
       is empty).
 - [x] `plan-lifecycle.mjs` is clean; `pin-check.mjs` passes; each link of the changed files resolves.
 - [x] `npm run typecheck`, `npm test`, `npm run lint` are green; `npm run contract` leaves no difference;

@@ -2884,7 +2884,7 @@ person already has; it does not say no secret leaves the vault's computer (a per
 server) and does not promise that a `creds://` reference works in such a window (E3.S1's Run with Secrets over SSH is for a local window only). `exportRefused.test.ts` drives
 it through the real broker on `/v1/use/exec`, `/v1/alias/exec` and the real `exportEnv` routes, and
 `exportWiring.test.ts` reads `extension.ts` to hold that the window passes `vscode.env.remoteName` to both. Whether the persisted collection reaches
-new remote terminals at all is the M4 measurement in `todo/PLAN_remote_bridge_scoped_E1.md`, taken by a
+new remote terminals at all is the M4 measurement in `research/PLAN_remote_bridge_scoped_E1.md`, taken by a
 person and not yet recorded. The form's row
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
 row: written into every integrated terminal opened after saving, in this window only, never to a file,
@@ -3852,7 +3852,7 @@ platforms, which is also the first unit test that ever opened it. Record:
 [PLAN_broker_origin_guard.md](PLAN_broker_origin_guard.md).
 
 **A third door, for a Remote Bridge listener, that needs a key** (E1.2 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S2_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
+[PLAN_remote_bridge_scoped_E1_S2_spec.md](PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
 the extension calls it yet* — `openBridgeListener` has no caller until E2.2, and a test reads
 every non-test source but the broker's own to keep it so). `BridgeListeners` (`brokerBridgeListeners.ts`) opens one
 loopback listener per open bridge, each with its own port and a key of 32 random bytes minted at that open,
@@ -3871,7 +3871,7 @@ reconnect cannot leave the earlier port and key usable, `close()` ends kept-aliv
 `dispose()` closes every bridge listener and refuses later opens, before the broker starts anything for them.
 
 **The allow-list, the note schema and the scope wall of a Remote Bridge** (E1.3 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
+[PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
 extension opens a bridge* — `extension.ts` passes no `bridgeWall`, and without one `openBridgeListener` rejects, so
 a door with no wall cannot exist). Three things stand behind the third door.
 
@@ -3965,7 +3965,7 @@ key file that cannot be removed (Amendment 3, C.6: `removeKeyFile` catches the `
 `ssh:exec — the key file could not be removed: …` to the journal, and the exec slot comes back in the same `finally`; the finished
 result stands, and the leftover file is the person's own, in a folder only they can read).
 
-**The bridged `ssh:exec` road (E1.6 of the scoped remote bridge; spec `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`).** A bridged call no longer runs
+**The bridged `ssh:exec` road (E1.6 of the scoped remote bridge; spec `research/PLAN_remote_bridge_scoped_E1_S6_spec.md`).** A bridged call no longer runs
 under the laptop's `ssh_config`: it runs under ONE file written for the call, with an environment built new, and what each leg offers and to whom is
 decided by the code before the spawn. Nothing here is reachable by a user while `test/bridgeBoundary.test.ts` R1 keeps every bridge door closed (E4.1
 flips it). The pieces, in the order a call meets them:
@@ -4066,9 +4066,39 @@ flips it). The pieces, in the order a call meets them:
      `materializedKeyPath(storageDir, 'no-client-file')` that nothing ever writes. A bridged `psql` or `mysql` launch with no `absentFile` is refused (`undefined`).
   Those variables, `-X` and `--no-defaults` are **defences inside the profile, not the lock**: PQ1 and PQ2 saw a stored URI's `?passfile=` and `?service=` outrank the variables and send the person's own password, and a URI-named
   certificate offered, which is why the stored string is never handed over. Off a bridge nothing changes: `buildDbQueryLaunch` without `bridged` answers byte for byte what it answered before, for every input, the refused ones
-  included, and a unit test compares 122 connections with a record of that. **What this does not do:** it serves no pair, so no bridged query runs anywhere; it writes no authentication control (`require_auth`,
+  included, and a unit test compares 122 connections with a record of that. **What this did not do (E1.6; E1.7 adds the controls and the check in the next item):** it served no pair, so no bridged query ran anywhere; it writes no authentication control (`require_auth`,
   `gssencmode`, a plugin rule, a `sqlcmd` flag), sets no client floor and checks no client's version, and a client that logs in with something other than the entry's password (GSSAPI, SSPI, a plugin) is E1.7's, with
   its probes. No door reaches a bridge in production (R1, then the switch of parent §4.5).
+- *The database client on a bridge, E1.7 (V3-V5; the E1.7 spec §S7.5, §S7.6 and §S7.8, `bridgedDbClient.ts`, `bridgedDbQuery.ts`, `bridgeWallSource.ts`).* **One pair is served** (V8, 2026-11-24): the ODBC `sqlcmd` on Linux, item 5; every other pair stays refused (item 6). What follows is what a served pair is built from, pinned by tests under a table the tests hand in.
+  1. *The authentication controls* (V3). `buildDbQueryLaunch(..., { bridged: true, absentFile, verdict })` takes the verdict of the client check and writes the controls of the client's vendor, and only that vendor's. `psql`: `gssencmode='disable'`, `sslcertmode='disable'` and
+     `require_auth='password,md5,scram-sha-256'` stand LAST in the keyword string, after `sslkey` (libpq takes the last of a keyword written twice, PQ2); `require_auth` names password methods and never `gss`, `sspi` or `none`; and `host`, `port` (5432 when the entry
+     names none) and `dbname` (libpq's default, the user name) are written EVERY time, because Debian's and Ubuntu's `pg_wrapper` reads `~/.postgresqlrc` and fills any of the three the string leaves out (PA1-i, 4 of 4; never one it names). An older libpq (14, 15) refuses
+     the keywords it does not know before it connects: it fails closed. Oracle's `mysql`: `--plugin-dir=<absent file>` and `--skip-enable-cleartext-plugin`, straight after `--protocol=TCP`; MariaDB's client: `--plugin-dir` alone, because it knows neither
+     `--restricted-auth` nor the cleartext flag and a flag a client does not know ends it (PA1-d); go-sqlcmd: `--authentication-method=SqlPassword`, last (PS1 saw it known; it does **not** stop the NTLM sign-in of a user written `DOMAIN\\user`, so go-sqlcmd stays unserved); the ODBC `sqlcmd`: none. A
+     bridged launch with no good verdict of its own client's vendor is `undefined`, and its program is the verdict's file, never the bare word. Off a bridge nothing moves (Q11, Q11b).
+  2. *The client check* (V4, `bridgedDbClient.ts`, no `vscode`). `dbClientVerdict(rows, client, platform, exit, stdout)` reads the version line (`psql --version`, `mysql --version`, `sqlcmd -?`) on stdout only, anchored at the start of the answer or of a line, into a vendor, a version and a
+     build tag (what follows the version on its line, as the PA1-a leg records it), and serves it only when the row of that client and system lists that exact build (DR8 otherwise: a version below, above or between recorded ones, and a recorded version with another tag, are all refused; DR7 for an exit that is not 0 or a line no reader reads).
+     `resolveDbProgram` walks the bridged `PATH` (absolute folders only; `<word>.exe` on Windows) to the first file, with the identity of the file behind a link (real path, size, modification time, and whether it begins with `#!`). `bridgedDbClientCheck` asks that file's path
+     for its version: under `bridgedSshEnv` and no name of its own, bounded at 10 s, in a folder of its own that holds nothing (`inEmptyFolder`: a fresh random name under the window's keys folder, removed in a `finally`); it takes **no exec slot**; two calls for one file before an answer share one spawn, which only
+     the window's end and the bound can end, so one caller's ended request goes on as ended and the others still get the answer; a **good verdict is kept per file, bound to its identity** (another size, time, real path or first file on `PATH` asks again) and never for a launcher; a bad one is handed to those who waited and kept for nobody. A table that serves nothing for the client starts nothing. `dbQueryAction` builds
+     one check per window with its own table, so a window cannot be wired without it.
+  3. *The bridged order* (V4, `bridgedDbQuery.ts`; `agentUseActions.ts` hands a bridged call over in one statement and keeps the off-bridge road, which now reads the stored connection through the same `storedConnectionOf`): the gate (DR1), the stored connection, Z2's refusals (DR2-DR6), `refuseQuery`, the client on `PATH` (`tool_missing`), the client check (DR7, DR8), the build with the verdict (DR9, code `internal`, when it answers nothing: the main port's sentence about a client that is never launched would
+     be false there), the exec slot, and the spawn of the file the check asked, from another folder that holds nothing, removed after a good run, a runner that threw and a request that ended. No step before the check starts a process, so a refused entry or query spends no version spawn. The journal sentences are DR7-DR9 (`bridgedDbSentences.ts`): the client's name, the exit code or `unknown`, the token the pattern matched, the system and the recorded builds, and no path and no value of the entry.
+  4. *The refusal before the dialog* (V5). `wallSuppliersOf(vault, { profiles, platform })` (both required, so a wiring that forgets them does not compile) answers the agent-forwarding refusal first and then, for a database entry whose client has no served row on this system, `{ code: 'not_supported', message: BRIDGE_USE_REFUSED(name), detail: DR1 }`, reading the entry's details and never the stored connection.
+     `Refusal` has an optional `detail`, `usable` hands it to `respondError`, and the journal holds DR1 for the agent's generic body; the grant of the call is dropped and nobody is asked. The gate in `run` stays (asked twice). **No production code wires a wall yet** (E2.2 wires it, through this function, with the production table and `process.platform`); the scenarios' wall is built by the same function. *Observed, not as the spec's §S7.8 reads:* a bridged token call rides a grant of its own, so the token lives on and a second call with it is refused the same way before the dialog; it is not answered as an unknown token.
+     Tests: `dbCliLauncher.test.ts` (Q1-Q3, Q11b, Q12, Q12b, Q13), `bridgedDbProfile.test.ts` (DP14, DP14b, DP18, DP18b, DP19), `bridgedDbClient.test.ts` (DC1-DC13), `bridgedDbDoors.test.ts` (DG5-DG11, DC13, DG2b) over `bridgedDbQueryWorld.ts`, `bridgeWallSource.test.ts` (BW3).
+  5. *What is served* (V8, `BRIDGED_DB_PROFILES` in `bridgedDbProfile.ts`). The row `sqlcmd`/`linux` serves the ODBC client (`odbc-sqlcmd`) at two recorded builds, each with the driver its legs ran on:
+     `17.11.0001.1` `Linux` with the driver 17.11.1.1, and `18.7.0001.1` `Linux` with 18.7.1.1 (the record: CI run 45390171118 at 35d59423; the production run 45397047469 on the turning commit). The ODBC
+     client's authentication lives in its driver library, which its version line does not name (L11), so the check also reads the `Driver=` path of *ODBC Driver 17/18 for SQL Server* from the ODBC configuration
+     the bridged environment gives it (`/etc/odbcinst.ini`), binds the driver file's real path, size and modification time beside the executable's, and reads the driver's version from the file's name
+     (`libmsodbcsql-18.7.so.1.1` is 18.7.1.1). A driver it cannot find or read is DR7; a kept verdict is dropped when its driver changes. On Windows no `sqlcmd` row is served, so a bridged query is refused by the gate first (DR1) and the check is never asked; were a row served there, the driver lookup would find no file to bind (the drivers are in the registry) and the ODBC client would be DR7.
+     The launch is today's `-S`, `-d`, `-Q`, `-b`, `-x` with the user and password in `SQLCMDUSER` and `SQLCMDPASSWORD` and no other flag; `Encrypt` and `TrustServerCertificate` stay refused (DR2) until a CI leg
+     shows what each does to a connection (§S7.9), as every other key outside the profile.
+  6. *What stays refused, and why* (the E1.7 spec §S7.15, §S7.20). `psql` on Linux: every road's control was shown and held on 14.25, 16.16 and 18.7, but on Debian and Ubuntu `psql` is `pg_wrapper`, which
+     started the newest major whatever a home file named, so the control of PA1-i is not shown and the owner kept the pair refused (L10, 2026-11-24); a check that follows the wrapper to the real binary is a later
+     story. go-sqlcmd: `SqlPassword` does not stop the NTLM sign-in of a `DOMAIN\\user` name (PS1-8-flag). MariaDB's client on Linux: no login at MySQL's default plugin under `--plugin-dir` (PE1-6). Oracle's
+     `mysql`: LDAP SASL and the security key unmeasured (PK1-m2, m4); the distributions' builds lack the plugins; on Windows its built-in Windows authentication is offered (m6). `psql` on Windows: no realm (w4).
+     The ODBC client on Windows: its driver is not bound (above). Every client on macOS: no runner.
 
 *What fails at `ssh` and is not refused:* a typed key path that is relative (read against the call's folder), an encrypted key (no passphrase under `BatchMode yes`), a host that is a `~/.ssh/config`
 alias. *Known limits:* `ssh` may print the keys folder's path (the sentinel) or the expanded `~` of a typed path in stderr, which comes back as it is; a FIDO key on a hop and its PIN (the hop leg has the askpass
@@ -4220,7 +4250,7 @@ authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for an
 bridge refuses the route. The plan records it as a todo (§8 of the scoped remote bridge plan), not as part of E1.
 
 *What silences a prompt on a bridge* (E1.4 of the scoped remote bridge,
-[PLAN_remote_bridge_scoped_E1_S4_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S4_spec.md); still nothing in the extension opens a
+[PLAN_remote_bridge_scoped_E1_S4_spec.md](PLAN_remote_bridge_scoped_E1_S4_spec.md); still nothing in the extension opens a
 bridge). **A call through a bridge asks every time unless that server's `quiet` switch is on, and the switch speaks for the MCP door
 only.** `quiet` is a field of the server's scope file (`bridgeScopeStore.ts`), read from a fresh `Scope` by `DoorView.resolveUse`
 (`bridgeScope.ts`, `usableIn`) at the lookup and copied onto the grant by `grantFor()` at mint for the dialog's coverage line;

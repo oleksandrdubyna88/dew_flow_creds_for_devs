@@ -1,31 +1,71 @@
 import type { DbType } from './types';
 import { DR1, DR2, DR3, DR4, DR5, DR6, DR6Quoted, KeyDialect, clientNameOf, settingWords } from './bridgedDbSentences';
 import { cleanHost } from './dbConnString';
+import type { DbVendor } from './bridgedDbClient';
 
 /**
  * The gate of a bridged database query (the E1.6 spec §S6.15 Z1; parent §4.11, Q18). Pure, no `vscode`.
  *
  * <p>A bridged `query` is a local subprocess under agent-written input, so it runs only for a client and a system whose behaviour was MEASURED. The table
- * below names every pair this code knows and says whether it is served. None is: E1.7 turns a row to served in the commit that records the probe runs of
- * its pair (parent §4.11), and until then every bridged query is refused before the stored connection is read and before any process starts.</p>
+ * below names every pair this code knows and says whether it is served. E1.7 turns a row to served in the commit that records the probe runs of its pair (parent
+ * §4.11, the E1.7 spec §S7.7); a pair that is not served is refused before the stored connection is read and before any process starts.</p>
  */
 
 export type DbClient = 'psql' | 'mysql' | 'sqlcmd';
+
+/** A build whose legs ran: the version and the build tag exactly as the client's own version line gives them (PA1-a), and the record of its runs (`run <number> at <sha>`). */
+export interface DbRecordedBuild {
+  readonly version: string;
+  readonly tag: string;
+  readonly record: string;
+  /**
+   * The ODBC `sqlcmd` only (E1.7 spec §S7.16 L11): the version of the driver file the client loads, read from its file name (`libmsodbcsql-18.6.so.1.1` is `18.6.1.1`). The client's own line does not name its
+   * driver, and its authentication lives in that library, so a build of this client is the pair of the two. A recorded ODBC build with no driver serves no driver.
+   */
+  readonly driver?: string;
+}
+
+/** One vendor's client of a served row, with the builds its legs ran on (E1.7 spec §S7.7). */
+export interface DbServedClient {
+  readonly vendor: DbVendor;
+  readonly builds: readonly DbRecordedBuild[];
+}
 
 export interface DbProfileRow {
   readonly client: DbClient;
   readonly platform: NodeJS.Platform;
   readonly served: boolean;
+  /** What a served row serves: the check admits a client only when its version line names one of these builds. Absent on a row that is not served. */
+  readonly clients?: readonly DbServedClient[];
 }
 
 const CLIENTS: readonly DbClient[] = ['psql', 'mysql', 'sqlcmd'];
 const SYSTEMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin'];
 
-/** Every pair this code knows. None is served: E1.7 turns a row in the commit that records its probe runs (parent §4.11). A row names no vendor and no version range yet; E1.7 adds both with the database client check. */
-export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => ({ client, platform, served: false })));
+/**
+ * The served rows, each with the builds its legs ran on (E1.7 spec §S7.7): the record names the candidate run whose legs (w) were green on that build, never the run of the commit that turned it.
+ * The ODBC `sqlcmd` on Linux: run 45390171118 at 35d59423, one job per image (ubuntu-22.04: 17.11.0001.1 with the driver 17.11.1.1; ubuntu-24.04 and ubuntu-latest: 18.7.0001.1 with 18.7.1.1).
+ */
+const SERVED: readonly DbProfileRow[] = [
+  {
+    client: 'sqlcmd',
+    platform: 'linux',
+    served: true,
+    clients: [{
+      vendor: 'odbc-sqlcmd',
+      builds: [
+        { version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1', record: 'run 45390171118 at 35d59423' },
+        { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45390171118 at 35d59423' },
+      ],
+    }],
+  },
+];
+
+/** Every pair this code knows: the served rows above, and every other client and system refused. */
+export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => SERVED.find((row) => row.client === client && row.platform === platform) ?? { client, platform, served: false }));
 
 /** The client a type is launched as, when it has one a profile can name. */
-function profileClientOf(dbType: DbType): DbClient | undefined {
+export function profileClientOf(dbType: DbType): DbClient | undefined {
   return CLIENTS.find((client) => client === clientNameOf(dbType));
 }
 
@@ -230,10 +270,31 @@ function kvHostAndPort(raw: Fields): Fields {
 
 const withPart = (ctx: Ctx) => (fields: Fields | Refusal, part: string): Fields | Refusal => (isRefusal(fields) ? fields : kvPart(ctx, fields, part));
 
+/** The key of a part of a key-value string, as the parser reads it (trimmed, in lower case), or an empty text when the part has none. */
+function kvKey(part: string): string {
+  const at = part.indexOf('=');
+  return at > 0 ? part.slice(0, at).trim().toLowerCase() : '';
+}
+
+/** The settings a key-value string may hold (E1.7 §S7.9): only the `sqlcmd` dialect has any. */
+const kvSettings = (ctx: Ctx): ReadonlyMap<string, Setting> => (ctx.dbType === 'mssql' ? MSSQL_SETTINGS : new Map());
+
+/** The pairs of the parts that are settings, each by its key as the profile spells it: a key given twice is refused whatever its value. */
+function kvPairs(ctx: Ctx, parts: readonly string[]): readonly Pair[] | Refusal {
+  const pairs = parts.map((part): Pair => [kvKey(part), part.slice(part.indexOf('=') + 1).trim()]);
+  const doubled = pairs.find(([key], at) => pairs.findIndex(([given]) => given === key) !== at);
+  return doubled === undefined ? pairs : refused(doubledSetting(ctx, doubled[0]));
+}
+
 function kvDraft(ctx: Ctx, text: string): Draft | Refusal {
   const parts = text.split(';').map((raw) => raw.trim()).filter((part) => part !== '');
-  const fields = parts.reduce<Fields | Refusal>(withPart(ctx), {});
-  return isRefusal(fields) ? fields : { fields: kvHostAndPort(fields), pairs: [] };
+  const isSetting = (part: string): boolean => kvSettings(ctx).has(kvKey(part));
+  const fields = parts.filter((part) => !isSetting(part)).reduce<Fields | Refusal>(withPart(ctx), {});
+  const pairs = kvPairs(ctx, parts.filter(isSetting));
+  if (isRefusal(fields)) {
+    return fields;
+  }
+  return isRefusal(pairs) ? pairs : { fields: kvHostAndPort(fields), pairs };
 }
 
 function draftOf(ctx: Ctx, stored: string): Draft | Refusal {
@@ -245,30 +306,72 @@ function draftOf(ctx: Ctx, stored: string): Draft | Refusal {
   return dialect === 'uri' ? uriDraft(ctx, text) : kvDraft(ctx, text);
 }
 
+/**
+ * A setting of the profile (the E1.7 spec §S7.9, Q15 of the parent): the shape its value must have, how the builder is given it, and whether it reaches the client. A setting of kind (a) is a
+ * transport-security key a client can be made to honour by a measured flag, and it is carried. A setting of kind (b) is a key a client does not use, which changes neither who authenticates,
+ * which server is reached, nor how that server is verified: it is read for its shape and never carried, so the launch with it equals the launch without it. Every other key is refused (DR2).
+ */
+interface Setting {
+  readonly shape: RegExp;
+  readonly written?: (value: string) => string;
+  readonly carried: boolean;
+}
+
+const BOOLEAN = /^(?:true|false)$/i;
+const NAME = /^[A-Za-z0-9 _.-]{1,63}$/;
+const carried = (shape: RegExp, written?: (value: string) => string): Setting => ({ shape, written, carried: true });
+const dropped = (shape: RegExp): Setting => ({ shape, carried: false });
+
 /** The three settings of a postgres URI and the shape each value must have: a word, one to four digits, a short plain name. */
-const POSTGRES_SETTINGS: ReadonlyMap<string, RegExp> = new Map([
-  ['sslmode', /^(?:disable|allow|prefer|require|verify-ca|verify-full)$/],
-  ['connect_timeout', /^\d{1,4}$/],
-  ['application_name', /^[A-Za-z0-9 _.-]{1,63}$/],
+const POSTGRES_SETTINGS: ReadonlyMap<string, Setting> = new Map([
+  ['sslmode', carried(/^(?:disable|allow|prefer|require|verify-ca|verify-full)$/)],
+  ['connect_timeout', carried(/^\d{1,4}$/)],
+  ['application_name', carried(NAME)],
 ]);
 
+/**
+ * No key of kind (a) yet: `Encrypt` and `TrustServerCertificate` stay refused (DR2) until a CI leg shows what each does to a connection (§S7.9: a key is added only with its leg; the judge of run
+ * 45380823025 found none). Kind (b), each with its reason: `Application Name` and `App` name the connection to the server's own views, `Persist Security Info` is a
+ * connector's habit of keeping a password it was given, `MultipleActiveResultSets`, `Pooling`, `Connect Retry Count` and `Connect Retry Interval` are a connector's own business, and the two timeouts
+ * would only bound a wait. None of the nine reaches `sqlcmd`, and none of them names an identity, a server or a way to verify one.
+ */
+const MSSQL_SETTINGS: ReadonlyMap<string, Setting> = new Map([
+  ['application name', dropped(NAME)],
+  ['app', dropped(NAME)],
+  ['persist security info', dropped(BOOLEAN)],
+  ['multipleactiveresultsets', dropped(BOOLEAN)],
+  ['pooling', dropped(BOOLEAN)],
+  ['connect retry count', dropped(/^\d{1,3}$/)],
+  ['connect retry interval', dropped(/^\d{1,3}$/)],
+  ['connection timeout', dropped(/^\d{1,5}$/)],
+  ['connect timeout', dropped(/^\d{1,5}$/)],
+]);
+
+/** Oracle's client takes `--ssl-mode`; `VERIFY_CA` and `VERIFY_IDENTITY` name a file the entry would carry, which waits for a typed field (parent §8). */
+const MYSQL_SETTINGS: ReadonlyMap<string, Setting> = new Map([['ssl-mode', carried(/^(?:DISABLED|PREFERRED|REQUIRED)$/i, (value) => value.toUpperCase())]]);
+
+const SETTINGS: Readonly<Record<DbType, ReadonlyMap<string, Setting>>> = { postgres: POSTGRES_SETTINGS, mysql: MYSQL_SETTINGS, mssql: MSSQL_SETTINGS, mongodb: new Map() };
+
 /** The pair a setting of the profile gives, `undefined` when the connection does not hold it, or the refusal of a value of the wrong shape. */
-function settingPair(ctx: Ctx, pairs: readonly Pair[], key: string, shape: RegExp): Pair | undefined | Refusal {
+function settingPair(ctx: Ctx, pairs: readonly Pair[], key: string, rule: Setting): Pair | undefined | Refusal {
   const value = pairs.find(([given]) => given === key)?.[1];
   if (value === undefined) {
     return undefined;
   }
-  return shape.test(value) ? [key, value] : refused(shapeOf(ctx, key));
+  return rule.shape.test(value) ? [key, writtenValue(rule, value)] : refused(shapeOf(ctx, key));
 }
 
-/** The profile's settings, in the order the builder writes them whatever order the connection gave. A key outside the profile is refused first, then each value's shape. */
+const writtenValue = (rule: Setting, value: string): string => rule.written?.(value) ?? value;
+
+/** The profile's settings, in the order the builder writes them whatever order the connection gave: only the ones that reach the client. A key outside the profile is refused first, then each value's shape. */
 function profileSettings(ctx: Ctx, pairs: readonly Pair[]): Readonly<Record<string, string>> | Refusal {
-  const outside = pairs.find(([key]) => ctx.dbType !== 'postgres' || !POSTGRES_SETTINGS.has(key));
+  const rules = SETTINGS[ctx.dbType];
+  const outside = pairs.find(([key]) => !rules.has(key));
   if (outside !== undefined) {
     return refused(unknownSetting(ctx, outside[0]));
   }
-  const taken = [...POSTGRES_SETTINGS].map(([key, shape]) => settingPair(ctx, pairs, key, shape));
-  return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair));
+  const taken = [...rules].map(([key, rule]) => settingPair(ctx, pairs, key, rule));
+  return taken.find(isRefusal) ?? Object.fromEntries(taken.filter(isPair).filter(([key]) => rules.get(key)?.carried === true));
 }
 
 const SOCKET_HOST = /(?:^[@/\\])|(?:[,/\\])/;
@@ -390,16 +493,29 @@ export function bridgedDbConnection(dbType: DbType, stored: string, entityName: 
 /** A value of a libpq keyword string: in single quotes, a backslash before every backslash and every quote. */
 const quoted = (value: string): string => `'${value.replaceAll(/[\\']/g, '\\$&')}'`;
 
+/** libpq's own default port, written whenever the entry names none (see `bridgedPsqlString`). */
+const POSTGRES_PORT = '5432';
+
+/**
+ * The authentication controls of `psql` (E1.7 spec §S7.5; probes PK1 and PE1, 2026-11-19): no GSS encryption request and no token made from a ticket, no client certificate, and a login the
+ * server grants only by one of the three password methods PE1 logged in with (a method a later libpq adds is refused: the list never grows by itself). Constants: nothing of a stored
+ * connection reaches them, and a stored connection that names one of the keys is refused (DP4).
+ */
+const PSQL_CONTROLS: readonly Pair[] = [['gssencmode', 'disable'], ['sslcertmode', 'disable'], ['require_auth', 'password,md5,scram-sha-256']];
+
 /**
  * The one keyword string `psql` is given after `--` for a built connection: `host`, `port`, `dbname`, `user`, the settings, then `passfile`, `sslcert` and `sslkey`
- * at `absentFile`. The controls come last because libpq takes the LAST value of a keyword written twice (PQ2-d3); no setting of the profile is one of them. There is no
- * `password` keyword, ever: the password travels in `PGPASSWORD`.
+ * at `absentFile`, then the three controls of `PSQL_CONTROLS`. The controls come last because libpq takes the LAST value of a keyword written twice (PQ2-d3); no setting of the
+ * profile is one of them. `host`, `port` and `dbname` are written EVERY time, with libpq's own defaults (5432; the user name) when the entry names none: Debian's and Ubuntu's
+ * `pg_wrapper` reads `~/.postgresqlrc` and fills any of the three that the string leaves out (PA1-i: 4 of 4; never one it names: 0 of 4). There is no `password` keyword, ever: the
+ * password travels in `PGPASSWORD`.
  */
 export function bridgedPsqlString(connection: Built, absentFile: string): string {
   const pairs: Pair[] = [
-    ['host', connection.host], ...Object.entries(optional('port', connection.port)), ...Object.entries(optional('dbname', connection.database)),
+    ['host', connection.host], ['port', connection.port ?? POSTGRES_PORT], ['dbname', connection.database ?? connection.user],
     ['user', connection.user], ...Object.entries(connection.settings),
     ['passfile', absentFile], ['sslcert', absentFile], ['sslkey', absentFile],
+    ...PSQL_CONTROLS,
   ];
   return pairs.map(([key, value]) => `${key}=${quoted(value)}`).join(' ');
 }

@@ -52,7 +52,7 @@ commit is green, so the scan, part C, the RED rows and the fix are one story. E1
 - **Files with no change in E1:** everything in `contract/`, `src_mcp`, `src_cli` and `src_broker_client`; `agentUseActions.ts`,
   `rotateAction.ts`, `commands/agentCommands.ts`, `sshSession.ts`, `transportFactory.ts`, `hostKeyTrust.ts`, `agentNaming.ts`,
   `mcpEntries.ts`, `test/agentNamesOnlyViewable.test.ts`, `todo/PLAN_remote_bridge_scoped.md`,
-  `todo/PLAN_remote_bridge_scoped_E1_S3_spec.md`. `sshUseActions.ts` changes in one comment only (E1.2), with the same line count.
+  `research/PLAN_remote_bridge_scoped_E1_S3_spec.md`. `sshUseActions.ts` changes in one comment only (E1.2), with the same line count.
 
 ## Facts read on `42d7340d` that E1.2 uses
 
@@ -224,7 +224,7 @@ names the folder `keys/`, no file name: no change.)
 |---|---|---|
 | `research/PLAN_agent_refusal_names_unlisted_entry.md` (F7) | none needed | nothing is owed (the parent's §9) |
 | `todo/PLAN_remote_bridge_scoped.md` | **active**: under change control (epoch 8, epoch 9 opening), open PR #354 of another session, branch `docs/remote-bridge-change-8-2` (D6) | **OWED, not written here.** The lead hands rows (1) to (4) of the parent's §9 to that session, with this plan's PR number; the file gets no change in this branch |
-| `todo/PLAN_remote_bridge_scoped_E1_S3_spec.md` | **active**: the same session edits it (D6) | **OWED, not written here.** The same hand-over: the sentence of Amendment 3, C.6 (`:1912` on that branch) gets the name `call-<uuid>.key` and a pointer to this plan |
+| `research/PLAN_remote_bridge_scoped_E1_S3_spec.md` | **active**: the same session edits it (D6) | **OWED, not written here.** The same hand-over: the sentence of Amendment 3, C.6 (`:1912` on that branch) gets the name `call-<uuid>.key` and a pointer to this plan |
 | `todo/PLAN_ssh_exec_own_agent_forwarding.md` | none (D7) | **written in c3**, row W1 |
 | `todo/PLAN_ssh_exec_absolute_program.md` | none (D7) | **written in c3**, row W2 |
 | `todo/PLAN_askpass_answers_the_hop.md` | none (D7) | **written in c3**, row W3 |
@@ -258,7 +258,7 @@ If, when E1.2 starts, a branch or a session has opened one of the three: do not 
 Commands 1, 3, 4, 5, 6, 7 of *Commands* in `src_vs_code`, then 8, 9 and 10 from the root, on the staged tree of c3. `tsc` exits 0
 before any test result is read; `npm test` is green; `npm run contract` leaves `contract/` with no difference; command 10 is empty;
 `plan-lifecycle.mjs` says clean; `pin-check.mjs` passes. Also: `git diff --stat 6dd96fe7 -- todo/PLAN_remote_bridge_scoped.md
-todo/PLAN_remote_bridge_scoped_E1_S3_spec.md` is empty, and the `.ts` part of c3 is comment lines only.
+research/PLAN_remote_bridge_scoped_E1_S3_spec.md` is empty, and the `.ts` part of c3 is comment lines only.
 
 **Commit c3:** `docs(agent): rule C — the comments, the changelog, the module documents and three boundary rows`.
 

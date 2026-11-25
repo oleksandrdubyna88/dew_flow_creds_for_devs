@@ -191,7 +191,7 @@ export function writeAtomic(dest, data, mode, { replace = true } = {}) {
  * dangling or not), where a rename would replace it. Where the filesystem cannot make a hard link, nothing is
  * created: the error is thrown (marked, see `isHardLinkFailure`; its code is kept), and the caller makes it a refusal to fix by
  * hand, because no later start can make the link either (no look-then-rename: its gap could replace a file another writer just
- * created). Only the agent-models registration passes `replace: false`; the guard never does. False when the name is taken.
+ * created). Only the dew-flow-mods registration (`lib/mods-marketplace.mjs`) passes `replace: false`; the guard never does. False when the name is taken.
  */
 function placeNew(tmp, dest) {
   try {
@@ -479,14 +479,14 @@ function changedUnderUs(settingsPath, original, target, now) {
 }
 
 /**
- * The one road a change of settings.json takes for the guard's three operations and the agent-models registration, once its
- * new text is known. install, repairRegistration, uninstall and the registration all end here, so none of them can drop a
+ * The one road a change of settings.json takes for the guard's three operations and the dew-flow-mods registration
+ * (`lib/mods-marketplace.mjs`), once its new text is known. install, repairRegistration, uninstall and the registration all end here, so none of them can drop a
  * step. The effort write (`writeConverged`) is NOT on this road: it writes by `writeAtomic` on its own, a recorded
  * follow-up. `original` and `target` are what the
  * caller read and resolved (`settingsFileOf`) BEFORE it computed `data`. In order: `beforeWrite` (a test seam); the
  * bytes are read again through the path and the target is resolved again, and a difference in either answers
  * `{ written: false, now }` with the bytes just read; `prepare` (what a caller does only when the write follows: the
- * guard copies its hook, the mod takes its backup); then the write at `target.file`, with the file's own mode when
+ * guard copies its hook, the registration takes its backup); then the write at `target.file`, with the file's own mode when
  * there is one. `replace: false` is for a file that did not exist at the read: it is then created only while its
  * name is still free, and a name taken meanwhile is `{ written: false, now }` too. An existing file is always
  * replaced. The default, `true`, renames over the name in both cases.
