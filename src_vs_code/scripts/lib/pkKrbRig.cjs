@@ -8,6 +8,7 @@
 //
 // Nothing of a ticket is read or printed: the rig asks `klist -s` (an exit code) and compares a principal's NAME.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { execFileSync, spawnSync } = require('node:child_process');
@@ -101,10 +102,31 @@ function putBackSystemFiles() {
       change.putBack();
       change.done = true;
     } catch (error) {
-      check(`rig K: ${change.what} is put back as it was`, false, `${oneLine(String(error?.message ?? error), 300)}${change.kept === undefined ? '' : `; the old one is kept at ${change.kept} until the scope removes the rig's folder`}`);
+      check(`rig K: ${change.what} is put back as it was`, false, `${oneLine(String(error?.message ?? error), 300)}${keptWords(change)}`);
     }
   }
   return changes.every((change) => change.done);
+}
+
+/**
+ * Where the old file of a change that could not be put back is kept: the copy in the rig's folder would go with that folder when the scope removes it, so a copy is made once, outside it, in the
+ * account's own home (a name of its own, never over a file that is there), and the words say where.
+ */
+function keptWords(change) {
+  if (change.kept === undefined) {
+    return '';
+  }
+  if (change.rescued === undefined && fs.existsSync(change.kept)) {
+    const rescued = path.join(os.homedir(), `.creds-rig-kept-${path.basename(change.kept)}-${process.pid}`);
+    try {
+      fs.copyFileSync(change.kept, rescued, fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(rescued, 0o600);
+      change.rescued = rescued;
+    } catch (error) {
+      return `; the old one is in ${change.kept}, and could not be copied out of the rig's folder (${oneLine(String(error?.message ?? error), 120)}): it goes with that folder`;
+    }
+  }
+  return change.rescued === undefined ? '' : `; the old one is kept at ${change.rescued}, outside the rig's folder, until a person puts it back`;
 }
 
 /** Registers a change of the rig (`{ what, putBack, kept? }`); the first registration also hands the scope its last-resort call. */
@@ -232,7 +254,8 @@ async function startRealm(scope, dir, home) {
     /** A ticket in the default cache, found under the bridged environment alone. */
     ticketInReach: () => client('klist', ['-s']),
     /** The ticket taken away (the leg's `no ticket` half). */
-    destroy: () => client('kdestroy', []),
+    // Named with -c: a later try of the put-back may run after /etc/krb5.conf is back, and that profile may name another cache of the person's. The rig's ticket is only ever in this one.
+    destroy: () => client('kdestroy', ['-c', `FILE:/tmp/krb5cc_${process.getuid()}`]), // NOSONAR: the MIT default cache, the one the rig's profile names
     /** The ticket made again from the keytab, by the bridged environment, into the default cache. */
     renew: () => client('kinit', ['-k', '-t', userKeytab, `${USER}@${REALM}`]),
   };
