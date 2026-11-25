@@ -52,10 +52,12 @@ const namesPinFile = (stderr, file) => file !== undefined && new RegExp(String.r
 function productOf(out) {
   const load = (file) => require(path.join(out, file));
   // `personPin.js` imports no `vscode` itself, but its chain does (`hostKeyTrust.js`): both are loaded under the stub, and FIRST, because that load evicts the modules of `out/`.
-  const [personPin, trust] = load(path.join('test', 'vscodeStub.js')).loadEachWithVscode(['../personPin', '../hostKeyTrust'], {});
+  const [personPin, trust, ofCall, bridged] = load(path.join('test', 'vscodeStub.js')).loadEachWithVscode(['../personPin', '../hostKeyTrust', '../pinOfCall', '../bridgedSshClient'], {});
   const { unusablePinSentence, pinWriteFailedSentence } = personPin;
   return {
     knownHostsPath: trust.knownHostsPath, // E3.S7 (D5): the complete pathname of a pin file, as the product makes it
+    decidePinOfCall: ofCall.decidePinOfCall, // E3.S9 (D12): M13's decision for a UNC folder
+    versionTokenOf: bridged.versionTokenOf, // E3.S9 (D12): how the product reads the version of `ssh -V` (M11.p)
     unusablePinSentence, // sentence A (E3.S4's record of §3.5)
     pinWriteFailedSentence, // sentence B
     ...load('sshBridge.js'), // sweepCommand, modeCheckCommand, interpretSocketProbe, isOwnerOnlyMode

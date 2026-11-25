@@ -18,9 +18,9 @@ const { servingConfig } = require('./lib/sshdRun.cjs');
 
 /** One start of the listener, waited for (10 s) by its "Server listening" line; once it listens, the program it runs is recorded. */
 async function startOnce(rig, dir, hostKey, given) {
-  const { port, penalties, extra } = given;
+  const { port, penalties, extra, logLevel } = given;
   const config = path.join(dir, 'sshd_config');
-  fs.writeFileSync(config, servingConfig(RUN, { port, hostKey, authorizedKeys: rig.authorizedKeys, pidFile: path.join(dir, 'sshd.pid'), penalties, extra }));
+  fs.writeFileSync(config, servingConfig(RUN, { port, hostKey, authorizedKeys: rig.authorizedKeys, pidFile: path.join(dir, 'sshd.pid'), penalties, extra, logLevel }));
   const sshd = launch(rig.scope, SSHD, ['-D', '-e', '-f', config]);
   // The listener's identity, taken at once: the pid and the start time it has from the fork on. Once `sshd.exited` its pid may be another process's.
   const identity = { pid: sshd.child.pid, start: startOf(sshd.child.pid) };
@@ -62,10 +62,10 @@ function recordProgram(dir, identity) {
  * (K2 on K1's port: the same port; a free port taken here: a fresh one). `launch` registers the listener's end with the scope; `endServer` is
  * the leg's own, first.
  */
-async function startServingSshd(rig, name, hostKey, port, extra = []) {
+async function startServingSshd(rig, name, hostKey, port, extra = [], { logLevel } = {}) {
   const dir = path.join(rig.dir, name);
   fs.mkdirSync(dir);
-  let given = { port: port ?? (await freePort()), penalties: true, extra };
+  let given = { port: port ?? (await freePort()), penalties: true, extra, logLevel };
   let started = await startOnce(rig, dir, hostKey, given);
   if (started.failure !== undefined && /PerSourcePenalties/.test(started.sshd.stderr)) {
     console.log(`info  ${name}: this sshd does not know PerSourcePenalties (before 9.8 it has none); started without the line`);

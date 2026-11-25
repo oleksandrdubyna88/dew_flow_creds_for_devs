@@ -72,7 +72,8 @@ function acceptedOf(lines, user) {
  * `none`: a `-N` login starts no session), `passwords` (`Failed password` and `Accepted password` lines) and the matching `lines`, verbatim.
  */
 function logCounts(log, user) {
-  const lines = log.split(/\r?\n/).filter((line) => line !== '');
+  // E3.S9 (D5): a counterpart at `DEBUG1` logs lines that start `debug1: `, `debug2: ` or `debug3: `; they are not the lines of the counts, so a `DEBUG1` log is read as the `VERBOSE` one is.
+  const lines = log.split(/\r?\n/).filter((line) => line !== '' && !/^debug[123]: /.test(line));
   const attempts = lines.filter((line) => AUTH_ATTEMPT.test(line));
   const attemptPorts = [...new Set(attempts.map(portOf).filter((port) => port !== undefined).map(Number))];
   const connection = /(?:^|\s)Connection from 127\.0\.0\.1 port \d+ on /;

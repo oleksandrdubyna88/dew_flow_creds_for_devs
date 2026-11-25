@@ -215,10 +215,10 @@ async function login(rig, given) {
  * that the rule refuses, throws: a rig must not build words that the product would not. A plain string is no pin, and the builders refuse it
  * (`CheckedPin`); `itestCallers.test.ts` scans every script that calls them. Async: the question is a child, awaited.
  */
-async function checkedPinOf(out, file) {
+async function checkedPinOf(out, file, program = 'ssh') {
   const { pinClientAsker } = require(path.join(out, 'pinClient.js'));
   const { checkedPin } = require(path.join(out, 'hostKeyPin.js'));
-  const client = await pinClientAsker()({ program: 'ssh', env: process.env });
+  const client = await pinClientAsker()({ program, env: process.env });
   if (client.kind === 'unreadable') {
     throw new Error(`the rig could not read the version of ssh (exit code ${client.exitCode})`);
   }

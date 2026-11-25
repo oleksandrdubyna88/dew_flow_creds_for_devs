@@ -140,8 +140,11 @@ async function identitiesOf(rig, real) {
 const HEX40 = /^[0-9a-f]{40}$/;
 const whole = (one) => typeof one.sha256 === 'string' && typeof one.path === 'string';
 
-/** Writes the record into the section's folder, prints it as one line, and checks it. */
-async function recordIdentities(check, rig, real) {
+/**
+ * Writes the record into the section's folder, prints it as one line, and checks it. E3.S9 (D9): a run that has no `tool.json` (R8) or no `known_hosts_command` (R9) says `tools: false` or `commands: false`, and
+ * that item is printed as `info  R8 not asked: …`, never as a pass; section 10's call is unchanged.
+ */
+async function recordIdentities(check, rig, real, { tools = true, commands = true } = {}) {
   const record = await identitiesOf(rig, real);
   fs.writeFileSync(path.join(rig.dir, 'identities.json'), `${JSON.stringify(record, null, 2)}\n`);
   console.log(`identities ${JSON.stringify(record)}`);
@@ -158,13 +161,21 @@ async function recordIdentities(check, rig, real) {
   const files = filesNamed(rig.dir, new Set(['program.json'])).length;
   check('every program.json under the section\'s folder is a listener of the record: the walk of the record missed none', files === listeners.length && files > 0, JSON.stringify({ files, listeners: listeners.length }));
   // R8 (E3.S5): every program that a leg named in a `tool.json` is in the record, with its path, SHA-256 and version; an independent walk counts the files.
-  const tools = record.executables.filter((one) => one.versionSource !== undefined);
+  const toolsOf = record.executables.filter((one) => one.versionSource !== undefined);
   const named = filesNamed(rig.dir, new Set(['tool.json'])).length;
-  check('every tool that a leg named (tool.json) is in the record, with its path, SHA-256 and version', named > 0 && tools.length === named && tools.every((one) => whole(one) && one.version !== null), JSON.stringify({ named, tools }));
+  if (tools) {
+    check('every tool that a leg named (tool.json) is in the record, with its path, SHA-256 and version', named > 0 && toolsOf.length === named && toolsOf.every((one) => whole(one) && one.version !== null), JSON.stringify({ named, tools: toolsOf }));
+  } else {
+    console.log(`info  R8 not asked: this run's legs name no tool (tool.json files: ${named})`);
+  }
   // R9 (E3.S6): the recording command of M8 is a text that the run hands the client by its config; each is in the record with its SHA-256. An independent walk counts the files of that name.
-  const commands = filesNamed(rig.dir, new Set(['known_hosts_command'])).length;
+  const commandFiles = filesNamed(rig.dir, new Set(['known_hosts_command'])).length;
   const recorded = record.configs.filter((one) => path.basename(one.file) === 'known_hosts_command');
-  check('every known_hosts_command of the run is a config text of the record, with its SHA-256', commands > 0 && recorded.length === commands && recorded.every((one) => typeof one.sha256 === 'string'), JSON.stringify({ commands, recorded }));
+  if (commands) {
+    check('every known_hosts_command of the run is a config text of the record, with its SHA-256', commandFiles > 0 && recorded.length === commandFiles && recorded.every((one) => typeof one.sha256 === 'string'), JSON.stringify({ commands: commandFiles, recorded }));
+  } else {
+    console.log(`info  R9 not asked: this run's legs write no known_hosts_command (files: ${commandFiles})`);
+  }
   return record;
 }
 

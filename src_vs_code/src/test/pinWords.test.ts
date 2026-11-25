@@ -11,7 +11,7 @@ import { SshExecAuth, buildSshExecArgv } from '../sshExecCommand';
 import type { EntityMetadata } from '../types';
 import { discoverSources } from './tempSiteScan';
 import { fakePath } from './fakePaths';
-import { PIN_SOURCE_OPTIONS, hostKeyWordsOf, sourceWordsOf, sshKnowsKnownHostsCommand, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
+import { PIN_SOURCE_OPTIONS, hostKeyWordsOf, sourceWordsOf, sshKnowsKnownHostsCommand, sshParserOf, testPin, valuesOf, withoutGlobal, withoutSources } from './pinnedArgv';
 
 /**
  * G1, E2.S2: the complete words of one pinned call, and the rule of the path that stands before them (the plan's §3.10, §3.11, §3.12
@@ -23,6 +23,11 @@ import { PIN_SOURCE_OPTIONS, hostKeyWordsOf, sourceWordsOf, sshKnowsKnownHostsCo
  *
  * <p>The new exports are read through the module object, and a pin goes through `testPin`, so this file compiles before they exist:
  * a missing export is a failed assertion.</p>
+ *
+ * <p><b>Two parsers (test 34; E3.S9).</b> The real client reads a bare value of a config line with the parser of its version: a client before 8.7 keeps a pair of apostrophes and splits a bare value at an
+ * equals sign; a client from 8.7 on takes the apostrophes out and reads the value whole. The `-G` tests (G1 to G6) take their expectation from the ONE parser that the local client's own `-V` names
+ * (`PARSER`, boundary `TOKENISER_SINCE` of `pinnedArgv.ts`): a version that cannot be read is a failed test, never a choice by outcome (decision 19). `scripts/itestOffRig.cjs unit-older` runs this file
+ * with the older client first on the PATH; CI runs it on the newer one.</p>
  */
 
 const PIN = fakePath('keys/4242/known_hosts-e1-0b6f3c1e');
@@ -143,6 +148,14 @@ const HAS_SSH = VERSION_ANSWER.error === undefined;
 /** Skipped only where there is no `ssh` and no CI: under `CI=true` a missing client fails. */
 const NEEDS_SSH = { skip: HAS_SSH || process.env.CI === 'true' ? false : 'no ssh on the PATH' };
 const KNOWS_COMMAND = sshKnowsKnownHostsCommand(VERSION_ANSWER.stderr);
+/** The parser of the local client by its version (8.7 is the boundary): `undefined` when `ssh -V` cannot be read. */
+const PARSER = sshParserOf(VERSION_ANSWER.stderr);
+
+/** The parser, or a failure that says so: a `-G` test of this file has no expectation for a client that did not say what it is (decision 19), and it does not skip. */
+function parserOrFail(): 'older' | 'newer' {
+  assert.notEqual(PARSER, undefined, 'the version of this ssh cannot be read: no parser, no expectation');
+  return PARSER as 'older' | 'newer';
+}
 /** Tests that give the real client a `KnownHostsCommand` (in the config or in the argv): skipped on a client older than 8.5, never failed; the argv tests (W1 to W6, P1 to P5) stay on. Where there is no client, or under `CI=true`, as `NEEDS_SSH`. */
 const NEEDS_SSH_85 = { skip: NEEDS_SSH.skip === false && !KNOWS_COMMAND ? 'the local ssh is older than 8.5: it has no KnownHostsCommand' : NEEDS_SSH.skip };
 
@@ -164,12 +177,14 @@ function sources(t: TestContext, argv: readonly string[]): string[] {
 }
 
 test('G1: under a config that says KnownHostsCommand, VerifyHostKeyDNS yes and LogLevel QUIET, the real ssh resolves every pinned argv to none of them', NEEDS_SSH_85, (t) => {
+  parserOrFail();
   for (const [name, argv] of [...everyKind(PIN, 'knows'), ['the tunnel with a caller\'s hostile extra', tunnel(PIN, 'knows', 'key', HOSTILE_EXTRA)] as const]) {
     assert.deepEqual(sources(t, argv), ['loglevel ERROR', 'verifyhostkeydns false'], name);
   }
 });
 
 test('G2: the control: the same config with an UNPINNED argv keeps all three on, so the test above can show the fault', NEEDS_SSH_85, (t) => {
+  parserOrFail();
   const kept = sources(t, run(undefined, 'knows'));
   assert.equal(kept.includes('knownhostscommand /bin/echo x'), true, kept.join(' | '));
   assert.equal(kept.includes('verifyhostkeydns true'), true, kept.join(' | '));
@@ -177,6 +192,7 @@ test('G2: the control: the same config with an UNPINNED argv keeps all three on,
 });
 
 test('G3: the words of an OLDER client leave a config\'s KnownHostsCommand on in a client that knows the option: so the answer about the client decides', NEEDS_SSH_85, (t) => {
+  parserOrFail();
   assert.deepEqual(sources(t, run(PIN, 'older')), ['knownhostscommand /bin/echo x', 'loglevel ERROR', 'verifyhostkeydns false']);
 });
 
@@ -307,7 +323,20 @@ test('P5: sentences E and F, word for word: no path, no part of the program\'s o
   assert.match(pinClientSentence('box', 0), /\(exit code 0\)/);
 });
 
+test('P6: the parser of a client by its version: below 8.7 older, from 8.7 on newer, and a version that cannot be read is no parser', () => {
+  const line = (version: string): string => `${version} Debian-5, OpenSSL 1.1.1w  11 Sep 2023\n`;
+  assert.equal(sshParserOf(line('OpenSSH_8.4p1')), 'older');
+  assert.equal(sshParserOf(line('OpenSSH_8.6p1')), 'older');
+  assert.equal(sshParserOf(line('OpenSSH_8.7p1')), 'newer');
+  assert.equal(sshParserOf(line('OpenSSH_10.2p1')), 'newer');
+  assert.equal(sshParserOf(''), undefined);
+  assert.equal(sshParserOf(undefined), undefined);
+  assert.equal(sshParserOf('not a version: OpenSSH_10.2p1\n'), undefined);
+  assert.equal(sshParserOf('ssh says OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2\n'), undefined);
+});
+
 test('G4: every path that the rule writes, the real ssh resolves to exactly that path in BOTH lists', NEEDS_SSH, (t) => {
+  parserOrFail();
   // The rows a POSIX client can be asked: a Windows path is a relative name to it, and it is written as it is all the same.
   for (const [what, file] of ROWS.filter((row) => 'word' in row[2])) {
     const resolved = lists(t, run(file, KNOWS_COMMAND ? 'knows' : 'older')); // the words differ only in the KnownHostsCommand pair, which a client below 8.5 does not take
@@ -321,15 +350,36 @@ function readAsOne(t: TestContext, word: string, file: string): boolean {
   return resolved.user === file && resolved.system === file;
 }
 
-test('G5: the control: the bare pair of apostrophes resolves ANOTHER path, and no refused row is read as the one file in BOTH spellings', NEEDS_SSH, (t) => {
+test('G5: the control of this client\'s parser: what the bare pair of apostrophes and the bare equals-sign path resolve to', NEEDS_SSH, (t) => {
+  const parser = parserOrFail();
   const pair = "/tmp/creds-a'b'/kh";
-  assert.equal(readAsOne(t, pair, pair), false, 'the pair of apostrophes, bare, was read as itself: G4 could not show the fault');
-  assert.equal(readAsOne(t, pair, '/tmp/creds-ab/kh'), true, 'the pair of apostrophes, bare, is read as the path without them');
+  const equals = '/tmp/data=prod/keys/known_hosts-e1';
+  if (parser === 'newer') {
+    assert.equal(readAsOne(t, pair, pair), false, 'the pair of apostrophes, bare, was read as itself: G4 could not show the fault');
+    assert.equal(readAsOne(t, pair, '/tmp/creds-ab/kh'), true, 'the pair of apostrophes, bare, is read as the path without them');
+    assert.equal(readAsOne(t, equals, equals), true, 'the bare equals-sign path is read as itself, whole, in both lists');
+    return;
+  }
+  assert.equal(readAsOne(t, pair, pair), true, 'the pair of apostrophes, bare, is read as itself by a client before 8.7');
+  assert.equal(readAsOne(t, pair, '/tmp/creds-ab/kh'), false, 'the pair of apostrophes, bare, was read as the path without them by a client before 8.7');
+  assert.equal(readAsOne(t, equals, equals), false, 'the bare equals-sign path was read as itself by a client before 8.7: it splits at the sign');
+  const resolved = lists(t, ['-o', `UserKnownHostsFile=${equals}`, '-o', `GlobalKnownHostsFile=${equals}`, '--', TARGET]);
+  assert.deepEqual({ user: resolved.user?.split(' ')[0], system: resolved.system?.split(' ')[0] }, { user: '/tmp/data', system: '/tmp/data' }, `the first name of each list of the bare equals-sign path: ${resolved.stderr}`);
+});
+
+test('G6: the refused rows: no refused row is read as the one file in BOTH spellings (a newer client), or what the client resolves is recorded (an older one)', NEEDS_SSH, (t) => {
+  const parser = parserOrFail();
   // A control character is refused as the rule of the bridged file refuses it (P4), whatever this client reads: a tab splits a bare word and is kept
   // in double quotes, and DEL is kept in both (measured 2026-11-18, OpenSSH 10.2p1). Every other kind is refused because of what was measured.
   for (const [what, file] of ROWS.filter((row) => 'kind' in row[2] && row[2].kind !== 'control')) {
-    const both = readAsOne(t, file, file) && readAsOne(t, `"${file}"`, file);
-    assert.equal(both, false, `${what}: ssh reads it as the one file bare AND in double quotes, so the rule refuses a path that it could always write`);
+    if (parser === 'newer') {
+      const both = readAsOne(t, file, file) && readAsOne(t, `"${file}"`, file);
+      assert.equal(both, false, `${what}: ssh reads it as the one file bare AND in double quotes, so the rule refuses a path that it could always write`);
+    } else {
+      // No expectation: the rule was measured on a newer client, and a client before 8.7 is recorded, not judged (the plan's re-review, its seventh place).
+      const of = (word: string): string => JSON.stringify(lists(t, ['-o', `UserKnownHostsFile=${word}`, '-o', `GlobalKnownHostsFile=${word}`, '--', TARGET]));
+      t.diagnostic(`${what}: bare ${of(file)}; in double quotes ${of(`"${file}"`)}`);
+    }
   }
 });
 

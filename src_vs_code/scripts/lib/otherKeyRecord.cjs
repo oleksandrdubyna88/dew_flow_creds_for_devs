@@ -30,13 +30,13 @@ function bare(file) {
   return file;
 }
 
-/** `[127.0.0.1]:<port> <type> <base64>\n` from the first two fields of a `.pub` text. Not the product's `knownHostsLine`: a defect of it must not make a source that the client then refuses. */
-function knownHostsLineOf(port, pubText) {
+/** `[<host>]:<port> <type> <base64>\n` (the host `127.0.0.1` unless M10 names another: E3.S9, D6) from the first two fields of a `.pub` text. Not the product's `knownHostsLine`: a defect of it must not make a source that the client then refuses. */
+function knownHostsLineOf(port, pubText, host = '127.0.0.1') {
   const fields = String(pubText).trim().split(/\s+/);
   if (fields.length < 2) {
     throw new Error(`a .pub text needs at least two fields (type and key); this one has ${fields.length}`);
   }
-  return `[127.0.0.1]:${port} ${fields[0]} ${fields[1]}\n`;
+  return `[${host}]:${port} ${fields[0]} ${fields[1]}\n`;
 }
 
 /** E1's words as `f3e9887d` writes them: the three pairs, one file as both known-hosts files (§3.9 row 2). */

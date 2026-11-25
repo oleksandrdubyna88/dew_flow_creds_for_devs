@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const rig = require('./itestRowRig.cjs');
 const rec = require('./lib/rowRecord.cjs');
+const off = require('./lib/offRigRecord.cjs');
 
 const { sec, standIn, within, me } = rig;
 const LABEL = 'M1';
@@ -85,24 +86,37 @@ async function bridgeAndCheck(ctx, label, roads) {
   check(`${label}: Close Remote Bridge ended the bridge's ssh within 5 s, by its recorded pid and start time (M1.7)`, ended, JSON.stringify(bridge?.pid));
 }
 
-/** M1.8 to M1.12: the record of starts, the pin words of each connection, the three pin paths, K1's log. */
+/**
+ * M1.8 to M1.12: the record of starts, the pin words of each connection, the three pin paths, K1's log. E3.S9 (D7): `ctx.expect` (`EXPECT.older` of `lib/offRigRecord.cjs`, M11's legs) says what an older client does: its
+ * answer is not kept, so each pinned call asks `ssh -V` once (3 questions, 8 starts), and its words hold no `KnownHostsCommand` pair. With none, the checks are what they were.
+ */
 async function recordChecks(ctx, label, roads, k1) {
   const { check, info, product } = ctx;
   const leg = ctx.rig;
+  const expect = ctx.expect ?? off.EXPECT.newer;
+  const older = expect.parser === 'older';
   const counts = rig.countsOf(leg, roads, [k1]);
   const { list } = counts.starts;
   const kinds = list.filter((one) => one.connection).map((one) => one.kind).sort();
-  check(`${label}: the shim recorded 6 starts, each whole: ONE question ssh -V, and 5 connection starts: the probe, the install run, the bridge, the sweep, the mode check (M1.8)`, list.length === 6 && list.every((one) => one.whole) && counts.starts.questions === 1 && kinds.join(',') === 'bridge,install,mode,probe,sweep', JSON.stringify({ total: list.length, questions: counts.starts.questions, kinds }));
+  const asks = older ? `${expect.questions} questions ssh -V, one for each pinned call` : 'ONE question ssh -V';
+  check(`${label}: the shim recorded ${expect.starts} starts, each whole: ${asks}, and 5 connection starts: the probe, the install run, the bridge, the sweep, the mode check (M1.8)`, list.length === expect.starts && list.every((one) => one.whole) && counts.starts.questions === expect.questions && kinds.join(',') === 'bridge,install,mode,probe,sweep', JSON.stringify({ total: list.length, questions: counts.starts.questions, kinds }));
   const question = list.find((one) => one.kind === 'question');
   const firstConnection = Math.min(...list.filter((one) => one.connection).map((one) => Number(one.start)));
   // The shim's start times are ticks of 10 ms, so the order is also read from the observers' own clock: the question ENDED before the first connection started (a run's `startedAt`, a bridge's `spawnedAt`).
   const firstStarted = Math.min(...roads.outcomes.slice(rig.markOf(roads).outcomes).map((one) => one.startedAt), ...counts.bridges.map((one) => one.spawnedAt));
   const questionEnd = counts.question.length === 1 ? counts.question[0].startedAt + counts.question[0].ms : null;
-  check(`${label}: the question started before the first connection start (the start times the shim recorded) and ENDED before it (the observers' clock), and the observer timed exactly one run of it (M1.9)`, question !== undefined && Number(question.start) <= firstConnection && counts.question.length === 1 && questionEnd !== null && questionEnd <= firstStarted, JSON.stringify({ question, firstConnection, timed: counts.question, questionEnd, firstStarted }));
+  const calls = rig.callsOf(leg, roads, product);
+  if (older) {
+    check(`${label}: the first question started before the first connection start (the start times the shim recorded), and each of the ${expect.questions} questions ended before the first run of its own pinned call (the observers' clock; ${calls.length} calls), the observer timing exactly ${expect.questions} runs (M1.9)`, question !== undefined && Number(question.start) <= firstConnection && counts.question.length === expect.questions && calls.length === expect.questions && off.questionsOk('older', calls, counts.question), JSON.stringify({ question, firstConnection, timed: counts.question, calls: calls.map((call) => call.from) }));
+  } else {
+    check(`${label}: the question started before the first connection start (the start times the shim recorded) and ENDED before it (the observers' clock), and the observer timed exactly one run of it (M1.9)`, question !== undefined && Number(question.start) <= firstConnection && counts.question.length === 1 && questionEnd !== null && questionEnd <= firstStarted, JSON.stringify({ question, firstConnection, timed: counts.question, questionEnd, firstStarted }));
+  }
   info(`${label}: the question ssh -V took ${counts.question[0]?.ms.toFixed(1)} ms (C20, the wait of a normal run)`);
   const connections = sec.recordedStarts(leg).filter((one) => rec.isConnectionStart(one.argv));
-  const sloppy = connections.filter((one) => sec.pinOf(product, one.argv) === undefined || sec.lacksNewPairs(product, one.argv) || product.argv.valuesOf(one.argv, 'StrictHostKeyChecking').length !== 1);
-  check(`${label}: each of the 5 connection argvs says StrictHostKeyChecking=yes, ONE path as both known-hosts files, VerifyHostKeyDNS=no, KnownHostsCommand=none and LogLevel=ERROR, each once (M1.10)`, connections.length === 5 && sloppy.length === 0, JSON.stringify(sloppy.map((one) => product.argv.sourceWordsOf(one.argv))));
+  const lacking = (argv) => (older ? !off.wordsOk('older', argv) : sec.lacksNewPairs(product, argv));
+  const sloppy = connections.filter((one) => sec.pinOf(product, one.argv) === undefined || lacking(one.argv) || product.argv.valuesOf(one.argv, 'StrictHostKeyChecking').length !== 1);
+  const pairs = older ? 'VerifyHostKeyDNS=no and LogLevel=ERROR, each once, and no KnownHostsCommand pair' : 'VerifyHostKeyDNS=no, KnownHostsCommand=none and LogLevel=ERROR, each once';
+  check(`${label}: each of the 5 connection argvs says StrictHostKeyChecking=yes, ONE path as both known-hosts files, ${pairs} (M1.10)`, connections.length === 5 && sloppy.length === 0, JSON.stringify(sloppy.map((one) => product.argv.sourceWordsOf(one.argv))));
   const remote = sec.remoteOf(connections.find((one) => one.argv.includes('-N'))?.argv ?? []) ?? '';
   const commands = { probe: product.probeCommand(), install: product.installCommand(), sweep: product.sweepCommand(me), mode: product.modeCheckCommand({ path: remote }) };
   const pinOf = (kind) => connections.filter((one) => rec.kindOf(one.argv, commands) === kind).map((one) => sec.pinOf(product, one.argv));

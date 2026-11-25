@@ -175,4 +175,4 @@ async function rowM7(check, top) {
   }
 }
 
-module.exports = { rowM7, legs };
+module.exports = { rowM7, legs, begin, coldCheck, twinsCheck, recordOf };

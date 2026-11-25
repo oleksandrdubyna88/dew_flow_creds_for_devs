@@ -103,9 +103,14 @@ function oneConnectionConfig(run, { address, port, first = [], hostKeyPath, auth
 /**
  * The config of a serving `sshd -D -e` (the serving launcher). `penalties` false leaves `PerSourcePenalties no` out, for an sshd older than
  * 9.8, which has no penalties. With a run of no lines and no `extra` it is, byte for byte, what `servingConfig` of
- * `itestPinnedRoads.cjs` wrote before E3.S2.
+ * `itestPinnedRoads.cjs` wrote before E3.S2. E3.S9 (D4): `logLevel` is `VERBOSE` (the default, the text as before) or `DEBUG1`, written IN PLACE of the one `LogLevel` line (a counterpart
+ * that logs `remote software version`, which is a `debug1` line, M11.v); any other value throws.
  */
-function servingConfig(run, { port, hostKey, authorizedKeys, pidFile, penalties, extra = [] }) {
+const LOG_LEVELS = ['VERBOSE', 'DEBUG1'];
+function servingConfig(run, { port, hostKey, authorizedKeys, pidFile, penalties, extra = [], logLevel = 'VERBOSE' }) {
+  if (!LOG_LEVELS.includes(logLevel)) {
+    throw new Error(`logLevel must be one of ${LOG_LEVELS.join(', ')}; got ${JSON.stringify(logLevel)}`);
+  }
   return [
     `ListenAddress 127.0.0.1:${port}`,
     `HostKey ${hostKey}`,
@@ -116,7 +121,7 @@ function servingConfig(run, { port, hostKey, authorizedKeys, pidFile, penalties,
     'PasswordAuthentication no',
     'KbdInteractiveAuthentication no',
     // `Connection from …` is a VERBOSE line: it is how K2's log shows that leg 2 reached it (T37). `Accepted publickey` is there at any level.
-    'LogLevel VERBOSE',
+    `LogLevel ${logLevel}`,
     // Measured on sshd 10.2 (2026-11-17): with the default, a run of refused host keys makes the listener refuse every next connection.
     ...(penalties ? ['PerSourcePenalties no'] : []),
     ...run.lines,

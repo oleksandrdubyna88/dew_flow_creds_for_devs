@@ -83,7 +83,10 @@ function sentenceCChecks(ctx, label, roads, spec) {
   check(`${label}: the stderr of the probe and of the mode check each holds the Offending line of ssh with the pin file of its own call, as ssh prints it (M7.c3)`, named.every((one) => one.ok), JSON.stringify(named));
 }
 
-/** The twin writer of the collision (§1.4, A3): `onPin(pinFile)` writes the bare word's path (the apostrophes taken out) with K2's line for `port`, folders 0700, file 0600, and records when. Answers `{ onPin, twins }`. */
+/**
+ * The twin writer of the collision (§1.4, A3): `onPin(pinFile)` writes the bare word's path as a client FROM 8.7 ON reads it (the apostrophes taken out; a client before 8.7 keeps them, and M11's twin legs show that the twin is
+ * then no file that the bare word names) with K2's line for `port`, folders 0700, file 0600, and records when. Answers `{ onPin, twins }`.
+ */
 function twinWriter(ctx, port, keyFile) {
   const twins = [];
   const line = ok.knownHostsLineOf(port, fs.readFileSync(`${keyFile}.pub`, 'utf8'));
@@ -97,13 +100,14 @@ function twinWriter(ctx, port, keyFile) {
 }
 
 /**
- * The control and the witness of the collision (M7.y3, M7.x2): `<leg>/st/<folder>/control/known_hosts-control` with K1's line and its twin (the apostrophes taken out) with K2's line, both written here (not by the product),
- * then the real client by its path with E1's words with the path BARE and as it is. Answers `{ file, twin, words, run }`.
+ * The control and the witness of the collision (M7.y3, M7.x2): `<leg>/st/<folder>/control/known_hosts-control` with K1's line and its twin (by default the apostrophes taken out, as a client FROM 8.7 ON reads the bare word;
+ * E3.S9 (D20): `twinOf` names another, the first name of the split at an equals sign for M11) with K2's line, both written here (not by the product), then the real client by its path with E1's words with the path BARE and as
+ * it is. Answers `{ file, twin, words, run }`.
  */
-async function controlBare(ctx, server, folder) {
+async function controlBare(ctx, server, folder, { twinOf = pr.resolvedBare } = {}) {
   const leg = ctx.rig;
   const file = path.join(leg.dir, 'st', folder, 'control', 'known_hosts-control');
-  const twin = pr.resolvedBare(file);
+  const twin = twinOf(file);
   for (const [target, key] of [[file, leg.k1], [twin, leg.k2]]) {
     fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
     fs.writeFileSync(target, ok.knownHostsLineOf(server.port, fs.readFileSync(`${key}.pub`, 'utf8')), { mode: 0o600 });

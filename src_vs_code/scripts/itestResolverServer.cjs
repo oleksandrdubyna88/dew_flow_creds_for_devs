@@ -75,7 +75,7 @@ function replyTo(query, question, zone) {
   const known = zone !== undefined && zone.name.toLowerCase() === question.name;
   const records = known ? recordsOf(zone, question.type) : [];
   const opt = optOf(query, question.end);
-  const flags = FLAG_QR | FLAG_AA | FLAG_RA | (query.readUInt16BE(2) & FLAG_RD) | (known && records.length > 0 ? FLAG_AD : 0) | (known ? 0 : 3);
+  const flags = FLAG_QR | FLAG_AA | FLAG_RA | (query.readUInt16BE(2) & FLAG_RD) | (known && records.length > 0 && zone.secure !== false ? FLAG_AD : 0) | (known ? 0 : 3);
   const header = Buffer.alloc(12);
   query.copy(header, 0, 0, 2);
   header.writeUInt16BE(flags, 2);

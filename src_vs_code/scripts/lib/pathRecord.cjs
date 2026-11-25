@@ -85,7 +85,10 @@ function offendingNames(stderr, file) {
   return String(stderr).split('\n').some((one) => line.test(one.replace(/\r$/, '')));
 }
 
-/** The path that a BARE word resolves to when the path holds apostrophes: ssh drops them (a pair of them, bare, names another path in both lists). */
+/**
+ * The path that a BARE word resolves to when the path holds apostrophes, as a client FROM 8.7 ON reads it: ssh drops them (a pair of them, bare, names another path in both lists). A client before 8.7 keeps them, and
+ * the file at this path is then a file that the bare word does not name (E3.S9: `BARE` of `offRigRecord.cjs`, M11 (b)).
+ */
 const resolvedBare = (file) => file.replaceAll("'", '');
 
 /** E1's three pairs with the path as it is in both known-hosts options (J18: `otherKeyRecord`'s words refuse white space and a quote; the collision's path holds apostrophes). */

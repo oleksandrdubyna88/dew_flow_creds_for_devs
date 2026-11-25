@@ -22,8 +22,9 @@ const { installStandIn } = require('./itestProbeInstall.cjs');
 const { ownedName, ownedPattern, formatOwner, runRecord } = require('./lib/leftovers.cjs');
 
 const me = os.userInfo().username;
-/** The image that the Containerfile builds (`scripts/containers/e3-resolver.Containerfile`), built by hand once. Not swept by the janitor (it reads Docker only). */
-const IMAGE_TAG = 'creds-itest-e3-resolver:20261124';
+/** The repository of the tag below, and the file whose git blob names the image (E3.S9, D13: the tag is `creds-itest-e3-resolver:<the first 12 hex digits of the file's blob id>`). Not swept by the janitor (it reads Docker only). */
+const CONTAINERFILE = 'src_vs_code/scripts/containers/e3-resolver.Containerfile';
+const IMAGE_REPOSITORY = 'creds-itest-e3-resolver';
 const WSLC = 'wslc.exe';
 /** The folder that the container's start makes for the resolver's three files (`containers/e3-resolver-init.sh`). */
 const CONTROL = '/run/e3-resolver';
@@ -68,9 +69,16 @@ async function containerNames() {
   return said.code === 0 ? said.stdout.split('\n').slice(1).map((line) => line.trim().split(/\s+/).at(-1)).filter((name) => name) : undefined;
 }
 
+/** The tag of the image that the committed Containerfile builds, or `undefined` when git cannot answer. */
+async function imageTag(repo = path.resolve(__dirname, '..', '..')) {
+  const said = await runBounded('git', ['-C', repo, 'rev-parse', `HEAD:${CONTAINERFILE}`], 10_000);
+  const blob = said.code === 0 ? said.stdout.trim() : '';
+  return /^[0-9a-f]{40}$/.test(blob) ? `${IMAGE_REPOSITORY}:${blob.slice(0, 12)}` : undefined;
+}
+
 /** The image of the probe: its id (`sha256:<hex>`), or `undefined`. */
-async function imageId() {
-  const said = await runBounded(WSLC, ['image', 'inspect', IMAGE_TAG], 30_000);
+async function imageId(tag) {
+  const said = await runBounded(WSLC, ['image', 'inspect', tag], 30_000);
   try {
     return JSON.parse(said.stdout)[0].Id;
   } catch {
@@ -99,7 +107,11 @@ function insideReport(ctx, output) {
   return { failed, last, identities: lines.find((line) => line.startsWith('identities ')) };
 }
 
-async function hostPart(ctx) {
+/**
+ * The host part, as a function (E3.S9, D13): R1 and R2 on the host, the image by its tag, the container started with `insideArgs` (the harness it runs and its arguments, D14), removed by its EXACT name on every path.
+ * `what` is the checks' prefix (`P2.1` for the probe). Answers `{ outcome, report }` once the container ran, or `undefined`.
+ */
+async function runInContainer(ctx, insideArgs, what = 'P2.1') {
   const repo = path.resolve(__dirname, '..', '..');
   const facts = await gitFacts(repo);
   const HEX40 = /^[0-9a-f]{40}$/;
@@ -108,8 +120,9 @@ async function hostPart(ctx) {
   ctx.check('the record names the commit and the pin of the shared rules (git rev-parse HEAD and HEAD:.agents/conventions) (answered on the host)', HEX40.test(facts.commit ?? '') && HEX40.test(facts.conventions ?? ''), JSON.stringify([facts.commit, facts.conventions]));
   const before = await containerNames();
   ctx.check('wslc answers `wslc list -a` (the container runtime of this machine; Docker is not used)', before !== undefined);
-  const id = await imageId();
-  ctx.check(`the image ${IMAGE_TAG} exists and wslc answers its id`, id !== undefined, id);
+  const tag = await imageTag(repo);
+  const id = tag === undefined ? undefined : await imageId(tag);
+  ctx.check(`the image ${tag} exists and wslc answers its id`, id !== undefined, JSON.stringify({ tag, id }));
   const unc = await runBounded('wslpath', ['-w', repo], 10_000);
   ctx.check('the worktree has a path that wslc.exe can mount (wslpath -w)', unc.code === 0 && unc.stdout.trim() !== '', JSON.stringify(unc));
   if (before === undefined || id === undefined || unc.code !== 0) {
@@ -119,7 +132,7 @@ async function hostPart(ctx) {
   const label = `testsToDelete.owner=${formatOwner(runRecord())}`;
   ctx.info(`wslc list -a before the run: ${JSON.stringify(before)}`);
   const run = ['run', '--pull', 'never', '--rm', '--name', name, '--label', label, '-v', `${unc.stdout.trim()}:/work:ro`, '--dns', '127.0.0.1', '--dns-option', 'trust-ad', '--dns-option', 'edns0',
-    '-e', `${IMAGE_ID_VARIABLE}=${id.replace(/^sha256:/, '')}`, id, 'sh', '/work/src_vs_code/scripts/containers/e3-resolver-init.sh'];
+    '-e', `${IMAGE_ID_VARIABLE}=${id.replace(/^sha256:/, '')}`, id, 'sh', '/work/src_vs_code/scripts/containers/e3-resolver-init.sh', ...insideArgs];
   ctx.section.after(() => removeContainer(name)); // the scope's own removal, by the exact name
   let outcome;
   let finished = false;
@@ -143,10 +156,18 @@ async function hostPart(ctx) {
   ctx.info(`wslc inspect while it ran: ${JSON.stringify(seen ?? null)}`);
   const after = await containerNames();
   const report = insideReport(ctx, `${outcome.stdout}${outcome.stderr === '' ? '' : `\nstderr: ${outcome.stderr}`}`);
-  ctx.check(`P2.1 the container ran from the image ${id.slice(0, 19)}… (inspect while it ran: that image id, the name ${name}, the owner label), started with --rm and the owner-form name; after the probe wslc list -a --no-trunc shows no container of that name`,
+  ctx.check(`${what} the container ran from the image ${id.slice(0, 19)}… (inspect while it ran: that image id, the name ${name}, the owner label), started with --rm and the owner-form name; after the probe wslc list -a --no-trunc shows no container of that name`,
     ownedPattern().test(name) && run.includes('--rm') && seen?.image === id && seen?.name === `/${name}` && seen?.labels?.['testsToDelete.owner'] === label.replace(/^testsToDelete\.owner=/, '') && after !== undefined && !after.includes(name), JSON.stringify({ name, seen, after }));
   ctx.info(`wslc list -a after the run: ${JSON.stringify(after)}`);
-  ctx.check('the inside part ran to its end: exit 0, no FAIL line, and its last line is "probe resolver: worked"', outcome.code === 0 && report.failed.length === 0 && report.last === 'probe resolver: worked', JSON.stringify({ code: outcome.code, failed: report.failed, last: report.last }));
+  return { outcome, report, tag, id };
+}
+
+async function hostPart(ctx) {
+  const ran = await runInContainer(ctx, ['scripts/itestFeasibility.cjs', 'resolver', '--inside']);
+  if (ran !== undefined) {
+    const { outcome, report } = ran;
+    ctx.check('the inside part ran to its end: exit 0, no FAIL line, and its last line is "probe resolver: worked"', outcome.code === 0 && report.failed.length === 0 && report.last === 'probe resolver: worked', JSON.stringify({ code: outcome.code, failed: report.failed, last: report.last }));
+  }
 }
 
 // ---- the inside part --------------------------------------------------------------------------------------------------------------------
@@ -291,7 +312,7 @@ async function insidePart(ctx) {
   const probe = {
     name: ctx.name,
     executables: [
-      { role: 'the image (its id; the sha256 is the image id, not a file digest)', path: given === null ? null : IMAGE_TAG, version: null, sha256: given },
+      { role: 'the image (its id; the sha256 is the image id, not a file digest)', path: given === null ? null : 'the image of the container', version: null, sha256: given },
       executable('ssh, the client inside', '/usr/bin/ssh', await versionLine(ctx, '/usr/bin/ssh')),
       executable('the image\'s sshd (the default of lib/sshdRun.cjs: no CREDS_ITEST_SSHD inside)', SSHD, await versionLine(ctx, SSHD)),
       executable('the resolver (itestResolverServer.cjs, root)', path.join(__dirname, 'itestResolverServer.cjs')),
@@ -312,4 +333,4 @@ async function probeResolver(ctx) {
   await (ctx.flags.includes('--inside') ? insidePart(ctx) : hostPart(ctx));
 }
 
-module.exports = { probeResolver };
+module.exports = { probeResolver, runInContainer, imageTag, NAME, CONTROL, questions, sshfpOf };

@@ -180,4 +180,4 @@ async function probeOlderClient(ctx) {
   await ctx.recordWithListener(rig, real, probe);
 }
 
-module.exports = { probeOlderClient, DEBS_VARIABLE };
+module.exports = { probeOlderClient, DEBS_VARIABLE, debsFolderOf, checkedDebs, unpack, librariesOf };

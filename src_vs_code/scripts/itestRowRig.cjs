@@ -47,7 +47,7 @@ async function rowsTop(check, base) {
 }
 
 /** The rig of one leg, in `<top.dir>/<name>/`: its own shim, records, storage, home, handed client config and `authorized_keys`. */
-function legRig(top, name, row, label) {
+function legRig(top, name, row, label, real) {
   const dir = path.join(top.dir, name);
   fs.mkdirSync(dir);
   const rig = { ...sec.rigOf(top.scope, dir, top.out, top.product), k1: top.k1, k2: top.k2, storedKey: top.storedKey, pin: top.pin, password: top.password, name, row, label, home: path.join(dir, 'home') };
@@ -58,7 +58,7 @@ function legRig(top, name, row, label) {
   fs.copyFileSync(`${top.userKey}.pub`, `${rig.userKey}.pub`);
   fs.writeFileSync(rig.clientConfig, rec.handedClientConfig(dir));
   fs.writeFileSync(rig.authorizedKeys, `${[rig.userKey, rig.storedKey].map((key) => fs.readFileSync(`${key}.pub`, 'utf8').trim()).join('\n')}\n`);
-  rig.real = sec.installShim(rig);
+  rig.real = sec.installShim(rig, real); // E3.S9 (D1): `real` names the client that the leg wraps; with none, the first outside the shim's folder as before
   if (rig.real === undefined) {
     throw new Error('the shim of the leg found no real ssh outside its own folder');
   }
@@ -121,8 +121,8 @@ function removeSocketsOf(rig) {
 }
 
 /** One leg, in its own process (s 1.2). `label` heads each check of the leg. */
-async function runLeg(check, top, row, name, label = `${row} ${name}`) {
-  const rig = legRig(top, name, row, label);
+async function runLeg(check, top, row, name, label = `${row} ${name}`, { real } = {}) {
+  const rig = legRig(top, name, row, label, real);
   writeGiven(rig);
   const result = launch(top.scope, process.execPath, [__filename, '--leg', rig.dir], { env: { ...rig.env, HOME: rig.home } });
   const identity = { pid: result.child.pid, start: startOf(result.child.pid) };
@@ -142,7 +142,8 @@ async function runLeg(check, top, row, name, label = `${row} ${name}`) {
 /** A counterpart's command line of its own: what the leg asked of the serving launcher, with the lines that turn password logins on last (F5). */
 async function counterpart(check, leg, name, hostKey, { port, extra = [], passwords = false } = {}) {
   const lines = passwords ? [...extra, ...rec.PASSWORD_LINES] : extra;
-  const server = await startServingSshd(leg, name, hostKey, port, lines);
+  const server = await startServingSshd(leg, name, hostKey, port, lines, { logLevel: leg.logLevel }); // E3.S9 (D3): a leg that sets `logLevel` has every counterpart log at it
+  (leg.servers ??= []).push(server); // E3.S9: a row that wraps a leg reads the counterpart's log after it (M11.v)
   check(`${leg.label}: ${name} listens: one sshd -D -e at 127.0.0.1, on a port of its own`, server.failure === undefined, server.failure);
   if (server.failure !== undefined) {
     await endChild(server.sshd);
@@ -500,10 +501,10 @@ async function masterOf(check, leg, port, pinFile) {
 }
 
 /** The control client (the parent's setup): the REAL client by its path, never the shim, with E1's words of a checked pin; answers `{ argv, code, stdout, stderr }`. */
-async function controlClient(leg, { port, pin, words, command = 'true' }) {
+async function controlClient(leg, { port, pin, words, command = 'true', host = '127.0.0.1' }) {
   const { product } = leg;
   const used = words ?? rec.e1Words(product.hostKeyWords(pin), product.argv.withoutSources, product.argv.HOST_KEY_OPTIONS);
-  const argv = [...used, '-i', leg.userKey, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-p', String(port), `${me}@127.0.0.1`, command];
+  const argv = [...used, '-i', leg.userKey, '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes', '-p', String(port), `${me}@${host}`, command];
   return { argv, ...(await runClient(leg, leg.clientConfig, argv, leg.env, leg.real)) };
 }
 
@@ -641,6 +642,7 @@ function evidence(leg, roads, servers, fields = {}) {
     calls: calls.map((call) => ({ pin: call.pin, keyFile: call.keyFile ?? null, road: call.road ?? null, from: call.from, to: call.to, samples: roads.sampler.samples().filter((sample) => inLife(call, sample)).length })),
     keysFolder: last === undefined ? null : Object.fromEntries(Object.entries(last.files).map(([name, file]) => [name, file.sha256])),
     sockets: roads.bridges.filter((one) => one.remote !== undefined).map((one) => ({ path: one.remote, left: sec.isSocket(one.remote) })),
+    ...(leg.evidenceExtra ?? {}), // E3.S9: the client's version and parser, set by an M11 leg
     ...fields,
   };
   fs.writeFileSync(path.join(leg.dir, 'evidence.json'), `${JSON.stringify(record)}\n`);
@@ -655,6 +657,7 @@ const ROW_FILES = {
   M1: () => require('./itestRowM1.cjs'), M2: () => require('./itestRowM2.cjs'), M3: () => require('./itestRowM3.cjs'), M4: () => require('./itestRowM4.cjs'), M6: () => require('./itestRowM6.cjs'),
   M8: () => require('./itestRowM8.cjs'), M9: () => require('./itestRowM9.cjs'), rig: () => require('./itestRigProof.cjs'),
   M7: () => require('./itestRowM7.cjs'), M12: () => require('./itestRowM12.cjs'), M14: () => require('./itestRowM14.cjs'), M5: () => require('./itestRowM5.cjs'),
+  M10: () => require('./itestRowM10.cjs'), M11: () => require('./itestRowM11.cjs'), // E3.S9: the rows that run off the rig (`itestOffRig.cjs`)
 };
 
 /** The rig of the leg, rebuilt in the leg process from `given.json` (the parent made the folder). */

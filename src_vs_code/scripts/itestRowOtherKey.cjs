@@ -150,12 +150,12 @@ function standInGuard(ctx, label, given, roads, id, opening = 'the stand-in: its
 
 /**
  * One login of the real client by its path with `words` of the row's own (a control or a witness), after the counts: `{ argv, code, stdout, stderr, before, after, session }`, `before` and `after` being
- * the counts of `server`'s log (accepted logins, `Connection from` lines, `Starting session` lines). Waits (5 s) for a new session line: a login that is refused adds none.
+ * the counts of `server`'s log (accepted logins, `Connection from` lines, `Starting session` lines, and E3.S9 (D19) `authAttempts`; `host` names the control's destination, 127.0.0.1 by default). Waits (5 s) for a new session line: a login that is refused adds none.
  */
-async function login(ctx, server, words, command = 'true') {
-  const snap = () => ({ accepted: rec.logCounts(server.sshd.stderr, me).accepted.length, connections: rec.logCounts(server.sshd.stderr, me).connections, sessions: ok.sessionsOf(server.sshd.stderr, me).length });
+async function login(ctx, server, words, command = 'true', { host } = {}) {
+  const snap = () => ({ accepted: rec.logCounts(server.sshd.stderr, me).accepted.length, connections: rec.logCounts(server.sshd.stderr, me).connections, authAttempts: rec.logCounts(server.sshd.stderr, me).authAttempts, sessions: ok.sessionsOf(server.sshd.stderr, me).length });
   const before = snap();
-  const result = await rig.controlClient(ctx.rig, { port: server.port, words, command });
+  const result = await rig.controlClient(ctx.rig, { port: server.port, words, command, host });
   await within(5_000, () => snap().sessions > before.sessions);
   return { ...result, before, after: snap(), session: rec.logCounts(server.sshd.stderr, me).accepted.at(-1)?.session ?? null };
 }

@@ -94,4 +94,4 @@ async function probeWindowsClient(ctx) {
   await ctx.recordWithoutListener(rig, SSH_EXE, probe);
 }
 
-module.exports = { probeWindowsClient };
+module.exports = { probeWindowsClient, SSH_EXE, storageOf, pinPathIn };
