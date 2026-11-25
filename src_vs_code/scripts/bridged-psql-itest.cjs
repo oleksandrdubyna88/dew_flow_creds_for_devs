@@ -195,6 +195,7 @@ async function legR3(scope, exe, dir, home, tlsMaterial, product, verdict) {
 }
 
 async function main(scope) {
+  let unmeasuredLegs = false;
   if (process.platform === 'win32') {
     console.log('skip  the bridged psql harness — Linux only');
     return 0;
@@ -217,10 +218,19 @@ async function main(scope) {
       await legPQ2(scope, exe, dir, product, version, under.verdict);
     } else {
       console.log('UNMEASURED (r) PD2, PD3, PQ2 and (s): the real check refused this psql under the candidate table, so the builder launches nothing (the finding is printed above)');
+      unmeasuredLegs = true;
+      // UNMEASURED is no pass: on CI the candidate table names this runner's build, so a refusal there is a defect (as a missing client is); off CI it is a printed skip.
+      if (process.env.CI === 'true') {
+        check('(r) PD2, PD3, PQ2 and (s) were measured (UNMEASURED is not a pass)', false, 'on CI the candidate table names this runner\'s psql: a refusal here is a defect of the rig or the table');
+      }
     }
   }
   const failures = failureCount();
-  console.log(failures === 0 ? '\nall bridged psql checks passed' : `\n${failures} check(s) failed`);
+  if (failures > 0) {
+    console.log(`\n${failures} check(s) failed`);
+  } else {
+    console.log(unmeasuredLegs ? '\nno check failed, but the production legs (r), PD2, PD3, PQ2 and (s) were NOT measured (above): this run is no pass of them' : '\nall bridged psql checks passed');
+  }
   return failures === 0 ? 0 : 1;
 }
 

@@ -37,7 +37,7 @@ const clients = require('./lib/dbPa1Clients.cjs');
 const psql = require('./lib/dbPa1Psql.cjs');
 const wrapper = require('./lib/dbPa1Wrapper.cjs');
 
-/** The legs one client family has, in order: its version line first (R1), then PA1-a, then its own. */
+/** The legs one client family has, in order: its version line first (R1), then PA1-a, then its own. The client as measured: a new object with the driver it read, for the ODBC client. */
 async function legsOf(scope, client, shared) {
   rig.announce(client.name, `${client.exe} (found by ${client.via})`, realVersion(client).line); // R1: the line comes first (the version line of the client's own family, not its first line)
   clients.legA(client, shared);
@@ -48,11 +48,11 @@ async function legsOf(scope, client, shared) {
     await clients.legD(scope, client, shared);
     await clients.legE(scope, client, shared);
   } else {
-    if (client.family === 'odbc-sqlcmd') {
-      client.driver = await clients.odbcDriver(client, shared);
-    }
-    await clients.legF(scope, client, shared);
+    const measured = client.family === 'odbc-sqlcmd' ? { ...client, driver: await clients.odbcDriver(client, shared) } : client;
+    await clients.legF(scope, measured, shared);
+    return measured;
   }
+  return client;
 }
 
 /** A client family the runner lacks: the rig's fault on a Linux CI run for the three the workflow installs, a printed `UNMEASURED` for any other. */
@@ -87,8 +87,9 @@ async function main(scope) {
       missing(family);
     }
   }
+  const measured = [];
   for (const client of found) {
-    await legsOf(scope, client, shared);
+    measured.push(await legsOf(scope, client, shared));
   }
   let ranByWord;
   if (process.platform === 'linux' && families.includes('psql')) {
@@ -96,8 +97,8 @@ async function main(scope) {
     ranByWord = await wrapper.legI(scope, shared);
   }
   // PA1-i runs the word on PATH, which can be another file than the psql the other legs ran: then it is named too, as a client of its own.
-  const another = ranByWord !== undefined && !found.some((client) => client.family === 'psql' && client.exe === ranByWord.exe);
-  buildsRecord([...found, ...(another ? [ranByWord] : [])]);
+  const another = ranByWord !== undefined && !measured.some((client) => client.family === 'psql' && client.exe === ranByWord.exe);
+  buildsRecord([...measured, ...(another ? [ranByWord] : [])]);
   return rig.finish('bridged db PA1');
 }
 
