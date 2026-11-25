@@ -241,6 +241,54 @@ export function buildBridgeArgv(
   ];
 }
 
+/** Where a bridge's note lives on the server, under the login's home (parent plan §4.3): the folder is 0700, the note 0600. */
+export const REMOTE_NOTE_DIR = '$HOME/.creds-for-devs/bridge';
+
+/** A bridge id is a UUID: the only value the note command puts into a remote command line, so it is checked before it is used. */
+const SAFE_BRIDGE_ID = /^[0-9a-f-]{8,64}$/;
+
+/**
+ * The remote command that writes a bridge's note (change 11.1, S1): the note arrives on STDIN, never on a command line, because a remote
+ * process list shows command lines to every login there. Written to a hidden temporary file and renamed into place, so a reader sees the
+ * old note or the new one, never half of one; the folder and the file are owner-only (`umask 077`, `chmod 700`). Every other note in the
+ * folder is removed first: the pilot has one bridge per server, and a stale note would point a client at a socket that is gone.
+ */
+export function noteWriteCommand(id: string): string | undefined {
+  if (!SAFE_BRIDGE_ID.test(id)) {
+    return undefined;
+  }
+  return [
+    'umask 077',
+    `d="${REMOTE_NOTE_DIR}"`,
+    'mkdir -p "$d"',
+    'chmod 700 "$HOME/.creds-for-devs" "$d"',
+    `find "$d" -maxdepth 1 -type f -name '*.json' ! -name '${id}.json' -delete`,
+    `cat > "$d/.${id}.tmp"`,
+    `mv -f "$d/.${id}.tmp" "$d/${id}.json"`,
+  ].join(' && ');
+}
+
+/**
+ * The one-shot `ssh` that writes the note: the bridge's own authentication and host-key words, no forward, and the note command after `--`
+ * and the target. `undefined` for an entity the bridge itself would refuse, or an id that is not a bridge id.
+ */
+export function buildNoteArgv(entity: EntityMetadata, options: BridgeOptions, isSafeTarget: (entity: EntityMetadata) => boolean, id: string): string[] | undefined {
+  const command = noteWriteCommand(id);
+  if (command === undefined || !isReachable(entity, options, isSafeTarget)) {
+    return undefined;
+  }
+  return [
+    ...authArgv(options.auth ?? 'key'),
+    ...FIXED_OPTIONS,
+    ...hostKeyWords(options.knownHostsFile),
+    ...keyArgv(options.keyPath),
+    ...portArgv(entity.port),
+    '--',
+    targetOf(entity),
+    command,
+  ];
+}
+
 /**
  * What to tell the person to run on the remote side.
  *

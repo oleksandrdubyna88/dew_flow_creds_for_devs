@@ -75,6 +75,11 @@ export class CredsAgentServer implements vscode.Disposable {
   private server: http.Server | undefined;
   private extra: ExtraListener | undefined;
   private port = 0;
+
+  /** The main broker's port, 0 before it started: a bridge's note names it (`brokerPort`, how a token call finds its window). */
+  get listeningPort(): number {
+    return this.port;
+  }
   /**
    * The SSH agent's address while it is running, for the endpoint file.
    *

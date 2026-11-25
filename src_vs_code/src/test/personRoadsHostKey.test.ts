@@ -305,8 +305,8 @@ test('T4c: a start that throws was handed an argv that names the pin file; the f
 test('T4d (guard): a pinned bridge that gets no argv, or whose argv cannot be built, starts nothing and deletes its pin file at once', async () => {
   const dir = storage('t4d');
   const failure = new Error('the argv could not be built');
-  const none = world(pinned(dir, { checks: [], mocks: { '../sshBridge': { ...realBridge, buildBridgeArgv: (): undefined => undefined } } }));
-  const throwing = world(pinned(dir, { checks: [], mocks: { '../sshBridge': { ...realBridge, buildBridgeArgv: (): never => { throw failure; } } } }));
+  const none = world(pinned(dir, { checks: [], mocks: { '../sshBridge': { ...realBridge, buildBridgeArgv: (): undefined => undefined }, './sshBridge': { ...realBridge, buildBridgeArgv: (): undefined => undefined } } }));
+  const throwing = world(pinned(dir, { checks: [], mocks: { '../sshBridge': { ...realBridge, buildBridgeArgv: (): never => { throw failure; } }, './sshBridge': { ...realBridge, buildBridgeArgv: (): never => { throw failure; } } } }));
 
   await click(none, 'openRemoteBridge');
   await assert.rejects(click(throwing, 'openRemoteBridge'), (error) => error === failure);
@@ -413,7 +413,7 @@ test('T9e (guard): a host key that is refused at the SECOND run of the install k
 /* --- part 4: the list of the argv calls --- */
 
 const AGENT_COMMANDS = path.join(__dirname, '..', '..', 'src', 'commands', 'agentCommands.ts');
-const BUILDERS = ['buildSshExecArgv', 'buildBridgeArgv'];
+const BUILDERS = ['buildSshExecArgv', 'buildBridgeArgv', 'buildNoteArgv'];
 
 /** The named function that a node stands in. */
 const withinOf = (node: ts.Node): string => ts.findAncestor(node, ts.isFunctionDeclaration)?.name?.text ?? '(no function)';
@@ -437,20 +437,21 @@ function callsOf(source: ts.SourceFile): ts.CallExpression[] {
 
 /** Each call of an argv builder in `commands/agentCommands.ts`: `<builder> in <function>`, and whether an object among its arguments names `knownHostsFile`. */
 function builderCalls(): { site: string; names: boolean }[] {
-  const source = ts.createSourceFile('agentCommands.ts', fs.readFileSync(AGENT_COMMANDS, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  return callsOf(source)
+  // The scoped bridge's open (change 11.1, S1) left the command module for `scopedBridgeOpen.ts`: both files are the three roads now.
+  const files = [AGENT_COMMANDS, path.join(path.dirname(AGENT_COMMANDS), '..', 'scopedBridgeOpen.ts')];
+  return files.flatMap((file) => callsOf(ts.createSourceFile(path.basename(file), fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)))
     .filter((call) => BUILDERS.includes(call.expression.getText()))
     .map((call) => ({ site: `${call.expression.getText()} in ${withinOf(call)}`, names: call.arguments.some(namesPinFile) }))
     .sort((a, b) => a.site.localeCompare(b.site));
 }
 
-test('T11: every argv call of the three roads names knownHostsFile, and the scan finds the four calls', () => {
+test('T11: every argv call of the three roads names knownHostsFile, and the scan finds the five calls', () => {
   const calls = builderCalls();
 
   assert.deepEqual(
     calls.map((call) => call.site),
-    ['buildBridgeArgv in registerAgentCommands', 'buildSshExecArgv in runRemote', 'buildSshExecArgv in sweepDeadSockets', 'buildSshExecArgv in verifyBridgeSocket'],
-    'the scan does not find the four argv calls of commands/agentCommands.ts: one was added, moved or renamed. Give the new call the pin file of its call, then edit this list',
+    ['buildBridgeArgv in startReady', 'buildNoteArgv in startReady', 'buildSshExecArgv in runRemote', 'buildSshExecArgv in sweepDeadSockets', 'buildSshExecArgv in verifyBridgeSocket'],
+    'the scan does not find the five argv calls of commands/agentCommands.ts and scopedBridgeOpen.ts: one was added, moved or renamed. Give the new call the pin file of its call, then edit this list',
   );
   assert.deepEqual(calls.filter((call) => !call.names).map((call) => call.site), [], 'T11: an argv call of the three roads names no knownHostsFile, so its ssh would not read the pin of the entry');
 });

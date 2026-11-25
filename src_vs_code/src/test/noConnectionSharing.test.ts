@@ -147,7 +147,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
     ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'pinClient.ts#pinClientAsker', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
     HOW_TO_FIX,
   );
-  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['commands/agentCommands.ts'], HOW_TO_FIX);
+  // Change 11.1, S1: the bridge is started by the scoped open, which left the command module.
+  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['scopedBridgeOpen.ts'], HOW_TO_FIX);
   assert.deepEqual(usesOf('secretsLaunch', 'remoteLaunch'), ['commands/runCommands.ts#launchesOf'], HOW_TO_FIX);
 });
 
@@ -158,7 +159,9 @@ test('G2: and each of them takes its argv from one of the two builders', () => {
     ['bridgedSshCall.ts#bridgedSpawn', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'remoteLaunch.ts#secretsArgv', 'sshUseActions.ts#execArgv'],
     HOW_TO_FIX,
   );
-  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['commands/agentCommands.ts#registerAgentCommands'], HOW_TO_FIX);
+  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
+  // Change 11.1, S1: the one-shot ssh that writes the bridge's note on the server; its argv carries FIXED_OPTIONS, so NO_CONNECTION_SHARING too.
+  assert.deepEqual(usesOf('buildNoteArgv', 'sshBridge'), ['scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
 });
 
 test('G2: the two options are spelled in one file', () => {
@@ -194,7 +197,8 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.
   assert.deepEqual(
     [...new Set(matchesOf(/^\s*(?:import\b[^\n]*\bfrom|(?:const|let|var)\b[^\n]*=\s*require\()\s*['"](?:node:)?child_process['"]/gm))],
-    ['binaryInstaller.ts', 'bridgeSpawner.ts', 'childKill.ts', 'helpLookup.ts', 'installFlow.ts', 'maskedTerminal.ts', 'materializedKeys.ts', 'sshExecRunner.ts', 'wslProcess.ts', 'wslRelayManager.ts'],
+    // Change 11.1, S1: bridgeNoteWriter.ts spawns the note's one-shot ssh, its argv from buildNoteArgv and the note on stdin.
+    ['binaryInstaller.ts', 'bridgeNoteWriter.ts', 'bridgeSpawner.ts', 'childKill.ts', 'helpLookup.ts', 'installFlow.ts', 'maskedTerminal.ts', 'materializedKeys.ts', 'sshExecRunner.ts', 'wslProcess.ts', 'wslRelayManager.ts'],
     HOW_TO_FIX,
   );
 });

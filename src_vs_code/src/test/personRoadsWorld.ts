@@ -132,6 +132,10 @@ export interface World {
   warnings: string[];
   errors: string[];
   logs: string[];
+  /** Every note the scoped bridge wrote (change 11.1, S1): the note and the argv of its one-shot ssh; no ssh starts for it. */
+  notes: { note: Record<string, unknown>; argv: readonly string[] }[];
+  /** Every listener the scoped bridge opened, and whether it was closed. */
+  listeners: { bridgeId: string; closed: boolean }[];
 }
 
 /** The known-hosts file that an argv names, and its text at the moment of the read (`undefined`: the file is not on the disk). */
@@ -172,7 +176,7 @@ function emptyWorld(parts: Parts): World {
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [] };
+  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], notes: [], listeners: [] };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
@@ -193,7 +197,9 @@ function vscodeStub(w: World, parts: Parts): Record<string, unknown> {
       showInformationMessage: dialog(w, parts, w.infos),
       showWarningMessage: dialog(w, parts, w.warnings),
       showErrorMessage: dialog(w, parts, w.errors),
-      showQuickPick: (items: readonly string[], options: { title: string }): Promise<string | undefined> => dialog(w, parts, w.infos)(options.title, ...items),
+      // The scope pick of the scoped bridge (items are objects, many may be picked) takes every entry offered; a question of words is asked as a dialog.
+      showQuickPick: (items: readonly unknown[], options: { title: string; canPickMany?: boolean }): Promise<unknown> =>
+        options.canPickMany === true ? Promise.resolve(items) : dialog(w, parts, w.infos)(options.title, ...(items as string[])),
       withProgress: (_options: unknown, task: () => Promise<unknown>): Promise<unknown> => task(),
     },
     ProgressLocation: { Notification: 15 },
@@ -252,6 +258,10 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   return {
     '../sshExecAuth': resolverOf(parts),
     '../sshExecRunner': runnerOf(w, parts),
+    '../bridgeNoteWriter': { writeBridgeNote: (note: Record<string, unknown>, argv: readonly string[]): Promise<{ ok: true }> => {
+      w.notes.push({ note, argv });
+      return Promise.resolve({ ok: true });
+    } },
     ...(parts.realForget === true ? {} : recorder),
     ...(parts.realClient === true ? {} : { './pinClient': clientOf(w, parts) }),
     ...(parts.noExecArgv === true ? noArgv : {}),
@@ -280,7 +290,20 @@ export function world(parts: Parts = {}): World {
   // supplied, and typing it would mean stubbing the whole extension (its provider, its stores, its servers) for nothing.
   mod.registerAgentCommands({
     MACHINES: [],
-    agentServer: { setFolderHooks: (): void => undefined, share: (): Promise<string> => Promise.resolve(formatToken(4242, 'c2VjcmV0')), signal: undefined },
+    agentServer: {
+      setFolderHooks: (): void => undefined,
+      share: (): Promise<string> => Promise.resolve(formatToken(4242, 'c2VjcmV0')),
+      signal: undefined,
+      listeningPort: 4242,
+      // The scoped bridge's own listener (change 11.1, S1): a port and a key of its own, recorded and closed when its ssh ends.
+      openBridgeListener: (context: { bridgeId: string }): Promise<unknown> => {
+        const record = { bridgeId: context.bridgeId, closed: false };
+        w.listeners.push(record);
+        return Promise.resolve({ port: 51_000 + w.listeners.length, key: 'listener-key', close: (): Promise<void> => { record.closed = true; return Promise.resolve(); } });
+      },
+    },
+    bridgeScopes: { read: () => ({ entries: new Set<string>(), quiet: false, revision: 'absent', admits: (): boolean => false }), set: (): Promise<string> => Promise.resolve('r1') },
+    listBridgeable: (): Promise<unknown[]> => Promise.resolve([{ id: 'db-1', name: 'db', kind: 'db', folder: '' }]),
     aliasMap: () => ({}),
     bridges: w.bridges,
     log: { info: say, warn: say },

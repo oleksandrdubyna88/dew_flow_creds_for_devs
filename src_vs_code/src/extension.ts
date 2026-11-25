@@ -81,14 +81,11 @@ import { describeScan, scanForSecrets } from './secretScan';
 import { bridgeSpawner, describeBridgeError } from './bridgeSpawner';
 import * as fs from 'node:fs';
 import { applyEnvBindings } from './envApply';
-import { entityFieldReading } from './entityFieldReading';
 import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
-import { RefSource } from './secretRef';
 export { maskingBanner } from './outputMask';
 import { wireSshAgent } from './sshAgentWiring';
 import { autoLockMinutesSetting } from './autoLockSetting';
-import { folderPath } from './quickOpen';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
 import {
@@ -109,6 +106,8 @@ import { onPath } from './installFlow';
 import { setEnvCollection } from './envCollectionRef';
 import { DoorsFor } from './entityEditCommands';
 import { envCollection } from './envCollectionRef';
+import { bridgeScopesOf, bridgeWallOf } from './bridgeWiring';
+import { vaultRefSource } from './vaultRefSource';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
 
@@ -500,6 +499,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // a credential (run a command, open the terminal) without ever receiving it.
   // Constructed cheaply here; it opens no socket until the first share.
   const useActions = new UseActionRegistry();
+  // What the reference resolver reads, and a Remote Bridge's wall over this machine's scope store (change 11.1, S1).
+  const refSource = vaultRefSource(storage);
+  const bridgeWall = bridgeWallOf(storage, bridgeScopesOf(storageDir), refSource);
   // Named rather than positional, and every one of them answered on the vault's side of the wall:
   // this class holds grants, not stored records, so it should no more read `burnPolicy` than it
   // reads a password. `brokerHooks.ts` carries the record of what the positional list cost.
@@ -549,6 +551,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The config read route. A key rather than a grant, no consent modal, and every attempt
     // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRoute: configRouteSources(storage),
+    bridgeWall,
   });
   // The SSH agent (`sshAgentWiring.ts`). Its address is published in the endpoint file so a relay inside WSL
   // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
@@ -811,25 +814,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await openRevisionViewer(element.accountId, element.node, element.revision, storage);
   });
 
-  /**
-   * Everything the reference resolver needs, built over this window's storage. Entities carry
-   * their folder path so an ambiguous name can be disambiguated by writing `Folder/Name`.
-   */
-  const refSource: RefSource = {
-    accounts: () => storage.getAccounts().map((a) => ({ accountId: a.accountId, email: a.email })),
-    entities: (accountId) => {
-      const nodes = storage.getNodes(accountId);
-      const byId = new Map(nodes.map((n) => [n.id, n]));
-      // `folderPath` is the quick-open walk, reused: two implementations of "where does this
-      // node sit" would disagree the first time a malformed parent chain arrived by sync.
-      return nodes
-        .filter((n) => n.type === 'entity')
-        .map((n) => ({ id: n.id, name: n.name, path: [...folderPath(n, byId), n.name] }));
-    },
-    // Three answers rather than two — a withheld field carries the reason it was withheld, so a
-    // reference to a woven password reports THAT instead of inventing an absence.
-    fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
-  };
 
   registerRunCommands({ context, log, onMutated: mutated, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
 
@@ -901,7 +885,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
-  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
+  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

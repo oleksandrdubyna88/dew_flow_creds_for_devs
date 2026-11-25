@@ -155,7 +155,13 @@ function shippedSources(dir = ''): string[] {
  */
 const DEFINES_THEM = ['credsAgentServer.ts', 'brokerHooks.ts'];
 
-test('R1: nothing in the shipped sources opens a bridge door or hands the broker a wall', () => {
+/**
+ * Change 11.1 (the owner, 2026-11-25; the 72-hour slice, S1) wires the scoped bridge: the wall is built in `bridgeWiring.ts`, handed to the broker
+ * in `extension.ts`, and a door is opened only by the open command's `scopedBridgeOpen.ts`. Any other file that does either is new, and fails here.
+ */
+const WIRES_THEM = ['bridgeWiring.ts', 'extension.ts', 'scopedBridgeOpen.ts'];
+
+test('R1 (change 11.1): only the wiring opens a bridge door or hands the broker a wall, and each of its three files does', () => {
   const callers = shippedSources().filter((file) => !DEFINES_THEM.includes(file));
   assert.ok(callers.length > 400, `the scan walked every source (${callers.length}), not a short list`);
   assert.ok(callers.includes('extension.ts'), 'it includes extension.ts');
@@ -163,7 +169,11 @@ test('R1: nothing in the shipped sources opens a bridge door or hands the broker
   assert.ok(!callers.some((file) => file.startsWith('test')), 'and no test');
   for (const file of callers) {
     const hits = codeOf(file).filter((line) => /openBridgeListener|bridgeWall/.test(line));
-    assert.deepEqual(hits, [], `${file} must not open a Remote Bridge listener yet`);
+    if (WIRES_THEM.includes(file)) {
+      assert.ok(hits.length > 0, `${file} is listed as wiring the bridge, and names neither: the list is stale`);
+    } else {
+      assert.deepEqual(hits, [], `${file} opens a Remote Bridge listener or hands the broker a wall: only ${WIRES_THEM.join(', ')} do (change 11.1)`);
+    }
   }
   const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'src_vs_code', 'package.json'), 'utf8')) as {
     contributes: { commands: { command: string }[] };
@@ -174,7 +184,7 @@ test('R1: nothing in the shipped sources opens a bridge door or hands the broker
 
 test('R1 has teeth: the scan sees the places the names live', () => {
   const hits = codeOf('credsAgentServer.ts').filter((line) => /openBridgeListener/.test(line));
-  assert.equal(hits.length, 1, 'credsAgentServer.ts defines openBridgeListener exactly once, and nothing calls it');
+  assert.equal(hits.length, 1, 'credsAgentServer.ts defines openBridgeListener exactly once');
   assert.ok(codeOf('brokerHooks.ts').some((line) => /bridgeWall/.test(line)), 'brokerHooks.ts names the hook');
   assert.ok(codeOf('credsAgentServer.ts').some((line) => /bridgeWall/.test(line)), 'and the broker reads it');
 });

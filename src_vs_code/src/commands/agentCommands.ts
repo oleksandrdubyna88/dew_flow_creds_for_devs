@@ -18,22 +18,25 @@ import { VaultKeys } from '../vaultKeys';
 import * as vscode from 'vscode';
 import { EntityMetadata } from '../types';
 import { SshExecAuth, buildSshExecArgv } from '../sshExecCommand';
-import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSocket, isOwnerOnlyMode, describeWideSocket, remoteSocketPath, bridgeId, buildBridgeArgv, remoteInstructions } from '../sshBridge';
+import { sweepCommand, modeCheckCommand, interpretSocketProbe, describeMissingSocket, isOwnerOnlyMode, describeWideSocket } from '../sshBridge';
 import { runSshExec } from '../sshExecRunner';
 import { describeError } from '../describeError';
 import { resolveExecAuth } from '../sshExecAuth';
-import { ReadyCall, withWrittenKey, withWrittenKeyUntilExit } from '../writtenKey';
+import { ReadyCall, withWrittenKey } from '../writtenKey';
 import { personPinWriter } from '../personPin';
 import { hostKeyTold } from '../hostKeyPin';
 import { probeCommand, blockerFor, interpretProbe, confirmationFor, installCommand, interpretInstall } from '../remoteCliInstall';
 import { entityKey } from '../entityFlags';
-import { parseToken } from '../grantToken';
-import { isSafeSshTarget, describeSshTarget } from '../sshCommand';
+import { describeSshTarget } from '../sshCommand';
 import { resolveKind } from '../entityKind';
 import { cliAliasNote, cliCommandFor } from '../cliCommandText';
 import { KeyRow, asElement, detailedNode, loadFailureWarnings } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
+import type { BridgeScopes } from '../bridgeScopeStore';
+import type { McpEntry } from '../mcpEntries';
+import { openScopedBridge } from '../scopedBridgeOpen';
+import { writeBridgeNote } from '../bridgeNoteWriter';
 import { buildAgentSnippet, buildKindSnippet } from '../agentShareSnippet';
 import { copySecret, copiedMessage } from '../secretClipboard';
 import { signingPublicLine } from '../gitSigningKey';
@@ -61,10 +64,14 @@ export interface AgentCommandsHost {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
+  /** The scope of each Remote Bridge's server (change 11.1, S1). */
+  readonly bridgeScopes: BridgeScopes;
+  /** The entries of one account that are opened to agents: what a bridge's scope may hold. */
+  readonly listBridgeable: (accountId: string) => Promise<readonly McpEntry[]>;
 }
 
 export function registerAgentCommands(host: AgentCommandsHost): void {
-  const { MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys, wslRelay } = host;
+  const { MACHINES, agentServer, aliasMap, bridgeScopes, bridges, listBridgeable, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys, wslRelay } = host;
 
   /**
    * Point a WSL shell at the relay, once, and turn the relay on.
@@ -411,72 +418,13 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    // Minting also starts the broker, which is what gives the port the forward needs.
-    const token = await agentServer.share(accountId, node.id, node.name, 'ssh');
-    const parsed = parseToken(token);
-    if (parsed === undefined) {
-      return;
-    }
-
-    // The SAME resolver an agent exec uses. This block used to handle `storedKey` alone and
-    // pass `undefined` for a key file, a password and no-credential-at-all — so a bridge to a
-    // password entity spawned an ssh with nothing to authenticate with, and (having no
-    // BatchMode) waited at the prompt forever rather than failing.
-    if (storageDir === undefined) {
-      return;
-    }
-    // N16, G1: the key file and the pin file of this call are this command's to delete until the bridge's ssh holds them; then that ssh's end deletes them.
-    const bridge = await withWrittenKeyUntilExit(await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect')), personPinWriter(storageDir, details), (credential) => {
-      if (credential.warning !== undefined) {
-        void vscode.window.showWarningMessage(credential.warning);
-      }
-      if (!credential.ok) {
-        void vscode.window.showErrorMessage(`Cannot bridge to "${node.name}": ${credential.message}`);
-        return undefined;
-      }
-      const keyPath = credential.keyPath;
-
-      const remote = { path: remoteSocketPath(details.user ?? '', bridgeId(() => crypto.randomUUID())) };
-      const argv = buildBridgeArgv(
-        details,
-        { port: parsed.port, remote, keyPath, auth: credential.auth, knownHostsFile: credential.knownHostsFile },
-        isSafeSshTarget,
-      );
-      if (argv === undefined) {
-        void vscode.window.showWarningMessage(
-          `"${node.name}" cannot be bridged: its host is not a shape ssh can be given safely.`,
-        );
-        return undefined;
-      }
-
-      // The RESOLVED environment, not the parent’s: a password entity carries its answer in
-      // SSH_ASKPASS, and spawning with process.env would drop exactly the thing that lets this
-      // connection authenticate at all.
-      return bridges.start(key, remote.path, 'ssh', argv, credential.env);
-    });
-    if (bridge === undefined) {
-      return;
-    }
-    const remote = { path: bridge.remotePath };
-    provider.refresh();
-
-    // The socket's permissions are the boundary on that host, and we cannot set them: for a
-    // `-R` forward sshd creates the socket, so the SERVER's StreamLocalBindMask governs. So
-    // look instead of assuming — measured on a real host after a version of this claimed a
-    // client flag did it. A host whose admin widened that mask hands every login there an
-    // opening into this machine's broker, and nobody would ever find out.
-    void verifyBridgeSocket(accountId, details, remote);
-
-    // The token goes THROUGH `remoteInstructions`, never appended after it: the block is pasted
-    // into a shell, and appending prose is what put a bearer token into a remote's history as a
-    // failed command.
-    const instructions = remoteInstructions(remote, token, node.name);
-    const answer = await vscode.window.showInformationMessage(
-      `Bridge open to "${node.name}". Open an SSH session there, paste the setup block, and \`creds\` works there.`,
-      'Copy the setup block',
-    );
-    if (answer !== undefined) {
-      await vscode.env.clipboard.writeText(instructions);
+    // The scoped bridge (change 11.1, S1): a listener of this bridge's own behind E1's wall, the scope the person picks, and a note on
+    // the server so `creds` and `creds-mcp` find it with nothing pasted. The old road forwarded to the main broker port with a pasted
+    // token, which handed the server the whole broker (cause D5); it is gone.
+    const opened = await openScopedBridge({ agentServer, bridges, scopes: bridgeScopes, listBridgeable, storage, storageDir, refresh: () => provider.refresh(), resolve: resolveExecAuth, writeNote: writeBridgeNote }, accountId, node, details);
+    if (opened !== undefined) {
+      // The socket's permissions are the boundary on that host and sshd sets them, not us: look instead of assuming.
+      void verifyBridgeSocket(accountId, details, { path: opened.remotePath });
     }
   });
 

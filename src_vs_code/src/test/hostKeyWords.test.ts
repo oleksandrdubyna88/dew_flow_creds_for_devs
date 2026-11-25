@@ -327,5 +327,6 @@ test('G1: the known-hosts options and strict checking are spelled in one functio
 
 test('G1: and that function is called by the tunnel\'s builder and by the exec words off a bridge, and by nothing else', () => {
   // `execHostKeyWords` is called by `buildSshExecArgv` for every exec call; on a bridged call it answers #365's single word and never calls `hostKeyWords`.
-  assert.deepEqual(usesOf('hostKeyWords', 'hostKeyPin'), ['sshBridge.ts#buildBridgeArgv', 'sshExecCommand.ts#execHostKeyWords'], HOW_TO_FIX);
+  // Change 11.1, S1: the note's one-shot ssh takes the bridge's host-key words (buildNoteArgv).
+  assert.deepEqual(usesOf('hostKeyWords', 'hostKeyPin'), ['sshBridge.ts#buildBridgeArgv', 'sshBridge.ts#buildNoteArgv', 'sshExecCommand.ts#execHostKeyWords'], HOW_TO_FIX);
 });

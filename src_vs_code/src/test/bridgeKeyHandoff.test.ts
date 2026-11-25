@@ -144,7 +144,7 @@ test('B5b: a window that is gone before the bridge starts: no ssh is spawned, an
 test('B6: a throw while the argv is built deletes the key file, and the same error reaches the caller', async () => {
   const failure = new Error('the argv could not be built');
   const throwing = { ...realBridge, buildBridgeArgv: (): never => { throw failure; } };
-  const w = world({ clicks: [writtenKey(FIRST)], mocks: { '../sshBridge': throwing } });
+  const w = world({ clicks: [writtenKey(FIRST)], mocks: { '../sshBridge': throwing, './sshBridge': throwing } });
 
   await assert.rejects(click(w, 'openRemoteBridge'), (error) => error === failure);
   assert.equal(w.children.length, 0);
