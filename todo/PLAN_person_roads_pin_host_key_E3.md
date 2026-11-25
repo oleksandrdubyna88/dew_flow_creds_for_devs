@@ -108,6 +108,10 @@ baseline of the parent's next epoch, not a change of this document that anybody 
 2. **M11 (b) is revised in the parent.** It keeps the runs of M1, of M2 (b) the mismatch and of M7 (a)-(e) with both legs of M2 (b) for each
    shape. In place of M7's collision it has *the twin of (c), on the older client*: both bare-word outcomes of M7's collision the other way
    round. E3.S9 below says what that means for the story. This also answers Q2 of the E3.S9 spec ("the switch legs too?"): yes.
+   **And M11 (b) has the equals-sign pair** (the lead, after the judge's review of the revision): the older parser splits a bare path at an
+   equals sign (probe P3.5), so it has a collision of its own kind, and the quoting of E2's pull request repairs it. The pair shows that
+   collision on the older client and records on the newer client that there is none. The answer to Q1 below ("no new leg") stands for M7
+   and for the shapes (a)-(e) that M11 (b) takes from M7; the pair is the one place where an equals sign has legs.
 3. **Test 34 is new in the parent's §5, and E3.S9 builds it.** It gives the control of test 21 (the unit test G5,
    `test/pinWords.test.ts:324`) a fixed expectation per parser. Why E3.S9: it is the story that brings up the older client, so it can watch
    G5 fail on that client first and then pass on both. It is test code; no product file changes.
@@ -117,7 +121,7 @@ baseline of the parent's next epoch, not a change of this document that anybody 
    the version of their own; read at `17694426`). E3.S10's judge reads that version beside the collision's result.
 5. **M2 (a), M5 (e) and M6 are said in the parent as they were built** (the owner's readings of 2026-11-24 for M2 (a) and M6.11; the
    measurement of E3.S8 for `loglevel SILENT`). No leg changes. E3.S10 writes the limit of M2 (a) into §10 in words (the parent's
-   decision 22).
+   decision 22), and with it what M14 does not prove: the broker's HTTP layer and its consent.
 6. **The answers of epoch 3 are records** (the parent's `## Epics`, E3, *How the rows are read*): the lead's answers in the specs of E3.S4
    to E3.S8, and Q1-Q5 below. None is a plan change.
 7. **1.23.0 is the one release that did not wait for E3** (the parent's decision 21). *The epic's end* below already says how the next
@@ -417,14 +421,36 @@ re-review for epoch 4*, item 8).
       The K1 leg rules out that the client found neither file. The K2 leg rules out that it found the twin. A bare-word outcome the other
       way round, in either leg, fails the row. The expectations of these two legs are constants of the older parser in the story's own
       code: they are not M7's expectations with a switch, and they are never chosen by what the run shows.
-    - *What the result says in words* (the parent's decision 22): this row does not show the collision, which is a fact of a client from 8.7
-      on, and no row ran a client of 8.5 or 8.6.
+    - *The equals-sign pair, two legs on the older client and the same two on the newer one* (the lead, after the judge's review). A storage
+      folder whose path holds one equals sign and none of the characters of M7 or M12. The product writes the pin file's path in double
+      quotes. The pin file of each call holds K1's line. The twin is a file at the first name that a split of the bare path at the sign
+      gives, the path up to the sign; it holds K2's line. That path does not hold the uuid of a call, so the leg writes the twin once,
+      before its world opens.
+      - **The older client, `ssh -G` first.** The bare path resolves to two names, the first of them the twin's path; the path in double
+        quotes resolves to itself, whole, in both lists (probes P3.5 and P3.4).
+      - **The older client, K1 is the counterpart (the witness).** The roads of the product, with the logins as in M1: 5 accepted logins,
+        the path in double quotes in every connection start, no sentence. The words and the count of the question are those of an older
+        client.
+      - **The older client, K2 is the counterpart.** Each of the four runs of the roads that start ends with 255 and the verification
+        line; K2 logs 0 accepted logins and 0 authentication attempts. Then the control, the control client with E1's words and the path
+        BARE, is ACCEPTED by K2: it ends with 0, and K2 logs one more accepted login with its command. If K2 does not accept it, the row is
+        not passed.
+      - **The newer client (10.2p1, the client of the rig), the same two legs.** `ssh -G` first: the bare path resolves to itself, whole,
+        in both lists. The roads give the same results. The control with the bare path against K2 ends with 255 and the verification line,
+        and K2 logs 0 authentication attempts and 0 accepted logins for it; in the K1 leg the same bare words end with 0 and K1 logs one
+        more accepted login. The result says in words that this parser has no collision of that kind.
+      The expectations are constants per parser, as for the twin of (c). Only `ssh -G` is measured for this pair. If a login of it does not
+      come out as the row says, the coder stops and tells the lead (the parent's decision 18); the legs are not made weaker.
+    - *What the result says in words* (the parent's decision 22): on the older client this row does not show the collision of a pair of
+      apostrophes, which is a fact of a client from 8.7 on; it shows the collision of an equals sign there, and that the newer client has
+      none of that kind; no row ran a client of 8.5 or 8.6.
   - **Test 34: the code of the unit test G5** (`test/pinWords.test.ts:324`; and `test/pinnedArgv.ts` if the choice of the parser lives beside
     `sshKnowsKnownHostsCommand`, `:20`). RED first: with the older client first on `PATH`, G5 as it stands fails at its first assertion; the
     story watches that and records the message (it is inferred from the lead's `ssh -G` measurement and was never run). Then the `-G` tests
     read the client's version with the product's reader and take the expectation of its parser, as the parent's test 34 lists them: G4 on
-    both parsers; the control of the newer parser as today; the control of the older parser (the bare pair resolves itself, and a bare
-    equals sign does not); the refused rows asserted on the newer parser and recorded on the older one. GREEN twice: the suite as CI runs it,
+    both parsers; the control of the newer parser as today, and with it that a bare equals sign resolves itself, whole; the control of the
+    older parser (the bare pair resolves itself, and a bare equals sign does not); the refused rows asserted on the newer parser and
+    recorded on the older one (weaker than G5 as it stands, and the parent's re-review record lists it). GREEN twice: the suite as CI runs it,
     and one run with the older client first on `PATH`. A written path that the older client resolves to another one is a defect of the rule
     on that client. The coder does not repair it in this story: the coder stops and tells the lead. The repair (the kind moves to "refused",
     which the parent's §3.11 allows) changes the product, so it is a repair inside E3 with its own spec and its test RED first (*What a
@@ -461,8 +487,10 @@ re-review for epoch 4*, item 8).
      passed", and E3 is then not done. **Since the re-review for epoch 4, §10 also says these limits in words** (the parent's decision 22
      and §6): M2 (a) proves the user-file slot that the handed config names and claims nothing about the compiled-in default path, and no
      run read or wrote the person's real `~/.ssh`; M7's collision is the result of a client from 8.7 on, with that client's version beside
-     it; M11 (b) shows on the older client, by its version, that the intended file alone supplied trust, and it shows no collision; no row
-     ran a client of 8.5 or 8.6; the result of test 34 on the older client stands beside M11.
+     it; M11 (b) shows on the older client, by its version, that for a pair of apostrophes the intended file alone supplied trust, with no
+     collision of that kind there, and it shows the collision of a bare equals sign on the older client and none of that kind on the newer
+     one; M14 proves the action's own `run` and not the broker's HTTP layer or its consent; no row ran a client of 8.5 or 8.6; the result
+     of test 34 on the older client stands beside M11.
   4. **The CHANGELOG table in §10.** Each sentence of the entry that claims a behaviour, with the test of §5 or the row behind it. The start is
      the claim list CL1-CL32 that E2.S4 wrote (the body of `d0ae4b3c`, carried in the squash message of `4799f9d7`), read again against the
      entry as it stands, because E2's later fixes changed it (settled item 4). A claim with nothing behind it is taken out of the entry or said as
@@ -510,6 +538,8 @@ entry for them.**
   `ssh -G -F /dev/null` with both options set to a quoted path that holds `=` prints that path, whole, as the sole value of each option. That
   check is evidence of the probe, not a row; if it splits the path, the lead stops and records a plan change. Until it runs, §10's CHANGELOG
   table says for this claim: OpenSSH 10.2p1 by `pinWords.test.ts` (row "an equals sign"); OpenSSH 8.4 read, not run.
+  (Since then: probe P3.4 and P3.5 ran it on 8.4p1, and the re-review for epoch 4 gave M11 (b) the equals-sign pair. This answer stands
+  for M7 and for the shapes (a)-(e): *Settled by the re-review for epoch 4*, item 2.)
 - **Q2: choice (a), on E3's branch.** Consult `552ad198`: `git diff extension-v1.23.0 HEAD -- src_vs_code/CHANGELOG.md` is empty (checked),
   and the shipped text already says "No connection starts" (W7) and names C19 as "Not yet right" (checked). E3.S1's first documents commit
   writes `## [1.23.0] — 2026-11-23` above the two shipped entries; C19's fix and every correction that §10 supports go into a NEW entry under
