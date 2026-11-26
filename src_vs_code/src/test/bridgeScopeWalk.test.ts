@@ -33,7 +33,7 @@ function asks(who: Who): Array<{ row: number; ask: Ask }> {
     { row: 4, ask: { method: 'GET', path: '/v1/mcp/entries' } },
     { row: 5, ask: { method: 'GET', path: snippet } },
     { row: 6, ask: { method: 'GET', path: '/v1/mcp/folders' } },
-    ...['exec', 'query'].flatMap((action) => [
+    ...['exec', 'query', 'run'].flatMap((action) => [
       { row: 7, ask: { path: `/v1/mcp/use/${action}`, body: { entry: who.entry, ...body } } },
       { row: 8, ask: { path: `/v1/alias/${action}`, body: { alias: who.alias, ...body } } },
       { row: 9, ask: { path: `/v1/use/${action}`, token: who.token, body } },
@@ -151,8 +151,8 @@ test('S3: through the same bridge e1 is served — rows 3, 4, 5 show it', async 
 
 test('S3: through the same bridge e1 reaches the action after Allow on rows 7, 8 and 9, for each action', async () => {
   // One world per action: a caller without a token may prompt five times a minute, and three routes are three.
-  for (const action of ['exec', 'query']) {
-    const ww = await wallWorld();
+  for (const action of ['exec', 'query', 'run']) {
+    const ww = await wallWorld({ supports: ['exec', 'query', 'run'] }); // `run` served on a bridge since S4
     try {
       const who = await whoIsIn(ww);
       for (const { row, ask } of asks(who).filter(({ row: r, ask: a }) => r >= 7 && a.path.endsWith(`/${action}`))) {
@@ -280,7 +280,7 @@ test('S6: every route a bridge does not serve is refused with its sentence, Conn
     const unnamed = [
       { method: 'GET', path: '/v1/use/exec' }, { method: 'POST', path: '/v1/health' }, { method: 'GET', path: '/v1/nope' }, { method: 'GET', path: '/v1/mcp/future' },
     ].map((route) => ({ ...route, code: 'not_supported', message: BRIDGE_UNKNOWN_PATH }));
-    assert.ok(named.length >= 20, `the table names ${named.length} refused routes`);
+    assert.ok(named.length >= 19, `the table names ${named.length} refused routes`); // 19 since S4 served run on the three prefixes
     for (const route of [...named, ...unnamed]) {
       const label = `${route.method} ${route.path}`;
       const body = route.method === 'POST' ? { entry: 'e1', alias: 'one', command: 'id', name: 'n' } : undefined;

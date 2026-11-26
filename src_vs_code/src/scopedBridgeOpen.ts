@@ -16,6 +16,7 @@ import type { resolveExecAuth } from './sshExecAuth';
 import { bridgeId, buildBridgeArgv, buildNoteArgv, remoteSocketPath } from './sshBridge';
 import type { OpenBridge, SshBridgeManager } from './sshBridgeManager';
 import { isSafeSshTarget } from './sshCommand';
+import { scopePickDetail } from './runSite';
 import type { StorageManager } from './storageManager';
 import type { EntityMetadata } from './types';
 import { type CallAuth, type ReadyCall, withWrittenKeyUntilExit } from './writtenKey';
@@ -68,7 +69,7 @@ async function pickScope(host: ScopedBridgeHost, accountId: string, server: { id
     return undefined;
   }
   const scope = host.scopes.read(accountId, server.id);
-  const items = entries.map((entry) => ({ label: entry.name, description: `${entry.kind}${entry.folder === '' ? '' : ` · ${entry.folder}`}`, picked: scope.entries.has(entry.id), id: entry.id }));
+  const items = entries.map((entry) => ({ label: entry.name, description: `${entry.kind}${entry.folder === '' ? '' : ` · ${entry.folder}`}`, detail: scopePickDetail(entry.kind), picked: scope.entries.has(entry.id), id: entry.id }));
   const chosen = await vscode.window.showQuickPick(items, { canPickMany: true, title: `What may the agent on "${server.name}" use?`, placeHolder: 'Only these entries are reachable through this bridge' });
   if (chosen === undefined || chosen.length === 0) {
     return undefined;

@@ -34,7 +34,7 @@ import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
-import { UseAction, UseActionRegistry, asksAfter } from './useActions';
+import { UseAction, UseActionRegistry, asksAfter, bridgedSiteFor } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -538,7 +538,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const question = { grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: () => asksAfter(useAction, grant), coverage: coverageOf(grant.scope, remembers === true) };
+    const question = { grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: () => asksAfter(useAction, grant), coverage: coverageOf(grant.scope, remembers === true), site: bridgedSiteFor(useAction, grant) };
     const consent = await this.gate.consent(question, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
@@ -547,7 +547,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Only an `allowed` from a request still there gets here; `prepared` writes the answer down after the launch gate has
     // let the call through, so an Allow the gate then refuses (a scope narrowed meanwhile) stamps nothing; and only a dialog that
     // said it opened the window writes one (`opensWindow`).
-    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, uses, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, opensWindow(question, asked), rungs));
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, uses, site: question.site, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, opensWindow(question, asked), rungs));
   }
 
   /** The capability check and the body's validation — both before anybody is asked anything. */

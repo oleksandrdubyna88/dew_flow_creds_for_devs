@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BridgeContext } from '../bridgeContext';
 import { SERVED_ACTIONS } from '../bridgeAllowList';
-import { bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from '../bridgeConsentText';
+import { PER_ENTRY_SITE_ACTIONS, bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from '../bridgeConsentText';
 
 /**
  * The words a person reads about a Remote Bridge, in a dialog that decides whether an agent on another computer
@@ -40,9 +40,15 @@ test('C10: the sentences are per action — exec\'s names a destination and a co
   assert.equal(query.includes('command runs on'), false, 'a query\'s SQL runs on the database the connection names, which the sentence does not name');
 });
 
-test('C12: the server sentence of E3\'s `run` is exact too, chosen by site and not by the action\'s name', () => {
+test('C12: the two sentences of `run` are exact too, chosen by site and not by the action\'s name (S4)', () => {
   assert.equal(bridgeModalLine(CONTEXT, 'run', 'server', 'orders-db'), `${THROUGH} It runs on that server.`);
-  assert.equal(bridgeModalLine(CONTEXT, 'run', 'laptop', 'orders-db'), THROUGH, 'a laptop sentence for `run` is E3\'s, written with its spawn observation; until then it claims nothing');
+  assert.equal(
+    bridgeModalLine(CONTEXT, 'run', 'laptop', 'orders-db'),
+    `${THROUGH} The stored command of "orders-db" runs on this computer, with its creds:// values in that process's environment only. Its output, with those values masked, goes back to the agent on that server.`,
+    'the laptop sentence stands beside its spawn observation (bridgedRun.test.ts: the child on this computer, the value in its environment only, masked)',
+  );
+  assert.equal(bridgeModalLine(CONTEXT, 'run', 'destination', 'orders-db'), THROUGH, 'a site `run` never has claims nothing');
+  assert.equal(bridgeRunSite('run'), undefined, '`run` has no fixed site: the dialog says the one decideRunSite chose for the entry');
 });
 
 test('C10: each served action has its own site, and an action with none claims no place at all', () => {
@@ -57,9 +63,17 @@ test('C10: each served action has its own site, and an action with none claims n
 test('F4: every action the allow-list serves has a run site AND a sentence for it, so the dialog of a newly served action can never claim nothing', () => {
   assert.ok(SERVED_ACTIONS.size > 0, 'the set under test is not empty');
   for (const action of SERVED_ACTIONS) {
+    if (PER_ENTRY_SITE_ACTIONS.has(action)) {
+      // A site decided per entry (`decideRunSite`): every site it can answer has a sentence. The broker hands it to the dialog (brokerConsent's `bridgeLine`).
+      for (const site of ['server', 'laptop'] as const) {
+        assert.notEqual(bridgeModalLine(CONTEXT, action, site, 'orders-db'), THROUGH, `"${action}" at ${site} has no sentence`);
+      }
+      continue;
+    }
     assert.notEqual(bridgeRunSite(action), undefined, `"${action}" is served on a bridge and has no entry in RUN_SITES`);
     assert.notEqual(lineOf(action), THROUGH, `"${action}" is served on a bridge and its site has no sentence`);
   }
+  assert.deepEqual([...PER_ENTRY_SITE_ACTIONS].filter((action) => !SERVED_ACTIONS.has(action)), [], 'a per-entry site is only for a served action');
 });
 
 test('C10: the entry\'s name is cleaned like a caller label in every sentence — one line, no control character, eighty code points, and a quote of its own made an apostrophe', () => {

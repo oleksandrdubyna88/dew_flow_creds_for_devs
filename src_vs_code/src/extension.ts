@@ -636,6 +636,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     applyEnv: (details: EntityMetadata, accountId: string) =>
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
+    bridgeRefs: { refSource, wall: bridgeWall }, // a bridged run on this computer reads its creds:// values through the bridge's scope (S4)
     // The human Start button's own function, plus the request's start gate (E4.S3).
     open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState, log, mutated),
   };

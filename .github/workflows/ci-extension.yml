@@ -649,6 +649,11 @@ jobs:
       - name: Bridged environment on Windows (ssh.exe -V, the child's names, the database clients)
         run: node --test out/test/bridgedEnvWindows.test.js
 
+      # S4 (change 11.1): a stored command whose "Runs on" is Windows, asked for through a Remote Bridge, runs here in Windows PowerShell with its
+      # creds:// value in the child's environment only; the child prints the value in two writes and its own command line, and the answer is masked.
+      - name: Bridged run on Windows (a creds:// value in the child's environment, masked across two writes)
+        run: node --test out/test/bridgedRunWindows.test.js
+
   # PS1 (the E1.7 spec §S7.4; parent §7's probe table): what a bridged `sqlcmd` signs in with. A job of its own, so that the receiver it needs (Microsoft's SQL Server container on the
   # runner's docker, a throwaway CA that the harness puts in the runner's trust store with `sudo` and takes out again, rule R3; and PK1's throwaway Kerberos realm, for the control that
   # needs a ticket) never touches `build-test`. go-sqlcmd is downloaded by an exact version and checked against a checksum written here (rule R7), as the release's own asset. The SQL Server image is pinned by

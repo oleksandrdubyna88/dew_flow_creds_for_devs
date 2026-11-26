@@ -10,13 +10,23 @@
  * registry neither knows nor cares.
  */
 
-import type { BridgeContext } from './bridgeContext';
+import type { BridgeContext, BridgeGrant } from './bridgeContext';
+import type { RunSite } from './bridgeConsentText';
 import type { ErrorCode } from './brokerProtocol';
 import type { JumpChain } from './sshOptions';
 import type { EntityMetadata } from './types';
 
-/** What a call is aimed at, as a grant names it: enough to read the live entity. */
-export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
+/**
+ * What a call is aimed at, as a grant names it: enough to read the live entity. Before consent the target is the GRANT, whose bridge is nested
+ * (`BridgeGrant`); at the run it is the context, whose bridge is bare. {@link targetBridge} reads either.
+ */
+export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'> & { readonly bridge?: BridgeContext | BridgeGrant };
+
+/** The Remote Bridge a call target came in by, or `undefined` off a bridge. */
+export function targetBridge(target: CallTarget): BridgeContext | undefined {
+  const bridge = target.bridge;
+  return bridge === undefined || !('context' in bridge) ? bridge : bridge.context;
+}
 
 /**
  * Another entry whose credential a call uses, beside the one its grant names: the SSH entry of a linked Terminal entry (E3.4, spec §2.5). The
@@ -35,6 +45,11 @@ export type FollowUp = boolean | ((target: CallTarget) => boolean);
 export function asksAfter(action: Pick<UseAction, 'asksAfterConsent'>, target: CallTarget): boolean {
   const flag = action.asksAfterConsent;
   return typeof flag === 'function' ? flag(target) : flag === true;
+}
+
+/** The site a bridged dialog says for this call when the action decides it per entry (`UseAction.bridgedSite`); `undefined` off a bridge. */
+export function bridgedSiteFor(action: Pick<UseAction, 'bridgedSite'>, target: CallTarget): RunSite | undefined {
+  return targetBridge(target) === undefined ? undefined : action.bridgedSite?.(target);
 }
 
 /** Where in the vault the grant points; the live entity is re-read per call. */
@@ -85,6 +100,11 @@ export interface UseActionContext {
    * as `summary`; read by the linked run, which compares it with the SSH entry the gate answers now (spec §2.3 step 3). INTERNAL: no contract names it.
    */
   readonly uses?: UsedEntry;
+  /**
+   * What `UseAction.bridgedSite` answered for this call before consent: where the dialog said it runs. Set by the broker on a bridge; read by the
+   * bridged run of a stored command or script, which refuses when the entry would now run elsewhere (S4). INTERNAL: no contract names it.
+   */
+  readonly site?: RunSite;
 }
 
 /**
@@ -119,6 +139,8 @@ export interface OverSshCall {
   readonly jump: () => JumpChain;
   readonly remoteCommand: string;
   readonly timeoutMs: number;
+  /** The remote command's standard input, written whole and closed: a stored script's body on a bridge's server (S4), never a command line. */
+  readonly stdin?: string;
   /**
    * The extension's own agent is the only one this call may use or forward (parent D17): its environment loses the host's `SSH_AUTH_SOCK` and every
    * `CREDS_REF_` name, and a forwarding entry sends no `-A` while that agent is not up. REQUIRED, so each caller decides where it is written;
@@ -201,6 +223,12 @@ export interface UseAction {
    * required method would make every shipped action state today whether it uses a second entry (spec §2.5).
    */
   uses?(target: CallTarget): UsedEntry | undefined;
+  /**
+   * Where this call runs when it comes through a Remote Bridge, when that depends on the stored entry (a stored command or script: the server,
+   * or this computer; parent §4.6, S4). The broker asks it for the consent dialog's line and hands the answer to the run as
+   * `UseActionContext.site`, which checks it again before it starts anything. Absent: the action's site is fixed (`bridgeRunSite`).
+   */
+  bridgedSite?(target: CallTarget): RunSite | undefined;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */
   describeOutcome(result: UseActionResult): string;
   /** Perform the action. Called only after validation and consent. */
