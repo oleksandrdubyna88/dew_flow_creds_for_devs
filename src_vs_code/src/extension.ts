@@ -201,11 +201,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     provider.refresh();
   });
   // Answered per row, never cached: a bridge that is reconnecting or waiting for the unlock is still this window's.
-  provider.isBridged = (accountId, nodeId) => bridgeSessions.has(entityKey(accountId, nodeId));
+  // A session's bridge (the new flow) or the old road's (the switch of §4.5 off): either is this window's.
+  provider.isBridged = (accountId, nodeId) => bridgeSessions.has(entityKey(accountId, nodeId)) || bridges.isOpen(entityKey(accountId, nodeId));
   // T24b: the doors the MCP switches do not show, read here where the sources live.
   const doorSources: DoorSources = {
     aliasesFor: cliAliasesFor,
-    bridgeOpen: (accountId, id) => bridgeSessions.has(entityKey(accountId, id)),
+    bridgeOpen: (accountId, id) => bridgeSessions.has(entityKey(accountId, id)) || bridges.isOpen(entityKey(accountId, id)),
     wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
     isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
   };

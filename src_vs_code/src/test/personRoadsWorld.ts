@@ -130,6 +130,8 @@ export interface Parts {
   vault?: Vault;
   /** More stand-ins, by request string. */
   mocks?: Record<string, unknown>;
+  /** The switch of the new flow (§4.5), as the host hands it. Default: on, as CI runs the new flow; `false` is the released road. */
+  bridgeFlow?: boolean;
 }
 
 /** The disposable vault of the host (E3.S4): the three credentials the real resolve tells apart. At most one is given. */
@@ -422,6 +424,7 @@ export function world(parts: Parts = {}): World {
     listBridgeable: (): Promise<unknown[]> => Promise.resolve([{ id: 'db-1', name: 'db', kind: 'db', folder: '' }]),
     aliasMap: () => ({}),
     bridges: w.bridges,
+    bridgeFlow: parts.bridgeFlow ?? true,
     // S2: a session keeps each bridge; this window always owns it here and the vault is unlocked.
     bridgeSessions: new BridgeSessions({ takeOwnership: () => Promise.resolve({ owns: () => true, release: () => Promise.resolve() }), unlocked: () => true, onState: () => undefined }),
     log: { info: say, warn: say },

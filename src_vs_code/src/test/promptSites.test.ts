@@ -127,10 +127,11 @@ test('a variable or a property that is merely named `window` is not the editor\'
   assert.deepEqual(scanSource(source, 'planted.ts'), { sites: [], windowReads: [] });
 });
 
-test('the real tree has no `window` the scan cannot follow, and the scan finds the sites the audit counted (172)', () => {
+test('the real tree has no `window` the scan cannot follow, and the scan finds the sites the audit counted (172, and one more)', () => {
   const { sites, windowReads } = scanTree();
   assert.deepEqual(windowReads, [], 'a window read as an alias or a destructure hides sites: write it as a direct member access');
-  assert.equal(sites.length, 172, 'the audit of 2026-11-06 found 172; a different count is a new or a removed site, and the exact-set test names it');
+  // 173: the audit's 172, and the released road's setup block, which change 11.1 moved behind the switch of §4.5 (`legacyBridgeOpen.ts`) next to the scope pick that S1 added.
+  assert.equal(sites.length, 173, 'the audit of 2026-11-06 found 172, and the switch of §4.5 added one; a different count is a new or a removed site, and the exact-set test names it');
 });
 
 /* ---------------------------------------------------------------------------------------------------------------

@@ -147,8 +147,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
     ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'pinClient.ts#pinClientAsker', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
     HOW_TO_FIX,
   );
-  // Change 11.1, S1: the bridge is started by the scoped open, which left the command module.
-  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['scopedBridgeOpen.ts'], HOW_TO_FIX);
+  // Change 11.1, S1: the bridge is started by the scoped open, which left the command module; the released road, behind the switch of §4.5, by its own.
+  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['legacyBridgeOpen.ts', 'scopedBridgeOpen.ts'], HOW_TO_FIX);
   assert.deepEqual(usesOf('secretsLaunch', 'remoteLaunch'), ['commands/runCommands.ts#launchesOf'], HOW_TO_FIX);
 });
 
@@ -159,7 +159,7 @@ test('G2: and each of them takes its argv from one of the two builders', () => {
     ['bridgedSshCall.ts#bridgedSpawn', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'remoteLaunch.ts#secretsArgv', 'sshUseActions.ts#execArgv'],
     HOW_TO_FIX,
   );
-  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
+  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['legacyBridgeOpen.ts#startLegacy', 'scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
   // Change 11.1, S1: the one-shot ssh that writes the bridge's note on the server; its argv carries FIXED_OPTIONS, so NO_CONNECTION_SHARING too.
   assert.deepEqual(usesOf('buildNoteArgv', 'sshBridge'), ['scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
 });

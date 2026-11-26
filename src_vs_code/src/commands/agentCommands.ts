@@ -39,6 +39,8 @@ import type { McpEntry } from '../mcpEntries';
 import { openScopedBridge, restoreScopedBridges, type ScopedBridgeHost } from '../scopedBridgeOpen';
 import { BridgeOptIns } from '../bridgeOptIns';
 import { writeBridgeNote } from '../bridgeNoteWriter';
+import { BRIDGE_FLOW_ENABLED } from '../bridgeFlowSwitch';
+import { openLegacyBridge } from '../legacyBridgeOpen';
 import { buildAgentSnippet, buildKindSnippet } from '../agentShareSnippet';
 import { copySecret, copiedMessage } from '../secretClipboard';
 import { signingPublicLine } from '../gitSigningKey';
@@ -74,6 +76,8 @@ export interface AgentCommandsHost {
   readonly bridgeScopes: BridgeScopes;
   /** The entries of one account that are opened to agents: what a bridge's scope may hold. */
   readonly listBridgeable: (accountId: string) => Promise<readonly McpEntry[]>;
+  /** The switch of the new flow (§4.5). Production leaves it out, so the constant of `bridgeFlowSwitch.ts` decides; a test world turns it on here. */
+  readonly bridgeFlow?: boolean;
 }
 
 export function registerAgentCommands(host: AgentCommandsHost): void {
@@ -82,8 +86,14 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   // The scoped Remote Bridge (change 11.1, S1 and S2): one host for the person's open and the restore; the bridges opened and not Closed.
   const scopedHost: ScopedBridgeHost = { agentServer, bridges, sessions: bridgeSessions, scopes: bridgeScopes, listBridgeable, storage, storageDir, refresh: () => provider.refresh(), resolve: resolveExecAuth, writeNote: writeBridgeNote, log: (message) => log.info('bridge', message) };
   const optIns = new BridgeOptIns(storageDir, (message) => log.warn('bridge', message));
-  /** The person's Close, or a check that found the bridge not up: no reconnect, and no restore after a reboot. */
+  // §4.5: off in every build that ships. Off, Open Remote Bridge is the released road (`legacyBridgeOpen.ts`) and nothing is restored.
+  const flowOn = host.bridgeFlow ?? BRIDGE_FLOW_ENABLED;
+  const isOpen = (key: string): boolean => (flowOn ? bridgeSessions.has(key) : bridges.isOpen(key));
+  /** The person's Close, or a check that found the bridge not up: no reconnect, and no restore after a reboot. With the switch off, the old road's stop. */
   const closeScoped = (accountId: string, serverId: string): Promise<boolean> => {
+    if (!flowOn) {
+      return Promise.resolve(bridges.stop(entityKey(accountId, serverId)));
+    }
     optIns.remove({ accountId, serverId });
     return bridgeSessions.close(entityKey(accountId, serverId));
   };
@@ -419,9 +429,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     }
     const key = entityKey(accountId, node.id);
 
-    if (bridgeSessions.has(key)) {
+    if (isOpen(key)) {
       const answer = await vscode.window.showQuickPick(['Keep it open', 'Close the bridge'], {
-        title: `"${node.name}" is bridged at ${bridgeSessions.remotePathFor(key) ?? 'a path it is reconnecting to'}`,
+        title: `"${node.name}" is bridged at ${(flowOn ? bridgeSessions.remotePathFor(key) : bridges.remotePathFor(key)) ?? 'a path it is reconnecting to'}`,
       });
       if (answer === 'Close the bridge') {
         await closeScoped(accountId, node.id);
@@ -439,9 +449,14 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
+    if (!flowOn) {
+      // §4.5: the released road (it forwards to the main broker port; cause D5) until E4.1 turns the switch on. The check closes nothing, as before.
+      await openLegacyBridge(scopedHost, accountId, node, details, (remote) => void verifyBridgeSocket(accountId, details, remote, () => Promise.resolve()));
+      return;
+    }
     // The scoped bridge (change 11.1, S1): a listener of this bridge's own behind E1's wall, the scope the person picks, and a note on
     // the server so `creds` and `creds-mcp` find it with nothing pasted. The old road forwarded to the main broker port with a pasted
-    // token, which handed the server the whole broker (cause D5); it is gone.
+    // token, which handed the server the whole broker (cause D5); it stays only behind the switch.
     const opened = await openScopedBridge(scopedHost, accountId, node, details);
     if (opened !== undefined) {
       optIns.add({ accountId, serverId: node.id });
@@ -731,9 +746,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
 
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
 
-  // D8: the bridges opened and not Closed come back, now and at every unlock.
-  void restoreScopedBridges(scopedHost, optIns);
-  host.onDidUnlock?.(() => void restoreScopedBridges(scopedHost, optIns));
+  // D8: the bridges opened and not Closed come back, now and at every unlock; with the switch off nothing comes back (§4.5).
+  if (flowOn) {
+    void restoreScopedBridges(scopedHost, optIns);
+    host.onDidUnlock?.(() => void restoreScopedBridges(scopedHost, optIns));
+  }
 }
 
 /** What *Ask for Every Use Again* tells the person: which of the two things is true of this key. */

@@ -445,21 +445,22 @@ function callsOf(source: ts.SourceFile): ts.CallExpression[] {
 
 /** Each call of an argv builder in `commands/agentCommands.ts`: `<builder> in <function>`, and whether an object among its arguments names `knownHostsFile`. */
 function builderCalls(): { site: string; names: boolean }[] {
-  // The scoped bridge's open (change 11.1, S1) left the command module for `scopedBridgeOpen.ts`: both files are the three roads now.
-  const files = [AGENT_COMMANDS, path.join(path.dirname(AGENT_COMMANDS), '..', 'scopedBridgeOpen.ts')];
+  // The scoped bridge's open (change 11.1, S1) left the command module for `scopedBridgeOpen.ts`, and the released road, behind the switch of
+  // §4.5, for `legacyBridgeOpen.ts`: the three files are the three roads now.
+  const files = [AGENT_COMMANDS, ...['legacyBridgeOpen.ts', 'scopedBridgeOpen.ts'].map((name) => path.join(path.dirname(AGENT_COMMANDS), '..', name))];
   return files.flatMap((file) => callsOf(ts.createSourceFile(path.basename(file), fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)))
     .filter((call) => BUILDERS.includes(call.expression.getText()))
     .map((call) => ({ site: `${call.expression.getText()} in ${withinOf(call)}`, names: call.arguments.some(namesPinFile) }))
     .sort((a, b) => a.site.localeCompare(b.site));
 }
 
-test('T11: every argv call of the three roads names knownHostsFile, and the scan finds the five calls', () => {
+test('T11: every argv call of the three roads names knownHostsFile, and the scan finds the six calls', () => {
   const calls = builderCalls();
 
   assert.deepEqual(
     calls.map((call) => call.site),
-    ['buildBridgeArgv in startReady', 'buildNoteArgv in startReady', 'buildSshExecArgv in runRemote', 'buildSshExecArgv in sweepDeadSockets', 'buildSshExecArgv in verifyBridgeSocket'],
-    'the scan does not find the five argv calls of commands/agentCommands.ts and scopedBridgeOpen.ts: one was added, moved or renamed. Give the new call the pin file of its call, then edit this list',
+    ['buildBridgeArgv in startLegacy', 'buildBridgeArgv in startReady', 'buildNoteArgv in startReady', 'buildSshExecArgv in runRemote', 'buildSshExecArgv in sweepDeadSockets', 'buildSshExecArgv in verifyBridgeSocket'],
+    'the scan does not find the six argv calls of commands/agentCommands.ts, legacyBridgeOpen.ts and scopedBridgeOpen.ts: one was added, moved or renamed. Give the new call the pin file of its call, then edit this list',
   );
   assert.deepEqual(calls.filter((call) => !call.names).map((call) => call.site), [], 'T11: an argv call of the three roads names no knownHostsFile, so its ssh would not read the pin of the entry');
 });
