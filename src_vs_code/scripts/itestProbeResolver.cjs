@@ -125,7 +125,8 @@ async function runInContainer(ctx, insideArgs, what = 'P2.1') {
     return;
   }
   const name = ownedName('e3-resolver');
-  const label = `testsToDelete.owner=${formatOwner(runRecord())}`;
+  const owner = formatOwner(runRecord());
+  const label = `testsToDelete.owner=${owner}`;
   ctx.info(`wslc list -a before the run: ${JSON.stringify(before)}`);
   const run = ['run', '--pull', 'never', '--rm', '--name', name, '--label', label, '-v', `${unc.stdout.trim()}:/work:ro`, '--dns', '127.0.0.1', '--dns-option', 'trust-ad', '--dns-option', 'edns0',
     '-e', `${IMAGE_ID_VARIABLE}=${id.replace(/^sha256:/, '')}`, id, 'sh', '/work/src_vs_code/scripts/containers/e3-resolver-init.sh', ...insideArgs];
@@ -153,7 +154,7 @@ async function runInContainer(ctx, insideArgs, what = 'P2.1') {
   const after = await containerNames();
   const report = insideReport(ctx, `${outcome.stdout}${outcome.stderr === '' ? '' : `\nstderr: ${outcome.stderr}`}`);
   ctx.check(`${what} the container ran from the image ${id.slice(0, 19)}… (inspect while it ran: that image id, the name ${name}, the owner label), started with --rm and the owner-form name; after the probe wslc list -a --no-trunc shows no container of that name`,
-    ownedPattern().test(name) && run.includes('--rm') && seen?.image === id && seen?.name === `/${name}` && seen?.labels?.['testsToDelete.owner'] === label.replace(/^testsToDelete\.owner=/, '') && after !== undefined && !after.includes(name), JSON.stringify({ name, seen, after }));
+    ownedPattern().test(name) && run.includes('--rm') && seen?.image === id && seen?.name === `/${name}` && seen?.labels?.['testsToDelete.owner'] === owner && after !== undefined && !after.includes(name), JSON.stringify({ name, seen, after }));
   ctx.info(`wslc list -a after the run: ${JSON.stringify(after)}`);
   return { outcome, report, tag, id };
 }
