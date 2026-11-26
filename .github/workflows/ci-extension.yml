@@ -761,6 +761,75 @@ jobs:
       - name: The builds every leg of this job ran
         run: node scripts/bridged-db-builds.cjs
 
+  # The `container` row (change 11.1, the 72-hour slice, S3 part 2; consult ae318292): a bridged query on Windows runs the ODBC `sqlcmd` in a Linux container built from
+  # `containers/db-sqlcmd.Containerfile`. The harness builds that image with the runner's docker through the product's own `buildArgv`, probes it with the product's `containerCheck`, and runs every
+  # leg through the product's `spawnInContainer` (docker takes the same `run` words as wslc): the runner holds a ticket of PK1's throwaway realm and the container must see none of it, PE1-7 against
+  # rig Q's SQL Server (published also on the docker bridge's gateway), a `DOMAIN\user` name as a plain SQL login, PS1-9 and PS1-4 with their controls, no password on any argument, no env file
+  # left. Until the row is served the check is handed the candidate row (`CANDIDATE ... container`). go-sqlcmd is the rig's own administrator, pinned and checked as in the PS1 jobs.
+  bridged-db-container:
+    name: bridged database client in a container (sqlcmd) · linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci --ignore-scripts # tsc only: no dependency needs its install script here
+
+      - name: The leftovers guard's dependencies
+        working-directory: .
+        run: npm ci --ignore-scripts --prefix .agents/conventions
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Install the Kerberos tools and go-sqlcmd (pinned, checked)
+        run: |
+          set -eu
+          # The policy that keeps packages' services from starting is put back as it was on every way out of the step (a trap), and at once after the install.
+          policy_kept="$RUNNER_TEMP/policy-rc.d.kept.$$"
+          if [ -e /usr/sbin/policy-rc.d ]; then sudo cp -p /usr/sbin/policy-rc.d "$policy_kept"; fi
+          put_policy_back() { if [ -e "$policy_kept" ]; then sudo cp -p "$policy_kept" /usr/sbin/policy-rc.d && sudo rm -f "$policy_kept"; else sudo rm -f /usr/sbin/policy-rc.d; fi; }
+          trap put_policy_back EXIT
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d > /dev/null
+          sudo chmod +x /usr/sbin/policy-rc.d
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends krb5-kdc krb5-admin-server krb5-user openssl
+          put_policy_back
+          trap - EXIT
+          mkdir -p "$HOME/go-sqlcmd"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$HOME/go-sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $HOME/go-sqlcmd.tar.bz2" | sha256sum -c -
+          tar -xjf "$HOME/go-sqlcmd.tar.bz2" -C "$HOME/go-sqlcmd"
+          echo "BRIDGED_SQLCMD_GO=$HOME/go-sqlcmd/sqlcmd" >> "$GITHUB_ENV"
+
+      - name: Pull the SQL Server image (pinned by tag and digest)
+        run: |
+          image='mcr.microsoft.com/mssql/server:2022-CU24-ubuntu-22.04@sha256:49b45a911dc535e9345fbfd7101a1bd8a1e190a5f29b877ef75387a061e5fcf0'
+          docker pull "$image"
+          echo "BRIDGED_MSSQL_IMAGE=$image" >> "$GITHUB_ENV"
+
+      - name: Assert the container legs, sqlcmd, through the product's container road
+        env:
+          BRIDGED_DB_SYSTEM_RIG: "1"
+          BRIDGED_DB_JOB: bridged-db-container
+        run: node scripts/bridged-container-sqlcmd-itest.cjs
+
   # PS1 on windows-latest (the E1.7 spec §S7.4, PS1-0 to PS1-8): SQL Server Express, installed by this job with TCP on at a fixed loopback port (the pinned Chocolatey package, which checks
   # Microsoft's installer against its own SHA-256; the package file itself is checked here against a SHA-512 written in this workflow), mixed mode so that a SQL login exists. The control is the
   # runner's own logon (a sysadmin through BUILTIN\Administrators). An install that fails (a checksum, or choco's own exit code) fails the step and so the job: a rig failure, not a result. If the TCP

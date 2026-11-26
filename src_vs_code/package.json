@@ -70,6 +70,7 @@
     "itest:bridged-psql-assert": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-psql-assert-itest.cjs",
     "itest:bridged-mysql-assert": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-assert-itest.cjs",
     "itest:bridged-sqlcmd": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-sqlcmd-itest.cjs",
+    "itest:bridged-container-sqlcmd": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-container-sqlcmd-itest.cjs",
     "itest:bridged-pk1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-pk1-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",

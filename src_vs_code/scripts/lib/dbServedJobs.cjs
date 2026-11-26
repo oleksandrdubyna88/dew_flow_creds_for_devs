@@ -10,6 +10,12 @@
 /** The harness each family of the table is asserted by (§S7.12): legs (u), (v) and (w). */
 const HARNESS_OF = { psql: 'bridged-psql-assert-itest.cjs', mysql: 'bridged-mysql-assert-itest.cjs', sqlcmd: 'bridged-sqlcmd-itest.cjs' };
 
+/** The harness of the `container` platform (change 11.1, S3): the ODBC `sqlcmd` of the shipped image, through the product's container road. */
+const CONTAINER_HARNESS = 'bridged-container-sqlcmd-itest.cjs';
+
+/** The harness that asserts one build: the container's own on that platform, else its family's. */
+const harnessOf = (build) => (build.platform === 'container' ? CONTAINER_HARNESS : HARNESS_OF[build.client]);
+
 /**
  * Per job (the value of `BRIDGED_DB_JOB`): the served builds it must find. An entry is `{ client, platform, vendor, version, tag, driver?, legs }`: the row's client and platform, the build exactly as the
  * row records it, and the ids of its legs (`legsOf` in `dbAssertRules.cjs` for the vendor). The ODBC `sqlcmd` on Linux, turned on the record of run 45390171118: each image's job must find its build.
@@ -62,7 +68,7 @@ const hasJobStep = (workflow, job, harness) => jobsOf(workflow).some(({ steps, i
 
 /**
  * The problems of the lock, as sentences (DP21): every served build stands in at least one job's list; every entry of a list is a served build, with the legs of its vendor and no others; every job a list
- * names is a step of the workflow that sets that name and runs its family's harness. `legsOf(client, vendor)` is the ids of the legs of a build.
+ * names is a step of the workflow that sets that name and runs its family's harness. `legsOf(client, vendor, platform)` is the ids of the legs of a build on its platform.
  */
 function lockProblems({ rows, jobs, workflow, legsOf }) {
   const served = servedBuilds(rows);
@@ -70,14 +76,14 @@ function lockProblems({ rows, jobs, workflow, legsOf }) {
   const unlisted = served.filter((build) => !listed.some((entry) => keyOf(entry.build) === keyOf(build))).map((build) => `the served build ${wordsOf(build)} stands in no job's list`);
   const unserved = listed.filter((entry) => !served.some((build) => keyOf(build) === keyOf(entry.build))).map((entry) => `job ${entry.job} lists ${wordsOf(entry.build)}, which no served row records`);
   const legs = listed.flatMap(({ job, build }) => {
-    const wanted = legsOf(build.client, build.vendor);
+    const wanted = legsOf(build.client, build.vendor, build.platform);
     const given = build.legs ?? [];
     const off = [...wanted.filter((leg) => !given.includes(leg)).map((leg) => `lacks the leg ${leg}`), ...given.filter((leg) => !wanted.includes(leg)).map((leg) => `names the leg ${leg}, which is no leg of its vendor`)];
     return off.map((what) => `job ${job}, ${wordsOf(build)}: the list ${what}`);
   });
   const steps = Object.entries(jobs).filter(([, builds]) => builds.length > 0).flatMap(([job, builds]) =>
-    [...new Set(builds.map((build) => HARNESS_OF[build.client]))].filter((harness) => !hasJobStep(workflow, job, harness)).map((harness) => `job ${job} is no step of the workflow that sets BRIDGED_DB_JOB: ${job} and runs scripts/${harness}`));
+    [...new Set(builds.map(harnessOf))].filter((harness) => !hasJobStep(workflow, job, harness)).map((harness) => `job ${job} is no step of the workflow that sets BRIDGED_DB_JOB: ${job} and runs scripts/${harness}`));
   return [...unlisted, ...unserved, ...legs, ...steps];
 }
 
-module.exports = { SERVED_JOBS, HARNESS_OF, servedBuilds, keyOf, wordsOf, hasJobStep, lockProblems };
+module.exports = { SERVED_JOBS, HARNESS_OF, CONTAINER_HARNESS, harnessOf, servedBuilds, keyOf, wordsOf, hasJobStep, lockProblems };

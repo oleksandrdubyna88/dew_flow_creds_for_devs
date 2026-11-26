@@ -7,7 +7,7 @@
 # A Linux container has no Windows sign-in, so the Windows roads (SSPI, the person's Windows identity) do not exist here.
 #
 # Microsoft's signing key is checked against a checksum before apt trusts it, as the CI's `database clients` job does. The base is pinned by
-# digest. The client runs as nobody (65534); the run adds `--cap-drop ALL`, `--pull never` and a memory limit.
+# digest. The client runs as nobody (65534); the run adds `--cap-drop ALL` and `--pull never` (no memory limit: wslc prints a swap warning for it).
 FROM ubuntu@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
 
 RUN apt-get update \

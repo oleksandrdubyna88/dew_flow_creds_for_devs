@@ -126,7 +126,7 @@ function assessFamily(family, ledger) {
   const unique = [...new Map(seen.map((entry) => [`${entry.vendor}|${entry.version}|${entry.tag}|${entry.driver ?? ''}`, entry])).values()];
   const clients = unique.map((client) => {
     const served = seen.filter((entry) => keyOf(entry) === keyOf(client)).every((entry) => entry.mode === 'PRODUCTION');
-    const results = judgeAll(rulesFor(family, client.vendor, client.name), ledger, client.name);
+    const results = judgeAll(rulesFor(family, client.vendor, client.name, client.platform), ledger, client.name);
     const recordOnly = served ? undefined : recordOnlyWhy(family, client.vendor, client.platform);
     if (recordOnly !== undefined) {
       return { ...client, served, recordOnly, results, failed: [], blocking: [] };
@@ -205,13 +205,14 @@ function report(family, assessed, lock, log = console.log) {
 
 /**
  * The ending every assertion harness shares: the lines its legs printed, judged for `family`, the lock of this job applied to the PRODUCTION table (`out/bridgedDbProfile.js`), and the report. Answers the exit code.
+ * `platform` is the row the legs are about: this runner's system, or `container` for the image's client (the container harness says so; never inferred from `process.platform`).
  */
-function conclude(family, lines) {
+function conclude(family, lines, platform = process.platform) {
   const rows = require(path.join(__dirname, '..', '..', 'out', 'bridgedDbProfile.js')).BRIDGED_DB_PROFILES;
   const ledger = ledgerOf(lines);
   const assessed = assessFamily(family, ledger);
   const ci = process.env.CI === 'true';
-  const lock = [...shadowProblems(ledger, rows, ci), ...lockCheck({ family, platform: process.platform, job: process.env.BRIDGED_DB_JOB, ci, rows, assessed, ledger })];
+  const lock = [...shadowProblems(ledger, rows, ci), ...lockCheck({ family, platform, job: process.env.BRIDGED_DB_JOB, ci, rows, assessed, ledger })];
   return report(family, assessed, lock);
 }
 
