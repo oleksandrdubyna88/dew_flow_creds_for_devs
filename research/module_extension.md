@@ -5462,14 +5462,22 @@ read from the ONE value that the guard hands the road (`CallAuth`, `writtenKey.t
 on the agent's exec: `accept-new`, no file. An entry with one gets strict checking against a file of this call alone,
 `known_hosts-<entry id>-<uuid>`: both runs of the socket check read one file, the probe and the install run read one file,
 the tunnel reads its own until its `ssh` has ended. What a person is told when a pinned call ended with `ssh`'s line `Host key verification failed.` is decided by one function,
-`hostKeyTold` in `hostKeyPin.ts` (G1, E2.S3). **Sentence C** (`refusedHostKeySentence`: the entry's host did not present its
+`hostKeyTold` in `hostKeyPin.ts` (G1, E2.S3).
+**The exit code of the run is its first question (G1, E3.S1; C19).** Each of its two callers hands it the exit code of the SAME
+run whose stderr it hands, as a required parameter: the socket check the runner's own (`number | null`), the install the one of
+`runRemote`, which is -1 for a run with no code. A missing code is never 0. A run that ended with 0 is told nothing, whatever
+its text holds, sentence C included: `ssh` ends with 255 when it refuses a host's key (measured), and with the exit code of the
+remote command when that command ran (read in `ssh(1)`), so a run that ended with 0 was not refused, and a verification line in
+its text is the remote side's (a profile of the login, or the command). The install then goes on to its question, and the socket
+check goes on and reads the socket's mode. A run that ended with another code, or that has none, is asked as follows.
+**Sentence C** (`refusedHostKeySentence`: the entry's host did not present its
 saved key) is shown only on evidence: `ssh`'s own line `Offending <type> key in <file>:<n>`, with the pin file of THIS call as
 the whole name. Only the `ssh` that was handed that file reads it, and its name ends with a uuid of this call alone; the nested
 `ssh` of a jump host names the files of the person's own config, and a remote command never learns the name. `ssh` prints a
 name otherwise than it is (a path in double quotes with none, a backslash as two, a byte outside printable ASCII as a backslash
 and three octal digits), so the function is handed the path, not the word, and reads the printed name back. **Sentence D**
 (`unnamedHostKeySentence`) is shown for the verification line without that evidence: a jump host's refused key, an `ssh` config
-that gives the host another name or port, a remote text. It names no host as the cause and tells the person not to replace a
+that gives the host another name or port, a remote text in a run that did not end with 0. It names no host as the cause and tells the person not to replace a
 saved key. It does not send the person to *Connect SSH* (the code gate of G1 E2, 2026-11-19; sentence C lost the same advice in the gate's second change, below): Connect's own line still accepts the
 person's other trust sources (C4: the system-wide known_hosts, `VerifyHostKeyDNS`, `KnownHostsCommand`), and sentence D is shown exactly
 when the call's `ssh` did not judge the saved key, so Connect could reach another host and send a password with the saved key never

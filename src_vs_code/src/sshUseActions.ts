@@ -313,8 +313,9 @@ function childEnv(call: OverSshCall, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
 }
 
 /**
- * The launch of a call off a bridge, or the refusal of its pin (sentence E or F: nothing is written and no `ssh` starts). The program and the
- * environment are decided first, because the pin's question about the client is asked of that program.
+ * The launch of a call off a bridge, or the refusal of its pin (sentence E or F: nothing is written, no connection starts and nothing is sent
+ * to the host; for sentence F the local question `ssh -V` ran first). The program and the environment are decided first, because the pin's
+ * question about the client is asked of that program.
  */
 async function localLaunch(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, prepared: { keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth }, jump: string | undefined, refuse: Refuse): Promise<Launch | UseActionResult> {
   const socket = deps.agentSocket(); // read ONCE: the argv and the environment below are decided from this one answer

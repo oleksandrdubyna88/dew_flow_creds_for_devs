@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { after, test, TestContext } from 'node:test';
+import * as ts from 'typescript';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import * as hostKeyPin from '../hostKeyPin';
+import { confirmationFor, interpretProbe } from '../remoteCliInstall';
+import { importedUses } from './funnelScan';
 import { KEY, Parts, World, click, knownHostsOf, passwordLogin, pinFiles, ran, settled, world } from './personRoadsWorld';
 import { testPin } from './pinnedArgv';
+import { discoverSources } from './tempSiteScan';
 
 /**
  * G1, E2.S3: what a person is told when a PINNED call ended with `ssh`'s line `Host key verification failed.`. Sentence C names the
@@ -20,6 +25,13 @@ import { testPin } from './pinnedArgv';
  * prints the line with the pin file of a call through these roads is shown by leg 2 of the smoke (section 10 of `scripts/ssh-agent-itest.cjs`),
  * which E2.S4 ran on 2026-11-19: 48 ok, locally, on OpenSSH 10.2p1 (CI is its second run). One text is that of `ssh.exe`
  * (OpenSSH_for_Windows 9.5p2, the same day, measured by hand): 13 lines, with every backslash of the path as two. No login was made on Windows.</p>
+ *
+ * <p><b>E3.S1 (C19): the exit code of the run is asked first.</b> A run that ended with 0 is told nothing about a host key, whatever its
+ * text holds: its `ssh` accepted the host's key, logged in and ran the remote command to its end, so the line in its text is the remote
+ * side's. S7 to S11 hold that on the function, X9 to X14 on the two roads (each text is answered twice with the same stdout, with 0 and
+ * with 255, so the exit code alone decides), and <b>part 3</b> holds the callers: exactly two, each handing the exit code of the run
+ * whose text it hands. That a call without the exit code does not compile is the fixture
+ * `fixtures/typed/host_key_told_needs_the_exit_code.ts` (`typedFixtures.test.ts`). No real `ssh` ends with 0 here: E3's M5 (h) runs one.</p>
  */
 
 const scope = cleanupScope();
@@ -85,8 +97,11 @@ const NO_BANNER = printed('Connection timed out during banner exchange');
 
 /* --- part 1: the one function --- */
 
-/** `hostKeyTold`. Its first argument is the checked pin of the call (E2.S2's `CheckedPin`): a test makes one with `testPin`, through the product's own maker. */
-type Told = (pin: unknown, stderr: string, name: string) => { install: string; bridge: string } | undefined;
+/**
+ * `hostKeyTold`. Its first argument is the checked pin of the call (E2.S2's `CheckedPin`): a test makes one with `testPin`, through the product's own maker.
+ * Its last argument is the exit code of the run (E3.S1): 255 is what `ssh` ended with for every text of S1 to S4 that it printed itself.
+ */
+type Told = (pin: unknown, stderr: string, name: string, exitCode: number | null) => { install: string; bridge: string } | undefined;
 
 /** An export of `hostKeyPin.ts`, read through the module object: this file compiles before the export exists, so its absence is a failed assertion. */
 function exported<T>(name: string): T {
@@ -120,7 +135,7 @@ for (const row of EVIDENCE) {
   test(`S1: ssh names the pin file of this call beside the verification line, ${row.label}: sentence C in both forms`, () => {
     const hostKeyTold = exported<Told>('hostKeyTold');
 
-    assert.deepEqual(hostKeyTold(testPin(row.pinFile), row.stderr, 'box'), TOLD_C);
+    assert.deepEqual(hostKeyTold(testPin(row.pinFile), row.stderr, 'box', 255), TOLD_C);
   });
 }
 
@@ -150,7 +165,7 @@ for (const row of NO_EVIDENCE) {
   test(`S2: the verification line with no evidence, ${row.label}: sentence D in both forms, never sentence C`, () => {
     const hostKeyTold = exported<Told>('hostKeyTold');
 
-    assert.deepEqual(hostKeyTold(testPin(PIN_FILE), row.stderr, 'box'), TOLD_D);
+    assert.deepEqual(hostKeyTold(testPin(PIN_FILE), row.stderr, 'box', 255), TOLD_D);
   });
 }
 
@@ -158,21 +173,21 @@ test('S3: a pinned call whose stderr holds no verification line is told nothing:
   const hostKeyTold = exported<Told>('hostKeyTold');
 
   for (const stderr of [HOST_DOWN, LOGIN_REFUSED, NO_ANSWER, NO_BANNER, '', printed(`note: ${VERIFICATION} earlier`), printed('Host key verification failed')]) {
-    assert.equal(hostKeyTold(testPin(PIN_FILE), stderr, 'box'), undefined, stderr);
+    assert.equal(hostKeyTold(testPin(PIN_FILE), stderr, 'box', 255), undefined, stderr);
   }
 });
 
 test('S3b: the Offending line of this call WITHOUT the verification line is told nothing: both lines are needed', () => {
   const hostKeyTold = exported<Told>('hostKeyTold');
 
-  assert.equal(hostKeyTold(testPin(PIN_FILE), printed(`Offending ED25519 key in ${PIN_FILE}:1`), 'box'), undefined);
+  assert.equal(hostKeyTold(testPin(PIN_FILE), printed(`Offending ED25519 key in ${PIN_FILE}:1`), 'box', 255), undefined);
 });
 
 test('S4: an unpinned call is told nothing, whatever its ssh printed', () => {
   const hostKeyTold = exported<Told>('hostKeyTold');
 
   for (const stderr of [refusedKey(PIN_FILE), HOP_REFUSED, NO_KEY_KNOWN, `${VERIFICATION}\n`]) {
-    assert.equal(hostKeyTold(undefined, stderr, 'box'), undefined, stderr);
+    assert.equal(hostKeyTold(undefined, stderr, 'box', 255), undefined, stderr);
   }
 });
 
@@ -199,6 +214,65 @@ test('S6: sentence D never tells the person to replace, trust or forget a saved 
   assert.match(sentence, /fingerprint with the server's owner/);
   assert.match(sentence, /HostName or Port that renames this host and for a jump host/);
   assert.doesNotMatch(sentence, /did not present|was rebuilt|Trust and connect|[Ff]orget|is not open/);
+});
+
+/* --- part 1, E3.S1 (C19): the exit code of the run is asked first --- */
+
+/** The exit codes of a run that did NOT end with 0, beside `ssh`'s own 255 of S1 to S4: another code; none (the runner's `null`: a time limit, a signal); and the -1 that `runRemote` hands for a run with none. */
+const NOT_ZERO: readonly { label: string; exitCode: number | null }[] = [
+  { label: 'another code, 1', exitCode: 1 },
+  { label: 'no exit code, the null of the runner', exitCode: null },
+  { label: 'the -1 that the install hands for a run with no exit code', exitCode: -1 },
+];
+const EVERY_CODE: readonly (number | null)[] = [0, 255, ...NOT_ZERO.map((one) => one.exitCode)];
+
+for (const row of EVIDENCE) {
+  test(`S7: a run that ended with 0 is told nothing, also when its text names the pin file of this call beside the verification line, ${row.label}`, () => {
+    const hostKeyTold = exported<Told>('hostKeyTold');
+
+    assert.equal(hostKeyTold(testPin(row.pinFile), row.stderr, 'box', 0), undefined);
+  });
+}
+
+for (const row of NO_EVIDENCE) {
+  test(`S8: a run that ended with 0 is told nothing when its text holds the verification line with no evidence, ${row.label}`, () => {
+    const hostKeyTold = exported<Told>('hostKeyTold');
+
+    assert.equal(hostKeyTold(testPin(PIN_FILE), row.stderr, 'box', 0), undefined);
+  });
+}
+
+for (const code of NOT_ZERO) {
+  test(`S9 (guard): a run that did not end with 0 is told as its text says, sentence C on the evidence and sentence D without it: ${code.label}`, () => {
+    const hostKeyTold = exported<Told>('hostKeyTold');
+
+    for (const row of EVIDENCE) {
+      assert.deepEqual(hostKeyTold(testPin(row.pinFile), row.stderr, 'box', code.exitCode), TOLD_C, row.label);
+    }
+    for (const row of NO_EVIDENCE) {
+      assert.deepEqual(hostKeyTold(testPin(PIN_FILE), row.stderr, 'box', code.exitCode), TOLD_D, row.label);
+    }
+  });
+}
+
+test('S10 (guard): a text with no verification line is told nothing under every exit code, and so is the Offending line of this call alone', () => {
+  const hostKeyTold = exported<Told>('hostKeyTold');
+
+  for (const exitCode of EVERY_CODE) {
+    for (const stderr of [HOST_DOWN, LOGIN_REFUSED, NO_ANSWER, NO_BANNER, '', printed(`Offending ED25519 key in ${PIN_FILE}:1`)]) {
+      assert.equal(hostKeyTold(testPin(PIN_FILE), stderr, 'box', exitCode), undefined, `exit code ${exitCode}: ${stderr}`);
+    }
+  }
+});
+
+test('S11 (guard): an unpinned call is told nothing under every exit code, whatever its ssh printed', () => {
+  const hostKeyTold = exported<Told>('hostKeyTold');
+
+  for (const exitCode of EVERY_CODE) {
+    for (const stderr of [refusedKey(PIN_FILE), HOP_REFUSED, NO_KEY_KNOWN, `${VERIFICATION}\n`]) {
+      assert.equal(hostKeyTold(undefined, stderr, 'box', exitCode), undefined, `exit code ${exitCode}: ${stderr}`);
+    }
+  }
 });
 
 /* --- part 2: the two roads --- */
@@ -371,4 +445,130 @@ test('X8 (guard): the SECOND run of the install keeps the sentence of before, al
 
   assert.equal(w.runs.length, 2);
   assert.deepEqual(w.errors, ['Could not install on "box": the installer produced no result and exited 255.']);
+});
+
+/* --- part 2, E3.S1 (C19): a run that ended with 0 goes on --- */
+
+const INSTALLED = 'creds-install: installed /home/dev/.local/bin/creds\n';
+/** What the mode check answers for a socket that only its owner can reach, and for one that is wider: the second is told with a warning, so a test can see that the mode was read. */
+const OWNER_ONLY = '600';
+const WIDE_MODE = '644';
+
+/** Texts that hold the verification line, and what each is told when its run did NOT end with 0. A road answers each twice with the SAME stdout and stderr: with 0, and with 255. */
+const LINE_HELD: readonly { label: string; sentence: string; stderr: (argv: readonly string[]) => string; told: { install: string; bridge: string } }[] = [
+  { label: 'the remote side wrote the line', sentence: 'sentence D', stderr: () => `profile: sourcing extras\n${VERIFICATION}\n`, told: TOLD_D },
+  { label: 'the text names the pin file of the run', sentence: 'sentence C', stderr: (argv) => refusedKey(asSshPrints(pinFileOf(argv))), told: TOLD_C },
+];
+
+/** A run that has no exit code: the runner answers `null` (a signal ended the child). */
+const noCode = (stdout: string, stderr: string): ReturnType<typeof ran> => ({ ...ran(stdout, 0, stderr), exitCode: null });
+
+for (const row of LINE_HELD) {
+  test(`X9: the install goes on to the question of its probe when the probe ended with 0 and ${row.label}`, async () => {
+    const w = world(pinned(storage('x9'), { answer: yes, run: (index, argv) => (index === 0 ? ran(PROBE_OK, 0, row.stderr(argv)) : ran(INSTALLED)) }));
+    await click(w, 'installRemoteCli');
+
+    assert.deepEqual(w.errors, [], `X9: a probe that ended with 0 was told about a host key: ${w.errors.join(' | ')}`);
+    assert.deepEqual(w.warnings, []);
+    assert.deepEqual(w.asked.map((one) => one.message), [confirmationFor(interpretProbe(PROBE_OK), 'box').message], 'X9: the install did not ask the question that its probe answers');
+    assert.equal(w.runs.length, 2, 'X9: the install run did not start after the yes');
+  });
+
+  test(`X10 (guard): the same probe with exit code 255 is told ${row.sentence} and the install stops, when ${row.label}`, async () => {
+    const w = world(pinned(storage('x10'), { answer: yes, run: (_index, argv) => ran(PROBE_OK, 255, row.stderr(argv)) }));
+    await click(w, 'installRemoteCli');
+
+    assert.deepEqual(w.errors, [row.told.install], 'X10: the exit code 255 with the line was not told');
+    assert.deepEqual(w.asked, [], 'X10: the install asked its question');
+    assert.equal(w.runs.length, 1, 'X10: the install went on');
+  });
+
+  test(`X11: the socket check shows no message when its run ended with 0 and ${row.label}; the bridge stays open`, async (t) => {
+    const w = await bridged(t, pinned(storage('x11'), { run: (_index, argv) => ran(OWNER_ONLY, 0, row.stderr(argv)) }));
+
+    assert.equal(w.runs.length, 2, `the check did not run twice (the sweep, the mode check): ${w.runs.length}`);
+    assert.deepEqual(w.errors, [], `X11: a check that ended with 0 was told about a host key: ${w.errors.join(' | ')}`);
+    assert.deepEqual(w.warnings, []);
+    assert.deepEqual(w.logs.filter((line) => line === row.told.bridge || line.includes(NOT_READ)), [], 'X11: the check logged a host key, or a mode that it did not read');
+    assert.equal(w.bridges.isOpen(KEY), true, 'X11: the check closed the bridge');
+  });
+
+  test(`X12: the socket check READS the mode when its run ended with 0 and ${row.label}: a socket wider than 600 is told`, async (t) => {
+    const w = await bridged(t, pinned(storage('x12'), { run: (_index, argv) => ran(WIDE_MODE, 0, row.stderr(argv)) }));
+
+    assert.deepEqual(w.errors, [], `X12: a check that ended with 0 was told about a host key: ${w.errors.join(' | ')}`);
+    assert.equal(w.warnings.length, 1, `X12: the check did not read the mode of the socket: ${w.warnings.join(' | ')}`);
+    assert.match(w.warnings[0], /has mode 644 rather than 600/);
+    assert.equal(w.bridges.isOpen(KEY), true, 'X12: the check closed the bridge');
+  });
+
+  test(`X13 (guard): the same run of the check with exit code 255 shows ONE error message with ${row.sentence} and does not read the mode, when ${row.label}`, async (t) => {
+    const w = await bridged(t, pinned(storage('x13'), { run: (_index, argv) => ran(WIDE_MODE, 255, row.stderr(argv)) }));
+
+    assert.deepEqual(w.errors, [row.told.bridge], 'X13: the exit code 255 with the line was not told');
+    assert.deepEqual(w.warnings, [], 'X13: the check read a stdout that it must not trust');
+  });
+}
+
+test('X14 (guard): a probe with NO exit code that holds the line is told sentence D: a missing code is never read as 0', async () => {
+  const w = world(pinned(storage('x14'), { answer: yes, run: () => noCode(PROBE_OK, `${VERIFICATION}\n`) }));
+  await click(w, 'installRemoteCli');
+
+  assert.deepEqual(w.errors, [SENTENCE_D], 'X14: a run with no exit code was read as a run that ended with 0');
+  assert.deepEqual(w.asked, [], 'X14: the install asked its question');
+});
+
+test('X14 (guard): a run of the socket check with NO exit code that holds the line is told sentence D: a missing code is never read as 0', async (t) => {
+  const w = await bridged(t, pinned(storage('x14'), { run: () => noCode(WIDE_MODE, `${VERIFICATION}\n`) }));
+
+  assert.deepEqual(w.errors, [TOLD_D.bridge], 'X14: a run with no exit code was read as a run that ended with 0');
+  assert.deepEqual(w.warnings, []);
+});
+
+/* --- part 3, E3.S1: the callers --- */
+
+const SRC = path.resolve(__dirname, '..', '..', 'src');
+
+/** Every shipped source file. */
+const SOURCES = discoverSources(SRC, new Map([['test', 'the tests are not shipped: they call the function with texts and exit codes of their own']]));
+
+const sourceOf = (file: string): string => fs.readFileSync(path.join(SRC, file), 'utf8');
+
+interface Call {
+  readonly file: string;
+  readonly args: readonly string[];
+}
+
+/** Every call of `hostKeyTold` by that name in one file, with its arguments as they are written. The syntax tree is read, so a call over several lines is one call. */
+function callsOf(file: string): Call[] {
+  const source = ts.createSourceFile(file, sourceOf(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const found: Call[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'hostKeyTold') {
+      found.push({ file, args: node.arguments.map((one) => one.getText(source)) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+const HOW_TO_FIX =
+  "a call of hostKeyTold was added, moved or changed. Each caller hands the exit code of the SAME run whose stderr it hands, as that run answered it: never a constant, and never 0 for a run with no exit code (PLAN_person_roads_pin_host_key.md, section 3.12, part 4). Then edit this list in the same commit";
+
+test('X15: hostKeyTold has exactly two callers, the socket check and the install, and each hands the stderr and the exit code of one and the same run', () => {
+  assert.ok(SOURCES.length > 100, `the discovery found only ${SOURCES.length} files`);
+  const calls = SOURCES.flatMap(callsOf);
+
+  assert.deepEqual(
+    calls,
+    [
+      { file: 'commands/agentCommands.ts', args: ['credential.knownHostsFile', 'outcome.stderr', 'entity.name', 'outcome.exitCode'] },
+      { file: 'commands/agentCommands.ts', args: ['credential.knownHostsFile', 'facts.stderr', 'node.name', 'facts.exitCode'] },
+    ],
+    HOW_TO_FIX,
+  );
+  // A reference of another kind (the function handed on as a value, imported under another name or through a namespace) would be a caller that the list above does not see.
+  const uses = SOURCES.flatMap((file) => importedUses(file, sourceOf(file), 'hostKeyTold', 'hostKeyPin'));
+  assert.equal(uses.length, calls.length, `${HOW_TO_FIX}. hostKeyTold is named at: ${uses.map((use) => `${use.file}:${use.line}`).join(', ')}`);
 });

@@ -237,7 +237,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           timeoutMs: 15_000,
           signal: agentServer.signal,
         });
-        const told = hostKeyTold(credential.knownHostsFile, outcome.stderr, entity.name);
+        const told = hostKeyTold(credential.knownHostsFile, outcome.stderr, entity.name, outcome.exitCode);
         if (told !== undefined) {
           // The ssh of the bridge has no stdio, so this check is the one place that can say what the host key check of the bridge came to (G1, P3).
           log.info('bridge', told.bridge);
@@ -308,7 +308,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       }
 
       const facts = await runRemote(details, credential, probeCommand(), 20_000);
-      const told = hostKeyTold(credential.knownHostsFile, facts.stderr, node.name);
+      const told = hostKeyTold(credential.knownHostsFile, facts.stderr, node.name, facts.exitCode);
       if (told !== undefined) {
         return void vscode.window.showErrorMessage(told.install);
       }

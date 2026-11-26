@@ -14,7 +14,7 @@ import { loadWithVscode } from './vscodeStub';
  * calls the handlers the extension registered. The bridges are the REAL `SshBridgeManager` over a spawner the test chooses.
  *
  * <p>Stand-ins, by the request string that `commands/agentCommands.ts` (or the module it imports) writes: `../sshExecAuth` (what a
- * resolve answers), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
+ * resolve answers; left out with `realResolve`), `../sshExecRunner` (no real `ssh`), `./keyInstaller` (the recorder of `forgetMaterializedKey`; left out with
  * `realForget`), `./pinClient` (the asker of the client of a pinned call; left out with `realClient`), and with `noExecArgv`
  * `../sshExecCommand`.</p>
  *
@@ -28,6 +28,21 @@ import { loadWithVscode } from './vscodeStub';
  *
  * <p>The entry's `user` and `port` (E1.S4): the smoke of section 10 of `scripts/ssh-agent-itest.cjs` loads this world with a real runner
  * and a real spawner, and names the user that runs it and the port of its own `sshd`. Every suite leaves them out.</p>
+ *
+ * <p>The REAL resolve (G1, E3.S4: `realResolve`): the rows of E3 keep `vscode` as their only stand-in, and the stand-in of `../sshExecAuth`
+ * replaces that whole module, so a fault of the real `resolveExecAuth` (a stored key written with no `materialized`, so never deleted) stays
+ * green under it. With `realResolve` the registered commands call the product's resolve, which reads a disposable `vault` that the host's
+ * `storage` answers: a stored key, a key named by its path (the entry's `sshKeyPath`) or a password, all plain text, so no PIN is asked.
+ * The real resolve hands `ssh` the PROCESS's environment, so a row runs the world in a process whose environment is its own.</p>
+ *
+ * <p>`said` is every message, quick pick and log line in the order it was shown (the four arrays lose the order across kinds), each with its time
+ * (`at`, `performance.now()` of this process: the clock of the observers of a leg process, G1 E3.S5), and `replaceHostKey` and `replaceHost` make the
+ * storage answer a NEW snapshot of the entry from the next read on (a leg that changes the pin, or the host, in the same window).</p>
+ *
+ * <p>Connect's repair (G1, E3.S5, M9): `connectOptions` is the product's own `connectionOptions`, taken from the graph this world loaded (so it is bound to
+ * this world's `vscode` and mocks), called with the current snapshot; it never connects. `updateDetailsFields` of the host's storage records what Connect
+ * saved in `updates` and makes the storage answer it from the next read on. `shares` is every token the *Open Remote Bridge…* command minted, with the time
+ * and how many things had been said then.</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
@@ -109,8 +124,27 @@ export interface Parts {
   client?: PinClient | ((index: number) => PinClient);
   /** The real `./pinClient` asks (a real `ssh -V` through the real runner); `clientAsks` stays empty. */
   realClient?: boolean;
+  /** The product's own `resolveExecAuth` answers instead of the stand-in: `clicks`, `checks` and `resolveGate` are not read. Needs a `vault` and a real `storageDir`. */
+  realResolve?: boolean;
+  /** What the host's `storage` holds of the entry, for the real resolve: a stored key, a key file named by its path, a password. Plain text. Left out: the host has none of these. */
+  vault?: Vault;
   /** More stand-ins, by request string. */
   mocks?: Record<string, unknown>;
+}
+
+/** The disposable vault of the host (E3.S4): the three credentials the real resolve tells apart. At most one is given. */
+export interface Vault {
+  privateKey?: string;
+  keyPath?: string;
+  password?: string;
+}
+
+/** One thing a person was shown, in the order it was shown. */
+export interface Said {
+  kind: 'info' | 'warning' | 'error' | 'pick' | 'log';
+  text: string;
+  /** `performance.now()` of this process when it was shown. */
+  at: number;
 }
 
 export interface World {
@@ -135,8 +169,25 @@ export interface World {
   logs: string[];
   /** Every note the scoped bridge wrote (change 11.1, S1): the note and the argv of its one-shot ssh; no ssh starts for it. */
   notes: { note: Record<string, unknown>; argv: readonly string[] }[];
-  /** Every listener the scoped bridge opened, and whether it was closed. */
-  listeners: { bridgeId: string; closed: boolean }[];
+  /** Every listener the scoped bridge opened (its own port and key: the click mints no shared token), when, how many things had been said before it, and whether it was closed. */
+  listeners: { bridgeId: string; closed: boolean; at: number; saidBefore: number }[];
+  /** Every message, quick pick and log line, in the order they were shown. */
+  said: Said[];
+  /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey` (the field is left out for `undefined`); the old snapshot is not changed. */
+  replaceHostKey(hostKey: string | undefined): void;
+  /**
+   * From the next read on the storage answers a NEW snapshot of the entry with this `host`; the old snapshot is not changed. M4 (c): a saved key on a host that cannot form a
+   * known-hosts line, in the window that a warming call used.
+   */
+  replaceHost(host: string): void;
+  /** The snapshot of the entry that the storage answers now. */
+  snapshot(): Record<string, unknown>;
+  /** Every token the host's `agentServer.share` minted, in order: when, and how many things had been said before it answered. */
+  shares: { at: number; saidBefore: number }[];
+  /** Every `updateDetailsFields` of the host's storage: the entry as it was saved. */
+  updates: Record<string, unknown>[];
+  /** Connect's options of the entry (the product's `connectionOptions`, no start gate), with the current snapshot. Connect's repair of M9; it never connects. */
+  connectOptions(): Promise<unknown>;
 }
 
 /** The known-hosts file that an argv names, and its text at the moment of the read (`undefined`: the file is not on the disk). */
@@ -177,13 +228,17 @@ function emptyWorld(parts: Parts): World {
     return child;
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
-  return { handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], notes: [], listeners: [] };
+  return {
+    handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], shares: [], updates: [], notes: [], listeners: [],
+    replaceHostKey: () => undefined, replaceHost: () => undefined, snapshot: () => ({}), connectOptions: () => Promise.resolve(undefined),
+  };
 }
 
 /** A dialog that records its text and answers what the test says; one without buttons answers nothing. */
-function dialog(w: World, parts: Parts, into: string[]): (message: string, ...rest: unknown[]) => Promise<string | undefined> {
+function dialog(w: World, parts: Parts, into: string[], kind: Said['kind']): (message: string, ...rest: unknown[]) => Promise<string | undefined> {
   return (message, ...rest) => {
     into.push(message);
+    w.said.push({ kind, text: message, at: performance.now() });
     const asks = rest.some((one) => typeof one === 'string');
     if (asks) {
       w.asked.push({ message, forgottenBefore: w.forgotten.length });
@@ -195,12 +250,12 @@ function dialog(w: World, parts: Parts, into: string[]): (message: string, ...re
 function vscodeStub(w: World, parts: Parts): Record<string, unknown> {
   return {
     window: {
-      showInformationMessage: dialog(w, parts, w.infos),
-      showWarningMessage: dialog(w, parts, w.warnings),
-      showErrorMessage: dialog(w, parts, w.errors),
+      showInformationMessage: dialog(w, parts, w.infos, 'info'),
+      showWarningMessage: dialog(w, parts, w.warnings, 'warning'),
+      showErrorMessage: dialog(w, parts, w.errors, 'error'),
       // The scope pick of the scoped bridge (items are objects, many may be picked) takes every entry offered; a question of words is asked as a dialog.
       showQuickPick: (items: readonly unknown[], options: { title: string; canPickMany?: boolean }): Promise<unknown> =>
-        options.canPickMany === true ? Promise.resolve(items) : dialog(w, parts, w.infos)(options.title, ...(items as string[])),
+        options.canPickMany === true ? Promise.resolve(items) : dialog(w, parts, w.infos, 'pick')(options.title, ...(items as string[])),
       withProgress: (_options: unknown, task: () => Promise<unknown>): Promise<unknown> => task(),
     },
     ProgressLocation: { Notification: 15 },
@@ -253,18 +308,21 @@ function clientOf(w: World, parts: Parts): Record<string, unknown> {
   };
 }
 
+/** The stand-ins a flag turns OFF: `mocks` unless the part's flag is `true`. */
+const unless = (flag: boolean | undefined, mocks: Record<string, unknown>): Record<string, unknown> => (flag === true ? {} : mocks);
+
 function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   const recorder = { './keyInstaller': { forgetMaterializedKey: (keyPath: string): void => void w.forgotten.push(keyPath) } };
   const noArgv = { '../sshExecCommand': { buildSshExecArgv: (): undefined => undefined } };
   return {
-    '../sshExecAuth': resolverOf(parts),
+    ...unless(parts.realResolve, { '../sshExecAuth': resolverOf(parts) }),
     '../sshExecRunner': runnerOf(w, parts),
     '../bridgeNoteWriter': { writeBridgeNote: (note: Record<string, unknown>, argv: readonly string[]): Promise<{ ok: true }> => {
       w.notes.push({ note, argv });
       return Promise.resolve({ ok: true });
     } },
-    ...(parts.realForget === true ? {} : recorder),
-    ...(parts.realClient === true ? {} : { './pinClient': clientOf(w, parts) }),
+    ...unless(parts.realForget, recorder),
+    ...unless(parts.realClient, { './pinClient': clientOf(w, parts) }),
     ...(parts.noExecArgv === true ? noArgv : {}),
     ...parts.mocks,
   };
@@ -272,7 +330,7 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
 
 /** The fields of the entry that a test chose and that have no default: a field left out is not in the snapshot. */
 function chosenFields(parts: Parts): Record<string, unknown> {
-  const fields: Record<string, unknown> = { hostKey: parts.hostKey, port: parts.port };
+  const fields: Record<string, unknown> = { hostKey: parts.hostKey, port: parts.port, sshKeyPath: parts.vault?.keyPath };
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
 }
 
@@ -281,28 +339,85 @@ function detailsOf(parts: Parts): Record<string, unknown> {
   return { id: ROW.node.id, name: ROW.node.name, isSshEnabled: true, host: parts.host ?? 'box.example', user: parts.user ?? 'dev', ...chosenFields(parts) };
 }
 
+/** What the host's storage adds for the real resolve: the three values of the vault, and no rotation that waits (so no door is needed and no PIN is asked). Nothing without a vault. */
+function vaultOf(vault: Vault | undefined): Record<string, unknown> {
+  return vault === undefined
+    ? {}
+    : {
+        getPrivateKey: (): Promise<string | undefined> => Promise.resolve(vault.privateKey),
+        getPassword: (): Promise<string | undefined> => Promise.resolve(vault.password),
+        heldRotations: { listed: (): Promise<unknown[]> => Promise.resolve([]) },
+      };
+}
+
+/** The entry as the storage answers it, a copy that holds `patch` (a field whose value is `undefined` is left out). */
+function patched(details: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries({ ...details, ...patch }).filter(([, value]) => value !== undefined));
+}
+
+type ConnectionOptionsOf = (accountId: string, entity: Record<string, unknown>, storage: unknown, storageDir: string, startGate: undefined) => Promise<unknown>;
+
+/** Connect's options from the graph the world just loaded: the same `vscode` stand-in and mocks. A graph that does not hold the module makes the call fail, saying so. */
+function connectionOptionsOfGraph(): ConnectionOptionsOf {
+  const loaded = require.cache[require.resolve('../connectionOptions')]?.exports as { connectionOptions?: ConnectionOptionsOf } | undefined;
+  return loaded?.connectionOptions ?? (() => Promise.reject(new Error('connectionOptions.js is not in the graph that this world loaded')));
+}
+
+/** The host's storage of the world: the entry's snapshot as `entry.details` (replaced, never changed), what Connect saved in `updates`, and the vault. */
+function storageOf(w: World, parts: Parts, entry: { details: Record<string, unknown> }): Record<string, unknown> {
+  return {
+    getAccounts: () => [],
+    getNodes: () => [],
+    getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details: entry.details }),
+    updateDetailsFields: (_accountId: string, _nodeId: string, updated: Record<string, unknown>): Promise<void> => {
+      w.updates.push(updated);
+      entry.details = { ...updated };
+      return Promise.resolve();
+    },
+    ...vaultOf(parts.vault),
+  };
+}
+
+/** The host's `agentServer`: the token it mints is recorded in `shares`. */
+function agentServerOf(w: World): Record<string, unknown> {
+  return {
+    setFolderHooks: (): void => undefined,
+    share: (): Promise<string> => {
+      w.shares.push({ at: performance.now(), saidBefore: w.said.length });
+      return Promise.resolve(formatToken(4242, 'c2VjcmV0'));
+    },
+    signal: undefined,
+    listeningPort: 4242,
+    // The scoped bridge's own listener (change 11.1, S1): a port and a key of its own, recorded and closed when its ssh ends.
+    openBridgeListener: (context: { bridgeId: string }): Promise<unknown> => {
+      const record = { bridgeId: context.bridgeId, closed: false, at: performance.now(), saidBefore: w.said.length };
+      w.listeners.push(record);
+      return Promise.resolve({ port: 51_000 + w.listeners.length, key: 'listener-key', close: (): Promise<void> => { record.closed = true; return Promise.resolve(); } });
+    },
+  };
+}
+
 /** Register the real agent commands over the stand-ins, and hand back what they registered and what they did. */
 export function world(parts: Parts = {}): World {
   const w = emptyWorld(parts);
-  const details = detailsOf(parts);
+  const entry = { details: detailsOf(parts) };
+  w.replaceHostKey = (hostKey) => {
+    entry.details = patched(entry.details, { hostKey });
+  };
+  w.replaceHost = (host) => {
+    entry.details = patched(entry.details, { host });
+  };
+  w.snapshot = () => entry.details;
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', vscodeStub(w, parts), mocksOf(w, parts));
-  const say = (_area: string, text: string): void => void w.logs.push(text);
+  const connectionOptionsOf = connectionOptionsOfGraph();
+  const say = (_area: string, text: string): void => void (w.logs.push(text), w.said.push({ kind: 'log', text, at: performance.now() }));
+  const storage = storageOf(w, parts, entry);
+  w.connectOptions = () => connectionOptionsOf(ROW.accountId, entry.details, storage, parts.storageDir ?? '/storage', undefined);
   // The host is an untyped record on purpose, as in forgetAgentConsents.test.ts: only the fields these three roads read are
   // supplied, and typing it would mean stubbing the whole extension (its provider, its stores, its servers) for nothing.
   mod.registerAgentCommands({
     MACHINES: [],
-    agentServer: {
-      setFolderHooks: (): void => undefined,
-      share: (): Promise<string> => Promise.resolve(formatToken(4242, 'c2VjcmV0')),
-      signal: undefined,
-      listeningPort: 4242,
-      // The scoped bridge's own listener (change 11.1, S1): a port and a key of its own, recorded and closed when its ssh ends.
-      openBridgeListener: (context: { bridgeId: string }): Promise<unknown> => {
-        const record = { bridgeId: context.bridgeId, closed: false };
-        w.listeners.push(record);
-        return Promise.resolve({ port: 51_000 + w.listeners.length, key: 'listener-key', close: (): Promise<void> => { record.closed = true; return Promise.resolve(); } });
-      },
-    },
+    agentServer: agentServerOf(w),
     bridgeScopes: { read: () => ({ entries: new Set<string>(), quiet: false, revision: 'absent', admits: (): boolean => false }), set: (): Promise<string> => Promise.resolve('r1') },
     listBridgeable: (): Promise<unknown[]> => Promise.resolve([{ id: 'db-1', name: 'db', kind: 'db', folder: '' }]),
     aliasMap: () => ({}),
@@ -317,7 +432,7 @@ export function world(parts: Parts = {}): World {
     setAliasMap: (): Thenable<void> => Promise.resolve(),
     sshAgent: {},
     state: {},
-    storage: { getAccounts: () => [], getNodes: () => [], getNode: () => ({ id: ROW.node.id, name: ROW.node.name, details }) },
+    storage,
     storageDir: parts.storageDir ?? '/storage',
     vaultKeys: {},
   });
@@ -331,6 +446,57 @@ export function click(w: World, command: 'openRemoteBridge' | 'closeRemoteBridge
     throw new Error(`credSshManager.${command} is not registered; registered: ${[...w.handlers.keys()].join(', ')}`);
   }
   return Promise.resolve(handler(ROW));
+}
+
+/** What the exec world needs of the product's `sshUseActions`: the deps that production assembles and the action's own `run`. */
+interface SshUseActions {
+  sshDepsFor(parts: Record<string, unknown>): unknown;
+  sshExecAction(deps: unknown): { run(ctx: Record<string, unknown>, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> };
+}
+
+/** The agent's exec over the host of {@link world} (G1, E3.S7, M14): the same entry, saved key and vault, and no registered command. */
+export interface ExecWorld {
+  /** The agent's `ssh:exec` through its own `run`, off a bridge (no `bridge` in the context): the status and the body that the broker would send. */
+  run(command: string): Promise<{ status: number; body: unknown }>;
+  /** Every line the agent's journal took (`deps.note`), and every line of the diagnostic log. */
+  notes: string[];
+  /** Every message, quick pick and log line, in the order it was shown. */
+  said: Said[];
+  /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey`. */
+  replaceHostKey(hostKey: string | undefined): void;
+}
+
+/**
+ * The agent's exec (G1, E3.S7, M14): the REAL `sshUseActions` is loaded under the stubbed `vscode`, its deps are assembled by the product's own
+ * `sshDepsFor` (as production does: the asker is the real `windowPinClient`, the resolve the real `resolveExecAuth`), over the SAME host as {@link world}
+ * (`detailsOf`, `storageOf`: the entry, its saved key and its vault). Only `mocks` (by request string, `./sshExecRunner` for a leg that times the question)
+ * stand in. `sshAgent` has no socket and `relays` is absent: it is read only on the terminal's road.
+ */
+export function execWorld(parts: Parts = {}): ExecWorld {
+  const w = emptyWorld(parts);
+  const entry = { details: detailsOf(parts) };
+  w.replaceHostKey = (hostKey) => {
+    entry.details = patched(entry.details, { hostKey });
+  };
+  const notes: string[] = [];
+  const say = (text: string): void => void (notes.push(text), w.said.push({ kind: 'log', text, at: performance.now() }));
+  const mod = loadWithVscode<SshUseActions>('../sshUseActions', vscodeStub(w, parts), parts.mocks ?? {});
+  const signal = new AbortController().signal;
+  const deps = mod.sshDepsFor({
+    storage: storageOf(w, parts, entry),
+    storageDir: parts.storageDir ?? '/storage',
+    agentServer: { signal, acquireExecSlot: (): (() => void) => () => undefined, note: say },
+    sshAgent: { socketPath: undefined, servesKeyForEntity: (): boolean => false },
+    log: { info: (_source: string, text: string): void => say(text), warn: (_source: string, text: string): void => say(text), error: (_source: string, text: string): void => say(text) },
+    onMutated: (): void => undefined,
+  });
+  const action = mod.sshExecAction(deps);
+  return {
+    run: (command) => action.run({ accountId: ROW.accountId, entityId: ROW.node.id, entityName: ROW.node.name, signal }, { command }),
+    notes,
+    said: w.said,
+    replaceHostKey: (hostKey) => w.replaceHostKey(hostKey),
+  };
 }
 
 /** Let every promise callback that is ready run: the stand-ins settle on promise callbacks, never on a timer. */

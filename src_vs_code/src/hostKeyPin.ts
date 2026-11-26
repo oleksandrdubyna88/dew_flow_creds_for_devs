@@ -358,7 +358,17 @@ export interface HostKeyTold {
 /**
  * What to tell the person when one run of a PINNED call ended with `ssh`'s line `Host key verification failed.` (G1, sentences C and D).
  * `undefined`: nothing, the road shows the sentences of before. `pin` is the checked pin of THIS call, and its `file` is the pin
- * file as it is on the disk; an unpinned call has none and is told nothing, whatever its `ssh` printed.
+ * file as it is on the disk; an unpinned call has none and is told nothing, whatever its `ssh` printed. `exitCode` is the exit code
+ * of the SAME run whose `stderr` is handed, as its runner answered it (`null`: the run has none). It is required: a caller hands the
+ * code of its own run, never a constant, and never 0 for a run that has no code.
+ *
+ * <p><b>The exit code is asked first (C19; the plan's §3.12, part 4).</b> A run that ended with 0 is told NOTHING, whatever its text
+ * holds, sentence C included, and the road goes on as for a run without the line. `ssh` ends with 255 when it refuses a host's key
+ * (measured by hand: the plan's §3.5 and §3.12, E2.S3's J4; held by leg 2 of the smoke), and with the exit code of the remote command when that command ran (read in `ssh(1)`; not run for this function).
+ * So a run that ended with 0 is one whose `ssh` took the host's key, logged in and ran the remote command to its end: a verification
+ * line in its text was written by the remote side (a profile of the login, or the command), and no line of it is `ssh`'s refusal of
+ * this call's pin. The order of the questions: no pin, nothing; exit code 0, nothing; no verification line, nothing; the evidence,
+ * sentence C; else sentence D. A run that ended with another code, or that has none, is asked as the rule below says.</p>
  *
  * <p><b>The rule: a sentence names a cause only when the call saw it.</b> The stderr of a run holds what the `ssh` of the call
  * printed, what a nested `ssh` of a jump host printed, and what the remote command wrote. The verification line can come from each
@@ -379,17 +389,26 @@ export interface HostKeyTold {
  *
  * <p><b>What it cannot tell.</b> A run whose `ssh` printed nothing (a client that does not keep `LogLevel=ERROR`; a nested `ssh`
  * under a config that says `LogLevel QUIET`, measured: exit code 255, no text) is told nothing. A remote command that wrote the
- * verification line reads as sentence D whatever the run's exit code was. `ssh` cuts its own log line at 1024 bytes, and a byte outside
+ * verification line, in a run that did NOT end with 0 (with 255, with another code, or with none), reads as sentence D: the code does not
+ * prove whose line it is, and sentence D names no host as the cause. `ssh` cuts its own log line at 1024 bytes, and a byte outside
  * printable ASCII is printed as four characters, so a pin path of about 250 such bytes or more loses the `:<n>` that ends its `Offending`
  * line: the line then names no file, and a real key change shows sentence D (reported by the review of E2.S3; not run). A miss is
- * sentence D or nothing; it is never sentence C.</p>
+ * sentence D or nothing; it is never sentence C. A real `ssh` whose run ended with 0 and held the line was not run for this function: the
+ * plan's E3 runs one on the roads (M5, h).</p>
  */
-export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: string): HostKeyTold | undefined {
-  const lines = stderr.split(/\r?\n/);
-  if (pin === undefined || !lines.includes(HOST_KEY_REFUSED_LINE)) {
+export function hostKeyTold(pin: CheckedPin | undefined, stderr: string, name: string, exitCode: number | null): HostKeyTold | undefined {
+  if (pin === undefined || exitCode === 0) {
     return undefined;
   }
-  if (lines.some((line) => namesFile(line, pin.file))) {
+  return toldByText(pin.file, stderr.split(/\r?\n/), name);
+}
+
+/** What the text of one run says about the host's key, for a pinned call whose run did not end with 0 ({@link hostKeyTold} asks those two first): sentence C on the evidence of `file`, sentence D for the verification line without it, nothing without that line. */
+function toldByText(file: string, lines: readonly string[], name: string): HostKeyTold | undefined {
+  if (!lines.includes(HOST_KEY_REFUSED_LINE)) {
+    return undefined;
+  }
+  if (lines.some((line) => namesFile(line, file))) {
     return { install: refusedHostKeySentence(name), bridge: `The bridge to "${name}" is not open: ${refusedHostKeySentence(name)}`, refused: true };
   }
   return { install: unnamedHostKeySentence(name), bridge: `The bridge to "${name}" could not be checked: ${unnamedHostKeySentence(name)}`, refused: false };
