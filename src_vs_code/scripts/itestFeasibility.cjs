@@ -12,13 +12,13 @@
 // of identities, and ONE last line: `probe <name>: worked`, or `probe <name>: FAILED — <its first failed check>`. The exit code is 0 when every
 // probe that ran printed `worked`, and 1 otherwise. One section scope and one owned folder per probe (`ownedDir` under `shortSocketRoot()`).
 //
-// What this file gives each probe (its `ctx`): the checks, an `execFile` with a time limit, one counterpart started by the serving launcher
+// What this file gives each probe (its `ctx`): the checks, a bounded program run (a time limit that ends its whole tree), one counterpart started by the serving launcher
 // and its end, the pin words of a counterpart, the two records of identities, and the small readers of an `sshd` log. Linux only.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
+const { boundedRun } = require('./lib/boundedRun.cjs');
 const { setChildTemp, endChild, checkedPinOf } = require('./itestSshd.cjs');
 const { startServingSshd, endServer, alive, descendantsOfListener } = require('./itestServing.cjs');
 const { recordIdentities, identitiesOf } = require('./itestIdentities.cjs');
@@ -69,24 +69,10 @@ function checkOf(state) {
 }
 
 /**
- * One program with `args`, bounded: `{ code, signal, timedOut, stdout, stderr }`; `code` is `null` when the program was ended by a signal.
- * Its stdin is closed at once. Never rejects. `execFile` and no shell: the argv stays separate arguments.
+ * One program with `args`, bounded: `{ code, signal, timedOut, stdout, stderr }`; `code` is `null` when the program was ended by a signal or by the limit.
+ * Its stdin is closed. Never rejects. No shell: the argv stays separate arguments, and the limit ends the program's WHOLE process tree (`lib/boundedRun.cjs`).
  */
-function run(program, args, { env = process.env, timeoutMs = 20_000 } = {}) {
-  return new Promise((resolve) => {
-    // The program is the probe's own choice (a shim, an unpacked client, the owner's Windows ssh.exe): a CI rig, not a product call.
-    const child = execFile(program, args, { env, timeout: timeoutMs, encoding: 'utf8' }, (error, stdout, stderr) => { // NOSONAR: a CI rig
-      resolve({
-        code: error ? (typeof error.code === 'number' ? error.code : null) : 0,
-        signal: error?.signal ?? null,
-        timedOut: error?.killed === true && error?.signal !== null,
-        stdout: String(stdout),
-        stderr: `${stderr}${error && typeof error.code !== 'number' && error.code !== undefined ? `\n${String(error)}` : ''}`,
-      });
-    });
-    child.stdin?.end();
-  });
-}
+const run = (program, args, { env = process.env, timeoutMs = 20_000 } = {}) => boundedRun(program, args, { env, timeoutMs });
 
 /** The ssh argv of a login of the rig: the words, the user key, no prompt, the port, the destination and the command. */
 const clientArgv = (rig, words, port, command) => [

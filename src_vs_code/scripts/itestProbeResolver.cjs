@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { execFile } = require('node:child_process');
+const { boundedRun } = require('./lib/boundedRun.cjs');
 const { rigOf, installShim, writeClientConfig, makeKeys, openLeg, startsOf, finishes } = require('./itestPinnedRoads.cjs');
 const { checkedPinOf, SSHD } = require('./itestSshd.cjs');
 const { installStandIn } = require('./itestProbeInstall.cjs');
@@ -35,15 +35,11 @@ const AUTH_ATTEMPT = /Accepted |Failed |Postponed |Invalid user|authenticating u
 /** What the image's id is called in the record: the part after `sha256:`. */
 const IMAGE_ID_VARIABLE = 'CREDS_ITEST_E3_IMAGE_ID';
 
-/** One program, bounded, exe + argv: `{ code, stdout, stderr }`. Never rejects. */
-function runBounded(program, args, timeoutMs, env = process.env) {
-  return new Promise((resolve) => {
-    // wslc.exe, wslpath and git are the machine's own programs, found by PATH: a CI rig, not a product call.
-    const child = execFile(program, args, { env, timeout: timeoutMs, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => { // NOSONAR: a CI rig
-      resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout: String(stdout), stderr: `${stderr}${error && typeof error.code !== 'number' ? `\n${String(error)}` : ''}` });
-    });
-    child.stdin?.end();
-  });
+/** One program, bounded, exe + argv: `{ code, stdout, stderr }`; its limit ends its whole process tree (`lib/boundedRun.cjs`). Never rejects. */
+async function runBounded(program, args, timeoutMs, env = process.env) {
+  // wslc.exe, wslpath and git are the machine's own programs, found by PATH: a CI rig, not a product call.
+  const { code, stdout, stderr } = await boundedRun(program, args, { env, timeoutMs, maxOutputBytes: 32 * 1024 * 1024 });
+  return { code, stdout, stderr };
 }
 
 // ---- the host part ----------------------------------------------------------------------------------------------------------------------

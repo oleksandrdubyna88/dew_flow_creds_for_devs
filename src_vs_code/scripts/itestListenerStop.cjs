@@ -88,7 +88,9 @@ async function listenerStopLeg(check, rig, real) {
     await client(['-O', 'exit', `${me}@127.0.0.1`]);
     const { list, error } = await endServer(server, master === undefined ? [] : [master], taken);
     const gone = await within(5_000, () => !fs.existsSync(control));
-    check('leg 0: the master, its session and K1 are gone, by pid and start time, and the control socket too', error === undefined && !list.some(alive) && (master === undefined || !alive(master)) && gone, error ?? JSON.stringify(list.filter(alive)));
+    // The detail names what was seen at the assertion (E3.S10 code gate): the control socket's `gone` and whether the master still runs, beside the error and the live pids.
+    const detail = JSON.stringify({ error: error ?? null, alive: list.filter(alive), masterAlive: master === undefined ? null : alive(master), gone });
+    check('leg 0: the master, its session and K1 are gone, by pid and start time, and the control socket too', error === undefined && !list.some(alive) && (master === undefined || !alive(master)) && gone, detail);
   }
 }
 
