@@ -35,7 +35,7 @@ that has no exit code (a signal ended it) is held by the tests alone.
 ### Measured — the saved host key on the real roads, and what that did not show
 
 1.23.0 went out before most of its words had been run against a real server, and said so ("Not measured before this release"). They
-have been run since. On 2026-11-25, in one run of the whole set, the extension's own commands (*Install creds on host*, *Open
+have been run since. On 2026-11-26, in one run of the whole set, the extension's own commands (*Install creds on host*, *Open
 Remote Bridge…* with its socket check, and the agent's `ssh:exec`) ran with the real `ssh` against a real OpenSSH server (10.2p1)
 on the test machine's loopback, and every sentence of the 1.23.0 entry that claims a behaviour has a test or one of those runs
 behind it, or is said below as not measured. What the runs showed, with the client's version where it matters:
@@ -67,7 +67,7 @@ is not.)
 
 - A key in the user-file slot that the test's own `ssh` config names does not satisfy a pinned call. Nothing was measured about
   OpenSSH's built-in default file (`~/.ssh/known_hosts`), because OpenSSH takes `~` from the system's user database, so that file
-  is in the real home of the account that ran the tests; no run changed its `~/.ssh/known_hosts`.
+  is in the real home of the account that ran the tests. The runs of the extension's commands and of the older `ssh` ran with that folder hidden behind an empty one and left it as it was (its `lstat` records were the same before and after); what the test server wrote there went into the empty folder. The run of 2026-11-25 did not hide it, and the test server wrote in the real `~/.ssh/agent`, which is why the folder is hidden now. The run of the older `ssh` on the unit test, the container run and the Windows `ssh.exe -G` run were not hidden: they start no test server on this machine's home, and the only reader of the real `~/.ssh/known_hosts` there was the harness itself, comparing its bytes before and after.
 - A pair of apostrophes in a path that is not in double quotes is read as another file by OpenSSH 10.2p1 (measured; from 8.7 on by
   the release notes, read): that is the case that the double quotes exist for. OpenSSH 8.4p1 has no such case. No run used OpenSSH 8.5 or 8.6.
 - The agent's `ssh:exec` was run through the action's own call, off a bridge. The broker's HTTP layer and its consent were not
