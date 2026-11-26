@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import {
   EXPORT_REFUSED,
   EnvExportResponseBody,
@@ -9,7 +8,7 @@ import {
   errorBody,
   statusForErrorCode,
 } from './brokerProtocol';
-import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards } from './useActions';
+import { CallTarget, OverSsh, UseAction, UseActionContext, UseActionResult, UsedEntry, launchGuards, targetBridge } from './useActions';
 import type { BridgeContext } from './bridgeContext';
 import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
 import { UsableFound, accountOnly, agentMayView, findUsableEntry, hiddenFromAgents } from './mcpEntries';
@@ -26,7 +25,8 @@ import { scriptRunPlan } from './scriptRun';
 import { LaunchPlan, SshLink, planLaunch, refusalSaid, sshLinkOf, trustLineFor } from './remoteLaunch';
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
-import { lockToOwner, materializedKeyPath } from './materializedKeys';
+import { type BridgedRunDeps, bridgedSiteOf, bridgedValidation, runBridged } from './bridgedRun';
+import { runScriptFile, untrusted } from './storedRun';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
 import type { DbProfileRow } from './bridgedDbProfile';
 import { DbClientCheck, bridgedDbClientCheck } from './bridgedDbClient';
@@ -108,83 +108,74 @@ function execOutcome(result: UseActionResult): string {
  * to remember. One choke point, and no second masker to disagree with it.</p>
  */
 
-/**
- * The message a not-yet-vouched-for body gets.
- *
- * <p>The broker's own consent is per GRANT: once a person clicks Allow, every later call
- * on that token runs silently — including one whose stored content was edited, or
- * replaced by a sync, after the click. The content fingerprint is what notices that, so
- * the agent path checks it too rather than trusting a grant to cover a body it never
- * showed anyone.</p>
- */
-function untrusted(entityName: string, what: string): UseActionResult {
-  return fail(
-    'no_credential',
-    `"${entityName}" has not been run on this machine yet. Run it once from the tree so a person sees ${what}, then retry.`,
-  );
+/** What the run of a stored command or script needs beyond `AgentUseDeps` for the road through a Remote Bridge (`bridgedRun.ts`, S4). */
+export type RunRoadDeps = Omit<BridgedRunDeps, keyof AgentUseDeps>;
+
+/** `validate` of a stored script: off a bridge nothing; on a bridge, §4.6's refusal before any dialog. */
+function validateScript(deps: AgentUseDeps, target: CallTarget): ReturnType<UseAction['validate']> {
+  return targetBridge(target) === undefined ? { ok: true } : bridgedValidation(entityFor(deps, target), target.entityName, 'script');
+}
+
+/** The script that is there to run: the entity and its body, or the refusal (gone, or nothing in it). */
+function scriptEntity(deps: AgentUseDeps, ctx: UseActionContext): EntityMetadata | UseActionResult {
+  const entity = entityFor(deps, ctx);
+  if (entity === undefined) {
+    return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
+  }
+  return entity.script === undefined || entity.script.trim().length === 0 ? fail('no_credential', `"${ctx.entityName}" has no script body.`) : entity;
+}
+
+/** The local road of a stored script, unchanged off a bridge: trusted as saved, this platform's interpreter, its variables in the child's environment. */
+async function runScriptHere(deps: AgentUseDeps, ctx: UseActionContext, entity: EntityMetadata, script: string): Promise<UseActionResult> {
+  if (!isCommandTrusted(deps.trustStore, ctx.entityId, script)) {
+    return untrusted(ctx.entityName, 'what it does');
+  }
+  const language = entity.scriptLanguage ?? 'other';
+  const plan = scriptRunPlan(language, process.platform);
+  return plan.kind === 'unsupported' ? fail('not_supported', plan.reason) : runScriptWithSlot(deps, ctx, entity, { script, language, plan });
+}
+
+async function runScriptWithSlot(
+  deps: AgentUseDeps,
+  ctx: UseActionContext,
+  entity: EntityMetadata,
+  { script, language, plan }: { script: string; language: string; plan: Extract<ReturnType<typeof scriptRunPlan>, { kind: 'run' }> },
+): Promise<UseActionResult> {
+  const release = deps.acquireExecSlot();
+  if (release === undefined) {
+    return fail('too_many_requests', 'Too many commands are already running.');
+  }
+  try {
+    const resolved = resolveScriptEnv(script, entity.scriptVars, language);
+    return await runScriptFile(deps, ctx, plan, resolved.body, { ...process.env, ...resolved.env });
+  } finally {
+    release();
+  }
 }
 
 /**
  * Run a stored SCRIPT.
  *
  * <p>Variables travel in the child's environment, so the file written to disk holds names
- * rather than values (see `resolveScriptEnv`), and it is deleted in `finally`.</p>
+ * rather than values (see `resolveScriptEnv`), and it is deleted in `finally`. Through a Remote Bridge it runs where `decideRunSite` says
+ * (`bridgedRun.ts`): on the server, or on this computer with its `creds://` values kept here.</p>
  */
-// eslint-disable-next-line max-lines-per-function
-export function scriptRunAction(deps: AgentUseDeps): UseAction {
+export function scriptRunAction(deps: AgentUseDeps & RunRoadDeps): UseAction {
   return {
     kind: 'script',
     action: 'run',
     mutatesSecrets: false,
     verb: 'run the stored script of',
     describeOutcome: execOutcome,
-    validate: () => ({ ok: true }),
+    validate: (_body, target) => validateScript(deps, target),
     summarize: () => 'the stored script, exactly as saved',
-    // eslint-disable-next-line complexity
+    bridgedSite: (target) => bridgedSiteOf(entityFor(deps, target), target.entityName, 'script'),
     async run(ctx): Promise<UseActionResult> {
-      const entity = entityFor(deps, ctx);
-      if (entity === undefined) {
-        return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
+      const entity = scriptEntity(deps, ctx);
+      if ('status' in entity) {
+        return entity;
       }
-      if (entity.script === undefined || entity.script.trim().length === 0) {
-        return fail('no_credential', `"${ctx.entityName}" has no script body.`);
-      }
-      if (!isCommandTrusted(deps.trustStore, ctx.entityId, entity.script)) {
-        return untrusted(ctx.entityName, 'what it does');
-      }
-      const language = entity.scriptLanguage ?? 'other';
-      const plan = scriptRunPlan(language, process.platform);
-      if (plan.kind === 'unsupported') {
-        return fail('not_supported', plan.reason);
-      }
-      const release = deps.acquireExecSlot();
-      if (release === undefined) {
-        return fail('too_many_requests', 'Too many commands are already running.');
-      }
-      const resolved = resolveScriptEnv(entity.script, entity.scriptVars, language);
-      const scriptPath = materializedKeyPath(
-        deps.storageDir,
-        `agent-script-${ctx.entityId}${plan.extension}`,
-      );
-      try {
-        fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
-        const body = resolved.body.endsWith('\n') ? resolved.body : `${resolved.body}\n`;
-        fs.writeFileSync(scriptPath, body, { mode: 0o700 });
-        lockToOwner(scriptPath);
-        const outcome = await runBounded(plan.command, [...plan.args, scriptPath], false, {
-          env: { ...process.env, ...resolved.env },
-          timeoutMs: clampExecTimeout(undefined),
-          ...launchGuards(deps.signal, ctx),
-        });
-        return { status: 200, body: outcome };
-      } finally {
-        try {
-          fs.rmSync(scriptPath, { force: true });
-        } catch {
-          // already gone — nothing to do
-        }
-        release();
-      }
+      return ctx.bridge === undefined ? runScriptHere(deps, ctx, entity, entity.script ?? '') : runBridged(deps, ctx, ctx.bridge, entity, 'script');
     },
   };
 }
@@ -309,12 +300,33 @@ function summaryFor(deps: AgentUseDeps, target: CallTarget): string {
  * a closed or PIN-hidden SSH entry forwards the agent. It writes no note.
  */
 export function forwardsAgentNow(deps: AgentUseDeps, target: CallTarget): boolean {
-  const call = linkedCall(deps, target, undefined);
+  const call = linkedCall(deps, target, targetBridge(target)); // on a bridge a linked entry is refused, so nothing follows its Allow (D.10)
   return call.kind === 'linked' && call.link.ssh.agentForward === true && deps.agentSocket?.() !== undefined;
+}
+
+/**
+ * `validate` on a bridge (S4; E3's decision for a Terminal entry with an SSH link): a linked entry is refused with the bridge's own sentence,
+ * because its line would run over ANOTHER SSH connection from this computer; an unlinked one by §4.6's table. All before any dialog.
+ */
+function validateBridged(deps: AgentUseDeps, target: CallTarget): ReturnType<UseAction['validate']> {
+  const gate = linkedCall(deps, target, targetBridge(target));
+  if (gate.kind === 'refused') {
+    deps.note(journalLine(target.entityName, gate.why, true));
+    return { ok: false, code: gate.code, message: gate.message };
+  }
+  return bridgedValidation(entityFor(deps, target), target.entityName, 'command');
+}
+
+/** The site a bridged dialog says for a Terminal entry: none for a linked one (refused before the dialog). */
+function terminalSite(deps: AgentUseDeps, target: CallTarget): ReturnType<NonNullable<UseAction['bridgedSite']>> {
+  return linkedCall(deps, target, targetBridge(target)).kind === 'local' ? bridgedSiteOf(entityFor(deps, target), target.entityName, 'command') : undefined;
 }
 
 /** `validate`: the gate, before any dialog (spec §2.2). The refusal and its note are written here, once. */
 function validateTarget(deps: AgentUseDeps, target: CallTarget): ReturnType<UseAction['validate']> {
+  if (targetBridge(target) !== undefined) {
+    return validateBridged(deps, target);
+  }
   const gate = linkedCall(deps, target, undefined);
   if (gate.kind !== 'refused') {
     return { ok: true };
@@ -450,13 +462,16 @@ async function runThere(deps: AgentUseDeps & { overSsh: OverSsh }, ctx: UseActio
   return refused ?? overSshWithSlot(deps, ctx, plan, chain);
 }
 
-async function runEntity(deps: AgentUseDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }, ctx: UseActionContext, entity: EntityMetadata): Promise<UseActionResult> {
+async function runEntity(deps: AgentUseDeps & RunRoadDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }, ctx: UseActionContext, entity: EntityMetadata): Promise<UseActionResult> {
   const gate = linkedCall(deps, ctx, ctx.bridge);
   const refused = gateRefusal(deps, ctx, gate, entity);
   if (refused !== undefined) {
     return refused;
   }
-  return gate.kind === 'linked' ? runThere(deps, ctx, entity, gate.link) : runHere(deps, ctx, entity);
+  if (gate.kind === 'linked') {
+    return runThere(deps, ctx, entity, gate.link);
+  }
+  return ctx.bridge === undefined ? runHere(deps, ctx, entity) : runBridged(deps, ctx, ctx.bridge, entity, 'command');
 }
 
 /**
@@ -475,7 +490,7 @@ async function runEntity(deps: AgentUseDeps & { onPath?: (exe: string) => boolea
  * rotated value of it before the mask table is read, and burns it after a 200, as for `creds_exec` on it. The run then needs the entry the broker
  * holds (`ctx.uses`) as well as the summary the dialog showed (spec §2.5, §2.3 step 3).</p>
  */
-export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }): UseAction {
+export function terminalRunAction(deps: AgentUseDeps & RunRoadDeps & { onPath?: (exe: string) => boolean; overSsh: OverSsh }): UseAction {
   return {
     kind: 'terminal',
     action: 'run',
@@ -487,6 +502,7 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
     validate: (_body, target) => validateTarget(deps, target),
     summarize: (_body, target) => summaryFor(deps, target),
     uses: (target) => usedEntryOf(deps, target),
+    bridgedSite: (target) => terminalSite(deps, target),
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       return entity === undefined ? fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`) : runEntity(deps, ctx, entity);

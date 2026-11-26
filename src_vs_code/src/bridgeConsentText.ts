@@ -13,21 +13,27 @@ import { cleanCallerField } from './brokerCaller';
 /**
  * Where a bridged action's work is done, said to the person who authorises it: at the DESTINATION a stored entry names, after a
  * connection that starts on this computer (`exec`); on this computer, which for `query` is the database CLIENT alone (the SQL runs on the
- * database the stored connection names); or on the server that asked (E3's `run`, not built).
+ * database the stored connection names) and for `run` the stored command or script with its `creds://` values; or on the server that asked
+ * (`run` with no value to keep here, S4).
  */
 export type RunSite = 'destination' | 'laptop' | 'server';
 
-/** The served actions and where each does its work. A bridge serves `exec` and `query` only (the allow-list, `bridgeAllowList.ts`). */
+/** The served actions whose site is fixed, and where each does its work (the allow-list, `bridgeAllowList.ts`). */
 const RUN_SITES: ReadonlyMap<string, RunSite> = new Map<string, RunSite>([
   ['exec', 'destination'],
   ['query', 'laptop'],
 ]);
 
 /**
- * The site of one action, or `undefined` for an action that has none. A line is true per action, because the modal is the
+ * The served actions whose site is decided per entry and per call (`decideRunSite` through `UseAction.bridgedSite`), never from the action's
+ * name: a stored command or script runs on the server or on this computer by its "Runs on" and its references (parent §4.6).
+ */
+export const PER_ENTRY_SITE_ACTIONS: ReadonlySet<string> = new Set(['run']);
+
+/**
+ * The site of one action, or `undefined` for an action that has none fixed. A line is true per action, because the modal is the
  * authorisation (parent §4.2): `exec` is not `query`, and a sentence that guessed for a third action would be a guess a person
- * authorises. Nothing but `exec` and `query` reaches a bridge's dialog. E3.1 replaces this with `decideRunSite` and chooses each `run`
- * sentence from that result, never from the action's name.
+ * authorises. `run` has no fixed site: its dialog says the site `decideRunSite` chose for that entry ({@link PER_ENTRY_SITE_ACTIONS}).
  */
 export function bridgeRunSite(action: string): RunSite | undefined {
   return RUN_SITES.get(action);
@@ -53,6 +59,11 @@ const SENTENCES: ReadonlyMap<string, (entryName: string) => string> = new Map<st
   ['exec:destination', (entry) => `The connection starts on this computer; the command runs on "${entry}", and its output goes back to that server.`],
   ['query:laptop', (entry) => `The database client runs on this computer, using the connection stored in "${entry}". Its output goes back to the agent on that server.`],
   ['run:server', () => 'It runs on that server.'],
+  [
+    'run:laptop',
+    (entry) =>
+      `The stored command of "${entry}" runs on this computer, with its creds:// values in that process's environment only. Its output, with those values masked, goes back to the agent on that server.`,
+  ],
 ]);
 
 /**

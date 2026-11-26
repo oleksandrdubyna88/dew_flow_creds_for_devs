@@ -35,7 +35,7 @@ test('D9: the real router — health is served, a route the table does not serve
     // A route the table names and refuses answers the person sentence; a path it does not know promises nothing. Each is asked through the
     // real broker, and nothing ran and nobody was asked either way: the route is refused, not just worded.
     const refused: [string, string][] = [
-      ['POST', '/v1/use/run'],
+      ['POST', '/v1/use/terminal'],
       ['POST', '/v1/config/read'],
       ['GET', '/v1/nope'],
       ['POST', '/v1/mcp/delete'],
@@ -141,7 +141,7 @@ test('K5: through the real handle — a server named in a header, a query or a b
     const claims = { 'X-Creds-Server': 'entry-server-2', 'X-Bridge-Id': 'bridge-2', 'X-Creds-Server-Entity': 'entry-server-2' };
     const plain = await raw(l.port, '/v1/health', keyed(l));
     const claiming = await raw(l.port, '/v1/health?server=entry-server-2&bridgeId=bridge-2', keyed(l, claims));
-    const refused = await raw(l.port, '/v1/use/run', keyed(l, claims), { method: 'POST', body: '{"server":"entry-server-2","command":"id"}' });
+    const refused = await raw(l.port, '/v1/use/terminal', keyed(l, claims), { method: 'POST', body: '{"server":"entry-server-2","command":"id"}' });
     await raw(main, '/v1/health', { Host: `127.0.0.1:${main}`, ...claims });
 
     await pause(50);
@@ -178,7 +178,7 @@ test('K10: a refused route is answered before its body arrives — Content-Lengt
       setTimeout(() => reject(new Error('no answer while the body was still incomplete: the body was read before the route was refused')), 2_000).unref();
     });
     socket.write(
-      `POST /v1/use/run HTTP/1.1\r\nHost: 127.0.0.1:${l.port}\r\nX-Creds-Bridge: ${l.key}\r\n`
+      `POST /v1/use/terminal HTTP/1.1\r\nHost: 127.0.0.1:${l.port}\r\nX-Creds-Bridge: ${l.key}\r\n`
         + 'Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"com',
     );
     try {

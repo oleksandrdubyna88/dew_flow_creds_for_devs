@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import type { AuditDoor, AuditEntry } from './agentAuditLog';
-import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite, consentButtons } from './bridgeConsentText';
+import { RunSite, bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite, consentButtons } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -105,6 +105,8 @@ export interface ConsentQuestion {
   readonly followUp?: boolean | (() => boolean);
   /** REQUIRED, like `caller`: a door added later does not compile until it says what its Allow covers. */
   readonly coverage: ConsentCoverage;
+  /** Where a bridged call runs when its action decides it per entry (`UseAction.bridgedSite`: a stored command or script, S4); else the action's fixed site. */
+  readonly site?: RunSite;
 }
 
 /** Whether the question's call may prompt again, read now. A flag that cannot be read keeps nothing: the place is not held on a guess. */
@@ -369,6 +371,6 @@ function shownName(grant: Grant): string {
 }
 
 /** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
-function bridgeLine({ grant, action }: ConsentQuestion): string {
-  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, bridgeRunSite(action), grant.entityName)}`;
+function bridgeLine({ grant, action, site }: ConsentQuestion): string {
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, site ?? bridgeRunSite(action), grant.entityName)}`;
 }
