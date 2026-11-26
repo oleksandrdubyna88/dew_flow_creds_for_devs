@@ -49,6 +49,29 @@ function sessionOf(line, user) {
   return found === null ? undefined : { kind: found[1], port: Number(found[2]) };
 }
 
+/**
+ * The CONNECTIONS that the attempt lines of `lines` belong to, as the keys `<port>#<instance>`, in order of first attempt. The kernel may give a client the same port twice
+ * in one leg, so a port is no connection: a `Connection from 127.0.0.1 port <n> on` line starts a new INSTANCE of port n, and each attempt line belongs to the current
+ * instance of its port (instance 0 when the log holds no `Connection from` line of that port, as in a log cut after a mark). An attempt line that names no port has no key.
+ */
+function attemptConnectionsOf(lines) {
+  const instances = new Map();
+  const keys = new Set();
+  for (const line of lines) {
+    const started = /(?:^|\s)Connection from 127\.0\.0\.1 port (\d+) on /.exec(line);
+    if (started !== null) {
+      instances.set(started[1], (instances.get(started[1]) ?? -1) + 1);
+    }
+    if (AUTH_ATTEMPT.test(line)) {
+      const port = portOf(line);
+      if (port !== undefined) {
+        keys.add(`${port}#${instances.get(port) ?? 0}`);
+      }
+    }
+  }
+  return [...keys];
+}
+
 /** Each accepted login of `lines`, with the SESSION of the first later `Starting session` line of the same port that no earlier login took, else `none`. */
 function acceptedOf(lines, user) {
   const accept = new RegExp(String.raw`Accepted (\S+) for ${literal(user)} from 127\.0\.0\.1 port (\d+)`);
@@ -67,8 +90,8 @@ function acceptedOf(lines, user) {
 
 /**
  * The counts of one counterpart's log (decision 15), for the lines of `user`: `connections` (the `Connection from` lines), `authAttempts` (the
- * distinct client ports that the lines matching `AUTH_ATTEMPT` name, and at least 1 when any line matches: `Accepted key … found at` names no
- * port; 0 only when no line matches), `accepted` (each `Accepted <method> for <user> from 127.0.0.1 port <n>` with its session kind or
+ * distinct CONNECTIONS, not client ports, that the lines matching `AUTH_ATTEMPT` name — `attemptConnections`, see `attemptConnectionsOf` — and at least 1 when any line
+ * matches: `Accepted key … found at` names no port; 0 only when no line matches), `attemptPorts` (the distinct client ports of those lines), `accepted` (each `Accepted <method> for <user> from 127.0.0.1 port <n>` with its session kind or
  * `none`: a `-N` login starts no session), `passwords` (`Failed password` and `Accepted password` lines) and the matching `lines`, verbatim.
  */
 function logCounts(log, user) {
@@ -76,13 +99,15 @@ function logCounts(log, user) {
   const lines = log.split(/\r?\n/).filter((line) => line !== '' && !/^debug[123]: /.test(line));
   const attempts = lines.filter((line) => AUTH_ATTEMPT.test(line));
   const attemptPorts = [...new Set(attempts.map(portOf).filter((port) => port !== undefined).map(Number))];
+  const attemptConnections = attemptConnectionsOf(lines);
   const connection = /(?:^|\s)Connection from 127\.0\.0\.1 port \d+ on /;
   const failed = new RegExp(String.raw`Failed password for (?:invalid user )?${literal(user)} from `);
   const accepted = new RegExp(String.raw`Accepted password for ${literal(user)} from `);
   return {
     connections: lines.filter((line) => connection.test(line)).length,
-    authAttempts: attempts.length === 0 ? 0 : Math.max(1, attemptPorts.length),
+    authAttempts: attempts.length === 0 ? 0 : Math.max(1, attemptConnections.length),
     attemptPorts,
+    attemptConnections,
     accepted: acceptedOf(lines, user),
     passwords: { failed: lines.filter((line) => failed.test(line)).length, accepted: lines.filter((line) => accepted.test(line)).length },
     lines: lines.filter((line) => AUTH_ATTEMPT.test(line) || connection.test(line) || sessionOf(line, user) !== undefined),

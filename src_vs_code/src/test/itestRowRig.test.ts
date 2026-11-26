@@ -46,6 +46,7 @@ interface Counts {
   readonly connections: number;
   readonly authAttempts: number;
   readonly attemptPorts: readonly number[];
+  readonly attemptConnections: readonly string[];
   readonly accepted: readonly Accepted[];
   readonly passwords: { readonly failed: number; readonly accepted: number };
   readonly lines: readonly string[];
@@ -98,7 +99,7 @@ test('RR1: a question is `-V` alone, a connection start names a destination afte
   assert.equal(roadOf('other'), undefined);
 });
 
-test('RR2: the four counts of a log: a login is one connection, one attempt and one accepted login, by client port', () => {
+test('RR2: the four counts of a log: a login is one connection, one attempt and one accepted login', () => {
   const counts = exported<LogCounts>('logCounts');
 
   const key = counts(text(keyLogin(41001)), USER);
@@ -129,7 +130,44 @@ test('RR2: the four counts of a log: a login is one connection, one attempt and 
   assert.equal(silent.authAttempts, 0, 'a connection that reached no authentication line is no attempt');
 
   const empty = counts('', USER);
-  assert.deepEqual({ ...empty, lines: [...empty.lines], accepted: [...empty.accepted] }, { connections: 0, authAttempts: 0, attemptPorts: [], accepted: [], passwords: { failed: 0, accepted: 0 }, lines: [] });
+  assert.deepEqual({ ...empty, lines: [...empty.lines], accepted: [...empty.accepted] }, { connections: 0, authAttempts: 0, attemptPorts: [], attemptConnections: [], accepted: [], passwords: { failed: 0, accepted: 0 }, lines: [] });
+});
+
+test('RR2b: an attempt is counted per connection, not per client port: a port the kernel gives the client twice is two attempts', () => {
+  const counts = exported<LogCounts>('logCounts');
+
+  // The run of 89a9667e: port 52142 served the 2nd and the 5th login of one leg; the counterpart logged 5 `Postponed publickey` lines and 5 accepted logins.
+  const ports = [52140, 52142, 52144, 52146, 52142];
+  const reused = counts(text(ports.flatMap((port) => keyLogin(port))), USER);
+  assert.equal(reused.authAttempts, 5, 'five connections reached authentication, though only four distinct ports did');
+  assert.equal(reused.accepted.length, 5);
+  assert.equal(reused.connections, 5);
+  assert.deepEqual(reused.attemptPorts, [52140, 52142, 52144, 52146], 'the ports stay as they were: distinct');
+  assert.deepEqual(reused.attemptConnections, ['52140#0', '52142#0', '52144#0', '52146#0', '52142#1']);
+
+  const twice = counts(text([...keyLogin(52150), ...keyLogin(52150, 'none')]), USER);
+  assert.equal(twice.authAttempts, 2, 'two authenticated connections on one port are two attempts');
+  assert.equal(twice.accepted.length, 2);
+  assert.deepEqual(twice.accepted.map((one) => one.session), ['command', 'none']);
+
+  // A log cut after a mark may start with the attempt lines of a connection whose `Connection from` line lies before the cut: that is instance 0 of its port.
+  const cut = counts(text(keyLogin(52160).slice(1)), USER);
+  assert.equal(cut.authAttempts, 1);
+  assert.deepEqual(cut.attemptConnections, ['52160#0']);
+});
+
+test('RR2c: a control that gets a port used before adds one attempt, so a before/after comparison sees it', () => {
+  const counts = exported<LogCounts>('logCounts');
+
+  const before = text(keyLogin(52142));
+  const control = ['Connection from 127.0.0.1 port 52142 on 127.0.0.1 port 40023 rdomain ""', ...refusedPassword(52142)];
+  const after = text([...keyLogin(52142), ...control]);
+  assert.equal(counts(before, USER).authAttempts, 1);
+  assert.equal(counts(after, USER).authAttempts - counts(before, USER).authAttempts, 1, 'the control reused the port of the earlier login and its attempt is still new');
+  assert.equal(counts(after, USER).accepted.length, counts(before, USER).accepted.length, 'the control logged no new accepted login');
+
+  const silentControl = text([...keyLogin(52142), 'Connection from 127.0.0.1 port 52142 on 127.0.0.1 port 40023 rdomain ""', 'Connection closed by 127.0.0.1 port 52142 [preauth]']);
+  assert.equal(counts(silentControl, USER).authAttempts, counts(before, USER).authAttempts, 'a control on a reused port that reaches no authentication line adds no attempt');
 });
 
 type SentencesOf = (parts: Record<string, unknown>, name: string) => string[];
