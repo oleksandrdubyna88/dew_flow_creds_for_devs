@@ -51,7 +51,7 @@ async function logChecks(ctx, label, roads, k1) {
   const leg = ctx.rig;
   const log = await m1.acceptedOf(k1, 5);
   const sessions = log.accepted.map((one) => one.session).sort().join(',');
-  check(`${label}: K1 logged exactly 5 accepted logins (4 with a command, 1 with none), and 5 client ports reached authentication (A.5)`, log.accepted.length === 5 && sessions === 'command,command,command,command,none' && log.attemptPorts.length === 5, JSON.stringify({ accepted: log.accepted, ports: log.attemptPorts }));
+  check(`${label}: K1 logged exactly 5 accepted logins (4 with a command, 1 with none), and 5 client ports reached authentication (A.5)`, log.accepted.length === 5 && sessions === 'command,command,command,command,none' && log.attemptConnections.length === 5, JSON.stringify({ accepted: log.accepted, ports: log.attemptPorts, connections: log.attemptConnections }));
   const pins = (names) => names.filter((name) => name.startsWith('known_hosts-'));
   const sampled = roads.sampler.samples().flatMap((sample) => pins(Object.keys(sample.files)));
   const listed = pins(Object.keys(rig.readFolder(roads.sampler.dir)));

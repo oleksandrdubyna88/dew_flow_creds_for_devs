@@ -286,7 +286,7 @@ function caseCounts(ctx, spec, label, counts, silent, ended) {
   if (spec.target === 'stopped') {
     ctx.check(`${label}: each connection start's run ended with 255 (the bridge too), and nothing answered (${id})`, runs.every((one) => one?.exitCode === 255) && bridge?.exitCode === 255 && wanted === 4 && log.connections === 0, JSON.stringify({ codes: runs.map((one) => one?.exitCode ?? null), bridge: bridge?.exitCode ?? null, starts: wanted, connections: log.connections }));
   } else if (spec.target === 'refusedLogin') {
-    ctx.check(`${label}: K1 logged an authentication attempt for each connection start and 0 accepted logins: the key check passed and the login was refused (${id})`, wanted === 4 && log.attemptPorts.length === wanted && log.accepted.length === 0, JSON.stringify({ starts: wanted, attemptPorts: log.attemptPorts, accepted: log.accepted }));
+    ctx.check(`${label}: K1 logged an authentication attempt for each connection start and 0 accepted logins: the key check passed and the login was refused (${id})`, wanted === 4 && log.attemptConnections.length === wanted && log.accepted.length === 0, JSON.stringify({ starts: wanted, attemptConnections: log.attemptConnections, attemptPorts: log.attemptPorts, accepted: log.accepted }));
   } else {
     const seen = silent.snapshot();
     // The bridge ended as in (b): by itself, with 255, and its own stderr file was read (review of E3.S8); the file's text goes into the evidence.
