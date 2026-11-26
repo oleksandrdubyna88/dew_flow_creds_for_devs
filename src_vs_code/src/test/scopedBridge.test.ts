@@ -143,7 +143,7 @@ test('S2: the note command, run by a real sh, writes the note only when the forw
   try {
     const refused = runNoteCommand(noteWriteCommand(ID, path.join(dir, 'wide.sock')) as string, home, '{"k":1}\n');
     assert.equal(refused.status, 3, 'a socket others may open: refused');
-    assert.match(refused.stderr, new RegExp(SOCKET_NOT_OWN.replace(/[()]/g, '\\$&')));
+    assert.ok(refused.stderr.includes(SOCKET_NOT_OWN), refused.stderr);
     assert.equal(fs.existsSync(note), false, 'and no note was written');
   } finally {
     wide.close();
