@@ -105,6 +105,11 @@ export class WindowLock {
     return this.claim();
   }
 
+  /** Whether the lock still names THIS acquisition: a holder broken after a frozen host learns it here (the Remote Bridge's owner, S2). */
+  holds(held: Holding): Promise<boolean> {
+    return this.isOurs(held);
+  }
+
   /** Refresh our timestamp — and only ours. A broken holder must not resurrect its own claim. */
   async beat(held: Holding): Promise<void> {
     if (await this.isOurs(held)) {

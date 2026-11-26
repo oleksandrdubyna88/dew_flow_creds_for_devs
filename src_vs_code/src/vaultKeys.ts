@@ -111,6 +111,11 @@ export class VaultKeys {
 
   readonly onDidLock: vscode.Event<void> = this.locked.event;
 
+  private readonly unlocked = new vscode.EventEmitter<void>();
+
+  /** Fired when a locked vault opens again: a Remote Bridge that Lock ended connects again (change 11.1, S2). Not fired for an open that was not locked. */
+  readonly onDidUnlock: vscode.Event<void> = this.unlocked.event;
+
   /** Locked-ness and the idle clock. Kept out of this class so its rules are testable
    *  without a `vscode` runtime — see lockState.ts. */
   private readonly lockState = new LockState();
@@ -201,6 +206,16 @@ export class VaultKeys {
   /** Ends the lock event with the extension: a lock after this still locks, and tells nobody. */
   dispose(): void {
     this.locked.dispose();
+    this.unlocked.dispose();
+  }
+
+  /** The person opened the vault: the lock state learns it, and a vault that WAS locked says so. */
+  private noteUnlocked(): void {
+    const was = this.lockState.isLocked();
+    this.lockState.noteUnlocked(Date.now());
+    if (was) {
+      this.unlocked.fire();
+    }
   }
 
   isLocked(): boolean {
@@ -269,7 +284,7 @@ export class VaultKeys {
     }
     const master = unwrapWithRecoveryCode(wrap, parsed.secret);
     const key = this.remember(account, master, wraps, vaultContent);
-    this.lockState.noteUnlocked(Date.now());
+    this.noteUnlocked();
     return key;
   }
 
@@ -306,7 +321,7 @@ export class VaultKeys {
       // opening the vault must not postpone auto-lock — that is what made the setting
       // inert as soon as auto-sync was switched on.
       if (options.interactive) {
-        this.lockState.noteUnlocked(Date.now());
+        this.noteUnlocked();
       } else {
         this.lockState.noteBackgroundUnlock(Date.now());
       }

@@ -3,6 +3,7 @@ import { BRIDGED_DB_PROFILES } from './bridgedDbProfile';
 import type { BridgeWallSource } from './bridgeScope';
 import { BridgeScopes, SCOPES_DIR, SCOPES_LOCK_DIR, nodeScopeFs } from './bridgeScopeStore';
 import { wallSuppliersOf } from './bridgeWallSource';
+import { BridgeSessions, type BridgeSessionsDeps, windowOwnership } from './bridgeSessions';
 import { LeasedQueue } from './leasedQueue';
 import type { McpVaultSource } from './mcpEntries';
 import type { RefSource } from './secretRef';
@@ -32,4 +33,12 @@ export function bridgeWallOf(vault: McpVaultSource, scopes: BridgeScopes, refSou
     refSource,
     ...wallSuppliersOf(vault, { profiles: BRIDGED_DB_PROFILES, platform: process.platform }),
   };
+}
+
+/** Where the owner locks of this machine's bridges live: one folder per bridge, shared by every window of the profile. */
+export const BRIDGE_OWNERS_DIR = 'bridge-owners';
+
+/** The bridges of this window, each kept by a session and owned by one window (change 11.1, S2). */
+export function bridgeSessionsOf(storageDir: string, unlocked: () => boolean, onState: BridgeSessionsDeps['onState']): BridgeSessions {
+  return new BridgeSessions({ takeOwnership: windowOwnership(nodePath.join(storageDir, BRIDGE_OWNERS_DIR)), unlocked, onState });
 }

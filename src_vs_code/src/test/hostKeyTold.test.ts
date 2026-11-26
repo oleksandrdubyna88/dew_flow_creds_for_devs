@@ -29,8 +29,8 @@ const SENTENCE_C =
   '"box" did not present its saved host key, so CredsForDevs did not connect. Nothing was sent to that host. Do not replace the saved key because of this message. If this server was rebuilt, get its key fingerprint from the server\'s owner. If it was not, do not connect.';
 const SENTENCE_D =
   'The connection to "box" ended with "Host key verification failed", and ssh did not name the saved host key of this entry as the reason. It can be the key of a jump host in your own ssh config, which your own known_hosts file checks, or your ssh config gives this host another name or port than this entry does. Do not replace a saved key because of this message. Check this host\'s key fingerprint with the server\'s owner, and check your own ssh config for a HostName or Port that renames this host and for a jump host.';
-const TOLD_C = { install: SENTENCE_C, bridge: `The bridge to "box" is not open: ${SENTENCE_C}` };
-const TOLD_D = { install: SENTENCE_D, bridge: `The bridge to "box" could not be checked: ${SENTENCE_D}` };
+const TOLD_C = { install: SENTENCE_C, bridge: `The bridge to "box" is not open: ${SENTENCE_C}`, refused: true };
+const TOLD_D = { install: SENTENCE_D, bridge: `The bridge to "box" could not be checked: ${SENTENCE_D}`, refused: false };
 
 /** The lines of a real `ssh` as it prints them: it ends its own lines with CR LF, also on Linux. */
 const printed = (...lines: string[]): string => lines.map((line) => `${line}\r\n`).join('');
@@ -304,6 +304,11 @@ test('X4: the socket check shows the same message when a hop was refused and the
   w.children[0].end(255); // the ssh of the bridge met the same hop; it has no stdio, so it says nothing
   await settled();
   t.mock.timers.tick(1500);
+  await settled();
+  // S2: the session reconnected after 1 s; sentence D does not close it (it says only that the check could not tell). The reconnect's
+  // ssh meets the same refused hop and ends with 255, as a real one would; the world's ssh ends only when the test says.
+  assert.equal(w.children.length, 2, 'X4: the session reconnected once');
+  w.children[1].end(255);
   await settled();
 
   assert.deepEqual(w.errors, [TOLD_D.bridge], 'X4: the socket check did not show ONE error message with the opening "could not be checked" and sentence D');

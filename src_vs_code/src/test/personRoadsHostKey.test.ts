@@ -365,6 +365,14 @@ test('T9b: Open Remote Bridge on a pinned entry whose host presents another key:
   await settled();
   t.mock.timers.tick(1500);
   await settled();
+  // S2: the session reconnected after 1 s (a second bridge ssh); the check that found the host key refused closed the session, which
+  // killed that ssh. The world's ssh ends only when the test says, so the killed ones end here, as a real one would.
+  assert.equal(w.children.length, 2, 'the session reconnected once before the check spoke');
+  assert.ok(w.children[1].killed > 0, 'the check closed the session: the reconnect\'s ssh was killed, nothing retries');
+  for (const child of w.children.filter((c) => c.killed > 0)) {
+    child.end(null);
+  }
+  await settled();
 
   assert.equal(w.runs.length, 2, `the check did not run twice (the sweep, the mode check): ${w.runs.length}`);
   assert.deepEqual(w.errors, [BRIDGE_NOT_OPEN], 'T9b: the refused host key of the bridge was not shown as ONE error message of the socket check');

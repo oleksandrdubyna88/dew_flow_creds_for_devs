@@ -8,6 +8,7 @@ import { folderHooks } from '../mcpFolderHooks';
 import { CredsAgentServer } from '../credsAgentServer';
 import { AliasMap, aliasFor, withoutAlias, describeAliasProblem, withAlias } from '../cliAliases';
 import { SshBridgeManager } from '../sshBridgeManager';
+import type { BridgeSessions } from '../bridgeSessions';
 import { createDiagnosticLog } from '../diagnosticLog';
 import { CredsProduct, CREDS_MCP, CREDS_CLI } from '../credsInstall';
 import { CredTreeDataProvider } from '../treeDataProvider';
@@ -35,7 +36,8 @@ import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
 import type { BridgeScopes } from '../bridgeScopeStore';
 import type { McpEntry } from '../mcpEntries';
-import { openScopedBridge } from '../scopedBridgeOpen';
+import { openScopedBridge, restoreScopedBridges, type ScopedBridgeHost } from '../scopedBridgeOpen';
+import { BridgeOptIns } from '../bridgeOptIns';
 import { writeBridgeNote } from '../bridgeNoteWriter';
 import { buildAgentSnippet, buildKindSnippet } from '../agentShareSnippet';
 import { copySecret, copiedMessage } from '../secretClipboard';
@@ -51,6 +53,8 @@ export interface AgentCommandsHost {
   readonly agentServer: CredsAgentServer;
   readonly aliasMap: () => AliasMap;
   readonly bridges: SshBridgeManager;
+  /** The sessions that keep each bridge (change 11.1, S2): reconnect, Lock, Close, one owning window. */
+  readonly bridgeSessions: BridgeSessions;
   readonly log: ReturnType<typeof createDiagnosticLog>;
   readonly mutated: () => void;
   readonly offerInstall: (product: CredsProduct) => Promise<void>;
@@ -64,6 +68,8 @@ export interface AgentCommandsHost {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
+  /** Calls `listener` at every unlock (D8: the bridges opened and not Closed come back then). Absent where no vault opens. */
+  readonly onDidUnlock?: (listener: () => void) => void;
   /** The scope of each Remote Bridge's server (change 11.1, S1). */
   readonly bridgeScopes: BridgeScopes;
   /** The entries of one account that are opened to agents: what a bridge's scope may hold. */
@@ -71,7 +77,16 @@ export interface AgentCommandsHost {
 }
 
 export function registerAgentCommands(host: AgentCommandsHost): void {
-  const { MACHINES, agentServer, aliasMap, bridgeScopes, bridges, listBridgeable, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys, wslRelay } = host;
+  const { MACHINES, agentServer, aliasMap, bridgeScopes, bridgeSessions, bridges, listBridgeable, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys, wslRelay } = host;
+
+  // The scoped Remote Bridge (change 11.1, S1 and S2): one host for the person's open and the restore; the bridges opened and not Closed.
+  const scopedHost: ScopedBridgeHost = { agentServer, bridges, sessions: bridgeSessions, scopes: bridgeScopes, listBridgeable, storage, storageDir, refresh: () => provider.refresh(), resolve: resolveExecAuth, writeNote: writeBridgeNote, log: (message) => log.info('bridge', message) };
+  const optIns = new BridgeOptIns(storageDir, (message) => log.warn('bridge', message));
+  /** The person's Close, or a check that found the bridge not up: no reconnect, and no restore after a reboot. */
+  const closeScoped = (accountId: string, serverId: string): Promise<boolean> => {
+    optIns.remove({ accountId, serverId });
+    return bridgeSessions.close(entityKey(accountId, serverId));
+  };
 
   /**
    * Point a WSL shell at the relay, once, and turn the relay on.
@@ -193,6 +208,8 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     accountId: string,
     entity: EntityMetadata,
     remote: { path: string },
+    /** Closes the bridge: a check that finds it not up ends it, so it does not reconnect into the same refusal (S2). */
+    closeIt: () => Promise<unknown>,
   ): Promise<void> {
     try {
       if (storageDir === undefined) {
@@ -225,6 +242,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           // The ssh of the bridge has no stdio, so this check is the one place that can say what the host key check of the bridge came to (G1, P3).
           log.info('bridge', told.bridge);
           void vscode.window.showErrorMessage(told.bridge);
+          if (told.refused) {
+            await closeIt(); // this host refused the saved key: reconnecting would meet the same refusal (S2)
+          }
           return;
         }
         const probe = interpretSocketProbe(outcome.stdout ?? '');
@@ -235,6 +255,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
           const text = describeMissingSocket(remote, entity.name ?? 'this entry');
           log.info('bridge', text);
           void vscode.window.showErrorMessage(text);
+          await closeIt();
           return;
         }
         if (probe.kind === 'unreadable') {
@@ -371,14 +392,14 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
    *
    * <p>No confirmation: the title says what it does, and a bridge costs one click to reopen.</p>
    */
-  register('credSshManager.closeRemoteBridge', (...args: unknown[]) => {
+  register('credSshManager.closeRemoteBridge', async (...args: unknown[]) => {
     const element = args[0] as { accountId?: string; node?: { id: string; name: string } };
     const accountId = element?.accountId;
     const node = element?.node;
     if (accountId === undefined || node === undefined) {
       return;
     }
-    const closed = bridges.stop(entityKey(accountId, node.id));
+    const closed = await closeScoped(accountId, node.id);
     provider.refresh();
     void vscode.window.showInformationMessage(
       closed
@@ -398,12 +419,12 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     }
     const key = entityKey(accountId, node.id);
 
-    if (bridges.isOpen(key)) {
+    if (bridgeSessions.has(key)) {
       const answer = await vscode.window.showQuickPick(['Keep it open', 'Close the bridge'], {
-        title: `"${node.name}" is bridged at ${bridges.remotePathFor(key)}`,
+        title: `"${node.name}" is bridged at ${bridgeSessions.remotePathFor(key) ?? 'a path it is reconnecting to'}`,
       });
       if (answer === 'Close the bridge') {
-        bridges.stop(key);
+        await closeScoped(accountId, node.id);
         provider.refresh();
         void vscode.window.showInformationMessage(`The bridge to "${node.name}" is closed.`);
       }
@@ -421,10 +442,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     // The scoped bridge (change 11.1, S1): a listener of this bridge's own behind E1's wall, the scope the person picks, and a note on
     // the server so `creds` and `creds-mcp` find it with nothing pasted. The old road forwarded to the main broker port with a pasted
     // token, which handed the server the whole broker (cause D5); it is gone.
-    const opened = await openScopedBridge({ agentServer, bridges, scopes: bridgeScopes, listBridgeable, storage, storageDir, refresh: () => provider.refresh(), resolve: resolveExecAuth, writeNote: writeBridgeNote }, accountId, node, details);
+    const opened = await openScopedBridge(scopedHost, accountId, node, details);
     if (opened !== undefined) {
+      optIns.add({ accountId, serverId: node.id });
       // The socket's permissions are the boundary on that host and sshd sets them, not us: look instead of assuming.
-      void verifyBridgeSocket(accountId, details, { path: opened.remotePath });
+      void verifyBridgeSocket(accountId, details, { path: opened.remotePath }, () => closeScoped(accountId, node.id));
     }
   });
 
@@ -708,6 +730,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   registerWslMcpCheck(register, { storageDir, state }, (message) => log.warn('wsl-mcp', message));
 
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
+
+  // D8: the bridges opened and not Closed come back, now and at every unlock.
+  void restoreScopedBridges(scopedHost, optIns);
+  host.onDidUnlock?.(() => void restoreScopedBridges(scopedHost, optIns));
 }
 
 /** What *Ask for Every Use Again* tells the person: which of the two things is true of this key. */

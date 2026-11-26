@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { BridgeSessions } from '../bridgeSessions';
 import { formatToken } from '../grantToken';
 import { materializedKeysDir } from '../materializedKeys';
 import { BridgeProcess, BridgeSpawner, SshBridgeManager } from '../sshBridgeManager';
@@ -306,6 +307,8 @@ export function world(parts: Parts = {}): World {
     listBridgeable: (): Promise<unknown[]> => Promise.resolve([{ id: 'db-1', name: 'db', kind: 'db', folder: '' }]),
     aliasMap: () => ({}),
     bridges: w.bridges,
+    // S2: a session keeps each bridge; this window always owns it here and the vault is unlocked.
+    bridgeSessions: new BridgeSessions({ takeOwnership: () => Promise.resolve({ owns: () => true, release: () => Promise.resolve() }), unlocked: () => true, onState: () => undefined }),
     log: { info: say, warn: say },
     mutated: (): void => undefined,
     offerInstall: (): Promise<void> => Promise.resolve(),

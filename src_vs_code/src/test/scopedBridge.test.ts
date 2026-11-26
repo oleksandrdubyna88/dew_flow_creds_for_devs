@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as net from 'node:net';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { writeBridgeNote, type NoteSpawn } from '../bridgeNoteWriter';
-import { buildNoteArgv, noteWriteCommand } from '../sshBridge';
+import { buildNoteArgv, noteWriteCommand, SOCKET_NOT_OWN } from '../sshBridge';
 import { NO_CONNECTION_SHARING } from '../sshExecCommand';
 import { click, settled, world, writtenKey } from './personRoadsWorld';
 
@@ -15,15 +20,21 @@ import { click, settled, world, writtenKey } from './personRoadsWorld';
 const ID = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
 const NOTE = { socket: '/tmp/creds-dev-x.sock', port: 51_001, brokerPort: 4242, key: 'the-listener-key-43-characters-long-abcdefg', serverName: 'box', openedAt: '2026-11-25T00:00:00.000Z' };
 
-test('S1: the note command writes the note from stdin, owner-only, by a rename; only a bridge id enters the command line', () => {
-  const command = noteWriteCommand(ID);
+const scope = cleanupScope();
+after(() => scope.close());
+
+test('S1: the note command writes the note from stdin, owner-only, by a rename; only a bridge id and a checked socket path enter the command line', () => {
+  const command = noteWriteCommand(ID, NOTE.socket);
   assert.ok(command !== undefined);
   assert.match(command, /^umask 077 && /, 'every file and folder it makes is owner-only');
   assert.match(command, /chmod 700 "\$HOME\/\.creds-for-devs" "\$d"/);
   assert.match(command, /cat > "\$d\/\.0f1e2d3c-[^"]*\.tmp" && mv -f "\$d\/\.0f1e2d3c-[^"]*\.tmp" "\$d\/0f1e2d3c-[^"]*\.json"$/, 'written to a hidden file, then renamed into place');
   assert.match(command, /find "\$d" -maxdepth 1 -type f -name '\*\.json' ! -name '0f1e2d3c-[^']*\.json' -delete/, 'the other notes go: one bridge per server');
   for (const bad of ['', 'x; rm -rf ~', "a'b", '../x', 'ABCDEF01-2345-6789-abcd-ef0123456789 ']) {
-    assert.equal(noteWriteCommand(bad), undefined, `a value that is not a bridge id never reaches a shell: ${JSON.stringify(bad)}`);
+    assert.equal(noteWriteCommand(bad, NOTE.socket), undefined, `a value that is not a bridge id never reaches a shell: ${JSON.stringify(bad)}`);
+  }
+  for (const bad of ['', 'relative.sock', "/tmp/a'b.sock", '/tmp/a b.sock', '/tmp/$(id).sock', '/tmp/a;b']) {
+    assert.equal(noteWriteCommand(ID, bad), undefined, `a socket path that is not plain never reaches a shell: ${JSON.stringify(bad)}`);
   }
 });
 
@@ -33,7 +44,7 @@ test('S1: the note\'s one-shot ssh shares no connection, takes the bridge\'s hos
   const joined = argv.join(' ');
   assert.ok(joined.includes(NO_CONNECTION_SHARING.join(' ')), 'no connection sharing');
   assert.ok(!argv.includes('-R') && !argv.includes('-N'), 'no forward and a remote command');
-  assert.deepEqual(argv.slice(-3), ['--', 'dev@box.example', noteWriteCommand(ID)], 'the target after --, then the command');
+  assert.deepEqual(argv.slice(-3), ['--', 'dev@box.example', noteWriteCommand(ID, '/tmp/creds-dev-x.sock')], 'the target after --, then the command');
   assert.equal(buildNoteArgv({ id: 'e1', name: 'box', host: '-oProxyCommand=x', isSshEnabled: true } as never, { port: 1, remote: { path: '/tmp/s' } }, () => false, ID), undefined, 'a host the bridge would refuse');
 });
 
@@ -106,4 +117,48 @@ test('S1: Open Remote Bridge forwards to the bridge\'s OWN listener (not the mai
   w.children[0].end(0);
   await settled();
   assert.equal(w.listeners[0].closed, true, 'the bridge ended: its listener is closed');
+});
+
+/** Runs the note command with a real `sh`, as sshd would: HOME is `home`, the note on stdin. */
+function runNoteCommand(command: string, home: string, stdin: string): { status: number | null; stderr: string } {
+  const result = spawnSync('/bin/sh', ['-c', command], { input: stdin, env: { ...process.env, HOME: home }, encoding: 'utf8' });
+  return { status: result.status, stderr: result.stderr };
+}
+
+/** A unix socket that listens at `file`, with `mode`. Closed by the caller. */
+async function socketAt(file: string, mode: number): Promise<net.Server> {
+  const server = net.createServer();
+  await new Promise<void>((resolve) => server.listen(file, resolve));
+  fs.chmodSync(file, mode);
+  return server;
+}
+
+test('S2: the note command, run by a real sh, writes the note only when the forwarded socket is this login\'s own with mode 600', { skip: process.platform === 'win32' ? 'a POSIX shell and a unix socket' : false }, async () => {
+  const dir = ownedDir(scope, 'nwc', { parent: shortSocketRoot() });
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home);
+  const note = path.join(home, '.creds-for-devs', 'bridge', `${ID}.json`);
+
+  const wide = await socketAt(path.join(dir, 'wide.sock'), 0o666);
+  try {
+    const refused = runNoteCommand(noteWriteCommand(ID, path.join(dir, 'wide.sock')) as string, home, '{"k":1}\n');
+    assert.equal(refused.status, 3, 'a socket others may open: refused');
+    assert.match(refused.stderr, new RegExp(SOCKET_NOT_OWN.replace(/[()]/g, '\\$&')));
+    assert.equal(fs.existsSync(note), false, 'and no note was written');
+  } finally {
+    wide.close();
+  }
+  const missing = runNoteCommand(noteWriteCommand(ID, path.join(dir, 'gone.sock')) as string, home, '{"k":1}\n');
+  assert.equal(missing.status, 3, 'no socket at all: refused');
+
+  const own = await socketAt(path.join(dir, 'own.sock'), 0o600);
+  try {
+    const written = runNoteCommand(noteWriteCommand(ID, path.join(dir, 'own.sock')) as string, home, '{"k":1}\n');
+    assert.equal(written.status, 0, written.stderr);
+    assert.equal(fs.readFileSync(note, 'utf8'), '{"k":1}\n');
+    assert.equal(fs.statSync(note).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(path.dirname(note)).mode & 0o777, 0o700);
+  } finally {
+    own.close();
+  }
 });

@@ -106,7 +106,7 @@ import { onPath } from './installFlow';
 import { setEnvCollection } from './envCollectionRef';
 import { DoorsFor } from './entityEditCommands';
 import { envCollection } from './envCollectionRef';
-import { bridgeScopesOf, bridgeWallOf } from './bridgeWiring';
+import { bridgeScopesOf, bridgeSessionsOf, bridgeWallOf } from './bridgeWiring';
 import { vaultRefSource } from './vaultRefSource';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
@@ -194,12 +194,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       provider.refresh();
     },
   );
-  // Answered per row, never cached: the map is the truth and it changes underneath the tree.
-  provider.isBridged = (accountId, nodeId) => bridges.isOpen(entityKey(accountId, nodeId));
+  // S2: a session keeps each bridge (reconnect, Lock, Close); `vaultKeys` is read only when a session asks, long after it exists.
+  const bridgeSessions = bridgeSessionsOf(storageDir, () => !vaultKeys.isLocked(), (key, state) => {
+    log.info('bridge', `${key} ${state}`);
+    provider.refresh();
+  });
+  // Answered per row, never cached: a bridge that is reconnecting or waiting for the unlock is still this window's.
+  provider.isBridged = (accountId, nodeId) => bridgeSessions.has(entityKey(accountId, nodeId));
   // T24b: the doors the MCP switches do not show, read here where the sources live.
   const doorSources: DoorSources = {
     aliasesFor: cliAliasesFor,
-    bridgeOpen: (accountId, id) => bridges.isOpen(entityKey(accountId, id)),
+    bridgeOpen: (accountId, id) => bridgeSessions.has(entityKey(accountId, id)),
     wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
     isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
   };
@@ -208,7 +213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
   provider.hasCliAlias = (accountId, nodeId) =>
     aliasFor(aliasMap(), accountId, nodeId) !== undefined;
-  context.subscriptions.push({ dispose: () => bridges.dispose() });
+  context.subscriptions.push({ dispose: () => bridges.dispose() }, { dispose: () => bridgeSessions.dispose() });
 
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
@@ -266,6 +271,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Unlock coordinator (PIN / security keys / cached master keys).
   const vaultKeys = new VaultKeys(context.secrets);
   context.subscriptions.push(vaultKeys); // disposes the lock event with the extension
+  context.subscriptions.push(vaultKeys.onDidLock(() => bridgeSessions.lockAll()), vaultKeys.onDidUnlock(() => bridgeSessions.unlockAll()));
 
   // Transport per account (NAS folder or vault server) + sharing on top.
   const transports = new TransportFactory(storage, googleAuth);
@@ -885,7 +891,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
-  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
+  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, bridgeSessions, log, mutated, offerInstall, onDidUnlock: (listener) => void context.subscriptions.push(vaultKeys.onDidUnlock(listener)), provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------
