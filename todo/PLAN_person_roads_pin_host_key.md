@@ -1890,7 +1890,7 @@ How to read the tables. *starts* are the starts of the client that the shim reco
 the starts whose argv names a destination (the sweep, the mode check, the probe, the install run, the bridge); the counterpart cell is `connections / authentication attempts / accepted logins` of its own log (decision 15: the four
 numbers are four). The numbers are the leg's record at the point the leg writes it: for M5 they are the numbers `countsAtChecks` holds (before the witness or the control); in the other legs a witness
 or a control against K1 that was accepted adds its login (`m11-c-twin-k1` `6/6/6` and `m11-eq-newer-k1` `6/6/6`: the check named in the row's text judges that login), and one against K2 is judged by its
-own check and is not in the cell. A witness against K1 that was refused adds a connection and no login (M7 (c) `m7-c-collision-k1`: `6/4/5`); `m11-eq-older-k1` has no witness against K1 (`5/5/5`; its control is against K2). Where the row's record has no counterpart (M5 (d), whose destination is a silent listener of the leg; M9's `m9-password-connect`, which starts no client) the cell is `null`. A leg whose asker is `warm` was warmed by one pinned call to K1 whose own starts
+own check and is not in the cell. A witness against K1 that was refused adds a connection and no login (M7 (c) `m7-c-collision-k1`: `6/4/5` as the record says; its authentication attempts are 5 by the counterpart's log, see the note under M7); `m11-eq-older-k1` has no witness against K1 (`5/5/5`; its control is against K2). Where the row's record has no counterpart (M5 (d), whose destination is a silent listener of the leg; M9's `m9-password-connect`, which starts no client) the cell is `null`. A leg whose asker is `warm` was warmed by one pinned call to K1 whose own starts
 are not counted. **Every leg of every table below ended with all its checks `ok` and no `FAIL`; each leg's records and checks are in the log of its run (kept in the private folder `~/.cache/creds-itest-e3-runs/e3s10-bd03f11a/`; they hold
 the person's user name and paths, so they are not committed). The numbers of every leg's table were re-read from the `evidence` records of the rig's run and of the runs of M10, M11 and M13, by a script that built the rows from the records and compared them with the text written from the runs on `bd03f11a` (93 records of the rig, 1 of M10, 29 of M11): of the 118 rows below, 112 were equal as built from `starts` and `counterparts` and one differed (`m7-c-collision-k1`: K1's log counted 4 authentication attempts and 5 accepted logins where the earlier run counted 5 and 5; the leg's checks all passed, and the cause of the lower count is not investigated; the row now says `6/4/5`); the two M5 legs whose counts are taken at the checks (`m5-e`, `m5-f`: `countsAtChecks`) and the two M11 (a) legs (a record of their own shape: `starts`, `connectionStarts`, `connections`, `authAttempts`) were read from those fields and were equal; `m12-rule` is the rule's own row and has no counterpart record (its cells are `null`); a value that the logs do not hold is `null`.**
 
@@ -1980,7 +1980,7 @@ the person's user name and paths, so they are not committed). The numbers of eve
 | m7-c-m1 | cold | 6 | 1 | 5 | k1 5/5/5 | 0,0,0,0 |
 | m7-c-m2-mismatch | cold | 5 | 1 | 4 | k2 4/0/0 | 255,255,255 |
 | m7-c-m2-switch | cold | 3 | 1 | 2 | k1 1/1/1; k2 1/0/0 | 0,255 |
-| m7-c-collision-k1 | cold | 6 | 1 | 5 | k1 6/4/5 | 0,0,0,0 |
+| m7-c-collision-k1 | cold | 6 | 1 | 5 | k1 6/4†/5 | 0,0,0,0 |
 | m7-c-collision-k2 | cold | 5 | 1 | 4 | k2 4/0/0 | 255,255,255 |
 | m7-d-m1 | cold | 6 | 1 | 5 | k1 5/5/5 | 0,0,0,0 |
 | m7-d-m2-mismatch | cold | 5 | 1 | 4 | k2 4/0/0 | 255,255,255 |
@@ -1988,6 +1988,8 @@ the person's user name and paths, so they are not committed). The numbers of eve
 | m7-e-m1 | cold | 6 | 1 | 5 | k1 5/5/5 | 0,0,0,0 |
 | m7-e-m2-mismatch | cold | 5 | 1 | 4 | k2 4/0/0 | 255,255,255 |
 | m7-e-m2-switch | cold | 3 | 1 | 2 | k1 1/1/1; k2 1/0/0 | 0,255 |
+
+† The record says 4 authentication attempts and 5 accepted logins; the counterpart's log of that leg holds 5 `Postponed publickey` lines and 5 `Accepted publickey` lines, so there were 5 attempts. The counter (`authAttempts`, from `attemptPorts`) counts the DISTINCT client ports of the attempts, and in this run the kernel gave the client the port 52142 twice (the second and the fifth login), so two attempts were counted as one (read by the lead in the record's `lines`, 2026-11-26; on `bd03f11a` the same leg read `6/5/5`). No check of the set depends on this count being exact above 0: a refused witness or control is read as "no attempt", which a port reuse cannot make. The counter's fix (count the attempt lines per connection, not distinct ports) is an open follow-up in `research/module_tests.md`.
 
 **M8** (rig; 15 checks labelled M8). The control first: E1's words accepted by K2, and the command's record holds a start (M8.c); the roads' four runs refused with 0 starts of the command (M8.3) and `KnownHostsCommand=none` once in each argv (M8.2).
 
