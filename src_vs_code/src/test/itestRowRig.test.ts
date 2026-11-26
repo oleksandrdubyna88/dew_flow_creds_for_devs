@@ -170,6 +170,12 @@ test('RR2c: a control that gets a port used before adds one attempt, so a before
   assert.equal(counts(silentControl, USER).authAttempts, counts(before, USER).authAttempts, 'a control on a reused port that reaches no authentication line adds no attempt');
 });
 
+test('RR2d: a log cut after a mark that opens with an attempt keeps it apart from the next connection of the same port', () => {
+  const counts = exported<LogCounts>('logCounts');
+  const cut = text([...refusedPassword(52160), 'Connection from 127.0.0.1 port 52160 on 127.0.0.1 port 40023 rdomain ""', ...refusedPassword(52160)]);
+  assert.equal(counts(cut, USER).authAttempts, 2, 'the attempt before the first Connection from line and the attempt of the next connection are two');
+});
+
 type SentencesOf = (parts: Record<string, unknown>, name: string) => string[];
 type Says = (shown: string, sentences: readonly string[]) => boolean;
 

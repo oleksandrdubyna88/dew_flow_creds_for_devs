@@ -65,7 +65,11 @@ function attemptConnectionsOf(lines) {
     if (AUTH_ATTEMPT.test(line)) {
       const port = portOf(line);
       if (port !== undefined) {
-        keys.add(`${port}#${instances.get(port) ?? 0}`);
+        // A cut log can open with an attempt whose `Connection from` line came before the mark: that is instance 0, kept, so the port's next `Connection from` starts 1.
+        if (!instances.has(port)) {
+          instances.set(port, 0);
+        }
+        keys.add(`${port}#${instances.get(port)}`);
       }
     }
   }
