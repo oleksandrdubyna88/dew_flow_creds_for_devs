@@ -22,6 +22,26 @@ export function sshKnowsKnownHostsCommand(stderr: string | undefined): boolean {
   return version === undefined || version[0] * 1000 + version[1] >= 8 * 1000 + 5;
 }
 
+/**
+ * The first OpenSSH that reads a value of a config line, a bare path included, with the new tokeniser (8.7): the ONE boundary of the tests between the two parsers of the client (test 34; G1,
+ * E3.S9). `scripts/lib/offRigRecord.cjs` holds the same number as `PARSER_SINCE`, and `itestRowsOff.test.ts` (TX11) holds the two equal.
+ */
+export const TOKENISER_SINCE: readonly [number, number] = [8, 7];
+
+/**
+ * The parser of a local `ssh` that answered `ssh -V` with `stderr`: `older` below 8.7, `newer` from 8.7 on. Unlike {@link sshKnowsKnownHostsCommand}, a version that cannot be read is `undefined`,
+ * never a parser: no expectation is chosen for a client that did not say what it is (decision 19).
+ */
+export function sshParserOf(stderr: string | undefined): 'older' | 'newer' | undefined {
+  const token = versionTokenOf(stderr ?? '');
+  return token === undefined ? undefined : parserOfVersion(token.version);
+}
+
+/** The parser of a client by its version `[major, minor]`: `older` below {@link TOKENISER_SINCE}, `newer` from it on. */
+function parserOfVersion(version: readonly [number, number]): 'older' | 'newer' {
+  return version[0] * 1000 + version[1] >= TOKENISER_SINCE[0] * 1000 + TOKENISER_SINCE[1] ? 'newer' : 'older';
+}
+
 /** The pairs that E2 adds to a pinned call (the plan's §3.10 and §3.12, part 1), in the order the words say them. */
 export const PIN_SOURCE_OPTIONS: readonly string[] = ['VerifyHostKeyDNS', 'KnownHostsCommand', 'LogLevel'];
 

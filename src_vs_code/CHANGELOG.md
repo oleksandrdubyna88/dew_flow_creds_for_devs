@@ -6,6 +6,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a server that prints "Host key verification failed" and still answers no longer stops Install creds on host or the bridge's socket check
+
+Since 1.23.0, *Install creds on host* and the socket check of *Open Remote Bridge…* tell you when their call for an entry with a
+saved host key ends with `Host key verification failed`. That rule read the text of the run alone. So when the server itself
+printed that line (a profile of the login, or the command) and the run still ended with exit code 0, *Install creds on host*
+stopped before its question with the second message of 1.23.0 (`The connection to "<name>" ended with "Host key verification
+failed", and ssh did not name the saved host key of this entry as the reason. …`), and after *Open Remote Bridge…* the socket
+check said `The bridge to "<name>" could not be checked: …` although it could read the socket. 1.23.0 named this under "Not yet
+right".
+
+Now the exit code of the run is asked first. A run that ended with exit code 0 is told nothing about a host key, whatever it
+printed: *Install creds on host* goes on to its question, and the socket check goes on and reads the mode of the socket. `ssh`
+ends with 255 when it refuses a host's key, and with the exit code of the remote command when that command ran (the manual,
+`ssh(1)`), so a run that ended with 0 was not refused. A run that did not end with 0 is told as in 1.23.0: a refused host key,
+and also a remote command that prints that line and ends with another code than 0, which still gets the second message. So is a
+run that has no exit code (a signal ended it, for example the time limit). An entry with no saved host key is told none of this, as before.
+
+Nothing that `ssh` is given changes: the same words, and the same one file with the saved key. So what `ssh` accepts and refuses
+is as in 1.23.0. What changes is one message, which was shown for a run that `ssh` had not refused.
+
+Held by the tests, on the texts that a real `ssh` printed: the same text is answered with exit code 0 and with 255, and the exit
+code alone decides. Measured too (2026-11-25, OpenSSH 10.2p1 on both ends, the test machine's loopback): a server that printed that
+line and then ran the command to its end (exit code 0) made *Install creds on host* go on to its question and the socket check read
+the mode of the socket, with neither message shown; the same line with exit code 255 gave the second message, as before. A run
+that has no exit code (a signal ended it) is held by the tests alone.
+
+### Measured — the saved host key on the real roads, and what that did not show
+
+1.23.0 went out before most of its words had been run against a real server, and said so ("Not measured before this release"). They
+have been run since. In the runs of 2026-11-26, the extension's own commands (*Install creds on host*, *Open
+Remote Bridge…* with its socket check, and the agent's `ssh:exec`) ran with the real `ssh` against a real OpenSSH server (10.2p1)
+on the test machine's loopback, and every sentence of the 1.23.0 entry that claims a behaviour has a test or one of those runs
+behind it, or is said below as not measured. What the runs showed, with the client's version where it matters:
+
+- A saved key that fits: the install runs to its end, the bridge opens and the socket check reads the socket, with five logins
+  and one file of its own for each call, deleted when the call has ended. The install ran through a stand-in for the downloaded
+  installer: nothing was downloaded, and the places the real installer writes were the same before and after.
+- Another key at the same address is refused before any login, with no authentication attempt at the server, whichever other source
+  would have trusted it: another known-hosts file, a `KnownHostsCommand`, a secure `SSHFP` record in DNS (OpenSSH 9.2p1 for that
+  one) or a connection that is already up.
+- Refusing a saved key that cannot be used, or whose file cannot be written, starts no connection: a window that has not asked the
+  `ssh` program for its version yet runs one local `ssh -V` first and nothing else; a window that has asked runs nothing.
+- A storage folder whose path holds a space, one apostrophe, a pair of apostrophes, a space and an apostrophe, or a backslash as
+  the last character of its own name works; the kinds that are refused are refused before any start of the `ssh` program, on both
+  roads.
+- An `ssh` older than 8.5, tried on OpenSSH 8.4p1 (`Debian-5+deb11u3`): the words carry no `KnownHostsCommand`, the saved key still
+  alone is trusted, and a path in double quotes is read as the one file. That `ssh` keeps the apostrophes of a path that is not in
+  double quotes, so for a pair of apostrophes the saved key's file alone supplied trust there, and it did not read a second file
+  that held another key. It splits a path that holds an equals sign into two names, and the double quotes that the extension writes
+  repair that. OpenSSH 10.2p1 reads such a path whole either way (1.23.0 had only asked both with `ssh -G`; these were logins).
+- *Install creds on host* and the bridge stop with the message about the version when the `ssh` program prints something that is
+  no version, or never answers: after about 20 ms in the first case and after 10 s in the second; nothing is shown while it waits.
+- Windows: `ssh.exe` 9.5p2 reads the quoted paths whole (`ssh -G`, run from WSL).
+
+What these runs did not show, in the same words as the results. (This replaces the sentence of 1.23.0, "Not measured before this
+release: an `ssh` older than 8.5, the install to its end on a real host, and a login on Windows". The first is measured on 8.4p1,
+the second ran to its end on the test machine's loopback through a stand-in for the installer, not on a remote host, and the third
+is not.)
+
+- A key in the user-file slot that the test's own `ssh` config names does not satisfy a pinned call. Nothing was measured about
+  OpenSSH's built-in default file (`~/.ssh/known_hosts`), because OpenSSH takes `~` from the system's user database, so that file
+  is in the real home of the account that ran the tests. The runs of the extension's commands and of the older `ssh` ran with that folder hidden behind an empty one and left it as it was (the folder's entries were unchanged); what the test server wrote there went into the empty folder. The run of 2026-11-25 did not hide it, and the test server wrote in the real `~/.ssh/agent`, which is why the folder is hidden now. The run of the older `ssh` on the unit test, the container run and the Windows `ssh.exe -G` run were not hidden: they start no test server on this machine's home, and the only reader of the real `~/.ssh/known_hosts` there was the test's own before-and-after check, comparing its bytes. That was measured for the unit test's run; the container and Windows runs were not traced.
+- A pair of apostrophes in a path that is not in double quotes is read as another file by OpenSSH 10.2p1 (measured; from 8.7 on by
+  the release notes, read): that is the case that the double quotes exist for. OpenSSH 8.4p1 has no such case. No run used OpenSSH 8.5 or 8.6.
+- The agent's `ssh:exec` was run through the action's own call, off a bridge. The broker's HTTP layer and its consent were not
+  run. *Run with Secrets* over SSH is held by the tests, not by a run. The agent's refusal of an unreadable version, and its run
+  over SSH, are held by the tests.
+- No login was made on Windows, and native Windows Node's quoting of an argument was not run (the Windows `ssh.exe` was started
+  from WSL). The install was not run on a remote host with the real installer.
+- Not in these runs: a hop under `LogLevel QUIET` that your own config refuses, and a config that gives the host another name or
+  port (both measured by hand before 1.23.0). Read, not run: a banner that `LogLevel=ERROR` may hide, and the agent's reading of
+  an unusable saved key as no saved key (the last paragraph of the 1.23.0 entry).
+
 ## [1.23.0] — 2026-11-23 — Security — a call without a terminal trusts only a saved host key; the search stays in reach and is green
 
 ### Added — the search stays in reach and its filter stays in view

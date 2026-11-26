@@ -43,6 +43,7 @@
 // extension registers them, with the real `ssh` against one `sshd -D -e` that serves every connection. Pinned to that server's key, every
 // connection carries the pin words and logs in; when another key answers at the same address, every connection is refused, the server logs no login,
 // and the person is told so.
+// Leg 0 (E3.S2) shows that a master connection outlives the stop of its listener and carries one more command, and the section ends with the record of identities of what ran.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
