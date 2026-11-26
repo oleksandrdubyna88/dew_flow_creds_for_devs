@@ -210,6 +210,9 @@ function openLeg(rig, port, parts = {}) {
     checks: [credentialOf(rig)],
     spawn: product.spawner.bridgeSpawner({ report: (error) => reported.push(String(error)) }),
     mocks: { '../sshExecRunner': runnerOf(recordingRunner(product.runner, outcomes)), ...mocks },
+    // The road that ships: the switch of the new bridge flow (the plan's §4.5, `bridgeFlowSwitch.ts`) is off in every released build, so the
+    // release gate's rows measure the released road. A leg that measures the new flow says `bridgeFlow: true`.
+    bridgeFlow: false,
     ...rest,
   });
   return { w, outcomes, reported, before: new Set(recordedStarts(rig).map((one) => one.file)) };
