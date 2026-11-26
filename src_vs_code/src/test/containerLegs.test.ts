@@ -10,7 +10,7 @@ import { type RecordedRun, factsOf, legRoad } from '../../scripts/lib/containerL
 
 const NAME = 'container-odbc-sqlcmd';
 const SECRET = 'not-a-real-password-7f3a';
-const RUN: RecordedRun = { argv: ['run', '--rm', '--env-file', '/s/db-env/a.env', 'img', '/opt/mssql-tools18/bin/sqlcmd', '-S', '172.17.0.1,1433', '-Q', 'select 1'], query: true, mode: '600', values: [SECRET] };
+const RUN: RecordedRun = { argv: ['run', '--rm', '--env-file', '/s/db-env/a.env', 'img', '/opt/mssql-tools18/bin/sqlcmd', '-S', '192.0.2.10,1433', '-Q', 'select 1'], query: true, mode: '600', values: [SECRET] };
 
 /** The lines `legRoad` prints for these runs. */
 async function roadLines(runs: RecordedRun[], left: number[]): Promise<string[]> {
