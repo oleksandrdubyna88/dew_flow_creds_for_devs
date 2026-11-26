@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -44,7 +45,7 @@ public static class BridgeNotes
     /// <remarks>
     /// <para><b>Owner-only or nothing.</b> The note holds the listener's key, so a folder whose mode is not 0700, or a note whose mode is not
     /// 0600, is not read at all: another login on the server could have written it, or read it. The writer sets both.</para>
-    /// <para><b>A note whose socket is gone is stale</b> (its ssh ended) and is passed over; the newest of the rest wins, by the time the
+    /// <para><b>A note whose socket is gone, or is a file left behind that refuses a connect, is stale</b> (its ssh ended) and is passed over; the newest of the rest wins, by the time the
     /// note itself says it was opened. A note that does not parse, or names a port out of range or an empty key, is passed over too.</para>
     /// </remarks>
     public static BridgeNote? Find(string? directory)
@@ -96,5 +97,26 @@ public static class BridgeNotes
         }
     }
 
-    private static bool SocketIsThere(string socket) => Path.IsPathRooted(socket) && Path.Exists(socket);
+    /// <summary>
+    /// Whether a bridge answers on the socket: a connect succeeds. A path that merely exists is not enough: sshd removes a forward's socket
+    /// file only when the server sets <c>StreamLocalBindUnlink yes</c>, and the default is <c>no</c>, so a dead bridge leaves its file
+    /// behind and only a refused connect tells the two apart.
+    /// </summary>
+    private static bool SocketIsThere(string socket)
+    {
+        if (!Path.IsPathRooted(socket) || !Path.Exists(socket))
+        {
+            return false;
+        }
+        try
+        {
+            using var probe = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            probe.Connect(new UnixDomainSocketEndPoint(socket));
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
 }

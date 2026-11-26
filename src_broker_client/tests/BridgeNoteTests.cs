@@ -41,6 +41,26 @@ public sealed class BridgeNoteTests : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// A socket file with nobody listening: what an ended forward leaves when the server keeps <c>StreamLocalBindUnlink no</c> (the default,
+    /// seen on a real Ubuntu server, 2026-11-26).
+    /// </summary>
+    private string DeadSocket(string name)
+    {
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, name);
+        var bound = path + ".bound";
+        using (var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified))
+        {
+            socket.Bind(new UnixDomainSocketEndPoint(bound));
+            socket.Listen(1);
+            // .NET removes the file it bound when the socket closes; sshd does not. A rename keeps the file where .NET will not look.
+            File.Move(bound, path);
+        }
+        Path.Exists(path).Should().BeTrue("the ended listener's file stays, as sshd leaves it");
+        return path;
+    }
+
     private string NoteFolder(UnixFileMode mode = Folder)
     {
         var folder = Path.Combine(root, "bridge");
@@ -67,11 +87,12 @@ public sealed class BridgeNoteTests : IDisposable
         WriteNote(folder, "old", LiveSocket("old.sock"), 51001, "2026-11-25T10:00:00.000Z");
         WriteNote(folder, "new", LiveSocket("new.sock"), 51002, "2026-11-25T11:00:00.000Z");
         WriteNote(folder, "gone", Path.Combine(root, "gone.sock"), 51003, "2026-11-25T12:00:00.000Z");
+        WriteNote(folder, "dead", DeadSocket("dead.sock"), 51004, "2026-11-25T13:00:00.000Z");
 
         var note = BridgeNotes.Find(folder);
 
         note.Should().NotBeNull();
-        note!.Port.Should().Be(51002, "the newest note with a live socket wins; one whose socket is gone is stale");
+        note!.Port.Should().Be(51002, "the newest note with a live socket wins; one whose socket is gone, or left behind by an ended forward, is stale");
         note.Key.Should().Be("key-new");
     }
 
