@@ -108,6 +108,7 @@ import { DoorsFor } from './entityEditCommands';
 import { envCollection } from './envCollectionRef';
 import { bridgeScopesOf, bridgeSessionsOf, bridgeWallOf, dbContainerAtActivation } from './bridgeWiring';
 import { registerDbContainerCommand } from './commands/dbContainerCommand';
+import { BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED } from './bridgeFlowSwitch';
 import { vaultRefSource } from './vaultRefSource';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
@@ -898,6 +899,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, bridgeSessions, log, mutated, offerInstall, onDidUnlock: (listener) => void context.subscriptions.push(vaultKeys.onDidUnlock(listener)), provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
   registerDbContainerCommand(register, dbContainer, context.extensionPath, (message) => log.info('db-container', message));
+  // §4.5: the database container serves bridged queries only, so its Prepare command shows in the palette only where the new flow is on.
+  void vscode.commands.executeCommand('setContext', BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED);
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

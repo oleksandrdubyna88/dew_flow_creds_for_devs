@@ -1282,6 +1282,10 @@
           "when": "false"
         },
         {
+          "command": "credSshManager.prepareDbContainer",
+          "when": "credSshManager.bridgeFlow"
+        },
+        {
           "command": "credSshManager.checkWslMcpInstall",
           "when": "isWindows"
         },

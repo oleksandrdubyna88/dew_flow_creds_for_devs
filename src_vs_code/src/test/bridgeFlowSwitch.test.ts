@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { BridgeOptIns } from '../bridgeOptIns';
-import { BRIDGE_FLOW_ENABLED } from '../bridgeFlowSwitch';
+import { BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED } from '../bridgeFlowSwitch';
 import { KEY, ROW, click, settled, world, writtenKey } from './personRoadsWorld';
 
 /**
@@ -22,6 +22,10 @@ test('SW1: the shipped default is off, and the manifest declares no activationEv
   assert.equal(BRIDGE_FLOW_ENABLED, false, 'the new flow is off in every build that ships; only the owner\'s pilot build turns it on, at build time');
   const manifest = JSON.parse(fs.readFileSync(path.join(SRC, '..', 'package.json'), 'utf8')) as { activationEvents?: unknown };
   assert.equal(manifest.activationEvents, undefined, 'activationEvents lands with the flip (E4.1), never before');
+  const palette = (manifest as { contributes: { menus: { commandPalette: { command: string; when?: string }[] } } }).contributes.menus.commandPalette;
+  assert.deepEqual(palette.filter((one) => one.command === 'credSshManager.prepareDbContainer'), [{ command: 'credSshManager.prepareDbContainer', when: BRIDGE_FLOW_CONTEXT }], 'Prepare Database Container shows only where the new flow is on');
+  const extension = fs.readFileSync(path.join(SRC, 'extension.ts'), 'utf8');
+  assert.match(extension, /executeCommand\('setContext', BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED\)/, 'the context key is the constant');
 });
 
 test('SW2: switch off, Open Remote Bridge is the released road: a token minted, the forward to the main broker port, no listener of its own, no note', async () => {

@@ -12,3 +12,6 @@
  * nothing about the shipped default; the test of this file does.</p>
  */
 export const BRIDGE_FLOW_ENABLED: boolean = false;
+
+/** The context key that carries the switch to the manifest: *Prepare Database Container* shows in the palette only when it is on. */
+export const BRIDGE_FLOW_CONTEXT = 'credSshManager.bridgeFlow';
