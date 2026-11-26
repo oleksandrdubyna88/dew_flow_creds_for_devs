@@ -206,7 +206,7 @@ test('the owned folder is removed when the run ends', { skip }, (t) => {
   assert.deepEqual(fs.readdirSync(temp), [], 'nothing of the run is left in its temp folder');
 });
 
-test('when $HOME is not the passwd home and no test target is given, it refuses with exit 2 and names both', (t) => {
+test('when $HOME is not the passwd home and no test target is given, it refuses with exit 2 and names both', { skip: process.platform === 'linux' ? false : 'off Linux the script refuses first because there is no bwrap' }, (t) => {
   const home = ownedDir(t, 'hide-home');
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
   delete env.CREDS_HIDE_SSH_TARGET;

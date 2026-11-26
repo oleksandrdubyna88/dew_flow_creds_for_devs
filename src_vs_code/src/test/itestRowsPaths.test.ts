@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { sshParserOf } from './pinnedArgv';
 import { PIN_PATH_KINDS, checkedPin, formatHostKey, hostKeyWords, pinPathRefusal, pinPathSentence } from '../hostKeyPin';
 
 /**
@@ -273,8 +274,12 @@ function resolved(word: string): { code: number | null; user: string | undefined
   return { code: said.status, user: value('userknownhostsfile'), global: value('globalknownhostsfile'), stderr: said.stderr };
 }
 const hasSsh = spawnSync('ssh', ['-V']).error === undefined;
+// PT9's expectations are those of the parser from 8.7 on (decision 19); an older client keeps the apostrophes of a bare word, which M11 (b) measures. A version that cannot be read fails PT9, it never chooses an expectation.
+const PARSER = hasSsh ? sshParserOf(spawnSync('ssh', ['-V'], { encoding: 'utf8' }).stderr) : undefined;
+const pt9Skip = !hasSsh ? 'no ssh on PATH' : PARSER === 'older' ? 'the ssh on PATH is older than 8.7: its bare words are measured by M11 (b), not by PT9' : false;
 
-test('PT9: the real client resolves both lists to the one path for each word of M7; the bare word of (c) resolves the twin; the bare word of (b) ends with invalid quotes', { skip: !hasSsh }, () => {
+test('PT9: the real client resolves both lists to the one path for each word of M7; the bare word of (c) resolves the twin; the bare word of (b) ends with invalid quotes', { skip: pt9Skip }, () => {
+  assert.equal(PARSER, 'newer', 'the version of the ssh on PATH could not be read: PT9 does not choose an expectation by outcome');
   const word = pathLib<(file: string, how: string) => string>('expectedWord');
   const bare = pathLib<(file: string) => string>('resolvedBare');
   const m7 = pathLib<readonly M7Leg[]>('M7_LEGS', 'object');
