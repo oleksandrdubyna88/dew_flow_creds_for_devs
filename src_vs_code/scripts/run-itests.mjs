@@ -82,6 +82,7 @@ const HARNESSES = [
   { name: 'bridged-ps1', script: 'bridged-ps1-itest.cjs', needs: 'the PS1 rigs: a CI runner with BRIDGED_DB_SYSTEM_RIG=1 (a SQL Server container or Express, go-sqlcmd, the ODBC sqlcmd); elsewhere the legs print UNMEASURED', windows: false },
   { name: 'bridged-pk1', script: 'bridged-pk1-itest.cjs', needs: 'the PK1 rigs: a CI runner with BRIDGED_DB_SYSTEM_RIG=1 (Kerberos realm, PostgreSQL server, the clients); elsewhere the legs print UNMEASURED', windows: false },
   { name: 'bridged-ssh', script: 'bridged-ssh-itest.cjs', needs: 'OpenSSH with sshd (POSIX only; CI installs it)', windows: false },
+  { name: 'bridge-note', script: 'bridge-note-itest.cjs', needs: 'OpenSSH with sshd, and the CLI and creds-mcp built (POSIX only; CI installs sshd)', windows: false },
   { name: 'bridged-mysql', script: 'bridged-mysql-itest.cjs', needs: "Oracle's mysql and MariaDB's client (Linux; CI installs them)", windows: false },
   { name: 'bridged-psql', script: 'bridged-psql-itest.cjs', needs: "PostgreSQL's psql (Linux; CI installs postgresql-client)", windows: false },
   { name: 'bridged-db-pe1', script: 'bridged-db-pe1-itest.cjs', needs: 'PostgreSQL server binaries (initdb), mysqld, and (optional) a MariaDB image named by PE1_MARIADB_IMAGE (Linux)', windows: false },

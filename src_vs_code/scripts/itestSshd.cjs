@@ -10,7 +10,12 @@ const harnessScope = require('./lib/harnessScope.cjs');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 
-const SSHD = '/usr/sbin/sshd';
+/**
+ * The sshd every run starts. `CREDS_ITEST_SSHD` names another (absolute: a workstation with no openssh-server keeps an unpacked one), and
+ * `CREDS_ITEST_SSHD_CONFIG` a file of config lines that one needs (its `SshdSessionPath`, `SshdAuthPath`). CI sets neither.
+ */
+const SSHD = process.env.CREDS_ITEST_SSHD ?? '/usr/sbin/sshd';
+const SSHD_LINES = process.env.CREDS_ITEST_SSHD_CONFIG === undefined ? [] : fs.readFileSync(process.env.CREDS_ITEST_SSHD_CONFIG, 'utf8').split('\n').filter((line) => line.trim() !== '');
 
 /** The owned folder every child started here gets as its `TMPDIR`, `TEMP` and `TMP`; the harness sets it once, in `main`. */
 let childTemp;
@@ -111,6 +116,7 @@ async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfi
       'StrictModes no',
       'PasswordAuthentication no',
       'KbdInteractiveAuthentication no',
+      ...SSHD_LINES,
       ...extraConfig,
       '',
     ].join('\n'),

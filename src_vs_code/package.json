@@ -59,6 +59,7 @@
     "itest:agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/agent-broker-itest.cjs",
     "itest:ssh-agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/ssh-agent-itest.cjs",
     "itest:bridged-ssh": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-ssh-itest.cjs",
+    "itest:bridge-note": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridge-note-itest.cjs",
     "itest:bridged-mysql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-itest.cjs",
     "itest:bridged-psql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-psql-itest.cjs",
     "itest:bridged-db-pa1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-db-pa1-itest.cjs",

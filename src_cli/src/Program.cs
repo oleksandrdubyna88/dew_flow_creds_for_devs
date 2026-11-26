@@ -34,6 +34,17 @@ internal static class Program
     private static void Note(string message) =>
         Console.Error.WriteLine($"[creds-for-devs] {message}");
 
+    /// <summary>
+    /// This login's Remote Bridge is the only endpoint, and it did not answer as a CredsForDevs window: its door refused the key the note
+    /// names (the bridge was reopened, so the listener and its key are new) or it is gone. Saying "not enabled" or "no window" here would
+    /// send the person to the wrong switch (change 11.1, S1).
+    /// </summary>
+    private static int BridgeDidNotAnswer(BrokerContract contract)
+    {
+        Note("the Remote Bridge of this server did not accept the call: it was closed or reopened since this login learned of it. Open the Remote Bridge to this server again in VS Code.");
+        return contract.Exit("brokerUnreachable");
+    }
+
     private static async Task<int> Main(string[] args)
     {
         var contract = BrokerContract.Current;
@@ -180,7 +191,8 @@ internal static class Program
         // On a Remote-SSH host there are no endpoint files: they live on the laptop at the other
         // end of the bridge. The forwarded socket IS the endpoint, and there is exactly one, so
         // discovery is skipped rather than made to fail and then be worked around.
-        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+        var bridgedHere = BrokerClient.BridgedEndpoint();
+        var endpoints = bridgedHere is { } bridged
             ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
@@ -202,6 +214,10 @@ internal static class Program
         {
             if (!await client.IsOurBrokerAsync(port))
             {
+                if (bridgedHere is not null)
+                {
+                    return BridgeDidNotAnswer(contract);
+                }
                 continue; // a note left by a window that has since closed
             }
 
@@ -300,7 +316,8 @@ internal static class Program
             return contract.Exit("usage");
         }
 
-        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+        var bridgedHere = BrokerClient.BridgedEndpoint();
+        var endpoints = bridgedHere is { } bridged
             ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
@@ -320,6 +337,10 @@ internal static class Program
         {
             if (!await client.IsOurBrokerAsync(port))
             {
+                if (bridgedHere is not null)
+                {
+                    return BridgeDidNotAnswer(contract);
+                }
                 continue; // a note left by a window that has since closed
             }
 
@@ -352,7 +373,8 @@ internal static class Program
 
     private static async Task<int> ListAsync(BrokerContract contract)
     {
-        var endpoints = BrokerClient.BridgedEndpoint() is { } bridged
+        var bridgedHere = BrokerClient.BridgedEndpoint();
+        var endpoints = bridgedHere is { } bridged
             ? [bridged]
             : Endpoints.Read(Endpoints.DirectoryHere());
 
@@ -380,6 +402,10 @@ internal static class Program
             }
         }
 
+        if (reached == 0 && bridgedHere is not null)
+        {
+            return BridgeDidNotAnswer(contract);
+        }
         if (reached == 0)
         {
             Note("no CredsForDevs window is running here.");

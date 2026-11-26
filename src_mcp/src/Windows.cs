@@ -113,6 +113,16 @@ internal static class Windows
     /// <summary>How many windows announced themselves, live or not — for a diagnostic.</summary>
     internal static int Announced() => Endpoints.Read(Endpoints.DirectoryHere()).Count;
 
+    /// <summary>The words for a host whose one window is its Remote Bridge, when that bridge did not answer (change 11.1, S1).</summary>
+    internal const string BridgeDidNotAnswer =
+        "This server reaches VS Code through a Remote Bridge, and the bridge did not accept the call: it was closed or reopened since this server learned of it. Ask the person to open the Remote Bridge to this server again in VS Code.";
+
+    /// <summary>
+    /// The hint of a "no window answered": on a bridged host, <see cref="BridgeDidNotAnswer"/>, because there "open VS Code" or "the id
+    /// may be stale" sends the agent to the wrong cause; elsewhere, <paramref name="usual"/>.
+    /// </summary>
+    internal static string NoWindowHint(string usual) => BrokerClient.BridgedEndpoint() is null ? usual : BridgeDidNotAnswer;
+
     /// <summary>
     /// Post an action to whichever window serves this entry.
     /// </summary>
