@@ -1,5 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
+using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsBroker.Tests;
@@ -11,8 +13,12 @@ namespace CredsBroker.Tests;
 [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
 public sealed class BridgeNoteTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), $"creds-bridge-note-{Guid.NewGuid():N}");
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
     private readonly List<Socket> sockets = [];
+    private string? _root;
+
+    /// <summary>An owned folder under the short socket root (a unix socket path is short), made on first use, removed with the scope.</summary>
+    private string root => _root ??= _owned.Dir("bnote", OwnedCreds.ShortSocketRoot);
 
     private const UnixFileMode Folder = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private const UnixFileMode Note = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -23,10 +29,7 @@ public sealed class BridgeNoteTests : IDisposable
         {
             socket.Dispose();
         }
-        if (Directory.Exists(root))
-        {
-            Directory.Delete(root, recursive: true);
-        }
+        _owned.Dispose();
     }
 
     /// <summary>A listening unix socket at a fresh path: what sshd leaves for a live forward.</summary>
