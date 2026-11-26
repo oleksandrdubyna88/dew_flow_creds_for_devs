@@ -106,7 +106,8 @@ import { onPath } from './installFlow';
 import { setEnvCollection } from './envCollectionRef';
 import { DoorsFor } from './entityEditCommands';
 import { envCollection } from './envCollectionRef';
-import { bridgeScopesOf, bridgeSessionsOf, bridgeWallOf } from './bridgeWiring';
+import { bridgeScopesOf, bridgeSessionsOf, bridgeWallOf, dbContainerAtActivation } from './bridgeWiring';
+import { registerDbContainerCommand } from './commands/dbContainerCommand';
 import { vaultRefSource } from './vaultRefSource';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
@@ -641,7 +642,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
   useActions.register(credentialExportEnvAction({ ...agentDeps, remoteName: vscode.env.remoteName }));
-  useActions.register(dbQueryAction(agentDeps));
+  // S3: on Windows a bridged database client runs in a Linux container; the env files a killed run left go first.
+  const dbContainer = dbContainerAtActivation(process.platform, process.env, context.extensionPath, storageDir);
+  useActions.register(dbQueryAction({ ...agentDeps, container: dbContainer }));
   useActions.register(vpnAction(agentDeps, 'up'));
   useActions.register(vpnAction(agentDeps, 'down'));
 
@@ -659,7 +662,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store: (ctx, slot, value, was) => storeRotated(storage, ctx, slot, value, was),
     onRotated: () => mutated(),
   };
-  useActions.register(rotateAction(dbQueryAction(agentDeps), 'query', rotateDeps));
+  useActions.register(rotateAction(dbQueryAction({ ...agentDeps, container: dbContainer }), 'query', rotateDeps));
   useActions.register(rotateAction(sshExecAction(sshDeps), 'command', rotateDeps));
   context.subscriptions.push(agentServer);
 
@@ -892,6 +895,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
   registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, bridgeSessions, log, mutated, offerInstall, onDidUnlock: (listener) => void context.subscriptions.push(vaultKeys.onDidUnlock(listener)), provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
+  registerDbContainerCommand(register, dbContainer, context.extensionPath, (message) => log.info('db-container', message));
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

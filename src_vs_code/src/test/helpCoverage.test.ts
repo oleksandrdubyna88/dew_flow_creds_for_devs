@@ -70,6 +70,8 @@ const ALIAS: Record<string, string> = {
  * out loud: "a Refresh button refreshes" does; "we ran out of time" does not.
  */
 const SELF_EVIDENT: Record<string, string> = {
+  'credSshManager.prepareDbContainer':
+    'One-time setup on Windows: it builds the container a bridged database query runs in, and says so when it is done. The README lists it with what it is for.',
   'credSshManager.refresh': 'A Refresh item re-reads the tree. There is nothing about it to learn.',
   'credSshManager.clearSearch':
     'The inverse of the filter, one click away from it, and described in the filter article by being its opposite.',

@@ -177,7 +177,8 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     usesOf('runBounded', 'sshExecRunner'),
     // E1.7: the database client check (boundedRun) and the bridged query (spawned) start a database client from the path the check asked: neither is `ssh`.
-    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'bridgedDbClient.ts#boundedRun', 'bridgedDbQuery.ts#spawned', 'configWrite.ts#boundedGit', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
+    // S3 (change 11.1): the container's runner starts the container tool (wslc) for the probe and the query, and the Prepare command starts it to build the image: neither is `ssh`.
+    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'bridgedDbClient.ts#boundedRun', 'bridgedDbQuery.ts#spawned', 'commands/dbContainerCommand.ts#registerDbContainerCommand', 'configWrite.ts#boundedGit', 'containerDbQuery.ts#runner', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
     HOW_TO_FIX,
   );
   // The two ways to name the program of a spawned ssh. `openSshBinary` is called by `sshSpawnLaunch` only (and `openSshProgram` is a string for a terminal).
@@ -190,8 +191,8 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
     // E1.6: bridgedSshClient.ts names the runner for the client check, whose one argv is `-V` (no connection).
-    // G1, E2.S1: pinClient.ts names it for the same question of a pinned call off a bridge, with the same one argv. E1.7: bridgedDbClient.ts and bridgedDbQuery.ts for the db client check.
-    ['agentUseActions.ts', 'bridgedDbClient.ts', 'bridgedDbQuery.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'pinClient.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    // G1, E2.S1: pinClient.ts names it for the same question of a pinned call off a bridge, with the same one argv. E1.7: bridgedDbClient.ts and bridgedDbQuery.ts for the db client check. S3 (change 11.1): containerDbQuery.ts and commands/dbContainerCommand.ts for the container tool (wslc), never ssh.
+    ['agentUseActions.ts', 'bridgedDbClient.ts', 'bridgedDbQuery.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'commands/dbContainerCommand.ts', 'configWrite.ts', 'containerDbQuery.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'pinClient.ts', 'sshUseActions.ts', 'transportFactory.ts'],
     HOW_TO_FIX,
   );
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.

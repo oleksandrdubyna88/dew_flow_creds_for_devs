@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after } from 'node:test';
 import type { AgentUseDeps, dbQueryAction as DbQueryAction } from '../agentUseActions';
+import type { ContainerDeps } from '../containerDbQuery';
 import { type DbClientCheck, type DbFiles, type DbVendor, bridgedDbClientCheck } from '../bridgedDbClient';
 import type { DbClient, DbProfileRow } from '../bridgedDbProfile';
 import { materializedKeysDir } from '../materializedKeys';
@@ -60,6 +61,8 @@ export interface QueryOptions {
   readonly onQuery?: (options: { readonly signal?: AbortSignal | readonly AbortSignal[]; readonly startGate?: AbortSignal }) => Promise<unknown>;
   /** Which programs are on `PATH` for the action's own `tool_missing` question (default: all). */
   readonly onPath?: (exe: string) => boolean;
+  /** The window's database container (change 11.1, S3): a bridged client runs through it, never on the host. */
+  readonly container?: ContainerDeps;
 }
 
 /** The vendor a passing check reads for each client. */
@@ -181,6 +184,7 @@ export async function queryWorld(dbType: DbType, connection: string, profiles?: 
     trustStore: { get: () => [], update: () => Promise.resolve() },
     applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
     onPath: options.onPath ?? (() => true),
+    ...containerPart(options),
     ...(profiles === undefined ? {} : { profiles }),
     ...checkPart(options, { client: CLIENT_OF[dbType] as DbClient, profiles, storageDir, runs: record.runs, journal: record.journal }),
   };
@@ -219,4 +223,9 @@ function checkPart(options: QueryOptions, world: World): { dbClient?: DbClientCh
     return { dbClient: realCheck(world, options.versionLine ?? RECORDED[world.client].line) };
   }
   return { dbClient: (call) => Promise.resolve(verdictOf(VENDOR_OF[call.client])) };
+}
+
+/** The window's database container, when the test names one (S3). */
+function containerPart(options: QueryOptions): { container?: ContainerDeps } {
+  return options.container === undefined ? {} : { container: options.container };
 }

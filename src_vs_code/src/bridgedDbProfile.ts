@@ -13,6 +13,9 @@ import type { DbVendor } from './bridgedDbClient';
 
 export type DbClient = 'psql' | 'mysql' | 'sqlcmd';
 
+/** Where a bridged client runs: a system, or a Linux container on the laptop (change 11.1, S3: `containerDb.ts`). */
+export type DbPlatform = NodeJS.Platform | 'container';
+
 /** A build whose legs ran: the version and the build tag exactly as the client's own version line gives them (PA1-a), and the record of its runs (`run <number> at <sha>`). */
 export interface DbRecordedBuild {
   readonly version: string;
@@ -33,14 +36,14 @@ export interface DbServedClient {
 
 export interface DbProfileRow {
   readonly client: DbClient;
-  readonly platform: NodeJS.Platform;
+  readonly platform: DbPlatform;
   readonly served: boolean;
   /** What a served row serves: the check admits a client only when its version line names one of these builds. Absent on a row that is not served. */
   readonly clients?: readonly DbServedClient[];
 }
 
 const CLIENTS: readonly DbClient[] = ['psql', 'mysql', 'sqlcmd'];
-const SYSTEMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin'];
+const SYSTEMS: readonly DbPlatform[] = ['linux', 'win32', 'darwin', 'container'];
 
 /**
  * The served rows, each with the builds its legs ran on (E1.7 spec §S7.7): the record names the candidate run whose legs (w) were green on that build, never the run of the commit that turned it.
@@ -61,6 +64,23 @@ const SERVED: readonly DbProfileRow[] = [
   },
 ];
 
+/**
+ * The container on the laptop (change 11.1, S3): NOT served yet. Its build is the same client and driver as the Linux row's 18.7, pinned by
+ * package revision in `containers/db-sqlcmd.Containerfile`, but the image is another artifact than the runner (measured: an image whose
+ * `autoremove` took a library the driver loads printed the right version and could not connect), so the row is turned in the commit that adds
+ * the CI job running the sqlcmd legs INSIDE that image, as every row of E1.7 was (the lock, `bridgedDbLock.ts`). Until then a bridged query on
+ * Windows is refused at the gate (DR1). The tests of the container road use a table with this row turned.
+ */
+export const CONTAINER_SQLCMD_CANDIDATE: DbProfileRow = {
+  client: 'sqlcmd',
+  platform: 'container',
+  served: true,
+  clients: [{
+    vendor: 'odbc-sqlcmd',
+    builds: [{ version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'candidate: image probed on wslc 3.0.5, 2026-11-26; no CI run yet' }],
+  }],
+};
+
 /** Every pair this code knows: the served rows above, and every other client and system refused. */
 export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => SERVED.find((row) => row.client === client && row.platform === platform) ?? { client, platform, served: false }));
 
@@ -70,7 +90,7 @@ export function profileClientOf(dbType: DbType): DbClient | undefined {
 }
 
 /** Whether `rows` serve this type on this platform; a type or a platform with no row is not served, and the sentence is DR1. */
-export function bridgedDbPair(rows: readonly DbProfileRow[], dbType: DbType, platform: NodeJS.Platform): { served: true } | { served: false; sentence: string } {
+export function bridgedDbPair(rows: readonly DbProfileRow[], dbType: DbType, platform: DbPlatform): { served: true } | { served: false; sentence: string } {
   const client = profileClientOf(dbType);
   const row = rows.find((candidate) => candidate.client === client && candidate.platform === platform);
   return row?.served === true ? { served: true } : { served: false, sentence: DR1(clientNameOf(dbType), platform) };

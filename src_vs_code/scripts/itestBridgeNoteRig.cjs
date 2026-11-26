@@ -3,10 +3,10 @@
 // its own socket path, a real `ssh -R` from the product's argv, and a note published by the product's one-shot ssh into the rig's home.
 // The product's `BridgeSession` (out/bridgeSession.js) drives them, so the reconnect, the Lock and the Close are the product's.
 // POSIX only; the caller skips elsewhere.
-const fs = require('fs');
+const fs = require('node:fs');
 const net = require('node:net');
-const os = require('os');
-const path = require('path');
+const os = require('node:os');
+const path = require('node:path');
 const { execFile, spawn } = require('node:child_process');
 const { launch, startSshd, endChild, checkedPinOf } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
@@ -127,7 +127,9 @@ async function makeRig(scope, check) {
   fs.writeFileSync(rig.authorizedKeys, fs.readFileSync(`${rig.userKey}.pub`, 'utf8'));
   fs.mkdirSync(rig.home, { mode: 0o700 });
   fs.mkdirSync(rig.endpoints);
-  const { SSH_AUTH_SOCK: _own, CREDS_BROKER_SOCKET: _socket, CREDS_ENDPOINT_DIR: _dir, ...env } = process.env;
+  // No agent of the person's, no socket variable, no announcement folder of the person's: the rig names each of them itself.
+  const dropped = new Set(['SSH_AUTH_SOCK', 'CREDS_BROKER_SOCKET', 'CREDS_ENDPOINT_DIR']);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !dropped.has(name)));
   rig.env = env;
   // The server's clients: the rig's home, an EMPTY announcement folder, no socket variable. Only the note can lead them to the laptop.
   rig.clientEnv = harnessScope.tempEnv(ownedDir(scope, 'bntmp'), { ...env, HOME: rig.home, CREDS_ENDPOINT_DIR: rig.endpoints, CREDS_RELAYED_FROM_WSL: '1' });

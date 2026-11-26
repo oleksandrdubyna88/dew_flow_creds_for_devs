@@ -1303,7 +1303,7 @@ also on the right-click menu where it applies.
   Revoke Code Access…
 - **CLI, bridge and WSL** — Enable CLI Access… · Install `creds` (terminal CLI)… ·
   Copy install command for another machine... · Install `creds` on the Host… · Open Remote Bridge… · Close
-  Remote Bridge · Set Up the WSL Agent Relay
+  Remote Bridge · Set Up the WSL Agent Relay · Prepare Database Container (Windows: builds the Linux container a bridged database query runs in)
 - **Agents (MCP)** — Install the MCP Server… · Check the WSL MCP install · MCP logs
 - **Recovery** — Set Up Recovery Code… · Unlock Vault (Recovery Code)… · Remove Recovery Code… ·
   Corporate Recovery… · Accept Recovery Share… · Recover a Colleague’s Vault… · Contribute to a

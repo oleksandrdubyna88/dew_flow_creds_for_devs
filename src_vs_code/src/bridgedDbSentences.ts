@@ -1,4 +1,5 @@
 import type { DbType } from './types';
+import type { DbPlatform } from './bridgedDbProfile';
 
 /**
  * The journal sentences of a bridged database `query` (the E1.6 spec §S6.15 Z3, DR1-DR6). Pure, no `vscode`.
@@ -16,15 +17,15 @@ export function clientNameOf(dbType: DbType): string {
   return CLIENT_NAMES[dbType] ?? 'a database client';
 }
 
-const SYSTEM_NAMES: Readonly<Partial<Record<NodeJS.Platform, string>>> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
+const SYSTEM_NAMES: Readonly<Partial<Record<DbPlatform, string>>> = { linux: 'Linux', win32: 'Windows', darwin: 'macOS', container: 'a Linux container on this machine' };
 
 /** The system as a person names it: `Linux`, `Windows`, `macOS`, or the platform's own name. */
-export function systemNameOf(platform: NodeJS.Platform): string {
+export function systemNameOf(platform: DbPlatform): string {
   return SYSTEM_NAMES[platform] ?? platform;
 }
 
 /** DR1: the pair is not served. */
-export function DR1(client: string, platform: NodeJS.Platform): string {
+export function DR1(client: string, platform: DbPlatform): string {
   return `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${systemNameOf(platform)} is not among them.`;
 }
 
@@ -150,7 +151,7 @@ export function DR7(client: string, exit: number | null): string {
 }
 
 /** DR8: the answer was read and names no recorded build of a served row. `token` is the words the pattern matched, `builds` the recorded builds (constants of the table). */
-export function DR8(client: string, token: string, platform: NodeJS.Platform, builds: string): string {
+export function DR8(client: string, token: string, platform: DbPlatform, builds: string): string {
   return `The ${client} on this computer answered ${token}. A Remote Bridge runs a query with ${client} on ${systemNameOf(platform)} only for the builds that were measured: ${builds}.`;
 }
 

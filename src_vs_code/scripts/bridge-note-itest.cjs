@@ -24,8 +24,8 @@
 //
 // RED first (S1): against binaries built before the note was read (`CREDS_ITEST_CLI` / `CREDS_ITEST_MCP` name them), N2, N3 and N5 fail.
 // POSIX only. With `CI=true` a missing sshd or binary FAILS: a skipped live check on the runner proves nothing.
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { SSHD } = require('./itestSshd.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 const { within, answers, run, mcpProcess, makeRig, sessionOf, drop, noteFile } = require('./itestBridgeNoteRig.cjs');
@@ -35,8 +35,10 @@ const CLI = process.env.CREDS_ITEST_CLI ?? path.join(ROOT, 'src_cli', 'src', 'bi
 const MCP = process.env.CREDS_ITEST_MCP ?? path.join(ROOT, 'src_mcp', 'src', 'bin', 'Debug', 'net10.0', 'creds-mcp');
 
 let fails = 0;
+/** One check's line. `extra` says why it failed; no caller hands it a note's text (the note holds the listener's key). */
 const check = (what, ok, extra) => {
-  console.log(`${ok ? '  ok' : 'FAIL'}  ${what}${ok || extra === undefined ? '' : `  (${extra})`}`);
+  const why = ok || extra === undefined ? '' : '  (' + extra + ')';
+  console.log((ok ? '  ok' : 'FAIL') + '  ' + what + why);
   if (!ok) fails += 1;
 };
 
@@ -201,7 +203,7 @@ async function closeWins(rig, agent, session) {
 async function deadForward(rig, ended) {
   const { file } = noteFile(rig);
   const named = file === undefined ? undefined : JSON.parse(fs.readFileSync(file, 'utf8')).socket;
-  check('N7: the note still names the ended forward, and its socket file stays (StreamLocalBindUnlink no)', named === ended.remotePath && fs.existsSync(named), String(named));
+  check('N7: the note still names the ended forward, and its socket file stays (StreamLocalBindUnlink no)', named === ended.remotePath && fs.existsSync(named), named === undefined ? 'no note' : 'the note names another socket');
   const after = await run(CLI, ['ssh', 'one', '--', 'id'], rig.clientEnv);
   check('N7: the client does not reach a bridge through it', after.code !== 0, `code ${after.code}`);
   check('N7: and says no window is there rather than a socket error', !/ECONNREFUSED|SocketException|Connection refused/i.test(after.stderr), after.stderr.trim());

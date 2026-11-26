@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describeError } from './describeError';
 import { DR1, DR7, DR8, vendorWords } from './bridgedDbSentences';
-import { BRIDGED_DB_PROFILES, DbClient, DbProfileRow, DbRecordedBuild } from './bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, DbClient, DbPlatform, DbProfileRow, DbRecordedBuild } from './bridgedDbProfile';
 import { bridgedSshEnv } from './bridgedSshEnv';
 import { CLIENT_CHECK_TIMEOUT_MS } from './bridgedSshClient';
 import { bridgedCallFolder, callKeyName } from './materializedKeys';
@@ -138,7 +138,7 @@ function readVersion(client: DbClient, stdout: string): Reading | undefined {
   return READERS[client].map((reader) => read(reader, stdout)).find((found) => found !== undefined);
 }
 
-const rowFor = (rows: readonly DbProfileRow[], client: DbClient, platform: NodeJS.Platform): DbProfileRow | undefined =>
+const rowFor = (rows: readonly DbProfileRow[], client: DbClient, platform: DbPlatform): DbProfileRow | undefined =>
   rows.find((row) => row.client === client && row.platform === platform && row.served);
 
 /** Numbers, not text: 10.6 is above 9.9. */
@@ -185,7 +185,7 @@ const withDriver = (driver: DbDriverFile | undefined): { driver?: DbDriverFile }
 export function dbClientVerdict(
   rows: readonly DbProfileRow[],
   client: DbClient,
-  platform: NodeJS.Platform,
+  platform: DbPlatform,
   exit: number | null,
   stdout: string,
   driver?: DbDriverFile,
@@ -366,7 +366,7 @@ function listedDriver(text: string, section: string): string | DbDriverFailure {
 /** `libmsodbcsql-18.6.so.1.1` is the driver version `18.6.1.1`. */
 const DRIVER_NAME = /^libmsodbcsql-(\d+(?:\.\d+)*)\.so\.(\d+(?:\.\d+)*)$/;
 
-function driverVersionOf(realPath: string): string | undefined {
+export function driverVersionOf(realPath: string): string | undefined {
   const found = DRIVER_NAME.exec(path.posix.basename(realPath));
   return found === null ? undefined : `${found[1]}.${found[2]}`;
 }

@@ -949,6 +949,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "credSshManager.prepareDbContainer",
+        "title": "Prepare Database Container",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.checkWslMcpInstall",
         "title": "Check the WSL MCP install",
         "category": "CredsForDevs",

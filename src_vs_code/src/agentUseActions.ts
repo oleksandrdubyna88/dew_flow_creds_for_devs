@@ -31,6 +31,7 @@ import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from
 import type { DbProfileRow } from './bridgedDbProfile';
 import { DbClientCheck, bridgedDbClientCheck } from './bridgedDbClient';
 import { runBridgedDbQuery, storedConnectionOf } from './bridgedDbQuery';
+import type { ContainerDeps } from './containerDbQuery';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -551,7 +552,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: str
  */
 // eslint-disable-next-line max-lines-per-function
 export function dbQueryAction(
-  deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck },
+  deps: AgentUseDeps & { onPath: (exe: string) => boolean; profiles?: readonly DbProfileRow[]; dbClient?: DbClientCheck; container?: ContainerDeps },
 ): UseAction {
   // The client check of this window (E1.7 spec §S7.6): one per action, built here with the action's own table, so a window cannot be wired without it and a good verdict is asked once for the window's life.
   const dbClient = deps.dbClient ?? bridgedDbClientCheck({ storageDir: deps.storageDir, note: deps.note, ...(deps.profiles === undefined ? {} : { rows: deps.profiles }) });
