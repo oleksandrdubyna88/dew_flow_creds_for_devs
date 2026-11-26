@@ -2,10 +2,10 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
 import { BRIDGE_USE_REFUSED } from '../bridgeScope';
-import { BRIDGED_DB_PROFILES, CONTAINER_SQLCMD_CANDIDATE } from '../bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, CONTAINER_SQLCMD_ROW } from '../bridgedDbProfile';
 
 /** The production table with the container's candidate row turned (it is turned in the commit that adds its CI job). */
-const WITH_CONTAINER = BRIDGED_DB_PROFILES.map((row) => (row.client === 'sqlcmd' && row.platform === 'container' ? CONTAINER_SQLCMD_CANDIDATE : row));
+const WITH_CONTAINER = BRIDGED_DB_PROFILES.map((row) => (row.client === 'sqlcmd' && row.platform === 'container' ? CONTAINER_SQLCMD_ROW : row));
 import { SQLCMD_IN_IMAGE } from '../containerDb';
 import { CONTAINER_NOT_READY, type ContainerDeps } from '../containerDbQuery';
 import type { DbType } from '../types';
@@ -173,14 +173,18 @@ test('S3: the env file is removed when the run throws too', async () => {
   });
 });
 
-test('S3: with the PRODUCTION table the container row is not served yet: a bridged sqlcmd query is refused at the gate, before the stored connection is read and before any run', async () => {
+test('S3: the PRODUCTION table serves the container row on the record of its CI run: a bridged sqlcmd query runs in the image, with nothing handed in', async () => {
+  assert.equal(BRIDGED_DB_PROFILES.find((row) => row.client === 'sqlcmd' && row.platform === 'container'), CONTAINER_SQLCMD_ROW, 'the production row is the recorded one');
+  assert.match(String(CONTAINER_SQLCMD_ROW.clients?.[0].builds[0].record), /^run \d+ at [0-9a-f]{8}$/, 'it names the run that showed its legs');
   const t = tool('creds-db-sqlcmd:c7');
   const qw = await queryWorld(MSSQL.dbType, MSSQL.connection, BRIDGED_DB_PROFILES, { container: t.container });
   const ww = await wallWorld({ query: qw.action });
   try {
-    assert.equal(message(await send(viaBridge(ww.bridge), query())), BRIDGE_USE_REFUSED('prod'));
-    assert.equal(qw.reads.count, 0);
-    assert.deepEqual(t.runs, []);
+    const reply = await send(viaBridge(ww.bridge), query());
+    assert.equal(reply.status, 200, reply.body);
+    assert.equal(t.runs.length, 2, 'the probe, then the query');
+    passwordOnlyInTheFile(t.runs, t.runs[1], qw.storageDir);
+    assert.deepEqual(qw.spawns, [], 'nothing ran on the host');
   } finally {
     ww.dispose();
   }

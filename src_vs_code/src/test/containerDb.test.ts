@@ -2,10 +2,10 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
-import { BRIDGED_DB_PROFILES, CONTAINER_SQLCMD_CANDIDATE } from '../bridgedDbProfile';
+import { BRIDGED_DB_PROFILES, CONTAINER_SQLCMD_ROW } from '../bridgedDbProfile';
 
 /** The production table with the container's candidate row turned (it is turned in the commit that adds its CI job). */
-const WITH_CONTAINER = BRIDGED_DB_PROFILES.map((row) => (row.client === 'sqlcmd' && row.platform === 'container' ? CONTAINER_SQLCMD_CANDIDATE : row));
+const WITH_CONTAINER = BRIDGED_DB_PROFILES.map((row) => (row.client === 'sqlcmd' && row.platform === 'container' ? CONTAINER_SQLCMD_ROW : row));
 import { DRIVER_UNLOADABLE, ENV_FILES_DIR, SQLCMD_IN_IMAGE, buildArgv, containerVerdict, imageTagOf, probeArgv, queryArgv, sweepEnvFiles, writeEnvFile, wslcPath } from '../containerDb';
 import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 

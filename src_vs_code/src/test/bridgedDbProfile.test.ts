@@ -13,7 +13,7 @@ const CLIENT_OF = { postgres: 'psql', mysql: 'mysql', mssql: 'sqlcmd' } as const
 const SYSTEMS = ['linux', 'win32', 'darwin', 'container'] as const;
 
 /** The rows E1.7 has turned (§S7.7), as `client/platform`: each in the commit that recorded its candidate run. */
-const SERVED_PAIRS = ['sqlcmd/linux'];
+const SERVED_PAIRS = ['sqlcmd/linux', 'sqlcmd/container'];
 
 test('DP1: the table has a row for each client on linux, win32, darwin and the container (S3), and exactly the turned rows are served, each with the builds its legs ran on', () => {
   for (const client of Object.values(CLIENT_OF)) {
@@ -31,7 +31,10 @@ test('DP1: the table has a row for each client on linux, win32, darwin and the c
       { version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1', record: 'run 45390171118 at 35d59423' },
       { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45390171118 at 35d59423' },
     ] }],
-  }], 'the ODBC sqlcmd on Linux, the two builds of the candidate run, each with its driver; go-sqlcmd is not served');
+  }, {
+    client: 'sqlcmd', platform: 'container', served: true,
+    clients: [{ vendor: 'odbc-sqlcmd', builds: [{ version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45893005996 at a9311e09' }] }],
+  }], 'the ODBC sqlcmd on Linux, the two builds of the candidate run, each with its driver; the image\'s build in the container (S3); go-sqlcmd is not served');
 });
 
 /** The production table with exactly one row served. */

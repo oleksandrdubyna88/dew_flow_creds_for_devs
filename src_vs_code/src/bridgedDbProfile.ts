@@ -48,8 +48,9 @@ const SYSTEMS: readonly DbPlatform[] = ['linux', 'win32', 'darwin', 'container']
 /**
  * The served rows, each with the builds its legs ran on (E1.7 spec §S7.7): the record names the candidate run whose legs (w) were green on that build, never the run of the commit that turned it.
  * The ODBC `sqlcmd` on Linux: run 45390171118 at 35d59423, one job per image (ubuntu-22.04: 17.11.0001.1 with the driver 17.11.1.1; ubuntu-24.04 and ubuntu-latest: 18.7.0001.1 with 18.7.1.1).
+ * The ODBC `sqlcmd` in the container ({@link CONTAINER_SQLCMD_ROW}): run 45893005996 at a9311e09.
  */
-const SERVED: readonly DbProfileRow[] = [
+const SERVED_HOSTS: readonly DbProfileRow[] = [
   {
     client: 'sqlcmd',
     platform: 'linux',
@@ -65,21 +66,23 @@ const SERVED: readonly DbProfileRow[] = [
 ];
 
 /**
- * The container on the laptop (change 11.1, S3): NOT served yet. Its build is the same client and driver as the Linux row's 18.7, pinned by
- * package revision in `containers/db-sqlcmd.Containerfile`, but the image is another artifact than the runner (measured: an image whose
- * `autoremove` took a library the driver loads printed the right version and could not connect), so the row is turned in the commit that adds
- * the CI job running the sqlcmd legs INSIDE that image, as every row of E1.7 was (the lock, `bridgedDbLock.ts`). Until then a bridged query on
- * Windows is refused at the gate (DR1). The tests of the container road use a table with this row turned.
+ * The container on the laptop (change 11.1, S3): the ODBC `sqlcmd` of the image built from `containers/db-sqlcmd.Containerfile` (the same client and
+ * driver as the Linux row's 18.7, pinned by package revision). The image is another artifact than a runner (measured: an image whose `autoremove`
+ * took a library the driver loads printed the right version and could not connect), so the row was turned on the record of the CI job that runs
+ * the legs INSIDE that image through the product's own container road (`bridged-db-container`, `scripts/bridged-container-sqlcmd-itest.cjs`):
+ * run 45893005996 at a9311e09, all eleven legs shown with their controls (the lock, `scripts/lib/dbServedJobs.cjs`).
  */
-export const CONTAINER_SQLCMD_CANDIDATE: DbProfileRow = {
+export const CONTAINER_SQLCMD_ROW: DbProfileRow = {
   client: 'sqlcmd',
   platform: 'container',
   served: true,
   clients: [{
     vendor: 'odbc-sqlcmd',
-    builds: [{ version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'candidate: image probed on wslc 3.0.5, 2026-11-26; no CI run yet' }],
+    builds: [{ version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45893005996 at a9311e09' }],
   }],
 };
+
+const SERVED: readonly DbProfileRow[] = [...SERVED_HOSTS, CONTAINER_SQLCMD_ROW];
 
 /** Every pair this code knows: the served rows above, and every other client and system refused. */
 export const BRIDGED_DB_PROFILES: readonly DbProfileRow[] = CLIENTS.flatMap((client) => SYSTEMS.map((platform) => SERVED.find((row) => row.client === client && row.platform === platform) ?? { client, platform, served: false }));

@@ -20,12 +20,15 @@ const harnessOf = (build) => (build.platform === 'container' ? CONTAINER_HARNESS
  * Per job (the value of `BRIDGED_DB_JOB`): the served builds it must find. An entry is `{ client, platform, vendor, version, tag, driver?, legs }`: the row's client and platform, the build exactly as the
  * row records it, and the ids of its legs (`legsOf` in `dbAssertRules.cjs` for the vendor). The ODBC `sqlcmd` on Linux, turned on the record of run 45390171118: each image's job must find its build.
  */
+const CONTAINER_LEGS = ['CI-0', 'CI-1', 'PS1-1', 'PE1-7', 'PS1-8', 'PS1-9-control', 'PS1-9', 'PS1-4-control', 'PS1-4', 'CI-argv', 'CI-envfile'];
 const ODBC_LEGS = ['PS1-0', 'PS1-1', 'PS1-5', 'PE1-7', 'PS1-9-control', 'PS1-9', 'PS1-4-control', 'PS1-4'];
 const odbcLinux = (version, driver) => ({ client: 'sqlcmd', platform: 'linux', vendor: 'odbc-sqlcmd', version, tag: 'Linux', driver, legs: ODBC_LEGS });
 const SERVED_JOBS = {
   'bridged-ps1-linux-ubuntu-22.04': [odbcLinux('17.11.0001.1', '17.11.1.1')],
   'bridged-ps1-linux-ubuntu-24.04': [odbcLinux('18.7.0001.1', '18.7.1.1')],
   'bridged-ps1-linux-ubuntu-latest': [odbcLinux('18.7.0001.1', '18.7.1.1')],
+  // The ODBC `sqlcmd` in the image (change 11.1, S3), turned on the record of run 45893005996: the container legs of `containerSqlcmdRules`.
+  'bridged-db-container': [{ client: 'sqlcmd', platform: 'container', vendor: 'odbc-sqlcmd', version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', legs: CONTAINER_LEGS }],
 };
 
 /** The builds a table serves, one entry each: client, platform, vendor, version, tag and (the ODBC client) driver. */

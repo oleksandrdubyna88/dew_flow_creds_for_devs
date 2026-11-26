@@ -23,9 +23,9 @@ const legsOf = (client: string, vendor: string, platform?: string): string[] => 
 const STEP = (job: string, harness: string): string => `\n      - name: Assert the legs\n        env:\n          BRIDGED_DB_JOB: ${job}\n        run: node scripts/${harness}\n`;
 
 test('DP21: the production table, the jobs\' list and the workflow agree: every served build stands in a job of the workflow with every leg of its vendor, and every entry of the list is a served build', () => {
-  assert.deepEqual(BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => `${row.client}/${row.platform}`), ['sqlcmd/linux'], 'the turned rows');
+  assert.deepEqual(BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => `${row.client}/${row.platform}`), ['sqlcmd/linux', 'sqlcmd/container'], 'the turned rows');
   assert.deepEqual(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: WORKFLOW, legsOf }), []);
-  assert.deepEqual(Object.keys(SERVED_JOBS).sort(), ['bridged-ps1-linux-ubuntu-22.04', 'bridged-ps1-linux-ubuntu-24.04', 'bridged-ps1-linux-ubuntu-latest'], 'each Linux PS1 image\'s job finds its build');
+  assert.deepEqual(Object.keys(SERVED_JOBS).sort(), ['bridged-db-container', 'bridged-ps1-linux-ubuntu-22.04', 'bridged-ps1-linux-ubuntu-24.04', 'bridged-ps1-linux-ubuntu-latest'], 'each Linux PS1 image\'s job finds its build, and the container job the image\'s');
   for (const harness of [...Object.values(HARNESS_OF), CONTAINER_HARNESS] as string[]) {
     assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'scripts', harness)), true, `${harness} is a file of scripts/`);
   }

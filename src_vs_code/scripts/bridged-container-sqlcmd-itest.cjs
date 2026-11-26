@@ -6,7 +6,7 @@
 //
 // The legs (`lib/containerLegs.cjs`, `containerSqlcmdRules` of `lib/dbAssertRules.cjs`): CI-0/CI-1 (the runner holds an identity, the container sees none), PS1-1, PE1-7 (the server's own word: the
 // session's auth_scheme and its log), PS1-8, PS1-9 and PS1-4 (with their controls), CI-argv and CI-envfile. Until the `container` row is served the check is handed the production table with
-// `CONTAINER_SQLCMD_CANDIDATE` put in (`CANDIDATE ... container`); once it is served the production table alone (`PRODUCTION ... container`), and `BRIDGED_DB_JOB` applies the lock.
+// `CONTAINER_SQLCMD_ROW` put in (`CANDIDATE ... container`); once it is served the production table alone (`PRODUCTION ... container`), and `BRIDGED_DB_JOB` applies the lock.
 //
 // The receiver is rig Q (`lib/psSqlServer.cjs`), also published on the docker bridge's gateway so that a container on the default network reaches it, with a certificate that names that address.
 // The legs run in a TEST image: the shipped one with two files added, the throwaway CA in its trust store (the profile refuses TrustServerCertificate) and a system data source for PS1-4. The
@@ -63,7 +63,7 @@ function testImage(scope, dir, base, ca, dsn) {
 function tableOf(parts) {
   const rows = parts.profile.BRIDGED_DB_PROFILES;
   const row = rows.find((one) => one.client === 'sqlcmd' && one.platform === 'container');
-  return row?.served === true ? { rows, mode: 'PRODUCTION' } : { rows: rows.map((one) => (one === row ? parts.profile.CONTAINER_SQLCMD_CANDIDATE : one)), mode: 'CANDIDATE' };
+  return row?.served === true ? { rows, mode: 'PRODUCTION' } : { rows: rows.map((one) => (one === row ? parts.profile.CONTAINER_SQLCMD_ROW : one)), mode: 'CANDIDATE' };
 }
 
 /** The verdict of the product's own check on an image, under `table`. */
