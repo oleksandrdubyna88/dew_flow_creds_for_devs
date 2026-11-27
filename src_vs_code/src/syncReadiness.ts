@@ -37,13 +37,22 @@ export interface SyncFacts {
 
 export interface SyncReadiness {
   state: SyncState;
-  /** Whether the account's icon should read as "good to go". */
+  /** Whether sync can run unattended. The icon reads the lock, not this: see {@link accountIconGreen}. */
   ready: boolean;
   /** One sentence: what is missing, or what state it is in. */
   reason: string;
   /** The command to run to fix it, when there is one. */
   fixCommand?: string;
   fixLabel?: string;
+}
+
+/**
+ * The account icon is green while the vault is unlocked (the owner, 2026-11-27). It used to be green only when sync could run
+ * unattended (`ready`), so an account with no sync location stayed grey while it was open, and a person could not tell an open
+ * vault from a locked one by the tree. What sync still lacks stays on the row as its sentence. Not known yet: grey.
+ */
+export function accountIconGreen(readiness: SyncReadiness | undefined): boolean {
+  return readiness !== undefined && readiness.state !== 'locked';
 }
 
 // eslint-disable-next-line complexity

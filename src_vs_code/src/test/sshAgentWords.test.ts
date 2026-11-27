@@ -197,7 +197,7 @@ test("R-b's pattern matches the old sentences it was written for, and the new on
 
 test('the auto-lock texts say a lock ends the SSH windows and that the setting is machine-wide', () => {
   const autoLockParagraph = fileUnits(EXTENSION_README).filter(
-    (unit) => unit.text.includes('credSshManager.autoLockMinutes') && unit.text.includes('default 60'),
+    (unit) => unit.text.includes('credSshManager.autoLockMinutes') && unit.text.includes('default 720'),
   );
   assert.equal(autoLockParagraph.length, 1, 'the extension README has no single auto-lock bullet');
   const units = [settingUnit('autoLockMinutes'), autoLockParagraph[0], { where: 'protection (en)', text: articleText('protection', 'en') }];

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LOCKED_BUTTON_LABELS, lockedButtons } from '../lockedNotice';
-import { SyncFacts, syncReadiness } from '../syncReadiness';
+import { SyncFacts, accountIconGreen, syncReadiness } from '../syncReadiness';
 
 /**
  * One answer, two surfaces: the colour of the account icon and the report shown when
@@ -112,4 +112,12 @@ test('the icon and the locked-vault popup name the unlock action identically', (
   assert.equal(r.state, 'locked');
   assert.equal(r.fixLabel, LOCKED_BUTTON_LABELS.unlock);
   assert.equal(r.fixLabel, LOCKED_BUTTON_LABELS[lockedButtons('yes')[0]]);
+});
+
+test('the account icon is green while the vault is unlocked, whatever sync still lacks; grey when locked or not known yet', () => {
+  assert.equal(accountIconGreen(syncReadiness({ ...nothing, hasLocation: true, hasStoredPin: true })), true, 'ready');
+  assert.equal(accountIconGreen(syncReadiness(nothing)), true, 'no sync location, but unlocked: green (it was grey before 2026-11-27)');
+  assert.equal(accountIconGreen(syncReadiness({ ...nothing, hasLocation: true, hasSecurityKey: true })), true, 'needs a person to sync, but unlocked');
+  assert.equal(accountIconGreen(syncReadiness({ ...nothing, hasLocation: true, hasStoredPin: true, isLocked: true })), false, 'locked');
+  assert.equal(accountIconGreen(undefined), false, 'not known yet');
 });

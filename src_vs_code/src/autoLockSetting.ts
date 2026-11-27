@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
  */
 
 /** What the setting reads when nobody set it; `package.json` says the same. */
-export const AUTO_LOCK_DEFAULT_MINUTES = 60;
+export const AUTO_LOCK_DEFAULT_MINUTES = 720;
 
 /**
  * Minutes of idle time before the vaults lock. `0` — and any negative number, which the rules read the same way —

@@ -1005,7 +1005,7 @@ A vault can be opened by **several security keys plus the PIN**, in the
 - **Unlock**: the master key is cached in memory for the window, so
   background sync never asks for a touch again. `Lock Vaults (clear cached
   keys)` drops the cache; `Unlock Vault (Security Key)…` prompts on demand.
-- **Auto-lock** (`credSshManager.autoLockMinutes`, default 60, `0` disables; a machine-wide setting, which a repository's own settings cannot change) locks the
+- **Auto-lock** (`credSshManager.autoLockMinutes`, default 720 — 12 hours, `0` disables; a machine-wide setting, which a repository's own settings cannot change) locks the
   vaults after an idle window measured in **your** actions — opening or copying a
   credential, connecting, installing a key, editing an entry, unlocking. Not mouse
   movement, and deliberately not background sync: a five-minute sync timer counted as
@@ -1240,7 +1240,7 @@ Relay* already writes to User settings.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `autoLockMinutes` | `60` | Lock after this many minutes **without you using the vault**; `0` disables (and no *Allow longer…* SSH window is offered). A machine-wide setting: a workspace or folder value is not applied. "Using" means an action of yours that touches a secret — open, copy, connect, install a key, edit, unlock. It is **not** mouse movement and **not** background sync: a timer firing is not you being present. Locking forgets the cached master key and refuses the saved Sync PIN until you unlock deliberately; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key. **From the UI:** *Set Auto-Lock…* |
+| `autoLockMinutes` | `720` (12 hours) | Lock after this many minutes **without you using the vault**; `0` disables (and no *Allow longer…* SSH window is offered). A machine-wide setting: a workspace or folder value is not applied. "Using" means an action of yours that touches a secret — open, copy, connect, install a key, edit, unlock. It is **not** mouse movement and **not** background sync: a timer firing is not you being present. Locking forgets the cached master key and refuses the saved Sync PIN until you unlock deliberately; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key. **From the UI:** *Set Auto-Lock…* |
 
 ### Sign-in
 
