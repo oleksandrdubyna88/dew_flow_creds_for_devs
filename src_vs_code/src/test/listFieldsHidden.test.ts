@@ -6,7 +6,9 @@ import { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } from '../agentNaming';
 import { HELP_LANGUAGES, HelpLanguage, bodyFor, helpArticle } from '../helpContent';
 import type { ReadRouteSources } from '../brokerReadRoutes';
 import type { McpAccess } from '../mcpAccess';
-import { McpEntry, McpVaultSource, visibleMcpEntries } from '../mcpEntries';
+import { McpEntry, McpVaultSource, agentMayView, visibleMcpEntries } from '../mcpEntries';
+import { locateRef, parseSecretRef } from '../secretRef';
+import { vaultRefLocator, viewableLocatorForOneListing } from '../vaultRefLocator';
 import { type FolderView, visibleFolders } from '../mcpFolders';
 import { stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
@@ -322,9 +324,9 @@ test('R4: a reference to an account that is not there, or to a name that no entr
   assert.equal((await rowOf(vaultOf(first, second), 't1')).command, HIDDEN_REFERENCE, 'an entry of a second account that has no switch there');
 });
 
-test('R5: a name that two entries have is replaced, one of them hidden or both viewable: the locator finds no ONE entry', async () => {
+test('R5: a name that two entries that the agent may view have is replaced; a hidden twin does not count (change 1.1: the list locates among the entries the agent may view)', async () => {
   const mixed = [entry('d1', 'Dup-mixed', { mcp: OPEN }), entry('d2', 'Dup-mixed')];
-  assert.equal(await listedCommand(ref('Dup-mixed'), mixed), HIDDEN_REFERENCE, 'one that the agent may view and one hidden');
+  assert.equal(await listedCommand(ref('Dup-mixed'), mixed), ref('Dup-mixed'), 'one that the agent may view and one hidden: the token names the viewable one, and is kept');
   const both = [entry('d3', 'Dup-both', { mcp: OPEN }), entry('d4', 'Dup-both', { mcp: OPEN })];
   assert.equal(await listedCommand(ref('Dup-both'), both), HIDDEN_REFERENCE, 'two that the agent may view');
 });
@@ -349,7 +351,7 @@ async function pair(command: string, without: readonly TreeNode[], withIt: reado
   return { equal: true, leaked: HIDDEN_WORDS.filter((word) => text.includes(word)), commands: [bodyA.find((r) => r.id === 't1')?.command, bodyB.find((r) => r.id === 't1')?.command] };
 }
 
-test('E3: a hidden entry and a missing one, a hidden folder and a missing one, give the same body; a reference that names no hidden folder is kept in both', async () => {
+test('E3: a hidden entry and a missing one, a hidden folder and a missing one, a hidden twin and no twin, give the same body; a reference that names no hidden folder is kept in both', async () => {
   const one = await pair(`run ${ref(HID.entry)}`, [hiddenFolder, SECOND], [hiddenEntry, hiddenFolder, SECOND]);
   assert.deepEqual(one.leaked, [], 'pair (1): the name of the hidden entry is in neither body');
   assert.deepEqual(one.commands, [`run ${HIDDEN_REFERENCE}`, `run ${HIDDEN_REFERENCE}`]);
@@ -359,6 +361,9 @@ test('E3: a hidden entry and a missing one, a hidden folder and a missing one, g
   const three = await pair(ref(VIS.two), [{ ...SECOND, parentId: 'hf' }], [hiddenFolder, SECOND]);
   assert.deepEqual(three.leaked, [], 'pair (3): the name of the hidden folder is in neither body');
   assert.deepEqual(three.commands, [ref(VIS.two), ref(VIS.two)], 'pair (3): the shorter reference is kept in both');
+  const twin = entry('tw1', 'Vis-twin', { mcp: OPEN });
+  const four = await pair(ref('Vis-twin'), [twin], [twin, entry('tw2', 'Vis-twin')]);
+  assert.deepEqual(four.commands, [ref('Vis-twin'), ref('Vis-twin')], 'pair (4): a hidden twin and no twin give the same body, and the reference to the viewable one is kept in both');
 });
 
 test('RG1: a reference to an entry that the agent may view, with no folder part or with an open folder, is kept byte for byte', async () => {
@@ -634,5 +639,31 @@ test('T3: in each language the usage of the agent-surface article holds the two 
     assert.equal(fallback, false, language);
     assert.equal(body.usage.includes(`${list}\n`), true, `${language}: the sentence of creds_list ends its bullet`);
     assert.equal(body.usage.includes(`${folders}\n`), true, `${language}: the sentence of creds_folders ends its bullet`);
+  }
+});
+
+// ---------- S3 · change 1.1, the index of the listing ----------
+
+test('RG7: the indexed locator of a listing finds what a locator over the viewable entries finds, token by token', () => {
+  const nodes = [
+    ...COMMON, hiddenEntry, hiddenFolder, SECOND,
+    entry('d1', 'Dup-mixed', { mcp: OPEN }), entry('d2', 'Dup-mixed'),
+    entry('d3', 'Dup-both', { mcp: OPEN }), entry('d4', 'Dup-both', { mcp: OPEN }),
+    entry('sp', 'Vis spaced', { mcp: OPEN }), entry('lc', 'MiXeD-case', { mcp: OPEN }),
+  ];
+  const source = vault(nodes);
+  const plain = vaultRefLocator(source);
+  const viewable = (accountId: string, id: string): boolean => agentMayView(source, accountId, id);
+  const indexed = viewableLocatorForOneListing(plain, viewable);
+  const tokens = [
+    ref(VIS.entry), ref(`${VIS.folder}/${VIS.entry}`), ref(VIS.two), ref(HID.entry), ref(HID.pin), ref('Dup-mixed'), ref('Dup-both'), ref('VIS%20SPACED'),
+    ref('mixed-CASE'), ref('No-such-entry'), ref(VIS.entry, 'password', 'nobody@x.test'), `CREDS://ME@X.TEST/${VIS.entry.toUpperCase()}/totp`,
+  ];
+  for (const token of tokens) {
+    const parsed = parseSecretRef(token);
+    const lastName = parsed?.entityPath[parsed.entityPath.length - 1] ?? '';
+    const whole = locateRef(token, { accounts: plain.accounts, entities: (accountId) => plain.entities(accountId).filter((e) => viewable(accountId, e.id)) });
+    const given = locateRef(token, { accounts: () => indexed.accounts(), entities: (accountId) => indexed.candidates(accountId, lastName) });
+    assert.deepEqual(given, whole, token);
   }
 });

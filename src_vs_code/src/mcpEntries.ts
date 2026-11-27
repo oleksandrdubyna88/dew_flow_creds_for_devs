@@ -2,7 +2,7 @@ import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { isOpenFolder } from './mcpFolders';
 import { ReferenceWall, keepsReference, listedCommand } from './agentCommandText';
-import { locatorForOneListing, vaultRefLocator } from './vaultRefLocator';
+import { vaultRefLocator, viewableLocatorForOneListing } from './vaultRefLocator';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
@@ -305,13 +305,13 @@ async function entryIfVisible(
 }
 
 /**
- * The one function of the three conditions of a `creds://` token in a listed command, built once for a listing: the product's own locator over ALL
- * entries of the account that the token names, the wall (`agentMayView`) in that account, and `isOpenFolder` for each folder that the token names
+ * The one function of the three conditions of a `creds://` token in a listed command, built once for a listing: the product's own locator over the
+ * entries that the agent may view of the account that the token names (change 1.1: a hidden twin of the same name does not make the token ambiguous), the wall (`agentMayView`) in that account, and `isOpenFolder` for each folder that the token names
  * (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
  */
 function referenceKeeper(source: McpVaultSource): (token: string) => boolean {
   const wall: ReferenceWall = {
-    locator: locatorForOneListing(vaultRefLocator(source)),
+    locator: viewableLocatorForOneListing(vaultRefLocator(source), (accountId, entityId) => agentMayView(source, accountId, entityId)),
     mayViewEntry: (accountId, entityId) => agentMayView(source, accountId, entityId),
     nodeOf: (accountId, id) => source.getNode(accountId, id),
   };

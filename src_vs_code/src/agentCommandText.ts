@@ -1,7 +1,8 @@
 import { HIDDEN_REFERENCE } from './agentNaming';
 import { isOpenFolder } from './mcpFolders';
-import { RefSource, locateRef, parseSecretRef, rewriteRefTokens } from './secretRef';
+import { RefSource, SecretRef, locateRef, parseSecretRef, rewriteRefTokens } from './secretRef';
 import type { TreeNode } from './types';
+import type { ListingLocator } from './vaultRefLocator';
 
 /**
  * The text of a command as an agent reads it in `creds_list`: each `creds://` token that is not a reference to things that the agent may
@@ -12,8 +13,8 @@ import type { TreeNode } from './types';
 
 /** What the three conditions need: the product's own locator, and the two questions of the wall. */
 export interface ReferenceWall {
-  /** The locator of `vaultRefLocator`, over ALL entries of an account, not the visible part (D5). */
-  readonly locator: Pick<RefSource, 'accounts' | 'entities'>;
+  /** The locator of `vaultRefLocator` over the entries that the agent may view (change 1.1: a hidden twin is no twin). */
+  readonly locator: ListingLocator;
   /** May the agent view this entry, in this account? (`agentMayView`.) */
   readonly mayViewEntry: (accountId: string, entityId: string) => boolean;
   /** The node, in this account. */
@@ -22,13 +23,27 @@ export interface ReferenceWall {
 
 /**
  * Is this token kept as the person typed it? Only when the three conditions are true, and fail closed: a token that the parser does not
- * read, an account that is not signed in, an entry that nobody has, two entries with the name, a hidden entry, and a folder that is named
- * and is not open all read alike (rule A). A folder that the token does not name is not asked.
+ * read, an account that is not signed in, an entry that nobody has, two entries that the agent may view with the name, a hidden entry (a hidden
+ * twin of a viewable entry does not count), and a folder that is named and is not open all read alike (rule A). A folder that the token does not name is not asked.
  */
 export function keepsReference(token: string, wall: ReferenceWall): boolean {
+  const hit = located(token, wall.locator);
+  return hit !== undefined && wall.mayViewEntry(hit.accountId, hit.entityId) && foldersOpen(wall, hit.accountId, hit.entityId, hit.ref.entityPath.length - 1);
+}
+
+/** The ONE entry that the agent may view and that the token names, by the product's own locator, given only the entries that can match; `undefined` for none, for two, and for a token that the parser does not read. */
+function located(token: string, locator: ListingLocator): { ref: SecretRef; accountId: string; entityId: string } | undefined {
   const ref = parseSecretRef(token);
-  const found = locateRef(token, wall.locator);
-  return ref !== undefined && found.ok && wall.mayViewEntry(found.accountId, found.entityId) && foldersOpen(wall, found.accountId, found.entityId, ref.entityPath.length - 1);
+  return ref === undefined ? undefined : locatedBy(token, ref, locator);
+}
+
+function locatedBy(token: string, ref: SecretRef, locator: ListingLocator): { ref: SecretRef; accountId: string; entityId: string } | undefined {
+  const found = locateRef(token, candidatesOf(locator, ref.entityPath[ref.entityPath.length - 1]));
+  return found.ok ? { ref, accountId: found.accountId, entityId: found.entityId } : undefined;
+}
+
+function candidatesOf(locator: ListingLocator, lastName: string): Pick<RefSource, 'accounts' | 'entities'> {
+  return { accounts: () => locator.accounts(), entities: (accountId) => locator.candidates(accountId, lastName) };
 }
 
 /** Is each of the `count` folders above the entry open to the agent? A parent that is missing, or a cycle, is not open. */

@@ -31,8 +31,8 @@ export interface FolderView {
   id: string;
   name: string;
   /**
-   * The id of the folder above it, when that folder is one that the agent may view; `null` when no folder above it is open to the agent, the root too — so a `null` parent
-   * does not say that the folder is at the top of the vault (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.5).
+   * The id of the folder above it, when that folder is one that the agent may view; `null` when the agent may not view the parent (or the id points to no node), and at the
+   * root — so a `null` parent does not say that the folder is at the top of the vault (a folder under a closed folder under an open one gets `null` too) (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.5).
    */
   parent: string | null;
   folderType?: FolderType;
