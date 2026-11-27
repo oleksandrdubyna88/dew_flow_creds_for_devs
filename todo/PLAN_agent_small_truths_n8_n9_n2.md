@@ -1,7 +1,7 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **approved 2026-11-27; built on the branch `fix/n8-n9-n2-small-truths` (S1 `d12df88a`, S2 `fe2c4ddd`, S3
-> `8515c1e9`), not merged and not released yet.** Scope: the extension only
+> Status: **stopped for re-review, 2026-11-27 (entry 1.2).** Built on the branch `fix/n8-n9-n2-small-truths` (S1
+> `d12df88a`, S2 `fe2c4ddd`, S3 `8515c1e9`), not merged and not released. Scope: the extension only
 > (`src_vs_code/src`: `mcpEntries.ts`, `agentUseActions.ts`, the five `help*.ts` files, `mcpLogRows.ts`, `mcpLogPage.ts`,
 > their tests), two README sentences, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `research/module_tests.md`, `todo/README.md`. One epic, three stories (`## Epics`).
@@ -18,13 +18,17 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-27 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-27 · by reviewers · state: stopped
 
 - 1.1 · 2026-11-27 · agent · dod, stories — J4 and M14 hold the journal LINE of a secret that could not be made, not the
   page's filter *Could not generate*; the dead filter is F5 and Q6, not built
   (Found by the coder of S3: `refuseCreation` notes the line with no `via` (`brokerMcpDoor.ts:412-420`), and
   `mcpRowsIn` keeps only `via` `mcp` (`mcpLogRows.ts:34`), so the page never shows it. A rotation that cannot draw a
   secret is noted as `404` (`brokerCall.ts:304`). The J4 of `2a5831ba` could not pass on unchanged code.)
+- 1.2 · 2026-11-27 · reviewer · scope, dod — the create, delete and no-generator lines carry no `via`, so the journal
+  page shows no row of a create or a delete; the texts of S3 are false on the page; a fix needs new sites
+  (Found by the lead's Opus review of the built branch: `brokerMcpDoor.ts:331`, `:413`, `:520`. This second change
+  stopped the plan.)
 
 ## 1. The three defects
 
