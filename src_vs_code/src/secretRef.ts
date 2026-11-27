@@ -134,6 +134,14 @@ export function segmentKey(segment: string): string {
   return segment.toLowerCase();
 }
 
+/**
+ * What two e-mail addresses are compared by: the letter case ignored. The locator's own rule (`locate`), exported so that the list of entries, which gives the locator the
+ * candidates of EACH account with the address, asks the same question.
+ */
+export function addressKey(address: string): string {
+  return address.toLowerCase();
+}
+
 function samePath(candidate: readonly string[], wanted: readonly string[]): boolean {
   // A reference names a suffix of the path: `gateway` matches `Servers/EU/gateway`, and
   // `EU/gateway` narrows it. Case-insensitive, because a person typing a name is not
@@ -155,7 +163,7 @@ function locate(
   ref: SecretRef,
   source: RefSource,
 ): { ok: true; accountId: string; entityId: string; path: string[] } | { ok: false; error: string } {
-  const account = source.accounts().find((a) => a.email.toLowerCase() === ref.account.toLowerCase());
+  const account = source.accounts().find((a) => addressKey(a.email) === addressKey(ref.account));
   if (account === undefined) {
     return { ok: false, error: `No signed-in account with the email "${ref.account}" — ${raw} cannot be resolved.` };
   }

@@ -1,7 +1,7 @@
 import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { isOpenFolder } from './mcpFolders';
-import { ReferenceWall, keepsReference, listedCommand } from './agentCommandText';
+import { ReferenceWall, foldersOpen, keepsReference, listedCommand } from './agentCommandText';
 import { vaultRefLocator, viewableLocatorForOneListing } from './vaultRefLocator';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
@@ -305,15 +305,15 @@ async function entryIfVisible(
 }
 
 /**
- * The one function of the three conditions of a `creds://` token in a listed command, built once for a listing: the product's own locator over the
- * entries that the agent may view of the account that the token names (change 1.1: a hidden twin of the same name does not make the token ambiguous), the wall (`agentMayView`) in that account, and `isOpenFolder` for each folder that the token names
- * (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
+ * The one function that decides a `creds://` token in a listed command, built once for a listing: the product's own locator, given the candidates of §2.4 (the entries
+ * that the agent may view, of each account with the token's address, whose folders that the token names exist and are open: `agentMayView` and `isOpenFolder`), and
+ * `agentMayView` again, in the account of the entry that is found, as the second lock (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
  */
 function referenceKeeper(source: McpVaultSource): (token: string) => boolean {
+  const nodes = { nodeOf: (accountId: string, id: string): TreeNode | undefined => source.getNode(accountId, id) };
   const wall: ReferenceWall = {
-    locator: viewableLocatorForOneListing(vaultRefLocator(source), (accountId, entityId) => agentMayView(source, accountId, entityId)),
+    locator: viewableLocatorForOneListing(vaultRefLocator(source), (accountId, entityId) => agentMayView(source, accountId, entityId), (accountId, entityId, count) => foldersOpen(nodes, accountId, entityId, count)),
     mayViewEntry: (accountId, entityId) => agentMayView(source, accountId, entityId),
-    nodeOf: (accountId, id) => source.getNode(accountId, id),
   };
   return (token) => keepsReference(token, wall);
 }
