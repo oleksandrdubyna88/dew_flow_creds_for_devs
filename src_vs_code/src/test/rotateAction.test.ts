@@ -12,6 +12,10 @@ import {
 import type { UseAction, UseActionContext, UseActionResult } from '../useActions';
 import type { EntityMetadata } from '../types';
 import { stored } from '../storedSecret';
+import { errorBody } from '../brokerProtocol';
+import type { ErrorCode } from '../brokerProtocol';
+import type { AuditEntry } from '../agentAuditLog';
+import { isRotation } from '../mcpLogRows';
 
 /**
  * Rotation: the far side changes first, and only then does the vault.
@@ -363,4 +367,50 @@ test('the statement runs as work that must finish once started — the request�
   assert.equal(log.ctxs.length, 1);
   assert.equal(log.ctxs[0].finishOnceStarted, true, 'a disconnect mid-statement would kill the rotation and lose its new value');
   assert.equal(log.ctxs[0].signal, CTX.signal, 'and it still carries the request, so a launch after the client left is refused');
+});
+
+/**
+ * The word the journal gets for each answer of a rotation, and what the page counts of it (N2, the second part;
+ * `todo/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D3 and D4).
+ *
+ * <p>The answer to the agent is not read here: it stays as it came. The word goes to the journal line only, and the page's count `Secrets
+ * replaced` reads the three words that say a secret was replaced.</p>
+ */
+const NOT_A_ROTATION_AT = new Date('2026-11-27T00:00:00Z');
+const journalRow = (outcome: string): AuditEntry => ({ at: NOT_A_ROTATION_AT, grant: 'tok…f2', entityName: 'orders-db', action: 'rotate', outcome, via: 'mcp' });
+
+test('P4: each answer of a rotation has its journal word, and only the three words that say a secret was replaced are rotations', async () => {
+  const run = async (kind: string | undefined, result: UseActionResult): Promise<string> => {
+    const { action } = world({ result });
+    const answer = await action.run(CTX, { statement: STATEMENT, ...(kind === undefined ? {} : { secretKind: kind }) });
+    return action.describeOutcome(answer);
+  };
+  const bodyAnswer = (body: object): UseActionResult => ({ status: 200, body: { entity: 'orders-db', stdout: '', ...body } });
+  const stderr = (status: number, code: ErrorCode): UseActionResult => ({ status, body: errorBody(code, 'the statement action says no') });
+  const cases: ReadonlyArray<readonly [string, string, boolean]> = [
+    ['stored', await run(undefined, { status: 200, body: { exitCode: 0, stdout: 'ALTER\n' } }), true],
+    ['the value was handed to the person', world().action.describeOutcome(bodyAnswer({ rotated: true, stored: false })), true],
+    ['the value is held until the PIN', world().action.describeOutcome(bodyAnswer({ rotated: true, stored: 'quarantined' })), true],
+    ['the statement ran and failed', await run(undefined, { status: 200, body: { exitCode: 1, stderr: 'denied' } }), false],
+    ['no generator', await run('x509', { status: 200, body: { exitCode: 0 } }), false],
+    ['404 of the statement', await run(undefined, stderr(404, 'not_found')), false],
+    ['409', await run(undefined, stderr(409, 'no_credential')), false],
+    ['412', await run(undefined, stderr(412, 'tool_missing')), false],
+    ['429', await run(undefined, stderr(429, 'too_many_requests')), false],
+    ['500', await run(undefined, stderr(500, 'internal')), false],
+  ];
+  const words = ['rotated', 'rotated, not stored', 'rotated, quarantined', 'statement failed', 'no generator', '404', '409', '412', '429', '500'];
+
+  cases.forEach(([label, word], index) => assert.equal(word, words[index], `the word for: ${label}`));
+  cases.forEach(([label, word, replaced]) => assert.equal(isRotation(journalRow(word)), replaced, `is "${word}" a replaced secret: ${label}`));
+});
+
+test('P5: the word of an answer is read from a body that is no object without a throw', () => {
+  const { action } = world();
+  const word = (result: UseActionResult): string => action.describeOutcome(result);
+
+  assert.doesNotThrow(() => word({ status: 502, body: null }));
+  assert.doesNotThrow(() => word({ status: 502, body: 'bad gateway' }));
+  assert.doesNotThrow(() => word({ status: 200, body: null }));
+  assert.deepEqual([word({ status: 502, body: null }), word({ status: 502, body: 'bad gateway' }), word({ status: 200, body: null })], ['502', '502', 'statement failed']);
 });

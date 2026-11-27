@@ -126,3 +126,15 @@ export function generatableKinds(): SecretKind[] {
  * that a view greps for is two until somebody edits one of them.</p>
  */
 export const NO_GENERATOR_OUTCOME = 'no generator';
+
+/**
+ * The three audit outcomes of a rotation that REPLACED a secret: stored, handed to the person, or held until the entry's PIN.
+ *
+ * <p>Written here, once, for the same reason as `NO_GENERATOR_OUTCOME`: the rotation writes them (`rotateAction.ts`) and the journal's count
+ * `Secrets replaced` reads them (`mcpLogRows.ts`). The far side has the new value in each of the three, so each is a replaced secret; every
+ * other outcome of a rotation — `no generator`, `statement failed`, a status number, `withheld` — replaced nothing the journal can vouch for.</p>
+ */
+export const ROTATED_OUTCOME = 'rotated';
+export const ROTATED_NOT_STORED_OUTCOME = 'rotated, not stored';
+export const ROTATED_QUARANTINED_OUTCOME = 'rotated, quarantined';
+export const ROTATED_OUTCOMES: ReadonlySet<string> = new Set([ROTATED_OUTCOME, ROTATED_NOT_STORED_OUTCOME, ROTATED_QUARANTINED_OUTCOME]);

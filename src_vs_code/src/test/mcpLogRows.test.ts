@@ -10,6 +10,8 @@ import {
   isRefusal,
   isRotation,
   MAX_ROWS_SHOWN,
+  McpLogFilter,
+  McpLogRow,
   mcpRowsIn,
   rowsToShow,
 } from '../mcpLogRows';
@@ -316,4 +318,68 @@ test('a row read into the journal carries the caller, so the view can show it', 
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].caller, CALLER);
+});
+
+/**
+ * What each count and each row of the page is made of (N2, the second part: `todo/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D4).
+ *
+ * <p>The three words that say a secret was replaced are written out here, as the product writes them: a word that a count reads is a contract,
+ * and a list read from the code could not turn red when somebody takes one out of it.</p>
+ */
+const ROTATED_WORDS = ['rotated', 'rotated, not stored', 'rotated, quarantined'];
+
+const outcomeRow = (action: string, outcome: string): McpLogRow => ({ at: AT, grant: 'tok…f2', entityName: 'x', action, outcome, via: 'mcp', day: '2026-08-27' });
+
+test('P1: a rotation is a row with one of the three words that say a secret was replaced, and no other outcome of a rotation is', () => {
+  const outcomes = [...ROTATED_WORDS, 'no generator', 'statement failed', '404', '400', 'ignored', 'ABANDONED', 'withheld'];
+
+  const rotations = outcomes.filter((outcome) => isRotation(outcomeRow('rotate', outcome)));
+
+  assert.deepEqual(rotations, ROTATED_WORDS);
+});
+
+test('P2: a rotation that could not draw its secret is counted under Could not generate and under no other button', () => {
+  const rows = mcpRowsIn(
+    [
+      line({ action: 'create', outcome: 'no generator' }),
+      line({ action: 'rotate', outcome: 'no generator' }),
+      line({ action: 'query', outcome: 'denied' }),
+      line({ action: 'query', outcome: 'exit 0' }),
+    ].join('\n'),
+    '2026-08-27',
+  );
+
+  assert.equal(applyFilter(rows, 'rotations').length, 0, 'nothing was replaced');
+  assert.equal(applyFilter(rows, 'noGenerator').length, 2);
+  assert.equal(applyFilter(rows, 'refused').length, 1);
+});
+
+const BUTTONS: readonly McpLogFilter[] = ['refused', 'rotations', 'agentSecrets', 'noGenerator'];
+
+test('P3: no row of the journal fits two buttons, and the row is drawn under the one that counts it', () => {
+  const rows = [
+    ['create', 'created with agent secret'],
+    ['create', 'created'],
+    ['create', 'no generator'],
+    ['delete', 'moved to Trash'],
+    ['delete', 'gone already'],
+    ['folder-create', 'done'],
+    ['exec', 'exit 0'],
+    ...ROTATED_WORDS.map((word) => ['rotate', word]),
+    ['rotate', 'no generator'],
+    ['rotate', 'statement failed'],
+    ...['400', '404', '409', '412', '429', '500', '502'].map((status) => ['rotate', status]),
+    ['rotate', 'denied'],
+    ['rotate', 'internal'],
+    ['rotate', 'ignored'],
+    ['rotate', 'ABANDONED'],
+    ['rotate', 'withheld'],
+  ].map(([action, outcome]) => outcomeRow(action, outcome));
+
+  for (const row of rows) {
+    const fitting = BUTTONS.filter((button) => applyFilter([row], button).length === 1);
+    assert.ok(fitting.length <= 1, `${row.action} → ${row.outcome} fits ${fitting.join(' and ')}`);
+    const drawn = /<tr data-kind="([^"]*)">/.exec(renderMcpLog([row]));
+    assert.equal(drawn?.[1], fitting.join(' '), `${row.action} → ${row.outcome}`);
+  }
 });

@@ -1,11 +1,20 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HELP_LANGUAGES, HelpLanguage, bodyFor, helpArticle } from '../helpContent';
-import { MCP_LOG_FILTERS, emptyMessage, isRefusal, mcpRowsIn } from '../mcpLogRows';
+import { MCP_LOG_FILTERS, applyFilter, emptyMessage, isRefusal, mcpRowsIn } from '../mcpLogRows';
+import type { McpLogFilter } from '../mcpLogRows';
 import { renderMcpLog } from '../mcpLogPage';
 import { parseAuditLine } from '../agentAuditLog';
+import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpCreateHooks } from '../brokerMcpDoor';
+import { UNANSWERED_FAILURE, errorBody } from '../brokerProtocol';
+import type { ErrorCode } from '../brokerProtocol';
+import { RotateDeps, StoreOutcome, rotateAction } from '../rotateAction';
+import { NEW_SECRET_PLACEHOLDER } from '../secretRotation';
 import { NO_GENERATOR_OUTCOME } from '../secretKinds';
+import { stored } from '../storedSecret';
+import type { EntityMetadata } from '../types';
+import type { UseAction, UseActionResult } from '../useActions';
 import { call, code, share, world } from './brokerWorld';
 import type { World } from './brokerWorld';
 
@@ -109,6 +118,304 @@ test('J4: a secret that this window was asked to make and could not leaves one l
 
     assert.equal(code(await call(port, '/v1/mcp/use/exec', { body: { entry: 'e-nope', command: 'x' } })), 'not_found');
     assert.equal(w.audit.length, lines + 1, 'the refused lookup adds no line');
+  } finally {
+    w.server.dispose();
+  }
+});
+
+
+/*
+ * The page shows the lines that it counts (N2, the second part; `todo/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.5 and 2.4).
+ *
+ * <p>Rows J5 to J13 run the real broker and read what it wrote with the page's own reader. Each row asserts the AGENT's answer first, the whole
+ * status and the whole body, and the journal after: the words of the journal change, no answer to an agent does. A failure of a row on code that
+ * has not been changed therefore names the journal, and the answer passed before it.</p>
+ */
+
+/** The four counts of the page: the rows that the filter of each button matches, as `mcpLogPage` counts them. */
+const COUNTED: readonly McpLogFilter[] = ['refused', 'rotations', 'agentSecrets', 'noGenerator'];
+
+const countsOf = (w: World): Record<string, number> => {
+  const rows = rowsOf(w);
+  return Object.fromEntries(COUNTED.map((filter) => [filter, applyFilter(rows, filter).length]));
+};
+
+const NO_COUNT = { refused: 0, rotations: 0, agentSecrets: 0, noGenerator: 0 };
+
+/** The request left ONE row on the page, and it is the line that says how the request ended. */
+function assertOneRow(w: World, action: string, outcome: string): void {
+  const rows = rowsOf(w);
+  assert.equal(rows.length, 1, `one row on the page for the request; the journal holds: ${w.audit.join(' | ')}`);
+  assert.deepEqual([rows[0]?.action, rows[0]?.outcome], [action, outcome], w.audit.join(' | '));
+}
+
+/** JG2: the line of the grant and the line of the question are in the journal, and the page shows neither. */
+function assertQuietLines(w: World): void {
+  const written = w.audit.map((line) => parseAuditLine(line)?.outcome);
+  assert.ok(written.includes('minted'), `the line that says a grant was minted: ${w.audit.join(' | ')}`);
+  assert.ok(written.includes('ALLOWED'), `the line that says the person allowed it: ${w.audit.join(' | ')}`);
+  assert.deepEqual(rowsOf(w).filter((row) => row.outcome === 'minted' || row.outcome === 'ALLOWED'), [], 'the page does not show them');
+}
+
+test('J5: a create that ran, with a secret from the agent, leaves one row on the page, and it is counted under Secrets from the agent', async () => {
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh', secret: 'k' } });
+
+    assert.deepEqual([answer.status, answer.body], [200, { created: true, id: 'new-1', name: 'app-03' }]);
+    assertQuietLines(w);
+    assertOneRow(w, 'create', 'created with agent secret');
+    assert.deepEqual(countsOf(w), { ...NO_COUNT, agentSecrets: 1 });
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('J5b: a create that ran with no secret leaves one row too, and no count moves', async () => {
+  const w = world({ create: 'open' });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/create', { body: { name: 'no-secret-yet', kind: 'ssh' } });
+
+    assert.deepEqual([answer.status, answer.body], [200, { created: true, id: 'new-1', name: 'no-secret-yet' }]);
+    assertOneRow(w, 'create', 'created');
+    assert.deepEqual(countsOf(w), NO_COUNT);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('J6: a delete that ran leaves one row on the page, and no count moves', async () => {
+  const w = world({ mcpUse: 'usable', trash: true });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/delete', { body: { entry: 'e1' } });
+
+    assert.deepEqual([answer.status, answer.body], [200, { deleted: true, entity: 'prod', restorable: true }]);
+    assertQuietLines(w);
+    assertOneRow(w, 'delete', 'moved to Trash');
+    assert.deepEqual(countsOf(w), NO_COUNT);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/** A create whose window cannot make the kind of secret that was asked for, so nobody is asked (the world of J4). */
+const NO_GENERATOR_CREATE: McpCreateHooks = {
+  choose: () => ({ ok: false, code: 'not_supported', message: 'This window cannot make that kind of secret.', noGenerator: true }),
+  settle: async () => ({ ok: true }),
+  make: async () => ({ id: 'x', name: 'x' }),
+};
+
+test('J7: a create for a secret that this window cannot make leaves one row on the page, counted under Could not generate and not under Refused', async () => {
+  const w = world({ mcpUse: 'usable', mcpCreateReal: NO_GENERATOR_CREATE });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/create', { body: { name: 'cert-01', kind: 'ssh' } });
+
+    assert.deepEqual([answer.status, answer.body], [404, errorBody('not_supported', 'This window cannot make that kind of secret.')]);
+    assertOneRow(w, 'create', NO_GENERATOR_OUTCOME);
+    assert.deepEqual(countsOf(w), { ...NO_COUNT, noGenerator: 1 });
+  } finally {
+    w.server.dispose();
+  }
+});
+
+const FOLDER_HOOKS: McpFolderHooks = {
+  list: () => [],
+  choose: () => ({ ok: true, target: { accountId: 'a1', entityId: 'f1', entityName: 'Servers', kind: 'folder' }, summary: 'staging in "Servers"', edit: {} }),
+  create: () => Promise.resolve({ id: 'f2', name: 'staging' }),
+  edit: () => Promise.resolve(true),
+  remove: () => Promise.resolve(true),
+};
+
+test('J9: a folder change that ran leaves one row on the page, and no count moves', async () => {
+  const w = world({ mcpUse: 'usable' });
+  w.server.setFolderHooks(FOLDER_HOOKS);
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/folder/create', { body: { name: 'staging', parent: 'f1' } });
+
+    assert.deepEqual([answer.status, answer.body], [200, { folder: 'Servers', created: true, id: 'f2', name: 'staging' }]);
+    assertQuietLines(w);
+    assertOneRow(w, 'folder-create', 'done');
+    assert.deepEqual(countsOf(w), NO_COUNT);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+/* ------------------------------------------------------------------------------------------------------------------------------------
+ * A rotation, through the real `rotateAction` behind the real broker, over a statement action that answers what the row says.
+ * ---------------------------------------------------------------------------------------------------------------------------------- */
+
+const OLD_CONNECTION = 'mysql://app:old-password-9f2c@db-01.example.internal:3306/orders';
+const STATEMENT = `ALTER USER app IDENTIFIED BY '${NEW_SECRET_PLACEHOLDER}'`;
+const DATABASE: EntityMetadata = { id: 'e1', name: 'prod', kind: 'db', isSshEnabled: false, dbType: 'mysql' };
+
+/** A world whose `rotate` route is the real rotation. `stores` holds each value that reached the vault; `entry: false` is an entry that has gone. */
+function rotationWorld(statement: UseActionResult, entry = true): { w: World; stores: string[] } {
+  const stores: string[] = [];
+  const underlying: UseAction = {
+    kind: 'db',
+    action: 'query',
+    mutatesSecrets: false,
+    verb: 'run a query against',
+    validate: () => ({ ok: true }),
+    summarize: () => STATEMENT,
+    describeOutcome: () => 'ok',
+    run: () => Promise.resolve(statement),
+  };
+  const deps: RotateDeps = {
+    generate: (kind) =>
+      kind === 'x509'
+        ? { ok: false, kind: 'x509', message: 'Certificates come from a certificate authority.' }
+        : { ok: true, value: 'NEW-secret-4b7e', kind: 'password' },
+    entity: () => (entry ? DATABASE : undefined),
+    current: () => Promise.resolve(stored(OLD_CONNECTION)),
+    snapshot: () => Promise.resolve({ at: 1, name: 'prod', details: DATABASE, secrets: {} }),
+    record: () => Promise.resolve(),
+    store: (_ctx, _slot, value) => {
+      stores.push(value);
+      return Promise.resolve<StoreOutcome>('stored');
+    },
+  };
+  const w = world({ kind: 'db', mcpUse: 'usable', supports: ['rotate'], realActions: { rotate: rotateAction(underlying, 'query', deps) } });
+  return { w, stores };
+}
+
+const rotate = async (w: World, extra: Record<string, unknown> = {}): Promise<{ status: number; body: unknown }> => {
+  const { port } = await share(w);
+  return call(port, '/v1/mcp/use/rotate', { body: { entry: 'e1', statement: STATEMENT, ...extra } });
+};
+
+test('JG1: a rotation that ran and stored its value stays one row, `rotated`, counted under Secrets replaced', async () => {
+  const { w, stores } = rotationWorld({ status: 200, body: { exitCode: 0, stdout: 'ALTER\n' } });
+  try {
+    const answer = await rotate(w);
+
+    assert.deepEqual([answer.status, answer.body], [200, { rotated: true, entity: 'prod', stdout: 'ALTER\n' }]);
+    assert.equal(stores.length, 1, 'the new value reached the vault');
+    assertOneRow(w, 'rotate', 'rotated');
+    assert.deepEqual(countsOf(w), { ...NO_COUNT, rotations: 1 });
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('J8: a rotation that cannot draw its secret is one row, `no generator`, counted under Could not generate, under no other count', async () => {
+  const { w, stores } = rotationWorld({ status: 200, body: { exitCode: 0 } });
+  try {
+    const answer = await rotate(w, { secretKind: 'x509' });
+
+    assert.deepEqual(
+      [answer.status, answer.body],
+      [404, { error: { code: 'not_supported', message: 'Certificates come from a certificate authority.' }, noGenerator: true }],
+    );
+    assert.deepEqual(stores, [], 'nothing ran, nothing was stored');
+    assertOneRow(w, 'rotate', NO_GENERATOR_OUTCOME);
+    assert.deepEqual(countsOf(w), { ...NO_COUNT, noGenerator: 1 });
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('J10: a rotation whose statement ran and failed is one row, `statement failed`, and it is not a replaced secret', async () => {
+  const { w, stores } = rotationWorld({ status: 200, body: { exitCode: 1, stderr: 'denied' } });
+  try {
+    const answer = await rotate(w);
+
+    assert.deepEqual([answer.status, answer.body], [200, { exitCode: 1, stderr: 'denied' }]);
+    assert.deepEqual(stores, [], 'the vault must not hold a password the server refused');
+    assertOneRow(w, 'rotate', 'statement failed');
+    assert.deepEqual(countsOf(w), NO_COUNT);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('J11: a rotation that the action refuses in its run, because the entry is gone, is one row with its status, and it is not a replaced secret', async () => {
+  const { w, stores } = rotationWorld({ status: 200, body: { exitCode: 0 } }, false);
+  try {
+    const answer = await rotate(w);
+
+    assert.deepEqual([answer.status, answer.body], [400, errorBody('invalid_request', '"prod" no longer exists in the vault.')]);
+    assert.deepEqual(stores, []);
+    assertOneRow(w, 'rotate', '400');
+    assert.deepEqual(countsOf(w), NO_COUNT);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+const STATEMENT_ERRORS: ReadonlyArray<readonly [number, ErrorCode]> = [
+  [404, 'not_found'],
+  [409, 'no_credential'],
+  [412, 'tool_missing'],
+  [429, 'too_many_requests'],
+  [500, 'internal'],
+];
+
+test('J12: an error answer of the statement action goes to the agent as it came and is one row with its status number; the 404 is not `no generator`', async () => {
+  for (const [status, errorCode] of STATEMENT_ERRORS) {
+    const body = errorBody(errorCode, 'the statement action says no');
+    const { w, stores } = rotationWorld({ status, body });
+    try {
+      const answer = await rotate(w);
+
+      assert.deepEqual([answer.status, answer.body], [status, body], String(status));
+      assert.deepEqual(stores, [], String(status));
+      assertOneRow(w, 'rotate', String(status));
+      assert.deepEqual(countsOf(w), NO_COUNT, String(status));
+    } finally {
+      w.server.dispose();
+    }
+  }
+});
+
+test('J13: a statement action that answers a body that is no object goes to the agent as it came — not as a 500 — and is one row with its status number', async () => {
+  for (const sent of [null, 'bad gateway']) {
+    const { w } = rotationWorld({ status: 502, body: sent });
+    try {
+      const answer = await rotate(w);
+
+      const body: unknown = answer.body;
+      assert.equal(answer.status, 502, String(sent));
+      assert.equal(body, sent, String(sent));
+      assertOneRow(w, 'rotate', '502');
+      assert.deepEqual(countsOf(w), NO_COUNT, String(sent));
+    } finally {
+      w.server.dispose();
+    }
+  }
+});
+
+test('JG4: a create whose handler throws leaves a line with the route and no mark, and no row on the page (F10: the texts say that such a request can leave no row)', async () => {
+  const throws: McpCreateHooks = {
+    choose: () => ({ ok: true, target: { accountId: 'a1', entityId: 'f1', entityName: 'Servers', kind: 'ssh' }, summary: 'x (ssh) in "Servers"', withSecret: false }),
+    settle: async () => ({ ok: true }),
+    make: () => Promise.reject(new Error('the vault is locked')),
+  };
+  const w = world({ mcpUse: 'usable', mcpCreateReal: throws });
+  try {
+    const { port } = await share(w);
+
+    const answer = await call(port, '/v1/mcp/create', { body: { name: 'x', kind: 'ssh' } });
+
+    assert.deepEqual([answer.status, answer.body], [500, errorBody('internal', UNANSWERED_FAILURE)]);
+    const failed = w.audit.map((line) => parseAuditLine(line)).filter((entry) => entry?.action === 'request');
+    assert.deepEqual(
+      failed.map((entry) => [entry?.outcome, entry?.via, entry?.detail]),
+      [['failed', undefined, 'a handler failed: Error on POST /v1/mcp/create; headers not sent']],
+      w.audit.join(' | '),
+    );
+    assert.deepEqual(rowsOf(w), [], 'and the page has no row for it');
   } finally {
     w.server.dispose();
   }

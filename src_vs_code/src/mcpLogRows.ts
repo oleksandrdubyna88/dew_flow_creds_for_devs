@@ -1,5 +1,5 @@
 import { AuditEntry, parseAuditLine } from './agentAuditLog';
-import { NO_GENERATOR_OUTCOME } from './secretKinds';
+import { NO_GENERATOR_OUTCOME, ROTATED_OUTCOMES } from './secretKinds';
 
 /**
  * The MCP journal: what AI agents did through this window and how each action ended — each action that ran, each one that was declined or not
@@ -88,9 +88,14 @@ export function isRefusal(row: AuditEntry): boolean {
   return REFUSALS.has(row.outcome);
 }
 
-/** A rotation that actually happened — an attempt that was refused is a refusal, not a rotation. */
+/**
+ * A rotation that the journal records as done: one of the three words that say a secret was replaced.
+ *
+ * <p>An attempt that was refused, one that could not draw its secret, a statement that failed, an answer that was an error status
+ * and one whose output was withheld are not replacements, so none of them is counted here (`ROTATED_OUTCOMES`).</p>
+ */
 export function isRotation(row: AuditEntry): boolean {
-  return row.action === 'rotate' && !isRefusal(row);
+  return row.action === 'rotate' && ROTATED_OUTCOMES.has(row.outcome);
 }
 
 /**
