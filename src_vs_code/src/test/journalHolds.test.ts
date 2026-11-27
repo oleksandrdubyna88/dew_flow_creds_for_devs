@@ -21,8 +21,8 @@ import type { World } from './brokerWorld';
 /**
  * What the journal holds, and what the texts about it say (N2; `todo/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.3 and 2.3).
  *
- * <p>These rows hold what the texts say. When a row of J1 to J4 changes, the texts T1 to T8 of that plan (the five help articles, the journal
- * page, the two README sentences) change in the same commit. J1 to J4 run the real broker and read what it wrote; their behaviour did not
+ * <p>These rows hold what the texts say. When a row of J changes, the texts T1 to T8 and T10 to T13 of that plan (the five help articles, the journal
+ * page, the two README sentences, the hints and the comments) change in the same commit. J1 to J4 run the real broker and read what it wrote; their behaviour did not
  * change in that plan, so a mutation shows that each can fail. H1 and H2 pin the sentences through the product's own functions.</p>
  */
 
@@ -386,7 +386,7 @@ test('J13: a statement action that answers a body that is no object goes to the 
       const answer = await rotate(w);
 
       const body: unknown = answer.body;
-      assert.equal(answer.status, 502, String(sent));
+      assert.equal(answer.status, 502, `body ${String(sent)}: the agent read ${answer.status} ${JSON.stringify(answer.body)}`);
       assert.equal(body, sent, String(sent));
       assertOneRow(w, 'rotate', '502');
       assert.deepEqual(countsOf(w), NO_COUNT, String(sent));
@@ -421,18 +421,18 @@ test('JG4: a create whose handler throws leaves a line with the route and no mar
   }
 });
 
-/** The sentence of T1, in the five languages (Appendix A of the plan). A native reader can polish a word; the clauses stay. */
+/** The sentence of T1, in the five languages (Appendix A of the plan, after S4). A native reader can polish a word; the clauses stay. */
 const WHAT_IT_IS: Record<HelpLanguage, string> = {
   en:
-    'A journal of what AI agents did through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete.',
+    'A journal of what AI agents did over MCP through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete. A request that fails inside this window can leave no row on the page. A create, a delete or a folder change that ran under an older version of the extension is absent from the page while its journal file is kept; the files are swept after 14 days.',
   ru:
-    'Журнал того, что ИИ-агенты сделали через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и секреты, которые это окно попросили создать, а оно не смогло. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос.',
+    'Журнал того, что ИИ-агенты сделали по MCP через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и секреты, которые это окно попросили создать, а оно не смогло. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос. Запрос, завершившийся сбоем внутри этого окна, может не оставить строки на странице. Создание, удаление или изменение папки, выполненные в более старой версии расширения, отсутствуют на странице, пока хранится их файл журнала; файлы удаляются через 14 дней.',
   uk:
-    'Журнал того, що AI-агенти зробили через це розширення: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і секрети, які це вікно попросили створити, а воно не змогло. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит.',
+    'Журнал того, що AI-агенти зробили через MCP у цьому розширенні: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і секрети, які це вікно попросили створити, а воно не змогло. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит. Запит, що завершився збоєм усередині цього вікна, може не лишити рядка на сторінці. Створення, видалення або зміна папки, виконані у старішій версії розширення, відсутні на сторінці, доки зберігається їхній файл журналу; файли видаляються через 14 днів.',
   de:
-    'Ein Journal dessen, was KI-Agenten durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage.',
+    'Ein Journal dessen, was KI-Agenten über MCP durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage. Eine Anfrage, die innerhalb dieses Fensters fehlschlägt, kann auf der Seite keine Zeile hinterlassen. Ein Erstellen, ein Löschen oder eine Ordneränderung, die unter einer älteren Version der Erweiterung lief, fehlt auf der Seite, solange die zugehörige Journaldatei aufbewahrt wird; die Dateien werden nach 14 Tagen entfernt.',
   es:
-    'Un diario de lo que los agentes de IA hicieron a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta.',
+    'Un diario de lo que los agentes de IA hicieron por MCP a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta. Una petición que falla dentro de esta ventana puede no dejar ninguna línea en la página. Una creación, un borrado o un cambio de carpeta que se ejecutó con una versión anterior de la extensión no aparece en la página mientras se conserva su archivo del diario; los archivos se eliminan a los 14 días.',
 };
 
 test('H1: the article of the journal says in each language what the journal holds, and that it is not a record of every request', () => {
@@ -450,17 +450,32 @@ const flat = (html: string): string => html.replace(/\s+/g, ' ');
 test('H2: the journal page says what it holds — the hints of the filters, the two empty messages and the lede', () => {
   const hint = (id: string): string | undefined => MCP_LOG_FILTERS.find((f) => f.id === id)?.hint;
 
-  assert.equal(hint('all'), 'Every line of the journal that came through MCP.');
+  assert.equal(hint('all'), 'Every line that this page shows.');
   assert.equal(
     hint('refused'),
-    'What it asked for and did not get — a prompt you declined, a prompt nobody answered, a run that was refused. A request that is refused before anybody is asked can leave no line.',
+    'What it asked for and did not get — a prompt you declined, a prompt nobody answered, a run that was refused. A request that is refused before anybody is asked can leave no line. A call that ended with an error status is under Everything.',
   );
   assert.equal(
     emptyMessage('all', 0),
-    'The journal holds no line yet. A listing leaves none, and a request that is refused before anybody is asked can leave none. Entries are invisible to agents until you turn on Agent access for one.',
+    'No line to show yet. A listing leaves none, and a request that is refused before anybody is asked can leave none. Entries are invisible to agents until you turn on Agent access for one.',
   );
-  assert.equal(emptyMessage('refused', 3), 'No refusal is in the journal. A request that is refused before anybody is asked can leave no line.');
+  assert.equal(emptyMessage('refused', 3), 'No line shown here is a refusal. A request that is refused before anybody is asked can leave no line.');
   const page = flat(renderMcpLog([]));
   assert.ok(page.includes('What AI agents did through this window, from the same record the broker writes to disk.'), page);
+  assert.ok(
+    page.includes(
+      'A create, a delete or a folder change that ran under an older version of the extension is absent while its journal file is kept; the files are swept after 14 days.',
+    ),
+    page,
+  );
   assert.ok(!page.includes('Every call an AI agent made'), 'the old claim is gone');
+});
+
+test('H3: the hint of Secrets replaced and the empty messages of the count filters say what the journal records, not what it never saw', () => {
+  const hint = (id: string): string | undefined => MCP_LOG_FILTERS.find((f) => f.id === id)?.hint;
+
+  assert.equal(hint('rotations'), 'Each rotation that the journal records as done. The value passed through this window and never through the agent.');
+  assert.equal(emptyMessage('rotations', 3), 'No line shown here is a rotation that the journal records as done.');
+  assert.equal(emptyMessage('agentSecrets', 3), 'No line shown here is a secret that came from an agent.');
+  assert.equal(emptyMessage('noGenerator', 3), 'No line shown here is a secret that this window could not make.');
 });

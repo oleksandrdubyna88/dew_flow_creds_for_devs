@@ -1,8 +1,10 @@
 import { CALLER_MAX_LABEL_CHARS } from './brokerCaller';
 
 /**
- * One line per agent call, for the output channel that IS this feature's audit
- * surface. Pure so the one rule worth asserting — the full secret never
+ * The lines of what an agent did, for the output channel that IS this feature's audit
+ * surface: a line when a grant is minted, a line for the answer to a consent question, and a
+ * line that says how the request ended (a listing writes none, and a request refused before a
+ * grant exists writes none). Pure so the one rule worth asserting — the full secret never
  * appears in a line — is a unit test rather than a promise.
  */
 

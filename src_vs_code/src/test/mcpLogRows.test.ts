@@ -139,7 +139,7 @@ test('the page shows a row per call and says so when there are none', () => {
   assert.ok(html.includes('orders-db'));
   assert.ok(html.includes('SELECT 1'));
   assert.ok(html.includes('2026-08-27'));
-  assert.ok(renderMcpLog([]).includes('The journal holds no line yet'));
+  assert.ok(renderMcpLog([]).includes('No line to show yet'));
 });
 
 test('a refused rotation appears under Refused and NOT under Secrets replaced', () => {
@@ -185,9 +185,9 @@ test('a secret that came from the agent is counted, and only that one is', () =>
 test('the empty message tells the two silences apart', () => {
   // "Nothing was replaced" and "no secret ever reached the vault from an agent" are different
   // facts, and the second is the reassuring one somebody opened this filter to check.
-  assert.match(emptyMessage('agentSecrets', 3), /No secret has reached the vault from an agent/);
-  assert.match(emptyMessage('rotations', 3), /No secrets have been replaced/);
-  assert.match(emptyMessage('all', 0), /The journal holds no line yet/);
+  assert.match(emptyMessage('agentSecrets', 3), /No line shown here is a secret that came from an agent/);
+  assert.match(emptyMessage('rotations', 3), /No line shown here is a rotation that the journal records as done/);
+  assert.match(emptyMessage('all', 0), /No line to show yet/);
 });
 
 test('what could not be generated is counted, and is not lumped in with refusals', () => {
