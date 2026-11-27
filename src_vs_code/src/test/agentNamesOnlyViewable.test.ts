@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, before, test } from 'node:test';
-import { HIDDEN_DEPENDENCY } from '../agentNaming';
+import { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } from '../agentNaming';
 import { BRIDGE_ROUTES } from '../bridgeAllowList';
 import { ErrorCode, errorBody, statusForErrorCode } from '../brokerProtocol';
 import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
@@ -16,7 +16,7 @@ import { World, share, world } from './brokerWorld';
 import { normalised, send, viaBridge, wallWorld } from './bridgeWallWorld';
 import { HIDDEN_HOP_IDS, asBroker, gateWorld, usableSsh } from './agentSshWorld';
 import { ACCOUNT, HIDDEN_ID, SecondOptions, SecondWorld, VISIBLE_NAME, secondEntryWorld } from './secondEntryWorld';
-import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, N5_COMMAND, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
+import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
 
 /**
  * Part A of the class test of `research/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.1): the ADDRESSED node, at the door.
@@ -330,7 +330,6 @@ function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
  * there today (the owner closed them in `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`; each story takes its own row out).
  */
 const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly today: unknown }[] = [
-  { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', today: N5_COMMAND },
   { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', today: HIDDEN.folders.none },
 ];
 
@@ -338,6 +337,7 @@ const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'fol
 const CLOSED: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
   { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
   { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', now: '' },
+  { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', now: HIDDEN_REFERENCE },
 ];
 
 /** The rows of one list with the fields of the open exceptions taken out. */

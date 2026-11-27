@@ -284,6 +284,7 @@ test('a node with no details is never an entry, whatever its switches say', () =
     hasPrivateKey: false,
     hasNotes: false,
     hasTotp: false,
+    keepsReference: () => true,
     dependsOn: [],
   });
 
@@ -295,7 +296,7 @@ test('an_agent_and_a_search_see_the_stored_command_not_the_resolved_one', () => 
   const node = entity('e1', 'alert', { isTerminal: true, command: 'tmux {name}', commandArgs: [{ value: '-t {name}' }] });
   const resolved = resolveMcpInTree(node, () => folder('f1', 'F', { mcp: { view: true } }));
 
-  const built = mcpEntryFor(node, { resolved, folderName: 'F', hasPassword: false, hasPrivateKey: false, hasNotes: false, hasTotp: false, dependsOn: [] });
+  const built = mcpEntryFor(node, { resolved, folderName: 'F', hasPassword: false, hasPrivateKey: false, hasNotes: false, hasTotp: false, keepsReference: () => true, dependsOn: [] });
 
   assert.equal(built?.command, 'tmux {name}');
   assert.ok(nodeHaystack(node).includes('tmux {name}'));
@@ -538,6 +539,7 @@ test('a payment instrument opened to an agent carries no payment field, and ther
     hasPrivateKey: false,
     hasNotes: false,
     hasTotp: false,
+    keepsReference: () => true,
     dependsOn: [],
   });
   assert.ok(entry !== undefined, 'the entry itself is visible — the switch says so');

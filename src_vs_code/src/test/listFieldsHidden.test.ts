@@ -264,3 +264,129 @@ test('FG2: an entry with no switch of its own, under a silent folder, under an o
 test('FG3: an entry at the root has no folder', async () => {
   assert.equal((await rowOf(placed(null, []), 'e1')).folder, '');
 });
+
+// ---------- S3 · N5, `command` ----------
+
+/** The terminal entry that holds `command`, in a world: it has switches of its own, so it is listed. */
+const terminal = (id: string, command: string): TreeNode => entry(id, `terminal ${id}`, { mcp: OPEN, kind: 'terminal', isSshEnabled: false, command });
+
+/** Hidden: no switch (`H`), a PIN of its own, the Trash, and a folder with no switch (`HF`). Viewable: `V` in an open folder, `V2` with switches of its own in `HF`. */
+const HID = { entry: 'Hid-entry', pin: 'Hid-pin', trashed: 'Hid-trashed', folder: 'Hid-folder' } as const;
+const VIS = { entry: 'Vis-entry', two: 'Vis-two', folder: 'Open-folder' } as const;
+
+const hiddenEntry = entry('h', HID.entry);
+const hiddenFolder = folder('hf', HID.folder);
+
+/** The nodes that every row of S3 has, but `hiddenEntry` and `hiddenFolder`, which the pair rows take out. */
+const COMMON: readonly TreeNode[] = [
+  folder('of', VIS.folder, { mcp: OPEN }),
+  entry('v', VIS.entry, {}, 'of'),
+  entry('p', HID.pin, { mcp: ALL, pinProtected: true }),
+  folder('tr', 'Trash', { isTrash: true, mcp: ALL }),
+  entry('tr1', HID.trashed, { mcp: ALL }, 'tr'),
+];
+
+const SECOND = entry('v2', VIS.two, { mcp: OPEN }, 'hf');
+
+const HIDDEN_WORDS = [HID.entry, HID.pin, HID.trashed, HID.folder];
+
+/** The command of the terminal entry `t1` in the list, for a world and a stored command. */
+async function listedCommand(command: string, nodes: readonly TreeNode[] = [hiddenEntry, hiddenFolder, SECOND]): Promise<string | undefined> {
+  return (await rowOf(vault([...COMMON, ...nodes, terminal('t1', command)]), 't1')).command;
+}
+
+const ref = (path: string, field = 'password', account = EMAIL): string => `creds://${account}/${path}/${field}`;
+
+test('R1: a reference to an entry that has no switch is replaced, and the text around it stays', async () => {
+  assert.equal(await listedCommand(`run ${ref(HID.entry)} now`), `run ${HIDDEN_REFERENCE} now`);
+});
+
+test('R2: a reference to an entry with a PIN of its own, or to an entry in the Trash, is replaced', async () => {
+  assert.equal(await listedCommand(`a ${ref(HID.pin)} b`), `a ${HIDDEN_REFERENCE} b`);
+  assert.equal(await listedCommand(`a ${ref(HID.trashed)} b`), `a ${HIDDEN_REFERENCE} b`);
+});
+
+test('R3: a reference that names a folder that is not open is replaced, also when the entry is one that the agent may view', async () => {
+  assert.equal(await listedCommand(`go ${ref(`${HID.folder}/${VIS.two}`)}`), `go ${HIDDEN_REFERENCE}`);
+});
+
+test('R4: a reference to an account that is not there, or to a name that no entry has, is replaced', async () => {
+  assert.equal(await listedCommand(ref(VIS.entry, 'password', 'nobody@x.test')), HIDDEN_REFERENCE);
+  assert.equal(await listedCommand(ref('No-such-entry')), HIDDEN_REFERENCE);
+  const first: Account = { accountId: 'a1', email: EMAIL, nodes: [terminal('t1', ref('Other-entry', 'password', 'you@x.test'))] };
+  const second: Account = { accountId: 'a2', email: 'you@x.test', nodes: [entry('o1', 'Other-entry')] };
+  assert.equal((await rowOf(vaultOf(first, second), 't1')).command, HIDDEN_REFERENCE, 'an entry of a second account that has no switch there');
+});
+
+test('R5: a name that two entries have is replaced, one of them hidden or both viewable: the locator finds no ONE entry', async () => {
+  const mixed = [entry('d1', 'Dup-mixed', { mcp: OPEN }), entry('d2', 'Dup-mixed')];
+  assert.equal(await listedCommand(ref('Dup-mixed'), mixed), HIDDEN_REFERENCE, 'one that the agent may view and one hidden');
+  const both = [entry('d3', 'Dup-both', { mcp: OPEN }), entry('d4', 'Dup-both', { mcp: OPEN })];
+  assert.equal(await listedCommand(ref('Dup-both'), both), HIDDEN_REFERENCE, 'two that the agent may view');
+});
+
+test('R6: a token that the parser does not read is replaced, also when it starts with a name that the agent may view', async () => {
+  for (const token of [`creds://${EMAIL}/${VIS.entry}`, ref(VIS.entry, 'salary'), ref(VIS.entry, 'Password'), `${ref(VIS.entry)}.`]) {
+    assert.equal(await listedCommand(token), HIDDEN_REFERENCE, token);
+  }
+});
+
+test('R7: the scheme in any letter case is a reference for the list, and the decision is the one of R1', async () => {
+  assert.equal(await listedCommand(`CREDS://${EMAIL}/${HID.entry}/password`), HIDDEN_REFERENCE);
+  assert.equal(await listedCommand(`Creds://ME@X.TEST/${HID.entry.toLowerCase()}/password`), HIDDEN_REFERENCE);
+});
+
+/** The two whole bodies of the list for a pair of worlds, and the text of the hidden words in them. */
+async function pair(command: string, without: readonly TreeNode[], withIt: readonly TreeNode[]): Promise<{ equal: boolean; leaked: string[]; commands: [string | undefined, string | undefined] }> {
+  const [a, b] = [vault([...COMMON, ...withIt, terminal('t1', command)]), vault([...COMMON, ...without, terminal('t1', command)])];
+  const [bodyA, bodyB] = [await visibleMcpEntries(a), await visibleMcpEntries(b)];
+  const text = JSON.stringify([bodyA, bodyB]);
+  assert.deepEqual(bodyA, bodyB, 'the two bodies are deep-equal');
+  return { equal: true, leaked: HIDDEN_WORDS.filter((word) => text.includes(word)), commands: [bodyA.find((r) => r.id === 't1')?.command, bodyB.find((r) => r.id === 't1')?.command] };
+}
+
+test('E3: a hidden entry and a missing one, a hidden folder and a missing one, give the same body; a reference that names no hidden folder is kept in both', async () => {
+  const one = await pair(`run ${ref(HID.entry)}`, [hiddenFolder, SECOND], [hiddenEntry, hiddenFolder, SECOND]);
+  assert.deepEqual(one.leaked, [], 'pair (1): the name of the hidden entry is in neither body');
+  assert.deepEqual(one.commands, [`run ${HIDDEN_REFERENCE}`, `run ${HIDDEN_REFERENCE}`]);
+  const two = await pair(ref(`${HID.folder}/${VIS.two}`), [{ ...SECOND, parentId: 'hf' }], [hiddenFolder, SECOND]);
+  assert.deepEqual(two.leaked, [], 'pair (2): the name of the hidden folder is in neither body');
+  assert.deepEqual(two.commands, [HIDDEN_REFERENCE, HIDDEN_REFERENCE]);
+  const three = await pair(ref(VIS.two), [{ ...SECOND, parentId: 'hf' }], [hiddenFolder, SECOND]);
+  assert.deepEqual(three.leaked, [], 'pair (3): the name of the hidden folder is in neither body');
+  assert.deepEqual(three.commands, [ref(VIS.two), ref(VIS.two)], 'pair (3): the shorter reference is kept in both');
+});
+
+test('RG1: a reference to an entry that the agent may view, with no folder part or with an open folder, is kept byte for byte', async () => {
+  for (const command of [`x ${ref(VIS.entry)} y`, `x ${ref(`${VIS.folder}/${VIS.entry}`)} y`]) {
+    assert.equal(await listedCommand(command), command);
+  }
+});
+
+test('RG2: a reference to an entry of a SECOND account that the agent may view there is kept: the wall is asked in the account that the reference names', async () => {
+  const first: Account = { accountId: 'a1', email: EMAIL, nodes: [...COMMON, hiddenEntry, terminal('t1', ref('Other-entry', 'password', 'you@x.test'))] };
+  const second: Account = { accountId: 'a2', email: 'you@x.test', nodes: [entry('o1', 'Other-entry', { mcp: OPEN })] };
+  assert.equal((await rowOf(vaultOf(first, second), 't1')).command, ref('Other-entry', 'password', 'you@x.test'));
+});
+
+test('RG3: a command with no token is the text; a blank command has no command', async () => {
+  assert.equal(await listedCommand('tmux {name}'), 'tmux {name}');
+  assert.equal(await listedCommand('   '), undefined);
+});
+
+test('RG4: the replaced text is not a token: the answer of R1, given to the same function a second time, is the same text', async () => {
+  const once = (await listedCommand(`run ${ref(HID.entry)} now`)) as string;
+  assert.equal(await listedCommand(once), once);
+});
+
+test('RG5: the shorter reference, which leaves a hidden folder out and names one entry, is kept byte for byte', async () => {
+  assert.equal(await listedCommand(ref(VIS.two)), ref(VIS.two));
+});
+
+test('RG6: a clean match in another letter case is kept in the letter case that the person typed', async () => {
+  const spaced = entry('sp', 'Vis spaced', { mcp: OPEN });
+  const kept = [`creds://ME@X.TEST/${VIS.entry.toLowerCase()}/totp`, `CREDS://${EMAIL}/${VIS.entry}/password`, `creds://${EMAIL}/VIS%20SPACED/password`];
+  for (const command of kept) {
+    assert.equal(await listedCommand(command, [hiddenEntry, spaced]), command);
+  }
+});

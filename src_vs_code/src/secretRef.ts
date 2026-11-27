@@ -93,6 +93,21 @@ export function findSecretRefs(text: string): string[] {
   return [...found];
 }
 
+/**
+ * The same scan as `findSecretRefs`, with the scheme in ANY letter case: the parser reads `CREDS://` as a reference (`parseSecretRef`), and
+ * `REF_PATTERN` does not find it, so a run leaves such a token as text. A caller that must decide on EVERY token that the parser could read
+ * (the list of entries an agent reads) asks this one. `REF_PATTERN` and `findSecretRefs` do not change.
+ */
+const REF_SCAN = new RegExp(REF_PATTERN.source, 'gi');
+
+/**
+ * Every token that looks like a reference, in any letter case of the scheme, given to `rewrite`; the text with its answers in their places.
+ * The text between the tokens is untouched, and a token is whole as `REF_PATTERN` takes it (a mark at the end is a part of it).
+ */
+export function rewriteRefTokens(text: string, rewrite: (token: string) => string): string {
+  return text.replace(REF_SCAN, (token) => rewrite(token));
+}
+
 /** What the resolver needs from the vault — ids stay internal, names come in. */
 export interface RefSource {
   accounts(): Array<{ accountId: string; email: string }>;

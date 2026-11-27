@@ -88,7 +88,7 @@ import { RefSource } from './secretRef';
 export { maskingBanner } from './outputMask';
 import { wireSshAgent } from './sshAgentWiring';
 import { autoLockMinutesSetting } from './autoLockSetting';
-import { folderPath } from './quickOpen';
+import { vaultRefLocator } from './vaultRefLocator';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
 import {
@@ -816,16 +816,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * their folder path so an ambiguous name can be disambiguated by writing `Folder/Name`.
    */
   const refSource: RefSource = {
-    accounts: () => storage.getAccounts().map((a) => ({ accountId: a.accountId, email: a.email })),
-    entities: (accountId) => {
-      const nodes = storage.getNodes(accountId);
-      const byId = new Map(nodes.map((n) => [n.id, n]));
-      // `folderPath` is the quick-open walk, reused: two implementations of "where does this
-      // node sit" would disagree the first time a malformed parent chain arrived by sync.
-      return nodes
-        .filter((n) => n.type === 'entity')
-        .map((n) => ({ id: n.id, name: n.name, path: [...folderPath(n, byId), n.name] }));
-    },
+    // `accounts` and `entities` are the pure locator that the list of entries an agent reads asks too, so the run and the list find one entry by one function.
+    ...vaultRefLocator(storage),
     // Three answers rather than two — a withheld field carries the reason it was withheld, so a
     // reference to a woven password reports THAT instead of inventing an absence.
     fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),

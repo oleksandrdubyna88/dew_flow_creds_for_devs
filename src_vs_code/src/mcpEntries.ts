@@ -1,6 +1,8 @@
 import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { isOpenFolder } from './mcpFolders';
+import { ReferenceWall, keepsReference, listedCommand } from './agentCommandText';
+import { locatorForOneListing, vaultRefLocator } from './vaultRefLocator';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
@@ -50,7 +52,10 @@ export interface McpEntry {
   /** The connection string with the password removed — never the one that would connect. */
   connectionString?: string;
   vpnType?: string;
-  /** The command a terminal entry runs. Not a secret: it is what the person typed. */
+  /**
+   * The command a terminal entry runs. Not a secret: it is what the person typed — but each `creds://` token that is not a reference to things the
+   * agent may view is shown as `HIDDEN_REFERENCE` (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
+   */
   command?: string;
   scriptLanguage?: string;
   hasPassword: boolean;
@@ -94,6 +99,8 @@ export interface McpEntryContext {
   hasTotp: boolean;
   /** The connection string, if any, as stored. Read (`plainText`) and stripped here rather than by the caller. */
   dbConnection?: StoredSecret;
+  /** Is this `creds://` token of the command a reference to things that the agent may view? Required: a caller that forgets it does not compile. */
+  keepsReference: (token: string) => boolean;
   /** The names this entry depends on that the agent may view, then `HIDDEN_DEPENDENCY` once if it depends on one more: already resolved from ids by the caller. */
   dependsOn: readonly string[];
 }
@@ -154,7 +161,7 @@ export function mcpEntryFor(node: TreeNode, context: McpEntryContext): McpEntry 
     name: node.name,
     kind: resolveKind(details),
     folder: context.folderName,
-    ...visibleFields(details),
+    ...visibleFields(details, context.keepsReference),
     connectionString: shownConnection(context.dbConnection),
     hasPassword: context.hasPassword,
     hasPrivateKey: context.hasPrivateKey,
@@ -178,16 +185,21 @@ function codeAccessOf(details: EntityMetadata): boolean | undefined {
  * new field on `EntityMetadata` does not appear here by itself, which is the intended
  * direction: adding one to this answer should be a decision somebody made.</p>
  */
-function visibleFields(details: EntityMetadata): Partial<McpEntry> {
+function visibleFields(details: EntityMetadata, keepsReference: (token: string) => boolean): Partial<McpEntry> {
   return {
     host: blankToUndefined(details.host),
     port: details.port,
     user: blankToUndefined(details.user),
     dbType: blankToUndefined(details.dbType),
     vpnType: blankToUndefined(details.vpnType),
-    command: blankToUndefined(details.command),
+    command: shownCommand(blankToUndefined(details.command), keepsReference),
     scriptLanguage: blankToUndefined(details.scriptLanguage),
   };
+}
+
+/** The command as the agent reads it: a token that is not kept is the placeholder; no command stays no command. */
+function shownCommand(command: string | undefined, keepsReference: (token: string) => boolean): string | undefined {
+  return command === undefined ? undefined : listedCommand(command, keepsReference);
 }
 
 /** An empty string on the wire says "there is one, and it is nothing", which is never true here. */
@@ -202,7 +214,7 @@ function blankToUndefined(value: string | undefined): string | undefined {
  * a module that takes the whole storage manager is a module whose test has to build one.</p>
  */
 export interface McpVaultSource {
-  getAccounts(): readonly { accountId: string }[];
+  getAccounts(): readonly { accountId: string; email?: string }[];
   getNodes(accountId: string): readonly TreeNode[];
   getNode(accountId: string, id: string): TreeNode | undefined;
   getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
@@ -226,10 +238,11 @@ export interface McpVaultSource {
  */
 export async function visibleMcpEntries(source: McpVaultSource): Promise<readonly McpEntry[]> {
   const found: McpEntry[] = [];
+  const keepsReference = referenceKeeper(source);
   for (const { accountId } of source.getAccounts()) {
     const byId = (id: string): TreeNode | undefined => source.getNode(accountId, id);
     for (const node of source.getNodes(accountId)) {
-      const entry = await entryIfVisible(source, accountId, node, byId);
+      const entry = await entryIfVisible(source, accountId, node, byId, keepsReference);
       if (entry !== undefined) {
         found.push(entry);
       }
@@ -276,6 +289,7 @@ async function entryIfVisible(
   accountId: string,
   node: TreeNode,
   byId: (id: string) => TreeNode | undefined,
+  keepsReference: (token: string) => boolean,
 ): Promise<McpEntry | undefined> {
   const resolved = resolveMcpInTree(node, byId);
   if (!shown(node, resolved)) {
@@ -284,9 +298,24 @@ async function entryIfVisible(
   return mcpEntryFor(node, {
     resolved,
     folderName: folderNameOf(resolved, byId),
+    keepsReference,
     ...(await storedSecrets(source, accountId, node.id)),
     dependsOn: dependencyNames(node, byId),
   });
+}
+
+/**
+ * The one function of the three conditions of a `creds://` token in a listed command, built once for a listing: the product's own locator over ALL
+ * entries of the account that the token names, the wall (`agentMayView`) in that account, and `isOpenFolder` for each folder that the token names
+ * (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
+ */
+function referenceKeeper(source: McpVaultSource): (token: string) => boolean {
+  const wall: ReferenceWall = {
+    locator: locatorForOneListing(vaultRefLocator(source)),
+    mayViewEntry: (accountId, entityId) => agentMayView(source, accountId, entityId),
+    nodeOf: (accountId, id) => source.getNode(accountId, id),
+  };
+  return (token) => keepsReference(token, wall);
 }
 
 /** A folder is not an entry, and an entry nobody opened is not shown. */
