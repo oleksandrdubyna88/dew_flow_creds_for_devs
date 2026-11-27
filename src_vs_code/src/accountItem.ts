@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { OwnedShare, StoredAccount, TreeNode } from './types';
 import { accountCounts, formatAccountCounts } from './accountCounts';
 import { OrgRecoveryAccess, accountContextValue } from './orgRecoveryAccess';
+import { SyncReadiness, accountIconGreen } from './syncReadiness';
 
 /**
  * The account row and the separator row, out of `treeDataProvider.ts` — which crossed the
@@ -14,7 +15,7 @@ export interface AccountRowInput {
   readonly collapsibleState: vscode.TreeItemCollapsibleState;
   /** What the org-recovery menu decides from — `'none'` for an ordinary account. */
   readonly orgAccess: OrgRecoveryAccess;
-  readonly readiness: { ready: boolean; reason?: string } | undefined;
+  readonly readiness: SyncReadiness | undefined;
   readonly extensionUri: vscode.Uri;
   readonly nodes: readonly TreeNode[];
   readonly byId: (id: string) => TreeNode | undefined;
@@ -34,9 +35,9 @@ export function accountItem(input: AccountRowInput): vscode.TreeItem {
   item.iconPath = vscode.Uri.joinPath(
     input.extensionUri,
     'media',
-    readiness?.ready === true ? 'account-green.svg' : 'account-grey.svg',
+    accountIconGreen(readiness) ? 'account-green.svg' : 'account-grey.svg',
   );
-  // The reason belongs on the row itself: a grey icon that does not say why is a riddle.
+  // Green means the vault is open; what sync still lacks is the sentence on the row itself.
   // The three counts (T32) replace the row's plus: entries / trash / shared, zeros written
   // out. Colours for the numbers are not expressible in a description — recorded in
   // accountCounts.ts.

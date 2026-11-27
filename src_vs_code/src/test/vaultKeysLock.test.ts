@@ -364,7 +364,7 @@ test('W1 setting idle auto-lock to 0 ends every login window, keeps the 10-minut
 });
 
 test('W2 wireSshAgent tells the manager whether the vault is locked, whether auto-lock is overdue and what it is set to', async (t) => {
-  // Unlocked, auto-lock 60, not overdue: the prompt offers the button.
+  // Unlocked, auto-lock at its default (720), not overdue: the prompt offers the button.
   const open = await rig({ answers: [ALLOW_ONCE] });
   await open.gate.confirm(key, login);
   assert.deepEqual(open.w.buttons[0], FOUR, 'the control: wired, a login prompt offers Allow longer…');
@@ -385,6 +385,7 @@ test('W2 wireSshAgent tells the manager whether the vault is locked, whether aut
   // Overdue: a granted window is not honoured once the idle time has passed, whatever the timer has not yet done.
   t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 21, 9, 0, 0) });
   const overdue = await rig({ answers: [LONGER, ALLOW_ONCE] });
+  overdue.w.settings.autoLockMinutes = 60; // shorter than the 4-hour window, so what ends it below is the idle time, not its own end
   overdue.w.pickAnswers.push('4 hours');
   await overdue.gate.confirm(key, login);
   assert.equal(await overdue.gate.confirm(key, login), true);

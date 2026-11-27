@@ -24,11 +24,11 @@ test("W6 the manifest default of credSshManager.autoLockMinutes is the reader's 
   assert.equal(manifest.contributes.configuration.properties['credSshManager.autoLockMinutes'].default, setting.AUTO_LOCK_DEFAULT_MINUTES);
 });
 
-test('W7 the reader: unset reads 60, 0 reads 0, a negative value is returned as it is (and reads as off)', () => {
+test('W7 the reader: unset reads 720, 0 reads 0, a negative value is returned as it is (and reads as off)', () => {
   const w = world({ also: ['../autoLockSetting'] });
   const [setting] = w.modules as [Setting];
 
-  assert.equal(setting.autoLockMinutesSetting(), 60, 'unset: the documented default');
+  assert.equal(setting.autoLockMinutesSetting(), 720, 'unset: the documented default, 12 hours');
   w.settings.autoLockMinutes = 0;
   assert.equal(setting.autoLockMinutesSetting(), 0);
   w.settings.autoLockMinutes = -5;

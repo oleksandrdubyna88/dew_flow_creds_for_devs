@@ -326,7 +326,7 @@ async function withVscodeStub(dir, body) {
        cancel() { this.token.isCancellationRequested = true; this.cancelled.fire(); }
        dispose() { this.cancelled.dispose(); }
      }
-     // Settings come from a global read at call time: section 7 runs with auto-lock at its default, 60.
+     // Settings come from a global read at call time: section 7 runs with auto-lock at its default, 720.
      const workspace = {
        getConfiguration: () => ({ get: (key, fallback) => (global.__AGENT_SETTINGS__ && key in global.__AGENT_SETTINGS__ ? global.__AGENT_SETTINGS__[key] : fallback) }),
        onDidChangeConfiguration: new EventEmitter().event,
@@ -682,7 +682,7 @@ async function windowLeg(rig, scenario) {
   }
 }
 
-/** A real `VaultKeys`, the lock link and the settings link (auto-lock at its default, 60) and a manager of its own. */
+/** A real `VaultKeys`, the lock link and the settings link (auto-lock at its default, 720) and a manager of its own. */
 function legWorld(rig) {
   const { VaultKeys } = require(path.join(OUT, 'vaultKeys.js'));
   const { connectAgentToLock, connectAgentToSettings } = require(path.join(OUT, 'sshAgentWiring.js'));

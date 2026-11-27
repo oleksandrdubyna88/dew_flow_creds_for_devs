@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the idle auto-lock is 12 hours by default
+
+`credSshManager.autoLockMinutes` is **720** (12 hours) by default; it was 60. The owner asked for it on 2026-11-27: with 60, a
+vault that nobody used for an hour locked, and a lock ends every SSH login window and closes every Remote Bridge, so an agent's
+work stopped after an hour of quiet. A value that you set yourself does not change. To keep the old behaviour, set it to `60`
+(or use *Set Auto-Lock…*). What this costs: on a computer that you leave unlocked, the cached master key stays in memory up to
+12 idle hours instead of one. Closing VS Code still locks, and *Lock Vaults* still locks at once.
+
+### Changed — an account icon is green while the vault is unlocked
+
+The account icon in the tree is green while the vault is unlocked, and grey while it is locked (the owner, 2026-11-27). Before,
+it was green only when sync could run with nobody there (a sync location AND a stored Sync PIN), so an account with no sync
+location stayed grey while the vault was open, and the tree did not show whether the vault was open. What sync still lacks is
+still the sentence on the account row, and *Sync* still reports it.
+
 ## [1.24.1] — 2026-11-27 — Fixed — the config snippet goes on across accounts; the journal reason of a linked run; the journal page shows the lines it counts
 
 ### Fixed — the snippet of a config no longer depends on what an earlier account holds under its id; the journal reason of a linked run; the texts about the journal; the journal page shows the lines that it counts
