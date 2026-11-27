@@ -1,6 +1,6 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **re-reviewed 2026-11-27: epoch 2 is open (`by nobody`); stories S1 to S3 are built, story S4 is not
+> Status: **re-reviewed 2026-11-27: epoch 2 is open (`by reviewers`); stories S1 to S3 are built, story S4 is not
 > built; not merged and not released.** The plan stopped at entry 1.2 on 2026-11-27 and was revised as a whole on
 > the same day (the record is in `## Plan changes`). Built on the branch `fix/n8-n9-n2-small-truths`: S1 `d12df88a`,
 > S2 `fe2c4ddd`, S3 `8515c1e9`, and two review fixes, `19b04992` and `56610bf0`. **To build: S4, the journal page
@@ -17,8 +17,8 @@
 > the lead accepted the 4. An Opus judge checked the marks in the table of the record and confirmed *Narrowed: no*;
 > the judge changed the marks of one commit and named two gaps. The 4 findings and the judge's points are applied in
 > the commit after `345b2ed7`; they are part of the re-review and are no entry of the ledger. The round and the
-> judge read `345b2ed7`, not the text with these fixes. The epoch line was written before the round and says
-> `by nobody`; the lead decides if it changes. The revision found five facts that the lead's decisions did not have: a fourth line with no
+> judge read `345b2ed7`, not the text with these fixes. The epoch line was written before the round as
+> `by nobody`; the lead changed it to `by reviewers` after the round passed (`proceed`, 2 of 2 reviewers). The revision found five facts that the lead's decisions did not have: a fourth line with no
 > `via` (the folder door), a rotation whose statement failed is noted as `rotated`, the empty messages of the count
 > filters are shown by no page, the counts and the rows of a filter can differ (§1.5), and the line of a handler
 > that threw has no `via` (F10; not built, Q10).
@@ -76,7 +76,7 @@ Narrowed: no — the revision adds sites, rows, mutations and texts (story S4); 
   `8515c1e9`: its one row *fits* held words that S4 corrects, so the commit now has three rows, one *fits* and two
   *cut*. The other marks stand. Nothing is merged, so nothing is reverted on `main`.)
 
-> Epoch 2 · approved 2026-11-27 · by nobody · state: open
+> Epoch 2 · approved 2026-11-27 · by reviewers · state: open
 
 ## 1. The three defects
 
