@@ -1110,8 +1110,8 @@ and green. Nothing left the merge conditions, and the release is as §8 says: it
 6. **Not done: the Opus nits.** N1: the sentence *Every call is recorded either way, in **⋯ → MCP logs**.* at
    `README.md:209` and `src_vs_code/README.md:810` still reads as if each call leaves a line; the journal holds what the
    texts of T1 say, and a listing leaves none. N2: the comment at `src_vs_code/src/mcpLogRows.ts:5` has no caveat that a
-   request whose handler failed can leave no row (the longer comment below it names that line). The third nit is not named
-   in the record that was read for this promotion.
+   request whose handler failed can leave no row (the longer comment below it names that line). The third nit (N3, a test
+   helper named `stderr` that builds an error body) was fixed before the merge: it is `statementError` (`8b4cd617`).
 7. **Not checked by a native reader:** the four translations (de, es, ru, uk) of the sentence of Appendix A. H1 pins the
    text; nobody measured how a native reader takes it. The texts of the plan stay as the five rows of Appendix A.
 8. **Not built here** (by the plan's own decision, §13 and §14): Q4 (a refusal for an entry that the agent may view writes no
