@@ -2334,7 +2334,7 @@ Break-its, each run once and restored:
 
 **The scenario, shown by revert (section 7, E3.4).** The fix landed in E3.3, so the teeth are shown by reverting it: with `coveringAt`'s scopes forced to `['all']` the live scenario prints `FAIL Ed25519: login 2 raised no dialog — 2 dialogs` and 9 checks fail; dropping `PubkeyAcceptedAlgorithms +ssh-rsa` from the RSA leg's sshd config makes the SHA-1 leg fail (the server then refuses the algorithm the client was told to ask for). Section 7 took 1667–2452 ms in the Alpine container (six `sshd -d` runs; 1667 ms on the final run, 67 checks ok).
 
-## The list answers name only what the agent may view (2026-11-27, [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md))
+## The list answers name only what the agent may view (2026-11-27, [PLAN_agent_list_fields_hidden_n1_n4_n6.md](PLAN_agent_list_fields_hidden_n1_n4_n6.md))
 
 The suite `src_vs_code/src/test/listFieldsHidden.test.ts`: each row builds its own small vault and calls the product's own list function; no row reads a source file. Each RED row was watched failing by its assertion on the unchanged code, and each has a mutation that turns it red.
 
@@ -2378,7 +2378,7 @@ entry lookup.
 | the routes are DERIVED from the contract through `contractRoutes.ts` | **unit** | a route with no row, and a route that the table names and the contract does not hold, fail the test, so the file cannot become empty |
 | the answers are exactly three sentences, each one the sentence that the same route gives today for an id that does not exist | **unit** | no new sentence |
 | each of the five lookups was reached, and a refused lookup took no throttle slot | **unit** | counters in the world |
-| row L1, the list check: the bodies of `GET /v1/mcp/entries` and `GET /v1/mcp/folders` hold no hidden NAME and no hidden ID, with no exception, and the four fields hold the fixed values (`[HIDDEN_DEPENDENCY]`, `''`, `HIDDEN_REFERENCE`, `null`) | **unit, the real broker** | written first and watched failing on the unchanged code (the four exceptions N1, N4, N5 and N6 of F7 were pinned here as they were); each story of [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md) took its own out. The fixture `unlistedWorld.ts` gives its account an e-mail address, and `N5_COMMAND` names it, so the locator FINDS the hidden entry and the wall refuses it |
+| row L1, the list check: the bodies of `GET /v1/mcp/entries` and `GET /v1/mcp/folders` hold no hidden NAME and no hidden ID, with no exception, and the four fields hold the fixed values (`[HIDDEN_DEPENDENCY]`, `''`, `HIDDEN_REFERENCE`, `null`) | **unit, the real broker** | written first and watched failing on the unchanged code (the four exceptions N1, N4, N5 and N6 of F7 were pinned here as they were); each story of [PLAN_agent_list_fields_hidden_n1_n4_n6.md](PLAN_agent_list_fields_hidden_n1_n4_n6.md) took its own out. The fixture `unlistedWorld.ts` gives its account an e-mail address, and `N5_COMMAND` names it, so the locator FINDS the hidden entry and the wall refuses it |
 | controls: a node that the agent MAY view is named, so the file of negative assertions can fail | **unit** | |
 | on a Remote Bridge, an entry in scope that the agent may not view answers as one out of scope and as one that does not exist | **unit** | `bridgeWallWorld.ts` |
 

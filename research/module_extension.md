@@ -3910,7 +3910,7 @@ is no longer the file's, and is written temp-and-rename (the rename retried 3 ti
 reader holds the file); 64 files at most, the oldest `at` pruned inside the lock, and `forget` removes one on Close.
 `doorView(bridge, wall)` wraps every way the router looks
 something up, so an entry out of scope answers through the route's own not-found function exactly as an entry that is
-not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed, after the placeholder of the local row, `HIDDEN_DEPENDENCY`, is dropped: the filter by name never serves it, X1 of [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md)),
+not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed, after the placeholder of the local row, `HIDDEN_DEPENDENCY`, is dropped: the filter by name never serves it, X1 of [PLAN_agent_list_fields_hidden_n1_n4_n6.md](PLAN_agent_list_fields_hidden_n1_n4_n6.md)),
 the snippet and the folders say nothing of it, the MCP lookup runs for every id narrowed to the context's account and
 the scope decides afterwards (so the time it takes is not an answer), and a token out of scope is unknown whether it is
 live or expired. **The listing and the snippet are per account**: `McpEntry` carries no account and an envelope may repeat
@@ -6869,7 +6869,7 @@ older window that still holds the entry answers under its own switches and conse
 stops the walk. **A lookup refusal writes no journal line**, for a node that exists and for one that does not: the lookup is before the throttle, so
 the count of lines would have no limit; a line for a node that exists would be an effect that a missing id does not have; and the journal is a
 plain file, so the line would write the hidden name where a local process can read it. **The two list answers follow the same wall, field by field**
-([PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md); F7 had left four fields open as N1, N4, N5 and N6 and the owner closed them on
+([PLAN_agent_list_fields_hidden_n1_n4_n6.md](PLAN_agent_list_fields_hidden_n1_n4_n6.md); F7 had left four fields open as N1, N4, N5 and N6 and the owner closed them on
 2026-11-27). *A field of a list answer names a node, or gives its id, only when the agent may view that node.* Three functions decide it and the plan adds no fourth:
 `shown` (`mcpEntries.ts`; for one id in one account `agentMayView`) for an entry, `isOpenFolder` (`mcpFolders.ts`, exported and unchanged) for a folder, and, for the
 text of a command, the product's own locator `locateRef` (`secretRef.ts`) over the pure `vaultRefLocator` (`vaultRefLocator.ts`, the two members of the window's `RefSource` that hold

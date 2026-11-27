@@ -6,7 +6,7 @@ import type { Candidates, ListingLocator } from './vaultRefLocator';
 
 /**
  * The text of a command as an agent reads it in `creds_list`: each `creds://` token that is not a reference to things that the agent may
- * view becomes `HIDDEN_REFERENCE` (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4); the text between the tokens stays.
+ * view becomes `HIDDEN_REFERENCE` (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4); the text between the tokens stays.
  *
  * <p>Pure: it imports no `vscode`, and it asks the wall through functions, as `agentRefusal` does.</p>
  */
