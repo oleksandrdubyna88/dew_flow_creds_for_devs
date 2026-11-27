@@ -28,6 +28,12 @@
 
 > Epoch 1 · approved 2026-11-27 · by reviewers · state: open
 
+- 1.1 · 2026-11-27 · reviewer · approach, dod — the list locates a `creds://` token among the entries that the agent may
+  view, so a hidden entry with the same name as a visible one does not make the token ambiguous; R5 "mixed" flips and
+  an E-pair holds it; the texts say that the placeholder also covers a broken or ambiguous reference
+  (Found by the lead's Opus review of the built branch: `agentCommandText.ts:30` located over ALL entries (D5), so a hidden
+  twin turned a kept reference into the placeholder, an oracle for a hidden name. The coai code round asked for the text.)
+
 ## 1. The defect
 
 An agent gets two lists: `creds_list` (the entries that a person opened to it) and `creds_folders` (the folders). The
