@@ -205,14 +205,19 @@ the agent MAY view (a switch that is off) should get a line with a limit is a pr
 **The new sentence, in English (the source).** The four other languages are in Appendix A.
 
 > A journal of what AI agents did through this extension: each action that ran for an agent and how it ended, each one
-> that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and requests we
-> could not serve. It is not a record of every request. A listing leaves no line. A request that is refused before
+> that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets
+> that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before
 > anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request
 > that is not complete.
 
 Each clause is a thing that a row of §6.3 observes. *can leave none* and *for example* are there on purpose: a refusal
 of `validate` comes before the question and DOES leave a line (observed: `invalid_request  no command given`), and the
 first request over the rate limit in a window leaves one.
+
+**The second count is not a count of refusals.** The old text called it *requests we could not serve*. It is the filter
+*Could not generate* of the journal page (`mcpLogRows.ts:57-61`, `isNoGenerator` at `:116-118`): the secrets that an
+agent asked this window to make and that the window could not make. A refused lookup or a switch that is off is not in
+it. The new sentence names it so, in the five languages (found by the `coai` plan round, 2026-11-27). Row J4 holds it.
 
 ## 3. The sites
 
@@ -278,7 +283,7 @@ stories are in the order that the owner gave.
    to M4.
 3. **S2 (N9).** Rows W1 to W3 first, watched failing by their assertions (they call `validate`, so the new parameter
    of B1 gives no compile error in a test). Then B1 to B3. Guard rows WG1 to WG4. Mutations M5 to M8.
-4. **S3 (N2).** First the behaviour rows J1 to J3, on the unchanged code: they pass, and mutations M9 to M11 show that
+4. **S3 (N2).** First the behaviour rows J1 to J4, on the unchanged code: they pass, and mutations M9 to M11 and M14 show that
    each can fail. Then rows H1 and H2, watched failing. Then T1 to T9. Mutations M12 and M13.
 5. The documents of §7.
 6. `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` in `src_vs_code`, at lowered priority, with
@@ -333,7 +338,7 @@ answers the nodes of the case. Each row calls `terminalRunAction(w.deps).validat
 ### 6.3 S3 (N2) — a new suite, `test/journalHolds.test.ts`
 
 The header of the suite says: these rows hold what the texts say; when a row of J changes, the texts of T1 to T8 change
-in the same commit. J1 to J3 run the real broker of `test/brokerWorld.ts` (`world`, `share`, `call`) and read
+in the same commit. J1 to J4 run the real broker of `test/brokerWorld.ts` (`world`, `share`, `call`) and read
 `w.audit`. Their behaviour does not change in this plan, so they are not RED rows; a mutation shows that each can fail.
 
 | # | Kind | Input | What must be true (today and after) |
@@ -341,6 +346,7 @@ in the same commit. J1 to J3 run the real broker of `test/brokerWorld.ts` (`worl
 | J1 | behaviour | `GET /v1/mcp/entries`, `/v1/mcp/folders`, `/v1/mcp/config-snippet?id=…` | each answers 200 and adds 0 lines to the journal |
 | J2 | behaviour | on `/v1/mcp/use/exec` and `/v1/mcp/delete`: an id that is not served; an entry whose switch is off; a body with no `entry` | the code is `not_found`, `denied`, `invalid_request`; 0 lines; 0 dialogs |
 | J3 | behaviour | a use that is allowed; one that is denied; one that nobody answers | read with the page's own reader `mcpRowsIn` (`mcpLogRows.ts:29-35`): one row each, with the outcome `exit 0`, `denied`, `consent_timeout`; `isRefusal` is true for the last two |
+| J4 | behaviour | a create that asks for a secret that this window cannot generate; then an id that is not served, on `/v1/mcp/use/exec` | `applyFilter(rows, 'noGenerator')` (`mcpLogRows.ts:120-123`) gives the one row of the create; the refused lookup adds no row and is not counted |
 
 | # | Kind | Input | Today | After |
 |---|---|---|---|---|
@@ -349,7 +355,7 @@ in the same commit. J1 to J3 run the real broker of `test/brokerWorld.ts` (`worl
 
 H1 and H2 read the text through the product's own functions, as each help row of this repository does
 (`test/sshRoadHelp.test.ts:186-190`). They are content rows: a sentence has no other behaviour. The facts that the
-sentence states are J1 to J3, in the same suite. T7 and T8 (the two README sentences) and T9 (comments) have no row;
+sentence states are J1 to J4, in the same suite. T7 and T8 (the two README sentences) and T9 (comments) have no row;
 the review reads them, and §11 has a `grep` for the old words.
 
 **Two existing assertions change**, because they pin the sentence that T5 replaces: `test/mcpLogRows.test.ts:140`
@@ -374,6 +380,7 @@ help pins a text of T1 to T6 (method: `grep` over `src_vs_code/src/test` for the
 | M11 | in `respondError`, write no line for a refusal that has a grant | J3 (the denied use and the use that nobody answered) |
 | M12 | put the old sentence back in ONE language (each of the five in turn) | H1, for that language |
 | M13 | put the old hint of the filter *Refused* back | H2 |
+| M14 | make `isNoGenerator` true for each row that `isRefusal` is true for | J4 |
 
 ### 6.5 What the tests do not prove
 
@@ -455,10 +462,10 @@ the five help files; none names the article `mcp-logs`. A branch that merges sec
 
 - [ ] Rows C1 to C3, W1 to W3, H1 and H2 were watched failing by their assertions on the unchanged code, then pass; the
       summary quotes one failure message of each story and the pass. No RED proof is a compile error.
-- [ ] Rows J1 to J3 pass before and after, and mutations M9 to M11 each turned one of them red.
+- [ ] Rows J1 to J4 pass before and after, and mutations M9 to M11 and M14 each turned one of them red.
 - [ ] Guard rows CG1 to CG4 and WG1 to WG4 were watched passing before and after; the tests named *no edit* have no
       changed line.
-- [ ] Mutations M1 to M13 each turned its rows red and were restored.
+- [ ] Mutations M1 to M14 each turned its rows red and were restored.
 - [ ] In W1 to W3 the agent's answer is `linkedRunRefused('deploy')` with `denied`, byte-equal to the answer for a
       closed SSH entry.
 - [ ] `grep -rn "every list\|every refusal\|every ask\|everything an agent asked"` over `README.md`,
@@ -525,11 +532,11 @@ polish a word before the merge; the clauses stay, and row H1 is changed with the
 
 | Language | `whatItIs` of `mcp-logs` |
 |---|---|
-| en | A journal of what AI agents did through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and requests we could not serve. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete. |
-| de | Ein Journal dessen, was KI-Agenten durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Anfragen, die wir nicht bedienen konnten. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage. |
-| es | Un diario de lo que los agentes de IA hicieron a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y peticiones que no pudimos atender. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta. |
-| ru | Журнал того, что ИИ-агенты сделали через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и запросы, которые мы не смогли выполнить. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос. |
-| uk | Журнал того, що AI-агенти зробили через це розширення: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і запити, які ми не змогли обслужити. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит. |
+| en | A journal of what AI agents did through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete. |
+| de | Ein Journal dessen, was KI-Agenten durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage. |
+| es | Un diario de lo que los agentes de IA hicieron a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta. |
+| ru | Журнал того, что ИИ-агенты сделали через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и секреты, которые это окно попросили создать, а оно не смогло. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос. |
+| uk | Журнал того, що AI-агенти зробили через це розширення: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і секрети, які це вікно попросили створити, а воно не змогло. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит. |
 
 ## Epics
 
@@ -557,7 +564,7 @@ Cornerstones: 1 of 1 — S1
   3. In W1 to W3 the journal has 1 note with the reason of §2.2, and the agent's answer has 0 changed bytes.
   4. J1: 0 lines for 3 list routes. J2: 0 lines for 6 refusals. J3: 3 rows with their 3 outcomes.
   5. H1 holds for 5 of 5 languages; H2 for the 5 texts of the journal page.
-  6. Each of the 13 mutations turns at least 1 row red.
+  6. Each of the 14 mutations turns at least 1 row red.
   7. `contract/`, `src_mcp` and `src_cli` have 0 differences. No interface gets a new member.
 - **Cornerstone area.** The config lookup (S1): a mistake there gives an agent the config of a wrong account, or of a
   node that it may not view, in an answer that passes each other test.
@@ -568,6 +575,6 @@ Cornerstones: 1 of 1 — S1
   first, with the failure messages kept. Then A1 and A2. Guards CG1 to CG4. Mutations M1 to M4. Complete on its own.
 - **S2 · N9, the journal reason.** Rows W1 to W3 RED first. Then B1 to B3. Guards WG1 to WG4. Mutations M5 to M8.
   Complete on its own; it shares no line with S1.
-- **S3 · N2, the texts, and the record.** Rows J1 to J3 with mutations M9 to M11 on the unchanged code. Rows H1 and H2
+- **S3 · N2, the texts, and the record.** Rows J1 to J4 with mutations M9 to M11 and M14 on the unchanged code. Rows H1 and H2
   RED. Then T1 to T9, mutations M12 and M13, the CHANGELOG entry, the two documents of `research/`, the closing checks
   of §5, the code round and the pull request. It follows S1 and S2, because the documents record them as built.
