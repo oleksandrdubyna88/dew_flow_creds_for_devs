@@ -1,11 +1,10 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
 > Status: **re-reviewed 2026-11-27: the plan stopped at entry 1.2 and was revised as a whole; epoch 2 is open.
-> S1 to S5 are built on the branch `fix/agent-list-fields-hidden` (PR #401, not merged, not
-> released). S6 is NOT built.** What remains: story S6 (§3.5, §6.10: the candidates of a `creds://` token are
-> filtered by the folders that the token names BEFORE the locator decides, they come from each account that has the
-> address of the token, and five checks of the tests are made tighter); the documents of S6; the code round; the
-> merge; the extension release and then the `mcp-v` release. The round of the re-review ran on `43b12661` (the lead
+> S1 to S6 are on the branch `fix/agent-list-fields-hidden` (PR #401, not merged, not released; S6:
+> `ae0c559e`, `538c9e7b`, `d56a56eb`, and row KG7 `1c1fa834`). The Opus review of S6 said ship and the `coai` code
+> round passed (`proceed`, 4 of 4).** What remains: the merge; the extension release and then the `mcp-v` release;
+> the promotion. The round of the re-review ran on `43b12661` (the lead
 > reported it: the interim document round, `proceed`, 2 of 2 reviewers, 2 findings, both accepted), and an Opus
 > judge checked the table of the record; their points are in this text. The lead set the epoch line to `by reviewers`
 > after the round passed.
