@@ -301,7 +301,7 @@ function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionRe
       where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary, caller },
     },
     () => started,
-    (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
+    (result) => (result.status === 200 || action === 'rotate' ? useAction.describeOutcome(result) : String(result.status)),
   );
 }
 

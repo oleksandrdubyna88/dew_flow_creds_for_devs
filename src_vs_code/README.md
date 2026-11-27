@@ -820,9 +820,13 @@ writes the client config; the extension itself keeps its zero runtime dependenci
   viewer renders — languages first, then the snippet, its target file, and the `CREDSFORDEVS_KEY`
   environment variable. The listing's `codeAccessEnabled` tells the agent whether the key exists;
   minting one is yours alone.
-- **MCP logs** (the `…` menu) is the journal: every ask, every refusal, and the two costs worth
-  counting — secrets that came FROM an agent, and requests we could not serve. **Show Entry by
-  id…** jumps from a journal line to the entry it names.
+- **MCP logs** (the `…` menu) is the journal: each action that ran for an agent over MCP and how it ended, each one that
+  you declined or did not answer, and the two costs worth counting — secrets that came FROM an agent, and
+  secrets that this window was asked to make and could not. It is not a record of every request: a
+  listing leaves no line, and a request that is refused before anybody is asked can leave none. A request
+  that fails inside the window can leave no row, and a create, a delete or a folder change that ran under an older
+  version is absent while its journal file is kept (the files are swept after 14 days).
+  **Show Entry by id…** jumps from a journal line to the entry it names.
 - **It works from inside WSL**, where the agent usually lives. The window is on Windows and
   `127.0.0.1` inside a distribution is that virtual machine's loopback, so the Linux `creds-mcp`
   hands the whole session to `creds-mcp.exe` through WSL interop and carries its stdio — nothing

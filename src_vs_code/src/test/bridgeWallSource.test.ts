@@ -36,6 +36,30 @@ test('W1: visibleConfigOf is asked of one account: a1\'s e1 is a1\'s and a2\'s i
   assert.equal(suppliers.visibleConfigOf('a2', 'e1')?.name, 'foreign');
 });
 
+test('CG3: visibleConfigOf stays in one account — a config hidden in a1 and visible in a2 is undefined for a1, and no node of a2 is read', () => {
+  const config = (id: string, name: string, mcp: EntityMetadata['mcp']): TreeNode => {
+    const details: EntityMetadata = { id, name, isSshEnabled: false, kind: 'config', isConfig: true, configFormat: 'json', configFileName: `${name}.json`, mcp };
+    return { id, name, type: 'entity', parentId: null, details };
+  };
+  const nodes: Record<string, readonly TreeNode[]> = { a1: [config('c1', 'conf1', {})], a2: [config('c1', 'conf2', { view: true })] };
+  const asked: string[] = [];
+  const none = (): Thenable<undefined> => Promise.resolve(undefined);
+  const vault: McpVaultSource = {
+    getAccounts: () => [{ accountId: 'a1' }, { accountId: 'a2' }],
+    getNodes: (account) => nodes[account] ?? [],
+    getNode: (account, id) => {
+      asked.push(account);
+      return (nodes[account] ?? []).find((node) => node.id === id);
+    },
+    getPassword: none, getPrivateKey: none, getNotes: none, getTotp: none, getDbConnection: none,
+  };
+  const suppliers = wallSuppliersOf(vault, GATE);
+
+  assert.equal(suppliers.visibleConfigOf('a1', 'c1'), undefined);
+  assert.ok(!asked.includes('a2'), `no read of a2: ${asked.join(',')}`);
+  assert.equal(suppliers.visibleConfigOf('a2', 'c1')?.name, 'conf2', 'positive control: a2 gives its own config');
+});
+
 /** A vault of one entry with the details a test chooses; every secret reader is absent, as the suppliers must not need them. */
 function vaultWith(details: Partial<EntityMetadata>): McpVaultSource {
   const node: TreeNode = { id: 'e1', name: 'prod', type: 'entity', parentId: null, details: { id: 'e1', name: 'prod', kind: 'ssh', ...details } as EntityMetadata };

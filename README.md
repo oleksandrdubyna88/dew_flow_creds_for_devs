@@ -234,7 +234,7 @@ value stored **today**, resolved into a child process's environment and masked o
 
 There is exactly one call where a secret travels *toward* the vault: an agent that provisioned
 something and holds the key can store it. **⋯ → MCP logs** counts those by name — along with
-everything an agent asked for and did not get. Install the server from
+the requests that you declined and the secrets that this window could not make. Install the server from
 **⋯ → Install the MCP Server…**; it is a separate binary, and the extension still has zero runtime
 dependencies.
 

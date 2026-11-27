@@ -10,8 +10,11 @@ import {
   preConsentedFor,
   rememberMcpConsent,
   switchForAction,
+  visibleConfigDetails,
   visibleMcpEntries,
 } from '../mcpEntries';
+import { readRouteBody } from '../brokerReadRoutes';
+import type { ConfigSnippetBody } from '../mcpSnippetRoute';
 import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
 import { ConsentStamp, ConsentStampStore, ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
 import { nodeHaystack } from '../treeSearch';
@@ -418,6 +421,77 @@ test('X1: a node that one account hides does not stop the search in the next acc
 
   assert.equal(found?.kind, 'usable');
   assert.equal(found?.kind === 'usable' && found.accountId, 'a2');
+});
+
+/** A config entry in the folder `parentId`; the agent may view it when `mcp` says so (N8). */
+function configEntry(id: string, name: string, extra: Record<string, unknown>, parentId = 'f1'): TreeNode {
+  return entity(id, name, { kind: 'config', isConfig: true, configFormat: 'json', configFileName: `${name}.json`, ...extra }, parentId);
+}
+
+/** The config of the second account: the one that the agent may view and that every N8 row looks for. */
+const SECOND_CONFIG = (): readonly TreeNode[] => [folder('f1', 'Open'), configEntry('c1', 'conf2', { mcp: { view: true } })];
+
+/** What the first account holds under the id `c1` in each N8 world: three hidden configs (C1) and a visible node that is not a config (C3). */
+const HIDDEN_FIRST: ReadonlyArray<readonly [string, readonly TreeNode[]]> = [
+  ['no view switch', [folder('f1', 'Closed'), configEntry('c1', 'conf1', {})]],
+  ['a PIN of its own', [folder('f1', 'Closed'), configEntry('c1', 'conf1', { mcp: { view: true }, pinProtected: true })]],
+  ['in the Trash', [folder('t1', 'Trash', { isTrash: true }), configEntry('c1', 'conf1', { mcp: { view: true } }, 't1')]],
+];
+const VISIBLE_NOT_CONFIG: readonly TreeNode[] = [folder('f1', 'Open'), entity('c1', 'ssh1', { kind: 'ssh', mcp: { view: true } })];
+
+/** The two fixtures are proved first: the agent lists the config of `a2` and no node of `a1`, in each hidden world. */
+async function listedIds(source: McpVaultSource): Promise<string[]> {
+  return (await visibleMcpEntries(source)).map((entry) => `${entry.id}:${entry.name}`);
+}
+
+test('C1: a config that the first account hides does not stop the search — the answer is the config of the second, as if the first held no such id', async () => {
+  const missing = visibleConfigDetails(twoAccounts([folder('f1', 'Open')], SECOND_CONFIG()), 'c1');
+  assert.equal(missing?.name, 'conf2', 'positive control: the first account holds no c1');
+  for (const [reason, first] of HIDDEN_FIRST) {
+    const source = twoAccounts(first, SECOND_CONFIG());
+    assert.deepEqual(await listedIds(source), ['c1:conf2'], `${reason}: the list has the config of a2 and no node of a1`);
+    assert.deepEqual(visibleConfigDetails(source, 'c1'), missing, reason);
+  }
+});
+
+test('C2: through the real read route the two bodies are equal, have no error, and the snippet names the file of the config of the second account', async () => {
+  const body = async (source: McpVaultSource): Promise<unknown> =>
+    readRouteBody('/v1/mcp/config-snippet', { visibleConfig: (id) => visibleConfigDetails(source, id) }, new URLSearchParams('id=c1&language=bash'));
+  const missing = (await body(twoAccounts([folder('f1', 'Open')], SECOND_CONFIG()))) as ConfigSnippetBody;
+  assert.equal(missing.error, undefined, 'positive control');
+  assert.match(missing.snippet?.code ?? '', /conf2\.json/);
+  for (const [reason, first] of HIDDEN_FIRST) {
+    const hidden = (await body(twoAccounts(first, SECOND_CONFIG()))) as ConfigSnippetBody;
+    assert.equal(hidden.error, undefined, reason);
+    assert.deepEqual(hidden, missing, reason);
+  }
+});
+
+test('C3: a node that the agent may view and that is not a config does not stop the search either (D1)', async () => {
+  const source = twoAccounts(VISIBLE_NOT_CONFIG, SECOND_CONFIG());
+  assert.ok((await listedIds(source)).includes('c1:ssh1'), 'the agent may view the node of a1');
+  assert.equal(visibleConfigDetails(source, 'c1')?.name, 'conf2');
+});
+
+test('CG1: no account has a visible config with the id — the answer is undefined, and the route says so', async () => {
+  const hidden = HIDDEN_FIRST[0]![1];
+  const worlds: ReadonlyArray<readonly [string, readonly TreeNode[], readonly TreeNode[]]> = [
+    ['hidden and hidden', hidden, hidden],
+    ['hidden and missing', hidden, [folder('f1', 'Open')]],
+    ['missing and missing', [folder('f1', 'Open')], [folder('f1', 'Open')]],
+    ['a visible entry that is not a config, and a hidden config', VISIBLE_NOT_CONFIG, hidden],
+  ];
+  for (const [label, first, second] of worlds) {
+    const source = twoAccounts(first, second);
+    assert.equal(visibleConfigDetails(source, 'c1'), undefined, label);
+    const body = (await readRouteBody('/v1/mcp/config-snippet', { visibleConfig: (id) => visibleConfigDetails(source, id) }, new URLSearchParams('id=c1'))) as ConfigSnippetBody;
+    assert.equal(body.error, 'no such config is open to agents', label);
+  }
+});
+
+test('CG2: two accounts that each hold a visible config with the id give the first, the order of getAccounts', () => {
+  const first = [folder('f1', 'Open'), configEntry('c1', 'conf1', { mcp: { view: true } })];
+  assert.equal(visibleConfigDetails(twoAccounts(first, SECOND_CONFIG()), 'c1')?.name, 'conf1');
 });
 
 test('L7: agentMayView is the list\'s own question, asked of one id in one account', () => {

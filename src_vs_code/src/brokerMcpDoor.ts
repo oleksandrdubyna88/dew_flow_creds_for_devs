@@ -75,6 +75,14 @@ export interface BrokerDoor {
      * <p>The MCP journal filters on it, and the one line it most needs to show is the one a call
      * that raised no dialog writes — "which calls ran with nobody being asked" is unanswerable
      * without it.</p>
+     *
+     * <p><b>The rule: a handler that writes the line that ENDS its request gives the mark</b> — the
+     * delete, the create (and its `no generator` refusal) and the folder change. The page shows a
+     * line with the mark as one row, so a request that ran is one row, not three. The line that
+     * says a grant was minted does not give it, and neither does a consent line: they begin or
+     * interrupt the request and would make it two or three rows. One line that ends a request has
+     * no mark either: the line of a handler that threw (`request → failed`, `brokerRequests.ts`),
+     * which names the route and not a door.</p>
      */
     via?: AuditDoor;
     /** Who the body said was calling — on the line so a person can match it to a session. */
@@ -334,6 +342,7 @@ async function confirmAndDelete(
     action: 'delete',
     outcome: moved ? 'moved to Trash' : 'gone already',
     detail: target.entityName,
+    via: 'mcp',
     caller,
   });
   door.respond(res, 200, { deleted: moved, entity: target.entityName, restorable: true });
@@ -416,6 +425,7 @@ function refuseCreation(
       action: 'create',
       outcome: NO_GENERATOR_OUTCOME,
       detail: refusal.message,
+      via: 'mcp',
       caller,
     });
   }
@@ -525,6 +535,7 @@ async function madeIfSettled(
     // through its context, and counting those is the price of this level said out loud.
     outcome: decision.withSecret ? 'created with agent secret' : 'created',
     detail: decision.summary,
+    via: 'mcp',
     caller,
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });

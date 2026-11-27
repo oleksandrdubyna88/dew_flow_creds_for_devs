@@ -14,6 +14,7 @@ import type { BridgeContext } from './bridgeContext';
 import { BRIDGE_NOT_SERVED } from './bridgeAllowList';
 import { UsableFound, accountOnly, agentMayView, findUsableEntry, hiddenFromAgents } from './mcpEntries';
 import { agentRefusal } from './agentNaming';
+import { isInTrash } from './trash';
 import { describeSshTarget } from './sshCommand';
 import { JumpChain, resolveJumpChain } from './sshOptions';
 import { EnvApplyResult } from './envApplyNotice';
@@ -229,21 +230,40 @@ function refusedCall(code: ErrorCode, message: string, why: string): LinkedCall 
   return { kind: 'refused', code, message, why };
 }
 
-/** The journal reason (never the agent's message), from the SSH entry's NODE: the lookup answers `undefined` for a missing node and for one the agent may not view. */
-function whyUnusable(node: TreeNode | undefined): string {
-  if (node === undefined) {
-    return 'the SSH entry is not in this account';
-  }
-  return hiddenFromAgents(node) ? 'the SSH entry is hidden from agents (PIN)' : `the SSH entry's "Usable by agents" switch is off`;
+/** One cause that the gate's lookup refuses an SSH entry for, in the order the lookup refuses, and the journal reason that names it. */
+interface UnusableCause {
+  readonly is: (node: TreeNode | undefined, byId: (id: string) => TreeNode | undefined) => boolean;
+  readonly why: string;
 }
 
-/** Step 5: the SSH entry's own `Usable by agents` switch, looked up in the Terminal entry's account only (`accountOnly`); a refusal reads the node once more there, for the journal. */
+/**
+ * The five causes of `whyUnusable`, in the order in which the lookup refuses (`shown` asks for an entry first, and the Trash takes each switch away before a
+ * PIN is read: `mcpEntries.ts`, `mcpAccess.ts`): the node is missing; it is not an entry (a folder); it is in the Trash; it has a PIN of its own. The fifth,
+ * for each other node, is `SWITCH_OFF`: its own `Usable by agents` switch is off. No reason holds a name or an id of the SSH entry.
+ */
+const UNUSABLE_CAUSES: readonly UnusableCause[] = [
+  { is: (node) => node === undefined, why: 'the SSH entry is not in this account' },
+  { is: (node) => node?.type !== 'entity', why: 'the SSH link points to a folder, not to an entry' },
+  { is: (node, byId) => node !== undefined && isInTrash(node, byId), why: 'the SSH entry is in the Trash' },
+  { is: (node) => node !== undefined && hiddenFromAgents(node), why: 'the SSH entry is hidden from agents (PIN)' },
+];
+
+/** The fifth cause, when none of the four above holds: the switch itself. */
+const SWITCH_OFF = `the SSH entry's "Usable by agents" switch is off`;
+
+/** The journal reason (never the agent's message), from the SSH entry's NODE and the tree lookup of the Terminal entry's account: the first of the five causes that holds. */
+function whyUnusable(node: TreeNode | undefined, byId: (id: string) => TreeNode | undefined): string {
+  return UNUSABLE_CAUSES.find((cause) => cause.is(node, byId))?.why ?? SWITCH_OFF;
+}
+
+/** Step 5: the SSH entry's own `Usable by agents` switch, looked up in the Terminal entry's account only (`accountOnly`); a refusal reads the node once more there, for the journal, and names the first of the five causes (`UNUSABLE_CAUSES`). */
 function usableGate(deps: AgentUseDeps, target: CallTarget, link: LinkedLink): LinkedCall {
   const found = findUsableEntry(accountOnly(deps.storage, target.accountId), link.ssh.id, 'exec');
   if (found?.kind === 'usable') {
     return { kind: 'linked', link, found };
   }
-  return refusedCall('denied', linkedRunRefused(target.entityName), whyUnusable(deps.storage.getNode(target.accountId, link.ssh.id)));
+  const byId = (id: string): TreeNode | undefined => deps.storage.getNode(target.accountId, id);
+  return refusedCall('denied', linkedRunRefused(target.entityName), whyUnusable(byId(link.ssh.id), byId));
 }
 
 /** Step 4: the link, through `sshLinkOf` (the one reader), with a lookup bound to the Terminal entry's account. */

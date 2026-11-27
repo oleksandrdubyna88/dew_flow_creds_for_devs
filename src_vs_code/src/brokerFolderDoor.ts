@@ -186,6 +186,7 @@ async function confirmAndRun(
     action: `folder-${route.action}`,
     outcome: 'done',
     detail: decision.summary,
+    via: 'mcp',
     caller,
   });
   door.respond(res, 200, { folder: decision.target.entityName, ...route.answer(result) });
