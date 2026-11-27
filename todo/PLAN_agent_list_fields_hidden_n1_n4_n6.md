@@ -1,12 +1,14 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
-> Status: **re-reviewed 2026-11-27: the plan stopped at entry 1.2 and was revised as a whole; epoch 2 is open
-> (`by nobody`). S1 to S5 are built on the branch `fix/agent-list-fields-hidden` (PR #401, not merged, not
-> released). S6 is NOT built.** What remains: the round of the re-review on this text and the Opus judge's check of
-> the table (the lead's); story S6 (§3.5, §6.10: the candidates of a `creds://` token are filtered by the folders
-> that the token names BEFORE the locator decides, and five checks of the tests are made tighter); the documents of
-> S6; the code round; the merge; the extension release and then the `mcp-v` release. `by nobody` is a counting
-> baseline and not an approval: until the round of the re-review has run, this revision is NOT reviewed.
+> Status: **re-reviewed 2026-11-27: the plan stopped at entry 1.2 and was revised as a whole; epoch 2 is open.
+> S1 to S5 are built on the branch `fix/agent-list-fields-hidden` (PR #401, not merged, not
+> released). S6 is NOT built.** What remains: story S6 (§3.5, §6.10: the candidates of a `creds://` token are
+> filtered by the folders that the token names BEFORE the locator decides, they come from each account that has the
+> address of the token, and five checks of the tests are made tighter); the documents of S6; the code round; the
+> merge; the extension release and then the `mcp-v` release. The round of the re-review ran on `43b12661` (the lead
+> reported it: the interim document round, `proceed`, 2 of 2 reviewers, 2 findings, both accepted), and an Opus
+> judge checked the table of the record; their points are in this text. The epoch line says `by nobody` until the
+> lead writes who approved.
 >
 > Scope: the extension (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `mcpAccess.ts` (one comment),
 > `secretRef.ts`, `agentNaming.ts`, `extension.ts`, one filter of `bridgeScope.ts`, two new pure modules,
@@ -23,7 +25,7 @@
 > 2026-11-27. This plan builds the four answers. **Two commits are the base of the `file:line` here.** §1.1 to §1.6,
 > §2.1 to §2.3, §2.5 to §2.8, §3.1 to §3.4, §6.1 to §6.9 and the rows and mutations of epoch 1 describe the code
 > BEFORE the build and were read on `dbb2166d` (extension 1.24.1, `creds-mcp` 0.11.0). §1.7, §2.4, §3.5, §6.10, the
-> mutations M20 to M28, F8 and F9 of §13 and the record below were read on `599ef537`, the head of the branch at the
+> mutations M20 to M30, F8 and F9 of §13 and the record below were read on `599ef537`, the head of the branch at the
 > stop. The things that were observed with the compiled extension are in §1.6 (on `dbb2166d`) and §1.7 (on
 > `599ef537`). Each prototype was run in a scratch copy, not in the repository. Five facts are not what F7 wrote
 > (§1.5), and §14 has the questions for the owner. Fable wrote this plan, the split and this revision.
@@ -40,6 +42,13 @@
 > are remembered for the listing (D9, measured, §1.7); no test of the branch goes red by way C (§6.8); and an
 > agent's own `creds_run` resolves no reference today, so the question of a reference that is ambiguous at the run
 > is the person's run (F8). The epics did not change, so there is no new split: one story is added.
+>
+> **The round of the re-review and the judge (in the commit after `43b12661`; no entry of the ledger).** The
+> document round: mutation M7 is defined against the filter of site K1, and the gate of §11 about existing
+> assertions names the checks that S6 changes. The judge: the marks of `ce023726`, `6d43a9ae`, `20d1be96` and
+> `19ea5abd` in the record; a row three folders deep (KD1, mutation M30); the swap of M27; the lines of Q1; site K3
+> keeps the two signatures that row RG7 reads; and ONE MORE ORACLE, which is older than S6: with two accounts that
+> have one e-mail address, the first account decided a token (§1.7; site K5, rows KA1 to KA3, mutation M29).
 
 ## Plan changes
 
@@ -69,25 +78,34 @@ Narrowed: no — the revision adds one story (S6: one filter, one memory for a l
 | Row L1 first, and the fixture's e-mail address, `a6ee45ac` | pushed, unmerged | fits | kept; S6 makes its scan wider (Q3 of §3.5): the whole body, not the fields of the rows |
 | S1 (N1): A1, A2, the bridge filter X1, rows D1 to D5, E1, DG1, DG2, BG1 and BG3, `2d519981` | pushed, unmerged | fits | kept; S6 makes DG2 exact (Q4 of §3.5) |
 | S2 (N4): B1 to B3, rows F1, F2, E2 and FG1 to FG3, `f042f3c5` | pushed, unmerged | fits | kept: the revision changes nothing of N4 |
-| S3 (N5), the part that fits: the scan in any letter case (C1), the pure locator (C2), C3, C5, the module `agentCommandText.ts`, the placeholder, rows R1 to R4, R6, R7, RG1 to RG6 and pairs (1) to (3) of E3, `ce023726` | pushed, unmerged | fits | kept |
+| S3 (N5), the part that fits: the scan in any letter case (C1), the pure locator (C2), C3, C4 (the command is shown through `keepsReference`, a required member of `McpEntryContext`; `listedCommand`, `foldersOpen` and its walk in the module `agentCommandText.ts`), C5, the placeholder, rows R1 to R4, R6, R7, RG1 to RG6 and pairs (1) to (3) of E3, `ce023726` | pushed, unmerged | fits | kept |
 | S3 (N5), the decision of a token: it located over ALL entries of the account (D5 of the first text), and row R5 held that for a hidden twin, `ce023726` | pushed, unmerged | cut | corrected already by a fix forward, `20d1be96` (entry 1.1); no revert commit |
+| S3 (N5), the order of the conditions: `keepsReference` asks the folders that a token names AFTER `locateRef` found one entry, and the comments that name *the three conditions* (`agentCommandText.ts:14`, `:24-25`; `mcpEntries.ts:307`, `:310`), `ce023726` | pushed, unmerged | cut | the order of the conditions and the comment at `mcpEntries.ts:307`, `:310`: a fix forward in S6 (K1, K2, K4); no revert commit. The order originates here, not in `20d1be96` |
+| S3 (N5), the account of a token: the list asks `locateRef`, which takes the FIRST account with the address (`secretRef.ts:158`), so an account with no viewable entry decides a token of the next account with the same address (§1.7), `ce023726` | pushed, unmerged | cut | a fix forward in S6 (K5); no revert commit |
 | S4 (N6): D1, D2, rows P1 to P3, E4, PG1, PG2 and G1; the list check with no exception left, `84535ccc` | pushed, unmerged | fits | kept: the revision changes nothing of N6 |
 | S5: the four tool descriptions, the regenerated contract file, the help in five languages, the harness check H1, rows T1 to T4, `f9f1edda` | pushed, unmerged | fits | kept: each sentence is true under the rule of epoch 2 (read again: Appendix A, Appendix B); S6 makes T3 and H1 tighter (Q1, Q2 and Q5 of §3.5) |
-| The CHANGELOG entry and the two documents of `research/`, `6d43a9ae` | pushed, unmerged | fits | kept; `fdf56f28` corrected its sentence about the command, and S6 corrects it once more |
+| The CHANGELOG entry and the two documents of `research/`, `6d43a9ae` | pushed, unmerged | fits | kept; its cells about the command were written again by `fdf56f28`, and the cut row of that commit carries them |
 | The size baseline of `extension.ts`, `46086e25` | pushed, unmerged | fits | kept |
 | Entry 1.1 in the plan, `05832bf3` | pushed, unmerged | fits | kept: the record of the change |
 | Entry 1.1, the part that fits: the list locates among the entries that the agent may view, the index of a listing, row R5 flipped, pair (4) of E3, row RG7, `20d1be96` | pushed, unmerged | fits | kept: way C filters the same candidates once more |
-| Entry 1.1, the order of the decision: the folders that a token names are asked only AFTER the locator found one entry (`agentCommandText.ts:29-32`), and the comments that say so (`:24-28`, `:34`), `20d1be96` | pushed, unmerged | cut | a fix forward in S6 (K1, K2 and K4 of §3.5); no revert commit |
+| Entry 1.1 kept the order of `ce023726` (`agentCommandText.ts:29-32` as it stands) and wrote it into its comments: `agentCommandText.ts:26-27` and `:34`, `mcpEntries.ts:308-309`, `vaultRefLocator.ts:43-49`, `20d1be96` | pushed, unmerged | cut | a fix forward in S6 (K1, K2 and K4 of §3.5); no revert commit |
 | Entry 1.1, the texts, the part that fits: the placeholder also stands for a missing, a broken and an ambiguous reference (the descriptions of `creds_list` and `creds_run`, row T1b, the CHANGELOG, `research/module_tests.md`), `fdf56f28` | pushed, unmerged | fits | kept |
 | Entry 1.1, the texts, the sentence that states the order of the three conditions: `research/module_extension.md:6883`, and the words *a hidden folder that the token names* at `src_vs_code/CHANGELOG.md:19`, `fdf56f28` | pushed, unmerged | cut | a fix forward in S6 (the documents of §7): the sentences say the one rule of §2.4 |
 | The index appends for each name, its key is the locator's own (`segmentKey`), and the dependencies ask the wall of the account, `19ea5abd` | pushed, unmerged | fits | kept: S6 filters the bucket that this index gives |
+| The sentence *the answer is the one of the whole list* at `vaultRefLocator.ts:48`, `19ea5abd` | pushed, unmerged | cut | it stops being true after K1: a fix forward in S6 (K4 writes it again); no revert commit |
 | Entry 1.2 and the stop, `599ef537` | pushed, unmerged | fits | kept: the record of the stop |
+| The revision of the whole plan for epoch 2, `43b12661` | pushed, unmerged | fits | kept: the record of the re-review; the commit after it holds the points of its round and of the judge |
 
-  (The reviser, Fable, wrote these marks. The rule gives the marks to an Opus judge: the lead's judge reads each row,
-  and a mark that the judge changes is changed in the commit after this one, as a part of the re-review. Nothing is
-  merged, so nothing is reverted on `main`. The consultation of the re-review is `coai` cons `89487899`.)
-  (The epoch line below is written before the round of the re-review, so it says `by nobody`. The lead changes it
-  when that round has passed.)
+  (The reviser, Fable, wrote the first marks in `43b12661`. The rule gives the marks to an Opus judge. The judge read
+  each row on 2026-11-27, confirmed that each site of S6 exists and that nothing is narrowed, and changed these marks:
+  the row *fits* of `ce023726` kept `agentCommandText.ts` whole, so that commit now has four rows, one *fits* and three
+  *cut* (the locator over all entries; the order of the conditions, which starts there; the first account with the
+  address, which the judge found); the row of `6d43a9ae` no longer says that S6 corrects it; the cut row of `20d1be96`
+  names each comment that says the order; `19ea5abd` has a second row for one sentence. The record has six *cut*
+  rows, each a fix forward. Nothing is merged, so nothing is reverted on `main`. The consultation of the re-review is
+  `coai` cons `89487899`.)
+  (The epoch line below was written before the round of the re-review, so it says `by nobody`. The round ran on
+  `43b12661`; the lead writes its result into the line.)
 
 > Epoch 2 · approved 2026-11-27 · by nobody · state: open
 
@@ -216,6 +234,21 @@ placeholder); a closed folder between two open ones and the same folder taken ou
 and `Mid/Inner/db` are kept in each world. The 221 tests of the seven suites that read the list are green with no
 edit (§6.8).
 
+**One more oracle, older than S6: two accounts with one e-mail address (found by the Opus judge of the re-review).**
+Two signed-in accounts can have the same address: the same e-mail under two providers
+(`backupManager.ts:141-142`). `locate` takes the FIRST account with the address (`secretRef.ts:158`), and a row of
+the list carries no account. So the first account decides a token, also when the agent may view nothing in it.
+Observed on `599ef537`, complete bodies; `a0` comes first, and `a1` holds a viewable `db` and the command:
+
+| The first account `a0` (same address) | The token | On `599ef537` | With the prototype of S6 |
+|---|---|---|---|
+| holds only a HIDDEN `db`; holds no node; has the address in another letter case | `db` | the placeholder | kept |
+| is not there | `db` | kept | kept |
+| holds a viewable `db` too | `db` | kept (the `db` of `a0`) | the placeholder: two candidates that the agent may view |
+| holds a viewable `db` in an open folder `Other`; the `db` of `a1` is in an open folder `Team` | `Team/db`; `db` | the placeholder; kept | kept; the placeholder |
+
+The first two rows are an oracle: the token tells that an account with the same address stands before this one. S6
+takes the candidates from EACH account with the address (site K5).
 **What way C costs (measured on the prototype, one run each, a source whose `getNode` is a map lookup; not a
 benchmark).** The vault has N entries with one name, each in a folder of its own, half of the folders open; ONE
 command holds T tokens.
@@ -225,10 +258,12 @@ command holds T tokens.
 | 2,000, 1,000, each names a folder | 124 ms | 1,339 ms | 746 ms | 100 ms |
 | 8,000, 4,000, each names a folder | 1,466 ms | not run | 12,144 ms | 1,039 ms |
 | 8,000, 4,000, one path part | 4,219 ms | not run | not run | 5,514 ms |
+| the same as row 2, with the candidates of each account with the address (K5); the prototype builds that list again for each token | 1,466 ms | — | — | 1,918 ms (173 ms for 2,000 and 1,000) |
 
 So the filter, asked again for each token, makes the worst case of a token that names a folder about 11 times
 slower, and the plan does not build it that way (D9). The worst case of a token with one path part is not made
-better or worse by this plan (F9).
+better or worse by this plan (F9). The last row says that D9 must hold the list of K5 itself (the candidates of the
+address), not only the bucket of one account.
 
 ## 2. The decisions
 
@@ -298,7 +333,7 @@ uses it. This plan adds no parser.
 | Part | The rule | Code |
 |---|---|---|
 | the scheme | any letter case for the parser: `CREDS://` is a reference. The scan of a RUN finds the lower-case scheme only; the scan of the list (`rewriteRefTokens`) finds each letter case | `secretRef.ts:71`; `:48`; `:101-109` |
-| the account | the e-mail address, with the letter case ignored | `locate`, `secretRef.ts:153-180` |
+| the account | the FIRST signed-in account whose e-mail address is the one of the token, with the letter case ignored. Two accounts can have one address | `locate`, `secretRef.ts:158`; `backupManager.ts:141-142` |
 | each part of the path | percent-decoded, then trimmed; compared with the letter case ignored (`segmentKey`). The reference names the LAST parts of the path, so it can leave folders out | `:50-56`, `:74`, `:80`; `:133-146` |
 | the field | one of seven words, in its exact letter case | `:25-33`, `:59-66` |
 | the result | exactly one entry, or nothing. No account, no entry and more than one entry are all *nothing* for `locateRef` | `:190-208` |
@@ -308,19 +343,21 @@ Each token that the scan of the list finds gets one decision, the same for each 
 
 1. The parser reads the token. It gives an account, a path of `k` parts and a field. A token that the parser does
    not read becomes `HIDDEN_REFERENCE`.
-2. **The candidates of the token** are the entries of the account that the token names for which each of these is
-   true:
-   - the agent may view the entry (`agentMayView`, in that account);
+2. **The candidates of the token** are the entries of EACH signed-in account that has the e-mail address of the
+   token (the letter case ignored), for which each of these is true:
+   - the agent may view the entry (`agentMayView`, in the entry's own account);
    - the entry's own name is the last part of the path, with the letter case ignored;
    - the `k - 1` folders directly above the entry exist, and the agent may view each of them (`isOpenFolder`). A
      token with one path part names no folder, so no folder is asked.
 3. The product's locator (`locateRef`) gets the candidates and no other entry. It compares the parts of the path
    with the names. The token is KEPT, as the person typed it, when the locator finds exactly ONE candidate. In each
-   other case it becomes `HIDDEN_REFERENCE`. The text between the tokens stays.
+   other case it becomes `HIDDEN_REFERENCE`. The text between the tokens stays. The locator gets the candidates as
+   ONE list, so that it counts over the accounts, and no first account wins.
 
 **Why the rule is safe.** Each thing that decides a token is a thing that the agent may view: an entry of its list,
-a folder of its list, and their names. A node that the agent may not view is never a candidate and never a folder
-that a candidate is under by name. So it decides nothing: with that node there, with another name, or not there,
+a folder of its list, and their names. A row of the list has no account, so the candidates are not sorted by
+account: an account in which the agent may view nothing gives no candidate and decides nothing. A node that the
+agent may not view is never a candidate and never a folder that a candidate is under by name. So it decides nothing: with that node there, with another name, or not there,
 the token reads the same (rule A). The rows K1 to KG5 of §6.10 compare the complete bodies.
 
 | The token | After | Seen on the prototype |
@@ -334,6 +371,8 @@ the token reads the same (rule A). The rows K1 to KG5 of §6.10 compare the comp
 | two entries that the agent may view have the name, and the token names no folder, or names folders that are open for the two and have the same names | `HIDDEN_REFERENCE`: two candidates (the product refuses such a reference as ambiguous too) | yes |
 | one entry that the agent may view has the name, and a HIDDEN entry has it too (entry 1.1) | kept: a hidden twin is no candidate | yes |
 | two entries that the agent may view have the name; the token names a folder; that folder is open for one of them and not open for the other one (entry 1.2) | kept: the second entry is no candidate of that token, whatever the name of its folder is | yes |
+| two accounts have the address; the agent may view one entry with the name, in the SECOND account | kept, as it is when the first account is not there | yes |
+| two accounts have the address, and the agent may view an entry with the name in each of them | `HIDDEN_REFERENCE`: two candidates. On `599ef537` the token is kept; this value changes | yes |
 | starts with the scheme and is not a reference for the parser: no field, a field that is not known, the field in another letter case (`Password`), a mark at the end that the scan takes in (`…/password.`) | `HIDDEN_REFERENCE` | yes |
 
 - **D4. One rule, and it fails closed (D5 is a part of it since epoch 2).** A token is kept only when the product's
@@ -347,6 +386,11 @@ the token reads the same (rule A). The rows K1 to KG5 of §6.10 compare the comp
   - *Epoch 2* asks the folders BEFORE the locator, as a part of what a candidate is. This is way C of the
     consultation of the re-review (`coai` cons `89487899`); this revision checked it against `samePath`, `locateRef`,
     `keepsReference`, `foldersOpen` and the index, and ran it (§1.7).
+  - *The accounts.* The Opus judge of the re-review found that the first account with the address decided a
+    token (§1.7). The candidates now come from each account with the address. `locateRef` takes one account and
+    its entries (`secretRef.ts:158-162`), so the list gives it the candidates of all those accounts as the entries
+    of one. Two accounts can hold the same id (`bridgeScope.ts:51-52`), so each candidate has an id of its own in
+    that list, and the entry that the locator finds is read back with its own account.
   - *Two other ways were read and not chosen.* Way A compares only the part of a path that the agent may view. It
     takes a folder out of the middle of a path, so two folders that are not next to each other look as if they
     were: with `Outer/Hidden/Inner/db`, the token `Outer/Inner/db` would be kept when `Hidden` is closed and
@@ -358,8 +402,8 @@ the token reads the same (rule A). The rows K1 to KG5 of §6.10 compare the comp
     match and stays as typed; (b) the scan of the list reads the scheme in any letter case and decides alike; (c) a
     shorter reference that names one visible entry and leaves a hidden folder out stays, because a folder that the
     token does not name is not asked.
-- **D5. (A part of D4 since epoch 2.)** The list locates among the candidates of D4. The run keeps its own locator
-  over the whole account and is not touched (F8). `scopedRefSource` (`bridgeScope.ts`) is the bridge's own and does
+- **D5. (A part of D4 since epoch 2.)** The list locates among the candidates of D4. The run keeps its own locator:
+  the first account with the address, and each entry of it. The run is not touched (F8). `scopedRefSource` (`bridgeScope.ts`) is the bridge's own and does
   not change.
 - **D6. The scan reads the scheme in any letter case.** `parseSecretRef` reads `CREDS://` as a reference, and
   `REF_PATTERN` does not find it. So a run does not resolve such a token: it stays text for the run. The list must
@@ -377,7 +421,7 @@ the token reads the same (rule A). The rows K1 to KG5 of §6.10 compare the comp
   entry 1.1 holds, for a listing, the viewable entries of an account by their own name (`indexByName`,
   `vaultRefLocator.ts:66-75`). Way C asks `k - 1` folders for each entry of that bucket. Asked again for each
   token, that is about 11 times the time of today for a vault with many entries of one name (§1.7). So the filtered
-  bucket is held for the listing, by the account, the key of the name (`segmentKey`) and `k - 1`. A token with one
+  list of candidates is held for the listing, by the address, the key of the name (`segmentKey`) and `k - 1`. A token with one
   path part takes the bucket as it is and reads no node. The memory lives as long as the index does: one listing.
   The cache of the list is forgotten on each change of the vault (`mcpEntriesCache.ts`), and a build that a change
   overtakes is not stored.
@@ -591,9 +635,10 @@ complete when each window runs the new extension.
 |---|---|---|---|
 | K1 | `agentCommandText.ts:45-47`, `candidatesOf`; its call at `:41` | gives `locateRef` each viewable entry of the account whose own name is the last part of the path | gives it the CANDIDATES of §2.4: those entries whose `k - 1` folders above exist and are each `isOpenFolder` (`foldersOpen`, `:50-54`, with no change of its body). For `k = 1` the bucket as it is, and no node is read |
 | K2 | `agentCommandText.ts:29-32`, `keepsReference` | one entry found, then `mayViewEntry`, then `foldersOpen` | the check of the folders after the locator goes: it is in K1, in ONE place. The check of the entry after the locator stays as it is, as the second lock that it is since entry 1.1 (M6 is run with M10) |
-| K3 | `vaultRefLocator.ts:36-63`, `ListingLocator` and `viewableLocatorForOneListing` | `candidates(accountId, lastName)`: the bucket of a name | it also holds, for the listing, the bucket that K1 filtered, by the account, `segmentKey(lastName)` and `k - 1` (D9). The coder chooses where the filter function comes in; the module stays pure and takes the wall as a function, as it takes `mayView` today |
+| K3 | `vaultRefLocator.ts:36-63`, `ListingLocator` and `viewableLocatorForOneListing` | `candidates(accountId, lastName)`: the bucket of a name | `viewableLocatorForOneListing(locator, mayView)` and `candidates(accountId, lastName)` keep their signatures and their answers, so row RG7 has no edit. What S6 needs comes in as a NEW member of `ListingLocator`, or as an optional parameter: the candidates of §2.4, held for the listing by the address, `segmentKey(lastName)` and `k - 1` (D9). The module stays pure and takes the wall as a function, as it takes `mayView` today |
+| K5 | `agentCommandText.ts:40-47`, `locatedBy` and `candidatesOf`; `secretRef.ts:158` is read and not changed in what it does | `locateRef` picks the first account with the address and gets the bucket of THAT account | the candidates of each account with the address go to `locateRef` as ONE list, as the entries of one account; each has an id of its own in that list; the entry that the locator finds is read back with its own account, and the second lock (`mayViewEntry`) asks in that account. The comparison of the address is the locator's own (if the list needs it by name, it gets a name in `secretRef.ts`, as `segmentKey` did in `19ea5abd`, with no change of what `locate` answers) |
 | K4 | the comments at `agentCommandText.ts:14-28` and `:34`, `vaultRefLocator.ts:42-50`, `mcpEntries.ts:307-311` | *the three conditions*; *a folder that is named and is not open* as a check after the match | say the one rule of §2.4: what a candidate is, and that the locator sees candidates only |
-| Q1 | `scripts/creds-mcp-itest.cjs:949-975` (review point 1) | `entries.find(…)` on what `JSON.parse` gave. When `creds_list` answers an OBJECT (its failure shape, `{ error, hint }`, `src_mcp/src/Tools.cs:218-227`), `find` is not a function and the scenario THROWS in place of a failed check | the check of the shape stays (`:955`); the rows `e-1` and `e-2` are searched in an array of their own that is empty when the answer is not an array, so each later check fails with its own sentence |
+| Q1 | `scripts/creds-mcp-itest.cjs:949-975` (review point 1) | `entries.find(…)` on what `JSON.parse` gave. When `creds_list` answers an OBJECT (its failure shape, `{ error, hint }`: `NoWindow` and `ToolFailure`, `src_mcp/src/Tools.cs:228-237`), `find` is not a function and the scenario THROWS in place of a failed check | the check of the shape stays (`:956`); the rows `e-1` and `e-2` are searched in an array of their own that is empty when the answer is not an array, so each later check fails with its own sentence |
 | Q2 | `scripts/creds-mcp-itest.cjs:974` (review point 2) | H1 reads the LAST element of `dependsOn` only | H1 compares the whole array with `['office vpn', HIDDEN_DEPENDENCY]` (the stub's value, `:223`): the name is kept, the order is kept, nothing is added |
 | Q3 | `test/agentNamesOnlyViewable.test.ts:310-346`, `listOf`, `rowLeaks` and row L1 (review point 3) | L1 reads the VALUES of the fields of the rows of `entries` and of `folders` | L1 searches the raw text of the two WHOLE response bodies for each hidden name and id: each key, each value, and each thing beside the two arrays. The two arrays are used apart, for the four exact values of `FIELDS` (`:332-337`) |
 | Q4 | `test/listFieldsHidden.test.ts:151-157`, row DG2 (review point 4) | asserts that the name of the other account's entry is NOT in `dependsOn` | asserts `dependsOn` exactly: `[HIDDEN_DEPENDENCY]` |
@@ -601,6 +646,9 @@ complete when each window runs the new extension.
 
 Each of the five review points was read against the code and is kept; none is dropped. Point 6 of the review (the
 status of the plan must say what is built) is this revision's status block and the todo row.
+
+The sites K1 to K5 are SITES. The rows of §6.10 that have the names K1 and K2 are ROWS; the text says *site* or *row*
+where the two could be mixed up.
 
 No interface of the product gets a new member but `ListingLocator` (K3). `McpVaultSource`, `McpEntryContext`,
 `BridgeWallSource` and the broker hooks do not change. `agentCommandText.ts` is 73 lines and `vaultRefLocator.ts`
@@ -635,14 +683,16 @@ One epic, six stories, on `fix/agent-list-fields-hidden` (from `main` at `dbb216
 
 **What remains (epoch 2).**
 
-9. **The round of the re-review.** The plan round of this branch has passed, so the rule gives the interim path:
-   `review_document` on this file, with a purpose that names the re-review of epoch 2
-   (`.agents/conventions/common/plan-change-control.md`, *Reviewing the revised plan*), and the lead's own Opus
-   review at the same time. An Opus judge checks the table of the record. Then the lead writes who approved epoch 2.
-10. **S6, the candidates.** Rows K1 and K2 first, in a new suite: each is watched FAILING by its assertion on
+9. **The round of the re-review (done, but for the epoch line).** The plan round of this branch had passed, so the
+   rule gives the interim path (`.agents/conventions/common/plan-change-control.md`, *Reviewing the revised plan*):
+   `review_document` on this file ran on `43b12661`. The lead reported `proceed`, 2 of 2 reviewers, 2 findings, both
+   accepted. An Opus judge checked the table of the record. Their points are in the commit after `43b12661`. The
+   lead writes who approved epoch 2.
+10. **S6, the candidates.** Rows K1, K2, KD1 and KA1 to KA3 first, in a new suite: each is watched FAILING by its assertion on
     `599ef537`, and the coder keeps the message (§1.7 has what the scratch script saw). Guards KG1 to KG5 are watched
-    passing on `599ef537`. Then K1 to K4 of §3.5. K1 and K2 pass. Guard KG6 (the count of the node reads). The rows
-    of epoch 1 that are named *no edit* in §6.10 stay green with no changed line. Mutations M20 to M25.
+    passing on `599ef537`. Then the sites K1 to K5 of §3.5. The six RED rows pass. Guard KG6 (the count of the node reads). The rows
+    of epoch 1 that are named *no edit* in §6.10 stay green with no changed line. Mutations M20 to M25, M29 and M30,
+    and M7 as §6.7 defines it now.
 11. **S6, the five tighter checks.** Q4 (DG2), Q5 (T3) and Q3 (L1), each with its mutation (M26 to M28); Q1 and Q2
     in the harness, each watched once as §6.10 says.
 12. **S6, the documents** of §7.
@@ -770,7 +820,7 @@ keeps no reference; the rows RG1, RG5 and RG6 fail then, so the suite cannot pas
 | M4 | in B2, give the name with no test of the folder | F1, F2, E2, L1 |
 | M5 | in B2, test the entry's parent in place of `resolved.folder` and give the parent's name | FG2 |
 | M6 | in C4, keep each token that `locateRef` finds (take the test of the entry out; change 1.1: with the filter of D5 the test is a second line of defence, so M6 is run together with M10) | R1, R2, L1 |
-| M7 | in C4, take the test of the named folders out | R3 |
+| M7 | epoch 1: in C4, take the test of the named folders out (it was a check after the locator). Since S6 the test is the filter of site K1, before the locator, so M7 is: in site K1, give the locator the bucket of the name with NO filter, and ask no folder after it | R3 must fail (the token that names a folder that is not open, for one viewable entry, is kept); row K1 fails too |
 | M8 | in C4, replace only a token that is found and hidden; keep the others | R4, R5, R6, and pair (2) of E3 |
 | M9 | in C1, scan with the letter case of `REF_PATTERN` (the lower-case scheme only) | R7 |
 | M10 | in C4, locate over ALL entries of the account again (take the filter by `agentMayView` out; change 1.1) | R5, pair (4) of E3 |
@@ -800,6 +850,9 @@ two others are not of this change (§6.9).
 Three call sites give a context to `mcpEntryFor` by hand (`test/mcpEntries.test.ts:277`, `:295`, `:531`). Each one
 gets the new required member of C4. It is a change of the type, not of an assertion.
 
+**S6 (epoch 2).** No existing test goes red by the product change of S6 (observed on the prototype, §6.10). S6
+changes these existing checks on purpose, and no other one: row DG2 (Q4), row T3 (Q5), the scan of row L1 (Q3), and
+in the harness the check H1 of `dependsOn` (Q2) and the way the scenario of `creds_list` reads its rows (Q1).
 ### 6.9 What the tests do not prove
 
 - A real window with a real `creds-mcp` and a real agent. H1 runs the real binary over a stub window; L1 runs the
@@ -837,10 +890,15 @@ name. W3: the node is taken out, so that a `parentId` points to nothing.
 | KG3 | guard | one viewable `db` in `Inner` (open, switches of its own) in `Hidden` in `Outer` (open). W1: `Hidden` is closed (`mcp: {}`). W3: `Hidden` is taken out | `Inner/db`; `Outer/Inner/db`; `Hidden/Inner/db`; `Outer/Hidden/Inner/db` | the first kept, the three others the placeholder, in both | the same; deep-equal; the word `Hidden` is in neither body |
 | KG4 | guard | two viewable `db`, each directly in a different OPEN folder with the name `Team` | `Team/db`; `db` | the placeholder twice | the same: two candidates that the agent may view whole are ambiguous |
 | KG5 | guard | the three worlds of K2 | `Inner/db`; `db` | the placeholder twice in the three (each `Inner` is open) | the same; deep-equal |
-| KG6 | guard, new behaviour | ten viewable `db` in ten open folders; the source counts its `getNode` calls. Listing A: the command holds ONE token `X1/db`. Listing B: it holds fifty tokens `X1/db` to `X50/db`. No folder has such a name | — (K1 is not built) | the two listings read the SAME number of nodes, and each token reads the placeholder: the candidates of a name and a number of named folders are found once for a listing (D9) |
+| KD1 | RED | three folders deep: a viewable `db` in `Inner` in `Mid` in an open `Top`; a second viewable `db` in a second `Inner` in a second `Mid` (switches of its own) in a `Top` that a person closed (`mcp: {}`). W2 gives the closed `Top` another name; W3 takes it out | `Top/Mid/Inner/db`; `Mid/Inner/db` | the first token: W1 the placeholder, W2 and W3 kept. The second: the placeholder in the three. The bodies differ | the first kept in the three, the second the placeholder in the three (two candidates with open folders); deep-equal |
+| KA1 | RED | two accounts with ONE address; the second holds a viewable `db` and the command. W1: the first account holds only a hidden `db`. W1b: it holds no node. W1c: its address is in another letter case. W1d: it holds a hidden entry with the SAME ID as the viewable one. W3: the first account is not there | `db` | the placeholder in W1, W1b, W1c and W1d; kept in W3. The bodies differ | kept in each world; the bodies are deep-equal |
+| KA2 | RED | two accounts with one address; EACH holds a viewable `db` | `db` | kept (the `db` of the first account) | the placeholder: two candidates that the agent may view, in a list with no account |
+| KA3 | RED | two accounts with one address; the first holds a viewable `db` in an open folder `Other`, the second a viewable `db` in an open folder `Team` | `Team/db`; `db` | the placeholder; kept | kept (one candidate, in the second account); the placeholder |
+| KG6 | guard, new behaviour | ten viewable `db` in ten open folders; the source counts its `getNode` calls. Listing A: the command holds ONE token `X1/db`. Listing B: it holds fifty tokens `X1/db` to `X50/db`. No folder has such a name | — (K1 is not built) | the two listings read the SAME number of nodes, and each token reads the placeholder: the candidates of an address, a name and a number of named folders are found once for a listing (D9) |
 
 **The rows of epoch 1 that S6 must not change, with no edit of a line:** R1 to R7, E3 with its four pairs, RG1 to
-RG7, BG1 and the four values of L1. Observed on the prototype of way C: the 221 tests of
+RG7 (RG2: a second account with ANOTHER address), BG1 and the four values of L1. Observed on the prototype of way C,
+with the accounts of K5: the 221 tests of
 `listFieldsHidden.test.ts`, `agentNamesOnlyViewable.test.ts`, `mcpEntries.test.ts`, `bridgeReadShape.test.ts`,
 `bridgeScope.test.ts`, `secretRef.test.ts` and `bridgeReferences.test.ts` pass. Row R3 (a token that names a folder
 that is not open, for one viewable entry) keeps its value: the entry is no candidate of that token.
@@ -853,7 +911,7 @@ that is not open, for one viewable entry) keeps its value: the entry is no candi
 | Q5 | T3 | for each of the five languages: the bullet of `creds_list` ends with sentence 1 of Appendix A, and the bullet of `creds_folders` ends with sentence 2 | mutation M27 |
 | Q3 | L1 | no hidden name and no hidden id is anywhere in the raw text of the two response bodies; the four fields hold the four values | mutation M28 |
 | Q2 | H1 | `dependsOn` of `e-2` after the real binary is exactly `['office vpn', HIDDEN_DEPENDENCY]` | no product mutation can reach it: the window of the harness is a stub. Watched once: with the two values of the stub in the other order, H1 fails; the stub is restored |
-| Q1 | the harness scenario of `creds_list` | an answer that is not an array gives failed checks with their sentences, and no exception | watched once: with the stub window not started, `creds_list` answers its failure object (`Tools.cs:218-227`), the scenario reports its checks as failed, and the run goes on to the next scenario |
+| Q1 | the harness scenario of `creds_list` | an answer that is not an array gives failed checks with their sentences, and no exception | watched once: with the stub window not started, `creds_list` answers its failure object (`NoWindow`, `Tools.cs:228-237`), the scenario reports its checks as failed, and the run goes on to the next scenario |
 
 **The mutations of epoch 2** (each one alone, restored after; each must turn its rows red).
 
@@ -866,11 +924,14 @@ that is not open, for one viewable entry) keeps its value: the entry is no candi
 | M24 | when more than one candidate is left, keep the token | KG4, KG1, KG5, R5 |
 | M25 | take the memory of D9 out, so that the bucket is filtered again for each token | KG6 |
 | M26 | in A1, drop an id that the entry's account does not hold (M2 again) | DG2 as Q4 leaves it (and D5 and E1, as before) |
-| M27 | in ONE language, move sentence 2 of Appendix A to the end of the bullet of `creds_list` | T3 as Q5 leaves it, for that language (the `includes` of epoch 1 stays green) |
+| M27 | in ONE language, SWAP the two sentences of Appendix A: sentence 2 ends the bullet of `creds_list`, and sentence 1 ends the bullet of `creds_folders` | T3 as Q5 leaves it, for that language. The `includes` of epoch 1 stays green, because each sentence still ends a bullet; a sentence that is only moved would make the epoch 1 check red too, and would show nothing |
 | M28 | in the read route of `/v1/mcp/entries`, add a key beside `entries` that holds the name of a hidden node | L1 as Q3 leaves it (the scan of epoch 1 stays green) |
+| M29 | in site K5, take the candidates of the FIRST account with the address only | KA1, KA2, KA3 |
+| M30 | in site K1, ask at most TWO folders above the entry (`min(k - 1, 2)`) | KD1 (K1 and K2 stay green: they name one and two folders) |
 
 **What these rows do not prove.** The time: KG6 counts node reads for one shape, and §1.7 has one run of a scratch
-script. A vault that changes while a listing is built. The real binary for K1 and K2: they are rows of the list
+script. A path of more than three named folders: KD1 is the deepest row, and a walk that stops at three is not
+caught. More than two accounts with one address. A vault that changes while a listing is built. The real binary for K1 and K2: they are rows of the list
 function, and H1 carries a placeholder through the binary. A folder that is hidden because it is in the Trash is
 covered by the wall (`isOpenFolder`) and has no row of its own here.
 
@@ -888,10 +949,12 @@ covered by the wall (`isOpenFolder`) and has no row of its own here.
 - `research/module_tests.md`: the row of the list check (`:2356` today) becomes row L1; the suite
   `listFieldsHidden.test.ts` gets its rows, with §6.9 as its *what it does not prove*; the harness check H1.
 - **S6.** `src_vs_code/CHANGELOG.md:19`, in the entry under `## [Unreleased]`: the cell of `command` says the one
-  rule (a token is kept when it names exactly one entry that the agent may view, by folders that the agent may view;
-  a folder that is not open, and an entry under it, decide nothing). `research/module_extension.md:6883`: the same
+  rule (a token is kept when it names exactly one entry that the agent may view, by folders that the agent may view,
+  counted over each account with the address; a folder that is not open, an entry under it, and an account in which
+  the agent may view nothing decide nothing). `research/module_extension.md:6883`: the same
   cell, with what a candidate is, that the folders are asked BEFORE the locator and why (entry 1.2), and D9.
-  `research/module_tests.md` (`:2346` today): the rows K1 to KG6, the five tighter checks, the record of M20 to M28,
+  `research/module_tests.md` (`:2346` today): the rows of §6.10 (K1, K2, KD1, KA1 to KA3, KG1 to KG6), the five tighter checks, the record of M20 to M30 and of
+  M7 in its form of S6,
   and the last paragraph of §6.10 as *what it does not prove*. No sentence of a tool description or of the help
   changes.
 - `todo/README.md`: this plan's row (it is there). On promotion: `research/README.md`, and the pointers of F7 change
@@ -914,8 +977,9 @@ covered by the wall (`isOpenFolder`) and has no row of its own here.
   `bridgeScope.ts` (X1). The filter of `dependsOn` stays a filter by name (F2).
 - It does not change the product code of `creds` (`src_cli`) or the records of `creds-mcp`.
 - It does not make the time of a hidden node and of a missing id equal by a measure.
-- It does not change the locator of a RUN. The person's run resolves a reference over the whole account, so a
-  token that the list keeps can be ambiguous at the run (F8).
+- It does not change the locator of a RUN. The person's run resolves a reference in the first account with the
+  address, over the whole of that account. So a token that the list keeps can be ambiguous or not found at the run,
+  and a token that the run resolves can read the placeholder in the list (F8).
 - It does not make the worst case of many entries with one name and many tokens with one path part faster (F9).
 - It does not change what a cut token leaves behind as text (F6).
 - It does not release. Two releases must follow the merge, in the order of §3.4.
@@ -972,6 +1036,9 @@ branch that merges second reads line 132 again.
     (§1.7). KG6 holds D9 by a count, not by a clock.
 12. **A token that the list keeps can fail at the person's run** as ambiguous, when a hidden entry has the same
     name (F8). The list then shows a reference that the person's own run refuses. This is so since entry 1.1.
+13. **A value changes for two accounts with one address** (row KA2): a token that is kept on `599ef537` reads the
+    placeholder when each of the two accounts holds a viewable entry with the name. The run still resolves it, in
+    the first account. The direction is safe, and the case needs the same e-mail under two providers (Q11).
 
 ## 11. Definition of Done
 
@@ -985,7 +1052,9 @@ branch that merges second reads line 132 again.
       is gone.
 - [ ] Each guard row was watched passing before and after; the tests named *no edit* have no changed line.
 - [ ] Mutations M1 to M19 each turned its rows red and were restored.
-- [ ] The four existing tests of §6.8 changed as that table says, and no other existing assertion changed.
+- [ ] The four existing tests of §6.8 changed as that table says, and no other existing assertion changed in S1 to
+      S5. In S6 exactly the checks that §6.8 names for S6 change (DG2, T3, the scan of L1, H1 and the harness
+      scenario of `creds_list`: Q1 to Q5 of §3.5), and no other existing assertion changes.
 - [ ] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
       priority, with a clean `tsc` read first. `npm run contract` leaves `contract/broker-v1.json` unchanged.
       `npm run contract:mcp` changed four descriptions in `contract/mcp-tools-v1.json` and nothing more.
@@ -1011,19 +1080,22 @@ lead ticks them at the merge. The boxes below are S6.
 
 - [ ] The round of the re-review ran on this text; an Opus judge checked the table of the record; the epoch line says
       who approved; the summary says so, or says that the revision was NOT reviewed.
-- [ ] Rows K1 and K2 were watched failing by their assertions on `599ef537`, then pass; the summary quotes one
-      failure message and the pass. In each of the two rows the three complete bodies are deep-equal.
+- [ ] Rows K1, K2, KD1 and KA1 to KA3 were watched failing by their assertions on `599ef537`, then pass; the summary
+      quotes one failure message and the pass. In K1, K2, KD1 and KA1 the complete bodies of the worlds are
+      deep-equal.
 - [ ] Guards KG1 to KG5 were watched passing on `599ef537` and after; KG6 passes; the rows of epoch 1 that §6.10
       names have no changed line and are green.
-- [ ] Mutations M20 to M28 each turned its rows red and were restored.
+- [ ] Mutations M20 to M30, and M7 as it is defined since S6, each turned its rows red and were restored.
 - [ ] The five tighter checks Q1 to Q5 are built; Q1 and Q2 were watched once as §6.10 says.
-- [ ] `agentCommandText.ts` asks the folders of a token in ONE place, before the locator. `src_mcp`, `contract/`,
+- [ ] `agentCommandText.ts` asks the folders of a token in ONE place, before the locator, and takes the candidates
+      from each account with the address. `viewableLocatorForOneListing(locator, mayView)` and `candidates(accountId,
+      lastName)` have the signatures of `599ef537`, and row RG7 has no changed line. `src_mcp`, `contract/`,
       the five `help*.ts` files and `bridgeScope.ts` have no difference to `599ef537`.
 - [ ] The documents of S6 (§7) are written.
 - [ ] The `coai` code round ran again on the finished branch with this revised plan; each finding has an accept or a
       reject with a reason.
 - [ ] `node .agents/conventions/tools/plan-lifecycle.mjs` is clean; the summary names the epoch (2), the count of its
-      changes and what was cut (the two *cut* marks of the record, each a fix forward).
+      changes and what was cut (the six *cut* rows of the record, each a fix forward).
 
 ## 12. Deviations — what shipped differently from this plan
 
@@ -1080,7 +1152,9 @@ There is no F7 in this list: F7 is the short name of the neighbour plan. F8 and 
   yet (checked: `grep -rn scopedRefSource src_vs_code/src` finds its definition, one comment and tests). So today
   the case is the person's run only. When a bridged run or an agent's run resolves references (E3 of the plan of
   the bridge), its refusal for an ambiguous name must not tell an agent that a hidden twin exists; the bridge has
-  one fixed sentence for it (`REFERENCE_REFUSED`). Recorded, not built.
+  one fixed sentence for it (`REFERENCE_REFUSED`). The same gap is there for two accounts with one address: the
+  run takes the first account (`secretRef.ts:158`), and the list counts over the two (K5), so the two can differ in
+  each direction (rows KA1 to KA3). Recorded, not built.
 - **F9. The time of the worst case.** Measured on `599ef537`, one run, a scratch script (§1.7): 8,000 viewable
   entries with one name and ONE command with 4,000 tokens of one path part take about 4 to 5 seconds for one build
   of the list, because the locator reads the whole bucket for each token. The list is built once for each change of
@@ -1135,6 +1209,11 @@ and Q10 are from the re-review; its consultation (`coai` cons `89487899`) answer
   on: yes* (one map; without it way C is about 11 times slower for a vault with many entries of one name). The
   other answer leaves the memory out and takes F9 and this cost into one follow-up.
 
+- **Q11 (N5, K5). Two accounts with one e-mail address: the list takes the candidates of the two, and a name that
+  the agent may view in each of them is ambiguous.** *Built on: yes* (the Opus judge of the re-review found the
+  oracle; a row of the list has no account, so the agent cannot tell which `db` a token names). The other answer
+  lets the first account that has a candidate win: it is safe for rule A too, row KA2 then stays *kept*, and the
+  list is nearer to the run; it needs a rule for a first account whose candidates are ambiguous.
 ## Appendix A — the two help sentences in the five languages
 
 UI labels stay English in each language (rule 7 of `.agents/PROJECT.md`); these sentences have none. Sentence 1 goes
@@ -1219,12 +1298,14 @@ Cornerstones: 1 of 1 — S3
   10. `contract/broker-v1.json`, `src_cli` and `McpJsonContext.cs` have 0 differences; `contract/mcp-tools-v1.json`
       has 4 changed descriptions.
   11. L1 failed 1 time on the unchanged code before S1, and passes after S4.
-  12. (S6) K1 and K2: in 2 of 2 rows the 3 complete bodies are deep-equal, and each of the 3 tokens is kept in each
-      world.
+  12. (S6) K1, K2 and KD1: in 3 of 3 rows the 3 complete bodies are deep-equal, and the token that names the open
+      branch is kept in each world. KA1: in 5 of 5 worlds the token is kept and the bodies are deep-equal. KA2: 1
+      placeholder. KA3: 1 token kept and 1 placeholder.
   13. (S6) KG1 to KG5: 0 values differ from those of `599ef537`. KG6: the two listings read the same number of nodes.
-  14. (S6) Each of the 9 mutations M20 to M28 turns at least 1 row red: 28 mutations in all.
+  14. (S6) Each of the 11 mutations M20 to M30 turns at least 1 row red, and M7 in its form of S6 turns R3 red: 30
+      mutations in all.
   15. (S6) `src_mcp`, `contract/`, the five `help*.ts` files and `bridgeScope.ts` have 0 differences to `599ef537`.
-      The folders of a token are asked in 1 place.
+      The folders of a token are asked in 1 place. Row RG7 has 0 changed lines.
 - **Cornerstone area.** The command field (S3, and S6 in the same area): the scan, the locator and what a candidate
   is. Two reviews found a mistake there after the build (entries 1.1 and 1.2). A mistake there is a
   name that leaves the vault inside a text that passes each other test, and the field is the only one of the four
@@ -1253,9 +1334,10 @@ Cornerstones: 1 of 1 — S3
   W7 and H1. Mutations M13, M14 and M19. The CHANGELOG entry, the two documents of `research/`, the closing checks
   of §5, the code round and the pull request. It follows S1 to S4, because the documents record them as built.
 - **S6 · N5 again: the candidates of a token, and the five tighter checks (epoch 2; not built; this document is its
-  specification, by Fable).** Rows K1 and K2 RED first on `599ef537`, with the failure messages kept; guards KG1 to
-  KG5 watched passing there. Then K1 to K4 of §3.5: the folders that a token names are a part of what a candidate
-  is, the locator sees candidates only, and the candidates are held for the listing (D9). Guard KG6. Mutations M20
-  to M25. Then the tighter checks Q4, Q5 and Q3 with mutations M26 to M28, and Q1 and Q2 in the harness. Then the
+  specification, by Fable).** Rows K1, K2, KD1 and KA1 to KA3 RED first on `599ef537`, with the failure messages kept; guards KG1 to
+  KG5 watched passing there. Then the sites K1 to K5 of §3.5: the folders that a token names are a part of what a
+  candidate is, the candidates come from each account with the address, the locator sees candidates only, and they
+  are held for the listing (D9). Guard KG6. Mutations M20 to M25, M29, M30 and M7. Then the tighter checks Q4, Q5
+  and Q3 with mutations M26 to M28, and Q1 and Q2 in the harness. Then the
   documents of S6, the closing checks of §5 and the code round. It needs S3 and entry 1.1, which are built. The
   stories S1 to S5 above are the record of what was built; S6 is the one story that remains.
