@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.24.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.23.0...extension-v1.24.0) (2026-11-27)
+
+
+### Features
+
+* **bridge:** E1.7 — database execution profiles for a bridged query (spec first) ([#380](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/380)) ([4d40697](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/4d40697cab36f73e6c3836dbd2ddfe50cc281172))
+
+
+### Bug Fixes
+
+* **extension:** G1 E3 — the release gate: real-sshd rows M1–M14, C19 (no sentence D for exit 0) ([#393](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/393)) ([fe9aee4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/fe9aee47aa89b955ca50011b793038c18387102d))
+
 ## [1.23.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.22.3...extension-v1.23.0) (2026-11-23)
 
 
