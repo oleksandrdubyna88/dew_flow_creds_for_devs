@@ -19,6 +19,12 @@
 
 > Epoch 1 · approved 2026-11-27 · by reviewers · state: open
 
+- 1.1 · 2026-11-27 · agent · dod, stories — J4 and M14 hold the journal LINE of a secret that could not be made, not the
+  page's filter *Could not generate*; the dead filter is F5 and Q6, not built
+  (Found by the coder of S3: `refuseCreation` notes the line with no `via` (`brokerMcpDoor.ts:412-420`), and
+  `mcpRowsIn` keeps only `via` `mcp` (`mcpLogRows.ts:34`), so the page never shows it. A rotation that cannot draw a
+  secret is noted as `404` (`brokerCall.ts:304`). The J4 of `2a5831ba` could not pass on unchanged code.)
+
 ## 1. The three defects
 
 ### 1.1 N8 — the config lookup stops at the first account that holds the id
@@ -220,10 +226,12 @@ Each clause is a thing that a row of §6.3 observes. *can leave none* and *for e
 of `validate` comes before the question and DOES leave a line (observed: `invalid_request  no command given`), and the
 first request over the rate limit in a window leaves one.
 
-**The second count is not a count of refusals.** The old text called it *requests we could not serve*. It is the filter
-*Could not generate* of the journal page (`mcpLogRows.ts:57-61`, `isNoGenerator` at `:116-118`): the secrets that an
-agent asked this window to make and that the window could not make. A refused lookup or a switch that is off is not in
-it. The new sentence names it so, in the five languages (found by the `coai` plan round, 2026-11-27). Row J4 holds it.
+**The second count is not a count of refusals.** The old text called it *requests we could not serve*. It is the journal
+line `→ no generator` (`NO_GENERATOR_OUTCOME`), which the filter *Could not generate* of the journal page was made to
+count (`mcpLogRows.ts:57-61`, `isNoGenerator` at `:116-118`): the secrets that an agent asked this window to make and
+that the window could not make. A refused lookup or a switch that is off is not in it. The new sentence names it so, in
+the five languages (found by the `coai` plan round, 2026-11-27). Row J4 holds the line. The page does not show that line
+today (F5, entry 1.1).
 
 ## 3. The sites
 
@@ -352,7 +360,7 @@ in the same commit. J1 to J4 run the real broker of `test/brokerWorld.ts` (`worl
 | J1 | behaviour | `GET /v1/mcp/entries`, `/v1/mcp/folders`, `/v1/mcp/config-snippet?id=…` | each answers 200 and adds 0 lines to the journal |
 | J2 | behaviour | on `/v1/mcp/use/exec` and `/v1/mcp/delete`: an id that is not served; an entry whose switch is off; a body with no `entry` | the code is `not_found`, `denied`, `invalid_request`; 0 lines; 0 dialogs |
 | J3 | behaviour | a use that is allowed; one that is denied; one that nobody answers | read with the page's own reader `mcpRowsIn` (`mcpLogRows.ts:29-35`): one row each, with the outcome `exit 0`, `denied`, `consent_timeout`; `isRefusal` is true for the last two |
-| J4 | behaviour | a create that asks for a secret that this window cannot generate; then an id that is not served, on `/v1/mcp/use/exec` | `applyFilter(rows, 'noGenerator')` (`mcpLogRows.ts:120-123`) gives the one row of the create; the refused lookup adds no row and is not counted |
+| J4 | behaviour | a create that asks for a secret that this window cannot generate; then an id that is not served, on `/v1/mcp/use/exec` | the create writes one journal line, action `create`, outcome `NO_GENERATOR_OUTCOME`; the refused lookup adds no line (entry 1.1) |
 
 | # | Kind | Input | Today | After |
 |---|---|---|---|---|
@@ -386,7 +394,7 @@ help pins a text of T1 to T6 (method: `grep` over `src_vs_code/src/test` for the
 | M11 | in `respondError`, write no line for a refusal that has a grant | J3 (the denied use and the use that nobody answered) |
 | M12 | put the old sentence back in ONE language (each of the five in turn) | H1, for that language |
 | M13 | put the old hint of the filter *Refused* back | H2 |
-| M14 | make `isNoGenerator` true for each row that `isRefusal` is true for | J4 |
+| M14 | in `refuseCreation` (`brokerMcpDoor.ts:412-420`), write the outcome `denied` in place of `NO_GENERATOR_OUTCOME` (entry 1.1) | J4 |
 
 ### 6.5 What the tests do not prove
 
@@ -511,6 +519,10 @@ the five help files; none names the article `mcp-logs`. A branch that merges sec
 - **F4. The journal page does not show the consent lines.** `mcpRowsIn` keeps the lines with `via` `mcp`
   (`mcpLogRows.ts:29-35`); the lines `→ minted`, `→ ALLOWED` and `→ DENIED` have no `via` (observed). The page shows
   the outcome row of the call. The sentence of §2.3 is written for what the page shows.
+- **F5. The filter *Could not generate* of the journal page never shows a real line (entry 1.1).** The create door
+  notes `→ no generator` with no `via` (`brokerMcpDoor.ts:412-420`), so `mcpRowsIn` drops it (`mcpLogRows.ts:34`). A
+  rotation that cannot draw a secret is noted with its status, `404`, because `describeOutcome` runs for a 200 only
+  (`brokerCall.ts:304`). The journal FILE holds the create line (row J4). Found by the coder of S3; not built here (Q6).
 
 ## 14. Questions for the owner
 
@@ -537,6 +549,9 @@ Q4 — both *no line here; B is its own plan* (`cdb56619`). Q2 was not asked: it
   a limit of its own, and its own plan.
 - **Q5 (N8, D1). An account whose node the agent may view and that is not a config does not stop the config search.**
   *Built on: it does not stop it* (§2.1). The other answer stops there, as the entry lookup does for `closed`.
+- **Q6 (F5). The filter *Could not generate* shows nothing, because its lines carry no `via`.** Fix it as its own small
+  item (the create line gets `via` `mcp`; a rotation with no generator is noted as `no generator`)? *Built on: not here*
+  — a new site and a new row would be a second change of this plan, and a second change stops it.
 
 ## Appendix A — the sentence of T1 in the five languages
 
