@@ -1,8 +1,8 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
-> Status: **plan only, nothing implemented yet, 2026-11-27. Not approved yet.** Scope: the extension
-> (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `secretRef.ts`, `agentNaming.ts`, `extension.ts`, one new pure
-> module, the five `help*.ts` files, their tests), the tool descriptions of `creds-mcp` (`src_mcp/src`: `Tools.cs`,
+> Status: **plan only, nothing implemented yet, 2026-11-27. The plan round passed; the ledger is not open yet.** Scope:
+> the extension (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `secretRef.ts`, `agentNaming.ts`, `extension.ts`,
+> one filter of `bridgeScope.ts`, one new pure module, the five `help*.ts` files, their tests), the tool descriptions of `creds-mcp` (`src_mcp/src`: `Tools.cs`,
 > `FolderTools.cs`, `UseTools.cs`, their tests), the generated `contract/mcp-tools-v1.json`, one harness
 > (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `research/module_tests.md`, `todo/README.md`. One epic, five stories (`## Epics`). Two artefacts change, and each
@@ -13,9 +13,16 @@
 > 2026-11-27. This plan builds the four answers. Each `file:line` here was read on `dbb2166d` (extension 1.24.1,
 > `creds-mcp` 0.11.0). The values of §1 were also observed on that commit, on 2026-11-27, with the compiled extension
 > (§1.6). A prototype of §3.1 was run in a scratch copy, not in the repository, to find the existing tests that change
-> (§6.8). No ledger yet: the first approval opens `## Plan changes` under this block
-> (`.agents/conventions/common/plan-change-control.md`). Five facts are not what F7 wrote (§1.5), and §14 has the
-> questions for the owner. Fable wrote this plan and the split.
+> (§6.8). Five facts are not what F7 wrote (§1.5), and §14 has the questions for the owner. Fable wrote this plan and
+> the split.
+>
+> **The plan round.** The `coai` plan round ran on `634f9aa7` on 2026-11-27. The lead reported it: `proceed`, 1 of 1
+> reviewers, 3 findings, and the lead accepted the 3. They are in this text: a Remote Bridge drops the placeholder of
+> `dependsOn` before it filters by name (§2.7, site X1, row BG3, mutation M16); the class row L1 is watched failing
+> before S1 and run again after S4 (§5, §11); the description of `creds_list` says which folder `folder` names (Appendix
+> B, row T4). The question consultants were asked on Q4 only (consultation `e3ac9aef`); their answer is in §2.4 and in
+> §14. These are part of the approval round and are no entry of a ledger. No ledger yet: the lead opens
+> `## Plan changes` under this block (`.agents/conventions/common/plan-change-control.md`).
 
 ## 1. The defect
 
@@ -104,7 +111,10 @@ cache (`mcpEntriesCache.ts`), two read routes (`brokerReadRoutes.ts:128-130`, `:
 `help*.ts` files for `dependsOn`, `` `folder` ``, `` `parent` ``, `` `command` ``, `creds_list` and `creds_folders`;
 each hit was read (§3.3). (4) A scratch script built a vault with the cases of §1.1 to §1.4 and printed the two lists
 from the compiled extension. (5) The change of §3.1 was written in a scratch copy of the tree, compiled, and the whole
-extension suite was run on it (§6.8). NOT done: a run of the real `creds-mcp` binary; a run on Windows.
+extension suite was run on it (§6.8). (6) After the plan round the same prototype was asked three more things, with a
+scratch script: the letter case of a reference, a shorter reference that leaves a hidden folder out (§2.4), and a
+Remote Bridge whose scope holds an entry that is named exactly as the placeholder of `dependsOn` (§2.7). NOT done: a
+run of the real `creds-mcp` binary; a run on Windows.
 
 ## 2. The decisions
 
@@ -169,40 +179,61 @@ a reference; `parseSecretRef` (`:69-83`) reads one; `locateRef` (`:167-176`) fin
 gives no reason when it finds none. `locateRef` was made for *a caller that must not see its messages*, and a Remote
 Bridge uses it (`bridgeScope.ts:286-293`). This plan adds no parser.
 
-**The rule.** Each token of the command that `REF_PATTERN` matches, in any letter case of the scheme, is KEPT only
-when the three conditions are true. Each other token becomes `HIDDEN_REFERENCE`. The text between the tokens stays.
+**How the product reads a reference (read on this commit).** The list uses these rules and adds none of its own.
+
+| Part | The rule | Code |
+|---|---|---|
+| the scheme | any letter case for the parser: `CREDS://` is a reference. The scan of a RUN finds the lower-case scheme only | `secretRef.ts:71`; `:48` |
+| the account | the e-mail address, with the letter case ignored | `:135` |
+| each part of the path | percent-decoded, then trimmed; compared with the letter case ignored. The reference names the LAST parts of the path, so it can leave folders out | `:50-56`, `:74`, `:80`; `:114-123` |
+| the field | one of seven words, in its exact letter case | `:25-33`, `:59-66` |
+| the result | exactly one entry, or nothing. No account, no entry and more than one entry are all *nothing* for `locateRef` | `:135-155`, `:178-185` |
+
+**The rule.** Each token of the command that `REF_PATTERN` matches gets ONE decision. The scan of the list reads the
+scheme in any letter case, and the decision is the same for each letter case. A token is KEPT, as the person typed
+it, only when the three conditions are true. Each other token becomes `HIDDEN_REFERENCE`. The text between the tokens
+stays.
 
 1. `locateRef` finds exactly one entry for it, in the account whose e-mail address the token names, among ALL
    entries of that account.
 2. The agent may view that entry (`agentMayView`, in the account that `locateRef` gave).
 3. The agent may view each folder that the token names. A token with `k` path parts names the entry and the `k - 1`
-   folders above it; each of them must be `isOpenFolder`.
+   folders above it; each of them must be `isOpenFolder`. A folder that the token does not name is not asked.
 
-| The token | After |
-|---|---|
-| names one entry that the agent may view, with no folder part or with open folders | kept, byte for byte |
-| names an entry that the agent may not view (no switch, a PIN, the Trash) | `HIDDEN_REFERENCE` |
-| names an entry that the agent may view, through a folder that is not open | `HIDDEN_REFERENCE` |
-| names an account that is not signed in, or an entry that no account has | `HIDDEN_REFERENCE` |
-| names two entries (the product refuses such a reference as ambiguous, `secretRef.ts:146-154`) | `HIDDEN_REFERENCE` |
-| starts with `creds://` and is not a reference (no field, a field that is not known) | `HIDDEN_REFERENCE` |
+| The token | After | Seen on the prototype |
+|---|---|---|
+| names one entry that the agent may view, with no folder part or with open folders | kept, byte for byte | yes |
+| differs from the stored names in letter case only (the scheme, the address, a path part), and the locator finds one entry that the agent may view | kept as typed: it is a clean match for the product's own locator | yes: `CREDS://ME@X.TEST/OPEN%20GRAND/visible%20dep/totp` |
+| names one entry that the agent may view by a shorter path that leaves out a folder that is not open | kept: it names no folder | yes |
+| names an entry that the agent may not view (no switch, a PIN, the Trash), in any letter case | `HIDDEN_REFERENCE` | yes |
+| names an entry that the agent may view, and NAMES a folder that is not open | `HIDDEN_REFERENCE` | yes |
+| names an account that is not signed in, or an entry that no account has | `HIDDEN_REFERENCE` | yes |
+| names two entries (the product refuses such a reference as ambiguous, `secretRef.ts:146-154`) | `HIDDEN_REFERENCE` | not run |
+| starts with the scheme and is not a reference for the parser: no field, a field that is not known, the field in another letter case (`Password`), a mark at the end that the scan takes in (`…/password.`) | `HIDDEN_REFERENCE` | yes |
 
 - **D4. Fail closed.** A token is kept only when the product's own locator finds one entry and the wall says yes. So
   a hidden entry, a missing entry, an ambiguous name and a broken token read alike (rule A), and a later change of
-  the grammar cannot open a hole here (Q4).
+  the grammar cannot open a hole here. The question consultants were asked this question (consultation `e3ac9aef`,
+  2026-11-27; Q4 of §14). The two of them answered: fail closed. They set three limits, and the rule above holds
+  them: (a) a reference that differs from the stored names in letter case only, and that the locator resolves to
+  ONE entry that the agent may view, is a clean match and stays as typed; (b) the scan of the list reads the scheme
+  in any letter case and decides alike; (c) a shorter reference that names one visible entry and leaves a hidden
+  folder out can stay.
 - **D5. The whole account is searched, not the visible part.** A name that is ambiguous for the person stays
   ambiguous for the agent. `scopedRefSource` gives the same reason (`bridgeScope.ts:377-379`). The agent does not
   see what the replaced token was, so it learns nothing from the placeholder.
-- **D6. The scan ignores the letter case of the scheme.** `parseSecretRef` reads `CREDS://` as a reference (`:71`),
-  and `REF_PATTERN` does not find it. The run does not resolve such a token; the list must not show it either.
+- **D6. The scan reads the scheme in any letter case.** `parseSecretRef` reads `CREDS://` as a reference (`:71`),
+  and `REF_PATTERN` does not find it (`:48`). So a run does not resolve such a token: it stays text for the run.
+  The list must not show it when it names a hidden thing (R7), and keeps it as typed when it is a clean match
+  (RG6). The scan of a run does not change.
 - **D7. A kept reference keeps the account's e-mail address.** The owner said: keep the text. The address is the
   account of an entry that the agent may view (Q3).
 - **D8. Where the locator's data comes from.** The window builds one `RefSource` over its storage
   (`extension.ts:818-832`). Its two members that hold no secret, `accounts` and `entities`, move without a change
   of their bodies into a function of a new pure module. `extension.ts` calls it, and the list calls it with its own
-  `McpVaultSource`. So the list and the run find the same entry for a reference. `McpVaultSource.getAccounts`
-  (`mcpEntries.ts:197`) gives `{ accountId; email? }`; the real storage gives the address already
-  (`StoredAccount`, `types.ts:10-14`), and a source with no address keeps no reference.
+  `McpVaultSource`. So the list and the run find the same entry for a reference, by the same case rules.
+  `McpVaultSource.getAccounts` (`mcpEntries.ts:197`) gives `{ accountId; email? }`; the real storage gives the
+  address already (`StoredAccount`, `types.ts:10-14`), and a source with no address keeps no reference.
 
 The command of an agent's run does not change. The window runs the stored text by the entry's id, not the listed
 text.
@@ -235,7 +266,7 @@ parent's id before, and it loses no call now. No request moves a folder to the r
 The rows E1 to E4 of §6 compare the two whole list bodies in each case. The time of the two cases is the same class
 and is not measured (F7 §2.4 has the residue).
 
-### 2.7 A Remote Bridge: nothing that it serves is meant to change
+### 2.7 A Remote Bridge: one filter changes, so that a bridge never serves the placeholder
 
 A bridge builds its row from the local row, field by field (`narrowed`, `bridgeScope.ts:144-155`).
 
@@ -243,17 +274,37 @@ A bridge builds its row from the local row, field by field (`narrowed`, `bridgeS
 |---|---|---|
 | `folder` | `''` (`:146`) | the same |
 | `hasCommand` | `row.command !== undefined` (`:149`) | the same: a replaced text is not blank, so the boolean does not change. A bridge gives a boolean and no text, as before |
-| `dependsOn` | the names that are also names of rows in scope (`:152`, `:162-166`) | the same, with two cases at the edge (below) |
+| `dependsOn` | the names that are also names of rows in scope (`:152`, `:162-166`) | the same names, and never `HIDDEN_DEPENDENCY` (X1, below) |
 | the folders | `[]` (`:211`) | the same |
 
-The filter of `dependsOn` is by NAME. Two cases follow from that, and they are said here:
+**The defect that N1 would make on a bridge (finding 1 of the plan round).** The filter of `dependsOn` is by NAME:
+a name of the local row is kept when a row in scope has that name. After N1 the local row can hold the placeholder.
+When a person names an entry in scope exactly as `HIDDEN_DEPENDENCY`, the placeholder passes the filter, for a
+hidden dependency and for a missing one. The bridge then shows a dependency that its scoped list leaves out. Observed
+on the prototype: with such an entry in scope, the bridge served `dependsOn: ["(a dependency that is not open to
+agents)"]` for a row that depends on one entry with no switch and on one id that no node has.
+
+**The fix, in this plan (X1).** The placeholder is not the identity of a dependency. `narrowed` drops it before it
+filters: a name is kept when it is not `HIDDEN_DEPENDENCY` AND a row in scope has that name. So a bridge never serves
+the placeholder, and a hidden dependency, a missing one and no dependency give the same served row.
+
+Two other ways were read and not chosen. To filter by ID, the local row must carry the ids of its dependencies; the
+row has names only (`McpEntry.dependsOn`, `mcpEntries.ts:59-60`), so that is a new field of a shipped answer or a
+second list beside it, and the re-review for epoch 6 of the plan of the bridge rejected a change of the name filter.
+To make the placeholder a value that no name can have, the product would need a rule for names; it has none.
+
+Three cases stay at the edge, and they are said here:
 
 1. A hidden dependency that has the same name as a row in scope is listed by a bridge today. After N1 the local row
    holds the placeholder and not that name, so the bridge lists nothing for it. Less is served.
-2. If a person names an entry in scope exactly as `HIDDEN_DEPENDENCY`, the placeholder passes the filter. The
-   bridge then says that a dependency exists that it does not list.
+2. A REAL dependency in scope whose name is exactly `HIDDEN_DEPENDENCY` is listed by a bridge today. After X1 the
+   bridge does not list it. Less is served, for a name that nobody has a reason to choose; the direction is safe.
+3. On the LOCAL list an entry that the agent may view and that has that name reads like the placeholder. The local
+   agent may view that entry, so nothing hidden is told.
 
-This plan edits no line of `bridgeScope.ts`. Case 2 is F2 of §13, for the plan of the bridge.
+X1 is the one edit of `bridgeScope.ts`. It needs one import of `agentNaming.ts`, which imports nothing, so the walk
+of `test/bridgeBoundary.test.ts:188-209` (no `vscode` behind `bridgeScope`) stays green. That file is the wall of
+[PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md); §9 has the row that is owed to that plan.
 
 ### 2.8 The two placeholders
 
@@ -266,7 +317,8 @@ nothing (`agentNaming.ts:10-13`):
 | `HIDDEN_REFERENCE` | `(a creds reference that is not open to agents)` |
 
 - The words are the owner's example for N1, in round brackets. A name of an entry has no such form by habit, so an
-  agent does not read the placeholder as a name. The brackets do not make it impossible (case 2 of §2.7).
+  agent does not read the placeholder as a name. The brackets do not make it impossible, so a Remote Bridge drops the
+  placeholder by its value (X1, §2.7).
 - Each one is true for a hidden node and for a missing one.
 - `HIDDEN_REFERENCE` does not hold `creds://`. `REF_PATTERN` does not match it, so a second pass over a changed text
   changes nothing (row RG4).
@@ -281,6 +333,7 @@ nothing (`agentNaming.ts:10-13`):
 |---|---|---|---|---|
 | P1 | S1 | `agentNaming.ts` (new exports) | — | `HIDDEN_DEPENDENCY` and `HIDDEN_REFERENCE` of §2.8 |
 | A1 | S1 | `mcpEntries.ts:527-532`, `dependencyNames` | the name of each node that exists | the names of the dependencies that are `shown`; `HIDDEN_DEPENDENCY` once at the end when one id or more is not (§2.2) |
+| X1 | S1 | `bridgeScope.ts:152`, in `narrowed`; one import; the comment at `:143` | `row.dependsOn.filter((name) => kept.has(name))` | a name is kept when it is not `HIDDEN_DEPENDENCY` and `kept` has it (§2.7); the comment says that the placeholder of the local row is never served |
 | A2 | S1 | the comments at `mcpEntries.ts:59-60`, `:89-90`, `:518-526` | *The names this entry needs*; *dropped rather than named* | say the rule of §2.2 and D2 |
 | B1 | S2 | `mcpFolders.ts:84`, `isOpenFolder` | private | exported; the body does not change |
 | B2 | S2 | `mcpEntries.ts:302-305`, `folderNameOf`; its call at `:278` | `resolved.folder?.name ?? ''` | the name when `isOpenFolder(resolved.folder, byId)`; else `''` |
@@ -314,7 +367,7 @@ the two predicates as functions, as `agentRefusal` takes `mayView` (`agentNaming
 |---|---|
 | `shown`, `agentMayView` (`mcpEntries.ts:285-300`), the body of `isOpenFolder`, `resolveMcpInTree`, `answeringFolder` | they are the wall; this plan asks them and does not change them |
 | `findUsableEntry`, `findFolder`, `moveRefusal`, `visibleConfigDetails` | lookups; rule A is there since F7 and since 1.24.1 |
-| `bridgeScope.ts` (each line), `bridgeWallSource.ts:24`, `mcpAccountVault.ts` | §2.7. The wall lists through `visibleMcpEntries` with one account, so a reference to another account is not kept there; the bridge makes a boolean of the text |
+| `bridgeScope.ts` (each line but the filter of X1), `bridgeWallSource.ts:24`, `mcpAccountVault.ts` | §2.7. The wall lists through `visibleMcpEntries` with one account, so a reference to another account is not kept there; the bridge makes a boolean of the text |
 | `mcpEntriesCache.ts`, `extension.ts:481-486` | the cache is forgotten on each change of the vault (`mutated`); a row that now depends on a second node is built again when that node changes |
 | `brokerReadRoutes.ts:128-142`, `mcpFolderHooks.ts:30` | they hand the two lists on |
 | `parseSecretRef`, `findSecretRefs`, `locateRef`, `locate`, `runPlan.ts`, `commands/runCommands.ts` | the grammar and the run do not change; the list reads them |
@@ -337,6 +390,9 @@ before and after.
 | 2 | `creds_list` → `folder` | the folder's name, also for a folder that is not open | `''` for a folder that is not open |
 | 3 | `creds_list` → `command` | the stored text | the stored text; each `creds://` token that is not a reference to things that the agent may view reads `(a creds reference that is not open to agents)` |
 | 4 | `creds_folders` → `parent` | the parent's id, also for a parent that is not open or that does not exist | `null` for such a parent |
+
+On a Remote Bridge no documented value changes. The bridge gets one edit so that this stays true (X1), and §2.7 has
+the three cases at its edge.
 
 **Each place that documents these fields, and what changes there.**
 
@@ -384,17 +440,27 @@ None is created: no table, folder, cache, process or journal line. The list cach
 
 One epic, five stories, on `fix/agent-list-fields-hidden` (from `main` at `dbb2166d`), in a worktree of its own.
 
-1. **Before the first test.** The lead puts the questions of §14 to the question consultants, and asks them what is
-   important before the split is final. Then the `coai` plan round, with the lead's own Opus review at the same time.
-   Its pass opens the ledger.
-2. **S1 (N1).** P1 first (two constants). Rows D1 to D5 and E1 RED, each watched failing by its assertion on the
-   unchanged code; the coder keeps the messages. Then A1 and A2. Guards DG1 and DG2. Mutations M1 to M3.
-3. **S2 (N4).** Rows F1, F2 and E2 RED. Then B1 to B3. Guards FG1 to FG3. Mutations M4 and M5.
-4. **S3 (N5).** Rows R1 to R7 and E3 RED. Then C1 to C5. Guards RG1 to RG4. Mutations M6 to M10.
-5. **S4 (N6).** Rows P1 to P3 and E4 RED. Then D1 and D2. Guards PG1 and PG2. Mutations M11 and M12.
-6. **The class test, after S4.** Row L1 replaces the list check of F7 (§6.5). The four existing tests of §6.8 change
-   with the story that makes each one red.
-7. **S5.** Rows T1 to T3 RED first. W1 to W4, then the build of the solution, the check H2, and `npm run contract:mcp` (W5).
+1. **Before the first test (done, but for the ledger).** The `coai` plan round ran on `634f9aa7` and passed; its 3
+   findings are in this text (the status block lists them). The question consultants were asked on Q4 only (§14).
+   The lead opens the ledger.
+2. **Row L1 first, before S1.** The fixture of the class test gets its e-mail address, and `N5_COMMAND` names it
+   (§6.1). Row L1 is written as the list check with NO exception, and it is run on the unchanged product code. It
+   must fail by its assertion, and the coder keeps the message: it names the hidden entry (N1 and N5), the hidden
+   folder (N4) and the id of the hidden folder (N6). Then the test is committed in a form that is green: the
+   exceptions that are still open stay in `EXCEPTIONS` (`test/agentNamesOnlyViewable.test.ts:312-317`), each one
+   asserted at its value of today. Each story takes its own exception out.
+3. **S1 (N1).** P1 first (two constants). Rows D1 to D5 and E1 RED, each watched failing by its assertion on the
+   unchanged code; the coder keeps the messages. Then A1 and A2. Then row BG3, watched failing with A1 built and the
+   bridge unchanged (the bridge serves the placeholder); then X1. Guards DG1, DG2, BG1 and BG2. Mutations M1 to M3,
+   M15 and M16. The exception N1 goes out of the list check.
+4. **S2 (N4).** Rows F1, F2 and E2 RED. Then B1 to B3. Guards FG1 to FG3. Mutations M4 and M5. The exception N4 goes
+   out.
+5. **S3 (N5).** Rows R1 to R7 and E3 RED. Then C1 to C5. Guards RG1 to RG6. Mutations M6 to M10, M17 and M18. The
+   exception N5 goes out.
+6. **S4 (N6), and L1 again.** Rows P1 to P3 and E4 RED. Then D1 and D2. Guards PG1 and PG2. Mutations M11 and M12.
+   The exception N6 goes out: `EXCEPTIONS` is empty and is removed, and the test is row L1 as it was written in
+   step 2. L1 is run again and passes. The summary quotes the failure message of step 2 and this pass. Guard G1.
+7. **S5.** Rows T1 to T4 RED first. W1 to W4, then the build of the solution, the check H2, and `npm run contract:mcp` (W5).
    W6 and W7. The documents of §7.
 8. `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` in `src_vs_code`, at lowered priority, with
    the exit of `tsc` read first. `npm run contract` leaves no difference in `contract/broker-v1.json`. The build of
@@ -404,14 +470,15 @@ One epic, five stories, on `fix/agent-list-fields-hidden` (from `main` at `dbb21
 10. After the merge: the extension release first, then the `mcp-v` release (§3.4). The lead and the owner decide
     when.
 
-One file of the suite runs through the same runner: `npm run compile`, then
+The four existing tests of §6.8 change with the story that makes each one red. One file of the suite runs through
+the same runner: `npm run compile`, then
 `node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/<file>.test.js"`.
 
 ## 6. Test plan
 
 Each RED row is a test of behaviour: it builds a vault, calls the product's own list function or the real read route,
 and asserts the value that comes back. No row of S1 to S4 reads a source file. Each RED row has a mutation of §6.7
-that turns it red. The rows of S5 are content rows: a tool description and a help sentence have no other behaviour.
+that turns it red. Row L1 is the first test that is written, before S1 (§5, step 2). The rows of S5 are content rows: a tool description and a help sentence have no other behaviour.
 
 ### 6.1 The worlds
 
@@ -420,7 +487,9 @@ that turns it red. The rows of S5 are content rows: a tool description and a hel
   source with one account or two, each account with an e-mail address).
 - **The class test**, `test/agentNamesOnlyViewable.test.ts`, over `test/unlistedWorld.ts`. The fixture has the four
   cases already (`unlistedWorld.ts:72-77`, `:84-85`, `:109-111`). Its source gets an e-mail address for the account
-  (`:116`), and `N5_COMMAND` (`:88-89`) names that address in place of the account id.
+  (`:116`), and `N5_COMMAND` (`:88-89`) names that address in place of the account id. With the address, the
+  locator FINDS the hidden entry and the wall refuses it; without it, the token would be replaced only because no
+  account is found. Row L1 is written and watched failing before S1 (§5, step 2).
 - **The pair worlds of rule A.** For each field, two vaults that differ in one thing: in the first the second node
   is hidden, in the second it is not there. Each E row asserts that the two list bodies are deep-equal.
 
@@ -452,25 +521,28 @@ In each RED row the test also asserts that the body of the list holds no name an
 
 ### 6.4 S3 (N5) — `command`
 
-The account has the e-mail address `me@x.test`. `V` is an entry that the agent may view; `H` is one with no switch.
+The account has the e-mail address `me@x.test`. `V` is an entry that the agent may view; `H` is one with no switch;
+`V2` has switches of its own in a folder `HF` that has no switch.
 
 | # | Kind | The command holds | Today (observed) | After |
 |---|---|---|---|---|
 | R1 | RED | `creds://me@x.test/H/password` | as typed | `HIDDEN_REFERENCE` in its place; the text before and after it stays |
 | R2 | RED | a reference to an entry with a PIN; to an entry in the Trash | as typed | `HIDDEN_REFERENCE` |
-| R3 | RED | `creds://me@x.test/<a folder with no switch>/V2/password`, where `V2` has switches of its own in that folder | as typed | `HIDDEN_REFERENCE` (the folder is named) |
+| R3 | RED | `creds://me@x.test/HF/V2/password` | as typed | `HIDDEN_REFERENCE` (the folder is named) |
 | R4 | RED | a reference to an account that is not there; to a name that no entry has | as typed | `HIDDEN_REFERENCE` |
-| R5 | RED | a name that two entries have, one that the agent may view and one hidden | as typed | `HIDDEN_REFERENCE` |
-| R6 | RED | `creds://me@x.test/H` (no field) and `creds://me@x.test/H/salary` (a field that is not known) | as typed | `HIDDEN_REFERENCE` |
-| R7 | RED | `CREDS://me@x.test/H/password` | as typed | `HIDDEN_REFERENCE` |
-| E3 | RED | the pair: R1; the same command with `H` taken out of the vault | the bodies are equal today too, and hold the name | deep-equal, and the name of `H` is in neither |
-| RG1 | guard | `creds://me@x.test/V/password`; `creds://ME@X.TEST/v/totp`; `creds://me@x.test/<an open folder>/V/password` | as typed | the same, byte for byte |
+| R5 | RED | a name that two entries have: one that the agent may view and one hidden; two that the agent may view | as typed | `HIDDEN_REFERENCE` in the two cases (the locator finds no ONE entry) |
+| R6 | RED | tokens that the parser does not read: `creds://me@x.test/V` (no field); `…/V/salary` (a field that is not known); `…/V/Password` (the field in another letter case); `…/V/password.` (a mark at the end) | as typed | `HIDDEN_REFERENCE`, also when the entry is one that the agent may view |
+| R7 | RED | `CREDS://me@x.test/H/password`; `Creds://ME@X.TEST/h/password` | as typed | `HIDDEN_REFERENCE`: the scan reads the scheme in any letter case, and the decision is the one of R1 |
+| E3 | RED | three pairs. (1) R1; the same command with `H` taken out of the vault. (2) R3; the same with `HF` taken out, so that the `parentId` of `V2` points to nothing. (3) the reference of RG5 in the same two worlds as (2) | (1) and (2): the bodies are equal today too, and hold the hidden name | in each pair the two bodies are deep-equal; in (1) and (2) the name of `H` and of `HF` is in neither; in (3) the reference is kept in the two |
+| RG1 | guard | `creds://me@x.test/V/password`; `creds://me@x.test/<an open folder>/V/password` | as typed | the same, byte for byte |
 | RG2 | guard | a reference to an entry of a SECOND account that the agent may view there | as typed | the same: the wall is asked in the account that the reference names |
 | RG3 | guard | a command with no token (`tmux {name}`); a blank command | the text; no `command` key | the same (the test at `test/mcpEntries.test.ts:290` stays green with one added member, §6.8) |
 | RG4 | guard | the answer of R1, given to the same function a second time | — | the same text: `HIDDEN_REFERENCE` is not a token (§2.8) |
+| RG5 | guard | `creds://me@x.test/V2/password`: the shorter reference, which leaves `HF` out and names one entry | as typed | the same, byte for byte (limit (c) of D4) |
+| RG6 | guard | a clean match in another letter case: `creds://ME@X.TEST/v/totp`; `CREDS://me@x.test/V/password`; a path part with `%20` for a name with a space, in upper case | as typed | the same, byte for byte, in the letter case that the person typed (limits (a) and (b) of D4) |
 
-E3 is RED by its second assertion. A source with no e-mail address keeps no reference; the row RG1 fails then, so the
-suite cannot pass with a locator that finds nothing.
+E3 is RED by its second assertion in pairs (1) and (2); pair (3) is a guard inside it. A source with no e-mail address
+keeps no reference; the rows RG1, RG5 and RG6 fail then, so the suite cannot pass with a locator that finds nothing.
 
 ### 6.5 S4 (N6) — `parent`, and the class row
 
@@ -485,7 +557,7 @@ suite cannot pass with a locator that finds nothing.
 
 | # | Kind | What | Today | After |
 |---|---|---|---|---|
-| L1 | RED | the class test, through the real read routes of the real broker: the bodies of `GET /v1/mcp/entries` and `GET /v1/mcp/folders` over `unlistedWorld.ts` | the bodies hold the name of the hidden dependency, the name of the hidden folder, the reference with the hidden name, and the id of the hidden parent (`agentNamesOnlyViewable.test.ts:336-339`) | no hidden NAME and no hidden ID is in the two bodies, with no exception. The four rows hold the new values: `[HIDDEN_DEPENDENCY]`, `''`, `HIDDEN_REFERENCE`, `null`. The list `EXCEPTIONS` (`:312-317`) is removed |
+| L1 | RED, written and watched failing BEFORE S1 (§5, step 2); run again after S4 | the class test, through the real read routes of the real broker: the bodies of `GET /v1/mcp/entries` and `GET /v1/mcp/folders` over `unlistedWorld.ts` | the bodies hold the name of the hidden dependency, the name of the hidden folder, the reference with the hidden name, and the id of the hidden parent (`agentNamesOnlyViewable.test.ts:336-339`) | no hidden NAME and no hidden ID is in the two bodies, with no exception. The four rows hold the new values: `[HIDDEN_DEPENDENCY]`, `''`, `HIDDEN_REFERENCE`, `null`. The list `EXCEPTIONS` (`:312-317`) is removed |
 | LG1 | guard | completeness 4 of the same file (`:360-369`): a node that the agent MAY view is named | green | green, with no change of a line |
 
 ### 6.6 S5 — the words, the bridge and the binary
@@ -495,10 +567,12 @@ suite cannot pass with a locator that finds nothing.
 | T1 | RED, content | in a TypeScript test: the description of `creds_vpn_up` in `contract/mcp-tools-v1.json` holds the value of `HIDDEN_DEPENDENCY`; the description of `creds_run` and of `creds_list` holds the value of `HIDDEN_REFERENCE` | the words are not there | they are there. The row joins the constant of the extension and the text of the binary through the generated file |
 | T2 | RED, content | in `src_mcp/tests/ToolsTests.cs`, beside `:112-113` and `:249-251`: `Tools.ListDescription` holds the sentence about `folder`; `FolderTools.ListDescription` holds the sentence about a `null` parent | not there | there |
 | T3 | RED, content | for each language of `HELP_LANGUAGES`: `usage` of `bodyFor(helpArticle('agent-surface'), language)` holds the two sentences of Appendix A, and `fallback` is false | not there | there |
+| T4 | RED, content | in the TypeScript test of T1, beside guard FG2 of §6.3 (the fact): the description of `creds_list` in `contract/mcp-tools-v1.json` holds the clause of Appendix B about the folder that gave the entry its access switches, with the words that it can be a folder above the entry's own | not there | there |
 | H1 | guard | the harness (`creds-mcp-itest.cjs`), the real binary over a stub window: a row with `folder: ''`, `dependsOn` ending with the placeholder and a `command` with the placeholder; a folder with `parent: null` | not checked | the four values cross the binary as they are: `folder` is the empty string, `parent` is `null` and the key is present |
 | H2 | check, watched | `node scripts/emit-mcp-tools.mjs --check` after W1 to W4 are built and before W5 | it passes on the unchanged code | it fails and names the command that rebuilds the file; after W5 it passes |
-| BG1 | guard | on a Remote Bridge (`test/bridgeWallWorld.ts`), a row in scope that depends on a hidden entry, has switches of its own in a closed folder, and holds a reference to a hidden entry | `dependsOn` has no name of it; `folder` is `''`; `hasCommand` is `true`; the folders are `[]` | the same, and the served body holds neither placeholder |
-| BG2 | guard, no edit | `test/bridgeReadShape.test.ts`: RS1, RS2 (`:117-130`), RS4, RS5, RS6; `test/bridgeScope.test.ts`; `test/bridgeScopeWalk.test.ts` | green | green, with no change of a line |
+| BG1 | guard | on a Remote Bridge, a row in scope that depends on a hidden entry and on an id that no node has, has switches of its own in a closed folder, and holds a reference to a hidden entry | `dependsOn` has no name of it; `folder` is `''`; `hasCommand` is `true`; the folders are `[]` | the same, and the served body holds neither placeholder |
+| BG3 | RED between A1 and X1 (§5, step 3) | through the wall's own view (`doorView`), as RS5 does (`test/bridgeReadShape.test.ts:246-262`), over the rows that `visibleMcpEntries` gives for a small vault. The scope holds an entry that is NAMED exactly `HIDDEN_DEPENDENCY`, and a row. Three worlds: (a) the row depends on an entry with no switch; (b) on an id that no node has; (c) on the entry with that name itself | on the unchanged code: (a) and (b) `[]`, (c) the name. With A1 and no X1 (observed on the prototype): (a) and (b) `[HIDDEN_DEPENDENCY]` | `[]` in the three worlds; the served body of (a) and of (b) is deep-equal to the served body when the row has no dependency; no served body holds `HIDDEN_DEPENDENCY` as a value of `dependsOn` |
+| BG2 | guard, no edit | `test/bridgeReadShape.test.ts`: RS1, RS2 (`:117-130`, the filter by name for a dependency out of scope), RS4, RS5, RS6; `test/bridgeScope.test.ts`; `test/bridgeScopeWalk.test.ts` | green | green, with no change of a line |
 | G1 | guard | a vault in which the agent may view each node: the two list bodies | a literal that the coder takes from the unchanged code | equal to that literal: no other field changes |
 
 ### 6.7 Mutation checks (each one alone, restored after; each must turn its rows red)
@@ -512,14 +586,18 @@ suite cannot pass with a locator that finds nothing.
 | M5 | in B2, test the entry's parent in place of `resolved.folder` and give the parent's name | FG2 |
 | M6 | in C4, keep each token that `locateRef` finds (take the test of the entry out) | R1, R2, L1 |
 | M7 | in C4, take the test of the named folders out | R3 |
-| M8 | in C4, replace only a token that is found and hidden; keep the others | R4, R5, R6 |
-| M9 | in C1, scan with the letter case of `REF_PATTERN` | R7 |
+| M8 | in C4, replace only a token that is found and hidden; keep the others | R4, R5, R6, and pair (2) of E3 |
+| M9 | in C1, scan with the letter case of `REF_PATTERN` (the lower-case scheme only) | R7 |
 | M10 | in C4, search the entries that the agent may view only | R5 |
 | M11 | in D1, give `node.parentId ?? null` | P1, P2, P3, E4, L1 |
 | M12 | in D1, test only that the parent exists | P1, P2 |
 | M13 | in W4, put the old description back and regenerate | T1 |
 | M14 | put the old `usage` back in ONE language (each of the five in turn) | T3, for that language |
-| M15 | in `narrowed` (`bridgeScope.ts:152`), take the filter out | BG1 |
+| M15 | in `narrowed` (`bridgeScope.ts:152`), take the whole filter out | BG1, BG3 |
+| M16 | in X1, take the test of the placeholder out and keep the filter by name | BG3, worlds (a), (b) and (c) |
+| M17 | in C4, ask `isOpenFolder` of each folder above the entry up to the root, not only of the folders that the token names | RG5, and pair (3) of E3 |
+| M18 | in C1, change the token to lower case before the decision and write that back | RG6 (the kept text is not the typed text) |
+| M19 | in W1, take the clause about the folder that gave the switches out and regenerate | T4 |
 
 ### 6.8 Existing tests that change, and why
 
@@ -556,12 +634,13 @@ gets the new required member of C4. It is a change of the type, not of an assert
 ## 7. Documents
 
 - `src_vs_code/CHANGELOG.md`, under `## [Unreleased]`: a `### Changed — security` entry with the table of §3.3, the
-  two placeholders, what a Remote Bridge serves (§2.7), and §3.4 (a window of an older extension, and `creds-mcp`
+  two placeholders, what a Remote Bridge serves and the three cases at its edge (§2.7), and §3.4 (a window of an older extension, and `creds-mcp`
   before its own release).
 - `research/module_extension.md`: the paragraph *A lookup and a refusal name only what the agent may view*
   (`:6852-6875` today) loses the sentence about the four fields that are not covered (`:6871-6875`) and gets the
   rule of §2.1 for the list answers, with the three functions that decide it and the table of §2.6; the bridge
-  paragraph (`:3913` today) gets one clause about the placeholder and the filter by name. No diagram shows a list
+  paragraph (`:3913` today) gets one clause: the filter of `dependsOn` drops the placeholder of the local row before it
+  filters by name (X1). No diagram shows a list
   field, so none is drawn again.
 - `research/module_tests.md`: the row of the list check (`:2356` today) becomes row L1; the suite
   `listFieldsHidden.test.ts` gets its rows, with §6.9 as its *what it does not prove*; the harness check H1.
@@ -581,7 +660,8 @@ gets the new required member of C4. It is a change of the type, not of an assert
 - It does not change `connectionString`. The plan of the bridge records that the local list strips the password of
   one dialect of four, and gives that to a todo of its own
   ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md), §8 *Boundaries*).
-- It does not change what a Remote Bridge serves, and it edits no line of `bridgeScope.ts` (§2.7, F2).
+- It does not change what a Remote Bridge serves, but for the edge cases of §2.7, and it edits one expression of
+  `bridgeScope.ts` (X1). The filter of `dependsOn` stays a filter by name (F2).
 - It does not change the product code of `creds` (`src_cli`) or the records of `creds-mcp`.
 - It does not make the time of a hidden node and of a missing id equal by a measure.
 - It does not release. Two releases must follow the merge, in the order of §3.4.
@@ -590,8 +670,8 @@ gets the new required member of C4. It is a change of the type, not of an assert
 
 | Plan | Touches | This plan's part | The row that the neighbour gets |
 |---|---|---|---|
-| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | written in this commit: its status block, its §2.6, its §11 and its §12 point here |
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall's rows (`narrowed`, its §4.2); its §8 says that the LOCAL list's `connectionString` and `command` go to *a new todo, E4 writes it* | this plan takes the `command` half of that row: a reference to a thing that the agent may not view. It edits no line of `bridgeScope.ts`; it changes one control and the accounts of the world in two test files of that plan (`bridgeReadShape.test.ts`, `bridgeWallWorld.ts`, §6.8) | OWED, in its §8 *Boundaries*: the `command` half of that row is this plan's; `connectionString` stays there; the local row can now hold two fixed placeholders, and the filter of `dependsOn` by name passes one when a row in scope has that name (F2). That plan is under change control (epoch 11), so its owner session writes the row |
+| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | OWED: its status block, its §2.6, its §11 and its §12 get a pointer to this plan. They are not written yet: the commits of this plan so far hold this file and `todo/README.md` only. The lead writes them with the commit that opens the ledger |
+| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall's rows (`narrowed`, its §4.2); its §8 says that the LOCAL list's `connectionString` and `command` go to *a new todo, E4 writes it* | this plan takes the `command` half of that row: a reference to a thing that the agent may not view. It edits ONE expression of `bridgeScope.ts`, the filter of `dependsOn` in `narrowed` (`:152`, X1), and adds one import there. It adds row BG3 to `bridgeReadShape.test.ts`, and changes one control and the accounts of the world in two test files of that plan (`bridgeReadShape.test.ts`, `bridgeWallWorld.ts`, §6.8) | OWED, in its §8 *Boundaries* (the table that its line 998 and line 1004 are rows of), as one new row: (1) the `command` half of the row *The local MCP door's listing serves `connectionString` … and `command`* is this plan's, and `connectionString` stays there; (2) the local row can hold two fixed placeholders, and `narrowed` drops the placeholder of `dependsOn` before it filters by name, so the sentence of its §4.2, *`dependsOn` (names in the scope only)*, stays true; (3) this is a new fact for the row *reviewed and rejected by the re-review for epoch 6* (`dependsOn` filtered by name): the filter by name stays, and one fixed value is never a name for it. That plan is under change control (epoch 11) and belongs to another session, so its owner session writes the row; this plan does not edit that file |
 | [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) | `src_mcp/src/Tools.cs:36` (another description), `Program.cs`, `creds-mcp-itest.cjs`; a `mcp-v` release of its own | none in behaviour. The two plans edit other constants of `Tools.cs`, and each one regenerates `contract/mcp-tools-v1.json` | under its story B2: the second one to merge regenerates the contract file again and reads the first one's descriptions |
 | [PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) | the consent stamps in `mcpEntries.ts` (`worthRemembering`, `:584-586` today) | none. Disjoint lines of the same file | no row: no shared function |
 
@@ -615,12 +695,15 @@ branch that merges second reads line 132 again.
    gets one *no*.
 3. **A reference to an entry that the agent may view is replaced** when the name is ambiguous, when the token is
    broken, or when no account of the source has an e-mail address. The direction is safe, and the person's run does
-   not change. RG1 keeps the good case.
+   not change. RG1, RG5 and RG6 keep the good cases.
 4. **The refactor of C2 is in `extension.ts`**, which no unit test loads. The bodies move with no change, and
    `tsc` checks the types. The alternative copies eight lines and can drift (Q5).
 5. **`parent: null` reads as the root.** An agent that draws the tree puts such a folder at the top. W2 says what
    `null` means.
-6. **An entry named as a placeholder.** §2.7, case 2. Not built (F2).
+6. **An entry named as a placeholder.** On a bridge it is closed by X1 (row BG3, mutation M16). On the local list
+   such an entry reads like the placeholder (§2.7, case 3); the agent may view that entry.
+   **And X1 is an edit of a file of another plan.** It is one expression. If the session of the bridge plan says no
+   to it, N1 cannot ship as written: the placeholder would cross a bridge.
 7. **Two releases.** Between them an agent reads the new values with the old words (§3.4).
 8. **A text that the sweep of §1.6 missed.** The method is a `grep` for the field names. A sentence that describes
    a field in other words is not found.
@@ -629,21 +712,27 @@ branch that merges second reads line 132 again.
 
 ## 11. Definition of Done
 
+- [ ] Row L1 was written with no exception and watched failing by its assertion on the unchanged code BEFORE S1; the
+      summary quotes that message. It was run again after S4 and passes.
 - [ ] Each RED row of §6.2 to §6.5 was watched failing by its assertion on the unchanged code, then passes; the
       summary quotes one failure message of each story and the pass. No RED proof is a compile error.
+- [ ] Row BG3 was watched failing with A1 built and X1 not built, then passes.
 - [ ] Rows E1 to E4: the two bodies of each pair are deep-equal.
-- [ ] Row L1: the two list bodies of the class test hold 0 hidden names and 0 hidden ids, and `EXCEPTIONS` is gone.
+- [ ] Row L1, after S4: the two list bodies of the class test hold 0 hidden names and 0 hidden ids, and `EXCEPTIONS`
+      is gone.
 - [ ] Each guard row was watched passing before and after; the tests named *no edit* have no changed line.
-- [ ] Mutations M1 to M15 each turned its rows red and were restored.
+- [ ] Mutations M1 to M19 each turned its rows red and were restored.
 - [ ] The four existing tests of §6.8 changed as that table says, and no other existing assertion changed.
 - [ ] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
       priority, with a clean `tsc` read first. `npm run contract` leaves `contract/broker-v1.json` unchanged.
       `npm run contract:mcp` changed four descriptions in `contract/mcp-tools-v1.json` and nothing more.
 - [ ] The solution builds with 0 warnings; the test executable of `creds-mcp` is green; `npm run itest:mcp` is
       green with H1. `src_cli` and `McpJsonContext.cs` have no difference.
-- [ ] `bridgeScope.ts` has no difference.
+- [ ] `bridgeScope.ts` differs in the filter of `narrowed`, one import and one comment, and in nothing more (X1).
+- [ ] The pointers of F7 (§9) are written.
 - [ ] The documents of §7 are written; the CHANGELOG entry and the pull request body carry §3.3 and §3.4.
-- [ ] The owed row of §9 is with the session that owns the bridge plan; the summary says so.
+- [ ] The owed row of §9 is with the session that owns the bridge plan, and that session has heard of X1 before the
+      merge; the summary says so.
 - [ ] `coai`: a `review_plan` round passed before the first test; a `review_code` round ran on the finished branch;
       each finding has an accept or a reject with a reason; the summary has the verdicts and the number of
       reviewers that answered.
@@ -662,13 +751,16 @@ branch that merges second reads line 132 again.
 - **F1. `folder` names the folder that answered, not the folder that the entry is in.** For an entry with no switch
   of its own under a silent folder under an open folder, the field holds the name of the open folder
   (`answeringFolder`, `mcpAccess.ts:358-360`; observed). `creds_folders` lists the silent folder too, with its own
-  name. The comment of the field says *the folder it lives in* (`mcpEntries.ts:39-40`). Nothing hidden is told. Not
-  changed (Q6).
+  name. The comment of the field says *the folder it lives in* (`mcpEntries.ts:39-40`). Nothing hidden is told. The
+  VALUE is not changed (Q6). The WORDS are: the description of `creds_list` says which folder the field names
+  (Appendix B, row T4; finding 3 of the plan round), and B3 repairs the comment.
 - **F2. The filter of `dependsOn` on a Remote Bridge is by name** (`bridgeScope.ts:152`, `:162-166`). The plan of
   the bridge looked at it and rejected a change (its §8, the row *reviewed and rejected by the re-review for epoch
-  6*: a duplicate name discloses nothing). The new fact is the placeholder: when a row in scope is named exactly as
-  `HIDDEN_DEPENDENCY`, the bridge passes the placeholder, and says that one more dependency exists. For the plan of
-  the bridge; guard BG1 holds the usual case.
+  6*: a duplicate name discloses nothing). The placeholder was a new fact, and the plan round asked for a fix here:
+  X1 drops the placeholder before the filter (§2.7). What stays, and is not built: the filter is by name, so a hidden
+  dependency with the name of a row in scope cannot be told from that row. After N1 the local row does not hold
+  such a name, so this case is gone for a hidden dependency; for a dependency that the agent may view locally and
+  that is out of scope, it is as that plan left it.
 - **F3. `creds-mcp` drops `codeAccessEnabled`.** The window gives the field (`mcpEntries.ts:55-58`, `:155`), the
   instructions tell an agent to read it *on the list* (`src_mcp/src/Program.cs:784`, `Tools.cs:48`), and the record
   has no property for it (`McpJsonContext.cs:50-68`). The binary reads the answer into the record and writes the
@@ -687,8 +779,9 @@ branch that merges second reads line 132 again.
 
 ## 14. Questions for the owner
 
-The lead puts them to the question consultants first. The work does not wait: each question has the answer that this
-plan is built on.
+The question consultants were asked on Q4 only (consultation `e3ac9aef`, 2026-11-27). They were not asked the other
+questions: Q1 to Q3 and Q5 to Q8 keep the answers that this plan is built on, and the owner can change each one. The
+work does not wait.
 
 - **Q1 (N1, D2). A dependency that was DELETED gives the placeholder too.** Today it is dropped. *Built on: yes*, so
   a hidden dependency and a deleted one read alike. The other answer keeps the drop; an agent can then tell that a
@@ -697,18 +790,25 @@ plan is built on.
   The other answer gives one in the place of each; the agent then reads how many there are.
 - **Q3 (N5, D7). A reference that is kept still shows the e-mail address of its account.** *Built on: it stays*
   (the owner said: keep the text). The other answer replaces each reference, as a Remote Bridge gives a boolean.
-- **Q4 (N5, D4). A token is replaced also when it is ambiguous, broken, in another letter case, or names an entry
-  that the agent may view through a folder that it may not view.** *Built on: yes* (fail closed, and a hidden entry
-  reads as a missing one). The other answer replaces only a reference that the locator finds and the wall refuses;
-  rows R4 to R7 and E3 go then, and rule A does not hold for `command`.
+- **Q4 (N5, D4). A token is replaced also when it is ambiguous, broken, or names an entry that the agent may view
+  through a folder that it may not view.** *Built on: yes* (fail closed, and a hidden entry reads as a missing one).
+  **The consultants answered (consultation `e3ac9aef`, 2026-11-27, the two rows of their answer): fail closed.** They
+  set three limits, and the plan is written to them (§2.4, D4): (a) a reference that differs from the stored names
+  in letter case only, and that the locator resolves to ONE entry that the agent may view, is a clean match and stays
+  as typed (row RG6); (b) the scan of the list reads the scheme in any letter case and applies the same decision
+  (rows R7 and RG6, mutations M9 and M18); (c) a shorter reference that names one visible entry and leaves a hidden
+  folder out can stay (row RG5, pair (3) of E3, mutation M17). The first draft of this plan put *another letter case*
+  in the list of the replaced tokens; that was wrong for a clean match, and it is corrected. The owner can still say
+  no: the other answer replaces only a reference that the locator finds and the wall refuses; rows R4 to R6 and pairs
+  (1) and (2) of E3 go then, and rule A does not hold for `command`.
 - **Q5 (N5, D8). The two members of the window's reference source move out of `extension.ts` into a pure module.**
   *Built on: yes*, so the list and the run find the same entry by one function. The other answer writes them a
   second time in the list.
 - **Q6 (N4, F1). `folder` names the folder that gave the switches, which is not always the folder that the entry is
-  in.** *Built on: no change.* The other answer makes it the parent's name when the agent may view the parent; it
+  in.** *Built on: no change of the value; the tool description says it (Appendix B, row T4).* The other answer makes it the parent's name when the agent may view the parent; it
   is its own small item.
 - **Q7 (the words). The two placeholders of §2.8, in round brackets.** *Built on: as written.* The owner can change
-  the words in one place each; rows T1, D1 and R1 read the constants.
+  the words in one place each; rows T1, D1, R1 and BG3 read the constants.
 - **Q8 (S5). The tool descriptions and the help sentences are in this plan, with a `mcp-v` release after the
   extension release.** *Built on: yes.* The other answer cuts S5 to the harness check H1; the agent then reads the
   placeholders with no description of them.
@@ -733,11 +833,14 @@ Each text is added to the description that is there; no sentence of today is rem
 stay green (`src_mcp/tests/ToolsTests.cs:112-113`, `:249-251`). The words in quotes are the values of the two
 constants of §2.8; row T1 holds them equal.
 
-1. **`creds_list`** (W1), a new paragraph after the first one: *`folder` is the name of the entry's folder when that
-   folder is open to you too, and empty when it is not or when the entry is at the root. `dependsOn` names the
-   entries this one needs that are open to you; when it needs one that is not, the list ends with "(a dependency
-   that is not open to agents)". In `command`, a creds:// reference to something that is not open to you reads
-   "(a creds reference that is not open to agents)".*
+1. **`creds_list`** (W1), a new paragraph after the first one: *`folder` is the name of ONE folder above the entry,
+   and only when that folder is open to you too. When the entry takes its access switches from a folder, it is the
+   folder that gave them, which can be a folder above the entry's own folder. When the entry has switches of its own,
+   it is the entry's own folder. It is empty when that folder is not open to you, and when the entry is at the top of
+   the vault. `dependsOn` names the entries this one needs that are open to you; when it needs one that is not, the
+   list ends with "(a dependency that is not open to agents)". In `command`, a creds:// reference to something that
+   is not open to you reads "(a creds reference that is not open to agents)".* Row T4 holds the clause about the
+   folder that gave the switches; guard FG2 holds the fact.
 2. **`creds_folders`** (W2), after *Each carries `id`, `name`, `parent`, …*: *`parent` is the id of the folder above
    it when that folder is open to you too, and null when it is not — so a null parent does not say that the folder
    is at the top of the vault.*
@@ -757,8 +860,9 @@ here and not in a document of their own: the lead asked for it for a plan of thi
 before ([PLAN_agent_small_truths_n8_n9_n2.md](../research/PLAN_agent_small_truths_n8_n9_n2.md), `## Epics`). The
 lead asked for four stories, one for each field. A fifth holds the words, because they are in another binary with a
 release of its own. The rows and the mutations of §6 are the scenarios of each story. Fable wrote this plan and the
-split, because each story is a judgement on authorisation (what an agent may see). The question consultants are NOT
-asked yet: the lead asks them before the plan round, and the split is final after that. Sonnet codes each story from
+split, because each story is a judgement on authorisation (what an agent may see). The question consultants were asked
+on Q4 only (consultation `e3ac9aef`); this text has no record that they were asked what is important for the split, so
+the lead says if that question is still owed before the split is final. Sonnet codes each story from
 its rows; Opus reviews each one; the security reading of S3 is Fable's, at review. One epic gives a cornerstone quota
 of 1.
 
@@ -777,32 +881,41 @@ Cornerstones: 1 of 1 — S3
      rows.
   2. E1 to E4: in 4 of 4 pairs the two bodies are deep-equal.
   3. D1 to D5: `dependsOn` holds 0 names of a node that is not `shown`, and at most 1 placeholder.
-  4. R1 to R7: 0 tokens that start with `creds://` are in a listed command, but the tokens of RG1 and RG2, which are
+  4. R1 to R7: 0 tokens that start with the scheme are in a listed command, but the tokens of RG1, RG2, RG5 and RG6, which are
      byte-equal to the stored text.
   5. P1 to P3 and F1, F2: 3 parents are `null` and 2 folders are `''`.
-  6. BG1 and BG2: the rows that a Remote Bridge serves have 0 changed bytes; `bridgeScope.ts` has 0 changed lines.
+  6. BG1 and BG2: the rows that a Remote Bridge serves in those worlds have 0 changed bytes. BG3: in 3 of 3 worlds a
+     bridge serves 0 placeholders. `bridgeScope.ts` has 1 changed expression (the filter of `narrowed`), 1 new import
+     and 1 changed comment.
   7. G1: with each node visible, the two list bodies have 0 changed bytes.
-  8. T3 holds for 5 of 5 languages; T1 for 3 descriptions; H1 for 4 values.
-  9. Each of the 15 mutations turns at least 1 row red.
+  8. T3 holds for 5 of 5 languages; T1 for 3 descriptions; T4 for 1 clause; H1 for 4 values.
+  9. Each of the 19 mutations turns at least 1 row red.
   10. `contract/broker-v1.json`, `src_cli` and `McpJsonContext.cs` have 0 differences; `contract/mcp-tools-v1.json`
       has 4 changed descriptions.
+  11. L1 failed 1 time on the unchanged code before S1, and passes after S4.
 - **Cornerstone area.** The command field (S3): the scan, the locator and the three conditions. A mistake there is a
   name that leaves the vault inside a text that passes each other test, and the field is the only one of the four
   with a grammar.
 
 **Stories.**
 
-- **S1 · N1, the dependencies.** P1, then rows D1 to D5 and E1 RED first, with the failure messages kept. Then A1
-  and A2. Guards DG1 and DG2. Mutations M1 to M3. The existing test of `test/mcpEntries.test.ts:238-250` changes
-  here. Complete on its own.
+- **S1 · N1, the dependencies, with row L1 first and the bridge filter.** Before a line of product code: the fixture's
+  e-mail address, and row L1 with no exception, watched failing on the unchanged code, with the message kept (§5,
+  step 2). Then P1, and rows D1 to D5 and E1 RED first, with the failure messages kept. Then A1 and A2. Then row BG3
+  RED, and X1. Guards DG1, DG2, BG1 and BG2. Mutations M1 to M3, M15 and M16. The existing test of
+  `test/mcpEntries.test.ts:238-250` changes here, and the exception N1 goes out of the list check. A1 and X1 are one
+  story on purpose: A1 alone lets the placeholder cross a bridge.
 - **S2 · N4, the folder.** Rows F1, F2 and E2 RED first. Then B1 to B3. Guards FG1 to FG3. Mutations M4 and M5. The
-  existing test of `test/mcpEntries.test.ts:88-109` changes here. It shares no line with S1.
+  existing test of `test/mcpEntries.test.ts:88-109` changes here, and the exception N4 goes out. It shares no line
+  with S1.
 - **S3 · N5, the command (the cornerstone; this document is its specification, by Fable).** Rows R1 to R7 and E3 RED
-  first. Then C1 to C5. Guards RG1 to RG4. Mutations M6 to M10. RS3 of `test/bridgeReadShape.test.ts` and the
-  accounts of `test/bridgeWallWorld.ts` change here. It needs P1 of S1 and B1 of S2.
-- **S4 · N6, the parent, and the class row.** Rows P1 to P3 and E4 RED first. Then D1 and D2. Guards PG1 and PG2.
-  Mutations M11 and M12. Then row L1 in the class test, with the fixture's e-mail address; guard G1. It needs B1 of
-  S2, and L1 needs S1 to S3.
-- **S5 · The words, the binary and the record.** Rows T1 to T3 RED first. W1 to W4, the build, the check H2, W5. W6.
-  W7 and H1. BG1 and BG2. Mutations M13 to M15. The CHANGELOG entry, the two documents of `research/`, the closing checks
+  first. Then C1 to C5. Guards RG1 to RG6. Mutations M6 to M10, M17 and M18. RS3 of `test/bridgeReadShape.test.ts`
+  and the accounts of `test/bridgeWallWorld.ts` change here, and the exception N5 goes out. It needs P1 of S1 and B1
+  of S2.
+- **S4 · N6, the parent, and row L1 again.** Rows P1 to P3 and E4 RED first. Then D1 and D2. Guards PG1 and PG2.
+  Mutations M11 and M12. The exception N6 goes out: the list of exceptions is empty and is removed, and the test is
+  row L1 as S1 wrote it. L1 is run again and passes; the summary quotes its failure message of S1 and this pass.
+  Guard G1. It needs B1 of S2, and the pass of L1 needs S1 to S3.
+- **S5 · The words, the binary and the record.** Rows T1 to T4 RED first. W1 to W4, the build, the check H2, W5. W6.
+  W7 and H1. Mutations M13, M14 and M19. The CHANGELOG entry, the two documents of `research/`, the closing checks
   of §5, the code round and the pull request. It follows S1 to S4, because the documents record them as built.
