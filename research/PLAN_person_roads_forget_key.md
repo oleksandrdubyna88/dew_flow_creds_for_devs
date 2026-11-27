@@ -196,7 +196,7 @@ with `../sshExecAuth` returning a credential whose `materialized` is a known pat
   `sshExecCommand.ts:146-148`), where the agent's exec uses the pin (`sshUseActions.ts:224`). Another machine at that
   address is accepted on first contact. Its plan, written 2026-11-17:
   [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md); its Epic 1 (the three roads enforce the pin)
-  is built in PR #379 after G2 (1.22.3); its Epic 2 (the measurements on a real `sshd`) and its candidates are open.
+  is built in PR #379 after G2 (1.22.3); its Epic 2 (the measurements on a real `sshd`) and its candidates are open. (As of 2026-11-17. Since then: G1 is IMPLEMENTED — E1 and E2 shipped in 1.23.0 on 2026-11-23, E3, the measurements on a real `sshd`, in 1.24.0 on 2026-11-27; its plan is `research/PLAN_person_roads_pin_host_key.md`, and its open candidates are listed there and in `research/module_tests.md`.)
 - **G2 (medium if it holds, not measured).** The bridge's argv does not turn connection sharing off (`sshBridge.ts:156-161`
   has no `ControlPath=none`/`ControlMaster=no`); with `ControlMaster auto` + `ControlPersist` in the person's config the
   `-R` forward may live in a master that *Close* and the window's dispose do not kill. The key is not needed after login,
