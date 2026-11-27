@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.24.0...extension-v1.24.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **extension:** the config snippet across accounts, the journal reason of a linked run, and the journal page shows the lines it counts (N8, N9, N2) ([#397](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/397)) ([147fc0d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/147fc0da38477563f34192ad9c71d5a9795d4621))
+
 ## [1.24.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.23.0...extension-v1.24.0) (2026-11-27)
 
 
