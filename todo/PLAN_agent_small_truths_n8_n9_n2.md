@@ -1,11 +1,12 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **re-reviewed 2026-11-27: epoch 2 is open (`by reviewers`); stories S1 to S3 are built, story S4 is not
-> built; not merged and not released.** The plan stopped at entry 1.2 on 2026-11-27 and was revised as a whole on
+> Status: **re-reviewed 2026-11-27: epoch 2 is open (`by reviewers`); S1 to S4 are on the branch, not merged (S4:
+> `2aef3f1b`, `9d85af48`, `eeb52651`); the code round of epoch 2 passed (`proceed`, 4 of 4 reviewers); not released;
+> the pull request waits for the owner.** The plan stopped at entry 1.2 on 2026-11-27 and was revised as a whole on
 > the same day (the record is in `## Plan changes`). Built on the branch `fix/n8-n9-n2-small-truths`: S1 `d12df88a`,
-> S2 `fe2c4ddd`, S3 `8515c1e9`, and two review fixes, `19b04992` and `56610bf0`. **To build: S4, the journal page
-> shows the lines that it counts** (§1.5, §2.4, §3.4, the rows of epoch 2 in §6.3). Then the documents of §7, the
-> closing checks, the code round and the pull request. Scope: the extension only (`src_vs_code/src`: `mcpEntries.ts`,
+> S2 `fe2c4ddd`, S3 `8515c1e9`, and two review fixes, `19b04992` and `56610bf0`. **S4, the journal page shows the lines
+> that it counts** (§1.5, §2.4, §3.4, the rows of epoch 2 in §6.3). Next: the pull request, the merge,
+> the release and the promotion. Scope: the extension only (`src_vs_code/src`: `mcpEntries.ts`,
 > `agentUseActions.ts`, the five `help*.ts` files, `mcpLogRows.ts`, `mcpLogPage.ts`; for S4 also `brokerMcpDoor.ts`,
 > `brokerFolderDoor.ts`, `brokerCall.ts`, `rotateAction.ts`, `secretKinds.ts`, two comments; their tests), two README
 > sentences, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,

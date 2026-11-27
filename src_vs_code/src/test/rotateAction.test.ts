@@ -386,18 +386,18 @@ test('P4: each answer of a rotation has its journal word, and only the three wor
     return action.describeOutcome(answer);
   };
   const bodyAnswer = (body: object): UseActionResult => ({ status: 200, body: { entity: 'orders-db', stdout: '', ...body } });
-  const stderr = (status: number, code: ErrorCode): UseActionResult => ({ status, body: errorBody(code, 'the statement action says no') });
+  const statementError = (status: number, code: ErrorCode): UseActionResult => ({ status, body: errorBody(code, 'the statement action says no') });
   const cases: ReadonlyArray<readonly [string, string, boolean]> = [
     ['stored', await run(undefined, { status: 200, body: { exitCode: 0, stdout: 'ALTER\n' } }), true],
     ['the value was handed to the person', world().action.describeOutcome(bodyAnswer({ rotated: true, stored: false })), true],
     ['the value is held until the PIN', world().action.describeOutcome(bodyAnswer({ rotated: true, stored: 'quarantined' })), true],
     ['the statement ran and failed', await run(undefined, { status: 200, body: { exitCode: 1, stderr: 'denied' } }), false],
     ['no generator', await run('x509', { status: 200, body: { exitCode: 0 } }), false],
-    ['404 of the statement', await run(undefined, stderr(404, 'not_found')), false],
-    ['409', await run(undefined, stderr(409, 'no_credential')), false],
-    ['412', await run(undefined, stderr(412, 'tool_missing')), false],
-    ['429', await run(undefined, stderr(429, 'too_many_requests')), false],
-    ['500', await run(undefined, stderr(500, 'internal')), false],
+    ['404 of the statement', await run(undefined, statementError(404, 'not_found')), false],
+    ['409', await run(undefined, statementError(409, 'no_credential')), false],
+    ['412', await run(undefined, statementError(412, 'tool_missing')), false],
+    ['429', await run(undefined, statementError(429, 'too_many_requests')), false],
+    ['500', await run(undefined, statementError(500, 'internal')), false],
   ];
   const words = ['rotated', 'rotated, not stored', 'rotated, quarantined', 'statement failed', 'no generator', '404', '409', '412', '429', '500'];
 

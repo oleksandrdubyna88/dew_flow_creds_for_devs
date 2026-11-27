@@ -354,7 +354,8 @@ test('P2: a rotation that could not draw its secret is counted under Could not g
   assert.equal(applyFilter(rows, 'refused').length, 1);
 });
 
-const BUTTONS: readonly McpLogFilter[] = ['refused', 'rotations', 'agentSecrets', 'noGenerator'];
+/** The count buttons, read from the page's own list: every filter but *Everything*, which counts each row. */
+const BUTTONS: readonly McpLogFilter[] = MCP_LOG_FILTERS.map((filter) => filter.id).filter((id) => id !== 'all');
 
 test('P3: no row of the journal fits two buttons, and the row is drawn under the one that counts it', () => {
   const rows = [
