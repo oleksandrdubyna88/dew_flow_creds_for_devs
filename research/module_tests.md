@@ -2430,7 +2430,7 @@ not a valid host.`, and after the fix the file passed (40 of 40 on that run).
 ## Three small truths of the agent surface (2026-11-27, [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md): N8, N9, N2)
 
 Pure tests; the real broker (`brokerWorld.ts`) for the journal rows. Run from `src_vs_code`: `npm run compile`, then
-`node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/mcpEntries.test.js" "out/test/bridgeWallSource.test.js" "out/test/linkedRunWhy.test.js" "out/test/journalHolds.test.js"`.
+`node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/mcpEntries.test.js" "out/test/bridgeWallSource.test.js" "out/test/linkedRunWhy.test.js" "out/test/journalHolds.test.js" "out/test/mcpLogRows.test.js" "out/test/rotateAction.test.js"`.
 
 **N8: the config lookup goes on to the next account** (`mcpEntries.test.ts`, beside X1, and `bridgeWallSource.test.ts`). Two accounts `a1` then `a2`;
 `a2` holds a config `c1` that the agent may view. Each fixture is proved first: `visibleMcpEntries` lists the config of `a2` and no node of `a1`.
@@ -2446,17 +2446,37 @@ Pure tests; the real broker (`brokerWorld.ts`) for the journal rows. Run from `s
 
 **N9** is in the table of the agent's gate (`linkedRunWhy.test.ts`, W1 to W3 and WG3).
 
-**N2: what the journal holds** (`journalHolds.test.ts`). These rows hold what the texts say; when a row of J changes, the texts of the plan's T1 to T8 change in
-the same commit.
+**N2: what the journal holds, and what the page shows** (`journalHolds.test.ts`; for the page also `mcpLogRows.test.ts` and `rotateAction.test.ts`). These rows hold what the texts say;
+when a row of J changes, the texts of the plan's T1 to T8 and T10 to T13 change in the same commit. From J5 on, each row asserts the agent's answer FIRST (the whole status and the
+whole body, the values that the code gave before S4) and the journal after, so the failure of a row on the code before S4 names the journal and not the answer.
 
 | flow | covered | note |
 |---|---|---|
 | J1: the three list routes (entries, folders, config snippet) | **unit, the real broker** | each answers 200 and adds 0 lines to the journal |
 | J2: a use and a delete for an id that is not served, an entry whose switch is off, a body with no entry | **unit, the real broker** | `not_found`, `denied`, `invalid_request`; 0 lines; 0 dialogs |
 | J3: a use that is allowed, one that is denied, one that nobody answers | **unit, the real broker** | read with the page's own reader `mcpRowsIn`: one row each, with `exit 0`, `denied`, `consent_timeout`; `isRefusal` is true for the last two |
-| J4: a create that asks for a secret that this window cannot make | **unit, the real broker** | one line with the outcome `no generator` (`NO_GENERATOR_OUTCOME`), and a refused lookup after it adds none. The line has no `via`, so `mcpRowsIn` does not read it as a row of the page (see below) |
-| H1: the help article `mcp-logs`, each of the five languages | **content** | `whatItIs` is the sentence of Appendix A of the plan, no fallback. Watched RED on the old text |
-| H2: the journal page: the hints of the filters `all` and `refused`, the two empty messages, the lede | **content** | the texts T2 to T6 of the plan, exact. Watched RED on the old text |
+| J4: a create that asks for a secret that this window cannot make | **unit, the real broker** | one line with the outcome `no generator` (`NO_GENERATOR_OUTCOME`), and a refused lookup after it adds none. The page shows that line since S4 (J7) |
+| J5: a create that ran, with a secret and with none | **unit, the real broker** | answer `200 {created: true, id, name}`; ONE row, `create → created with agent secret` / `create → created`; *Secrets from the agent* 1 / 0, the three other counts 0. Watched RED on `aa70258c`: 0 rows (the line had no `via`) |
+| J6: a delete that ran | **unit, the real broker** | answer `200 {deleted: true, entity, restorable: true}`; ONE row, `delete → moved to Trash`; the four counts 0. RED before: 0 rows |
+| J7: a create for a secret that this window cannot make | **unit, the real broker** | answer `404`, `not_supported`; ONE row, `create → no generator`; *Could not generate* 1, *Refused* 0. RED before: 0 rows |
+| J8: a rotation that cannot draw its secret (the real `rotateAction` behind the broker) | **unit, the real broker** | answer `404`, `not_supported`, `noGenerator: true`, compared whole; nothing stored; ONE row, `rotate → no generator`; *Could not generate* 1, *Secrets replaced* 0, *Refused* 0. RED before: the word was `404` |
+| J9: a folder change that ran | **unit, the real broker** | answer `200 {folder, created: true, id, name}`; ONE row, `folder-create → done`; the four counts 0. RED before: 0 rows |
+| J10: a rotation whose statement ran and failed (`exitCode: 1`) | **unit, the real broker** | answer `200` with the statement's own body; nothing stored; ONE row, `rotate → statement failed`; the four counts 0. RED before: the word was `rotated` |
+| J11: a rotation that the action refuses in its run (the entry is gone) | **unit, the real broker** | answer `400`, `invalid_request`, whole; ONE row, `rotate → 400`; the four counts 0. The answer and the word are a guard; RED before in the count *Secrets replaced* |
+| J12: an error answer of the statement action: 404 `not_found`, 409, 412, 429, 500 | **unit, the real broker** | each status and body as the statement gave them, whole; nothing stored; ONE row whose word is the status number (the 404 is `404`, never `no generator`); the four counts 0. RED before in the count only |
+| J13: a statement action that answers `{status: 502, body: null}` and `{status: 502, body: 'bad gateway'}` | **unit, the real broker** | the agent reads `502` and the body as it came (R3: not `500`); ONE row, `rotate → 502`; the four counts 0. RED before in the count only |
+| JG1: a rotation that ran and stored its value | **unit, guard** | `200 {rotated: true, …}`; ONE row, `rotate → rotated`; *Secrets replaced* 1. Watched passing before and after |
+| JG2: asserted in J5, J6 and J9 | **unit, guard** | `→ minted` and `→ ALLOWED` are in the journal, and the page shows a row for neither. Watched passing before and after |
+| JG4: a create whose `make` throws (F10) | **unit, guard** | `500`, `internal`, `UNANSWERED_FAILURE`; the journal has `request → failed` with the route and no mark; the page has no row. Watched passing before and after; it changes only if Q10 is answered yes |
+| JG3: J1 to J4, `brokerMcpRoutes.test.ts:367-382`, `rotateAction.test.ts:130-140` and `:283-289`, `rotationNoLoss.test.ts:326` | **unit, guard, no edit** | green, with no changed line |
+| P1 (`mcpLogRows.test.ts`): `isRotation` for each outcome that a rotation can write | **unit** | true for the three `rotated` words, false for `no generator`, `statement failed`, `404`, `400`, `ignored`, `ABANDONED`, `withheld`. The three words are literals here, on purpose |
+| P2: the fixture with a row `rotate → no generator` | **unit** | *Secrets replaced* 0, *Could not generate* 2, *Refused* 1 |
+| P3: one row for each outcome word of the page | **unit** | no row fits two buttons, and `renderMcpLog` draws the row with the `data-kind` of the one that counts it |
+| P4 (`rotateAction.test.ts`): the word of each answer of a rotation, then `isRotation` for it | **unit** | the words of D3; the three answers with `rotated: true` are rotations, the others are not. Watched RED two times: on `aa70258c` by the word (`rotated` for a statement that failed), and after R1 to R3 by the matcher (it counted `statement failed`) |
+| P5: `describeOutcome` for a body that is `null` or a text | **unit** | no throw; the words `502`, `502`, `statement failed`. RED before: a `TypeError` |
+| H1: the help article `mcp-logs`, each of the five languages | **content** | `whatItIs` is the sentence of Appendix A of the plan after S4, no fallback. Watched RED on the old text, twice (S3, S4) |
+| H2: the journal page: the hints of the filters `all` and `refused`, the two empty messages, the lede | **content** | the texts T2 to T6 of the plan after S4, exact. Watched RED on the old text, twice |
+| H3: the hint of *Secrets replaced*, the empty messages of the three count filters | **content** | the texts T10 and T11, exact. Watched RED on the old text |
 
 **What none of this proves** (the plan's section 6.5):
 
@@ -2465,15 +2485,28 @@ the same commit.
 - That a real vault can change between the reads of the gate. It cannot today; W1 to W3 test the function's answer for that case, as L6 does.
 - The four translations. H1 pins the text that Appendix A has; nobody measured how a native reader takes it.
 - T7, T8 and T9 (the two README sentences and the comments): no row.
-- The count *Could not generate* on the journal page. The line of a refused create is written (J4) without a `via`, so `mcpRowsIn` does not return it; a rotation that
-  could not draw a secret is written with the status `404`, not with the word `no generator` (`brokerCall.ts` describes an outcome only for a status of 200). Found
-  while building J4; no row holds it, and the plan's sentence about the second count is not proved by one.
+- The page in a real VS Code window. The rows read `mcpRowsIn`, `applyFilter` and the markup of `renderMcpLog`; the script that hides rows does not run in a row, and P3 holds what it reads, the `data-kind` of each row.
+- That the far side did not change when the line says `statement failed`. The word says that the statement did not succeed.
+- A rotation that threw after it wrote, or whose answer was withheld (F9): `internal` or `withheld`; *Secrets replaced* does not count it, and no row holds the case.
+- The lines of an older version. No row writes a file of an older version; J5, J6, J7 and J9 show on `aa70258c` that a line with no mark gives no row, and that rule of the page did not change.
+- A rotation through the alias door or a token. R1 and R2 are in the code that each door shares; the rows use the MCP door.
+- A handler that threw (F10). JG4 makes the `make` of a create throw and holds that the page has no row for it; no row makes a delete or a folder change throw.
+- The status 412 of a statement action was not observed in a scratch run (J12 has its case); a 403 of a statement comes on a bridge only, and a bridge serves no rotation.
+- A statement action that answers a body that is no object does not exist in the product today; J13 builds one.
 - Windows. The extension suite runs on Ubuntu.
 
 Watched red, by mutation (temporary, never committed): M1 (the old loop) turns C1, C2, C3 red; M2 (stop at a visible node that is not a config) only C3; M3 (no `shown`) C1,
 C2, CG1, CG3 and part A; M4 (`accountOnlyVault` answers each account) CG3 and W1; M5 to M8 turn W1 and W3, W2, W3 and the whole of W1 to W3 with the gate's rows red; M9 to M11
 turn J1, J2 and J4, J3; M12 (the old sentence in one language) and M13 (the old hint) turn H1 and H2; M14 (`refuseCreation` writes `denied` in place of
 `NO_GENERATOR_OUTCOME`) turns J4 red (the lead, 2026-11-27).
+
+Watched red, by mutation, for S4 (temporary, never committed; each one alone, restored after): M15 (no `via` at V3) J5; M16 (V1) J6; M17 (V2) J7 and not J4; M18 (V4) J9; M19 (the
+condition `result.status === 200` alone at `brokerCall.ts`) J8 and not J11 to J13; M20 (the old `isRotation`) P1, P2, P3, P4 in its second assertion, J8 and J10 to J13 (`tsc` said
+TS6133, an import no longer read, and still emitted; the run was against the emitted code); M21 (a `rotated` word for each 200 answer) J10, P4 and P5; M22 (`via: 'mcp'` on `minted`,
+then in the shared callback `note` of `credsAgentServer.ts`) J3, J5, J6, JG1, J8, J10 to J13 and JG4, and J9 for the callback (more rows than one; JG2 says so first in J5 and J6); M23 (`rotated,
+quarantined` out of the three words) P1, P4; M24 (the old hint of *Secrets replaced*; then one old empty message of T11) H3 each; M25 (`no generator` for each 404) J12 and P4; M26 (the code of
+the body's `error` as the word) J11, J12, P4; M27 (the guard of R3 out, with R1 in place) P5 and J13, where the agent read `500`, `internal` and not `502` with the body `null`; M12 (the S3
+sentence back, each of the five languages in turn) H1 for that language; M13 (the S3 hint of *Refused* back) H2.
 
 ## The path of a call file holds no id (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md), rule C)
 

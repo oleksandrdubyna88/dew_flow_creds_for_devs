@@ -157,34 +157,25 @@ function assertQuietLines(w: World): void {
   assert.deepEqual(rowsOf(w).filter((row) => row.outcome === 'minted' || row.outcome === 'ALLOWED'), [], 'the page does not show them');
 }
 
-test('J5: a create that ran, with a secret from the agent, leaves one row on the page, and it is counted under Secrets from the agent', async () => {
-  const w = world({ create: 'open' });
-  try {
-    const { port } = await share(w);
+test('J5: a create that ran leaves one row on the page — with a secret from the agent it is counted under Secrets from the agent, with none no count moves', async () => {
+  const cases: ReadonlyArray<readonly [string, Record<string, unknown>, string, number]> = [
+    ['with a secret', { name: 'app-03', kind: 'ssh', secret: 'k' }, 'created with agent secret', 1],
+    ['with no secret', { name: 'no-secret-yet', kind: 'ssh' }, 'created', 0],
+  ];
+  for (const [label, body, outcome, agentSecrets] of cases) {
+    const w = world({ create: 'open' });
+    try {
+      const { port } = await share(w);
 
-    const answer = await call(port, '/v1/mcp/create', { body: { name: 'app-03', kind: 'ssh', secret: 'k' } });
+      const answer = await call(port, '/v1/mcp/create', { body });
 
-    assert.deepEqual([answer.status, answer.body], [200, { created: true, id: 'new-1', name: 'app-03' }]);
-    assertQuietLines(w);
-    assertOneRow(w, 'create', 'created with agent secret');
-    assert.deepEqual(countsOf(w), { ...NO_COUNT, agentSecrets: 1 });
-  } finally {
-    w.server.dispose();
-  }
-});
-
-test('J5b: a create that ran with no secret leaves one row too, and no count moves', async () => {
-  const w = world({ create: 'open' });
-  try {
-    const { port } = await share(w);
-
-    const answer = await call(port, '/v1/mcp/create', { body: { name: 'no-secret-yet', kind: 'ssh' } });
-
-    assert.deepEqual([answer.status, answer.body], [200, { created: true, id: 'new-1', name: 'no-secret-yet' }]);
-    assertOneRow(w, 'create', 'created');
-    assert.deepEqual(countsOf(w), NO_COUNT);
-  } finally {
-    w.server.dispose();
+      assert.deepEqual([answer.status, answer.body], [200, { created: true, id: 'new-1', name: body.name }], label);
+      assertQuietLines(w);
+      assertOneRow(w, 'create', outcome);
+      assert.deepEqual(countsOf(w), { ...NO_COUNT, agentSecrets }, label);
+    } finally {
+      w.server.dispose();
+    }
   }
 });
 

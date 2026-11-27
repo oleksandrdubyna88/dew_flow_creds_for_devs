@@ -1713,8 +1713,9 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   refuses it FIRST among `notRotatable`'s refusals — beside the woven and the PIN ones, before the secret is
   drawn and before the statement runs — because the broker burns it right after the answer, new value and
   all (an unprotected one-use entry stored the value, answered 200, and burned with it). The agent gets an
-  `invalid_request` saying the entry is one-use and to take "one use" off first; the journal counts it as
-  every prepare refusal (`burnOnUse.detailsBurnedByAgentUse`, the burn's own predicate over the details).
+  `invalid_request` saying the entry is one-use and to take "one use" off first; the journal records it as
+  every prepare refusal, with the word of the line, `400` (`burnOnUse.detailsBurnedByAgentUse`, the burn's own predicate over the details), and the page
+  counts that row under no filter: only an outcome that is a code of `REFUSALS` is a refusal there (F6 of `todo/PLAN_agent_small_truths_n8_n9_n2.md`).
   An entry made one-use WHILE the statement ran still takes no hold road (the security review, finding 7c):
   the held item would burn unread — so the value is handed to the person BEFORE the answer, awaited — as a
   COPY ONLY (`copiedBeforeTheBurn`, `8d107e84`): *Store it* would seal it into the entry the burn takes, so it
@@ -7047,11 +7048,25 @@ one of them is a place where an agent's next move is to make the value itself. A
 followed by agent-supplied secrets is the leak this product exists to avoid, visible before it
 happens.
 
-**The journal is a view, not a store.** The broker already writes one line per call — a file per
-run, a folder per day, swept after a fortnight — and every line now records which door the call
-came through. **⋯ → MCP logs** filters that file: everything, refused, secrets replaced, secrets
-from the agent, could not generate. Inventing a second store would have been exactly the drift the
-shared logging rule was written against.
+**The journal is a view, not a store.** The broker already writes what the journal holds — a file
+per run, a folder per day, swept after a fortnight: a line when a grant is minted, a line for the
+answer to a consent question and a line that says how the request ended. A listing writes none, and a
+request that is refused before a grant exists writes none. **The line that a handler writes at the end
+of its request records which door it came through** (`via mcp`): the tail of a use, a refusal that has
+a grant and, since the page was made to show what it counts (D2 of
+`todo/PLAN_agent_small_truths_n8_n9_n2.md`), the delete, the create (with its `no generator` refusal) and the folder
+change, which write their last line themselves through `door.note`. The line `minted` and the consent
+lines `ALLOWED` and `DENIED` do not carry it, so a request that ran is one row and not three. The line of a
+handler that threw (`request → failed`) names the route and no door, and the page does not show it. A line
+that an older version wrote with no mark stays off the page while its file is kept. **⋯ → MCP logs**
+filters the lines that have the mark: everything, refused, secrets replaced, secrets from the agent,
+could not generate. A rotation's line says how it ended (D3, D4): `rotated`, `rotated, not stored` and
+`rotated, quarantined` are the three words that say a secret was replaced — written once in
+`secretKinds.ts`, and the only words that the count *Secrets replaced* reads; `no generator` is a
+rotation that could not draw its secret (counted under *Could not generate*, as the create is);
+`statement failed` is a 200 answer of the statement with no `rotated`, so nothing was stored; each other
+answer of the rotation has its status number. Inventing a second store would have been exactly the drift
+the shared logging rule was written against.
 
 **And it works from inside WSL (2026-08-28).** The agent usually runs in the distribution, where
 `127.0.0.1` is the virtual machine's loopback and the announcement files are on a Windows disk. The
