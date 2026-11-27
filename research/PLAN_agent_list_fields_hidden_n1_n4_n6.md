@@ -6,7 +6,7 @@
 > release holds the vsix. `creds-mcp` 0.11.1 (the words of the four tool descriptions): release PR #402 (`0dae1c9f`),
 > tag `mcp-v0.11.1`, `release.yml` run 46073024214.
 >
-> MCP-RELEASE-OUTCOME: (lead fills)
+> success: six platforms with their sha256 files, the two Windows builds signed, the GitHub release not a draft
 >
 > Deviations: §12. Ledger at promotion: epoch 1 closed with entries 1.1 and 1.2 and the stop; epoch 2 approved by
 > reviewers, 0 changes (left as it stood, append only). The owner's words on 2026-11-27: the four answers (hide or mask
