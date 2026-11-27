@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.1] — 2026-11-27 — Fixed — the config snippet goes on across accounts; the journal reason of a linked run; the journal page shows the lines it counts
+
 ### Fixed — the snippet of a config no longer depends on what an earlier account holds under its id; the journal reason of a linked run; the texts about the journal; the journal page shows the lines that it counts
 
 **`creds_config_snippet` and an id that two accounts of one window hold.** The lookup went through the accounts and stopped at the first

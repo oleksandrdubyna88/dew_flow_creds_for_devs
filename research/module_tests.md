@@ -2425,9 +2425,9 @@ not a valid host.`, and after the fix the file passed (40 of 40 on that run).
   exist today; a new sentence on an existing route that names a node by another road is covered only when the fixture reaches it.
 - H1 to H6 run only where `creds-mcp` is built. The unit suite proves the window's half (part A) and the binary's decision
   (`CredsMcp.Tests`, `WindowsTests`: `not_found` goes on, `denied` stops) apart; the harness is the one check of the two together.
-- The config-snippet lookup stopped at the first account that held the id (N8 of the plan); it goes on since [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md) (C1 to C3, section *Three small truths of the agent surface*).
+- The config-snippet lookup stopped at the first account that held the id (N8 of the plan); it goes on since [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md) (C1 to C3, section *Three small truths of the agent surface*).
 
-## Three small truths of the agent surface (2026-11-27, [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md): N8, N9, N2)
+## Three small truths of the agent surface (2026-11-27, [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md): N8, N9, N2)
 
 Pure tests; the real broker (`brokerWorld.ts`) for the journal rows. Run from `src_vs_code`: `npm run compile`, then
 `node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/mcpEntries.test.js" "out/test/bridgeWallSource.test.js" "out/test/linkedRunWhy.test.js" "out/test/journalHolds.test.js" "out/test/mcpLogRows.test.js" "out/test/rotateAction.test.js"`.

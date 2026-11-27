@@ -371,7 +371,7 @@ test('the statement runs as work that must finish once started â€” the requestâ€
 
 /**
  * The word the journal gets for each answer of a rotation, and what the page counts of it (N2, the second part;
- * `todo/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D3 and D4).
+ * `research/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D3 and D4).
  *
  * <p>The answer to the agent is not read here: it stays as it came. The word goes to the journal line only, and the page's count `Secrets
  * replaced` reads the three words that say a secret was replaced.</p>

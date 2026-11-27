@@ -3,9 +3,9 @@
 > Status: **IMPLEMENTED, 2026-11-11.** Epic 1 (rule A) was merged as #347 (`cb017473`) and released in extension 1.21.1
 > (the heading of the CHANGELOG is #349). Epic 2 (rule B) was merged as #353 (`b95282f1`) and released in extension 1.21.3
 > (release PR #355). Deviations: §12. Ledger at promotion: epoch 1, one entry (1.1), no stop. Still open, for the owner: the
-> questions N1, N4, N5, N6, N2, N8 and N9 (§2.6, §11), and the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
+> questions N1, N4, N5 and N6 (§2.6, §11), and the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
 > N10 (§11) moved to its own plan, [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md). N8, N9 and N2 moved on
-> 2026-11-27 to [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md) (the owner put them next). The owner said yes on 2026-11-09
+> 2026-11-27 to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md) (the owner put them next) and shipped in extension 1.24.1 (#397; release PR #398). The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
 > SSH refusals, their tests), one harness (`src_vs_code/scripts/creds-mcp-itest.cjs`), `src_vs_code/CHANGELOG.md`,
 > `research/module_extension.md`, `research/module_tests.md`, `todo/README.md`, and one boundary row in each neighbour
@@ -684,8 +684,9 @@ Both:
 - **N1, N4, N5, N6: the four fields of the list answers.** They are in §2.6, each one a question for the owner.
 - **N2. The help says that the journal holds every refusal** (`helpEn.ts:137`, and the four other languages). A
   lookup refusal writes no line (`credsAgentServer.ts:734-747`). This is true before and after this plan.
-  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md): a list
-  writes no line too, and the same claim is in more texts than the help.
+  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md): a list
+  writes no line too, and the same claim is in more texts than the help. **Shipped in extension 1.24.1** (#397): the
+  texts say what the journal holds, and the journal page shows the lines that its texts and counts are about.
 - **N3. The journal is a plain file.** A process of the same user can read the names in it. A boundary of the
   product, said in §7.
 - **N7. The note of a Remote Bridge refusal holds the real sentence**, with the name of the key entry or the jump
@@ -699,12 +700,14 @@ Both:
   named and no value is given; only the answer differs. Found by the lead's Opus review of the E1 stories
   (2026-11-11). Not built here: to build it is a counted change (a new site and a new row), so it is a question for
   the owner — build it in epic 2, or as its own small item.
-  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md).
+  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md).
+  **Shipped in extension 1.24.1** (#397): the lookup goes on to the next account.
 - **N9. `whyUnusable` says "switch is off" for an SSH node in the Trash and for a link to a folder.** The cause is another one.
   This reaches the agent journal only; the agent sees nothing of it. Known, not built.
-  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md). That
+  **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md). That
   plan observed that the sentence above is true of the function only: in a vault that does not change, `sshLinkOf`
-  refuses these two links first, with its own reason.
+  refuses these two links first, with its own reason. **Shipped in extension 1.24.1** (#397), as a safeguard: the
+  journal reason comes from the node, for each of five causes.
 - **N10. The path of a borrowed key reaches the agent in three ways, and an id can be name-like.** The file of a key
   that a call writes is `<storageDir>/keys/<keyEntityId>-<uuid>.key` (`keyInstaller.ts:158-160`; `sshExecAuth.ts:154`).
   (a) A key that cannot be written: `Could not write the stored key to disk: <the error of the operating system>`
@@ -777,12 +780,13 @@ append-only and was left as it was at promotion.
   `ssh` on a 200 answer, was NOT run against a real `ssh`. The owner said yes on 2026-11-11 to build it as its own small plan:
   [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md).
 - **N8** (the config-snippet lookup stops at the first account that holds the id) and **N9** (`whyUnusable` says "switch is off" for an
-  SSH node in the Trash and for a link to a folder; the journal only) are known and not built.
+  SSH node in the Trash and for a link to a folder; the journal only) were known and not built here; they shipped on
+  2026-11-27 in extension 1.24.1 (#397), with N2, by [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md).
 
 **Owner questions still open.** N1, N4, N5, N6 (the four list fields of §2.6, each a change of a documented MCP answer), N2 (the
 help says that the journal holds every refusal; a lookup refusal writes no line), N8 and N9. N10 is not a question any more.
 N2, N8 and N9 are not questions any more either: on 2026-11-27 they moved to
-[PLAN_agent_small_truths_n8_n9_n2.md](../todo/PLAN_agent_small_truths_n8_n9_n2.md).
+[PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md), and shipped in extension 1.24.1 (#397; release PR #398).
 
 ## Epics
 
