@@ -177,6 +177,12 @@ const bridgeWorld = (needs: readonly string[], extra: readonly TreeNode[] = []):
 
 const dependsOnOf = (served: { entries: readonly Record<string, unknown>[] }, id: string): unknown => served.entries.find((row) => row.id === id)?.dependsOn;
 
+/** The row of a world, said as a sentence, when a bridge serves a dependency for it: the scoped list has none. */
+function wrongWorld(world: string, served: { entries: readonly Record<string, unknown>[] }): string[] {
+  const names = dependsOnOf(served, 'b-row') as string[];
+  return names.length === 0 ? [] : [`${world}: ${JSON.stringify(names)}`];
+}
+
 test('BG3: a Remote Bridge never serves the placeholder, also when an entry in scope is named exactly as the placeholder', async () => {
   const scope = ['b-row', 'b-named'];
   const control = await servedByBridge(bridgeWorld([]), scope);
@@ -184,9 +190,12 @@ test('BG3: a Remote Bridge never serves the placeholder, also when an entry in s
   const hidden = await servedByBridge(bridgeWorld(['b-hidden'], [entry('b-hidden', 'DEP-no-switch-name')]), scope);
   const missing = await servedByBridge(bridgeWorld(['b-nothing']), scope);
   const itself = await servedByBridge(bridgeWorld(['b-named']), scope);
-  assert.deepEqual(dependsOnOf(hidden, 'b-row'), [], '(a) a dependency with no switch');
-  assert.deepEqual(dependsOnOf(missing, 'b-row'), [], '(b) an id that no node has');
-  assert.deepEqual(dependsOnOf(itself, 'b-row'), [], '(c) the entry that has the placeholder\'s words for its name');
+  const wrong = [
+    ...wrongWorld('(a) a dependency with no switch', hidden),
+    ...wrongWorld('(b) an id that no node has', missing),
+    ...wrongWorld('(c) the entry named as the placeholder', itself),
+  ];
+  assert.deepEqual(wrong, [], 'a bridge serves a dependency that its scoped list leaves out');
   assert.deepEqual(hidden, control, '(a) serves the body of a row with no dependency');
   assert.deepEqual(missing, control, '(b) serves the body of a row with no dependency');
   for (const served of [control, hidden, missing, itself]) {
@@ -209,4 +218,49 @@ test('BG1: on a Remote Bridge a row that depends on a hidden entry and on a miss
   assert.deepEqual(served.folders, []);
   const text = JSON.stringify(served);
   assert.deepEqual([HIDDEN_DEPENDENCY, HIDDEN_REFERENCE, 'creds://', 'DEP-no-switch-name', 'FOLDER-closed-name'].filter((word) => text.includes(word)), []);
+});
+
+// ---------- S2 · N4, `folder` ----------
+
+/** A folder that the agent may view: `view` on. */
+const OPEN = { view: true } as const;
+
+/** An entry with switches of its own, in the folder `parent`. */
+const placed = (parent: string | null, extra: readonly TreeNode[]): McpVaultSource =>
+  vault([...extra, entry('e1', 'in a folder', { mcp: { view: true } }, parent)]);
+
+test('F1: an entry with switches of its own, in a folder with no switch, has no folder name', async () => {
+  const source = placed('f1', [folder('f1', 'FOLDER-no-switch-name')]);
+  assert.equal((await rowOf(source, 'e1')).folder, '');
+  await assertBodyHolds(source, ['FOLDER-no-switch-name']);
+});
+
+test('F2: an entry with switches of its own, in a folder that a person closed (mcp: {}) under an open folder, has no folder name', async () => {
+  const source = placed('f2', [folder('f1', 'FOLDER-open-name', { mcp: OPEN }), folder('f2', 'FOLDER-closed-name', { parentId: 'f1', mcp: {} })]);
+  assert.equal((await rowOf(source, 'e1')).folder, '');
+  await assertBodyHolds(source, ['FOLDER-closed-name']);
+});
+
+test('E2: a folder with no switch and a parent id that points to no node give the same body of the list', async () => {
+  const hidden = placed('f1', [folder('f1', 'FOLDER-no-switch-name')]);
+  const missing = placed('f1', []);
+  assert.deepEqual(await visibleMcpEntries(hidden), await visibleMcpEntries(missing));
+});
+
+test('FG1: an entry with switches of its own, in a folder that takes view from the folder above it, has the folder\'s name', async () => {
+  const source = placed('f2', [folder('f1', 'FOLDER-above', { mcp: OPEN }), folder('f2', 'FOLDER-inherits', { parentId: 'f1' })]);
+  assert.equal((await rowOf(source, 'e1')).folder, 'FOLDER-inherits');
+});
+
+test('FG2: an entry with no switch of its own, under a silent folder, under an open folder, has the name of the open folder, the one that answered', async () => {
+  const source = vault([
+    folder('f1', 'FOLDER-open', { mcp: OPEN }),
+    folder('f2', 'FOLDER-silent', { parentId: 'f1' }),
+    entry('e1', 'inherits', {}, 'f2'),
+  ]);
+  assert.equal((await rowOf(source, 'e1')).folder, 'FOLDER-open');
+});
+
+test('FG3: an entry at the root has no folder', async () => {
+  assert.equal((await rowOf(placed(null, []), 'e1')).folder, '');
 });

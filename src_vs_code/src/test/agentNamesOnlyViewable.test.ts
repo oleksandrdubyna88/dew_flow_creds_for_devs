@@ -330,7 +330,6 @@ function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
  * there today (the owner closed them in `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`; each story takes its own row out).
  */
 const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly today: unknown }[] = [
-  { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', today: markerOf(HIDDEN.folders.none) },
   { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', today: N5_COMMAND },
   { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', today: HIDDEN.folders.none },
 ];
@@ -338,6 +337,7 @@ const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'fol
 /** The fields that an owner's answer closed, each at the value that it holds now: the place of a hidden node is a fixed word, an empty name or null. */
 const CLOSED: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
   { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
+  { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', now: '' },
 ];
 
 /** The rows of one list with the fields of the open exceptions taken out. */

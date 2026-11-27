@@ -1,5 +1,6 @@
 import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
+import { isOpenFolder } from './mcpFolders';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
@@ -37,7 +38,10 @@ export interface McpEntry {
   id: string;
   name: string;
   kind: string;
-  /** The folder it lives in, so an agent can tell two entries with one name apart. */
+  /**
+   * The name of the folder that gave the entry its switches, or the entry's own folder when it has switches of its own — and only when the agent may
+   * view that folder; `''` when it may not, and at the root. So an agent can tell two entries with one name apart when their folders are open to it.
+   */
   folder: string;
   host?: string;
   port?: number;
@@ -279,7 +283,7 @@ async function entryIfVisible(
   }
   return mcpEntryFor(node, {
     resolved,
-    folderName: folderNameOf(resolved),
+    folderName: folderNameOf(resolved, byId),
     ...(await storedSecrets(source, accountId, node.id)),
     dependsOn: dependencyNames(node, byId),
   });
@@ -303,9 +307,13 @@ export function agentMayView(source: Pick<McpVaultSource, 'getNode'>, accountId:
   return node !== undefined && shown(node, resolveMcpInTree(node, byId));
 }
 
-/** An entry at the root has no folder, and an empty name is the honest answer for it. */
-function folderNameOf(resolved: ResolvedMcpAccess & { folder?: TreeNode }): string {
-  return resolved.folder?.name ?? '';
+/**
+ * The name of the folder that the access came from, when the agent may view that folder (`isOpenFolder`); in each other case `''`, which is also
+ * the answer for an entry at the root and for a parent id that points to no node (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.3).
+ */
+function folderNameOf(resolved: ResolvedMcpAccess & { folder?: TreeNode }, byId: (id: string) => TreeNode | undefined): string {
+  const folder = resolved.folder;
+  return folder !== undefined && isOpenFolder(folder, byId) ? folder.name : '';
 }
 
 /**

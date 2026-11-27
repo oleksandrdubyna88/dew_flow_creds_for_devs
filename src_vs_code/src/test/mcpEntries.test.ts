@@ -88,7 +88,7 @@ test('a vault nobody has opened to agents answers an empty list', async () => {
 
 test('an entry appears once its own switch is on, and carries its non-secret half', async () => {
   const nodes = [
-    folder('f1', 'Databases'),
+    folder('f1', 'Databases', { mcp: { view: true } }),
     entity('e1', 'orders-db', {
       kind: 'db',
       dbType: 'mysql',

@@ -352,8 +352,8 @@ function effectivePolicy(answer: AxisAnswer): McpAskPolicy {
  * node's parent, which answers a different question — where this node SITS, not where its answer
  * came from — and that fallback is load-bearing rather than tidy: `mcpEntries.folderNameOf` puts
  * it on the wire as an entry's `folderName`, so an entry that decided for itself still tells an
- * agent which folder it is in. Every consumer that means "inherited from" already guards on the
- * source, and both axes fall back the same way so neither reads differently from the other.</p>
+ * agent which folder it is in, when the agent may view that folder (`folderNameOf` asks `isOpenFolder`). Every consumer that means "inherited from"
+ * already guards on the source, and both axes fall back the same way so neither reads differently from the other.</p>
  */
 function answeringFolder(answer: AxisAnswer, parent: TreeNode | undefined): TreeNode | undefined {
   return answer.source === 'folder' ? answer.node : parent;

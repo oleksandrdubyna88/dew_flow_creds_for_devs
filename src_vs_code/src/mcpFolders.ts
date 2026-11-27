@@ -81,7 +81,7 @@ export function visibleFolders(
   );
 }
 
-function isOpenFolder(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
+export function isOpenFolder(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
   if (node.type !== 'folder' || isTrashFolder(node) || isInTrash(node, byId)) {
     return false;
   }
