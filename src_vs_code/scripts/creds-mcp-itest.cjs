@@ -955,7 +955,9 @@ harnessScope.run(async (scope) => {
   }
   check('it found the window and read its entries', Array.isArray(entries) && entries.length === 2, text.slice(0, 200));
 
-  const entry = entries.find((e) => e.id === 'e-1') ?? {};
+  // The rows are searched in an array of their own: the failure shape of this tool is an OBJECT (`{ error, hint }`), and `find` of an object throws in place of failing a check.
+  const rows = Array.isArray(entries) ? entries : [];
+  const entry = rows.find((e) => e.id === 'e-1') ?? {};
   // Field by field, because every one of these crossed a hand-written TypeScript interface and a
   // hand-written C# record. A rename on either side arrives here as undefined, not as an error.
   check('the name survives the crossing', entry.name === 'orders-db', JSON.stringify(entry.name));
@@ -969,9 +971,9 @@ harnessScope.run(async (scope) => {
   check('the capabilities survive', entry.can && entry.can.use === true && entry.can.delete === false, JSON.stringify(entry.can));
 
   // H1: the three values that the window gives for a thing that the agent may not view cross the binary as they are.
-  const hidden = entries.find((e) => e.id === 'e-2') ?? {};
+  const hidden = rows.find((e) => e.id === 'e-2') ?? {};
   check('H1: a folder that is not open crosses as the empty string, and the key is there', hidden.folder === '' && 'folder' in hidden, JSON.stringify(hidden.folder));
-  check('H1: the placeholder of dependsOn crosses as it is, at the end', Array.isArray(hidden.dependsOn) && hidden.dependsOn.at(-1) === HIDDEN_DEPENDENCY, JSON.stringify(hidden.dependsOn));
+  check('H1: dependsOn crosses as it is: the name, then the placeholder, and nothing else', JSON.stringify(hidden.dependsOn) === JSON.stringify(['office vpn', HIDDEN_DEPENDENCY]), JSON.stringify(hidden.dependsOn));
   check('H1: the placeholder of a reference in command crosses as it is', hidden.command === `run ${HIDDEN_REFERENCE} now`, JSON.stringify(hidden.command));
 
   check('no secret appears anywhere in what the agent received', !called.out.includes(SECRET));

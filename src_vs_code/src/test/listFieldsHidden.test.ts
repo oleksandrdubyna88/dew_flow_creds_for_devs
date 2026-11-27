@@ -148,12 +148,12 @@ test('DG1: dependencies that the agent may view are named in the stored order; n
   assert.deepEqual((await rowOf(needy([], []), 'e1')).dependsOn, []);
 });
 
-test('DG2: the wall is asked in the entry\'s own account: an id that a second account holds as an entry the agent may view is not named', async () => {
+test('DG2: the wall is asked in the entry\'s own account: an id that a second account holds as an entry the agent may view is not named, and the row is exactly the placeholder', async () => {
   const own: Account = { accountId: 'a1', email: EMAIL, nodes: [entry('e1', 'needy', { mcp: { view: true }, dependsOn: ['shared-id'] })] };
   const other: Account = { accountId: 'a2', email: 'you@x.test', nodes: [entry('shared-id', 'DEP-in-other-account', { mcp: { view: true } })] };
   const source = vaultOf(own, other);
   const row = await rowOf(source, 'e1');
-  assert.equal(row.dependsOn.includes('DEP-in-other-account'), false);
+  assert.deepEqual(row.dependsOn, [HIDDEN_DEPENDENCY], 'the id is not in the entry\'s own account, so it reads as a dependency that is not open, and the name of the other account\'s entry is not there');
 });
 
 // ---------- S1 · the Remote Bridge never serves the placeholder (X1) ----------
@@ -636,6 +636,13 @@ const HELP_SENTENCES: Readonly<Record<HelpLanguage, readonly [string, string]>> 
   ],
 };
 
+/** The bullet of one tool in the text: from \`- <tool> —\` to the end of its line. */
+function bulletOf(usage: string, tool: string): string {
+  const line = usage.split('\n').find((candidate) => candidate.startsWith(`- ${tool} —`));
+  assert.notEqual(line, undefined, `the usage has no bullet of ${tool}`);
+  return line as string;
+}
+
 test('T3: in each language the usage of the agent-surface article holds the two sentences, and is not the English fallback', () => {
   const article = helpArticle('agent-surface') as NonNullable<ReturnType<typeof helpArticle>>;
   assert.deepEqual([...HELP_LANGUAGES].sort(), Object.keys(HELP_SENTENCES).sort(), 'the table has a row for each language');
@@ -643,8 +650,8 @@ test('T3: in each language the usage of the agent-surface article holds the two 
     const { body, fallback } = bodyFor(article, language);
     const [list, folders] = HELP_SENTENCES[language];
     assert.equal(fallback, false, language);
-    assert.equal(body.usage.includes(`${list}\n`), true, `${language}: the sentence of creds_list ends its bullet`);
-    assert.equal(body.usage.includes(`${folders}\n`), true, `${language}: the sentence of creds_folders ends its bullet`);
+    assert.equal(bulletOf(body.usage, 'creds_list').endsWith(list), true, `${language}: the bullet of creds_list ends with its sentence`);
+    assert.equal(bulletOf(body.usage, 'creds_folders').endsWith(folders), true, `${language}: the bullet of creds_folders ends with its sentence`);
   }
 });
 

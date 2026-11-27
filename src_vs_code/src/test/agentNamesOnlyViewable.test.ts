@@ -307,22 +307,21 @@ test('the exact answers: none is a new sentence, and each is the answer that the
 
 type ListRow = Record<string, unknown> & { id: string };
 
-async function listOf(list: 'entries' | 'folders'): Promise<ListRow[]> {
+/** The raw text of the whole body of a list answer: every key, every value, and everything beside the array. */
+async function bodyTextOf(list: 'entries' | 'folders'): Promise<string> {
   const route = list === 'entries' ? CONTRACT.reads.mcpEntries.path : CONTRACT.reads.mcpFolders.path;
   const reply = await ask(rig, 'GET', route);
   assert.equal(reply.status, 200, reply.text);
-  return (JSON.parse(reply.text) as Record<string, ListRow[]>)[list];
+  return reply.text;
 }
 
-/** Each hidden name and id that one field of one row holds, said as a sentence; a name that holds a shorter hidden text is said once. */
-function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
-  const texts = [...HIDDEN_NAMES, ...HIDDEN_IDS];
-  return rows.flatMap((row) =>
-    Object.entries(row).flatMap(([field, value]) => {
-      const held = texts.filter((text) => JSON.stringify(value)?.includes(text));
-      return held.filter((text) => !held.some((other) => other !== text && other.includes(text))).map((text) => `${list}[${row.id}].${field} holds ${text}`);
-    }),
-  );
+/** The rows of the array of a list answer, apart from its text: for the exact values of the four fields. */
+const rowsIn = (text: string, list: 'entries' | 'folders'): ListRow[] => (JSON.parse(text) as Record<string, ListRow[]>)[list];
+
+/** Each hidden name and id that the raw text holds, said as a sentence; a name that holds a shorter hidden text is said once. */
+function textLeaks(list: string, text: string): string[] {
+  const held = [...HIDDEN_NAMES, ...HIDDEN_IDS].filter((hidden) => text.includes(hidden));
+  return held.filter((hidden) => !held.some((other) => other !== hidden && other.includes(hidden))).map((hidden) => `the body of ${list} holds ${hidden}`);
 }
 
 /**
@@ -336,15 +335,15 @@ const FIELDS: readonly { readonly n: string; readonly list: 'entries' | 'folders
   { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', now: null },
 ];
 
-/** Row L1: no hidden name and no hidden id is in the body of either list, in any field, with no exception; the four fields hold their fixed values. */
+/** Row L1: no hidden name and no hidden id is anywhere in the RAW TEXT of the two response bodies (a key, a value, or a thing beside the array); the four fields hold their fixed values. */
 test('the list check (row L1): the two list bodies hold no hidden name and no hidden id, and the four fields hold the value of the owner\'s answer', async () => {
-  const bodies = { entries: await listOf('entries'), folders: await listOf('folders') };
+  const texts = { entries: await bodyTextOf('entries'), folders: await bodyTextOf('folders') };
   for (const c of FIELDS) {
-    const row = bodies[c.list].find((r) => r.id === c.row) as ListRow;
+    const row = rowsIn(texts[c.list], c.list).find((r) => r.id === c.row) as ListRow;
     assert.deepEqual(row[c.field], c.now, `${c.n}: the value that the owner's answer gives`);
   }
-  const found = [...rowLeaks('entries', bodies.entries), ...rowLeaks('folders', bodies.folders)];
-  assert.deepEqual(found, [], 'a field of a list names a node that the agent may not view');
+  const found = [...textLeaks('entries', texts.entries), ...textLeaks('folders', texts.folders)];
+  assert.deepEqual(found, [], 'a list answer names a node that the agent may not view, in a key, a value or beside the array');
 });
 
 test('completeness 1: every route of the contract has a row or a written reason, and the contract holds no route that nobody has seen', () => {
