@@ -1,6 +1,8 @@
 # PLAN — three roads of the person enforce the entry's pinned host key (G1 of N16)
 
-> Status: **epoch 4 approved by the owner 2026-11-25 (narrowed), open, one change (4.1, 2026-11-25: M13's control of K7 proves two files for (a) only; (b) and (c) the bare word is refused, owner's word). Epoch 3 (approved 2026-11-23, narrowed) was stopped for re-review on 2026-11-25 by its second change (3.2: M11 (b) cannot run as written: an `ssh` older than 8.7 keeps the apostrophes of a bare word, so it has no collision; OpenSSH 8.4p1 measured); the re-review has passed. The revision of the whole plan for epoch 4 is written (2026-11-25: `### Re-review for epoch 4`, §1.3, decisions 19-22), and it is NARROWED. The Opus judge sorted the done work of epoch 3 (14 fits; the E3.S9 spec cut, fixed forward), and the coai round on the revised plan passed (the interim document round, two parts, `proceed`; one finding accepted and fixed in §3.11). The owner approved epoch 4 on 2026-11-25. E3.S9 was then reviewed (PASS WITH FIXES, `d5abc739`, `92f1b37d`) and E3.S10 ran three times: the run of 2026-11-25 on `50da30ad` is superseded (its counterpart `sshd` wrote in the person's real `~/.ssh/agent`, found by an owner-approved `strace`), the set of 2026-11-26 on `17479f5f` is superseded too (the coai code gate, `proceed`, found that the wrapper and the probes' launcher ended no process tree on a timeout and that the wrapper took `$HOME`, and the owner chose to fix now and run the whole set again), the set on `bd03f11a` is superseded as well (the required CI check `clients · build · test` found a line of the M10 harness owner-blind, fixed in `89a9667e`), and on 2026-11-26 the whole set ran again on `89a9667e`, with the person's `~/.ssh` hidden behind an owned folder (bwrap): every run passed at its first start, M1-M14, with 0 FAIL (the rig 1735 ok, M10 41, M11 656, M13 25, test 34's older run 8 ok unwrapped, its newer run 21 pass), and §10 (the rows, the limits in words, the CHANGELOG table) is written from those runs, as a draft. Next: the judge's and the gate's read of this set. E1 and E2 merged (#379, #388) and released in 1.23.0 on 2026-11-23, before E3 (3.1). E3 started 2026-11-23: its stories document is written; E3.S1 (C19), E3.S2 (the launcher) and E3.S3 (the probes) are built and reviewed; E3.S4 (the common rig, M1, M6), E3.S5 (M4, M9) and E3.S6 (M2, M3, M8) are built and reviewed (CI green on `62251613`); the owner read HC1 of E3.S4 as a record, not a plan change, and M2 (a) as the user-file slot that the handed config names (2026-11-24); E3.S7 (M7, M12, M14) is built and reviewed (CI green on `97752998`); E3.S8 (M5) is built and reviewed (review fixes `167220a6`, CI green); the E3.S9 spec was written again for epoch 4 (`3b3dd0c7`), and E3.S9 (M10, M11, M13, test 34) is built (`6409e7c4`, `fbe36413`; entry 4.1 `15e28ea9`) and reviewed. Every row of E3 is measured by the runs of 2026-11-26 on `89a9667e` (§10); every run before it was a proving run.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
+> Status: **IMPLEMENTED, 2026-11-27.** All three epics are built, merged and released. E1 (#379, squash `f3e9887d`) and E2 (#388, squash `4799f9d7`) went out in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`), before E3 (entry 3.1). E3 (#393, squash `fe9aee47`) and the counter fix of the coai feature review (#394, `b152bf06`) went out in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The whole set of the real runs ran once on the release commit `a63dee35`, from a fresh checkout, before the tag, with 0 FAIL (§10.5). Deviations from the plan, as shipped: (1) the release came in two steps, so §9 step 11 held only for 1.24.0 (entry 3.1, decision 21); (2) the plan ran in four epochs with seven recorded changes (1.1, 1.2, 2.1, 2.2, 3.1, 3.2, 4.1), and the ledger below is left as it stood, with epoch 4 `open` (the check reads no ledger in `research/`, and it reads a current epoch that says `closed` as a finding); (3) the coai feature review gave `proceed`: its finding 1 was accepted and fixed in #394 (the counterpart's authentication attempts are counted per connection, not per client port), and its finding 0 was rejected for this release and is recorded as candidate (10) in [module_tests.md](module_tests.md) (the socket check's sentence after a refused key; a change of sentence C's contract, for a later plan); (4) the one counterpart record that differs between the run on `89a9667e` and the run on the release commit is `m7-c-collision-k1` (5 authentication attempts, was 4), from the per-connection counter of #394. Epic by epic: [E1](PLAN_person_roads_pin_host_key_E1.md), [E2](PLAN_person_roads_pin_host_key_E2.md) and [E3](PLAN_person_roads_pin_host_key_E3.md).
+>
+> The status as it stood before the promotion, kept as it was written: **epoch 4 approved by the owner 2026-11-25 (narrowed), open, one change (4.1, 2026-11-25: M13's control of K7 proves two files for (a) only; (b) and (c) the bare word is refused, owner's word). Epoch 3 (approved 2026-11-23, narrowed) was stopped for re-review on 2026-11-25 by its second change (3.2: M11 (b) cannot run as written: an `ssh` older than 8.7 keeps the apostrophes of a bare word, so it has no collision; OpenSSH 8.4p1 measured); the re-review has passed. The revision of the whole plan for epoch 4 is written (2026-11-25: `### Re-review for epoch 4`, §1.3, decisions 19-22), and it is NARROWED. The Opus judge sorted the done work of epoch 3 (14 fits; the E3.S9 spec cut, fixed forward), and the coai round on the revised plan passed (the interim document round, two parts, `proceed`; one finding accepted and fixed in §3.11). The owner approved epoch 4 on 2026-11-25. E3.S9 was then reviewed (PASS WITH FIXES, `d5abc739`, `92f1b37d`) and E3.S10 ran three times: the run of 2026-11-25 on `50da30ad` is superseded (its counterpart `sshd` wrote in the person's real `~/.ssh/agent`, found by an owner-approved `strace`), the set of 2026-11-26 on `17479f5f` is superseded too (the coai code gate, `proceed`, found that the wrapper and the probes' launcher ended no process tree on a timeout and that the wrapper took `$HOME`, and the owner chose to fix now and run the whole set again), the set on `bd03f11a` is superseded as well (the required CI check `clients · build · test` found a line of the M10 harness owner-blind, fixed in `89a9667e`), and on 2026-11-26 the whole set ran again on `89a9667e`, with the person's `~/.ssh` hidden behind an owned folder (bwrap): every run passed at its first start, M1-M14, with 0 FAIL (the rig 1735 ok, M10 41, M11 656, M13 25, test 34's older run 8 ok unwrapped, its newer run 21 pass), and §10 (the rows, the limits in words, the CHANGELOG table) is written from those runs, as a draft. Next: the judge's and the gate's read of this set. E1 and E2 merged (#379, #388) and released in 1.23.0 on 2026-11-23, before E3 (3.1). E3 started 2026-11-23: its stories document is written; E3.S1 (C19), E3.S2 (the launcher) and E3.S3 (the probes) are built and reviewed; E3.S4 (the common rig, M1, M6), E3.S5 (M4, M9) and E3.S6 (M2, M3, M8) are built and reviewed (CI green on `62251613`); the owner read HC1 of E3.S4 as a record, not a plan change, and M2 (a) as the user-file slot that the handed config names (2026-11-24); E3.S7 (M7, M12, M14) is built and reviewed (CI green on `97752998`); E3.S8 (M5) is built and reviewed (review fixes `167220a6`, CI green); the E3.S9 spec was written again for epoch 4 (`3b3dd0c7`), and E3.S9 (M10, M11, M13, test 34) is built (`6409e7c4`, `fbe36413`; entry 4.1 `15e28ea9`) and reviewed. Every row of E3 is measured by the runs of 2026-11-26 on `89a9667e` (§10); every run before it was a proving run.** (Plan written 2026-11-17.) Approved 2026-11-17 by the plan round (`proceed`; its four
 > findings, P1-P4, accepted and folded in: `## Plan changes`). Epoch 1 had two changes (1.1: the pass criteria of E2's rows M2 and M3; 1.2: the stop). Its re-review replaced the
 > old split (two epics and a list of candidates) by three epics (`## Epics`): E1 is done; E2 builds the known repairs (§1.1, §3.10-§3.12); E3 is the
 > measurements against a real `sshd`, as the release gate. Epoch 2 had two changes (2.1: two more refused kinds of a storage path; 2.2: the stop). The revision for
@@ -25,9 +27,9 @@
 > `writtenKey.ts`, the module for the pin of one call (`personPin.ts`), the words that both `ssh` argv builders write for a
 > pinned call (`hostKeyPin.ts`, `sshBridge.ts`, `sshExecCommand.ts`: the agent's pinned exec and a pinned *Run with Secrets* get them too,
 > §3.9-§3.11), the sentences for a refused host key, their tests, the real runs against a real `sshd`, the docs. Found as G1 of
-> [PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md) (N16, §5) by the lead's Opus review and a
+> [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (N16, §5) by the lead's Opus review and a
 > Fable security pass on 2026-11-16, by reading.
-> **Depends on:** the G2 plan, [PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md): merged into `main` on
+> **Depends on:** the G2 plan, [PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md): merged into `main` on
 > 2026-11-17 (#376, `07ed8303`). This plan is built on it (§4).
 > **Which tree the line references mean:** §1, §3.1-§3.9, §4, §5 (tests 1-16) and §7 keep the references of the tree before E1
 > (`main` at `ca99cd91`): they are the record of what E1 was built against. §1.1, §3.10-§3.12, tests 17-27 and `## Epics` (E2, E3)
@@ -710,7 +712,7 @@ E1.S2 (counted in its spec, §4.3). What E1.S3 adds comes on top of 784, and its
   one pure function, outside this file.
 - **Not taken: moving the socket check out of the file.** `test/launchRoadScan.test.ts:306-319` pins the three calls of
   `buildSshExecArgv` that name no `ownAgent` to this file by name; that list belongs to
-  [PLAN_ssh_exec_own_agent_forwarding.md](PLAN_ssh_exec_own_agent_forwarding.md). The budget holds after G2 (above). If a
+  [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md). The budget holds after G2 (above). If a
   later merge into `main` takes it away before E1.S2 is built, that is a question to the lead, not a silent move.
 
 **After E1, and E2's budget.** Measured on `main` at `f3e9887d`, 2026-11-18: `commands/agentCommands.ts` has **797** lines, as the
@@ -1191,7 +1193,7 @@ exit code 255 and an empty stderr, because `LogLevel=ERROR` is a word of the out
 
 ## 4. The boundary with the G2 plan
 
-The G2 plan ([PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md); merged 2026-11-17, #376) carries
+The G2 plan ([PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md); merged 2026-11-17, #376) carries
 this table from its side in its §6 (`planning-docs.md`, *a boundary between two plans is named on both sides*). On N16's
 side, G1 of its §5 names this plan. **Revised on 2026-11-17 against what G2 shipped** (`main` at `ca99cd91`): the first two
 rows say what is in the code now, and the rows below the builders' row were added from G2's follow-ups H1-H5 (its §9).
@@ -1223,7 +1225,7 @@ from its side. The rows from H1-H5 name gaps that G2 found and that the pin word
 **Epoch 2 moves nothing of this division.** The pairs that E2 adds (§3.10, §3.12) are words of the same two argvs, written
 by the same function as the pin words; G2's two options are not touched, and E2 adds no option about connection sharing.
 M3 is E3's row now, with a stop of the listener alone that keeps the master alive (`## Epics`). The bridged exec call and
-its `-F` file belong to [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md): E2 changes neither, and reuses that
+its `-F` file belong to [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md): E2 changes neither, and reuses that
 file's reading of a client's version and the kinds of path it refuses, without changing them (§3.10, §3.11). If a spec of
 E2 wants one shared function in place of two, that is a question to the lead and a line in both plans, not a silent move.
 
@@ -1729,7 +1731,7 @@ plan it writes the one release exception and adds the item of this re-review. No
    plan, and then the line of epoch 2. Until that line stands: no new code on any epic of this plan and no merge of its
    work.
 6. **Done up to its pull request, 2026-11-19:** E2, on its own branch from `main` (`fix/g1-e2-measurements`), after
-   epoch 2 was open. Opus wrote its stories document (`todo/PLAN_person_roads_pin_host_key_E2.md`) and marked the one
+   epoch 2 was open. Opus wrote its stories document (`research/PLAN_person_roads_pin_host_key_E2.md`) and marked the one
    cornerstone; Fable wrote the cornerstone's spec and the specs that are security judgements; Sonnet coded each story,
    tests RED first; Opus reviewed each; `review_code` over E2's diff reached `proceed` (read from the gate's record on
    2026-11-19: its last round on `1cef821e`, all eight reviewers answered; the one commit after it, the head `22caab8b`, is
@@ -1788,6 +1790,7 @@ plan it writes the one release exception and adds the item of this re-review. No
    34, after the line of epoch 4 and before the Opus review of E3.S8. No code of E3.S9 comes before the new spec.
 10. **The feature review** (`review_feature`), once, from a checkout of `main` that holds E1, E2 and E3; its `baseRef`
     is the commit before E1 (`4392a272`). Findings that are accepted land as new pull requests.
+    **Done, 2026-11-27:** the feature review ran once and gave `proceed`; its finding 1 was accepted and landed as #394 (`b152bf06`), its finding 0 was rejected for this release (candidate (10) of `research/module_tests.md`).
 11. **The release** (an extension patch) with the owner's word, and only when: E3 passed as a whole on the code that is
     released (any later change that can affect the shipped extension or the measurements — `src_vs_code/src`, its dependencies, build, packaging, or the harness — means the whole set again, and the release names the commit and the vsix that E3 measured); the feature review is resolved; every
     candidate that is not built has its disposition. **Since epoch 3, "the code that is released" is checked, not assumed:**
@@ -1804,6 +1807,7 @@ plan it writes the one release exception and adds the item of this re-review. No
     `package-lock.json`), so the clause above
     applies each time: the whole set runs once more on the merged release commit of `main`, before the tag is cut (the
     stories document of E3, *The epic's end*).
+    **Done, 2026-11-27:** E3 (#393) and the counter fix (#394) were merged; the release PR #395 was merged as the squash `a63dee35`; the whole set ran once on that commit from a fresh checkout, before the tag (§10.5), with 0 FAIL; the tag `extension-v1.24.0` was cut at `a63dee35` and the release published to the Marketplace the same day.
 12. **The candidates that are not built** follow their dispositions (`## Epics`). One that the lead takes becomes a
     plan of its own, the question consultants first.
 
@@ -2168,13 +2172,36 @@ The start is the claim list CL1-CL32 of E2.S4 (`d0ae4b3c`, in the squash message
 
 No claim of the list was taken out; CL3, CL5, CL17, CL21, CL31 and the second half of CL2 and of CL30 stand on the suite or on a reading alone and are said so in the entry. The rows CL33-CL36 were added from the entry as it stands (C19, E2's later fixes and the shipped "not measured" sentence); they are not in the list of E2.S4.
 
+### 10.5 The run on the release merge commit (§9, step 11)
+
+Written 2026-11-27, after the release. §9, step 11 asks that the whole set run once more on the merged release commit of `main` before the tag is cut, because a release-please commit always changes more of `src_vs_code` than the CHANGELOG. This is that run. Every number below was re-read on 2026-11-27 from the logs of the run (the private folder `release-a63dee35` of the run's logs, kept out of the repository like the folders of the earlier sets: it holds the person's user name and paths).
+
+- **What was released.** Extension 1.24.0: release PR #395, squash `a63dee3561d3fc7f229b6813cb7b3bb62cc1d835` (`chore(main): release extension 1.24.0`); tag `extension-v1.24.0` at that commit. Published to the Marketplace on 2026-11-27 (`release.yml` run 45922548761: "Published remsoftdev.creds-for-devs v1.24.0"), with a GitHub release that carries the `.vsix`. The release holds E3 (#393, squash `fe9aee47`) and the counter fix of the coai feature review (#394, `b152bf06`). The feature review gave `proceed`: its finding 1 was accepted and fixed in #394, and its finding 0 was rejected for this release and is recorded as candidate (10) in `research/module_tests.md`.
+- **Why the whole set ran again.** `git rev-parse a63dee35:src_vs_code` is `12468b160acc68a4cf999b7894b2adabbb898fa5`; the tree that §10.1 measured, on `89a9667e`, was `ca8a475f4ba2b399026fc1b87e50cff4760a5558`. They differ (#394 changed the harness's counter; the release commit changed `package.json`, `package-lock.json` and `RELEASES.md`), so §9, step 11 applied as written.
+- **One fresh checkout, once.** The set ran from one fresh checkout of `a63dee35`, started on 2026-11-27 at 01:12 UTC, before the tag. The shared rules were pinned at `cd19c17365782a740571e2b8a18571c9fea241f0` (`cd19c173`). In all 13 records of the run (before the install, after the build, and before and after each run), `git rev-parse HEAD` answered `a63dee35…`, the pin was `cd19c173…`, and `git status --porcelain` answered empty in both modes (`--untracked-files=no` and `--untracked-files=all`). **Nothing was repeated**: each run started once and ended with exit code 0.
+- **The runs** (UTC, 2026-11-27; the commands are those of §10.1):
+
+  | run | from | to | exit | its last line | per-row `ok` counts, re-read from the log |
+  |---|---|---|---|---|---|
+  | the rig's whole set (wrapped) (`rig.log`) | 01:12:13 | 01:18:54 | 0 | `all agent integration checks passed`: 1735 `ok`, 0 FAIL (1736 `ok` lines with the wrapper's own) | M1 24, M2 68, M3 43, M4 265, M5 180, M6 176, M7 351, M8 15, M9 181, M12 164, M14 40 (1507 in all; the other `ok` lines, 228 without the wrapper's, belong to the script's other sections) |
+  | M11 (wrapped) (`m11.log`) | 01:19:09 | 01:21:30 | 0 | `off-rig m11: 656 ok, 0 FAIL` | 642 `ok` lines are labelled M11; the other 15 are the run's own checks (the keys, the shim, the scan, the commit) and the wrapper's |
+  | test 34, the older client first on `PATH` (`unit-older.log`; unwrapped, as in §10.3, item 2) | 01:21:37 | 01:21:41 | 0 | `off-rig unit-older: 8 ok, 0 FAIL` | the child: 21 tests, 18 pass, 0 fail, 3 skipped |
+  | test 34, the newer client first on `PATH` (`test34-newer.log`) | 01:21:45 | 01:21:46 | 0 | 21 tests, 21 pass, 0 fail, 0 skipped | |
+  | M10 (`m10.log`; unwrapped) | 01:21:54 | 01:22:30 | 0 | `off-rig m10: 41 ok, 0 FAIL` | 9 on the host, 32 inside the container |
+  | M13 (`m13.log`; unwrapped) | 01:22:34 | 01:22:35 | 0 | `off-rig m13: 25 ok, 0 FAIL` | 21 `ok` lines are labelled M13; the other 4 are the run's own checks |
+
+  The counts are the same as those of the run on `89a9667e` (§10.1, §10.2): the rig 1735, M11 656, M10 41, M13 25, `unit-older` 8 with its child at 21/18/0/3, and test 34's newer run 21 of 21; the rig's rows have the same counts of checks as in §10.2.
+- **The person's `~/.ssh`.** The wrapper's record for the rig and for M11: `ok   the person's ~/.ssh was hidden for the run and is unchanged: 10 entries, the same lstat records before and after`. What the run wrote in place of it: for the rig `agent (dir)` (an empty folder, as on `89a9667e`), for M11 nothing. The `strace` of `unit-older` holds **6 lines, all of ONE `node` process, all on `~/.ssh/known_hosts`** (`access`, `openat` read-only and `statx`, each twice: the harness's own guard, before and after the child run), the same as in §10.3. The creds folders of the run were `[]` in each of the six leftovers records.
+- **The one record that differs from the run on `89a9667e`.** Of the 93 evidence records of the rig, the 29 of M11 and the one of M10, compared by their starts and by each counterpart's connections, authentication attempts and accepted logins, one counterpart record differs: `m7-c-collision-k1` now reads K1 6 connections / **5** authentication attempts / 5 accepted logins, where `89a9667e` read 4 authentication attempts (§10.2, the note under M7). The cause is the per-connection counter of #394: the kernel had given one client port to two attempts of that leg, and the old counter, which counted distinct ports, folded them into one. The leg's checks passed on both runs, and the new number matches the 5 accepted logins.
+- **Verdict.** The whole set passed on the release commit, once, with 0 FAIL, and the tag was cut after it. The limits of §10.3 stand unchanged: this run measured the same things and no more.
+
 ## Epics
 
 Three epics, and a list of the candidates that are not built, each with its disposition. This is the split of the re-review
 for epoch 2 (§2, decision 7; the question consultants `274c6e9d`, both answers; the consult `97eb6bb5`). It REPLACES the split
 of epoch 1 (two epics and a list of candidates, consult `cbe21f00`); it does not append an epic to it. The gate's split
 order allows two epics beyond what is done: E1 is done, E2 and E3 are the two. Each epic's stories are one document,
-`todo/PLAN_person_roads_pin_host_key_E<n>.md`, written by Opus when that epic starts; it links back here and gets its own
+`research/PLAN_person_roads_pin_host_key_E<n>.md`, written by Opus when that epic starts; it links back here and gets its own
 `todo/README.md` row. The code gate runs once per epic, on that epic's
 branch. Three epics: the cornerstone quota is 2, and the feature review runs once at the end (§9, step 10).
 

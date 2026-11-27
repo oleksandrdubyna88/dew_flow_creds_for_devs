@@ -9,7 +9,7 @@ import { checkedPin, hostKeyWords, knownHostsLine, parseHostKey } from '../hostK
 import { NO_CONNECTION_SHARING } from '../sshExecCommand';
 
 /**
- * G1, E3.S6 (`todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md`, §7): M2, M3 and M8 on the rig of E3.S4. OT1 holds the table of the seven legs, OT2 the handed config
+ * G1, E3.S6 (`research/PLAN_person_roads_pin_host_key_E3_S6_spec.md`, §7): M2, M3 and M8 on the rig of E3.S4. OT1 holds the table of the seven legs, OT2 the handed config
  * of a leg (the other source goes IN PLACE of `/dev/null`), OT3 the words of the controls and the witnesses, OT4 the sessions of a log, OT5 the judge of the
  * four refused runs, OT6 the shim's file for an IGNORED stderr, OT7 the recording command of M8 and OT8 the line of a known-hosts file.
  *

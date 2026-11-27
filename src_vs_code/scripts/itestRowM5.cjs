@@ -1,5 +1,5 @@
 'use strict';
-// Row M5 of G1 (E3.S8; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 2): what the person is told when a pinned call meets a host key that is not the saved one, as the
+// Row M5 of G1 (E3.S8; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 2): what the person is told when a pinned call meets a host key that is not the saved one, as the
 // call saw it. Eleven legs, each its own leg process, world, key copy and counterpart(s), each cold: (a) K2 answers, (e) as (a) under a quiet handed config, (f) a jump host whose key the jump file refuses, (g) K1 accepts the logins
 // and the remote side writes the verification line and ends with 255, (h) the same and then runs the asked command to 0, and (b) a stopped counterpart, (c) a refused login, (d) a listener that never answers, each also on an UNPINNED entry.
 // What the person was shown is read from the world's `said`, and compared with the product's functions AND with the words pinned in `lib/toldRecord.cjs`. The comparisons across legs (the unpinned twins, the control of (h)) run in

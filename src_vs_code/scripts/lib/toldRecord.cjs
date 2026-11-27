@@ -1,5 +1,5 @@
 'use strict';
-// The pure rules of M5 of G1 (E3.S8; `todo/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 3): the table of the eleven legs, the words that only one of the two sentences holds and the two
+// The pure rules of M5 of G1 (E3.S8; `research/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 3): the table of the eleven legs, the words that only one of the two sentences holds and the two
 // prefixes of the bridge's message (literals of the plan's 3.5 and 3.12, never read from the product: a product whose C and D were swapped must be red beside its own text), the judge of what the
 // person was told, the texts of the two forced scripts and of the jump host's config, the shown messages and the comparison of two legs, the control of (h), and the lines that name a file.
 //

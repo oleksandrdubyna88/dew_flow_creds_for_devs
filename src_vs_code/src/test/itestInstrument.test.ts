@@ -7,7 +7,7 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { discoverSources } from './tempSiteScan';
 
 /**
- * G1, E3.S2: test 33 of `todo/PLAN_person_roads_pin_host_key.md` §5, the launch instrument of the real `sshd` runs (decision 16).
+ * G1, E3.S2: test 33 of `research/PLAN_person_roads_pin_host_key.md` §5, the launch instrument of the real `sshd` runs (decision 16).
  *
  * <p><b>What this holds.</b> Every script starts its `sshd` with the executable of ONE place, `scripts/lib/sshdRun.cjs`, and every sshd
  * config of the real runs is written there: the one-connection config of `startSshd` and the config of the serving launcher. The

@@ -1,6 +1,8 @@
 # PLAN — E3.S8 spec: what the person is told, as the call saw it (M5)
 
-> Status: **spec, 2026-11-24, by Opus; not built.** Story E3.S8 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S8 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-24, by Opus; not built.** Story E3.S8 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its decisions 15, 16 and 18; §3.5, *The words as E2 built them*; §3.12 with part 4 (C19); C7; `## Epics`, E3: *The setup of every
 > measurement*, the row M5 and *Info for M5 (a)*) and of its stories document [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md)
 > (`## The rows: built story by story, measured once`, `## E3.S8`). It builds on the common rig as BUILT by E3.S4 to E3.S7
@@ -69,7 +71,7 @@ source of trust or config made in the leg's folder; a control or a witness never
 | # | Fact | How |
 |---|---|---|
 | T1 | **The tree.** `fix/g1-e3-release-gate` at `8cf4b6ea` (the review fixes of E3.S7), no modified tracked file. E3.S4 to E3.S7 are built; the last proving run of E3.S7: 1553 ok, 0 FAIL, 82 leg processes (`research/module_tests.md`, *M7, M12 and M14, seen when they were built*) | read |
-| T2 | **The row.** M5, `todo/PLAN_person_roads_pin_host_key.md:1731`; its last column is quoted beside each check (§2 to §5). *Info for M5 (a)*: `:1779-1780` | read |
+| T2 | **The row.** M5, `research/PLAN_person_roads_pin_host_key.md:1731`; its last column is quoted beside each check (§2 to §5). *Info for M5 (a)*: `:1779-1780` | read |
 | T3 | **The two callers of `hostKeyTold`.** The install's probe, `agentCommands.ts:282-286` (`runRemote` answers `-1` where the runner has none, `:350`); the socket check's mode check, `:211-221`, which shows `told.bridge` as an error AND writes it as a log line. Both hand their run's exit code (C19, built by E3.S1) | read |
 | T4 | **`hostKeyTold`** (`hostKeyPin.ts:397-402`): no pin or exit code 0, nothing; else `toldByText` (`:405-413`): no whole verification line, nothing; a line that names the call's pin file (`namesFile`, `:345`), C with the prefix `The bridge to "<name>" is not open: `; else D with `The bridge to "<name>" could not be checked: ` | read |
 | T5 | **The sentences.** C: `refusedHostKeySentence`, `hostKeyPin.ts:427-429`; D: `unnamedHostKeySentence`, `:443-445`. C holds `did not present its saved host key, so CredsForDevs did not connect`; D holds `and ssh did not name the saved host key of this entry as the reason`; neither holds the other's words | read |

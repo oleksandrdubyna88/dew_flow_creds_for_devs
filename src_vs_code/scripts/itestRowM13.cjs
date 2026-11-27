@@ -1,5 +1,5 @@
 'use strict';
-// Row M13 of G1 (E3.S9; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.5, §4): the Windows client alone. `ssh.exe -G` of the Windows that the owner's machine has, started from
+// Row M13 of G1 (E3.S9; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.5, §4): the Windows client alone. `ssh.exe -G` of the Windows that the owner's machine has, started from
 // WSL (interop; Node's `execFile`, no shell, the argv as separate arguments: S3.P5's way), with the product's own argv for a pin file whose Windows path holds (a) a space, (b) an apostrophe, (c) a space and an apostrophe, and the rule
 // asked for a UNC folder. The words are the product's (`buildSshExecArgv`, `buildBridgeArgv`, each with `knownHostsFile: await checkedPinOf(out, <pin path>, SSH_EXE)`), never typed here. Only `ssh.exe -V`, `ssh.exe -G` and
 // `where.exe ssh` are started: no login, no network, no file written on Windows. One file is told from two by the control of K7 (E1.S1): a path with ` ~` after a space. NOT in this row: a login on Windows (C6). The Windows user

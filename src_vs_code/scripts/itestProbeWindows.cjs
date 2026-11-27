@@ -1,5 +1,5 @@
 'use strict';
-// Probe P5 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): the Windows client from this machine, for M13.
+// Probe P5 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): the Windows client from this machine, for M13.
 //
 // What it shows: the harness starts the `ssh.exe` of the owner's Windows from WSL (interop), with the argv as separate arguments (Node's
 // `execFile`, no shell), reads its `-G` output, and tells one file from two by the control of K7 (E1.S1): a path with ` ~` after a space.

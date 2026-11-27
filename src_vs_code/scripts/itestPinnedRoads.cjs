@@ -1,4 +1,4 @@
-// Section 10 of `ssh-agent-itest.cjs` (G1, `todo/PLAN_person_roads_pin_host_key_E1.md`, E1.S4), in a file of its own so that script stays
+// Section 10 of `ssh-agent-itest.cjs` (G1, `research/PLAN_person_roads_pin_host_key_E1.md`, E1.S4), in a file of its own so that script stays
 // under the 800-line limit.
 //
 // A pinned entry's roads must start `ssh` only against the saved host key. The unit tests show the words a pinned call SENDS and the file it

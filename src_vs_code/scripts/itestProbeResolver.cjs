@@ -1,5 +1,5 @@
 'use strict';
-// Probe P2 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a resolver that the run owns, whose answer the client takes as secure, in a
+// Probe P2 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a resolver that the run owns, whose answer the client takes as secure, in a
 // container (M10). The brief's way: the counterpart, the client, the resolver and the harness of the roads all run INSIDE one container, because a port
 // that `wslc` publishes is on the Windows loopback only and the distro cannot reach it. Containers on this machine are `wslc`'s, never Docker's.
 //

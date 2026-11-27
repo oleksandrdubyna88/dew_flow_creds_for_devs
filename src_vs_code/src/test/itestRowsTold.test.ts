@@ -9,7 +9,7 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { checkedPin, hostKeyTold, refusedHostKeySentence, unnamedHostKeySentence } from '../hostKeyPin';
 
 /**
- * G1, E3.S8 (`todo/PLAN_person_roads_pin_host_key_E3_S8_spec.md`, section 6): M5 on the rig of E3.S4. TT1 holds the table of the eleven legs, TT2 that the product
+ * G1, E3.S8 (`research/PLAN_person_roads_pin_host_key_E3_S8_spec.md`, section 6): M5 on the rig of E3.S4. TT1 holds the table of the eleven legs, TT2 that the product
  * agrees with the pinned words, TT3 the reading of the screen, TT4 the two forced scripts, TT5 the jump host's config, TT6 the shown messages and their comparison, TT7 the
  * lines that name a file, TT8 the control of (h), TT9 what the real client does with the two configs (where an `ssh` is on the PATH).
  *

@@ -1,6 +1,8 @@
 # PLAN — E2.S3 spec: sentence C only when `ssh` names the pin file of the call, sentence D otherwise (SECURITY)
 
-> Status: **spec, 2026-11-18, by Fable; built (a686badd, a375c3f2), unmerged; its condition that asks the text alone (sentence D whatever the run's exit code was) is cut in the re-review for epoch 3 and replaced by the parent's §3.12, part 4 (E3.S1): nothing is built from that condition again.** A security spec, written before its code (the row *Security judgement* of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E2.S3 (spec) of G1: merged (#388, squash `4799f9d7`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-18, by Fable; built (a686badd, a375c3f2), unmerged; its condition that asks the text alone (sentence D whatever the run's exit code was) is cut in the re-review for epoch 3 and replaced by the parent's §3.12, part 4 (E3.S1): nothing is built from that condition again.** A security spec, written before its code (the row *Security judgement* of
 > `subagent-models.md`; outside the quota, not the cornerstone: E2.S2 holds it). Story E2.S3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.12 parts 2 and 3, the rows of sentences C and D
 > in §3.5, §3.6, the tests 24 and 25 of its §5, the mutation checks of test 26 that name the `Offending` line, the folder and

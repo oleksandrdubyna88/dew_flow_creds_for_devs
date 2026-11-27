@@ -1,6 +1,6 @@
 'use strict';
-// THE common rig of the real-road rows of E3 (G1, E3.S4; `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md`; decisions 15 and 16 of
-// `todo/PLAN_person_roads_pin_host_key.md`, its setup built ONCE). Every row-story drives the three roads through this file: the install, the
+// THE common rig of the real-road rows of E3 (G1, E3.S4; `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md`; decisions 15 and 16 of
+// `research/PLAN_person_roads_pin_host_key.md`, its setup built ONCE). Every row-story drives the three roads through this file: the install, the
 // bridge and the bridge's socket check, the registered commands of the product, with the real runner, the real bridge spawner, the real pin
 // writer, the real asker of the client and the real `resolveExecAuth`. ONLY the `vscode` module is a stand-in there (the lead's answer A1):
 // the observers and the gate below call the real runner and pass its answer on, and the vault is data that the world's host answers.

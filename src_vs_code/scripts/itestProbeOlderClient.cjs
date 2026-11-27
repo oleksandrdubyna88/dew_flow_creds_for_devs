@@ -1,5 +1,5 @@
 'use strict';
-// Probe P3 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a client older than 8.5 that runs here, for M11; with the lead's check Q1
+// Probe P3 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a client older than 8.5 that runs here, for M11; with the lead's check Q1
 // (`ssh -G` of a quoted path that holds `=`).
 //
 // The way: an unpacked package. The two `.deb` files (an `openssh-client` 8.4 and a `libssl1.1` of Debian 11, kept with their `SHA256SUMS` in the folder

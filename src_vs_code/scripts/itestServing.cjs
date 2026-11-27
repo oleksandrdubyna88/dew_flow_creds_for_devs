@@ -1,4 +1,4 @@
-// The serving launcher of the real runs (G1, E3.S2; decision 16 of `todo/PLAN_person_roads_pin_host_key.md`): the ONE starter of every
+// The serving launcher of the real runs (G1, E3.S2; decision 16 of `research/PLAN_person_roads_pin_host_key.md`): the ONE starter of every
 // counterpart of a row of E3, moved here from `itestPinnedRoads.cjs` (section 10) so that every row file reaches it and its stops.
 //
 // `startServingSshd` starts one `sshd -D -e`, which serves EVERY connection, with the run's executable and config lines (`RUN` of

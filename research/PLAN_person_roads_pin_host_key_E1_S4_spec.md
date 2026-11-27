@@ -1,6 +1,8 @@
 # PLAN — E1.S4 spec: the smoke on real input (section 10 of `ssh-agent-itest.cjs`)
 
-> Status: **built 2026-11-18 (abd43690) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released: 40 of 40 checks locally on OpenSSH 10.2p1, and section 10 passed in CI on the merge commit (`ci · extension`, run 44362280657, both legs). Spec written 2026-11-17, by Opus.** A test harness, not a security judgement (the row *Judge* of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E1.S4 (spec) of G1: merged (#379, squash `f3e9887d`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **built 2026-11-18 (abd43690) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released: 40 of 40 checks locally on OpenSSH 10.2p1, and section 10 passed in CI on the merge commit (`ci · extension`, run 44362280657, both legs). Spec written 2026-11-17, by Opus.** A test harness, not a security judgement (the row *Judge* of
 > `subagent-models.md`: test scenarios and the brief). Story E1.S4 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its E1 *Done when*, the smoke; §5, P4; §3.7, its last row) and of its stories document
 > [PLAN_person_roads_pin_host_key_E1.md](PLAN_person_roads_pin_host_key_E1.md) (`## E1.S4`, with its feasibility probe). This file is
@@ -247,7 +249,7 @@ scripts are not linted, and the repository's limits still apply in spirit: 50 li
 ### 4.1 The header and the imports
 
 ```js
-// Section 10 of `ssh-agent-itest.cjs` (G1, `todo/PLAN_person_roads_pin_host_key_E1.md`, E1.S4), in a file of its own so that script stays
+// Section 10 of `ssh-agent-itest.cjs` (G1, `research/PLAN_person_roads_pin_host_key_E1.md`, E1.S4), in a file of its own so that script stays
 // under the 800-line limit.
 //
 // A pinned entry's roads must start `ssh` only against the saved host key. The unit tests show the words a pinned call SENDS and the file it

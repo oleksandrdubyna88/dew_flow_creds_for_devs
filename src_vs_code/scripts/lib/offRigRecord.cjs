@@ -1,6 +1,6 @@
 'use strict';
-// The pure rules of the rows that run off the rig (G1, E3.S9; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1, §3, §4; decisions 19 to 22 of
-// `todo/PLAN_person_roads_pin_host_key.md`): the tables of the legs of M10, M11 and M13, the boundary 8.7 between the two parsers of the client and the
+// The pure rules of the rows that run off the rig (G1, E3.S9; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1, §3, §4; decisions 19 to 22 of
+// `research/PLAN_person_roads_pin_host_key.md`): the tables of the legs of M10, M11 and M13, the boundary 8.7 between the two parsers of the client and the
 // expectation of each (constants by the VERSION of a client, never chosen from what a client did: decision 19), the questions and words of a call per
 // parser, the two programs of M11 (c) and (d), sentence F's pinned words, the times of (d), the reader of `ssh -G`, K7's control, the UNC words and the
 // version line of an `sshd` log. `test/itestRowsOff.test.ts` (TX1 to TX13) holds them without loading the harness.

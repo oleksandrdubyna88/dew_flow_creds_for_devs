@@ -1,5 +1,5 @@
 'use strict';
-// Row M11 of G1 (E3.S9; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.3, §3.1, §3.2): the pinned roads against a client older than 8.5, which has no
+// Row M11 of G1 (E3.S9; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.3, §3.1, §3.2): the pinned roads against a client older than 8.5, which has no
 // `KnownHostsCommand` and asks nothing more than E1's words and E2's two pairs. It runs through `itestOffRig.cjs m11` only (never in section 10, never in CI), with the unpacked OpenSSH 8.4p1 of probe P3 as
 // the client of its older legs and the rig's own client as that of the two newer legs of the equals-sign pair. This file holds (a) the client alone, (b) the runs of M1, M2 (b) the mismatch and M7's shapes on the older
 // client, the helpers every M11 leg shares (the client's version and parser, M11.p; the version in the counterpart's log, M11.v), and the list of the legs. The twin of (c) and the equals-sign pair are in

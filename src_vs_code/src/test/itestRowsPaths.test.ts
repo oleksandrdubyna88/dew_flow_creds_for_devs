@@ -10,7 +10,7 @@ import { sshParserOf } from './pinnedArgv';
 import { PIN_PATH_KINDS, checkedPin, formatHostKey, hostKeyWords, pinPathRefusal, pinPathSentence } from '../hostKeyPin';
 
 /**
- * G1, E3.S7 (`todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md`, §7): M7, M12 and M14 on the rig of E3.S4. PT1 and PT2 hold the tables of the
+ * G1, E3.S7 (`research/PLAN_person_roads_pin_host_key_E3_S7_spec.md`, §7): M7, M12 and M14 on the rig of E3.S4. PT1 and PT2 hold the tables of the
  * legs (and that the product agrees with them), PT3 how `ssh` prints a path and the bare word's twin, PT4 the `/dev/null` scan, PT5 E1's words with a
  * path as it is, PT6 the no-path judge, PT7 the listing of a folder, PT8 the kind words of sentence E, PT9 what the real client does with the words
  * of M7 (where an `ssh` is on the PATH), PT10 the exec world.

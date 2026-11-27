@@ -1,5 +1,5 @@
 #!/bin/sh
-# The start of the container of probe P2 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`), run as root by the host part of
+# The start of the container of probe P2 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`), run as root by the host part of
 # `scripts/itestProbeResolver.cjs`; the worktree is mounted read-only at /work. Root does three things and no more: it makes the one user that the harness
 # and the counterpart run as, it starts the resolver of the run (the only process that is root: port 53), and it runs the harness as that user.
 # The exit code is the harness's. The container ends with it (`--rm`).

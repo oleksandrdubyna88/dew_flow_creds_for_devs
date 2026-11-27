@@ -1,5 +1,5 @@
 'use strict';
-// Row M8 of G1 (E3.S6; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §4): the entry is pinned to K1, K2 answers at its address, and the leg's handed
+// Row M8 of G1 (E3.S6; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §4): the entry is pinned to K1, K2 answers at its address, and the leg's handed
 // config names a `KnownHostsCommand` that prints K2's line (and records each of its starts), with `VerifyHostKeyDNS no`. THE CONTROL FIRST: the control client with E1's words (a file of K1's line as both
 // known-hosts files, no `KnownHostsCommand=none`) is accepted by K2 and the command's record holds at least one start, so the source is there and would be taken. Then the three roads, which say
 // `KnownHostsCommand=none`: each of the four runs that start ends with 255 and the verification line, the command's record holds 0 starts for them, and K2 logs 0 accepted logins and 0 authentication attempts.

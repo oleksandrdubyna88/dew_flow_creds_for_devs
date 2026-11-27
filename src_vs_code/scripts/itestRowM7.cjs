@@ -1,5 +1,5 @@
 'use strict';
-// Row M7 of G1 (E3.S7; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §2): the pin file is read as the one intended file where its path needs double
+// Row M7 of G1 (E3.S7; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §2): the pin file is read as the one intended file where its path needs double
 // quotes. The storage folder of a leg is `<leg>/st/<name>`, its name holding (a) a space, (b) one apostrophe, (c) a pair of apostrophes, (d) a space and an apostrophe, (e) a backslash as the folder's last
 // character; for each the runs of M1 and of M2 (b), both legs (`m1Runs`, `mismatch`, `switchLeg`, with M7's own checks inside them), and for (c) the collision: a file at the path that the bare word would
 // resolve to (the apostrophes taken out) holds K2's line, the pin file holds K1's; once the counterpart is K1, once K2. The twin is written by the leg when the call's pin file is known, before its client starts

@@ -1,6 +1,6 @@
 'use strict';
-// The pure rules of the refused legs of M4 and M9 (G1, E3.S5; `todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §2; decision 15 of
-// `todo/PLAN_person_roads_pin_host_key.md`): the table of the 25 legs, the message that a refused leg expects (read from the product's own
+// The pure rules of the refused legs of M4 and M9 (G1, E3.S5; `research/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §2; decision 15 of
+// `research/PLAN_person_roads_pin_host_key.md`): the table of the 25 legs, the message that a refused leg expects (read from the product's own
 // functions, never typed here), and the judge of a refused leg's counts. `test/itestRowsRefused.test.ts` (RF1 to RF3) holds them without
 // loading the harness. The four counts stay apart (the stories of E3.S4): a start of the client is not a connection start, and neither is a
 // connection in the counterpart's log.

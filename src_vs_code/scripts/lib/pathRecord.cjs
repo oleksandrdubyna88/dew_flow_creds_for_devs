@@ -1,5 +1,5 @@
 'use strict';
-// The pure rules of M7, M12 and M14 of G1 (E3.S7; `todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §5.1): the tables of the legs of M7 and M12 (literals of the spec, never read from the product),
+// The pure rules of M7, M12 and M14 of G1 (E3.S7; `research/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §5.1): the tables of the legs of M7 and M12 (literals of the spec, never read from the product),
 // the coverage judge, the word that a pin file's path needs, how `ssh` prints a path in its `Offending` line, the bare word's twin, E1's words with a path as it is, the scan for `/dev/null`
 // as a known-hosts file, the judge of "no path in a text" and the listing of a folder.
 //

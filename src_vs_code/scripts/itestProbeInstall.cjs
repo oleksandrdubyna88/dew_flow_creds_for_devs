@@ -1,5 +1,5 @@
 'use strict';
-// Probe P1 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): the install's stand-in, for M1, M2 (the switch), M3 (the switch), M6, M7, M9
+// Probe P1 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): the install's stand-in, for M1, M2 (the switch), M3 (the switch), M6, M7, M9
 // and M11 (b). The product's *Install creds on host* runs `installCommand()` on the host, which downloads the published installer and runs it. A
 // row must run that install to its end on the real `sshd` without fetching the installer and without writing outside the owned folder.
 //

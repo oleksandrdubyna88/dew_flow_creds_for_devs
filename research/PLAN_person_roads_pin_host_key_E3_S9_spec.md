@@ -1,6 +1,8 @@
 # PLAN — E3.S9 spec: the rows off the rig (M10, M11, M13), and the control of test 21 per parser (test 34)
 
-> Status: **spec, 2026-11-25, by Opus; not built. It replaces the spec of 2026-11-24, which the re-review for epoch 4 cut** (the parent's
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S9 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-25, by Opus; not built. It replaces the spec of 2026-11-24, which the re-review for epoch 4 cut** (the parent's
 > `### Re-review for epoch 4`, the row of the E3.S9 spec: its M11 (b) built M7's collision legs on the older client). Story E3.S9 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its decisions 15, 16, 18 and 19-22; §1.3; §3.10; §3.11, *Two
 > parsers*; §5, tests 21 and 34; §6, *The release evidence says its limits*; C20, C21; `## Epics`, E3: *The setup of every measurement*,
