@@ -4,6 +4,7 @@ import { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } from '../agentNaming';
 import type { ReadRouteSources } from '../brokerReadRoutes';
 import type { McpAccess } from '../mcpAccess';
 import { McpEntry, McpVaultSource, visibleMcpEntries } from '../mcpEntries';
+import { type FolderView, visibleFolders } from '../mcpFolders';
 import { stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 import { CONTEXT_1, wallWorld } from './bridgeWallWorld';
@@ -389,4 +390,175 @@ test('RG6: a clean match in another letter case is kept in the letter case that 
   for (const command of kept) {
     assert.equal(await listedCommand(command, [hiddenEntry, spaced]), command);
   }
+});
+
+// ---------- S4 · N6, `parent` ----------
+
+/** The folders that `creds_folders` lists for a vault of one account. */
+function foldersOf(nodes: readonly TreeNode[]): FolderView[] {
+  const source = vault(nodes);
+  return visibleFolders(source.getAccounts(), (accountId) => source.getNodes(accountId), (accountId, id) => source.getNode(accountId, id));
+}
+
+/** The folder `c1`, with switches of its own, under the parent `parentId`; `extra` holds the nodes that the parent is. */
+const childOf = (parentId: string | null, extra: readonly TreeNode[]): readonly TreeNode[] => [...extra, folder('c1', 'child', { parentId, mcp: OPEN })];
+
+const parentOfChild = (nodes: readonly TreeNode[]): string | null | undefined => foldersOf(nodes).find((f) => f.id === 'c1')?.parent;
+
+test('P1: a folder with switches of its own, under a folder with no switch, has no parent', () => {
+  const nodes = childOf('p1', [folder('p1', 'PARENT-no-switch-name')]);
+  assert.equal(parentOfChild(nodes), null);
+  assert.deepEqual(['p1', 'PARENT-no-switch-name'].filter((text) => JSON.stringify(foldersOf(nodes)).includes(text)), []);
+});
+
+test('P2: a folder with switches of its own, under a folder that a person closed (mcp: {}) under an open folder, has no parent', () => {
+  const nodes = childOf('p2', [folder('p1', 'PARENT-open', { mcp: OPEN }), folder('p2', 'PARENT-closed-name', { parentId: 'p1', mcp: {} })]);
+  assert.equal(parentOfChild(nodes), null);
+  assert.deepEqual(['p2', 'PARENT-closed-name'].filter((text) => JSON.stringify(foldersOf(nodes)).includes(text)), []);
+});
+
+test('P3: a folder whose parent id points to no node has no parent', () => {
+  const nodes = childOf('nothing-has-this-id', []);
+  assert.equal(parentOfChild(nodes), null);
+  assert.equal(JSON.stringify(foldersOf(nodes)).includes('nothing-has-this-id'), false);
+});
+
+test('E4: a parent with no switch and a parent id that points to no node give the same body of the list of folders', () => {
+  const hidden = foldersOf(childOf('p1', [folder('p1', 'PARENT-no-switch-name')]));
+  assert.deepEqual(hidden, foldersOf(childOf('p1', [])));
+  assert.deepEqual(['p1', 'PARENT-no-switch-name'].filter((text) => JSON.stringify(hidden).includes(text)), [], 'the body holds no name and no id of the hidden parent');
+});
+
+test('PG1: a folder that the agent may view, under a parent that it may view, has the parent\'s id', () => {
+  assert.equal(parentOfChild(childOf('p1', [folder('p1', 'PARENT-open', { mcp: OPEN })])), 'p1', 'a parent with its own switch');
+  const inherits = [folder('p0', 'PARENT-top', { mcp: OPEN }), folder('p1', 'PARENT-inherits', { parentId: 'p0' }), folder('c1', 'child', { parentId: 'p1' })];
+  assert.equal(parentOfChild(inherits), 'p1', 'a child that takes view from above, under a parent that takes view from above');
+});
+
+test('PG2: a folder at the root has no parent', () => {
+  assert.equal(parentOfChild(childOf(null, [])), null);
+});
+
+// ---------- S4 · G1, nothing else changes ----------
+
+/** A vault in which the agent may view each node, and each of the four fields holds something: a dependency, a folder, a reference, a parent. */
+const EVERYTHING_VIEWABLE: readonly TreeNode[] = [
+  folder('g-top', 'Servers', { mcp: OPEN }),
+  folder('g-eu', 'EU', { parentId: 'g-top' }),
+  entry('g-vpn', 'office vpn', { kind: 'vpn', isSshEnabled: false, vpnType: 'openvpn' }, 'g-top'),
+  entry('g-gw', 'gateway', { mcp: OPEN, dependsOn: ['g-vpn'] }, 'g-eu'),
+  entry('g-term', 'ops', { kind: 'terminal', isSshEnabled: false, command: `run creds://${EMAIL}/EU/gateway/password now` }, 'g-top'),
+  entry('g-root', 'at the root', { mcp: OPEN }),
+];
+
+/** The two list bodies of that vault on the code before this change (`37b82b48`), taken from a run of it: the literal is not computed by the code under test. */
+const BEFORE = {
+  entries: [
+    {
+      id: 'g-vpn',
+      name: 'office vpn',
+      kind: 'vpn',
+      folder: 'Servers',
+      host: 'h.example.test',
+      vpnType: 'openvpn',
+      hasPassword: false,
+      hasPrivateKey: false,
+      hasNotes: false,
+      hasTotp: false,
+      dependsOn: [],
+      can: {
+        use: false,
+        edit: false,
+        create: false,
+        delete: false
+      }
+    },
+    {
+      id: 'g-gw',
+      name: 'gateway',
+      kind: 'ssh',
+      folder: 'EU',
+      host: 'h.example.test',
+      hasPassword: false,
+      hasPrivateKey: false,
+      hasNotes: false,
+      hasTotp: false,
+      dependsOn: [
+        'office vpn'
+      ],
+      can: {
+        use: false,
+        edit: false,
+        create: false,
+        delete: false
+      }
+    },
+    {
+      id: 'g-term',
+      name: 'ops',
+      kind: 'terminal',
+      folder: 'Servers',
+      host: 'h.example.test',
+      command: 'run creds://me@x.test/EU/gateway/password now',
+      hasPassword: false,
+      hasPrivateKey: false,
+      hasNotes: false,
+      hasTotp: false,
+      dependsOn: [],
+      can: {
+        use: false,
+        edit: false,
+        create: false,
+        delete: false
+      }
+    },
+    {
+      id: 'g-root',
+      name: 'at the root',
+      kind: 'ssh',
+      folder: '',
+      host: 'h.example.test',
+      hasPassword: false,
+      hasPrivateKey: false,
+      hasNotes: false,
+      hasTotp: false,
+      dependsOn: [],
+      can: {
+        use: false,
+        edit: false,
+        create: false,
+        delete: false
+      }
+    }
+  ],
+  folders: [
+    {
+      id: 'g-top',
+      name: 'Servers',
+      parent: null,
+      holds: 'any',
+      can: {
+        create: false,
+        edit: false,
+        delete: false
+      }
+    },
+    {
+      id: 'g-eu',
+      name: 'EU',
+      parent: 'g-top',
+      holds: 'any',
+      can: {
+        create: false,
+        edit: false,
+        delete: false
+      }
+    }
+  ]
+};
+
+test('G1: with each node viewable, the two list bodies are those of the code before this change: no other field changes', async () => {
+  const source = vault(EVERYTHING_VIEWABLE);
+  const folders = visibleFolders(source.getAccounts(), (accountId) => source.getNodes(accountId), (accountId, id) => source.getNode(accountId, id));
+  assert.deepEqual(JSON.parse(JSON.stringify({ entries: await visibleMcpEntries(source), folders })), BEFORE);
 });

@@ -326,37 +326,24 @@ function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
 }
 
 /**
- * The fields of the two list answers that still hold the name or the id of a node the agent may not view, each at the value that is
- * there today (the owner closed them in `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`; each story takes its own row out).
+ * The four fields of the two list answers that held the name or the id of a node the agent may not view (N1, N4, N5 and N6 of
+ * `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`), each at the value that it holds now: a fixed word, an empty name or null.
  */
-const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly today: unknown }[] = [
-  { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', today: HIDDEN.folders.none },
-];
-
-/** The fields that an owner's answer closed, each at the value that it holds now: the place of a hidden node is a fixed word, an empty name or null. */
-const CLOSED: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
+const FIELDS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
   { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
   { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', now: '' },
   { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', now: HIDDEN_REFERENCE },
+  { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', now: null },
 ];
 
-/** The rows of one list with the fields of the open exceptions taken out. */
-function withoutExceptions(list: 'entries' | 'folders', rows: readonly ListRow[]): ListRow[] {
-  return rows.map((row) => ({ ...row, ...Object.fromEntries(EXCEPTIONS.filter((e) => e.list === list && e.row === row.id).map((e) => [e.field, undefined])) }));
-}
-
-/** Row L1: no hidden name and no hidden id is in the body of either list, in any field, but the fields that an open exception names. */
-test('the list check (row L1): the open exceptions hold the value of today, and the two list bodies hold no other hidden name and no hidden id', async () => {
+/** Row L1: no hidden name and no hidden id is in the body of either list, in any field, with no exception; the four fields hold their fixed values. */
+test('the list check (row L1): the two list bodies hold no hidden name and no hidden id, and the four fields hold the value of the owner\'s answer', async () => {
   const bodies = { entries: await listOf('entries'), folders: await listOf('folders') };
-  for (const e of EXCEPTIONS) {
-    const row = bodies[e.list].find((r) => r.id === e.row) as ListRow;
-    assert.deepEqual(row[e.field], e.today, `${e.n}: the value of today`);
-  }
-  for (const c of CLOSED) {
+  for (const c of FIELDS) {
     const row = bodies[c.list].find((r) => r.id === c.row) as ListRow;
     assert.deepEqual(row[c.field], c.now, `${c.n}: the value that the owner's answer gives`);
   }
-  const found = [...rowLeaks('entries', withoutExceptions('entries', bodies.entries)), ...rowLeaks('folders', withoutExceptions('folders', bodies.folders))];
+  const found = [...rowLeaks('entries', bodies.entries), ...rowLeaks('folders', bodies.folders)];
   assert.deepEqual(found, [], 'a field of a list names a node that the agent may not view');
 });
 
