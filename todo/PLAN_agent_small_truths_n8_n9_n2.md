@@ -11,11 +11,14 @@
 > sentences, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`, `research/module_tests.md`,
 > `todo/README.md`. One epic, four stories (`## Epics`).
 >
-> **Epoch 2 is `by nobody`: this revision is NOT reviewed yet.** The re-review had one consultation (`coai`,
-> `d7510da7`; the lead checked its answer against the code) and this revision of the whole plan. The interim document
-> round of the rule (`review_document` on this file) has not run on it, and an Opus judge has not yet checked the
-> marks in the table of the record. Each summary says so until the round has run. The lead decides what the epoch
-> line says after it. The revision found five facts that the lead's decisions did not have: a fourth line with no
+> **The re-review, and what the epoch line says.** The re-review had one consultation (`coai`, `d7510da7`; the lead
+> checked its answer against the code) and the revision of the whole plan (`345b2ed7`). The interim document round
+> of the rule (`review_document` on this file) ran on that revision: its verdict was `proceed`, with 4 findings, and
+> the lead accepted the 4. An Opus judge checked the marks in the table of the record and confirmed *Narrowed: no*;
+> the judge changed the marks of one commit and named two gaps. The 4 findings and the judge's points are applied in
+> the commit after `345b2ed7`; they are part of the re-review and are no entry of the ledger. The round and the
+> judge read `345b2ed7`, not the text with these fixes. The epoch line was written before the round and says
+> `by nobody`; the lead decides if it changes. The revision found five facts that the lead's decisions did not have: a fourth line with no
 > `via` (the folder door), a rotation whose statement failed is noted as `rotated`, the empty messages of the count
 > filters are shown by no page, the counts and the rows of a filter can differ (§1.5), and the line of a handler
 > that threw has no `via` (F10; not built, Q10).
@@ -60,15 +63,18 @@ Narrowed: no — the revision adds sites, rows, mutations and texts (story S4); 
 | The approval of epoch 1 and the consultants' answers, `96505c4e` | pushed, unmerged | fits | kept |
 | S1 (N8): the config lookup goes on to the next account, rows C1 to C3 and CG1 to CG3, `d12df88a` | pushed, unmerged | fits | kept: the revision changes nothing of N8 |
 | S2 (N9): the five causes of `whyUnusable`, rows W1 to W3 and WG3, `fe2c4ddd` | pushed, unmerged | fits | kept: Q1 is not answered and the plan stays built on yes; a no is one revert |
-| S3 (N2): the decision O1 of §2.3, rows J1 to J4, the harness of H1 and H2, the texts T1, T2, T4, T7, T8 and T9, the CHANGELOG entry and the two documents of `research/`, `8515c1e9` | pushed, unmerged | fits | kept; S4 adds to them (a clause in T1, T2, T4 and T7; rows J5 to J10; the documents of §7, where the point about the count that no row proves goes) |
-| S3 (N2): the words of T3, T5 and T6 (the hint of *Everything* and the two empty messages), `8515c1e9` | pushed, unmerged | cut | a fix forward in S4: the words of §3.4 take their place; no revert commit, because the commit also holds the work of the row above |
+| S3 (N2), the part that fits: the decision O1 of §2.3; rows J1 to J4 and the harness of the suite; the texts T2, T4 and T8; the comments T9 at `mcpLogPanel.ts:8` and `mcpLogRows.ts:5-6`; parts 1 and 2 of the CHANGELOG entry (N8, N9); the N8 and N9 text of `research/module_extension.md`; the rows of `research/module_tests.md`, apart from the point that the next row names, `8515c1e9` | pushed, unmerged | fits | kept; S4 adds one sentence to T2 and to T4 (and to the literal of T4 at `test/journalHolds.test.ts:147-150`), rows J5 to J13, and its points of §7 |
+| S3 (N2), words that S4 corrects: T1 in the five `help*.ts:137` and T7 at `src_vs_code/README.md:823-826` (*through this extension* becomes *over MCP*); the expectations `WHAT_IT_IS` of H1 at `test/journalHolds.test.ts:118-129`; the heading and the third part of the CHANGELOG entry (*The texts now say what the journal holds* is false of the page, §1.5); the point of `research/module_tests.md:2468-2470` about the count *Could not generate*, which §7 takes out; the comment line `mcpLogRows.ts:10`, which T12 writes again, `8515c1e9` | pushed, unmerged | cut | a fix forward in S4 (T1, T7, H1, T12 and the points of §7); no revert commit, because the commit also holds the work of the row above |
+| S3 (N2), words that S4 replaces: T3, T5 and T6 (the hint of *Everything* and the two empty messages), and the assertions that pin those words, `test/mcpLogRows.test.ts:140` and `:188` and `test/journalHolds.test.ts:146` and `:151-155`, `8515c1e9` | pushed, unmerged | cut | a fix forward in S4: the words of §3.4 take their place and the assertions get them; no revert commit, for the same reason |
 | Entry 1.1: J4 and M14 hold the journal line, F5 and Q6, `f82140ea` | pushed, unmerged | fits | kept; J4 and M14 stay, and row J7 now holds the page's filter (Q6 is answered) |
 | The fix of the code round of S1 to S3: the CG3 fixture of S1 is a typed `EntityMetadata`, and the status, `19b04992` | pushed, unmerged | fits | kept |
-| The fix of the Opus review: `whyUnusable` of S2 has no cast, and the record of M14 in `research/module_tests.md`, `56610bf0` | pushed, unmerged | fits | kept; S4 adds M15 to M24 to that record |
+| The fix of the Opus review: `whyUnusable` of S2 has no cast, and the record of M14 in `research/module_tests.md`, `56610bf0` | pushed, unmerged | fits | kept; S4 adds M15 to M27 to that record |
 | Entry 1.2 and the stop, `aa70258c` | pushed, unmerged | fits | kept: the record of the stop |
 
-  (The marks are the reviser's, Fable. The rule gives the marks to an Opus judge: the judge reads each row after this
-  commit, and a mark that the judge changes is corrected here. Nothing is merged, so nothing is reverted on `main`.)
+  (The reviser, Fable, wrote the first marks in `345b2ed7`. The rule gives the marks to an Opus judge. The judge read
+  each row on 2026-11-27, confirmed that each site exists and that nothing is narrowed, and changed the marks of
+  `8515c1e9`: its one row *fits* held words that S4 corrects, so the commit now has three rows, one *fits* and two
+  *cut*. The other marks stand. Nothing is merged, so nothing is reverted on `main`.)
 
 > Epoch 2 · approved 2026-11-27 · by nobody · state: open
 
@@ -253,7 +259,8 @@ existing fixture has such a row (`test/mcpLogRows.test.ts:195-203`); `applyFilte
 | T1 as built (`help*.ts:137`), T7 (`src_vs_code/README.md:823-826`) | *each action that ran for an agent and how it ended* | a create, a delete and a folder change that ran have no row; a failed rotation ends as `rotated` |
 | T1, T7, T8 (`README.md:236-237`), `helpEn.ts:132` | the two counts | *Secrets from the agent* is 0 for each create; *Could not generate* is 0 for each request |
 | the hint of *Secrets replaced* (`mcpLogRows.ts:51`) | *Every secret an agent rotated* | the count holds rotations that replaced nothing |
-| T1, T2 (`mcpLogPage.ts:63-65`), T7 | *what AI agents did through this extension* | the page shows the MCP door only; a call through a CLI alias or a token is in the files and not on the page (`AuditDoor`, `agentAuditLog.ts:54`) |
+| T1, T7 | *what AI agents did through this extension* | the page shows the MCP door only; a call through a CLI alias or a token is in the files and not on the page (`AuditDoor`, `agentAuditLog.ts:54`). T2 does not have this fault: it says itself that the page is *filtered to the calls that arrived through MCP* |
+| T2 (`mcpLogPage.ts:63-65`) | *it is the audit file, filtered to the calls that arrived through MCP* | its words are right for a line with the mark. They do not say that a create, a delete and a folder change that arrived through MCP have no mark: today each one, and after V1 to V4 the ones of an older version. So T2 keeps its words and gets one sentence more (§3.4) |
 | T3 (`mcpLogRows.ts:42`), T5 (`:166`), T6 (`:173`) | *Every line of the journal that came through MCP*; *The journal holds no line yet*; *No refusal is in the journal* | a line with no mark is not shown; the page shows the newest 2000 rows; so *no line* and *every line* are claims about the files that the page cannot make |
 | the comment at `mcpLogRows.ts:8-9`, `research/module_extension.md:7050-7052`, the comment at `agentAuditLog.ts:4` | *one line per call* | observed: a create that ran writes three lines, a listing none, a refused lookup none |
 
@@ -349,19 +356,22 @@ and then O2 adds a contract and a growth surface for nothing that this plan need
 the agent MAY view (a switch that is off) should get a line with a limit is a product question (Q4), and its own plan.
 
 **The new sentence, in English (the source).** The four other languages are in Appendix A. S3 built it without the
-words *over MCP* and without its last sentence; S4 adds the two (§2.4, D5).
+words *over MCP* and without its two last sentences; S4 adds the three (§2.4, D5).
 
 > A journal of what AI agents did over MCP through this extension: each action that ran for an agent and how it ended,
 > each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and
 > secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no
 > line. A request that is refused before anybody is asked can leave none: for example an id that is not open to
-> agents, a switch that is off, or a request that is not complete. A create, a delete or a folder change that ran under
-> an older version of the extension is in the journal files and is not shown.
+> agents, a switch that is off, or a request that is not complete. A request that fails inside this window can leave
+> no row on the page. A create, a delete or a folder change that ran under an older version of the extension is absent
+> from the page while its journal file is kept; the files are swept after 14 days.
 
 Each clause is a thing that a row of §6.3 observes. *can leave none* and *for example* are there on purpose: a refusal
 of `validate` comes before the question and DOES leave a line (observed: `invalid_request  no command given`), and the
 first request over the rate limit in a window leaves one. The clauses *each action that ran … and how it ended* and
-*two counts* are true of the page only after S4 (§1.5).
+*two counts* are true of the page only after S4 (§1.5). The sentence *A request that fails inside this window can
+leave no row* is the limit of the first clause: it does not promise a row for a request whose handler threw (F10,
+guard JG4). *can* is there on purpose: an action that throws in the broker's tail does leave a row, `internal`.
 
 **The second count is not a count of refusals.** The old text called it *requests we could not serve*. It is the journal
 line `→ no generator` (`NO_GENERATOR_OUTCOME`), which the filter *Could not generate* of the journal page was made to
@@ -384,7 +394,10 @@ The base is the consultation `d7510da7` and the lead's check of it. Five decisio
 | The consent line of the same request (`create Servers (…) → ALLOWED`: the same action word, no mark; observed) | stays out | must be told apart by its outcome word: a second list |
 
 **The decision: (a).** One rule, and the writer knows its door. The cost is the last row but one: a sentence says so
-(D5). Only the line that ENDS the request gets the mark, so a request that ran gives one row more, not three.
+(D5). Only the line that ENDS the request gets the mark, so a request that ran gives one row more, not three. One
+line that ends a request stays with no mark, and this plan does not change it: the line of a handler that threw
+(`request → failed`, F10). The texts say so (D5), and no text of this plan says that EACH line that ends a request
+has the mark.
 
 *Who reads `via`, and what changes.* Method: `grep -rn` over `src_vs_code/src` for `via`.
 
@@ -409,7 +422,7 @@ reached from the MCP routes only (`brokerMcpRoutes.ts:54-74`, `:96-100`), throug
 `credsAgentServer.ts:244`, whose `via` is `'mcp'` (`:268`). The one door with another `via`, the token door of a
 bridge (`:497`), runs `bridgedTokenCall` and none of the four.
 
-**D3: the line of a rotation says how the rotation ended.** Two sites.
+**D3: the line of a rotation says how the rotation ended.** Two sites, three changes (R1 to R3).
 
 | The answer of the action's run | The agent reads | The journal word today | The word after |
 |---|---|---|---|
@@ -419,16 +432,37 @@ bridge (`:497`), runs `bridgedTokenCall` and none of the four.
 | 200 with no `rotated` (the statement ran and failed; nothing is stored) | the statement's own answer | `rotated` | `statement failed` |
 | 404 with `noGenerator: true` | `404`, `not_supported` | `404` | `no generator` |
 | 400 (the action refuses in its run: the entry is gone, one-use, woven, a PIN) | `400`, `invalid_request` | `400` | the same (F6) |
-| each other status of the statement | as it came | the status number | the same |
+| an error answer of the STATEMENT action, handed back as it came: 404 (`not_found`, `not_supported`; no `noGenerator`), 409 (`no_credential`), 412 (`tool_missing`), 429 (`too_many_requests`), 500 (`internal`) | the same status and body | the status number | the same; the 404 of the statement stays `404` and is NOT `no generator` |
+| a status that is not 200 with a body that is no object (`null`, a text) | as it came (observed: `502 null`) | the status number | the same |
+
+The error answers of the statement are the ones that its two actions can give off a bridge: the query of a database
+entry and the command of an SSH entry (`extension.ts:653-654`; `fail`, `agentUseActions.ts:88-90`, used at `:601-648`,
+and `sshUseActions.ts:140-142`, used at `:439-447` and through `refuse`, `:401`; the status of each code,
+`brokerProtocol.ts:41-54`). A rotation is not served on a bridge (`bridgeAllowList.ts:94`), so the 403 of a bridge
+does not come. Each such answer was observed through the real broker on `aa70258c` (404, 409, 429, 500; 412 is the
+same function with another code): the status and the body go to the agent as they came, the line has the status
+number, and the store is not called.
 
 - **R1.** The broker asks the action for its word also when the action is `rotate` (`brokerCall.ts:304`). Each other
   action keeps the status number for an answer that is not 200: their `describeOutcome` reads a 200 body
   (`execOutcome`, `agentUseActions.ts:97-100`). `describeRotation` reads a body that is not 200 already
-  (`rotateAction.ts:124-126`), so the word `no generator` is there and waits.
+  (`rotateAction.ts:124-126`), so the word `no generator` is there and waits. **R1 sends EACH status of a rotation to
+  `describeRotation`, not only 404.** So the rows J11 and J12 hold each answer of the table and its word, before and
+  after.
 - **R2.** `describeRotation` gives a `rotated` word only for an answer that carries `rotated: true`
   (`rotateAction.ts:391-393` is the one place that sets it). A 200 answer with no `rotated` gets `statement failed`.
   The word says what is known: the statement ran and did not succeed, and nothing was stored. It does not say that the
   far side did not change (`rotateAction.ts:183-185` says why that is not known). Q8.
+- **R3 (the judge's gap 2). `describeRotation` reads a field of the body only when the body is an object that is not
+  `null`.** Today the function reads `noGenerator` from the body of an answer that is not 200 with no test
+  (`rotateAction.ts:124`). Observed on `aa70258c`: for `{ status: 502, body: null }` it throws a `TypeError`. Today
+  that cannot happen in a call, because the broker does not ask for the word of such an answer. After R1 it can, and
+  the place is bad: the broker asks for the word outside its `try` (`brokerResponse.ts:197`; the `try` is `:191-196`),
+  so the throw leaves `runAndDeliver`, the handler fails, and the agent reads `500`, `internal` where it read `502`
+  before. Each body that the product makes today is an object (the two tables above), so the case needs a statement
+  action that answers so. The guard is in `describeRotation`, for each status: a body that is no object, or is
+  `null`, gets the status number as its word, as today. Row J13 feeds such a body and holds the answer; mutation M27
+  takes the guard out.
 
 **The answer to the agent does not change by a byte.** The word goes to the journal line only: `answered` writes the
 line with it and sends `result.status` and the masked body, which do not read it (`brokerResponse.ts:247-250`). Rows
@@ -451,19 +485,23 @@ The counts of a rotation that cannot draw its secret, after S4: *Could not gener
 
 | Text | After D2 to D4, is it true? | The change |
 |---|---|---|
-| T1, *each action that ran … how it ended*; the two counts | yes, for each line that this version writes when a handler ends. One hole is known and not built: a handler that THREW leaves a line with no mark, and the agent reads `500` (F10, Q10) | none |
+| T1 and T7, *each action that ran … how it ended*; the two counts | not for each request: a handler that THREW leaves a line with no mark and no row, and the agent reads `500` (F10; not built, Q10) | one sentence more, in T1 (five languages) and in T7: *A request that fails inside this window can leave no row on the page.* Guard JG4 holds the fact. (Finding 1 of the document round) |
 | T1 and T7, *through this extension* | no: the page is the MCP door | *over MCP* |
-| T1, T2 and T7, for a line of an older version | no, for the 14 days of a file | one sentence more |
+| T1, T2 and T7, for a line of an older version | no, while its journal file is kept | one sentence more, which names the limit: *absent from the page while its journal file is kept; the files are swept after 14 days.* (Finding 3 of the document round) |
 | T3, *Every line of the journal that came through MCP* | no: the cap, and the lines of an older version | *Every line that this page shows.* |
 | T4, the hint of *Refused* | it does not say where a refused rotation with the outcome `400` is (F6) | one sentence more |
 | T5, *The journal holds no line yet* | no: the files can hold lines that the page does not show | *No line to show yet.* |
 | T6 and the three other empty messages of a filter (shown by no page) | no: *nothing was ever …* is a claim about the files | *No line shown here is …* |
 | the hint of *Secrets replaced*, *Every secret an agent rotated* | no: a rotation that threw after it wrote, or whose answer was withheld, can have replaced a secret (F9) | *Each rotation that the journal records as done.* |
 | T8; `helpEn.ts:132`; the hints of *Secrets from the agent* and *Could not generate* (`mcpLogRows.ts:56`, `:61`) | yes | none |
-| *one line per call* (three places) | no | what the journal holds |
+| *one line per call* (three places) | no | what the journal holds; and T13 and T12 do not say that EACH line that ends a request records its door: they name the line of a handler that threw as the one that does not (Finding 1) |
 
-T1 does not name the cap of 2000 rows or the 14 days: the page says the cap itself when it cuts
-(`mcpLogPage.ts:72`), and no clause of T1 says *for all time*. The exact words are in §3.4 and Appendix A.
+T1 does not name the cap of 2000 rows: the page says the cap itself when it cuts (`mcpLogPage.ts:72`), and no clause
+of T1 says *for all time*. **The 14 days.** `AUDIT_RETAIN_DAYS` is 14 (`agentAuditFile.ts:84`). The sweep runs when a
+window opens its journal file (`brokerAuditWriter.ts:46-54`, `:75-89`), and it keeps the newest file at each age
+(`agentAuditFile.ts:57-60`). So a file can stay for more than 14 days when no window starts. The exact clause of the
+sentence is *while its journal file is kept*; *swept after 14 days* is the rule of the sweep. The exact words are in
+§3.4 and Appendix A.
 
 ## 3. The sites
 
@@ -511,7 +549,8 @@ window hold: when an earlier account has no visible config with that id and a la
 catalog or the snippet of that config. Before, it was `{"error":"no such config is open to agents", …}`.
 
 **No other answer changes, and S4 changes none.** The status, the code and the body of a create, a delete, a folder
-change and a rotation are the same bytes as before (rows J5 to J10 assert each answer). No route, status, code, body
+change and a rotation are the same bytes as before (rows J5 to J13 assert each answer, each status of a rotation
+that is not 200 among them). No route, status, code, body
 shape, sentence or tool description changes. `contract/broker-v1.json` and `contract/mcp-tools-v1.json` do not
 change, and the product code of `src_mcp` and `src_cli` does not change. Nothing changes on a Remote Bridge: a bridge
 has one account for N8 (§2.1), and it serves no create, delete, folder change or rotation
@@ -533,7 +572,8 @@ files for `) → created` must now search for `→ created`.
 
 **The page *MCP logs* (S4).** A create, a delete and a folder change that ran have a row. The counts *Secrets from the
 agent* and *Could not generate* count. *Secrets replaced* no longer counts a rotation that replaced nothing. A line
-that an older version wrote with no mark stays out of the page.
+that an older version wrote with no mark stays out of the page while its file is kept. A request whose handler
+threw has no row, as before (F10).
 
 The CHANGELOG entry and the pull request body say this.
 
@@ -547,30 +587,32 @@ The CHANGELOG entry and the pull request body say this.
 | V2 | `brokerMcpDoor.ts:413-420`, the line of a create with no generator | no `via` | `via: 'mcp'` |
 | V3 | `brokerMcpDoor.ts:520-529`, the line of a create that ran (`created`, `created with agent secret`) | no `via` | `via: 'mcp'` |
 | V4 | `brokerFolderDoor.ts:183-190`, the line of a folder change that ran (`done`) | no `via` | `via: 'mcp'` (Q7) |
-| V5 | the comment of `via` in `BrokerDoor.note` (`brokerMcpDoor.ts:72-78`) | names the quiet line only | says the rule: the line that ends a request carries the mark; `minted` does not, and why |
+| V5 | the comment of `via` in `BrokerDoor.note` (`brokerMcpDoor.ts:72-78`) | names the quiet line only | says the rule: a handler that writes the line that ends its request gives the mark; `minted` does not, and why. It names the one line that ends a request with no mark, the line of a handler that threw (`brokerRequests.ts:371`) |
 | R1 | `brokerCall.ts:304` | `result.status === 200 ? useAction.describeOutcome(result) : String(result.status)` | the action's word also when `action === 'rotate'` (the `action` of `:291`); each other action as today |
 | R2 | `describeRotation`, `rotateAction.ts:120-127`, and its comment at `:114-119` | each 200 answer is `rotated` or a `JOURNAL_WORDS` word | a 200 answer with `rotated: true` as today; a 200 answer with no `rotated` is `statement failed` (Q8) |
+| R3 | the same function, where it reads the body (`rotateAction.ts:122`, `:124`) | reads `stored` and `noGenerator` from the body with no test; a body that is `null` throws a `TypeError` (observed) | reads a field only when the body is an object that is not `null`; each other body gets the status number as its word, as today (§2.4, R3) |
 | L1 | `isRotation`, `mcpLogRows.ts:91-94`; the three words at `rotateAction.ts:122` and `:466-469` | `row.action === 'rotate' && !isRefusal(row)`; the words are literals of `rotateAction.ts` | the action `rotate` and one of the three words; the words are exported one time from `secretKinds.ts`, beside `NO_GENERATOR_OUTCOME` (`:128`), and the two files read them |
-| T1 | `whatItIs` of `mcp-logs` in the five `help*.ts` files, line 137 | the sentence of S3 | Appendix A: *over MCP*, and the last sentence |
-| T2 | the lede, `mcpLogPage.ts:63-65` | *What AI agents did through this window, … Nothing here is a second copy: it is the audit file, filtered to the calls that arrived through MCP.* | the same, and one sentence more: *A create, a delete or a folder change that ran under an older version of the extension is not shown.* |
+| T1 | `whatItIs` of `mcp-logs` in the five `help*.ts` files, line 137 | the sentence of S3 | Appendix A: *over MCP*, and two sentences at its end: a request that fails inside the window, and the lines of an older version with the 14 days |
+| T2 | the lede, `mcpLogPage.ts:63-65` | *What AI agents did through this window, … Nothing here is a second copy: it is the audit file, filtered to the calls that arrived through MCP.* | the same, and one sentence more: *A create, a delete or a folder change that ran under an older version of the extension is absent while its journal file is kept; the files are swept after 14 days.* |
 | T3 | the hint of *Everything*, `mcpLogRows.ts:42` | *Every line of the journal that came through MCP.* | *Every line that this page shows.* |
 | T4 | the hint of *Refused*, `mcpLogRows.ts:46` | the sentence of S3 | the same, and one sentence more: *A call that ended with an error status is under Everything.* |
 | T5 | the empty page, `mcpLogRows.ts:166` | *The journal holds no line yet. A listing leaves none, …* | *No line to show yet. A listing leaves none, and a request that is refused before anybody is asked can leave none. Entries are invisible to agents until you turn on Agent access for one.* |
 | T6 | the empty message of *Refused*, `mcpLogRows.ts:173` (shown by no page) | *No refusal is in the journal. A request that is refused before anybody is asked can leave no line.* | *No line shown here is a refusal. A request that is refused before anybody is asked can leave no line.* |
-| T7 | `src_vs_code/README.md:823-826` | the sentence of S3 | *each action that ran for an agent over MCP and how it ended*; and at its end: *A create, a delete or a folder change that ran under an older version is not shown.* |
+| T7 | `src_vs_code/README.md:823-826` | the sentence of S3 | *each action that ran for an agent over MCP and how it ended*; and after *can leave none.*: *A request that fails inside the window can leave no row, and a create, a delete or a folder change that ran under an older version is absent while its journal file is kept (the files are swept after 14 days).* |
 | T10 | the hint of *Secrets replaced*, `mcpLogRows.ts:51` | *Every secret an agent rotated. The value passed through this window and never through the agent.* | *Each rotation that the journal records as done. The value passed through this window and never through the agent.* |
 | T11 | the three other empty messages of a filter (shown by no page): the default at `mcpLogRows.ts:168`, `agentSecrets` at `:174-175`, `noGenerator` at `:176-177` | *No secrets have been replaced by an agent.*; *No secret has reached the vault from an agent. Every value an agent used was held by this window.*; *Nothing was asked for that this window could not make. The generators have covered everything an agent has wanted.* | *No line shown here is a rotation that the journal records as done.*; *No line shown here is a secret that came from an agent.*; *No line shown here is a secret that this window could not make.* |
-| T12 | three comments: `mcpLogRows.ts:8-13`; `agentAuditLog.ts:4-6`; `isRotation`, `mcpLogRows.ts:91` | *one line per call*; *One line per agent call*; *A rotation that actually happened* | what the journal holds, in the words of T1: a line when a grant is minted, a line for the answer to a consent question, a line that says how the request ended; a listing writes none, and a request that is refused before a grant exists writes none. For `isRotation`: the three words |
-| T13 | `research/module_extension.md:7050-7052` | *The broker already writes one line per call … and every line now records which door the call came through* | the same words as T12; *the line that ends a request records which door it came through* |
+| T12 | three comments: `mcpLogRows.ts:8-13`; `agentAuditLog.ts:4-6`; `isRotation`, `mcpLogRows.ts:91` | *one line per call*; *One line per agent call*; *A rotation that actually happened* | what the journal holds, in the words of T1: a line when a grant is minted, a line for the answer to a consent question, a line that says how the request ended; a listing writes none, and a request that is refused before a grant exists writes none. The comment of `mcpLogRows.ts` says which lines have the mark of the door: the line that a handler writes at the end of its request, and not `minted`, not a consent line, and not the line of a handler that threw. For `isRotation`: the three words |
+| T13 | `research/module_extension.md:7050-7052` | *The broker already writes one line per call … and every line now records which door the call came through* | the same words as T12; *the line that a handler writes at the end of its request records which door it came through; the line of a handler that threw (`request → failed`) names the route and no door, and the page does not show it* |
 
 T8 (`README.md:236-237`) and T9 (the comments of S3) stay as S3 built them. No interface gets a new member:
 `BrokerDoor.note` has the field `via` already (`brokerMcpDoor.ts:79`).
 
 **The limits of the lint rule.** A function has a complexity of 4 at most and a file 800 lines
-(`src_vs_code/eslint.config.mjs:30-32`). R1 adds one `||` to an arrow function that has one `?:`. R2 adds one test to
-`describeRotation`, which has an `if` and a `?:`; the coder moves the 200 case into a function of its own.
+(`src_vs_code/eslint.config.mjs:30-32`). R1 adds one `||` to an arrow function that has one `?:`. R2 and R3 add two
+tests to `describeRotation`, which has an `if` and a `?:`; the coder moves the 200 case and the read of the body into
+functions of their own.
 `brokerMcpDoor.ts` has 531 lines, `brokerFolderDoor.ts` 206, `rotateAction.ts` 507, `mcpLogRows.ts` 178,
-`test/journalHolds.test.ts` 159 and `test/mcpLogRows.test.ts` 319.
+`test/journalHolds.test.ts` 159, `test/mcpLogRows.test.ts` 319 and `test/rotateAction.test.ts` 366.
 
 ### 3.5 Sites of S4 that were checked and do not change
 
@@ -587,6 +629,7 @@ T8 (`README.md:236-237`) and T9 (the comments of S3) stay as S3 built them. No i
 | `emptyMessage` and where the page calls it (`mcpLogRows.ts:164-169`, `mcpLogPage.ts:71`, `:102`) | the page keeps its fixed sentence for a filter with no row; the sentences of a filter are not shown (F8) |
 | `rowsToShow` and the sentence of the cap (`mcpLogRows.ts:141-155`, `mcpLogPage.ts:72`) | the page says the cap itself |
 | `answered`, `brokerResponse.ts:232-254`; `refuseNoGenerator` and `refuse`, `rotateAction.ts:491-504`; `ranAndStored`, `:187-190` | the answer to the agent does not change |
+| `runAndDeliver`, `brokerResponse.ts:185-198`: the word is asked outside the `try` (`:197`) | it stays there. Inside the `try`, a throw of `describeOutcome` would go to `failed` and the agent would read `500` too. R3 makes the function of the rotation safe for each body in place of that (J13, M27) |
 | the rate limits, the consent memory, the bridge's refusal (the table of D2) | they read the door of the call |
 | the hints of *Secrets from the agent* and *Could not generate* (`mcpLogRows.ts:56`, `:61`); T8; `helpEn.ts:132`, `:125`; `README.md:209`; `src_vs_code/README.md:810` | true of the page after V1 to V4 and R1 |
 | the dialog sentence *Each call is logged in the "CredsForDevs: Agent Access" output panel.* (`brokerConsent.ts:325`) | true: a call that raises a dialog has a grant, and its mint writes a line to that panel |
@@ -615,17 +658,23 @@ needs its suite.
    B3. Guard rows WG1 to WG4. Mutations M5 to M8.
 4. **S3 (N2). DONE, `8515c1e9`.** The behaviour rows J1 to J4 on the unchanged code, with mutations M9 to M11 and
    M14. Rows H1 and H2, watched failing. Then T1 to T9. Mutations M12 and M13. A `coai` code round ran on S1 to S3.
-5. **The re-review. This revision; the rest is to do.** An Opus judge checks the marks of the record. The lead runs
-   the interim document round on this file (`review_document`, with a purpose that names the re-review of epoch 2)
-   and an Opus review of the whole revision at the same time, and resolves each finding. A finding that is accepted
-   after this commit and that changes a planned step is entry 2.1. The lead decides when S4 starts.
-6. **S4, the lines.** Rows J5 to J10 first: each is watched FAILING on the code of `aa70258c` by its assertion about
-   the journal (its assertions about the answer stand first and pass), and the coder keeps the message. Guards JG1
-   and JG2 are watched passing. Then V1 to V5, R1 and R2. J5, J6, J7 and J9 pass. J8 and J10 have their new word and
-   stay red in one assertion, the count `rotations`, until L1.
-7. **S4, the page.** Rows P1 to P4, watched failing (P4 on the code of step 6: the word is `statement failed`, and
-   the old matcher counts it). Then L1. P1 to P4, J8 and J10 pass. Then the mutations M15 to M23, each one alone on
-   the code of this step.
+5. **The re-review. DONE for the revision `345b2ed7`.** The lead ran the interim document round on this file
+   (`review_document`; verdict `proceed`; 4 findings, each one accepted), and an Opus judge checked the marks of the
+   record. The commit after `345b2ed7` applies the 4 findings and the judge's points (the rows of `8515c1e9`, the
+   list of pinned assertions in §6.3, R3). A finding that is accepted after that commit and that changes a planned
+   step is entry 2.1. The lead decides what the epoch line says and when S4 starts.
+6. **S4, the lines.** The rows J5 to J13 and P1 to P5 are written first, and each is watched FAILING on the code of
+   `aa70258c`; the coder keeps each message. For J5 to J10 the message is about the journal (the assertions about the
+   answer stand first and pass). For J11 to J13 the answer and the journal word pass, and the message is about the
+   count `rotations`. For P4 the message is about the WORD: a statement that failed gives `rotated`. Guards JG1, JG2
+   and JG4 are watched passing. Then V1 to V5, and R3 with R1 and R2 in one change (R1 with no R3 breaks the answer
+   of J13; M27 shows it). After this step J5, J6, J7, J9 and P5 pass. J8 and J10 have their new word. J8, J10 and J11 to
+   J13 stay red in one assertion, the count `rotations`, until L1.
+7. **S4, the page.** P1 to P3 are still red as in step 6. **P4 is watched red a second time, with another message:**
+   the word is now `statement failed`, and the old matcher counts it as a rotation. So P4 has two red observations,
+   one for the writer (on `aa70258c`) and one for the reader (on the code of step 6), and the summary quotes the two.
+   Then L1. P1 to P4, J8 and J10 to J13 pass. Then the mutations M15 to M23 and M25 to M27, each one alone on the code
+   of this step.
 8. **S4, the texts.** Rows H1 and H2 get the words of §3.4 and Appendix A and row H3 is added; the three are watched
    failing. Then T1 to T7 and T10 to T13, and the existing assertions that §6.3 names. Mutations M12, M13 and M24.
 9. The documents of §7.
@@ -709,7 +758,7 @@ the review reads them, and §11 has a `grep` for the old words.
 Each gets the first words of T5, *The journal holds no line yet*. No other existing test of the journal page or of the
 help pins a text of T1 to T6 (method: `grep` over `src_vs_code/src/test` for the old words of §1.3).
 
-**The rows of S4 (epoch 2; not built).** The rows J5 to J10 are in the same suite, `test/journalHolds.test.ts`. They
+**The rows of S4 (epoch 2; not built).** The rows J5 to J13 are in the same suite, `test/journalHolds.test.ts`. They
 run the real broker (`world`, `share`, `call` of `test/brokerWorld.ts`), and read the journal with the page's own
 reader: `rowsOf(w)` is `mcpRowsIn` over `w.audit` (`test/journalHolds.test.ts:21`). *The four counts* are
 `applyFilter(rows, f).length` for `refused`, `rotations`, `agentSecrets` and `noGenerator`. In each row the person
@@ -725,17 +774,24 @@ of the suite then says: when a row of J changes, the texts T1 to T8 and T10 to T
 | J9 | RED | `w.server.setFolderHooks(…)` (the shape of `test/consentContractEpoch8.test.ts:125-131`); `POST /v1/mcp/folder/create` | `200 {folder, created: true, id, name}`; 0 rows | the same answer; ONE row, `folder-create → done`; the four counts 0 |
 | J10 | RED | the real `rotateAction`; the statement answers `{ status: 200, body: { exitCode: 1, stderr: 'denied' } }` | status 200 and that body; ONE row, `rotate → rotated`; `rotations` 1 | the same status and body; ONE row, `rotate → statement failed`; `rotations` 0, `refused` 0; the store was not called |
 | JG1 | guard | the real `rotateAction`; the statement succeeds and the value is stored | `200 {rotated: true, …}`; ONE row, `rotate → rotated`; `rotations` 1 | the same |
+| J11 | RED in its count; the answer and the word are a guard | the real `rotateAction`; the action refuses in its run, because the entry is gone | status 400 and the body `{ error: { code: 'invalid_request', message } }`, compared whole; ONE row, `rotate → 400`; `rotations` 1 | the same status and the same body; ONE row, `rotate → 400`; the four counts 0 |
+| J12 | RED in its count; the answer and the word are a guard | the real `rotateAction`; the statement action answers an error, one case for each answer that it can give (§2.4, D3): 404 `not_found`, 409 `no_credential`, 412 `tool_missing`, 429 `too_many_requests`, 500 `internal`, each with the body of `errorBody` | in each case the status and the body that the statement gave, compared whole; ONE row with the status number as its outcome (`404`, `409`, `412`, `429`, `500`); `rotations` 1; the store was not called | the same status and the same body; the same outcome, and for the 404 it is `404` and not `no generator`; the four counts 0; the store was not called |
+| J13 | RED in its count; the answer and the word are a guard (R3) | the real `rotateAction`; the statement action answers `{ status: 502, body: null }`, and in a second case `{ status: 502, body: 'bad gateway' }` | the answer is `502` with the body `null`, and `502` with the text; ONE row, `rotate → 502`; `rotations` 1 | the same status and the same body in the two cases (not `500`); ONE row, `rotate → 502`; the four counts 0 |
 | JG2 | guard, asserted in J5, J6 and J9 | — | `w.audit` holds the lines `→ minted` and `→ ALLOWED` of the request, and `rowsOf` gives a row for neither | the same |
+| JG4 | guard: it holds the sentence of T1 and T7 about a request that fails (F10) | a create that the person allows and whose `make` throws | the answer is `500`, `internal`, with the sentence `UNANSWERED_FAILURE`; the journal has the line `request → failed` with the route and no mark; `rowsOf` gives 0 rows for the request | the same. When Q10 is answered with yes, this row and the sentence change in one commit |
 | JG3 | guard, no edit | J1 to J4; `test/brokerMcpRoutes.test.ts:367-382`; `test/rotateAction.test.ts:130-140` and `:283-289`; `test/rotationNoLoss.test.ts:326` | green | green, with no change of a line |
 
-The rows P1 to P4 are pure, in `test/mcpLogRows.test.ts`, beside the rows of the filters (`:108-132`, `:191-216`).
+The rows P1 to P5 are pure. P1 to P3 are in `test/mcpLogRows.test.ts`, beside the rows of the filters (`:108-132`,
+`:191-216`). P4 and P5 call the real `rotateAction` and are in `test/rotateAction.test.ts`, beside the row of the
+word `no generator` (`:283-289`); P4 reads `isRotation` there too.
 
 | # | Kind | Input | On `aa70258c` | After |
 |---|---|---|---|---|
 | P1 | RED | `isRotation` for a row with the action `rotate` and each outcome that the product can write for it: the three `rotated` words; `no generator`; `statement failed`; `404`; `400`; `ignored`; `ABANDONED`; `withheld` | true for each | true for the three `rotated` words, false for each other |
 | P2 | RED | the existing fixture (`:195-203`), which has a row `rotate → no generator`: `applyFilter(rows, 'rotations').length` | 1 | 0; `noGenerator` is 2 and `refused` is 1, as today |
-| P3 | RED | one row for each outcome word of §2.4 and of J5 to J10 | the row `rotate → no generator` fits two matchers | each row fits one matcher at most; `renderMcpLog` gives the row the `data-kind` of that matcher; so each count is the number of rows that its filter shows |
-| P4 | RED | the word that the real `rotateAction(…).describeOutcome` gives for each answer of the table of D3, and `isRotation` for a row with that word | the word for a statement that failed is `rotated`, and it is a rotation | the three answers with `rotated: true` are rotations; each other answer is not |
+| P3 | RED | one row for each outcome word of §2.4 and of J5 to J13 | the row `rotate → no generator` fits two matchers | each row fits one matcher at most; `renderMcpLog` gives the row the `data-kind` of that matcher; so each count is the number of rows that its filter shows |
+| P4 | RED, two times (§5, steps 6 and 7) | for each answer of the table of D3: FIRST the word that the real `rotateAction(…).describeOutcome` gives, THEN `isRotation` for a row with that word | on `aa70258c` the first assertion fails: the word for a statement that failed is `rotated`, where the row asks for `statement failed`. On the code after R1 to R3 and before L1 the word is right and the second assertion fails: the old matcher says that `statement failed` and `no generator` are rotations | the words are those of D3; the three answers with `rotated: true` are rotations; each other answer is not. The row of D3 with a body that is no object is not in P4: it is P5 |
+| P5 | RED (R3) | `rotateAction(…).describeOutcome` for `{ status: 502, body: null }`, for `{ status: 502, body: 'bad gateway' }` and for `{ status: 200, body: null }`, inside `assert.doesNotThrow` | the first case throws a `TypeError` (observed); the row fails by its assertion | no case throws; the words are `502`, `502` and `statement failed` |
 
 The content rows. H1 and H2 change with the texts; H3 is new.
 
@@ -747,13 +803,26 @@ The content rows. H1 and H2 change with the texts; H3 is new.
 
 T7, T12 and T13 have no row; the review reads them, and §11 has a `grep`.
 
-**Existing assertions that S4 changes**, because they pin a text that it replaces. In `test/mcpLogRows.test.ts`:
-`:140` and `:188` (the first words of T5), `:186` (*No secret has reached the vault from an agent*) and `:187` (*No
-secrets have been replaced*). `:221` (each message is longer than 20 characters) and `:223` (`/could not make/`) stay
-green with the words of T11. In `test/journalHolds.test.ts`: the sentences of `WHAT_IT_IS` (`:118-129`) and the
-literals of H2 at `:146`, `:152-155`. No other existing test pins a text of §3.4, and no existing test pins a journal
-line that S4 changes (method: `grep` over `src_vs_code/src/test` for each old text and for `moved to Trash`,
-`created`, `→ done`, `folder-`, `no generator`, `via mcp` and `'404'`).
+**Existing assertions that S4 changes**, because they pin a text of §3.4. This is the whole list.
+
+| The assertion | The text that it pins | What S4 does |
+|---|---|---|
+| `test/mcpLogRows.test.ts:140` and `:188` | T5, its first words (*The journal holds no line yet*) | the first words of the new T5 |
+| `test/mcpLogRows.test.ts:186` | T11, `agentSecrets` (*No secret has reached the vault from an agent*) | the new words |
+| `test/mcpLogRows.test.ts:187` | T11, the default (*No secrets have been replaced*) | the new words |
+| `test/mcpLogRows.test.ts:221` and `:223` | each empty message is longer than 20 characters; `noGenerator` has *could not make* | no edit: the words of T11 keep them green |
+| `test/journalHolds.test.ts:118-129` (`WHAT_IT_IS`, read at `:136`) | T1, the five sentences | the sentences of Appendix A |
+| `test/journalHolds.test.ts:146` | T3, the hint of *Everything* | the new words |
+| `test/journalHolds.test.ts:147-150` | T4, the hint of *Refused* | the same literal with the sentence that T4 gets |
+| `test/journalHolds.test.ts:151-154` | T5, whole | the new T5 |
+| `test/journalHolds.test.ts:155` | T6 | the new T6 |
+| `test/journalHolds.test.ts:157` | T2, its first sentence | no edit of this line: the first sentence stays; H2 gets one assertion more for the sentence that T2 gets |
+
+No existing test pins T7, T10, T12 or T13, and no existing test pins a journal line that S4 changes. Method: `grep`
+over `src_vs_code/src/test` for a part of each text of §3.4 as it is today, for `MCP_LOG_FILTERS`, `.hint`,
+`emptyMessage`, `whatItIs` and `mcp-logs`, and for `moved to Trash`, `created`, `→ done`, `folder-`, `no generator`,
+`via mcp`, `→ rotated` and a status number as an outcome. `test/helpCatalog.test.ts` and `test/helpContent.test.ts`
+read the article `mcp-logs` and pin no sentence of it.
 
 ### 6.4 Mutation checks (each one alone, restored after; each must turn its rows red)
 
@@ -782,12 +851,15 @@ The mutations of S4 (epoch 2). M12 and M13 are done again on the new texts.
 | M16 | take the `via` out at V1 (`brokerMcpDoor.ts:331-338`) | J6 |
 | M17 | take the `via` out at V2 (`brokerMcpDoor.ts:413-420`) | J7, and not J4 |
 | M18 | take the `via` out at V4 (`brokerFolderDoor.ts:183-190`) | J9 |
-| M19 | put the condition `result.status === 200` back alone at `brokerCall.ts:304` | J8 |
-| M20 | put the old `isRotation` back (`row.action === 'rotate' && !isRefusal(row)`) | P1, P2, P3, and J8 and J10 (their count `rotations`) |
+| M19 | put the condition `result.status === 200` back alone at `brokerCall.ts:304` | J8, and not J11 to J13 (their word is the status number on each side) |
+| M20 | put the old `isRotation` back (`row.action === 'rotate' && !isRefusal(row)`) | P1, P2, P3, the second assertion of P4, and J8 and J10 to J13 (their count `rotations`) |
 | M21 | in `describeRotation`, give a `rotated` word for each 200 answer | J10, P4 |
 | M22 | give `via: 'mcp'` to `minted` (`brokerMcpDoor.ts:345`); then, as a second mutation, give it in the shared callback (`credsAgentServer.ts:282`) | J5 and J6 (more rows than one), JG2 |
 | M23 | take `rotated, quarantined` out of the three words of L1 | P1, P4 |
 | M24 | put the old hint of *Secrets replaced* back; then, as a second mutation, one old empty message of T11 | H3 |
+| M25 | in `describeRotation`, give `no generator` for each 404 (take the test of `noGenerator` out) | J12, its 404 case |
+| M26 | in `describeRotation`, give the code of the body's `error` as the word of an answer that is not 200 | J11 and J12 (the word) |
+| M27 | take the guard of R3 out, with R1 in place | P5, and J13 in its `null` case: the agent's answer is `500`, `internal`, where it must be `502` with the body `null` |
 
 ### 6.5 What the tests do not prove
 
@@ -811,8 +883,11 @@ The mutations of S4 (epoch 2). M12 and M13 are done again on the new texts.
   line with no mark gives no row, and that rule of the page does not change.
 - A rotation through the alias door or a token. R1 and R2 are in the code that each door shares (`brokerCall.ts`,
   `rotateAction.ts`); the rows use the MCP door.
-- A handler that threw (F10). No row makes a create, a delete or a folder change throw; the page has no row for that
-  request, before and after S4.
+- A handler that threw (F10). Guard JG4 makes the `make` of a create throw and holds that the page has no row for
+  it, before and after S4. No row makes a delete or a folder change throw.
+- The status 412 of a statement was not observed in a scratch run; J12 has its case. A 403 of a statement comes on a
+  bridge only, and a bridge serves no rotation; no row has it.
+- A statement action that answers a body that is no object does not exist in the product today. J13 builds one.
 
 ## 7. Documents
 
@@ -836,7 +911,8 @@ The mutations of S4 (epoch 2). M12 and M13 are done again on the new texts.
 The points above are written (S3, `8515c1e9`). **S4 adds these:**
 
 - `src_vs_code/CHANGELOG.md`, the same `### Fixed` entry under `## [Unreleased]`: its heading names the page; its
-  third part gets the words *over MCP* and the lines of an older version; a fourth part, *The journal page shows the
+  third part gets the words *over MCP*, the request that fails inside the window and the lines of an older version
+  with the 14 days; a fourth part, *The journal page shows the
   lines that it counts*, says what a person sees (a row for a create, a delete and a folder change that ran; the two
   counts that were 0; *Secrets replaced* without the rotations that replaced nothing) and the table of the journal
   lines of §3.3. The sentence *No journal line is added or removed* stays, and the lines that change follow it.
@@ -844,8 +920,8 @@ The points above are written (S3, `8515c1e9`). **S4 adds these:**
   ends a request carries it, `minted` and the consent lines do not) and the three `rotated` words with `statement
   failed` and `no generator` (D3, D4). The sentence at `:1716-1717` (*the journal counts it as every prepare refusal*)
   gets the word of the line, `400`, and that the page counts it under no filter (F6).
-- `research/module_tests.md`, the section of this plan (`:2449-2476` today): the rows J5 to J10, JG1, JG2, P1 to P4 and
-  H3; the mutations M15 to M24; the point of *What none of this proves* about the count *Could not generate*
+- `research/module_tests.md`, the section of this plan (`:2449-2476` today): the rows J5 to J13, JG1, JG2, JG4, P1 to
+  P4 and H3; the mutations M15 to M27; the point of *What none of this proves* about the count *Could not generate*
   (`:2468-2470`) goes, because J7 and J8 hold it now, and the new points of §6.5 come.
 - `src_vs_code/README.md`: T7. `README.md`: no change (T8 stays).
 
@@ -855,7 +931,8 @@ The points above are written (S3, `8515c1e9`). **S4 adds these:**
 - It does not show the lines `→ minted`, `→ ALLOWED` and `→ DENIED` on the page (F4), and it does not show a line that
   an older version wrote with no mark.
 - It does not count a row whose outcome is a status number under *Refused* (F6, Q9).
-- It does not give the mark to the line of a handler that threw (F10, Q10).
+- It does not give the mark to the line of a handler that threw (F10, Q10). The texts say that such a request can
+  leave no row on the page.
 - It does not make the page show the empty message of a filter; the page keeps `Nothing matches that filter.` (F8).
 - It does not change an answer to the agent in S4: no status, code or body.
 - It does not change `sshLinkOf`, so a link to a folder keeps the sentence *no longer in this vault*, in the journal
@@ -921,7 +998,11 @@ rotation (`bridgeAllowList.ts:85-87`, `:94`). No open plan names the journal pag
     `door.note` call, each call of the funnel `log` and each reader of `via`, and ran each kind of request. One more
     line that ends a request with no mark was found that way and is NOT built: the line of a handler that threw
     (F10, Q10). A writer that goes round the funnel was not looked for.
-12. **(S4) Three things are more than the lead's decisions** (V4, R2 and the texts T3, T5, T10): Q7 and Q8 say what a
+12. **(S4) R1 sends each status of a rotation to `describeRotation`, and a throw there changes the agent's answer.**
+    The function is asked outside the broker's `try`. R3 guards the read of the body, J11 to J13 hold each answer that
+    is not 200 with its whole body, and M27 shows the failure. A NEW answer shape of a statement action that R3 does
+    not expect is held by J13 only for a body that is no object.
+13. **(S4) Three things are more than the lead's decisions** (V4, R2 and the texts T3, T5, T10): Q7 and Q8 say what a
     *no* removes.
 
 ## 11. Definition of Done
@@ -937,12 +1018,19 @@ one again for its rows.
 - [ ] Mutations M1 to M14 each turned its rows red and were restored.
 - [ ] In W1 to W3 the agent's answer is `linkedRunRefused('deploy')` with `denied`, byte-equal to the answer for a
       closed SSH entry.
-- [ ] (S4) Rows J5 to J10, P1 to P4 and H3, and H1 and H2 with their new words, were watched failing on the code of
-      `aa70258c` by their assertions, then pass; the summary quotes the failure message of J5, J8, J10 and P1 and the
-      pass. For J5 to J10 the message names the journal, not the answer.
-- [ ] (S4) Guards JG1 and JG2 were watched passing before and after; the tests of JG3 have no changed line.
-- [ ] (S4) Mutations M15 to M24, and M12 and M13 on the new words, each turned its rows red and were restored.
-- [ ] (S4) The answer to the agent is the same in J5 to J10 before and after: the status and the whole body.
+- [ ] (S4) Rows J5 to J13, P1 to P5 and H3, and H1 and H2 with their new words, were watched failing on the code of
+      `aa70258c` by their assertions, then pass; the summary quotes the failure message of J5, J8, J10, J12 and P1 and
+      the pass. For J5 to J10 the message names the journal, not the answer; for J11 to J13 it names the count
+      `rotations`, not the answer and not the word.
+- [ ] (S4) P4 was watched red two times, as step 6 and step 7 of §5 say: on the code of `aa70258c` (the word of a
+      statement that failed is `rotated`), and on the code after R1 to R3 and before L1 (the word is `statement
+      failed`, and the old matcher counts it). The summary quotes the two messages.
+- [ ] (S4) Guards JG1, JG2 and JG4 were watched passing before and after; the tests of JG3 have no changed line.
+- [ ] (S4) Mutations M15 to M27, and M12 and M13 on the new words, each turned its rows red and were restored. For
+      M27 the summary quotes the status that the agent read.
+- [ ] (S4) The answer to the agent is the same in J5 to J13 before and after: the status and the whole body, for
+      each status of a rotation that is not 200 (400, 404 with and with no `noGenerator`, 409, 412, 429, 500, and 502
+      with a body that is no object).
 - [ ] (S4) Through `mcpRowsIn`, a create that ran, a delete that ran, a folder change that ran and a create with no
       generator each give ONE row. A rotation with no generator counts 1 under *Could not generate*, 0 under *Secrets
       replaced* and 0 under *Refused*. No row of P3 fits two matchers.
@@ -1024,7 +1112,9 @@ on `aa70258c`.
   journal gets `request → failed` with the route and no `via` (`unanswered`, `brokerRequests.ts:358-375`; called at
   `credsAgentServer.ts:703`). The page has no row for it (observed with a create whose `make` throws: the line is
   `request  (—) → failed  a handler failed: Error on POST /v1/mcp/create; headers not sent`). The handler does not
-  know its door there; the route names it. It is the same kind of line as V1 to V4, for a failure and not for an action that ended. Not built (Q10).
+  know its door there; the route names it. The texts do not promise a row for it: T1 and T7 say that a request that
+  fails inside the window can leave no row, T12 and T13 name this line as the one with no door, and guard JG4 holds
+  the fact (finding 1 of the document round). It is the same kind of line as V1 to V4, for a failure and not for an action that ended. Not built (Q10).
 
 ## 14. Questions for the owner
 
@@ -1074,24 +1164,27 @@ revision is built on.
   to 599), one row and one mutation, and T4 then loses its last sentence.
 - **Q10 (F10). Should the line of a handler that threw carry the mark when its route is an MCP route?** *Built on: not
   here.* A *yes* is one site (`brokerRequests.ts:371`, with the door taken from the route), one row and one mutation.
-  Without it, a create or a delete whose handler threw has no row on the page, and the agent read `500`.
+  Without it, a create or a delete whose handler threw has no row on the page, and the agent read `500`; T1 and T7
+  say so. With a *yes*, guard JG4 and that sentence of T1 and T7 change in the same commit.
 
 ## Appendix A — the sentence of T1 in the five languages
 
 UI labels stay English in each language (rule 7 of `.agents/PROJECT.md`); this sentence has none. A native reader can
 polish a word before the merge; the clauses stay, and row H1 is changed with the text.
 
-These are the sentences after S4. Each one is the sentence that S3 built (`help*.ts:137` on `aa70258c`), with two
-changes and no other: the words for *over MCP* near its start, and one last sentence about an older version (§2.4,
-D5).
+These are the sentences after S4. Each one is the sentence that S3 built (`help*.ts:137` on `aa70258c`), with three
+changes and no other: the words for *over MCP* near its start, and two sentences at its end (§2.4, D5). The first
+says that a request that fails inside the window can leave no row on the page (F10; finding 1 of the document
+round). The second says that a create, a delete or a folder change of an older version is absent from the page while
+its journal file is kept, with the 14 days of the sweep (finding 3).
 
 | Language | `whatItIs` of `mcp-logs` |
 |---|---|
-| en | A journal of what AI agents did over MCP through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete. A create, a delete or a folder change that ran under an older version of the extension is in the journal files and is not shown. |
-| de | Ein Journal dessen, was KI-Agenten über MCP durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage. Ein Erstellen, ein Löschen oder eine Ordneränderung, die unter einer älteren Version der Erweiterung lief, steht in den Journaldateien und wird nicht angezeigt. |
-| es | Un diario de lo que los agentes de IA hicieron por MCP a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta. Una creación, un borrado o un cambio de carpeta que se ejecutó con una versión anterior de la extensión está en los archivos del diario y no se muestra. |
-| ru | Журнал того, что ИИ-агенты сделали по MCP через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и секреты, которые это окно попросили создать, а оно не смогло. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос. Создание, удаление или изменение папки, выполненные в более старой версии расширения, есть в файлах журнала, но здесь не показаны. |
-| uk | Журнал того, що AI-агенти зробили через MCP у цьому розширенні: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і секрети, які це вікно попросили створити, а воно не змогло. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит. Створення, видалення або зміна папки, виконані у старішій версії розширення, є у файлах журналу, але тут не показані. |
+| en | A journal of what AI agents did over MCP through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete. A request that fails inside this window can leave no row on the page. A create, a delete or a folder change that ran under an older version of the extension is absent from the page while its journal file is kept; the files are swept after 14 days. |
+| de | Ein Journal dessen, was KI-Agenten über MCP durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage. Eine Anfrage, die innerhalb dieses Fensters fehlschlägt, kann auf der Seite keine Zeile hinterlassen. Ein Erstellen, ein Löschen oder eine Ordneränderung, die unter einer älteren Version der Erweiterung lief, fehlt auf der Seite, solange die zugehörige Journaldatei aufbewahrt wird; die Dateien werden nach 14 Tagen entfernt. |
+| es | Un diario de lo que los agentes de IA hicieron por MCP a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta. Una petición que falla dentro de esta ventana puede no dejar ninguna línea en la página. Una creación, un borrado o un cambio de carpeta que se ejecutó con una versión anterior de la extensión no aparece en la página mientras se conserva su archivo del diario; los archivos se eliminan a los 14 días. |
+| ru | Журнал того, что ИИ-агенты сделали по MCP через расширение: каждое действие, выполненное для агента, и чем оно закончилось, каждое, которое вы отклонили или оставили без ответа, и два счётчика — секреты, пришедшие ОТ агента, и секреты, которые это окно попросили создать, а оно не смогло. Это не запись каждого запроса. Список не оставляет строки. Запрос, отклонённый до того, как кого-либо спросили, может не оставить строки: например, id, не открытый агентам, выключенный переключатель или неполный запрос. Запрос, завершившийся сбоем внутри этого окна, может не оставить строки на странице. Создание, удаление или изменение папки, выполненные в более старой версии расширения, отсутствуют на странице, пока хранится их файл журнала; файлы удаляются через 14 дней. |
+| uk | Журнал того, що AI-агенти зробили через MCP у цьому розширенні: кожна дія, виконана для агента, і чим вона закінчилася, кожна, яку ви відхилили або залишили без відповіді, — і два лічильники, за якими варто стежити: секрети, що прийшли ВІД агента, і секрети, які це вікно попросили створити, а воно не змогло. Це не запис кожного запиту. Перелік не лишає рядка. Запит, відхилений до того, як когось запитали, може не лишити рядка: наприклад, id, не відкритий агентам, вимкнений перемикач або неповний запит. Запит, що завершився збоєм усередині цього вікна, може не лишити рядка на сторінці. Створення, видалення або зміна папки, виконані у старішій версії розширення, відсутні на сторінці, доки зберігається їхній файл журналу; файли видаляються через 14 днів. |
 
 ## Epics
 
@@ -1127,11 +1220,12 @@ Cornerstones: 1 of 1 — S1
   3. In W1 to W3 the journal has 1 note with the reason of §2.2, and the agent's answer has 0 changed bytes.
   4. J1: 0 lines for 3 list routes. J2: 0 lines for 6 refusals. J3: 3 rows with their 3 outcomes.
   5. H1 holds for 5 of 5 languages; H2 for the 5 texts of the journal page; H3 for the 4 texts of T10 and T11.
-  6. Each of the 24 mutations turns at least 1 row red.
+  6. Each of the 27 mutations turns at least 1 row red.
   7. `contract/`, `src_mcp` and `src_cli` have 0 differences. No interface gets a new member.
   8. (S4) J5, J6, J7 and J9: 1 row each, where `aa70258c` gives 0. J8: *Could not generate* 1, *Secrets replaced* 0,
-     *Refused* 0. J10: *Secrets replaced* 0. In J5 to J10 the answer to the agent has 0 changed bytes.
-  9. (S4) P1: 3 outcome words of 10 are a rotation. P3: 0 rows fit two matchers.
+     *Refused* 0. J10: *Secrets replaced* 0. J11 to J13: 8 answers of a rotation that are not 200, each with its
+     status number as the word. In J5 to J13 the answer to the agent has 0 changed bytes.
+  9. (S4) P1: 3 outcome words of 10 are a rotation. P3: 0 rows fit two matchers. P5: 0 of 3 bodies throw.
 - **Cornerstone area.** The config lookup (S1): a mistake there gives an agent the config of a wrong account, or of a
   node that it may not view, in an answer that passes each other test.
 
@@ -1146,8 +1240,8 @@ Cornerstones: 1 of 1 — S1
   S4.** Rows J1 to J4 with mutations M9 to M11 and M14 on the unchanged code. Rows H1 and H2 RED. Then T1 to T9,
   mutations M12 and M13, the CHANGELOG entry and the two documents of `research/`. It follows S1 and S2, because the
   documents record them as built.
-- **S4 · N2 on the page: the page shows the lines that it counts. NOT BUILT.** Steps 6 to 11 of §5. Rows J5 to J10
-  RED first, with guards JG1 to JG3; then V1 to V5, R1 and R2. Rows P1 to P4 RED; then L1. Rows H1 and H2 with their
-  new words and row H3 RED; then T1 to T7 and T10 to T13. Mutations M15 to M24, and M12 and M13 again. Then the
+- **S4 · N2 on the page: the page shows the lines that it counts. NOT BUILT.** Steps 6 to 11 of §5. Rows J5 to J13
+  and P1 to P5 RED first, with guards JG1 to JG4; then V1 to V5 and R1 to R3; P4 red a second time; then L1. Rows H1 and H2 with their
+  new words and row H3 RED; then T1 to T7 and T10 to T13. Mutations M15 to M27, and M12 and M13 again. Then the
   points of S4 in the documents of §7, the closing checks, the code round with the revised plan and the pull request.
   It follows S3, because it corrects the texts of S3 and adds to its suite.
