@@ -85,8 +85,9 @@ internal static class UseTools
             not one you supply. Give the entry's `id` from creds_list.
 
             Use this when creds_list showed you an entry of kind `terminal` or `script`: its own
-            `command` field tells you what it will do. A creds:// reference in that text to something
-            that is not open to you is shown as "(a creds reference that is not open to agents)".
+            `command` field tells you what it will do. In that text
+            "(a creds reference that is not open to agents)" stands in the place of a creds://
+            reference that is not open to you, or that is missing, broken or ambiguous.
             The person approves the run when this
             entry’s consent setting asks for one.
             """),

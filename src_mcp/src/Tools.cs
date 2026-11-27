@@ -142,8 +142,8 @@ internal static class Tools
         entry is at the top of the vault. `dependsOn` names the entries this one needs that are open
         to you; when it needs one that is not, the list ends with
         "(a dependency that is not open to agents)".
-        In `command`, a creds:// reference to something that is not open to you reads
-        "(a creds reference that is not open to agents)".
+        In `command`, "(a creds reference that is not open to agents)" stands in the place of a
+        creds:// reference that is not open to you, or that is missing, broken or ambiguous.
 
         You get the NON-SECRET half of each: name, kind, folder, host, user, port, and for a
         database a connection string with the password removed. You never get a password, a

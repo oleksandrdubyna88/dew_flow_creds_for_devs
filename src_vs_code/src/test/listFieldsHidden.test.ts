@@ -600,6 +600,12 @@ test('T1: the descriptions of creds_vpn_up, creds_run and creds_list hold the wo
   );
 });
 
+test('T1b: the descriptions of creds_list and creds_run say that the reference placeholder also stands for a reference that is missing, broken or ambiguous', () => {
+  const described = generatedDescriptions();
+  const lacking = ['creds_list', 'creds_run'].filter((tool) => !(described.get(tool) ?? '').includes('or that is missing, broken or ambiguous'));
+  assert.deepEqual(lacking, [], 'a description says that the placeholder stands only for a reference that is not open');
+});
+
 test('T4: the description of creds_list says which folder `folder` names: the one that gave the switches, which can be a folder above the entry\'s own', () => {
   const text = generatedDescriptions().get('creds_list') ?? '';
   assert.equal(text.includes('it is the folder that gave them'), true);

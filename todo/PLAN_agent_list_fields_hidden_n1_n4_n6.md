@@ -204,8 +204,8 @@ scheme in any letter case, and the decision is the same for each letter case. A 
 it, only when the three conditions are true. Each other token becomes `HIDDEN_REFERENCE`. The text between the tokens
 stays.
 
-1. `locateRef` finds exactly one entry for it, in the account whose e-mail address the token names, among ALL
-   entries of that account.
+1. `locateRef` finds exactly one entry for it, in the account whose e-mail address the token names, among the
+   entries of that account that the agent may view (change 1.1; D5).
 2. The agent may view that entry (`agentMayView`, in the account that `locateRef` gave).
 3. The agent may view each folder that the token names. A token with `k` path parts names the entry and the `k - 1`
    folders above it; each of them must be `isOpenFolder`. A folder that the token does not name is not asked.
@@ -218,7 +218,8 @@ stays.
 | names an entry that the agent may not view (no switch, a PIN, the Trash), in any letter case | `HIDDEN_REFERENCE` | yes |
 | names an entry that the agent may view, and NAMES a folder that is not open | `HIDDEN_REFERENCE` | yes |
 | names an account that is not signed in, or an entry that no account has | `HIDDEN_REFERENCE` | yes |
-| names two entries (the product refuses such a reference as ambiguous, `secretRef.ts:146-154`) | `HIDDEN_REFERENCE` | not run |
+| names two entries that the agent may view (the product refuses such a reference as ambiguous, `secretRef.ts:146-154`) | `HIDDEN_REFERENCE` | yes |
+| names one entry that the agent may view, and a HIDDEN entry has the same name (change 1.1) | kept: a hidden twin is no twin, so the token reads as it does with no twin | yes |
 | starts with the scheme and is not a reference for the parser: no field, a field that is not known, the field in another letter case (`Password`), a mark at the end that the scan takes in (`…/password.`) | `HIDDEN_REFERENCE` | yes |
 
 - **D4. Fail closed.** A token is kept only when the product's own locator finds one entry and the wall says yes. So
@@ -229,9 +230,16 @@ stays.
   ONE entry that the agent may view, is a clean match and stays as typed; (b) the scan of the list reads the scheme
   in any letter case and decides alike; (c) a shorter reference that names one visible entry and leaves a hidden
   folder out can stay.
-- **D5. The whole account is searched, not the visible part.** A name that is ambiguous for the person stays
-  ambiguous for the agent. `scopedRefSource` gives the same reason (`bridgeScope.ts:377-379`). The agent does not
-  see what the replaced token was, so it learns nothing from the placeholder.
+- **D5. The list locates among the entries that the agent may view; the run keeps its own locator over the whole
+  account (change 1.1).** The first draft searched the whole account, so that a name that is ambiguous for the person
+  stayed ambiguous for the agent. That was wrong for rule A: a HIDDEN entry with the name of a viewable one made a
+  token to the viewable one the placeholder, and the same token was kept when the hidden twin was not there, so the
+  placeholder told that a hidden twin exists (found by the Opus review of the built branch). Now each account's
+  viewable entries are indexed once for a listing, by the entry's own name in lower case (`samePath` needs the last
+  segment to be that name, so the index gives `locateRef` only the entries that can match, and the answer is the one
+  of the whole list), and the accounts are read once; two viewable twins are still ambiguous and give the
+  placeholder. The run of a command is not touched: it resolves over the whole account, as the person's own locator
+  always did. `scopedRefSource` (`bridgeScope.ts:377-379`) is the bridge's own and does not change.
 - **D6. The scan reads the scheme in any letter case.** `parseSecretRef` reads `CREDS://` as a reference (`:71`),
   and `REF_PATTERN` does not find it (`:48`). So a run does not resolve such a token: it stays text for the run.
   The list must not show it when it names a hidden thing (R7), and keeps it as typed when it is a clean match
@@ -256,7 +264,8 @@ The owner: *the id only when the agent may view the parent; otherwise `null`*.
 `null`. The rows of §1.4: rows 1, 2 and 3 become `null`; rows 4 and 5 do not change.
 
 `null` is the value of a folder at the root today, and the type is `string | null` already (`mcpFolders.ts:33-34`).
-After this plan `null` means: no folder above this one is open to you. The tool description says so (W2).
+After this plan `null` means: the agent may not view the parent (or the id points to no node), or the folder is at the
+root; a folder under a closed folder under an open one gets `null` too (row P2). The tool description says so (W2).
 
 **The readers of `parent` were checked.** An agent sends a `parent` id in `creds_create_folder` and in a move
 (`creds_edit_folder`). The two lookups refuse an id of a folder that is not open with the answer of a missing id
@@ -270,7 +279,7 @@ parent's id before, and it loses no call now. No request moves a folder to the r
 |---|---|---|---|
 | `dependsOn` | `HIDDEN_DEPENDENCY`, once | `HIDDEN_DEPENDENCY`, once (D2; today: nothing) | yes |
 | `folder` | `''` | `''` (today too) | yes |
-| `command` | `HIDDEN_REFERENCE` in the place of the token | `HIDDEN_REFERENCE` (D4) | yes |
+| `command` | `HIDDEN_REFERENCE` in the place of the token | `HIDDEN_REFERENCE` (D4); a hidden twin of a viewable entry is no twin (D5), so a token to the viewable one is kept in both worlds | yes |
 | `parent` | `null` | `null` (today: the id) | yes |
 
 The rows E1 to E4 of §6 compare the two whole list bodies in each case. The time of the two cases is the same class
@@ -354,7 +363,7 @@ nothing (`agentNaming.ts:10-13`):
 | C4 | S3 | `mcpEntries.ts:173-183` (`:180`), `:139-159`, `:78-91`, `:266-282` | `command: blankToUndefined(details.command)` | the text of §2.4. `McpEntryContext` gets one REQUIRED member, `keepsReference: (token: string) => boolean`, so a caller that forgets it does not compile; `entryIfVisible` gives the function of the three conditions, with the locator of C2 built once for a listing |
 | C5 | S3 | the comment at `mcpEntries.ts:47-49` | *Not a secret: it is what the person typed* | adds: a reference to a thing that the agent may not view is shown as `HIDDEN_REFERENCE` |
 | D1 | S4 | `mcpFolders.ts:96`, in `viewOf` | `node.parentId ?? null` | the id when the parent exists and `isOpenFolder`; else `null` |
-| D2 | S4 | the comment at `mcpFolders.ts:33-34` | *`null` at the root* | *`null` when no folder above it is open to the agent, the root too* |
+| D2 | S4 | the comment at `mcpFolders.ts:33-34` | *`null` at the root* | *`null` when the agent may not view the parent (or the id points to no node), and at the root* |
 | W1 | S5 | `src_mcp/src/Tools.cs:133-151`, `ListDescription` | names `folder`; says nothing of `dependsOn` and `command` | Appendix B, text 1 |
 | W2 | S5 | `src_mcp/src/FolderTools.cs:24-40` (`:29`), `ListDescription` | *Each carries `id`, `name`, `parent`, …* | Appendix B, text 2 |
 | W3 | S5 | `src_mcp/src/UseTools.cs:84-90`, the description of `creds_run` | *its own `command` field tells you what it will do* | Appendix B, text 3 |
@@ -540,10 +549,10 @@ The account has the e-mail address `me@x.test`. `V` is an entry that the agent m
 | R2 | RED | a reference to an entry with a PIN; to an entry in the Trash | as typed | `HIDDEN_REFERENCE` |
 | R3 | RED | `creds://me@x.test/HF/V2/password` | as typed | `HIDDEN_REFERENCE` (the folder is named) |
 | R4 | RED | a reference to an account that is not there; to a name that no entry has | as typed | `HIDDEN_REFERENCE` |
-| R5 | RED | a name that two entries have: one that the agent may view and one hidden; two that the agent may view | as typed | `HIDDEN_REFERENCE` in the two cases (the locator finds no ONE entry) |
+| R5 | RED | a name that two entries that the agent may view have; and, flipped by change 1.1, a name that one entry that the agent may view and one hidden entry have | as typed | `HIDDEN_REFERENCE` for the two viewable entries (the locator finds no ONE entry); the token KEPT as typed for the viewable one with a hidden twin |
 | R6 | RED | tokens that the parser does not read: `creds://me@x.test/V` (no field); `…/V/salary` (a field that is not known); `…/V/Password` (the field in another letter case); `…/V/password.` (a mark at the end) | as typed | `HIDDEN_REFERENCE`, also when the entry is one that the agent may view |
 | R7 | RED | `CREDS://me@x.test/H/password`; `Creds://ME@X.TEST/h/password` | as typed | `HIDDEN_REFERENCE`: the scan reads the scheme in any letter case, and the decision is the one of R1 |
-| E3 | RED | three pairs. (1) R1; the same command with `H` taken out of the vault. (2) R3; the same with `HF` taken out, so that the `parentId` of `V2` points to nothing. (3) the reference of RG5 in the same two worlds as (2) | (1) and (2): the bodies are equal today too, and hold the hidden name | in each pair the two bodies are deep-equal; in (1) and (2) the name of `H` and of `HF` is in neither; in (3) the reference is kept in the two |
+| E3 | RED | three pairs. (1) R1; the same command with `H` taken out of the vault. (2) R3; the same with `HF` taken out, so that the `parentId` of `V2` points to nothing. (3) the reference of RG5 in the same two worlds as (2). (4) change 1.1: a reference to a viewable entry that has a hidden twin of the same name; the same with the twin taken out | (1) and (2): the bodies are equal today too, and hold the hidden name | in each pair the two bodies are deep-equal; in (1) and (2) the name of `H` and of `HF` is in neither; in (3) and (4) the reference is kept in the two, and the two bodies of (4) are deep-equal (RED on the code of the first build: the placeholder with the twin, the token without) |
 | RG1 | guard | `creds://me@x.test/V/password`; `creds://me@x.test/<an open folder>/V/password` | as typed | the same, byte for byte |
 | RG2 | guard | a reference to an entry of a SECOND account that the agent may view there | as typed | the same: the wall is asked in the account that the reference names |
 | RG3 | guard | a command with no token (`tmux {name}`); a blank command | the text; no `command` key | the same (the test at `test/mcpEntries.test.ts:290` stays green with one added member, §6.8) |
@@ -594,11 +603,11 @@ keeps no reference; the rows RG1, RG5 and RG6 fail then, so the suite cannot pas
 | M3 | in A1, one placeholder for each hidden dependency, in its place | D4 |
 | M4 | in B2, give the name with no test of the folder | F1, F2, E2, L1 |
 | M5 | in B2, test the entry's parent in place of `resolved.folder` and give the parent's name | FG2 |
-| M6 | in C4, keep each token that `locateRef` finds (take the test of the entry out) | R1, R2, L1 |
+| M6 | in C4, keep each token that `locateRef` finds (take the test of the entry out; change 1.1: with the filter of D5 the test is a second line of defence, so M6 is run together with M10) | R1, R2, L1 |
 | M7 | in C4, take the test of the named folders out | R3 |
 | M8 | in C4, replace only a token that is found and hidden; keep the others | R4, R5, R6, and pair (2) of E3 |
 | M9 | in C1, scan with the letter case of `REF_PATTERN` (the lower-case scheme only) | R7 |
-| M10 | in C4, search the entries that the agent may view only | R5 |
+| M10 | in C4, locate over ALL entries of the account again (take the filter by `agentMayView` out; change 1.1) | R5, pair (4) of E3 |
 | M11 | in D1, give `node.parentId ?? null` | P1, P2, P3, E4, L1 |
 | M12 | in D1, test only that the parent exists | P1, P2 |
 | M13 | in W4, put the old description back and regenerate | T1 |
@@ -786,6 +795,11 @@ branch that merges second reads line 132 again.
 - **F5. The description of `creds_edit_folder` still says that the Trash is not a destination**
   (`src_mcp/src/FolderTools.cs:75-76`). F7 removed that refusal: the Trash answers as a folder that is not there.
   The sentence is true and names a thing that the agent cannot address. Recorded.
+- **F6. A `{name}` token, and a token that is cut (Opus F4, change 1.1).** A `creds://` token that holds `{name}` (for
+  example `creds://me@x.test/{name}/password`) always becomes the placeholder: `REF_PATTERN` stops at `}`, so the token is
+  cut there and the parser does not read it. When a token is cut at a space or at a `)`, the rest stays as the person
+  typed it. That rest is the person's own text and is not checked against the vault; it is no break of rule A, because
+  the list shows a word that the person typed and does not read the vault for it. Recorded, not built.
 
 ## 14. Questions for the owner
 
@@ -848,14 +862,16 @@ constants of §2.8; row T1 holds them equal.
    folder that gave them, which can be a folder above the entry's own folder. When the entry has switches of its own,
    it is the entry's own folder. It is empty when that folder is not open to you, and when the entry is at the top of
    the vault. `dependsOn` names the entries this one needs that are open to you; when it needs one that is not, the
-   list ends with "(a dependency that is not open to agents)". In `command`, a creds:// reference to something that
-   is not open to you reads "(a creds reference that is not open to agents)".* Row T4 holds the clause about the
+   list ends with "(a dependency that is not open to agents)". In `command`, "(a creds reference that is not open to
+   agents)" stands in the place of a creds:// reference that is not open to you, or that is missing, broken or
+   ambiguous.* Row T4 holds the clause about the
    folder that gave the switches; guard FG2 holds the fact.
 2. **`creds_folders`** (W2), after *Each carries `id`, `name`, `parent`, …*: *`parent` is the id of the folder above
    it when that folder is open to you too, and null when it is not — so a null parent does not say that the folder
    is at the top of the vault.*
-3. **`creds_run`** (W3), after *its own `command` field tells you what it will do.*: *A creds:// reference in that
-   text to something that is not open to you is shown as "(a creds reference that is not open to agents)".*
+3. **`creds_run`** (W3), after *its own `command` field tells you what it will do.*: *In that text
+   "(a creds reference that is not open to agents)" stands in the place of a creds:// reference that is not open to you,
+   or that is missing, broken or ambiguous.*
 4. **`creds_vpn_up`** (W4), after *that dependency is the person saying "this needs that first".*: *A dependency
    that is not open to you is not named: `dependsOn` then ends with "(a dependency that is not open to agents)",
    and you cannot bring that one up — tell the person which entry needs it.*

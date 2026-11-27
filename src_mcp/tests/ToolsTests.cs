@@ -123,6 +123,7 @@ public sealed class ToolsTests
         Tools.ListDescription.Should().Contain("which can be a folder above the entry's own folder");
         Tools.ListDescription.Should().Contain("\"(a dependency that is not open to agents)\"");
         Tools.ListDescription.Should().Contain("\"(a creds reference that is not open to agents)\"");
+        Tools.ListDescription.Should().Contain("or that is missing, broken or ambiguous");
     }
 }
 
