@@ -304,18 +304,6 @@ test('the exact answers: none is a new sentence, and each is the answer that the
   assert.deepEqual(JSON.parse(snippet.raw), { error: 'no such config is open to agents', envVar: (JSON.parse(snippet.raw) as { envVar: string }).envVar, languages: [] });
 });
 
-/**
- * The four fields of the two list answers that can hold the name or the id of a node the agent may not view (the plan's
- * section 2.6). Each is a documented answer of an MCP tool today, so each is a question for the owner and none is changed here.
- * When the owner closes one, its assertion goes red and its row goes.
- */
-const EXCEPTIONS = [
-  { n: 'N1', list: 'entries', field: 'dependsOn', reason: 'the agent can tell the person which VPN is missing; creds_vpn_up builds on it; a Remote Bridge filters it' },
-  { n: 'N4', list: 'entries', field: 'folder', reason: 'so an agent can tell two entries with one name apart; a Remote Bridge gives an empty string' },
-  { n: 'N5', list: 'entries', field: 'command', reason: 'not a secret: it is what the person typed; a Remote Bridge gives a boolean' },
-  { n: 'N6', list: 'folders', field: 'parent', reason: 'the shape of the tree' },
-] as const;
-
 type ListRow = Record<string, unknown> & { id: string };
 
 async function listOf(list: 'entries' | 'folders'): Promise<ListRow[]> {
@@ -325,24 +313,42 @@ async function listOf(list: 'entries' | 'folders'): Promise<ListRow[]> {
   return (JSON.parse(reply.text) as Record<string, ListRow[]>)[list];
 }
 
-/** The same rows with one field of one row taken out. */
-const without = (rows: readonly ListRow[], id: string, field: string): ListRow[] => rows.map((row) => (row.id === id ? { ...row, [field]: undefined } : row));
+/** Each hidden name and id that one field of one row holds, said as a sentence; a name that holds a shorter hidden text is said once. */
+function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
+  const texts = [...HIDDEN_NAMES, ...HIDDEN_IDS];
+  return rows.flatMap((row) =>
+    Object.entries(row).flatMap(([field, value]) => {
+      const held = texts.filter((text) => JSON.stringify(value)?.includes(text));
+      return held.filter((text) => !held.some((other) => other !== text && other.includes(text))).map((text) => `${list}[${row.id}].${field} holds ${text}`);
+    }),
+  );
+}
 
-test('the list check: the four exceptions are exactly N1, N4, N5 and N6, each holds the value that is there today, and the lists hold nothing else', async () => {
-  assert.deepEqual(EXCEPTIONS.map((e) => `${e.list}.${e.field}`), ['entries.dependsOn', 'entries.folder', 'entries.command', 'folders.parent']);
-  const entries = await listOf('entries');
-  const folders = await listOf('folders');
-  const row = (rows: readonly ListRow[], id: string): ListRow => rows.find((r) => r.id === id) as ListRow;
-  assert.deepEqual(row(entries, VISIBLE.n1).dependsOn, [markerOf(HIDDEN.entries.none)], 'N1: the hidden dependency\'s NAME');
-  assert.equal(row(entries, VISIBLE.n4).folder, markerOf(HIDDEN.folders.none), 'N4: the hidden folder\'s NAME');
-  assert.equal(row(entries, VISIBLE.n5).command, N5_COMMAND, 'N5: the reference text, with the hidden entry\'s NAME in it');
-  assert.equal(row(folders, VISIBLE.n6).parent, HIDDEN.folders.none, 'N6: the hidden parent\'s ID');
-  const left = JSON.stringify([
-    without(without(without(entries, VISIBLE.n1, 'dependsOn'), VISIBLE.n4, 'folder'), VISIBLE.n5, 'command'),
-    without(folders, VISIBLE.n6, 'parent'),
-  ]);
-  const found = [...HIDDEN_NAMES, ...HIDDEN_IDS].filter((text) => left.includes(text));
-  assert.deepEqual(found, [], 'no hidden name and no hidden id is left in the two bodies');
+/**
+ * The fields of the two list answers that still hold the name or the id of a node the agent may not view, each at the value that is
+ * there today (the owner closed them in `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`; each story takes its own row out).
+ */
+const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly today: unknown }[] = [
+  { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', today: [markerOf(HIDDEN.entries.none)] },
+  { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', today: markerOf(HIDDEN.folders.none) },
+  { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', today: N5_COMMAND },
+  { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', today: HIDDEN.folders.none },
+];
+
+/** The rows of one list with the fields of the open exceptions taken out. */
+function withoutExceptions(list: 'entries' | 'folders', rows: readonly ListRow[]): ListRow[] {
+  return rows.map((row) => ({ ...row, ...Object.fromEntries(EXCEPTIONS.filter((e) => e.list === list && e.row === row.id).map((e) => [e.field, undefined])) }));
+}
+
+/** Row L1: no hidden name and no hidden id is in the body of either list, in any field, but the fields that an open exception names. */
+test('the list check (row L1): the open exceptions hold the value of today, and the two list bodies hold no other hidden name and no hidden id', async () => {
+  const bodies = { entries: await listOf('entries'), folders: await listOf('folders') };
+  for (const e of EXCEPTIONS) {
+    const row = bodies[e.list].find((r) => r.id === e.row) as ListRow;
+    assert.deepEqual(row[e.field], e.today, `${e.n}: the value of today`);
+  }
+  const found = [...rowLeaks('entries', withoutExceptions('entries', bodies.entries)), ...rowLeaks('folders', withoutExceptions('folders', bodies.folders))];
+  assert.deepEqual(found, [], 'a field of a list names a node that the agent may not view');
 });
 
 test('completeness 1: every route of the contract has a row or a written reason, and the contract holds no route that nobody has seen', () => {
