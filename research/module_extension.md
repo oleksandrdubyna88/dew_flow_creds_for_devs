@@ -7051,12 +7051,17 @@ happens.
 **The journal is a view, not a store.** The broker already writes what the journal holds — a file
 per run, a folder per day, swept after a fortnight: a line when a grant is minted, a line for the
 answer to a consent question and a line that says how the request ended. A listing writes none, and a
-request that is refused before a grant exists writes none. **The line that a handler writes at the end
+request that is refused at the lookup or the validation, before a grant exists, writes none. One refusal
+without a grant does write a line: the first call over the rate limit in a window writes
+`request → too_many_requests` (`credsAgentServer.ts:228`), and the page shows it under *Refused*. **The line that a handler writes at the end
 of its request records which door it came through** (`via mcp`): the tail of a use, a refusal that has
 a grant and, since the page was made to show what it counts (D2 of
 `todo/PLAN_agent_small_truths_n8_n9_n2.md`), the delete, the create (with its `no generator` refusal) and the folder
 change, which write their last line themselves through `door.note`. The line `minted` and the consent
-lines `ALLOWED` and `DENIED` do not carry it, so a request that ran is one row and not three. The line of a
+lines `ALLOWED` and `DENIED` do not carry it, so a request that ran after a question is one row and not three.
+A use that the entry's consent policy lets run with no question writes one more marked line,
+`consent → allowed without a prompt` (`quietly`, `brokerMcpDoor.ts:269-271`), so it is two rows: the page is
+meant to show which calls ran without anybody being asked. A delete, a create and a folder change always ask. The line of a
 handler that threw (`request → failed`) names the route and no door, and the page does not show it. A line
 that an older version wrote with no mark stays off the page while its file is kept. **⋯ → MCP logs**
 filters the lines that have the mark: everything, refused, secrets replaced, secrets from the agent,
