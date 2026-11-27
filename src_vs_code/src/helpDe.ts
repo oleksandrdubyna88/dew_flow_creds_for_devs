@@ -134,7 +134,7 @@ export const DE_BODIES: Readonly<Record<string, HelpBody>> = {
   },
   'mcp-logs': {
     title: "MCP logs — das Agentenjournal",
-    whatItIs: "Ein Journal von allem, was KI-Agenten durch diese Erweiterung getan oder erbeten haben: jede Auflistung, jede Verwendung, jede Ablehnung — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Anfragen, die wir nicht bedienen konnten.",
+    whatItIs: "Ein Journal dessen, was KI-Agenten durch diese Erweiterung getan haben: jede Aktion, die für einen Agenten lief, und wie sie endete, jede, die Sie abgelehnt oder nicht beantwortet haben — und zwei Zahlen, die zu beobachten sich lohnt: Geheimnisse, die VON einem Agenten kamen, und Geheimnisse, die dieses Fenster erzeugen sollte und nicht erzeugen konnte. Es ist kein Protokoll jeder Anfrage. Eine Auflistung hinterlässt keine Zeile. Eine Anfrage, die abgelehnt wird, bevor jemand gefragt wird, kann ebenfalls keine hinterlassen: zum Beispiel eine ID, die für Agenten nicht geöffnet ist, ein Schalter, der aus ist, oder eine unvollständige Anfrage.",
     why: "Ein Agent, der mit Ihren Zugangsdaten handelt, muss eine Spur hinterlassen, die ein Mensch hinterher lesen kann. Die Zustimmungsabfrage zeigt eine Handlung; das Journal zeigt das Muster.",
     setup: "Nichts einzurichten. Das Journal füllt sich erst, wenn der Agentenzugriff für mindestens einen Eintrag an ist (siehe „Agenten über MCP\").",
     usage: "Menü „…\" des Baums → MCP logs. Jede Zeile nennt den Eintrag, die Handlung und den Ausgang; „Show Entry by id…\" springt von einer Zeile zu dem Eintrag, den sie nennt.",

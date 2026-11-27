@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the snippet of a config no longer depends on what an earlier account holds under its id; the journal reason of a linked run; the texts about the journal
+
+**`creds_config_snippet` and an id that two accounts of one window hold.** The lookup went through the accounts and stopped at the first
+account that held a node with the id. When that node was one that the agent may not view (no *View* switch, a PIN of its own, the Trash), or was
+a node that the agent may view and that is not a config, the answer was `no such config is open to agents`, although `creds_list` showed the config of
+a later account. From the two answers an agent could tell that an earlier account holds a node with that id. The lookup now goes on to the next
+account, as the lookup of an entry and the lookup of a folder already did, and gives the first config that the agent may view. One answer changes:
+`GET /v1/mcp/config-snippet` for an id that two accounts of ONE window hold, when an earlier account has no visible config with that id and a later one has
+one, gives the catalog or the snippet of that config (before: the error body). No route, status, code, body shape, sentence or tool description changes;
+`contract/` is unchanged, and so are `creds-mcp` and `creds`. Nothing changes on a Remote Bridge: its lookup reads one account.
+
+**The journal reason of a linked run.** When the SSH entry of a linked *creds_run* is refused at the gate, the journal line names the cause from the
+node: the entry is not in the account, the link points to a folder, the entry is in the Trash, it has a PIN of its own, or its *Usable by agents* switch
+is off (before: a folder and an entry in the Trash both read "switch is off"). In a vault that does not change during the call, the lines are the same as
+before, because the link refuses a folder and the Trash first with its own reason; the new causes are for a read of the node that differs from the link's read.
+What the agent is told does not change by a byte.
+
+**The texts about the journal.** The five help articles, the journal page (its first sentence, the hints of *Everything* and *Refused*, and the two empty
+messages) and two README sentences said that the journal holds every list, every use and every refusal. It does not: a listing leaves no line, and a
+request that is refused before anybody is asked (an id that is not open to agents, a switch that is off, a request that is not complete) can leave none.
+The texts now say what the journal holds. No journal line is added or removed.
+
 ## [1.24.0] — 2026-11-27 — Security — a run that ended with 0 is told nothing about a host key; the saved host key is measured on the real roads
 
 ### Fixed — a server that prints "Host key verification failed" and still answers no longer stops Install creds on host or the bridge's socket check

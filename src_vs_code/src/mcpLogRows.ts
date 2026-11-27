@@ -2,11 +2,12 @@ import { AuditEntry, parseAuditLine } from './agentAuditLog';
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
 
 /**
- * The MCP journal: what an agent asked this window for, and what it was told.
+ * The MCP journal: what AI agents did through this window and how each action ended — each action that ran, each one that was declined or not
+ * answered. It is not a record of every request: a listing leaves no line, and a request refused before anybody is asked can leave none.
  *
  * <p><b>A view, not a second store.</b> The broker already writes one line per call into
  * `agent-*.log`, a file per run inside a folder per day, swept after a fortnight. Those lines
- * now say which door a call came through, so "everything an agent did" is a filter over a file
+ * now say which door a call came through, so "what an agent did" is a filter over a file
  * that already exists — history between sessions comes free, the sweep already works, and no
  * second place appears that could disagree with the first. Inventing one would be exactly the
  * drift the shared logging rule was written against.</p>
@@ -38,11 +39,11 @@ export function mcpRowsIn(text: string, day: string): McpLogRow[] {
 export type McpLogFilter = 'all' | 'refused' | 'rotations' | 'agentSecrets' | 'noGenerator';
 
 export const MCP_LOG_FILTERS: readonly { id: McpLogFilter; label: string; hint: string }[] = [
-  { id: 'all', label: 'Everything', hint: 'Every call an agent made through MCP.' },
+  { id: 'all', label: 'Everything', hint: 'Every line of the journal that came through MCP.' },
   {
     id: 'refused',
     label: 'Refused',
-    hint: 'What it asked for and did not get — a switch that is off, a prompt you declined, a prompt nobody answered.',
+    hint: 'What it asked for and did not get — a prompt you declined, a prompt nobody answered, a run that was refused. A request that is refused before anybody is asked can leave no line.',
   },
   {
     id: 'rotations',
@@ -162,14 +163,14 @@ export function rowsToShow(rows: readonly McpLogRow[]): { rows: readonly McpLogR
  */
 export function emptyMessage(filter: McpLogFilter, totalRows: number): string {
   if (totalRows === 0) {
-    return 'No agent has called this window yet. Entries are invisible to agents until you turn on Agent access for one.';
+    return 'The journal holds no line yet. A listing leaves none, and a request that is refused before anybody is asked can leave none. Entries are invisible to agents until you turn on Agent access for one.';
   }
   return EMPTY[filter] ?? 'No secrets have been replaced by an agent.';
 }
 
 /** One sentence per filter, because "nothing here" means a different thing in each. */
 const EMPTY: Partial<Record<McpLogFilter, string>> = {
-  refused: 'Nothing was refused — every call an agent made was allowed.',
+  refused: 'No refusal is in the journal. A request that is refused before anybody is asked can leave no line.',
   agentSecrets:
     'No secret has reached the vault from an agent. Every value an agent used was held by this window.',
   noGenerator:

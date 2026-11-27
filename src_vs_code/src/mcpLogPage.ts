@@ -60,7 +60,7 @@ export function renderMcpLog(all: readonly McpLogRow[]): string {
 </head>
 <body>
   <h2>MCP logs</h2>
-  <p class="lede">Every call an AI agent made to this window, from the same record the broker
+  <p class="lede">What AI agents did through this window, from the same record the broker
     writes to disk. Nothing here is a second copy: it is the audit file, filtered to the calls
     that arrived through MCP.</p>
   <div class="filters">${MCP_LOG_FILTERS.map(

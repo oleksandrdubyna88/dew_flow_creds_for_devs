@@ -134,7 +134,7 @@ export const ES_BODIES: Readonly<Record<string, HelpBody>> = {
   },
   'mcp-logs': {
     title: "MCP logs — el diario de los agentes",
-    whatItIs: "Un diario de todo lo que los agentes de IA hicieron o pidieron a través de esta extensión: cada listado, cada uso, cada negativa — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y peticiones que no pudimos atender.",
+    whatItIs: "Un diario de lo que los agentes de IA hicieron a través de esta extensión: cada acción que se ejecutó para un agente y cómo terminó, cada una que usted rechazó o no respondió — y dos cuentas que conviene vigilar: secretos que vinieron DESDE un agente, y secretos que se pidió generar a esta ventana y no pudo. No es un registro de todas las peticiones. Un listado no deja ninguna línea. Una petición que se rechaza antes de preguntar a nadie puede no dejar ninguna: por ejemplo, un id que no está abierto a los agentes, un interruptor apagado o una petición incompleta.",
     why: "Un agente que actúa sobre sus credenciales debe dejar un rastro que una persona pueda leer después. La ventana de consentimiento muestra una acción; el diario muestra el patrón.",
     setup: "Nada que configurar. El diario se llena sólo cuando el acceso de agentes está encendido para al menos una entrada (vea «Agentes por MCP»).",
     usage: "Menú «…» del árbol → MCP logs. Cada línea nombra la entrada, la acción y el resultado; «Show Entry by id…» salta de una línea a la entrada que nombra.",

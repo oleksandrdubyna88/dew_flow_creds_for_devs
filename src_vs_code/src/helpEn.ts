@@ -134,7 +134,7 @@ export const EN_BODIES: Readonly<Record<string, HelpBody>> = {
   },
   'mcp-logs': {
     title: "MCP logs — the agent journal",
-    whatItIs: "A journal of everything AI agents did or asked through this extension: every list, every use, every refusal, and two counts worth watching — secrets that came FROM an agent, and requests we could not serve.",
+    whatItIs: "A journal of what AI agents did through this extension: each action that ran for an agent and how it ended, each one that you declined or did not answer, and two counts worth watching — secrets that came FROM an agent, and secrets that this window was asked to make and could not. It is not a record of every request. A listing leaves no line. A request that is refused before anybody is asked can leave none: for example an id that is not open to agents, a switch that is off, or a request that is not complete.",
     why: "An agent acting on your credentials must leave a trail a person can read afterwards. The consent modal shows one action; the journal shows the pattern.",
     setup: "Nothing to set up. The journal fills only when agent access is on for at least one entry (see “Agents over MCP”).",
     usage: "The tree’s “…” menu → MCP logs. Each line names the entry, the action and the outcome; “Show Entry by id…” jumps from a line to the entry it names.",
