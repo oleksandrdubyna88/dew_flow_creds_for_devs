@@ -103,7 +103,7 @@ function buildClients(out, rid, sha) {
     try {
       run('dotnet', ['publish', path.join(REPO, client.project), '-c', 'Release', '-r', rid, '-o', publish, `-p:Version=${client.version}`, '-m:4'], REPO);
       fs.copyFileSync(path.join(publish, client.name), path.join(folder, client.name));
-      fs.chmodSync(path.join(folder, client.name), 0o755);
+      fs.chmodSync(path.join(folder, client.name), 0o700); // the owner's own copy; creds-pilot.sh sets the mode on the server
     } finally {
       fs.rmSync(publish, { recursive: true, force: true });
     }

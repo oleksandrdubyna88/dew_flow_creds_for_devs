@@ -33,7 +33,10 @@ sh <folder>/creds-pilot.sh install <folder>
 
 It links `creds` and `creds-mcp` in `~/.local/bin` to the pilot (an old file there is moved aside, and comes back on undo). If the
 tools that you use today are in another folder, name it: `CREDS_PILOT_BIN=/usr/local/bin sh <folder>/creds-pilot.sh install <folder>`
-(a system folder needs `sudo` or root). Registration with Claude Code:
+(a system folder needs root). A folder outside your home serves every login of the server, so the pilot's binaries then go beside
+it, in `<parent>/lib/creds-pilot` (for `/usr/local/bin`: `/usr/local/lib/creds-pilot`), readable by every login, and not into one
+login's home (`CREDS_PILOT_HOME` sets another folder). Run the script as the login whose Claude Code you register: with `sudo`,
+the registration goes to the Claude Code of root. Registration with Claude Code:
 
 - no registration named `creds`: the script adds one, with the link's absolute path;
 - one that already runs that link: it is kept;

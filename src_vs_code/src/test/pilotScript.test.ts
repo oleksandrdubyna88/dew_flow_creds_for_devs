@@ -140,3 +140,20 @@ test('PS5: with no claude on the PATH, nothing is registered and the command to 
   assert.equal(pilot(r, ['undo'], false).status, 0);
   assert.equal(fs.existsSync(path.join(r.bin, 'creds')), false);
 });
+
+test('PS6: a bin folder outside the home (shared, like /usr/local/bin) gets a pilot folder beside it that every login can reach, not one inside the home', { skip: POSIX }, () => {
+  const r = rig('ps6');
+  const shared = { ...r, bin: path.join(path.dirname(r.home), 'usr', 'bin') };
+  const sharedHome = path.join(path.dirname(r.home), 'usr', 'lib', 'creds-pilot');
+  const installed = pilot(shared, ['install', r.drop]);
+  assert.equal(installed.status, 0, installed.out);
+  assert.equal(fs.readlinkSync(path.join(shared.bin, 'creds-mcp')), path.join(sharedHome, 'bin', 'creds-mcp'));
+  assert.equal(fs.existsSync(pilotHome(r)), false, 'nothing in the login\'s home');
+  const mode = (p: string): number => fs.statSync(p).mode & 0o777;
+  assert.deepEqual([mode(sharedHome), mode(path.join(sharedHome, 'bin')), mode(path.join(sharedHome, 'bin', 'creds'))], [0o755, 0o755, 0o755]);
+  assert.equal(mode(path.join(sharedHome, 'state')), 0o700, 'what undo needs stays private');
+  assert.ok(pilot(shared, ['status']).out.includes(`installed in ${sharedHome},`));
+
+  assert.equal(pilot(shared, ['undo']).status, 0);
+  assert.deepEqual([fs.existsSync(sharedHome), fs.existsSync(path.join(shared.bin, 'creds'))], [false, false]);
+});

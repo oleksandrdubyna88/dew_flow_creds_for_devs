@@ -7,8 +7,10 @@
 #   sh creds-pilot.sh undo
 #
 # Where things go (each can be set in the environment):
-#   CREDS_PILOT_HOME  the pilot's own folder: the binaries and what undo needs     default: $HOME/.creds-for-devs/pilot
 #   CREDS_PILOT_BIN   the folder whose `creds` and `creds-mcp` become the pilot's   default: $HOME/.local/bin
+#   CREDS_PILOT_HOME  the pilot's own folder: the binaries and what undo needs     default: $HOME/.creds-for-devs/pilot, or
+#                     <parent of CREDS_PILOT_BIN>/lib/creds-pilot when CREDS_PILOT_BIN is outside $HOME (a shared folder such as
+#                     /usr/local/bin serves every login, so its links must not point into one login's home: /root is 0700)
 #   CREDS_PILOT_NAME  the name of the Claude Code registration                     default: creds
 #
 # What install does, and undo reverses exactly:
@@ -22,8 +24,12 @@
 # POSIX sh, no bashisms. Nothing here reads or prints a credential.
 set -eu
 
-PILOT_HOME="${CREDS_PILOT_HOME:-$HOME/.creds-for-devs/pilot}"
 BIN_DIR="${CREDS_PILOT_BIN:-$HOME/.local/bin}"
+case "$BIN_DIR" in
+  "$HOME"/*) SHARED=0; DEFAULT_HOME="$HOME/.creds-for-devs/pilot" ;;
+  *) SHARED=1; DEFAULT_HOME="${BIN_DIR%/*}/lib/creds-pilot" ;;
+esac
+PILOT_HOME="${CREDS_PILOT_HOME:-$DEFAULT_HOME}"
 NAME="${CREDS_PILOT_NAME:-creds}"
 STATE="$PILOT_HOME/state"
 TOOLS="creds creds-mcp"
@@ -61,6 +67,9 @@ do_install() {
 
   umask 077
   mkdir -p "$PILOT_HOME/bin" "$PILOT_HOME/aside" "$STATE"
+  if [ "$SHARED" = 1 ]; then
+    chmod 755 "$PILOT_HOME" "$PILOT_HOME/bin" # every login that runs the shared links must reach the binaries; aside and state stay 0700
+  fi
   for tool in $TOOLS; do
     cp "$folder/$tool" "$PILOT_HOME/bin/$tool"
     chmod 755 "$PILOT_HOME/bin/$tool"
