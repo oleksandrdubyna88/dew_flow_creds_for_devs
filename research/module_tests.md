@@ -2472,7 +2472,8 @@ the same commit.
 
 Watched red, by mutation (temporary, never committed): M1 (the old loop) turns C1, C2, C3 red; M2 (stop at a visible node that is not a config) only C3; M3 (no `shown`) C1,
 C2, CG1, CG3 and part A; M4 (`accountOnlyVault` answers each account) CG3 and W1; M5 to M8 turn W1 and W3, W2, W3 and the whole of W1 to W3 with the gate's rows red; M9 to M11
-turn J1, J2 and J4, J3; M12 (the old sentence in one language) and M13 (the old hint) turn H1 and H2.
+turn J1, J2 and J4, J3; M12 (the old sentence in one language) and M13 (the old hint) turn H1 and H2; M14 (`refuseCreation` writes `denied` in place of
+`NO_GENERATOR_OUTCOME`) turns J4 red (the lead, 2026-11-27).
 
 ## The path of a call file holds no id (2026-11-12, E1 of [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md), rule C)
 
