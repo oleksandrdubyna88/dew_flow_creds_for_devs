@@ -93,6 +93,21 @@ export function findSecretRefs(text: string): string[] {
   return [...found];
 }
 
+/**
+ * The same scan as `findSecretRefs`, with the scheme in ANY letter case: the parser reads `CREDS://` as a reference (`parseSecretRef`), and
+ * `REF_PATTERN` does not find it, so a run leaves such a token as text. A caller that must decide on EVERY token that the parser could read
+ * (the list of entries an agent reads) asks this one. `REF_PATTERN` and `findSecretRefs` do not change.
+ */
+const REF_SCAN = new RegExp(REF_PATTERN.source, 'gi');
+
+/**
+ * Every token that looks like a reference, in any letter case of the scheme, given to `rewrite`; the text with its answers in their places.
+ * The text between the tokens is untouched, and a token is whole as `REF_PATTERN` takes it (a mark at the end is a part of it).
+ */
+export function rewriteRefTokens(text: string, rewrite: (token: string) => string): string {
+  return text.replace(REF_SCAN, (token) => rewrite(token));
+}
+
 /** What the resolver needs from the vault — ids stay internal, names come in. */
 export interface RefSource {
   accounts(): Array<{ accountId: string; email: string }>;
@@ -111,6 +126,22 @@ export type RefResolution =
   | { ok: true; values: Record<string, string> }
   | { ok: false; error: string };
 
+/**
+ * What two path segments are compared by: the letter case ignored. The ONE normalisation of the locator (`samePath`), exported so that the index that the list of
+ * entries builds over the same names uses it too, and a later change of how names match changes both.
+ */
+export function segmentKey(segment: string): string {
+  return segment.toLowerCase();
+}
+
+/**
+ * What two e-mail addresses are compared by: the letter case ignored. The locator's own rule (`locate`), exported so that the list of entries, which gives the locator the
+ * candidates of EACH account with the address, asks the same question.
+ */
+export function addressKey(address: string): string {
+  return address.toLowerCase();
+}
+
 function samePath(candidate: readonly string[], wanted: readonly string[]): boolean {
   // A reference names a suffix of the path: `gateway` matches `Servers/EU/gateway`, and
   // `EU/gateway` narrows it. Case-insensitive, because a person typing a name is not
@@ -119,7 +150,7 @@ function samePath(candidate: readonly string[], wanted: readonly string[]): bool
     return false;
   }
   const tail = candidate.slice(candidate.length - wanted.length);
-  return tail.every((segment, i) => segment.toLowerCase() === wanted[i].toLowerCase());
+  return tail.every((segment, i) => segmentKey(segment) === segmentKey(wanted[i]));
 }
 
 function describePath(path: readonly string[]): string {
@@ -132,7 +163,7 @@ function locate(
   ref: SecretRef,
   source: RefSource,
 ): { ok: true; accountId: string; entityId: string; path: string[] } | { ok: false; error: string } {
-  const account = source.accounts().find((a) => a.email.toLowerCase() === ref.account.toLowerCase());
+  const account = source.accounts().find((a) => addressKey(a.email) === addressKey(ref.account));
   if (account === undefined) {
     return { ok: false, error: `No signed-in account with the email "${ref.account}" — ${raw} cannot be resolved.` };
   }

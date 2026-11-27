@@ -113,6 +113,18 @@ public sealed class ToolsTests
         Tools.ListDescription.Should().Contain("nothing has been opened to you");
         Tools.ListName.Should().Be("creds_list");
     }
+
+    [Fact]
+    public void The_tool_description_says_which_folder_is_named_and_what_a_hidden_thing_reads_as()
+    {
+        // Phrases that cannot wrap. The words in quotes are the values of two constants of the
+        // extension (agentNaming.ts); a test of the generated contract file holds them equal.
+        Tools.ListDescription.Should().Contain("is the name of ONE folder above the entry, and only when that folder is open to you too");
+        Tools.ListDescription.Should().Contain("which can be a folder above the entry's own folder");
+        Tools.ListDescription.Should().Contain("\"(a dependency that is not open to agents)\"");
+        Tools.ListDescription.Should().Contain("\"(a creds reference that is not open to agents)\"");
+        Tools.ListDescription.Should().Contain("or that is missing, broken or ambiguous");
+    }
 }
 
 /// <summary>
@@ -249,6 +261,13 @@ public sealed class KindCatalogTests
         FolderTools.ListDescription.Should().Contain("`holds`");
         FolderTools.ListDescription.Should().Contain("`fields`");
         FolderTools.ListDescription.Should().Contain("creds_kinds");
+    }
+
+    [Fact]
+    public void The_folder_listing_description_says_that_a_null_parent_is_not_the_top_of_the_vault()
+    {
+        FolderTools.ListDescription.Should().Contain("when that folder is open to you too, and null when it");
+        FolderTools.ListDescription.Should().Contain("a null parent does not say that the folder");
     }
 
     [Fact]

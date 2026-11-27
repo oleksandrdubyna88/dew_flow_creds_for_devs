@@ -27,6 +27,8 @@ internal static class FolderTools
         you may rename, move or remove.
 
         Each carries `id`, `name`, `parent`, `holds`, `fields` and `can` (create, edit, delete).
+        `parent` is the id of the folder above it when that folder is open to you too, and null when it
+        is not — so a null parent does not say that the folder is at the top of the vault.
         A folder with a `holds` kind accepts only that kind, and its `fields` are everything an
         entry created there may carry — nothing else can be set. A folder that `holds` "any" lists
         no fields: you name the kind yourself in creds_create, and creds_kinds / creds_kind_help

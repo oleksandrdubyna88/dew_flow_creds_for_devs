@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — security — the list answers name no node that the agent may not view (N1, N4, N5, N6)
+
+`creds_list` and `creds_folders` named, in four fields, a node that the agent may not view, or gave its id. Each field now holds a fixed value in the place of such a node, the same
+value for a hidden node and for an id that points to nothing. No route, status, error code, field name or field type changes. See
+[PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md).
+
+| The answer | Before | After |
+|---|---|---|
+| `creds_list` → `dependsOn` | the name of each dependency that exists | the names of the dependencies that the agent may view; then `(a dependency that is not open to agents)` once when there is one more (an entry with no switch, a PIN of its own, in the Trash, a folder, or an id that no node has — a deleted dependency, dropped before, counts as one more) |
+| `creds_list` → `folder` | the folder's name, also for a folder that is not open | `''` for a folder that is not open |
+| `creds_list` → `command` | the stored text | the stored text; each `creds://` token is kept as typed only when it names exactly ONE entry that the agent may view, by names of folders that the agent may view, counted over each account that has the address of the token. Each other token (an entry that the agent may not view, an account or entry that is not there, two such entries, a broken token) reads `(a creds reference that is not open to agents)`. A folder that the agent may not view, a hidden entry with the same name, and an account in which the agent may view nothing decide nothing: with that node there, with another name, or not there, the token reads the same. An entry that the agent may view counts as a candidate wherever it is, but under a folder that the agent may not view only for a token that names no folder: so for a bare `db`, two viewable `db` entries read the placeholder. A `{name}` token always reads the placeholder, and when a token is cut at a space or a `)` the rest stays as typed. A kept reference keeps the e-mail address of its account. The run of the command does not change |
+| `creds_folders` → `parent` | the parent's id, also for a parent that is not open or that does not exist | `null` for such a parent, so `null` no longer says that the folder is at the top of the vault |
+
+**A Remote Bridge.** No documented value changes. The filter of `dependsOn` of a bridge drops the placeholder before it filters by name, so a bridge never serves it, also when an entry in
+scope is named exactly as the placeholder. Three cases at the edge: a hidden dependency that has the name of a row in scope was listed by a bridge before, and is not now (less is served);
+a real dependency in scope that is named exactly `(a dependency that is not open to agents)` is not listed by a bridge now (less is served); and on the local list an entry that the agent may view and
+that has that name reads like the placeholder (the agent may view that entry, so nothing hidden is told).
+
+**Two releases.** The values come from this extension; the words that describe them (the descriptions of `creds_list`, `creds_folders`, `creds_run` and `creds_vpn_up`, in `contract/mcp-tools-v1.json`)
+come from `creds-mcp`, which has its own `mcp-v` release after this one. With the new extension and the old `creds-mcp` the placeholders explain themselves, and the old words do not say that a `null`
+parent can be a folder under a closed one. A window of an older extension that holds the same vault still names what a newer one hides, and `creds-mcp` keeps the first row for an id.
+The help article *What an agent can and cannot do* says the two sentences in five languages.
+
 ## [1.24.1] — 2026-11-27 — Fixed — the config snippet goes on across accounts; the journal reason of a linked run; the journal page shows the lines it counts
 
 ### Fixed — the snippet of a config no longer depends on what an earlier account holds under its id; the journal reason of a linked run; the texts about the journal; the journal page shows the lines that it counts

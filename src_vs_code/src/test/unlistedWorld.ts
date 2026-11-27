@@ -20,6 +20,9 @@ import type { EntityMetadata, TreeNode } from '../types';
 
 export const ACCOUNT = 'a1';
 
+/** The e-mail address of the account: a `creds://` reference names an account by it, so the locator can FIND the entry that a reference names. */
+export const EMAIL = 'me@x.test';
+
 /** Every switch on: the node is hidden for another reason (the Trash, a PIN), not for want of a switch. */
 const ALL: McpAccess = { view: true, use: true, edit: true, create: true, delete: 'any', folderCreate: true, folderEdit: true, folderDelete: 'any' };
 
@@ -85,8 +88,8 @@ export const VISIBLE = {
   n6: 'vf-n6',
 } as const;
 
-/** What N5's command says: a reference to the hidden entry by NAME. */
-export const N5_COMMAND = `creds://${ACCOUNT}/${markerOf(HIDDEN.entries.none)}/password`;
+/** What N5's command says: a reference to the hidden entry by NAME, in the account that the locator finds by its address. */
+export const N5_COMMAND = `creds://${EMAIL}/${markerOf(HIDDEN.entries.none)}/password`;
 
 const NODES: readonly TreeNode[] = [
   folder(HIDDEN.folders.none, null),
@@ -113,7 +116,7 @@ const NODES: readonly TreeNode[] = [
 
 /** The vault as the broker's collaborators see it: one account, no stored secret anywhere. */
 export const SOURCE: McpVaultSource = {
-  getAccounts: () => [{ accountId: ACCOUNT }],
+  getAccounts: () => [{ accountId: ACCOUNT, email: EMAIL }],
   getNodes: () => NODES,
   getNode: (_account, id) => NODES.find((node) => node.id === id),
   getPassword: () => Promise.resolve(stored(undefined)),

@@ -1,4 +1,8 @@
+import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
+import { isOpenFolder } from './mcpFolders';
+import { ReferenceWall, foldersOpen, keepsReference, listedCommand } from './agentCommandText';
+import { vaultRefLocator, viewableLocatorForOneListing } from './vaultRefLocator';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
@@ -36,7 +40,10 @@ export interface McpEntry {
   id: string;
   name: string;
   kind: string;
-  /** The folder it lives in, so an agent can tell two entries with one name apart. */
+  /**
+   * The name of the folder that gave the entry its switches, or the entry's own folder when it has switches of its own — and only when the agent may
+   * view that folder; `''` when it may not, and at the root. So an agent can tell two entries with one name apart when their folders are open to it.
+   */
   folder: string;
   host?: string;
   port?: number;
@@ -45,7 +52,10 @@ export interface McpEntry {
   /** The connection string with the password removed — never the one that would connect. */
   connectionString?: string;
   vpnType?: string;
-  /** The command a terminal entry runs. Not a secret: it is what the person typed. */
+  /**
+   * The command a terminal entry runs. Not a secret: it is what the person typed — but each `creds://` token that is not a reference to things the
+   * agent may view is shown as `HIDDEN_REFERENCE` (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
+   */
   command?: string;
   scriptLanguage?: string;
   hasPassword: boolean;
@@ -56,7 +66,10 @@ export interface McpEntry {
    * actionable half — the agent tells the person to run Enable Code Access…; it can never
    * mint one itself. */
   codeAccessEnabled?: boolean;
-  /** The names this entry needs to be usable, so an agent can bring up a VPN first. */
+  /**
+   * The names of the entries this one needs to be usable that the agent may view, so an agent can bring up a VPN first; when it needs one
+   * that it may not view, or an id that no node has, the list ends with ONE `HIDDEN_DEPENDENCY` (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2).
+   */
   dependsOn: string[];
   /** What may be done with it, from the ladder — beyond `view`, which it evidently has. */
   can: McpCapabilities;
@@ -86,7 +99,9 @@ export interface McpEntryContext {
   hasTotp: boolean;
   /** The connection string, if any, as stored. Read (`plainText`) and stripped here rather than by the caller. */
   dbConnection?: StoredSecret;
-  /** The names this entry depends on, already resolved from ids by the caller. */
+  /** Is this `creds://` token of the command a reference to things that the agent may view? Required: a caller that forgets it does not compile. */
+  keepsReference: (token: string) => boolean;
+  /** The names this entry depends on that the agent may view, then `HIDDEN_DEPENDENCY` once if it depends on one more: already resolved from ids by the caller. */
   dependsOn: readonly string[];
 }
 
@@ -146,7 +161,7 @@ export function mcpEntryFor(node: TreeNode, context: McpEntryContext): McpEntry 
     name: node.name,
     kind: resolveKind(details),
     folder: context.folderName,
-    ...visibleFields(details),
+    ...visibleFields(details, context.keepsReference),
     connectionString: shownConnection(context.dbConnection),
     hasPassword: context.hasPassword,
     hasPrivateKey: context.hasPrivateKey,
@@ -170,16 +185,21 @@ function codeAccessOf(details: EntityMetadata): boolean | undefined {
  * new field on `EntityMetadata` does not appear here by itself, which is the intended
  * direction: adding one to this answer should be a decision somebody made.</p>
  */
-function visibleFields(details: EntityMetadata): Partial<McpEntry> {
+function visibleFields(details: EntityMetadata, keepsReference: (token: string) => boolean): Partial<McpEntry> {
   return {
     host: blankToUndefined(details.host),
     port: details.port,
     user: blankToUndefined(details.user),
     dbType: blankToUndefined(details.dbType),
     vpnType: blankToUndefined(details.vpnType),
-    command: blankToUndefined(details.command),
+    command: shownCommand(blankToUndefined(details.command), keepsReference),
     scriptLanguage: blankToUndefined(details.scriptLanguage),
   };
+}
+
+/** The command as the agent reads it: a token that is not kept is the placeholder; no command stays no command. */
+function shownCommand(command: string | undefined, keepsReference: (token: string) => boolean): string | undefined {
+  return command === undefined ? undefined : listedCommand(command, keepsReference);
 }
 
 /** An empty string on the wire says "there is one, and it is nothing", which is never true here. */
@@ -194,7 +214,7 @@ function blankToUndefined(value: string | undefined): string | undefined {
  * a module that takes the whole storage manager is a module whose test has to build one.</p>
  */
 export interface McpVaultSource {
-  getAccounts(): readonly { accountId: string }[];
+  getAccounts(): readonly { accountId: string; email?: string }[];
   getNodes(accountId: string): readonly TreeNode[];
   getNode(accountId: string, id: string): TreeNode | undefined;
   getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
@@ -218,10 +238,11 @@ export interface McpVaultSource {
  */
 export async function visibleMcpEntries(source: McpVaultSource): Promise<readonly McpEntry[]> {
   const found: McpEntry[] = [];
+  const keepsReference = referenceKeeper(source);
   for (const { accountId } of source.getAccounts()) {
     const byId = (id: string): TreeNode | undefined => source.getNode(accountId, id);
     for (const node of source.getNodes(accountId)) {
-      const entry = await entryIfVisible(source, accountId, node, byId);
+      const entry = await entryIfVisible(source, accountId, node, byId, keepsReference);
       if (entry !== undefined) {
         found.push(entry);
       }
@@ -268,6 +289,7 @@ async function entryIfVisible(
   accountId: string,
   node: TreeNode,
   byId: (id: string) => TreeNode | undefined,
+  keepsReference: (token: string) => boolean,
 ): Promise<McpEntry | undefined> {
   const resolved = resolveMcpInTree(node, byId);
   if (!shown(node, resolved)) {
@@ -275,10 +297,25 @@ async function entryIfVisible(
   }
   return mcpEntryFor(node, {
     resolved,
-    folderName: folderNameOf(resolved),
+    folderName: folderNameOf(resolved, byId),
+    keepsReference,
     ...(await storedSecrets(source, accountId, node.id)),
-    dependsOn: dependencyNames(node, byId),
+    dependsOn: dependencyNames(node, source, accountId, byId),
   });
+}
+
+/**
+ * The one function that decides a `creds://` token in a listed command, built once for a listing: the product's own locator, given the candidates of §2.4 (the entries
+ * that the agent may view, of each account with the token's address, whose folders that the token names exist and are open: `agentMayView` and `isOpenFolder`), and
+ * `agentMayView` again, in the account of the entry that is found, as the second lock (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4).
+ */
+function referenceKeeper(source: McpVaultSource): (token: string) => boolean {
+  const nodes = { nodeOf: (accountId: string, id: string): TreeNode | undefined => source.getNode(accountId, id) };
+  const wall: ReferenceWall = {
+    locator: viewableLocatorForOneListing(vaultRefLocator(source), (accountId, entityId) => agentMayView(source, accountId, entityId), (accountId, entityId, count) => foldersOpen(nodes, accountId, entityId, count)),
+    mayViewEntry: (accountId, entityId) => agentMayView(source, accountId, entityId),
+  };
+  return (token) => keepsReference(token, wall);
 }
 
 /** A folder is not an entry, and an entry nobody opened is not shown. */
@@ -299,9 +336,13 @@ export function agentMayView(source: Pick<McpVaultSource, 'getNode'>, accountId:
   return node !== undefined && shown(node, resolveMcpInTree(node, byId));
 }
 
-/** An entry at the root has no folder, and an empty name is the honest answer for it. */
-function folderNameOf(resolved: ResolvedMcpAccess & { folder?: TreeNode }): string {
-  return resolved.folder?.name ?? '';
+/**
+ * The name of the folder that the access came from, when the agent may view that folder (`isOpenFolder`); in each other case `''`, which is also
+ * the answer for an entry at the root and for a parent id that points to no node (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.3).
+ */
+function folderNameOf(resolved: ResolvedMcpAccess & { folder?: TreeNode }, byId: (id: string) => TreeNode | undefined): string {
+  const folder = resolved.folder;
+  return folder !== undefined && isOpenFolder(folder, byId) ? folder.name : '';
 }
 
 /**
@@ -516,19 +557,27 @@ function granted(access: McpAccess, needed: McpRung, node: TreeNode): boolean {
 }
 
 /**
- * Dependencies as NAMES, never ids.
+ * Dependencies as NAMES, never ids, and only the names of entries that the agent may view.
  *
  * <p>An id means nothing to an agent — it cannot look one up, because the only thing that
  * resolves ids is the vault it is not allowed to enumerate. A name is what appears in the
- * consent modal it will trigger next, so the two halves of the conversation match. A dependency
- * whose target has been deleted is dropped rather than named, since a name that resolves to
- * nothing is worse than silence.</p>
+ * consent modal it will trigger next, so the two halves of the conversation match.</p>
+ *
+ * <p><b>A dependency that the agent may not view is not named</b> (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2): an entry with no
+ * switch, a PIN of its own or in the Trash, and a folder, are not `shown`. They give ONE `HIDDEN_DEPENDENCY`, at the end, for any number,
+ * so the list does not tell how many or where. <b>An id that no node has gives it too</b> (D2): if it stayed dropped, an agent could tell a
+ * hidden dependency from a deleted one, and rule A says it must not. The wall is `agentMayView`, the account-aware question that the references of a command ask too, in the entry's own account.</p>
  */
-function dependencyNames(node: TreeNode, byId: (id: string) => TreeNode | undefined): readonly string[] {
-  return (node.details?.dependsOn ?? []).flatMap((id) => {
-    const target = byId(id);
-    return target === undefined ? [] : [target.name];
-  });
+function dependencyNames(node: TreeNode, source: Pick<McpVaultSource, 'getNode'>, accountId: string, byId: (id: string) => TreeNode | undefined): readonly string[] {
+  const ids = node.details?.dependsOn ?? [];
+  const named = ids.flatMap((id) => viewableName(id, source, accountId, byId));
+  return named.length < ids.length ? [...named, HIDDEN_DEPENDENCY] : named;
+}
+
+/** The name of the entry that this id points to when the agent may view it, as a list of one; no node, a folder and a hidden entry give none. */
+function viewableName(id: string, source: Pick<McpVaultSource, 'getNode'>, accountId: string, byId: (id: string) => TreeNode | undefined): string[] {
+  const target = byId(id);
+  return target !== undefined && agentMayView(source, accountId, id) ? [target.name] : [];
 }
 
 /**

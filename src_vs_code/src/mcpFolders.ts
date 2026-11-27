@@ -30,7 +30,10 @@ export interface FoldersBody {
 export interface FolderView {
   id: string;
   name: string;
-  /** `null` at the root — the same shape the tree uses. */
+  /**
+   * The id of the folder above it, when that folder is one that the agent may view; `null` when the agent may not view the parent (or the id points to no node), and at the
+   * root — so a `null` parent does not say that the folder is at the top of the vault (a folder under a closed folder under an open one gets `null` too) (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.5).
+   */
   parent: string | null;
   folderType?: FolderType;
   /**
@@ -81,7 +84,7 @@ export function visibleFolders(
   );
 }
 
-function isOpenFolder(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
+export function isOpenFolder(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
   if (node.type !== 'folder' || isTrashFolder(node) || isInTrash(node, byId)) {
     return false;
   }
@@ -93,7 +96,7 @@ function viewOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): Fol
   return {
     id: node.id,
     name: node.name,
-    parent: node.parentId ?? null,
+    parent: openParentId(node, byId),
     folderType: node.folderType,
     ...holdsOf(node.folderType),
     can: {
@@ -102,6 +105,18 @@ function viewOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): Fol
       delete: mayDeleteFolder(access, node.mcpCreatedByAgent === true),
     },
   };
+}
+
+/** The parent's id when the parent is a node that the agent may view (`isOpenFolder`); in each other case `null`, also for an id that points to no node. */
+function openParentId(node: TreeNode, byId: (id: string) => TreeNode | undefined): string | null {
+  const parent = parentNode(node, byId);
+  return parent !== undefined && isOpenFolder(parent, byId) ? parent.id : null;
+}
+
+/** The node that `parentId` points to, or `undefined` at the root and for an id that no node has. */
+function parentNode(node: TreeNode, byId: (id: string) => TreeNode | undefined): TreeNode | undefined {
+  const parentId = node.parentId ?? null;
+  return parentId === null ? undefined : byId(parentId);
 }
 
 /**

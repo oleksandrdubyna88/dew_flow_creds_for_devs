@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, before, test } from 'node:test';
+import { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } from '../agentNaming';
 import { BRIDGE_ROUTES } from '../bridgeAllowList';
 import { ErrorCode, errorBody, statusForErrorCode } from '../brokerProtocol';
 import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
@@ -15,7 +16,7 @@ import { World, share, world } from './brokerWorld';
 import { normalised, send, viaBridge, wallWorld } from './bridgeWallWorld';
 import { HIDDEN_HOP_IDS, asBroker, gateWorld, usableSsh } from './agentSshWorld';
 import { ACCOUNT, HIDDEN_ID, SecondOptions, SecondWorld, VISIBLE_NAME, secondEntryWorld } from './secondEntryWorld';
-import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, N5_COMMAND, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
+import { HIDDEN, HIDDEN_IDS, HIDDEN_NAMES, SOURCE, STORAGE, VISIBLE, madeUp, markerOf, proveFixture } from './unlistedWorld';
 
 /**
  * Part A of the class test of `research/PLAN_agent_refusal_names_unlisted_entry.md` (section 5.1): the ADDRESSED node, at the door.
@@ -304,45 +305,45 @@ test('the exact answers: none is a new sentence, and each is the answer that the
   assert.deepEqual(JSON.parse(snippet.raw), { error: 'no such config is open to agents', envVar: (JSON.parse(snippet.raw) as { envVar: string }).envVar, languages: [] });
 });
 
-/**
- * The four fields of the two list answers that can hold the name or the id of a node the agent may not view (the plan's
- * section 2.6). Each is a documented answer of an MCP tool today, so each is a question for the owner and none is changed here.
- * When the owner closes one, its assertion goes red and its row goes.
- */
-const EXCEPTIONS = [
-  { n: 'N1', list: 'entries', field: 'dependsOn', reason: 'the agent can tell the person which VPN is missing; creds_vpn_up builds on it; a Remote Bridge filters it' },
-  { n: 'N4', list: 'entries', field: 'folder', reason: 'so an agent can tell two entries with one name apart; a Remote Bridge gives an empty string' },
-  { n: 'N5', list: 'entries', field: 'command', reason: 'not a secret: it is what the person typed; a Remote Bridge gives a boolean' },
-  { n: 'N6', list: 'folders', field: 'parent', reason: 'the shape of the tree' },
-] as const;
-
 type ListRow = Record<string, unknown> & { id: string };
 
-async function listOf(list: 'entries' | 'folders'): Promise<ListRow[]> {
+/** The raw text of the whole body of a list answer: every key, every value, and everything beside the array. */
+async function bodyTextOf(list: 'entries' | 'folders'): Promise<string> {
   const route = list === 'entries' ? CONTRACT.reads.mcpEntries.path : CONTRACT.reads.mcpFolders.path;
   const reply = await ask(rig, 'GET', route);
   assert.equal(reply.status, 200, reply.text);
-  return (JSON.parse(reply.text) as Record<string, ListRow[]>)[list];
+  return reply.text;
 }
 
-/** The same rows with one field of one row taken out. */
-const without = (rows: readonly ListRow[], id: string, field: string): ListRow[] => rows.map((row) => (row.id === id ? { ...row, [field]: undefined } : row));
+/** The rows of the array of a list answer, apart from its text: for the exact values of the four fields. */
+const rowsIn = (text: string, list: 'entries' | 'folders'): ListRow[] => (JSON.parse(text) as Record<string, ListRow[]>)[list];
 
-test('the list check: the four exceptions are exactly N1, N4, N5 and N6, each holds the value that is there today, and the lists hold nothing else', async () => {
-  assert.deepEqual(EXCEPTIONS.map((e) => `${e.list}.${e.field}`), ['entries.dependsOn', 'entries.folder', 'entries.command', 'folders.parent']);
-  const entries = await listOf('entries');
-  const folders = await listOf('folders');
-  const row = (rows: readonly ListRow[], id: string): ListRow => rows.find((r) => r.id === id) as ListRow;
-  assert.deepEqual(row(entries, VISIBLE.n1).dependsOn, [markerOf(HIDDEN.entries.none)], 'N1: the hidden dependency\'s NAME');
-  assert.equal(row(entries, VISIBLE.n4).folder, markerOf(HIDDEN.folders.none), 'N4: the hidden folder\'s NAME');
-  assert.equal(row(entries, VISIBLE.n5).command, N5_COMMAND, 'N5: the reference text, with the hidden entry\'s NAME in it');
-  assert.equal(row(folders, VISIBLE.n6).parent, HIDDEN.folders.none, 'N6: the hidden parent\'s ID');
-  const left = JSON.stringify([
-    without(without(without(entries, VISIBLE.n1, 'dependsOn'), VISIBLE.n4, 'folder'), VISIBLE.n5, 'command'),
-    without(folders, VISIBLE.n6, 'parent'),
-  ]);
-  const found = [...HIDDEN_NAMES, ...HIDDEN_IDS].filter((text) => left.includes(text));
-  assert.deepEqual(found, [], 'no hidden name and no hidden id is left in the two bodies');
+/** Each hidden name and id that the raw text holds, said as a sentence; a name that holds a shorter hidden text is said once. */
+function textLeaks(list: string, text: string): string[] {
+  const held = [...HIDDEN_NAMES, ...HIDDEN_IDS].filter((hidden) => text.includes(hidden));
+  return held.filter((hidden) => !held.some((other) => other !== hidden && other.includes(hidden))).map((hidden) => `the body of ${list} holds ${hidden}`);
+}
+
+/**
+ * The four fields of the two list answers that held the name or the id of a node the agent may not view (N1, N4, N5 and N6 of
+ * `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`), each at the value that it holds now: a fixed word, an empty name or null.
+ */
+const FIELDS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
+  { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
+  { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', now: '' },
+  { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', now: HIDDEN_REFERENCE },
+  { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', now: null },
+];
+
+/** Row L1: no hidden name and no hidden id is anywhere in the RAW TEXT of the two response bodies (a key, a value, or a thing beside the array); the four fields hold their fixed values. */
+test('the list check (row L1): the two list bodies hold no hidden name and no hidden id, and the four fields hold the value of the owner\'s answer', async () => {
+  const texts = { entries: await bodyTextOf('entries'), folders: await bodyTextOf('folders') };
+  for (const c of FIELDS) {
+    const row = rowsIn(texts[c.list], c.list).find((r) => r.id === c.row) as ListRow;
+    assert.deepEqual(row[c.field], c.now, `${c.n}: the value that the owner's answer gives`);
+  }
+  const found = [...textLeaks('entries', texts.entries), ...textLeaks('folders', texts.folders)];
+  assert.deepEqual(found, [], 'a list answer names a node that the agent may not view, in a key, a value or beside the array');
 });
 
 test('completeness 1: every route of the contract has a row or a written reason, and the contract holds no route that nobody has seen', () => {

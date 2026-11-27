@@ -13,6 +13,7 @@ import {
   visibleConfigDetails,
   visibleMcpEntries,
 } from '../mcpEntries';
+import { HIDDEN_DEPENDENCY } from '../agentNaming';
 import { readRouteBody } from '../brokerReadRoutes';
 import type { ConfigSnippetBody } from '../mcpSnippetRoute';
 import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
@@ -87,7 +88,7 @@ test('a vault nobody has opened to agents answers an empty list', async () => {
 
 test('an entry appears once its own switch is on, and carries its non-secret half', async () => {
   const nodes = [
-    folder('f1', 'Databases'),
+    folder('f1', 'Databases', { mcp: { view: true } }),
     entity('e1', 'orders-db', {
       kind: 'db',
       dbType: 'mysql',
@@ -237,16 +238,18 @@ test('a field added to a stored record does not reach the wire on its own', asyn
 
 test('dependencies are named, never given as ids', async () => {
   // An id means nothing to an agent: the only thing that resolves one is the vault it is not
-  // allowed to enumerate. The name is what the consent modal it triggers next will say.
+  // allowed to enumerate. The name is what the consent modal it triggers next will say. Only the
+  // name of an entry that the agent may view is given; an id that no node has reads as a
+  // dependency that is not open to agents, once, at the end (plan N1, §2.2 and D2).
   const nodes = [
     folder('f1', 'F'),
-    entity('v1', 'office vpn', { kind: 'vpn' }),
+    entity('v1', 'office vpn', { kind: 'vpn', mcp: { view: true } }),
     entity('e1', 'orders-db', { kind: 'db', mcp: { view: true }, dependsOn: ['v1', 'gone'] }),
   ];
 
-  const [entry] = await visibleMcpEntries(vault(nodes));
+  const entry = (await visibleMcpEntries(vault(nodes))).find((row) => row.id === 'e1');
 
-  assert.deepEqual(entry.dependsOn, ['office vpn']);
+  assert.deepEqual(entry?.dependsOn, ['office vpn', HIDDEN_DEPENDENCY]);
 });
 
 test('the capabilities say what may be done beyond looking', () => {
@@ -281,6 +284,7 @@ test('a node with no details is never an entry, whatever its switches say', () =
     hasPrivateKey: false,
     hasNotes: false,
     hasTotp: false,
+    keepsReference: () => true,
     dependsOn: [],
   });
 
@@ -292,7 +296,7 @@ test('an_agent_and_a_search_see_the_stored_command_not_the_resolved_one', () => 
   const node = entity('e1', 'alert', { isTerminal: true, command: 'tmux {name}', commandArgs: [{ value: '-t {name}' }] });
   const resolved = resolveMcpInTree(node, () => folder('f1', 'F', { mcp: { view: true } }));
 
-  const built = mcpEntryFor(node, { resolved, folderName: 'F', hasPassword: false, hasPrivateKey: false, hasNotes: false, hasTotp: false, dependsOn: [] });
+  const built = mcpEntryFor(node, { resolved, folderName: 'F', hasPassword: false, hasPrivateKey: false, hasNotes: false, hasTotp: false, keepsReference: () => true, dependsOn: [] });
 
   assert.equal(built?.command, 'tmux {name}');
   assert.ok(nodeHaystack(node).includes('tmux {name}'));
@@ -535,6 +539,7 @@ test('a payment instrument opened to an agent carries no payment field, and ther
     hasPrivateKey: false,
     hasNotes: false,
     hasTotp: false,
+    keepsReference: () => true,
     dependsOn: [],
   });
   assert.ok(entry !== undefined, 'the entry itself is visible — the switch says so');

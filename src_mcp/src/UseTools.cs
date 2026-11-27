@@ -85,7 +85,10 @@ internal static class UseTools
             not one you supply. Give the entry's `id` from creds_list.
 
             Use this when creds_list showed you an entry of kind `terminal` or `script`: its own
-            `command` field tells you what it will do. The person approves the run when this
+            `command` field tells you what it will do. In that text
+            "(a creds reference that is not open to agents)" stands in the place of a creds://
+            reference that is not open to you, or that is missing, broken or ambiguous.
+            The person approves the run when this
             entry’s consent setting asks for one.
             """),
         new(
@@ -110,7 +113,10 @@ internal static class UseTools
             creds_list.
 
             Reach for this when an entry's `dependsOn` names a VPN and the host it fronts is not
-            answering: that dependency is the person saying "this needs that first". You get back
+            answering: that dependency is the person saying "this needs that first". A dependency
+            that is not open to you is not named: `dependsOn` then ends with
+            "(a dependency that is not open to agents)", and you cannot bring that one up — tell the
+            person which entry needs it. You get back
             whether it came up, never the configuration. The person approves it whenever this
             entry's consent setting asks — every time, once every 12 hours, or never.
             """),

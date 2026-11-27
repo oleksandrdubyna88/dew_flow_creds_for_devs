@@ -87,6 +87,9 @@ function plantedNodes(): TreeNode[] {
   const db = (id: string): TreeNode => entity(id, id, 'f1', { kind: 'db', dbType: 'mssql', host: 'db.example.test' });
   return [
     { id: 'f-planted', name: PLANTED.FOLDER, type: 'folder', parentId: null, mcp: EVERYTHING },
+    // The entry that `PLANTED.REFERENCE` names, open to agents on the main port and in no scope: the local list keeps a reference to it (the plan of the list fields, RS3).
+    { id: 'f-outside', name: 'outside', type: 'folder', parentId: null, mcp: EVERYTHING },
+    entity('outside-db', 'db', 'f-outside'),
     db('db-kv'), db('db-qs'), db('db-slash'), db('db-at'),
     entity('full-row', 'full row', 'f1', {
       kind: 'db', host: 'full.example.test', port: 5432, user: 'u', dbType: 'postgres', vpnType: 'openvpn', scriptLanguage: 'bash',
@@ -186,7 +189,7 @@ function heldBy(flavour: Flavour, slot: (typeof SECRET_SLOTS)[string], value: st
 function vaultOf(x: XState, flavour: Flavour, asked: string[]): McpVaultSource {
   const nodes = nodesOf(x, flavour);
   return {
-    getAccounts: () => [{ accountId: 'a2' }, { accountId: ACCOUNT }],
+    getAccounts: () => [{ accountId: 'a2', email: 'other@example.test' }, { accountId: ACCOUNT, email: 'acct@example.test' }],
     getNodes: (accountId) => nodes[accountId] ?? [],
     getNode: (accountId, id) => {
       asked.push(accountId);

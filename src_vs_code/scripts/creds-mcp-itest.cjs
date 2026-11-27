@@ -188,7 +188,10 @@ const { EXE, binaryIsFresherThanItsSource } = require('./mcpBinary.cjs');
 
 const SECRET = 'hunter2-SUPER-SECRET-VALUE';
 
-/** What a window would answer for a vault with one entry opened to agents. */
+/** What a window answers in the place of a dependency, and of a `creds://` reference, that the agent may not view (`agentNaming.ts`): the words cross the binary as they are. */
+const { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } = require(path.join(__dirname, '..', 'out', 'agentNaming.js'));
+
+/** What a window would answer for a vault with two entries opened to agents: `e-1`, and `e-2` whose folder is not open to the agent (H1 of the plan of the list fields). */
 const ENTRIES = [
   {
     id: 'e-1',
@@ -205,6 +208,19 @@ const ENTRIES = [
     hasNotes: true,
     hasTotp: false,
     dependsOn: ['office vpn'],
+    can: { use: true, edit: false, create: false, delete: false },
+  },
+  {
+    id: 'e-2',
+    name: 'ops',
+    kind: 'terminal',
+    folder: '',
+    hasPassword: false,
+    hasPrivateKey: false,
+    hasNotes: false,
+    hasTotp: false,
+    command: `run ${HIDDEN_REFERENCE} now`,
+    dependsOn: ['office vpn', HIDDEN_DEPENDENCY],
     can: { use: true, edit: false, create: false, delete: false },
   },
 ];
@@ -937,9 +953,11 @@ harnessScope.run(async (scope) => {
   } catch {
     /* reported by the checks below */
   }
-  check('it found the window and read its entries', Array.isArray(entries) && entries.length === 1, text.slice(0, 200));
+  check('it found the window and read its entries', Array.isArray(entries) && entries.length === 2, text.slice(0, 200));
 
-  const entry = entries[0] ?? {};
+  // The rows are searched in an array of their own: the failure shape of this tool is an OBJECT (`{ error, hint }`), and `find` of an object throws in place of failing a check.
+  const rows = Array.isArray(entries) ? entries : [];
+  const entry = rows.find((e) => e.id === 'e-1') ?? {};
   // Field by field, because every one of these crossed a hand-written TypeScript interface and a
   // hand-written C# record. A rename on either side arrives here as undefined, not as an error.
   check('the name survives the crossing', entry.name === 'orders-db', JSON.stringify(entry.name));
@@ -951,6 +969,12 @@ harnessScope.run(async (scope) => {
   check('hasPassword survives as a boolean', entry.hasPassword === true);
   check('the dependency name survives', Array.isArray(entry.dependsOn) && entry.dependsOn[0] === 'office vpn', JSON.stringify(entry.dependsOn));
   check('the capabilities survive', entry.can && entry.can.use === true && entry.can.delete === false, JSON.stringify(entry.can));
+
+  // H1: the three values that the window gives for a thing that the agent may not view cross the binary as they are.
+  const hidden = rows.find((e) => e.id === 'e-2') ?? {};
+  check('H1: a folder that is not open crosses as the empty string, and the key is there', hidden.folder === '' && 'folder' in hidden, JSON.stringify(hidden.folder));
+  check('H1: dependsOn crosses as it is: the name, then the placeholder, and nothing else', JSON.stringify(hidden.dependsOn) === JSON.stringify(['office vpn', HIDDEN_DEPENDENCY]), JSON.stringify(hidden.dependsOn));
+  check('H1: the placeholder of a reference in command crosses as it is', hidden.command === `run ${HIDDEN_REFERENCE} now`, JSON.stringify(hidden.command));
 
   check('no secret appears anywhere in what the agent received', !called.out.includes(SECRET));
 
@@ -1301,6 +1325,8 @@ harnessScope.run(async (scope) => {
   });
   // Opened to nobody: it must not appear in the listing, and must not be a destination.
   await storage.addNode('a-1', { id: 'f-shut', name: 'Private', type: 'folder', parentId: null });
+  // Opened to the agent, under the folder that is not: its `parent` reads null (H1).
+  await storage.addNode('a-1', { id: 'f-under', name: 'Under', type: 'folder', parentId: 'f-shut', mcp: { view: true } });
 
   // Its OWN window, and that is not tidiness. An unauthenticated caller may make a window prompt
   // five times a minute (`aliasThrottle.ts`) — a real defence against consent fatigue, and the
@@ -1346,7 +1372,9 @@ harnessScope.run(async (scope) => {
   );
   const listedFolders = Array.isArray(parsedFolders) ? parsedFolders : [];
   const ids = listedFolders.map((f) => f.id).sort();
-  check('only the folders opened to it are listed', ids.join(',') === 'f-look,f-open', JSON.stringify(ids));
+  check('only the folders opened to it are listed', ids.join(',') === 'f-look,f-open,f-under', JSON.stringify(ids));
+  const underFolder = listedFolders.find((f) => f.id === 'f-under') ?? {};
+  check('H1: a parent that is not open crosses as null, and the key is there', 'parent' in underFolder && underFolder.parent === null, JSON.stringify(underFolder));
   const openFolder = listedFolders.find((f) => f.id === 'f-open') ?? {};
   const lookFolder = listedFolders.find((f) => f.id === 'f-look') ?? {};
   check(
