@@ -3910,7 +3910,7 @@ is no longer the file's, and is written temp-and-rename (the rename retried 3 ti
 reader holds the file); 64 files at most, the oldest `at` pruned inside the lock, and `forget` removes one on Close.
 `doorView(bridge, wall)` wraps every way the router looks
 something up, so an entry out of scope answers through the route's own not-found function exactly as an entry that is
-not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed),
+not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed, after the placeholder of the local row, `HIDDEN_DEPENDENCY`, is dropped: the filter by name never serves it, X1 of [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md)),
 the snippet and the folders say nothing of it, the MCP lookup runs for every id narrowed to the context's account and
 the scope decides afterwards (so the time it takes is not an answer), and a token out of scope is unknown whether it is
 live or expired. **The listing and the snippet are per account**: `McpEntry` carries no account and an envelope may repeat
@@ -6868,11 +6868,25 @@ answer to a hidden entry is `not_found`, which the binary reads as *this window 
 older window that still holds the entry answers under its own switches and consent policy; a `denied` for a node that the agent may view still
 stops the walk. **A lookup refusal writes no journal line**, for a node that exists and for one that does not: the lookup is before the throttle, so
 the count of lines would have no limit; a line for a node that exists would be an effect that a missing id does not have; and the journal is a
-plain file, so the line would write the hidden name where a local process can read it. **Four fields of the two list answers are not covered,
-each one a question for the owner and each one pinned by a test as it is today (N1, N4, N5, N6):** `creds_list` → `dependsOn` (the name of each
-dependency), `folder` (the name of the folder, also when nobody opened it) and `command` (the stored text, which can hold a `creds://` reference),
-and `creds_folders` → `parent` (the id of a parent that is not open). Pinned by part A of the class test, `agentNamesOnlyViewable.test.ts`
-(see `module_tests.md`, *A refusal names only what the agent may view*).
+plain file, so the line would write the hidden name where a local process can read it. **The two list answers follow the same wall, field by field**
+([PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md); F7 had left four fields open as N1, N4, N5 and N6 and the owner closed them on
+2026-11-27). *A field of a list answer names a node, or gives its id, only when the agent may view that node.* Three functions decide it and the plan adds no fourth:
+`shown` (`mcpEntries.ts`; for one id in one account `agentMayView`) for an entry, `isOpenFolder` (`mcpFolders.ts`, exported and unchanged) for a folder, and, for the
+text of a command, the product's own locator `locateRef` (`secretRef.ts`) over the pure `vaultRefLocator` (`vaultRefLocator.ts`, the two members of the window's `RefSource` that hold
+no secret, moved out of `extension.ts` so that the run and the list find one entry by one function). In each other case the field holds ONE fixed value, the same for a hidden
+node and for an id that points to nothing (rule A):
+
+| Field | The agent may not view the node, or the id points to nothing | Where |
+|---|---|---|
+| `creds_list` → `dependsOn` | the names of the dependencies that are `shown`, then ONE `HIDDEN_DEPENDENCY` (`agentNaming.ts`) at the end, for any number, for a folder id and for an id that no node has (before: the name, and a missing id dropped) | `dependencyNames` |
+| `creds_list` → `folder` | `''`; the name only when `isOpenFolder` is true for the folder that answered the switches (which can be a folder above the entry's own, `answeringFolder`) | `folderNameOf` |
+| `creds_list` → `command` | each `creds://` token that the scan finds, in any letter case of the scheme, is kept as typed only when the locator finds exactly one entry for it in the account whose e-mail address it names, the agent may view that entry, and the agent may view each folder that the token names (a shorter reference that leaves a hidden folder out stays); each other token, also an ambiguous or a broken one, reads `HIDDEN_REFERENCE`. The text between the tokens stays | `agentCommandText.ts`, `rewriteRefTokens` |
+| `creds_folders` → `parent` | `null`; the id only when the parent exists and `isOpenFolder` is true for it, so `null` no longer says that the folder is at the top | `openParentId` |
+
+A Remote Bridge never serves the placeholder: the filter of `dependsOn` in `narrowed` (`bridgeScope.ts`) drops `HIDDEN_DEPENDENCY` before it filters by name, so an entry in scope that
+is NAMED as the placeholder does not carry it across. The words of the four tool descriptions of `creds-mcp` and the help sentences are in the plan, with their own `mcp-v` release after
+the extension release; a window of an older extension still names what a newer one hides. Pinned by `listFieldsHidden.test.ts` and by the list check (row L1) of part A of the class test,
+`agentNamesOnlyViewable.test.ts` (see `module_tests.md`, *A refusal names only what the agent may view* and *The list answers name only what the agent may view*).
 
 *Rule B: a second entry in a refusal.* An SSH entry that the agent may view can need a second entry: the key entry that `sshKeyEntityId`
 names, and every hop of the chain of `jumpHostEntityId`. Using the first entry uses those too, so a hidden key entry or a hidden jump host
