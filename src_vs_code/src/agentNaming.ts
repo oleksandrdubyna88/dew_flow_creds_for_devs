@@ -43,7 +43,7 @@ export function agentRefusal(
 
 /**
  * What `dependsOn` of `creds_list` holds in the place of a dependency that the agent may not view, once at the end of the list, for any
- * number of them and for an id that no node has (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2, D1 and D2). It is true for a
+ * number of them and for an id that no node has (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2, D1 and D2). It is true for a
  * hidden node and for a missing one, so the two read alike (rule A). A Remote Bridge never serves it (`bridgeScope.ts`, `narrowed`).
  */
 export const HIDDEN_DEPENDENCY = '(a dependency that is not open to agents)';

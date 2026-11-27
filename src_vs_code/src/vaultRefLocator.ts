@@ -5,7 +5,7 @@ import type { TreeNode } from './types';
 /**
  * The part of the reference resolver's source that holds no secret: the accounts by e-mail address, and every entity of an account with its
  * folder path. The window builds its `RefSource` from this, and the list of agent-visible entries asks it which entry a `creds://` token
- * names, so the run and the list find the same entry by one function and the same case rules (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, D8).
+ * names, so the run and the list find the same entry by one function and the same case rules (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, D8).
  *
  * <p>Pure and `vscode`-free. The bodies are the ones that `extension.ts` had; a source with no address for an account gives no account, so a
  * reference to it is found by nobody.</p>
@@ -44,7 +44,7 @@ export interface ListingLocator {
   /** The entries of the account that the agent may view and whose own name is `lastName` (the letter case ignored): the bucket of a name, before the folders are asked. */
   candidates(accountId: string, lastName: string): Entities;
   /**
-   * THE candidates of a token (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4): from EACH account that has the address, the entries that the agent may view, whose
+   * THE candidates of a token (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4): from EACH account that has the address, the entries that the agent may view, whose
    * own name is `lastName`, and whose `namedFolders` folders directly above exist and are each open to the agent. Held for the listing by the address, the name and the number
    * of folders (D9), so a token that is asked again costs no node read.
    */

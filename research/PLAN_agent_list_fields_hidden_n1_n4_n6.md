@@ -1,6 +1,28 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
-> Status: **re-reviewed 2026-11-27: the plan stopped at entry 1.2 and was revised as a whole; epoch 2 is open.
+> Status: **IMPLEMENTED, 2026-11-27.** N1, N4, N5 and N6 (one epic, six stories S1 to S6) are built, merged and released
+> in two artefacts. Merged as #401 (squash `57fa6288`). Extension 1.24.2: release PR #403 (`83a43f9d`), tag
+> `extension-v1.24.2`; the `release.yml` run 46068886151 ended "Published remsoftdev.creds-for-devs v1.24.2"; the GitHub
+> release holds the vsix. `creds-mcp` 0.11.1 (the words of the four tool descriptions): release PR #402 (`0dae1c9f`),
+> tag `mcp-v0.11.1`, `release.yml` run 46073024214.
+>
+> success: six platforms with their sha256 files, the two Windows builds signed, the GitHub release not a draft
+>
+> Deviations: §12. Ledger at promotion: epoch 1 closed with entries 1.1 and 1.2 and the stop; epoch 2 approved by
+> reviewers, 0 changes (left as it stood, append only). The owner's words on 2026-11-27: the four answers (hide or mask
+> each field), «делай по плану» (the pull request over the cap, the merge, both releases, the promotion) and «идем по
+> полному» (no split of N5). The consultants answered Q4 (fail closed) and the owner's «keep the text» answered Q3; the
+> record read for this promotion holds no owner answer to the other questions of §14, so the plan shipped on their
+> default answers. Proof: the extension suite ran 8657 tests, 8613 pass, 0 fail, 44 skipped; `itest:mcp` 141 checks;
+> `CredsMcp.Tests` 174 pass, 3 skipped, 2 fail locally (the two `ParentWatchProcessTests`: `creds-mcp.exe` cannot start
+> under WSL; CI is green). Not done, and open (§13, §12): F6, F8 and F9; the bridge drops a real in-scope dependency that
+> is named exactly as the placeholder (fail closed, documented); a vault that changes during one listing (§6.5); the
+> clause of the `creds_run` description about the run-time resolution; the boundary row owed to the Remote Bridge plan
+> (§9); the translations, which no native reader checked. The body below was written before the build and is kept as
+> it was: where it says that S6 is "not built", the sentence is the state at the re-review, and the `file:line` are those
+> of `dbb2166d` and `599ef537`, not of the merge. Scope: unchanged from the status below.
+>
+> The status as it stood before the promotion, kept as it was written: **re-reviewed 2026-11-27: the plan stopped at entry 1.2 and was revised as a whole; epoch 2 is open.
 > S1 to S6 are on the branch `fix/agent-list-fields-hidden` (PR #401, not merged, not released; S6:
 > `ae0c559e`, `538c9e7b`, `d56a56eb`, and row KG7 `1c1fa834`). The Opus review of S6 said ship and the `coai` code
 > round passed (`proceed`, 4 of 4).** What remains: the merge; the extension release and then the `mcp-v` release;
@@ -20,7 +42,7 @@
 > extension only.
 >
 > The owner answered the four questions of §2.6 of
-> [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7) on
+> [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7) on
 > 2026-11-27. This plan builds the four answers. **Two commits are the base of the `file:line` here.** §1.1 to §1.6,
 > §2.1 to §2.3, §2.5 to §2.8, §3.1 to §3.4, §6.1 to §6.9 and the rows and mutations of epoch 1 describe the code
 > BEFORE the build and were read on `dbb2166d` (extension 1.24.1, `creds-mcp` 0.11.0). §1.7, §2.4, §3.5, §6.10, the
@@ -495,7 +517,7 @@ Three cases stay at the edge, and they are said here:
 
 X1 is the one edit of `bridgeScope.ts`. It needs one import of `agentNaming.ts`, which imports nothing, so the walk
 of `test/bridgeBoundary.test.ts:188-209` (no `vscode` behind `bridgeScope`) stays green. That file is the wall of
-[PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md); §9 has the row that is owed to that plan.
+[PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md); §9 has the row that is owed to that plan.
 
 ### 2.8 The two placeholders
 
@@ -971,7 +993,7 @@ covered by the wall (`isOpenFolder`) and has no row of its own here.
 - It does not change which folder `folder` names (F1).
 - It does not change `connectionString`. The plan of the bridge records that the local list strips the password of
   one dialect of four, and gives that to a todo of its own
-  ([PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md), §8 *Boundaries*).
+  ([PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md), §8 *Boundaries*).
 - It does not change what a Remote Bridge serves, but for the edge cases of §2.7, and it edits one expression of
   `bridgeScope.ts` (X1). The filter of `dependsOn` stays a filter by name (F2).
 - It does not change the product code of `creds` (`src_cli`) or the records of `creds-mcp`.
@@ -987,10 +1009,10 @@ covered by the wall (`isOpenFolder`) and has no row of its own here.
 
 | Plan | Touches | This plan's part | The row that the neighbour gets |
 |---|---|---|---|
-| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | WRITTEN with the commit that opens the ledger: its status block, its §2.6, its §11 and its §12 point to this plan |
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall's rows (`narrowed`, its §4.2); its §8 says that the LOCAL list's `connectionString` and `command` go to *a new todo, E4 writes it* | this plan takes the `command` half of that row: a reference to a thing that the agent may not view. It edits ONE expression of `bridgeScope.ts`, the filter of `dependsOn` in `narrowed` (`:152`, X1), and adds one import there. It adds row BG3 to `bridgeReadShape.test.ts`, and changes one control and the accounts of the world in two test files of that plan (`bridgeReadShape.test.ts`, `bridgeWallWorld.ts`, §6.8) | OWED, in its §8 *Boundaries* (the table that its line 998 and line 1004 are rows of), as one new row: (1) the `command` half of the row *The local MCP door's listing serves `connectionString` … and `command`* is this plan's, and `connectionString` stays there; (2) the local row can hold two fixed placeholders, and `narrowed` drops the placeholder of `dependsOn` before it filters by name, so the sentence of its §4.2, *`dependsOn` (names in the scope only)*, stays true; (3) this is a new fact for the row *reviewed and rejected by the re-review for epoch 6* (`dependsOn` filtered by name): the filter by name stays, and one fixed value is never a name for it. That plan is under change control (epoch 11) and belongs to another session, so its owner session writes the row; this plan does not edit that file |
-| [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) | `src_mcp/src/Tools.cs:36` (another description), `Program.cs`, `creds-mcp-itest.cjs`; a `mcp-v` release of its own | none in behaviour. The two plans edit other constants of `Tools.cs`, and each one regenerates `contract/mcp-tools-v1.json` | under its story B2: the second one to merge regenerates the contract file again and reads the first one's descriptions |
-| [PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) | the consent stamps in `mcpEntries.ts` (`worthRemembering`, `:584-586` today) | none. Disjoint lines of the same file | no row: no shared function |
+| [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | WRITTEN with the commit that opens the ledger: its status block, its §2.6, its §11 and its §12 point to this plan |
+| [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) | the wall's rows (`narrowed`, its §4.2); its §8 says that the LOCAL list's `connectionString` and `command` go to *a new todo, E4 writes it* | this plan takes the `command` half of that row: a reference to a thing that the agent may not view. It edits ONE expression of `bridgeScope.ts`, the filter of `dependsOn` in `narrowed` (`:152`, X1), and adds one import there. It adds row BG3 to `bridgeReadShape.test.ts`, and changes one control and the accounts of the world in two test files of that plan (`bridgeReadShape.test.ts`, `bridgeWallWorld.ts`, §6.8) | OWED, in its §8 *Boundaries* (the table that its line 998 and line 1004 are rows of), as one new row: (1) the `command` half of the row *The local MCP door's listing serves `connectionString` … and `command`* is this plan's, and `connectionString` stays there; (2) the local row can hold two fixed placeholders, and `narrowed` drops the placeholder of `dependsOn` before it filters by name, so the sentence of its §4.2, *`dependsOn` (names in the scope only)*, stays true; (3) this is a new fact for the row *reviewed and rejected by the re-review for epoch 6* (`dependsOn` filtered by name): the filter by name stays, and one fixed value is never a name for it. That plan is under change control (epoch 11) and belongs to another session, so its owner session writes the row; this plan does not edit that file |
+| [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) | `src_mcp/src/Tools.cs:36` (another description), `Program.cs`, `creds-mcp-itest.cjs`; a `mcp-v` release of its own | none in behaviour. The two plans edit other constants of `Tools.cs`, and each one regenerates `contract/mcp-tools-v1.json` | under its story B2: the second one to merge regenerates the contract file again and reads the first one's descriptions |
+| [PLAN_consent_coverage_per_door.md](../todo/PLAN_consent_coverage_per_door.md) | the consent stamps in `mcpEntries.ts` (`worthRemembering`, `:584-586` today) | none. Disjoint lines of the same file | no row: no shared function |
 
 The order: this plan needs no other plan, and no other plan needs this one. Method: `grep -lE` over `todo/PLAN_*.md`
 for `mcpEntries.ts`, `mcpFolders.ts`, `secretRef.ts`, `agentNaming`, `quickOpen`, `isOpenFolder`,
@@ -1041,33 +1063,33 @@ branch that merges second reads line 132 again.
 
 ## 11. Definition of Done
 
-- [ ] Row L1 was written with no exception and watched failing by its assertion on the unchanged code BEFORE S1; the
+- [x] Row L1 was written with no exception and watched failing by its assertion on the unchanged code BEFORE S1; the
       summary quotes that message. It was run again after S4 and passes.
-- [ ] Each RED row of §6.2 to §6.5 was watched failing by its assertion on the unchanged code, then passes; the
+- [x] Each RED row of §6.2 to §6.5 was watched failing by its assertion on the unchanged code, then passes; the
       summary quotes one failure message of each story and the pass. No RED proof is a compile error.
 - [ ] Row BG3 was watched failing with A1 built and X1 not built, then passes.
-- [ ] Rows E1 to E4: the two bodies of each pair are deep-equal.
-- [ ] Row L1, after S4: the two list bodies of the class test hold 0 hidden names and 0 hidden ids, and `EXCEPTIONS`
+- [x] Rows E1 to E4: the two bodies of each pair are deep-equal.
+- [x] Row L1, after S4: the two list bodies of the class test hold 0 hidden names and 0 hidden ids, and `EXCEPTIONS`
       is gone.
 - [ ] Each guard row was watched passing before and after; the tests named *no edit* have no changed line.
-- [ ] Mutations M1 to M19 each turned its rows red and were restored.
+- [x] Mutations M1 to M19 each turned its rows red and were restored.
 - [ ] The four existing tests of §6.8 changed as that table says, and no other existing assertion changed in S1 to
       S5. In S6 exactly the checks that §6.8 names for S6 change (DG2, T3, the scan of L1, H1 and the harness
       scenario of `creds_list`: Q1 to Q5 of §3.5), and no other existing assertion changes.
-- [ ] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
+- [x] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
       priority, with a clean `tsc` read first. `npm run contract` leaves `contract/broker-v1.json` unchanged.
       `npm run contract:mcp` changed four descriptions in `contract/mcp-tools-v1.json` and nothing more.
-- [ ] The solution builds with 0 warnings; the test executable of `creds-mcp` is green; `npm run itest:mcp` is
+- [x] The solution builds with 0 warnings; the test executable of `creds-mcp` is green; `npm run itest:mcp` is
       green with H1. `src_cli` and `McpJsonContext.cs` have no difference.
-- [ ] `bridgeScope.ts` differs in the filter of `narrowed`, one import and one comment, and in nothing more (X1).
+- [x] `bridgeScope.ts` differs in the filter of `narrowed`, one import and one comment, and in nothing more (X1).
 - [x] The pointers of F7 (§9) are written.
-- [ ] The documents of §7 are written; the CHANGELOG entry and the pull request body carry §3.3 and §3.4.
+- [x] The documents of §7 are written; the CHANGELOG entry and the pull request body carry §3.3 and §3.4.
 - [ ] The owed row of §9 is with the session that owns the bridge plan, and that session has heard of X1 before the
       merge; the summary says so.
-- [ ] `coai`: a `review_plan` round passed before the first test; a `review_code` round ran on the finished branch;
+- [x] `coai`: a `review_plan` round passed before the first test; a `review_code` round ran on the finished branch;
       each finding has an accept or a reject with a reason; the summary has the verdicts and the number of
       reviewers that answered.
-- [ ] `node .agents/conventions/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; a change of this plan after its
+- [x] `node .agents/conventions/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; a change of this plan after its
       approval is an entry of its ledger; the plan is promoted with its deviations.
 - [ ] The summary names the models and the counts of the launches.
 - [ ] The lead and the owner have heard that two releases must follow, in the order of §3.4, and have the questions
@@ -1077,28 +1099,112 @@ branch that merges second reads line 132 again.
 ticked one by one here: the record of what ran is in the commits of §5 and in `research/module_tests.md`, and the
 lead ticks them at the merge. The boxes below are S6.
 
-- [ ] The round of the re-review ran on this text; an Opus judge checked the table of the record; the epoch line says
+**The state of the boxes at the promotion (2026-11-27).** Each box that is ticked was read against the record: the pull
+request body of #401 (the proof, the gates and the follow-ups), `research/module_tests.md`, the merged diff of
+`57fa6288` and, for S6, the diff from `599ef537` to it. Two checks were run again for the promotion:
+`git diff 599ef537 57fa6288` over `src_mcp`, `contract`, the five `help*.ts` files and `bridgeScope.ts` is empty, and row
+RG7 has no changed line there; the merged diff of `bridgeScope.ts` is one import, one comment and the one filter of X1.
+A box that asks for a quoted failure message is ticked on the record that the row was watched failing; the messages
+themselves were in the summaries of the sessions and are not in this repository. Six boxes of S1 to S5 stay open, each for
+a reason that §12 item 8 gives: BG3 in its order, the guard rows and the "no edit" tests, the four existing tests of §6.8,
+the owed row of §9, the summary of the models, and the questions of §14.
+
+- [x] The round of the re-review ran on this text; an Opus judge checked the table of the record; the epoch line says
       who approved; the summary says so, or says that the revision was NOT reviewed.
-- [ ] Rows K1, K2, KD1 and KA1 to KA3 were watched failing by their assertions on `599ef537`, then pass; the summary
+- [x] Rows K1, K2, KD1 and KA1 to KA3 were watched failing by their assertions on `599ef537`, then pass; the summary
       quotes one failure message and the pass. In K1, K2, KD1 and KA1 the complete bodies of the worlds are
       deep-equal.
-- [ ] Guards KG1 to KG5 were watched passing on `599ef537` and after; KG6 passes; the rows of epoch 1 that §6.10
+- [x] Guards KG1 to KG5 were watched passing on `599ef537` and after; KG6 passes; the rows of epoch 1 that §6.10
       names have no changed line and are green.
-- [ ] Mutations M20 to M30, and M7 as it is defined since S6, each turned its rows red and were restored.
-- [ ] The five tighter checks Q1 to Q5 are built; Q1 and Q2 were watched once as §6.10 says.
-- [ ] `agentCommandText.ts` asks the folders of a token in ONE place, before the locator, and takes the candidates
+- [x] Mutations M20 to M30, and M7 as it is defined since S6, each turned its rows red and were restored.
+- [x] The five tighter checks Q1 to Q5 are built; Q1 and Q2 were watched once as §6.10 says.
+- [x] `agentCommandText.ts` asks the folders of a token in ONE place, before the locator, and takes the candidates
       from each account with the address. `viewableLocatorForOneListing(locator, mayView)` and `candidates(accountId,
       lastName)` have the signatures of `599ef537`, and row RG7 has no changed line. `src_mcp`, `contract/`,
       the five `help*.ts` files and `bridgeScope.ts` have no difference to `599ef537`.
-- [ ] The documents of S6 (§7) are written.
-- [ ] The `coai` code round ran again on the finished branch with this revised plan; each finding has an accept or a
+- [x] The documents of S6 (§7) are written.
+- [x] The `coai` code round ran again on the finished branch with this revised plan; each finding has an accept or a
       reject with a reason.
-- [ ] `node .agents/conventions/tools/plan-lifecycle.mjs` is clean; the summary names the epoch (2), the count of its
+- [x] `node .agents/conventions/tools/plan-lifecycle.mjs` is clean; the summary names the epoch (2), the count of its
       changes and what was cut (the six *cut* rows of the record, each a fix forward).
 
-## 12. Deviations — what shipped differently from this plan
+## 12. Deviations — what shipped differently from this plan (promoted 2026-11-27)
 
-(Empty until the plan is promoted.)
+1. **Five stories became six, and the plan stopped once.** Epoch 1 had S1 (N1), S2 (N4), S3 (N5, the cornerstone), S4 (N6)
+   and S5 (the words, the binary and the record). Two changes were counted in it. **1.1:** the list locates a `creds://`
+   token among the entries that the agent may view, so a hidden entry with the name of a viewable one no longer makes the
+   token ambiguous (the first build located over ALL entries, so a hidden twin turned a kept reference into the
+   placeholder, an oracle for a hidden name); found by the lead's Opus review of the built branch (*fix first*; the code
+   round had asked for the text too); row R5 flipped, pair (4) of E3 and row RG7 were added, and the texts say that the
+   placeholder also stands for a missing, a broken and an ambiguous reference (row T1b). The Opus recheck said *ship*.
+   **1.2:** a viewable entry under a folder that the agent may not view still counted as a match, so two viewable `db`
+   entries under `Open/Team` and `Closed/Team` made `…/Team/db/password` the placeholder and the token was kept when the closed
+   `Team` was not there, which tells the name of a folder that the agent may not view; found by CodeRabbit on #401. The second
+   change stopped the plan.
+2. **The re-review, and S6.** One consultation (`coai` cons `89487899`; option C: filter the candidates by the folders that
+   the token names BEFORE the locator); the whole plan was revised (`43b12661`); the interim document round on the
+   revision ended `proceed` (2 of 2 reviewers; 2 findings, both accepted); an Opus judge checked the table of the record,
+   confirmed *Narrowed: no*, changed marks (six *cut* rows, each a fix forward, no revert, nothing was merged) and found a
+   NEW oracle older than S6: with two accounts that have one e-mail address, the first account decided a token. Epoch 2
+   was approved `by reviewers` with 0 changes (the line was written `by nobody` before the round and changed after it
+   passed). The epics did not change; one story was added. **S6** (sites K1 to K5; rows K1, K2, KD1, KA1 to KA3, KG1 to KG6;
+   mutations M20 to M30 and M7 in its new form): the folders that a token names are a part of what a candidate is and are
+   asked in ONE place before the locator; the candidates come from each account that has the address (K5); the locator
+   sees candidates only; they are held for one listing (D9); and five tighter checks (Q1 to Q5: the scan of L1 reads the
+   whole body, DG2 asserts the exact row, T3 finds the bullet of each tool, and two in the harness). Rows beyond the first
+   plan: T1b, RG7, pair (4) of E3, KD1 (three folders deep, from the judge) and **KG7**. KG7 is from the Opus review of S6:
+   its fuzz (300 random vaults, 12,516 hidden-node pairs) found 0 differences in `command` and one low finding, a NUL in
+   the cache key of the memory of D9 that could make two keys collide; fixed in `1c1fa834`.
+3. **The gates, as run.** Plan round: `proceed`, 1 of 1 reviewers, 3 findings accepted (the bridge filter X1 with row BG3,
+   row L1 first, the words about `folder` with row T4); consultants on Q4 (fail closed, with three limits: case, scheme
+   and a short reference). Code round 1: `proceed`, 4 of 4; 1 accepted, 1 rejected. Opus review: *fix first* (entry 1.1);
+   Opus recheck: *ship*. Code round 2: `proceed`, 4 of 4; 3 accepted (the index appends for each name, one segment key
+   shared with the locator, the dependencies through the account-aware wall), 3 rejected. CodeRabbit on #401: the
+   closed-folder oracle (entry 1.2, the stop), then 2 minor findings in the documents (`0f3c133f`); on the last head
+   CodeRabbit was skipped (its limit; the owner had said to skip it then). Opus review of S6: *ship*. Code round 3:
+   `proceed`, 4 of 4; 5 findings rejected with reasons.
+4. **The owner's words, 2026-11-27.** The four answers of §2.6 of F7 (hide or mask each field); «делай по плану» (the
+   pull request over the cap, the merge, both releases, the promotion); «идем по полному» (the full way: N5 was not split
+   out). Q3 was answered «keep the text» and Q4 by the consultants. The record read for this promotion holds no owner
+   answer to Q1, Q2, Q5 to Q11; the plan was built, merged and released on their default answers, and §14 says what each
+   *no* removes.
+5. **Proof at the merge.** The extension suite: 8657 tests, 8613 pass, 0 fail, 44 skipped. `itest:mcp`: 141 checks. `tsc`,
+   `eslint`, `ratchet` and `contract` clean; `contract/mcp-tools-v1.json` changed four descriptions and nothing more;
+   `contract/broker-v1.json`, `src_cli` and `McpJsonContext.cs` have no difference. `CredsMcp.Tests`: 174 pass, 3 skipped,
+   2 fail on the lead's machine (the two `ParentWatchProcessTests`: `creds-mcp.exe` cannot start under WSL; CI is green).
+   Mutations M1 to M19 and the 1.1 mutation of epoch 1, and M20 to M30 and M7 of epoch 2, each turned its rows red (the
+   record is in `research/module_tests.md`). The Opus fuzz after S6 is in item 2.
+6. **Where the code is not where the plan said.** Rows BG1 and BG3 are in `listFieldsHidden.test.ts`, not in
+   `bridgeReadShape.test.ts` (§9 says the second); the control of RS3 was fixed in `bridgeWallWorld.ts` (a folder and an
+   entry named `outside`, and an e-mail address for each account), and the merged diff has no change in
+   `bridgeReadShape.test.ts`. The existing checks that S6 changed are the five that §6.8 names, and no other.
+   `bridgeScope.ts` has one import, one comment and the one filter of X1. The pull request is #401 (33 files); the two
+   releases carry this change only.
+7. **Not built here** (by the plan's own decision, §13 and §14): **F6** (a `{name}` token reads the placeholder, and the
+   rest of a token that is cut at a space or at a `)` stays as typed); **F8** (a person's *Run with secrets* resolves
+   over the first account with the address, so a reference that the list keeps can still resolve differently or be
+   ambiguous at the run; an agent's own run resolves no `creds://` off a bridge); **F9** (the worst case, 8,000 entries
+   with one name and 4,000 bare references to it: about 3.8 s for one listing, the figure at the merge; the 4 to 5 s of
+   §13 were measured on `599ef537`, and the body of #401 says about 5 s). Also open: the bridge drops a real in-scope dependency that is named exactly as the
+   placeholder (fail closed, documented in the CHANGELOG); a vault that changes during one listing (§6.5); the clause of
+   the `creds_run` description about the run-time resolution; F1 to F5 (recorded only).
+8. **Boxes of §11 not ticked, and why.** (a) *Row BG3 was watched failing with A1 built and X1 not built*: the record
+   says that each RED row was watched failing and that mutations M15 and M16 turn BG3 red; the order of A1 before X1 is
+   not recorded. (b) *Each guard row was watched passing before and after; the tests named no edit have no changed line*:
+   KG1 to KG6 were checked (the box of S6 is ticked), the guards of S1 to S5 and the "no edit" tests are in no record
+   that this promotion read. (c) *The four existing tests of §6.8 changed as that table says*: RS3 changed through
+   `bridgeWallWorld.ts` and not through its own file (item 6), so the box does not read true as written. (d) *The owed row
+   of §9 is with the session that owns the bridge plan*: not written; `todo/PLAN_remote_bridge_scoped.md` belongs to
+   another session, and this promotion did not edit it. (e) *The summary names the models and the counts of the
+   launches*: the record read for this promotion has no such summary. (f) *The lead and the owner have heard that two
+   releases must follow, and have the questions of §14*: the releases are done after the owner's «делай по плану»; the
+   answers to the questions of §14 are in item 4.
+9. **Not checked by a native reader:** the four translations (de, es, ru, uk) of the sentence of Appendix A. Row T3 pins
+   the text; nobody measured how a native reader takes it.
+10. **Process notes.** The plan's order was S1, S2, S3, S4, S5, then the stop, then S6. The `file:line` of §1.1 to §1.6,
+    §2.1 to §2.3, §2.5 to §2.8, §3.1 to §3.4, §6.1 to §6.9 are those of `dbb2166d`, and those of §1.7, §2.4, §3.5 and §6.10
+    are those of `599ef537`; none was read again on the merge commit. The pull request was over the cap on the owner's
+    word. `creds-mcp` 0.11.1 has no CHANGELOG of its own: its notes are the generated `src_mcp/RELEASES.md`.
 
 ## 13. Found along the way (not built here)
 
@@ -1259,7 +1365,7 @@ still names what a newer one hides.
 
 One epic, because the four fields are small, share one predicate and one release of the extension. Its stories are
 here and not in a document of their own: the lead asked for it for a plan of this size, and the family has done it
-before ([PLAN_agent_small_truths_n8_n9_n2.md](../research/PLAN_agent_small_truths_n8_n9_n2.md), `## Epics`). The
+before ([PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md), `## Epics`). The
 lead asked for four stories, one for each field. A fifth holds the words, because they are in another binary with a
 release of its own. A sixth, S6, is from the re-review for epoch 2: the epic did not change, so the split was not made
 again, and one story was added. The rows and the mutations of §6 are the scenarios of each story. Fable wrote this plan and the

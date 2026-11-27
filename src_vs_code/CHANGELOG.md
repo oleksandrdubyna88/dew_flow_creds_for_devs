@@ -6,11 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.2] — 2026-11-27 — Changed — security — the list answers name no node that the agent may not view: dependsOn, folder, command references, parent
+
 ### Changed — security — the list answers name no node that the agent may not view (N1, N4, N5, N6)
 
 `creds_list` and `creds_folders` named, in four fields, a node that the agent may not view, or gave its id. Each field now holds a fixed value in the place of such a node, the same
 value for a hidden node and for an id that points to nothing. No route, status, error code, field name or field type changes. See
-[PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md).
+[PLAN_agent_list_fields_hidden_n1_n4_n6.md](../research/PLAN_agent_list_fields_hidden_n1_n4_n6.md).
 
 | The answer | Before | After |
 |---|---|---|

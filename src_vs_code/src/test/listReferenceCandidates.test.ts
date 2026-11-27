@@ -6,7 +6,7 @@ import { stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 
 /**
- * The candidates of a `creds://` token in a listed command (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4 and §6.10, story S6).
+ * The candidates of a `creds://` token in a listed command (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.4 and §6.10, story S6).
  *
  * <p>Each row builds two or three vaults that differ in ONE thing that the agent may not view, calls the product's own list function, and compares the
  * COMPLETE bodies with `deepEqual`: a token reads the same with that node there, with another name, and with the node taken out (so that a `parentId`

@@ -16,7 +16,7 @@ import { CONTEXT_1, wallWorld } from './bridgeWallWorld';
 import { loadBridgeModules } from './bridgeModules';
 
 /**
- * The list answers name no node that the agent may not view (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §6).
+ * The list answers name no node that the agent may not view (`research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §6).
  *
  * <p>Each row builds its own small vault and calls the product's own list function: no row reads a source file. A hidden node has a
  * name and an id that a plain text search finds, so a row that asserts "the body holds no hidden name" can fail. The pair rows (E1 to

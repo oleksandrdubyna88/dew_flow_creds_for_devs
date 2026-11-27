@@ -326,7 +326,7 @@ function textLeaks(list: string, text: string): string[] {
 
 /**
  * The four fields of the two list answers that held the name or the id of a node the agent may not view (N1, N4, N5 and N6 of
- * `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`), each at the value that it holds now: a fixed word, an empty name or null.
+ * `research/PLAN_agent_list_fields_hidden_n1_n4_n6.md`), each at the value that it holds now: a fixed word, an empty name or null.
  */
 const FIELDS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
   { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
