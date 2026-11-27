@@ -45,6 +45,14 @@ function run(program, args, cwd) {
   return result.stdout;
 }
 
+/** A working folder of the build inside `out` (never a temp path: the repository's guard, S2.1), emptied first; the caller removes it. */
+function freshFolder(out, name) {
+  const folder = path.join(out, name);
+  fs.rmSync(folder, { recursive: true, force: true });
+  fs.mkdirSync(folder);
+  return folder;
+}
+
 const sha256 = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const sumsOf = (folder, names) => names.map((name) => `${sha256(path.join(folder, name))}  ${name}\n`).join('');
 
@@ -59,7 +67,7 @@ function committedState() {
 /** The VSIX: bundle, stage a copy, switch on in the copy, package the copy. The extension folder itself is not changed. */
 function buildVsix(out, sha) {
   run('npm', ['run', 'bundle'], EXTENSION);
-  const stage = fs.mkdtempSync(path.join(out, 'stage-'));
+  const stage = freshFolder(out, '.stage');
   try {
     for (const entry of fs.readdirSync(EXTENSION)) {
       if (!NOT_STAGED.has(entry)) {
@@ -91,7 +99,7 @@ function buildClients(out, rid, sha) {
     { project: 'src_mcp/src/CredsMcp.csproj', name: 'creds-mcp', version: pilotVersion(released.src_mcp, sha) },
   ];
   for (const client of clients) {
-    const publish = fs.mkdtempSync(path.join(out, `publish-${client.name}-`));
+    const publish = freshFolder(out, `.publish-${client.name}`);
     try {
       run('dotnet', ['publish', path.join(REPO, client.project), '-c', 'Release', '-r', rid, '-o', publish, `-p:Version=${client.version}`, '-m:4'], REPO);
       fs.copyFileSync(path.join(publish, client.name), path.join(folder, client.name));
