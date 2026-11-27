@@ -7,8 +7,8 @@
 > address of the token, and five checks of the tests are made tighter); the documents of S6; the code round; the
 > merge; the extension release and then the `mcp-v` release. The round of the re-review ran on `43b12661` (the lead
 > reported it: the interim document round, `proceed`, 2 of 2 reviewers, 2 findings, both accepted), and an Opus
-> judge checked the table of the record; their points are in this text. The epoch line says `by nobody` until the
-> lead writes who approved.
+> judge checked the table of the record; their points are in this text. The lead set the epoch line to `by reviewers`
+> after the round passed.
 >
 > Scope: the extension (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `mcpAccess.ts` (one comment),
 > `secretRef.ts`, `agentNaming.ts`, `extension.ts`, one filter of `bridgeScope.ts`, two new pure modules,
@@ -104,10 +104,10 @@ Narrowed: no — the revision adds one story (S6: one filter, one memory for a l
   names each comment that says the order; `19ea5abd` has a second row for one sentence. The record has six *cut*
   rows, each a fix forward. Nothing is merged, so nothing is reverted on `main`. The consultation of the re-review is
   `coai` cons `89487899`.)
-  (The epoch line below was written before the round of the re-review, so it says `by nobody`. The round ran on
-  `43b12661`; the lead writes its result into the line.)
+  (The epoch line below was written before the round of the re-review as `by nobody`. The round ran on `43b12661`:
+  `proceed`, 2 of 2 reviewers; the lead set the line to `by reviewers`.)
 
-> Epoch 2 · approved 2026-11-27 · by nobody · state: open
+> Epoch 2 · approved 2026-11-27 · by reviewers · state: open
 
 ## 1. The defect
 
