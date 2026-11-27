@@ -1,5 +1,5 @@
 import { folderPath } from './quickOpen';
-import type { RefSource } from './secretRef';
+import { type RefSource, segmentKey } from './secretRef';
 import type { TreeNode } from './types';
 
 /**
@@ -45,7 +45,7 @@ export interface ListingLocator {
  * <p>A hidden entry with the name of a viewable one must not make a reference to the viewable one ambiguous: without the hidden twin the token is
  * kept, so the placeholder would tell that a hidden twin exists (rule A). The window's own run keeps its locator over ALL entries; only the list
  * narrows. `samePath` needs the last segment of the path to be the entry's own name, so each account's viewable entries are indexed once, by that
- * name in lower case, and a token is given only the entries that can match it: the answer is the one of the whole list, at the cost of one walk
+ * name under the locator's own key (`segmentKey`), and a token is given only the entries that can match it: the answer is the one of the whole list, at the cost of one walk
  * of the account for the listing and not for each token. The accounts are read once. Built lazily: a listing with no reference costs nothing.</p>
  */
 export function viewableLocatorForOneListing(locator: Pick<RefSource, 'accounts' | 'entities'>, mayView: (accountId: string, entityId: string) => boolean): ListingLocator {
@@ -58,15 +58,18 @@ export function viewableLocatorForOneListing(locator: Pick<RefSource, 'accounts'
   };
   return {
     accounts: () => (accountsHeld.value ??= locator.accounts()),
-    candidates: (accountId, lastName) => indexOf(accountId).get(lastName.toLowerCase()) ?? [],
+    candidates: (accountId, lastName) => indexOf(accountId).get(segmentKey(lastName)) ?? [],
   };
 }
 
+/** The entries by the key of their own name: one pass, a bucket per name that is appended to while it is built and read-only once it is returned. */
 function indexByName(entities: Entities): ReadonlyMap<string, Entities> {
-  const index = new Map<string, Entities>();
+  const index = new Map<string, Entities[number][]>();
   for (const entity of entities) {
-    const key = entity.name.toLowerCase();
-    index.set(key, [...(index.get(key) ?? []), entity]);
+    const key = segmentKey(entity.name);
+    const bucket = index.get(key) ?? [];
+    bucket.push(entity);
+    index.set(key, bucket);
   }
   return index;
 }

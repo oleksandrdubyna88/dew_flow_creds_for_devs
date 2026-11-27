@@ -126,6 +126,14 @@ export type RefResolution =
   | { ok: true; values: Record<string, string> }
   | { ok: false; error: string };
 
+/**
+ * What two path segments are compared by: the letter case ignored. The ONE normalisation of the locator (`samePath`), exported so that the index that the list of
+ * entries builds over the same names uses it too, and a later change of how names match changes both.
+ */
+export function segmentKey(segment: string): string {
+  return segment.toLowerCase();
+}
+
 function samePath(candidate: readonly string[], wanted: readonly string[]): boolean {
   // A reference names a suffix of the path: `gateway` matches `Servers/EU/gateway`, and
   // `EU/gateway` narrows it. Case-insensitive, because a person typing a name is not
@@ -134,7 +142,7 @@ function samePath(candidate: readonly string[], wanted: readonly string[]): bool
     return false;
   }
   const tail = candidate.slice(candidate.length - wanted.length);
-  return tail.every((segment, i) => segment.toLowerCase() === wanted[i].toLowerCase());
+  return tail.every((segment, i) => segmentKey(segment) === segmentKey(wanted[i]));
 }
 
 function describePath(path: readonly string[]): string {

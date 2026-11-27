@@ -300,7 +300,7 @@ async function entryIfVisible(
     folderName: folderNameOf(resolved, byId),
     keepsReference,
     ...(await storedSecrets(source, accountId, node.id)),
-    dependsOn: dependencyNames(node, byId),
+    dependsOn: dependencyNames(node, source, accountId, byId),
   });
 }
 
@@ -566,18 +566,18 @@ function granted(access: McpAccess, needed: McpRung, node: TreeNode): boolean {
  * <p><b>A dependency that the agent may not view is not named</b> (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2): an entry with no
  * switch, a PIN of its own or in the Trash, and a folder, are not `shown`. They give ONE `HIDDEN_DEPENDENCY`, at the end, for any number,
  * so the list does not tell how many or where. <b>An id that no node has gives it too</b> (D2): if it stayed dropped, an agent could tell a
- * hidden dependency from a deleted one, and rule A says it must not. The wall is asked in the entry's own account, through the lookup it is given.</p>
+ * hidden dependency from a deleted one, and rule A says it must not. The wall is `agentMayView`, the account-aware question that the references of a command ask too, in the entry's own account.</p>
  */
-function dependencyNames(node: TreeNode, byId: (id: string) => TreeNode | undefined): readonly string[] {
+function dependencyNames(node: TreeNode, source: Pick<McpVaultSource, 'getNode'>, accountId: string, byId: (id: string) => TreeNode | undefined): readonly string[] {
   const ids = node.details?.dependsOn ?? [];
-  const named = ids.flatMap((id) => viewableName(id, byId));
+  const named = ids.flatMap((id) => viewableName(id, source, accountId, byId));
   return named.length < ids.length ? [...named, HIDDEN_DEPENDENCY] : named;
 }
 
 /** The name of the entry that this id points to when the agent may view it, as a list of one; no node, a folder and a hidden entry give none. */
-function viewableName(id: string, byId: (id: string) => TreeNode | undefined): string[] {
+function viewableName(id: string, source: Pick<McpVaultSource, 'getNode'>, accountId: string, byId: (id: string) => TreeNode | undefined): string[] {
   const target = byId(id);
-  return target !== undefined && shown(target, resolveMcpInTree(target, byId)) ? [target.name] : [];
+  return target !== undefined && agentMayView(source, accountId, id) ? [target.name] : [];
 }
 
 /**
