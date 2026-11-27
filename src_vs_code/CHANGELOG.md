@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.0] — 2026-11-27 — Security — a run that ended with 0 is told nothing about a host key; the saved host key is measured on the real roads
+
 ### Fixed — a server that prints "Host key verification failed" and still answers no longer stops Install creds on host or the bridge's socket check
 
 Since 1.23.0, *Install creds on host* and the socket check of *Open Remote Bridge…* tell you when their call for an entry with a

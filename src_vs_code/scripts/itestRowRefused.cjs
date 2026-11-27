@@ -1,5 +1,5 @@
 'use strict';
-// The refused leg of M4 (b)-(d) and of M9 (G1, E3.S5; `todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1, §3), on the rig of E3.S4: a saved host key that
+// The refused leg of M4 (b)-(d) and of M9 (G1, E3.S5; `research/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1, §3), on the rig of E3.S4: a saved host key that
 // cannot be used, or a pin write that fails, on one road (*Install creds on host*, *Open Remote Bridge…*), cold or warm, in a world, a process and a counterpart
 // of its own. The case is made by the entry's own data or by the storage folder, and by nothing else: (b) a saved text that does not parse; (c) a parsed key on
 // a host that cannot form a known-hosts line; (d) the window's key folder `keys/<pid>/` readable and not writable, so `materializeKnownHosts` throws `EACCES` at

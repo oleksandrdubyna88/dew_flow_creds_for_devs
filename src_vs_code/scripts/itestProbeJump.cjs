@@ -1,5 +1,5 @@
 'use strict';
-// Probe P4 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a handed config that the nested client of a jump host reads too (M5 f).
+// Probe P4 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a handed config that the nested client of a jump host reads too (M5 f).
 //
 // What it shows: the nested `ssh` that a `ProxyJump` starts reads the config that the harness handed (the shim's `-F`), not the person's
 // files: it refuses the jump host by the known-hosts file that only that config names, and passes when that file holds the right key.

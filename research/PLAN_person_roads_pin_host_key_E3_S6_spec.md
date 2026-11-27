@@ -1,6 +1,8 @@
 # PLAN — E3.S6 spec: another key is refused, whatever else would trust it (M2, M3, M8)
 
-> Status: **spec, 2026-11-24, by Opus; not built.** Story E3.S6 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S6 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-24, by Opus; not built.** Story E3.S6 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its decisions 15, 16 and 18; §3.5, §3.9, §3.10; `## Epics`, E3: *The setup of every measurement* and the rows M2, M3 and M8) and of its
 > stories document [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md) (`## The rows: built story by story, measured
 > once`, `## E3.S6`). It builds on the common rig as BUILT by E3.S4 and E3.S5 (`scripts/itestRowRig.cjs` and the files below), and on the
@@ -71,7 +73,7 @@ and no user name in a committed text; lowered priority, leg processes one at a t
 | # | Fact | How |
 |---|---|---|
 | H1 | **The tree.** `fix/g1-e3-release-gate` at `be47dd81`, no modified tracked file. E3.S4 and E3.S5 are built and reviewed; their last proving run is 873 ok lines, 0 FAIL, 41 leg processes (`research/module_tests.md:2526`) | read |
-| H2 | **The rows.** M2 `todo/PLAN_person_roads_pin_host_key.md:1728`, M3 `:1729`, M8 `:1734`; their last columns are quoted in §2 to §4 beside each check | read |
+| H2 | **The rows.** M2, M3 and M8, the rows of E3's table in `research/PLAN_person_roads_pin_host_key.md` (line numbers of the time of writing, 1728, 1729 and 1734, no longer hold); their last columns are quoted in §2 to §4 beside each check | read |
 | H3 | **On a refused key four runs start** (the setup, change 1.1): the install returns after a refused probe (`agentCommands.ts:282-286`), so its install run does not start. The four are the probe, the bridge, the sweep and the mode check | read |
 | H4 | **The bridge's `ssh` has no stdio.** `bridgeSpawner` spawns it with `stdio: 'ignore'` (`bridgeSpawner.ts:79`). The rig's recording spawner keeps its argv, its times and its exit code, not its stderr (`itestRowRig.cjs:261-272`). Section 10's leg 2 judges the bridge by "ended by itself" (`itestPinnedRoads.cjs:412`), M6.14 judges the runner's runs only (`itestRowM6.cjs:193`). So no built check has read the bridge's verification line | read |
 | H5 | **What an ignored stdio is.** Node's `stdio: 'ignore'` opens `/dev/null` for that descriptor of the child (Node's `child_process` manual). So the shim, a `sh` script that the bridge's spawn starts, can tell an ignored stderr by `readlink /proc/$$/fd/2` = `/dev/null`. Read, not measured | read |

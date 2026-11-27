@@ -1,5 +1,5 @@
 'use strict';
-// Row M4 of G1 (E3.S5; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.5, §4): a saved host key of
+// Row M4 of G1 (E3.S5; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.5, §4): a saved host key of
 // the entry that is absent, that cannot be used, or whose file cannot be written. Fifteen legs, each its own process, world and counterpart, each with the real
 // resolve over a vault of its own credential:
 //   (a) absent (nothing, an empty text, white space only): the five runs of M1 are unpinned, `accept-new`, no question, no pin file, and K1 logs 5 logins;
@@ -51,7 +51,7 @@ async function logChecks(ctx, label, roads, k1) {
   const leg = ctx.rig;
   const log = await m1.acceptedOf(k1, 5);
   const sessions = log.accepted.map((one) => one.session).sort().join(',');
-  check(`${label}: K1 logged exactly 5 accepted logins (4 with a command, 1 with none), and 5 client ports reached authentication (A.5)`, log.accepted.length === 5 && sessions === 'command,command,command,command,none' && log.attemptPorts.length === 5, JSON.stringify({ accepted: log.accepted, ports: log.attemptPorts }));
+  check(`${label}: K1 logged exactly 5 accepted logins (4 with a command, 1 with none), and 5 client ports reached authentication (A.5)`, log.accepted.length === 5 && sessions === 'command,command,command,command,none' && log.attemptConnections.length === 5, JSON.stringify({ accepted: log.accepted, ports: log.attemptPorts, connections: log.attemptConnections }));
   const pins = (names) => names.filter((name) => name.startsWith('known_hosts-'));
   const sampled = roads.sampler.samples().flatMap((sample) => pins(Object.keys(sample.files)));
   const listed = pins(Object.keys(rig.readFolder(roads.sampler.dir)));

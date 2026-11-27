@@ -1,5 +1,5 @@
 'use strict';
-// Row M9 of G1 (E3.S5; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.6, §1.7, §4): a saved key that does not
+// Row M9 of G1 (E3.S5; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.6, §1.7, §4): a saved key that does not
 // parse, on a key entry and on a password entry, and the repair that sentence A advises. Ten legs, each its own process, world and counterpart:
 //   the eight legs `m9-key-*` and `m9-password-*`: each road, cold and warm, in `itestRowRefused.cjs` (the form of sentence A follows the login; a password entry gets no
 //   repair and the counterpart's log shows no password attempt);

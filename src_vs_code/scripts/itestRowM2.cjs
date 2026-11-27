@@ -1,5 +1,5 @@
 'use strict';
-// Row M2 of G1 (E3.S6; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §2): the entry is pinned to K1 and the host at its address presents K2,
+// Row M2 of G1 (E3.S6; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §2): the entry is pinned to K1 and the host at its address presents K2,
 // which a known-hosts file lists: (a) the file that the client reads as the person's own, (b) the file that it reads as the system-wide one. Both files are the leg's own, named by the handed config
 // (the client's `~` is in the person's real home, so (a) is the user-file SLOT: the owner's answer A1). Four legs, each its own process, world and counterpart(s):
 //   `m2-mismatch-user`, `m2-mismatch-global`: K2 answers from the start; the three roads are refused (four runs start, no install run);

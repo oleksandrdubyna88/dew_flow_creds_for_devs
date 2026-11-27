@@ -1,5 +1,5 @@
 'use strict';
-// Row M12 of G1 (E3.S7; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §3): a path that cannot be written for `ssh` as one file starts nothing, for every
+// Row M12 of G1 (E3.S7; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §3): a path that cannot be written for `ssh` as one file starts nothing, for every
 // refused kind. `m12-rule` (first): the run reads the kinds from the product (`PIN_PATH_KINDS`) and fails when one of them is neither a leg (a)-(f) nor (g) or (h); (g) and (h) are asked of the rule and of the client
 // alone, and no road is driven for them. Then (a)-(f), each on the install and on the bridge (a leg per road, as E3.S5: one road per refused leg), cold, the entry pinned to K1 and the counterpart K1, so only the
 // refusal can stop the call: 0 starts of the client of ANY kind (the question `ssh -V` included), 0 connections in the counterpart's log, no file written into the storage folder, no bridged row, sentence E with the

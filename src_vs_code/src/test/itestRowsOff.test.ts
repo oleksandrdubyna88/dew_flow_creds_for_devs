@@ -10,7 +10,7 @@ import { pinClientOf } from '../pinClient';
 import * as pinnedArgv from './pinnedArgv';
 
 /**
- * G1, E3.S9 (`todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md`, §7): the pure rules of the rows that run off the rig (M10, M11, M13), in
+ * G1, E3.S9 (`research/PLAN_person_roads_pin_host_key_E3_S9_spec.md`, §7): the pure rules of the rows that run off the rig (M10, M11, M13), in
  * `scripts/lib/offRigRecord.cjs`, and the three changes that E3.S9 makes to the rig's own lib (`DEBUG1` in the serving config, the counts of a
  * `DEBUG1` log, the host of a known-hosts line). TX1 to TX13. The libs are read at run time (`createRequire`), so this file compiles before they
  * exist. It is the rig's own test, not a test of the parent's section 5.

@@ -1,5 +1,5 @@
 'use strict';
-// The rig's own proof RP of G1 (E3.S4; `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §5). Not a row: it shows that the parts of the rig that no row of E3.S4
+// The rig's own proof RP of G1 (E3.S4; `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §5). Not a row: it shows that the parts of the rig that no row of E3.S4
 // uses work, before E3.S5 and E3.S6 use them. Each part is a leg of its own (`rig-…`), in its own leg process, with its evidence line and the real resolve.
 // Its numbers are "seen when it was built".
 //   RP1 `rig-warm`            cold, then warm in the same world, then another pin in the same window (`replaceHostKey`): the state is the leg's own;

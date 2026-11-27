@@ -1,5 +1,5 @@
 'use strict';
-// What the eleven legs of M5 share (G1, E3.S8; `todo/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 4): the forced scripts, the listener that never answers, the jump config, the drive of the roads, the
+// What the eleven legs of M5 share (G1, E3.S8; `research/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 4): the forced scripts, the listener that never answers, the jump config, the drive of the roads, the
 // reading of the screen, and the checks that several legs hold. What the person was told is compared with the product's functions (the sentences) AND with the words that only one sentence holds and the two
 // openings of the bridge's message, pinned in `lib/toldRecord.cjs`: a product whose C and D were swapped is red although the shown text equals its own function's answer. A failed witness or control is a named
 // FAIL and the leg goes on to its end; a value that was not read is `null`, never read as "nothing was shown". Like every row file this one starts no counterpart, no world and no process itself (the guards read it).

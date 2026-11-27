@@ -1,5 +1,5 @@
 'use strict';
-// Row M3 of G1 (E3.S6; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §3): a call that rides a live master connection is carried past the key check
+// Row M3 of G1 (E3.S6; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §3): a call that rides a live master connection is carried past the key check
 // ("with a master up, a call without G2's two options rides it, and neither its own `-i` key nor its own pinned host key is used", `sshExecCommand.ts`). The roads carry G2's two options (`ControlPath=none`,
 // `ControlMaster=no`), so a master never carries them. Two legs, each its own process, world and counterpart(s), each with a master to K1 that the leg makes through its handed config:
 //   `m3-mismatch`: the entry is pinned to K2, K1 answers; the three roads are refused, K1's log shows no new session, command or forward; a witness of the leg's own (the probe's words, pinned to K2, and no G2 option) RIDES the master;

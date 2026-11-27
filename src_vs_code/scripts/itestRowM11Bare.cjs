@@ -1,5 +1,5 @@
 'use strict';
-// Row M11 of G1 (E3.S9; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §3.3): the two cases where the BARE word of a pin file's path is read by the parser of the client. The expectation of each is a constant of
+// Row M11 of G1 (E3.S9; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §3.3): the two cases where the BARE word of a pin file's path is read by the parser of the client. The expectation of each is a constant of
 // `lib/offRigRecord.cjs` by the client's parser (`BARE`), never M7's expectation with a switch, and never taken from what the client did. Six legs, each its own process, world, counterpart, folder and client:
 //   the twin of (c) on the older client (`m11-c-twin-k1`, `m11-c-twin-k2`): the storage folder `x'y'z`; the twin (the path with the apostrophes taken out) holds K2's line, the pin file K1's. An older client keeps the
 //     apostrophes of a bare word, so it reads the intended file: K1 ACCEPTS the witness and K2 refuses the control. This shows the ABSENCE of the hole on that parser, not a repair that closes it.

@@ -10,7 +10,7 @@ import { Parts, World, click, ownKeyFile, ran, settled, world } from './personRo
 import { loadWithVscode } from './vscodeStub';
 
 /**
- * G1, E3.S5 (`todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md`, §7): M4 and M9 on the rig of E3.S4. RF1 to RF3 hold the pure rules of the
+ * G1, E3.S5 (`research/PLAN_person_roads_pin_host_key_E3_S5_spec.md`, §7): M4 and M9 on the rig of E3.S4. RF1 to RF3 hold the pure rules of the
  * refused legs (`scripts/lib/refusedRecord.cjs`: the two tables of legs, the message that a refused leg expects, the judge of its counts),
  * RF4 to RF6 hold the world's additions (`replaceHost`, `said[].at`, `shares`, `updates`, `connectOptions`), RF7 holds the finder of a
  * program on a `PATH` (`scripts/itestRowRefused.cjs`) and RF8 holds the observer of `./sshExecRunner` (D1).

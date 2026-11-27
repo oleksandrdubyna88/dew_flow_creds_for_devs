@@ -1,5 +1,5 @@
 'use strict';
-// Row M1 of G1 (E3.S4; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §6): a pinned entry
+// Row M1 of G1 (E3.S4; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §6): a pinned entry
 // whose host presents the pinned key works on all three roads, to the end of the install. The leg `m1` is cold (a new world in a new process: the
 // asker of the client has asked nothing), the entry is pinned to K1, signs in with a key that the person named by its path, and K1 answers with the
 // install's stand-in (probe P1 of E3.S3). The roads run the product's real resolve (the rig, `itestRowRig.cjs`). Each check below holds the words of
@@ -127,7 +127,7 @@ async function recordChecks(ctx, label, roads, k1) {
   check(`${label}: the probe and the install run name one path, the sweep and the mode check one path, the bridge its own: 3 distinct paths, each known_hosts-e1-<uuid> in keys/<pid>/ (M1.11)`, probe[0] !== undefined && probe[0] === install[0] && sweep[0] === mode[0] && new Set(paths).size === 3 && paths.every((file) => file !== undefined && path.dirname(file) === folder && named.test(path.basename(file))), JSON.stringify({ probe, install, sweep, mode, bridge }));
   const k1log = await acceptedOf(k1, 5);
   const sessions = k1log.accepted.map((one) => one.session).sort();
-  check(`${label}: K1 logged exactly 5 accepted logins, one per run: 4 with a command session and 1 with none (the bridge); 5 client ports reached authentication; the 4 runs of the runner ended with 0 (M1.12)`, k1log.accepted.length === 5 && sessions.join(',') === 'command,command,command,command,none' && k1log.attemptPorts.length === 5 && k1log.authAttempts === 5 && roads.outcomes.length === 4 && roads.outcomes.every((one) => one.outcome?.exitCode === 0), JSON.stringify({ accepted: k1log.accepted, ports: k1log.attemptPorts, runs: roads.outcomes.map((one) => one.outcome?.exitCode) }));
+  check(`${label}: K1 logged exactly 5 accepted logins, one per run: 4 with a command session and 1 with none (the bridge); 5 client ports reached authentication; the 4 runs of the runner ended with 0 (M1.12)`, k1log.accepted.length === 5 && sessions.join(',') === 'command,command,command,command,none' && k1log.attemptConnections.length === 5 && k1log.authAttempts === 5 && roads.outcomes.length === 4 && roads.outcomes.every((one) => one.outcome?.exitCode === 0), JSON.stringify({ accepted: k1log.accepted, ports: k1log.attemptPorts, connections: k1log.attemptConnections, runs: roads.outcomes.map((one) => one.outcome?.exitCode) }));
   return k1log;
 }
 

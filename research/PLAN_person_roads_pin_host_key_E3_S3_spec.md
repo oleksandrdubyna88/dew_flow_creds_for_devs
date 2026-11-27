@@ -1,6 +1,8 @@
 # PLAN — E3.S3 brief: the feasibility of the instruments that are not known to work (decision 18)
 
-> Status: **brief, 2026-11-23, by Opus; no probe built, no probe run.** Story E3.S3 of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S3 (brief) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **brief, 2026-11-23, by Opus; no probe built, no probe run.** Story E3.S3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its decision 18; `## Epics`, E3: *The feasibility comes first*,
 > *The setup of every measurement* and the rows M1-M3, M5 (f) and (h), M6, M7, M9-M11, M13) and of its stories document
 > [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md) (`## E3.S3`, its settled item 9, the lead's answers Q1 and

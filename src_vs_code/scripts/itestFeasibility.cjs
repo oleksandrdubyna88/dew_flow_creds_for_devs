@@ -1,6 +1,6 @@
 'use strict';
-// The feasibility probes of G1 (E3.S3, `todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`; decision 18 of
-// `todo/PLAN_person_roads_pin_host_key.md`): before any row of E3 is built, each instrument that is not known to work is asked, through the
+// The feasibility probes of G1 (E3.S3, `research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`; decision 18 of
+// `research/PLAN_person_roads_pin_host_key.md`): before any row of E3 is built, each instrument that is not known to work is asked, through the
 // committed instrument of E3.S2 (`lib/sshdRun.cjs`, `itestServing.cjs`, `itestIdentities.cjs`), from a tree with no modified tracked file,
 // whether it can show what its rows need. A probe is NOT a row: it measures no pass criterion, and what it sees is "seen when it was probed".
 //

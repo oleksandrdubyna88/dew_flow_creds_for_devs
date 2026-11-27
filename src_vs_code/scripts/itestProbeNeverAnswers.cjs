@@ -1,5 +1,5 @@
 'use strict';
-// Probe P7 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a program that never answers `-V`, ended by the runner's limit, for M11 (d).
+// Probe P7 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a program that never answers `-V`, ended by the runner's limit, for M11 (d).
 //
 // What it shows: a program that records its start, answers nothing and does not end by itself is asked `-V` by the product's own asker
 // (`pinClientAsker` of `out/pinClient.js`), the runner's limit ends it, and the probe can time it and see it gone by its pid and start time

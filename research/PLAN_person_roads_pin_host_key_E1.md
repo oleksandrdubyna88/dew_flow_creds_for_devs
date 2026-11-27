@@ -1,10 +1,12 @@
 # PLAN — G1, epic E1: the stories (the three roads enforce the saved pin of one call)
 
-> Status: **Epic 1 built 2026-11-17/18 (E1.S1 to E1.S4), merged (#379, `f3e9887d`), not released; the re-review of epoch 2 replaces two of its rules (E1.S1's rule of the path by the parent's §3.11, E1.S3's condition of sentence C by §3.12); the stories document was written 2026-11-17.** The stories document of epic E1 of
+> Status: **IMPLEMENTED, 2026-11-27.** Epic E1 (the stories document) of G1: merged (#379, squash `f3e9887d`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **Epic 1 built 2026-11-17/18 (E1.S1 to E1.S4), merged (#379, `f3e9887d`), not released; the re-review of epoch 2 replaces two of its rules (E1.S1's rule of the path by the parent's §3.11, E1.S3's condition of sentence C by §3.12); the stories document was written 2026-11-17.** The stories document of epic E1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E1). It is the epic's baseline,
 > written when E1 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It keeps no
 > change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E1.S2). Built on its own
-> branch on top of the G2 plan ([PLAN_bridge_no_connection_sharing.md](../research/PLAN_bridge_no_connection_sharing.md)), which
+> branch on top of the G2 plan ([PLAN_bridge_no_connection_sharing.md](PLAN_bridge_no_connection_sharing.md)), which
 > merged on 2026-11-17 (#376; the parent's §4, §9). The spec of E1.S1 is written:
 > [PLAN_person_roads_pin_host_key_E1_S1_spec.md](PLAN_person_roads_pin_host_key_E1_S1_spec.md), and the spec of the
 > cornerstone E1.S2: [PLAN_person_roads_pin_host_key_E1_S2_spec.md](PLAN_person_roads_pin_host_key_E1_S2_spec.md) (both
@@ -14,7 +16,7 @@
 The goal, scope, dependencies and done-when of the epic are in the parent's `## Epics`, E1; the sections named below
 (§3.1 and so on) are the parent's. This document splits the epic into four stories, in the order in which what each
 one decides has to be known. Each story's scenarios and brief are in its spec,
-`todo/PLAN_person_roads_pin_host_key_E1_S<n>_spec.md`, written when that story starts. A line reference here was
+`research/PLAN_person_roads_pin_host_key_E1_S<n>_spec.md`, written when that story starts. A line reference here was
 measured on `main` after G2 had merged (`ca99cd91`, 2026-11-17): they were repaired with the parent's (its §9, step 1),
 and a repaired reference is not a change.
 
@@ -354,4 +356,4 @@ a test harness and is no security judgement: Opus writes its spec.
 When the four stories are built, the code gate runs on E1's branch: `review_code`, then `resolve`, until `proceed`. A
 cadence consult, if the gate orders one, comes before that round. Then the lead's Opus review, CI green on the head
 sha, CodeRabbit read, and one PR, merged by squash. **E1 is merged and not released** (the parent's §9, step 4). E2
-then writes `todo/PLAN_person_roads_pin_host_key_E2.md`.
+then writes `research/PLAN_person_roads_pin_host_key_E2.md`.

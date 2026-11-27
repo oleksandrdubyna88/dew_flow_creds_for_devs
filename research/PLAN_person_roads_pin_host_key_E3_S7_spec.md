@@ -1,6 +1,8 @@
 # PLAN — E3.S7 spec: the pin file's path, and the agent's exec (M7, M12, M14)
 
-> Status: **spec, 2026-11-24, by Opus; not built.** Story E3.S7 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S7 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-24, by Opus; not built.** Story E3.S7 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its decisions 15, 16 and 18; §3.5, §3.9, §3.11; `## Epics`, E3: *The setup of every measurement* and the rows M7, M12 and M14) and of its
 > stories document [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md) (`## The rows: built story by story, measured
 > once`, `## E3.S7`, the lead's answers Q1 and Q3). It builds on the common rig as BUILT by E3.S4, E3.S5 and E3.S6 (`scripts/itestRowRig.cjs`
@@ -73,7 +75,7 @@ addition:
 | # | Fact | How |
 |---|---|---|
 | J1 | **The tree.** `fix/g1-e3-release-gate` at `62251613`, no modified tracked file. E3.S4 to E3.S6 are built and reviewed; the last proving run: 991 ok, 0 FAIL, 48 leg processes (`research/module_tests.md:2530`, `:2532`) | read |
-| J2 | **The rows.** M7 `todo/PLAN_person_roads_pin_host_key.md:1733`, M12 `:1738`, M14 `:1740`; their last columns are quoted beside each check (§2 to §4) | read |
+| J2 | **The rows.** M7 `research/PLAN_person_roads_pin_host_key.md:1733`, M12 `:1738`, M14 `:1740`; their last columns are quoted beside each check (§2 to §4) | read |
 | J3 | **The storage folder of a leg** is `path.join(dir, 'storage')` (`itestRowRig.cjs:629`); the world takes `storageDir: rig.storage` (`itestPinnedRoads.cjs:201`), the sampler `materializedKeysDir(leg.storage)` when `openRoads` runs (`itestRowRig.cjs:249`), and M1.11 compares each pin file's folder with `materializedKeysDir(leg.storage)` (`itestRowM1.cjs:108-113`). So a leg that sets `leg.storage` before `openRoads` moves every one of them | read |
 | J4 | **The pid of `keys/<pid>/`** is the process's own (`materializedKeys.ts:51-53`): the leg process, where the product runs | read |
 | J5 | **The rule.** `PIN_PATH_KINDS` (`hostKeyPin.ts:143-152`): `control`, `quote`, `doubleBackslash`, `backslashApostrophe`, `lastBackslash`, `percent`, `variable`, `tilde`; `REFUSED_PIN_PATHS` asks them in that order (`:157-166`); `pinPathRefusal` `:185`. `checkedPin` quotes a path with white space, an apostrophe or `=` (`:226`) | read |

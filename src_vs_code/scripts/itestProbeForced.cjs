@@ -1,5 +1,5 @@
 'use strict';
-// Probe P6 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a forced command that writes the verification line to its stderr
+// Probe P6 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a forced command that writes the verification line to its stderr
 // and then runs the command it was asked for, to 0 (M5 h).
 //
 // What it shows: a counterpart whose login is accepted, whose remote side writes `Host key verification failed.` to its stderr and then

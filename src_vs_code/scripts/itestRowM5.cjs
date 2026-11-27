@@ -1,5 +1,5 @@
 'use strict';
-// Row M5 of G1 (E3.S8; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 2): what the person is told when a pinned call meets a host key that is not the saved one, as the
+// Row M5 of G1 (E3.S8; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S8_spec.md` section 2): what the person is told when a pinned call meets a host key that is not the saved one, as the
 // call saw it. Eleven legs, each its own leg process, world, key copy and counterpart(s), each cold: (a) K2 answers, (e) as (a) under a quiet handed config, (f) a jump host whose key the jump file refuses, (g) K1 accepts the logins
 // and the remote side writes the verification line and ends with 255, (h) the same and then runs the asked command to 0, and (b) a stopped counterpart, (c) a refused login, (d) a listener that never answers, each also on an UNPINNED entry.
 // What the person was shown is read from the world's `said`, and compared with the product's functions AND with the words pinned in `lib/toldRecord.cjs`. The comparisons across legs (the unpinned twins, the control of (h)) run in
@@ -286,7 +286,7 @@ function caseCounts(ctx, spec, label, counts, silent, ended) {
   if (spec.target === 'stopped') {
     ctx.check(`${label}: each connection start's run ended with 255 (the bridge too), and nothing answered (${id})`, runs.every((one) => one?.exitCode === 255) && bridge?.exitCode === 255 && wanted === 4 && log.connections === 0, JSON.stringify({ codes: runs.map((one) => one?.exitCode ?? null), bridge: bridge?.exitCode ?? null, starts: wanted, connections: log.connections }));
   } else if (spec.target === 'refusedLogin') {
-    ctx.check(`${label}: K1 logged an authentication attempt for each connection start and 0 accepted logins: the key check passed and the login was refused (${id})`, wanted === 4 && log.attemptPorts.length === wanted && log.accepted.length === 0, JSON.stringify({ starts: wanted, attemptPorts: log.attemptPorts, accepted: log.accepted }));
+    ctx.check(`${label}: K1 logged an authentication attempt for each connection start and 0 accepted logins: the key check passed and the login was refused (${id})`, wanted === 4 && log.attemptConnections.length === wanted && log.accepted.length === 0, JSON.stringify({ starts: wanted, attemptConnections: log.attemptConnections, attemptPorts: log.attemptPorts, accepted: log.accepted }));
   } else {
     const seen = silent.snapshot();
     // The bridge ended as in (b): by itself, with 255, and its own stderr file was read (review of E3.S8); the file's text goes into the evidence.

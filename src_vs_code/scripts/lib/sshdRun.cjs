@@ -1,6 +1,6 @@
 'use strict';
 // The `sshd` of a real run, and the text of every sshd config of the real runs (G1, E3.S2; decision 16 of
-// `todo/PLAN_person_roads_pin_host_key.md`): the instrument's ONE place. `scripts/itestSshd.cjs` reads the run once, with
+// `research/PLAN_person_roads_pin_host_key.md`): the instrument's ONE place. `scripts/itestSshd.cjs` reads the run once, with
 // `sshdRunOf(process.env)`; its `startSshd` (`sshd -d`) and the serving launcher of `scripts/itestServing.cjs` (`sshd -D -e`) write
 // their config with `oneConnectionConfig` and `servingConfig`, so the lines of the run reach both from here. `test/itestInstrument.test.ts`
 // (test 33) holds that no other script names an sshd by a path or writes an sshd config.

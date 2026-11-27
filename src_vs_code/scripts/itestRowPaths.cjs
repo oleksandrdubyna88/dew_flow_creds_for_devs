@@ -1,5 +1,5 @@
 'use strict';
-// What the rows M7, M12 and M14 of G1 share (E3.S7; `todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §1.2 to §1.4, §5.2). The case of each leg is made by the STORAGE FOLDER of the leg's window and by
+// What the rows M7, M12 and M14 of G1 share (E3.S7; `research/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §1.2 to §1.4, §5.2). The case of each leg is made by the STORAGE FOLDER of the leg's window and by
 // nothing else: a folder inside the leg's own folder whose name holds the characters that the row names, handed to the world as its `storageDir`, so the product makes the pin file's complete pathname itself.
 // No product function is patched and no path is handed to a builder. Every expected word, kind, prefix and path is pinned in the spec or computed from what the leg made (the lesson of S5.R.6b): where a
 // check also reads a product function, a pinned part stands beside it. Like every row file this one starts no counterpart, no world and no process itself (the guards of the rig's proof read it).
