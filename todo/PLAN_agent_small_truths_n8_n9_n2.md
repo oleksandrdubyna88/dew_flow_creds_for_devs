@@ -1,6 +1,6 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **plan only, nothing implemented yet, 2026-11-27. Not approved yet.** Scope: the extension only
+> Status: **approved, nothing implemented yet, 2026-11-27.** Scope: the extension only
 > (`src_vs_code/src`: `mcpEntries.ts`, `agentUseActions.ts`, the five `help*.ts` files, `mcpLogRows.ts`, `mcpLogPage.ts`,
 > their tests), two README sentences, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `research/module_tests.md`, `todo/README.md`. One epic, three stories (`## Epics`).
@@ -8,10 +8,16 @@
 > The owner put three items next, in this order: N8, N9, N2. They are items of §11 of
 > [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7), and that
 > plan's §12 lists them as open. Each `file:line` here was read on `32cc729c` (extension 1.24.0). Three things were also
-> observed on that commit, on 2026-11-27, with the compiled extension (§1.4). No ledger yet: the first approval opens
-> `## Plan changes` under this block (`.agents/conventions/common/plan-change-control.md`).
+> observed on that commit, on 2026-11-27, with the compiled extension (§1.4).
+> Approved by the `coai` plan round on 2026-11-27 (`proceed`, 1 of 1 reviewers, session `70487363`; its one finding
+> was accepted and fixed in the round, `2a5831ba`: the second count of §2.3, row J4, mutation M14). The question
+> consultants answered Q3, Q4 and Q5 of §14 as this plan is built; Q1 was split and is the owner's.
 > Two of the three items are not what F7 wrote: N9 does not happen in a vault that does not change (§1.2), and N2 is
 > wider than one help sentence (§1.3). §14 has the questions for the owner. Fable wrote this plan and the split.
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-27 · by reviewers · state: open
 
 ## 1. The three defects
 
@@ -510,6 +516,13 @@ the five help files; none names the article `mcp-logs`. A branch that merges sec
 
 The lead puts them to the question consultants first. The work does not wait: each question has the answer that this
 plan is built on.
+
+**The consultants, 2026-11-27** (two rows each, `coai` `consask`): Q5 — both A, *go on* (`00b66665`; the lead checked
+the precedent: `findFolder` goes on past a node that is not an open folder, `mcpFolders.ts:141-145`). Q1 — split
+(`7b5e3cd1`): one says leave the code, because WG3 and the Trash row of `test/agentSshGate.test.ts:313` already guard
+the gate order and a table is a second place that decides the reason; the other says build the table. It stays the
+owner's; S2 is built as its own commit, so a *no* removes it with a revert. Q3 — both *all 12 texts* (`18acb7fc`).
+Q4 — both *no line here; B is its own plan* (`cdb56619`). Q2 was not asked: its answer changes nothing in this plan.
 
 - **Q1 (N9). N9 does not happen in a vault that does not change (§1.2). Build the two causes as a safeguard?** *Built
   on: yes* (one table, three rows). The other answer: no code change; keep guard row WG3; F7's N9 gets the note *not a
