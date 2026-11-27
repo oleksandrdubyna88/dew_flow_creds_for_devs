@@ -135,6 +135,16 @@ internal static class Tools
         List the credentials the person has explicitly opened to you in CredsForDevs — SSH hosts,
         databases, VPNs, saved commands and scripts.
 
+        `folder` is the name of ONE folder above the entry, and only when that folder is open to you too.
+        When the entry takes its access switches from a folder, it is the folder that gave them,
+        which can be a folder above the entry's own folder. When the entry has switches of its own,
+        it is the entry's own folder. It is empty when that folder is not open to you, and when the
+        entry is at the top of the vault. `dependsOn` names the entries this one needs that are open
+        to you; when it needs one that is not, the list ends with
+        "(a dependency that is not open to agents)".
+        In `command`, a creds:// reference to something that is not open to you reads
+        "(a creds reference that is not open to agents)".
+
         You get the NON-SECRET half of each: name, kind, folder, host, user, port, and for a
         database a connection string with the password removed. You never get a password, a
         private key, a VPN config or a one-time-code seed, and there is no way to ask for one.

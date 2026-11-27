@@ -1,6 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { HIDDEN_DEPENDENCY, HIDDEN_REFERENCE } from '../agentNaming';
+import { HELP_LANGUAGES, HelpLanguage, bodyFor, helpArticle } from '../helpContent';
 import type { ReadRouteSources } from '../brokerReadRoutes';
 import type { McpAccess } from '../mcpAccess';
 import { McpEntry, McpVaultSource, visibleMcpEntries } from '../mcpEntries';
@@ -561,4 +564,75 @@ test('G1: with each node viewable, the two list bodies are those of the code bef
   const source = vault(EVERYTHING_VIEWABLE);
   const folders = visibleFolders(source.getAccounts(), (accountId) => source.getNodes(accountId), (accountId, id) => source.getNode(accountId, id));
   assert.deepEqual(JSON.parse(JSON.stringify({ entries: await visibleMcpEntries(source), folders })), BEFORE);
+});
+
+// ---------- S5 · the words ----------
+
+interface GeneratedTool {
+  readonly name: string;
+  readonly description: string;
+}
+
+/** The tool descriptions of `contract/mcp-tools-v1.json`, which `npm run contract:mcp` writes from the built `creds-mcp`: the join of the constants and the binary's own words. */
+function generatedDescriptions(): Map<string, string> {
+  const file = path.resolve(__dirname, '..', '..', '..', 'contract', 'mcp-tools-v1.json');
+  const tools = (JSON.parse(fs.readFileSync(file, 'utf8')) as { tools: GeneratedTool[] }).tools;
+  return new Map(tools.map((tool) => [tool.name, tool.description]));
+}
+
+test('T1: the descriptions of creds_vpn_up, creds_run and creds_list hold the words of the two placeholders', () => {
+  const described = generatedDescriptions();
+  const holds = (tool: string, words: string): boolean => (described.get(tool) ?? '').includes(words);
+  assert.deepEqual(
+    [
+      ['creds_vpn_up', HIDDEN_DEPENDENCY],
+      ['creds_run', HIDDEN_REFERENCE],
+      ['creds_list', HIDDEN_REFERENCE],
+      ['creds_list', HIDDEN_DEPENDENCY],
+    ].filter(([tool, words]) => !holds(tool, words)),
+    [],
+    'a description does not hold the words of a placeholder',
+  );
+});
+
+test('T4: the description of creds_list says which folder `folder` names: the one that gave the switches, which can be a folder above the entry\'s own', () => {
+  const text = generatedDescriptions().get('creds_list') ?? '';
+  assert.equal(text.includes('it is the folder that gave them'), true);
+  assert.equal(text.includes("which can be a folder above the entry's own folder"), true);
+});
+
+/** Appendix A of the plan: the sentence added to the `creds_list` bullet, and the one added to the `creds_folders` bullet, of `usage` of `agent-surface`. */
+const HELP_SENTENCES: Readonly<Record<HelpLanguage, readonly [string, string]>> = {
+  en: [
+    'A folder, a dependency and a `creds://` reference in a command are named only when they are open to agents too. Otherwise the folder is empty, and the dependency and the reference are shown as fixed words that name nothing.',
+    'The parent is given only when it is open to agents too.',
+  ],
+  de: [
+    'Ein Ordner, eine Abhängigkeit und ein `creds://`-Verweis in einem Befehl werden nur genannt, wenn sie ebenfalls für Agenten geöffnet sind. Sonst ist der Ordner leer, und die Abhängigkeit und der Verweis erscheinen als feste Worte, die nichts benennen.',
+    'Das Elternteil wird nur angegeben, wenn es ebenfalls für Agenten geöffnet ist.',
+  ],
+  es: [
+    'Una carpeta, una dependencia y una referencia `creds://` en un comando sólo se nombran cuando también están abiertas a los agentes. Si no, la carpeta queda vacía, y la dependencia y la referencia se muestran como palabras fijas que no nombran nada.',
+    'El padre sólo se indica cuando también está abierto a los agentes.',
+  ],
+  ru: [
+    'Папка, зависимость и ссылка `creds://` в команде называются, только если они тоже открыты агентам. Иначе папка пустая, а зависимость и ссылка показаны фиксированными словами, которые ничего не называют.',
+    'Родитель указан, только если он тоже открыт агентам.',
+  ],
+  uk: [
+    'Папка, залежність і посилання `creds://` у команді називаються, лише якщо вони теж відкриті агентам. Інакше папка порожня, а залежність і посилання показані сталими словами, які нічого не називають.',
+    'Батько вказаний, лише якщо він теж відкритий агентам.',
+  ],
+};
+
+test('T3: in each language the usage of the agent-surface article holds the two sentences, and is not the English fallback', () => {
+  const article = helpArticle('agent-surface') as NonNullable<ReturnType<typeof helpArticle>>;
+  assert.deepEqual([...HELP_LANGUAGES].sort(), Object.keys(HELP_SENTENCES).sort(), 'the table has a row for each language');
+  for (const language of HELP_LANGUAGES) {
+    const { body, fallback } = bodyFor(article, language);
+    const [list, folders] = HELP_SENTENCES[language];
+    assert.equal(fallback, false, language);
+    assert.equal(body.usage.includes(`${list}\n`), true, `${language}: the sentence of creds_list ends its bullet`);
+    assert.equal(body.usage.includes(`${folders}\n`), true, `${language}: the sentence of creds_folders ends its bullet`);
+  }
 });
