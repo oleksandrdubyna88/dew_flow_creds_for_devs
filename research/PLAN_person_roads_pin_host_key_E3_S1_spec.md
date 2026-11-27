@@ -1,6 +1,8 @@
 # PLAN — E3.S1 spec: a run that ended with 0 is told nothing about a host key (C19; SECURITY)
 
-> Status: **spec, 2026-11-23, by Fable; not built.** A security spec, written before its code (the row *Security judgement* of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S1 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-23, by Fable; not built.** A security spec, written before its code (the row *Security judgement* of
 > `subagent-models.md`; outside the quota: both cornerstones of the plan are marked). Story E3.S1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.12, part 4, with decision 14; the last row of the
 > table of §3.5; §3.6, *After E2, and E3.S1's budget*; the tests 28-32 of its §5; §6, *E3.S1 (C19) updates*; the group *E3.S1* of

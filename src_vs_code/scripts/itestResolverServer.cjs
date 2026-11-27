@@ -1,5 +1,5 @@
 'use strict';
-// The resolver of probe P2 of E3.S3 (`todo/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a name server that the run owns, for M10. It runs INSIDE the
+// The resolver of probe P2 of E3.S3 (`research/PLAN_person_roads_pin_host_key_E3_S3_spec.md`): a name server that the run owns, for M10. It runs INSIDE the
 // probe's container, as root (port 53), and is the only thing in the run that does. It is not a package and it validates nothing: it answers what a zone
 // file says and SETS the AD bit on those answers, which is the signal that the client's own resolver library passes on under `options trust-ad` (the
 // lead's answer on "secure" in the brief). It records every question.

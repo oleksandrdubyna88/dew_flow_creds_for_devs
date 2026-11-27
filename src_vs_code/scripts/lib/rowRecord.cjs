@@ -1,6 +1,6 @@
 'use strict';
-// The pure rules of the record of the real-road rows (G1, E3.S4; decision 15 of `todo/PLAN_person_roads_pin_host_key.md`, the stories
-// document's *E3.S4*, `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §2): how a start of the client, a connection start, an
+// The pure rules of the record of the real-road rows (G1, E3.S4; decision 15 of `research/PLAN_person_roads_pin_host_key.md`, the stories
+// document's *E3.S4*, `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §2): how a start of the client, a connection start, an
 // authentication attempt and an accepted login are counted, the sentences of §3.5, the handed client config's text, the lines that turn
 // password logins on, E1's words, and how the output line of a leg process is read. Four counts that stay apart: no check puts one for
 // another. The rig (`scripts/itestRowRig.cjs`) and section 10 import these; `test/itestRowRig.test.ts` (RR1 to RR5) holds them without

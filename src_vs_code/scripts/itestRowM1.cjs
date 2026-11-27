@@ -1,5 +1,5 @@
 'use strict';
-// Row M1 of G1 (E3.S4; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §6): a pinned entry
+// Row M1 of G1 (E3.S4; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §6): a pinned entry
 // whose host presents the pinned key works on all three roads, to the end of the install. The leg `m1` is cold (a new world in a new process: the
 // asker of the client has asked nothing), the entry is pinned to K1, signs in with a key that the person named by its path, and K1 answers with the
 // install's stand-in (probe P1 of E3.S3). The roads run the product's real resolve (the rig, `itestRowRig.cjs`). Each check below holds the words of

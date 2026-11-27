@@ -1,6 +1,8 @@
 # PLAN — E1.S3 spec: the three roads name the pin file, and a refused host key is told (SECURITY)
 
-> Status: **built 2026-11-18 (4dca4bd0 the product and the tests, 5dc8139e the documents) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its condition of sentence C (the verification line anywhere in the stderr) is replaced in epoch 2 by the parent's §3.12, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
+> Status: **IMPLEMENTED, 2026-11-27.** Story E1.S3 (spec) of G1: merged (#379, squash `f3e9887d`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **built 2026-11-18 (4dca4bd0 the product and the tests, 5dc8139e the documents) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its condition of sentence C (the verification line anywhere in the stderr) is replaced in epoch 2 by the parent's §3.12, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: E1.S2 holds it). Story E1.S3 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.3, §3.4, sentence C of §3.5, §3.6, the tests 2,
 > 3, 4, 9 and 11 of its §5 and the mutation checks of item 15 that name the four argv calls, one file per run, the bridge's pin
@@ -20,7 +22,7 @@
 
 Paths are relative to `src_vs_code/src/` unless they start with another folder. "The parent" is the plan linked above; a section
 named as §3.5 and so on is the parent's, and a section named as "§2 of this spec" is this document's. "N16" is
-[PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md). The names of the two specs before this one keep
+[PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md). The names of the two specs before this one keep
 their meaning (`hostKeyWords`, the six words, `valuesOf`; `CallAuth`, `ReadyCall`, `writePersonPin`, the world, Q0 to QS). This
 document's own names: the facts L1 to L12, the scenarios H1 to H5 and T1 to T11, the mutations W1 to W19, the break-its Z1 to
 Z14. "The five runs" are the `ssh` runs of the three roads: the tunnel of the bridge, the sweep and the mode check of the socket

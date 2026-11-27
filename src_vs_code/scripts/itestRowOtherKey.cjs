@@ -1,5 +1,5 @@
 'use strict';
-// What the rows M2, M3 and M8 of G1 share (E3.S6; `todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §1, §5.2): in each leg the entry is pinned to ONE key and the host at the entry's address presents ANOTHER, which
+// What the rows M2, M3 and M8 of G1 share (E3.S6; `research/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §1, §5.2): in each leg the entry is pinned to ONE key and the host at the entry's address presents ANOTHER, which
 // one more source of trust would accept: a known-hosts file the client reads as the person's file (M2 (a)) or as the system-wide one (M2 (b)), a live master connection (M3), or a `KnownHostsCommand` (M8).
 // Every source is made by the client config that the shim hands the real `ssh` (`-F`), in the leg's own folder, never by the person's `~/.ssh` (the client's `~` is in the person's real home: S4.F23).
 // The roads are the registered commands with the real resolve, the real asker, the real runner and the real bridge spawner. The controls and the witnesses use words that are literal (`lib/otherKeyRecord.cjs`) or

@@ -1,6 +1,8 @@
 # PLAN — E2.S4 spec: the CHANGELOG entry claims only what holds, and E1's smoke runs on the changed words (R5, test 27)
 
-> Status: **spec, 2026-11-18, by Opus; built (805aed3b, d0ae4b3c), unmerged; section 10 shows 48 ok locally on OpenSSH 10.2p1, and CI is the second run. Three sentences of its CHANGELOG entry are cut in the re-review for epoch 3 ("No `ssh` starts" for an unusable saved key, "Nothing starts then", and the remote command among the cases of sentence D) and corrected forward in E3.** Story E2.S4 of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E2.S4 (spec) of G1: merged (#388, squash `4799f9d7`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-18, by Opus; built (805aed3b, d0ae4b3c), unmerged; section 10 shows 48 ok locally on OpenSSH 10.2p1, and CI is the second run. Three sentences of its CHANGELOG entry are cut in the re-review for epoch 3 ("No `ssh` starts" for an unusable saved key, "Nothing starts then", and the remote command among the cases of sentence D) and corrected forward in E3.** Story E2.S4 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (repair R5 of its `## Epics`, E2; its §6, decision 11, and
 > test 27 of its §5) and of its stories document [PLAN_person_roads_pin_host_key_E2.md](PLAN_person_roads_pin_host_key_E2.md)
 > (`## E2.S4`). A test harness and a reading of the entry against the tests, not a security judgement: Opus writes this spec, a

@@ -1,6 +1,8 @@
 # PLAN — E3.S2 spec: the launch instrument of the real `sshd` runs (W4; decision 16; test 33)
 
-> Status: **spec, 2026-11-23, by Opus; not built.** Story E3.S2 of
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S2 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-23, by Opus; not built.** Story E3.S2 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its decision 16; §3.7, *Added by epoch 3*; test 33 of its §5;
 > §6, *E3.S2 (the instrument) updates*; the group *E3.S2* of its §8; `## Epics`, E3: the line of E3.S2, *The setup of every measurement*
 > with *The stop of the listener alone*, *The launch instrument* and *The identities*, and row M3) and of its stories document
@@ -215,7 +217,7 @@ the record come after leg 2, so that nothing of theirs can change a port, a reco
 ```js
 'use strict';
 // The `sshd` of a real run, and the text of every sshd config of the real runs (G1, E3.S2; decision 16 of
-// `todo/PLAN_person_roads_pin_host_key.md`): the instrument's ONE place. `scripts/itestSshd.cjs` reads the run once, with
+// `research/PLAN_person_roads_pin_host_key.md`): the instrument's ONE place. `scripts/itestSshd.cjs` reads the run once, with
 // `sshdRunOf(process.env)`; its `startSshd` (`sshd -d`) and the serving launcher of `scripts/itestServing.cjs` (`sshd -D -e`) write
 // their config with `oneConnectionConfig` and `servingConfig`, so the lines of the run reach both from here. `test/itestInstrument.test.ts`
 // (test 33) holds that no other script names an sshd by a path or writes an sshd config.
@@ -434,7 +436,7 @@ it read before when no variable is set.
 ## 4. `scripts/itestServing.cjs` (new)
 
 ```js
-// The serving launcher of the real runs (G1, E3.S2; decision 16 of `todo/PLAN_person_roads_pin_host_key.md`): the ONE starter of every
+// The serving launcher of the real runs (G1, E3.S2; decision 16 of `research/PLAN_person_roads_pin_host_key.md`): the ONE starter of every
 // counterpart of a row of E3, moved here from `itestPinnedRoads.cjs` (section 10) so that every row file reaches it and its stops.
 //
 // `startServingSshd` starts one `sshd -D -e`, which serves EVERY connection, with the run's executable and config lines (`RUN` of
@@ -858,7 +860,7 @@ system `sshd`).
 ## 8. The record of identities: `scripts/itestIdentities.cjs` (new)
 
 ```js
-// The record of identities of a real run (G1, E3.S2; decision 16 of `todo/PLAN_person_roads_pin_host_key.md`, its setup *The identities*
+// The record of identities of a real run (G1, E3.S2; decision 16 of `research/PLAN_person_roads_pin_host_key.md`, its setup *The identities*
 // and *The launch instrument*): what ran, by path, version and SHA-256, and every config text the run handed out, by SHA-256, beside the
 // commit of the tree and the answer of `git status --porcelain --untracked-files=no`. A result with no identity beside it is not a result
 // of its row, and a run from a tree with a modified tracked file is no run of its commit.
@@ -1047,7 +1049,7 @@ import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { discoverSources } from './tempSiteScan';
 
 /**
- * G1, E3.S2: test 33 of `todo/PLAN_person_roads_pin_host_key.md` §5, the launch instrument of the real `sshd` runs (decision 16).
+ * G1, E3.S2: test 33 of `research/PLAN_person_roads_pin_host_key.md` §5, the launch instrument of the real `sshd` runs (decision 16).
  *
  * <p><b>What this holds.</b> Every script starts its `sshd` with the executable of ONE place, `scripts/lib/sshdRun.cjs`, and every sshd
  * config of the real runs is written there: the one-connection config of `startSshd` and the config of the serving launcher. The

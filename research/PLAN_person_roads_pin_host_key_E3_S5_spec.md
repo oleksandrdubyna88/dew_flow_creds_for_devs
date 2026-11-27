@@ -1,6 +1,8 @@
 # PLAN — E3.S5 spec: a saved key that cannot be used, and a pin write that fails, in both states of the asker (M4, M9)
 
-> Status: **spec, 2026-11-24, by Opus; not built.** Story E3.S5 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S5 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-24, by Opus; not built.** Story E3.S5 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md)
 > (its decisions 15, 16 and 18; §3.1, §3.2, §3.5, §3.10; `## Epics`, E3: *The setup of every measurement* and the rows M4 and M9; the
 > candidates C1, C9 and C14) and of its stories document [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md)
 > (`## The rows: built story by story, measured once`, `## E3.S5`). It builds on the common rig AS SPECIFIED in

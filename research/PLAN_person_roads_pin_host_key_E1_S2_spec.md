@@ -1,6 +1,8 @@
 # PLAN — E1.S2 spec: the pin of one call, and the guard that owns two files (SECURITY, CORNERSTONE)
 
-> Status: **built 2026-11-17/18 (7f061190 the import lines, aad8b8ba the product and the tests, 08d65f5d the documents) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Spec written 2026-11-17, by Fable.** The cornerstone spec of the G1 plan, and a security spec, written
+> Status: **IMPLEMENTED, 2026-11-27.** Story E1.S2 (spec) of G1: merged (#379, squash `f3e9887d`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **built 2026-11-17/18 (7f061190 the import lines, aad8b8ba the product and the tests, 08d65f5d the documents) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Spec written 2026-11-17, by Fable.** The cornerstone spec of the G1 plan, and a security spec, written
 > before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`). Story E1.S2 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.1, §3.2, sentences A and B of §3.5, §3.6, and the
 > tests 1, 5, 6, 7, 8 and 10 of its §5) and of its stories document
@@ -16,7 +18,7 @@
 
 Paths are relative to `src_vs_code/src/` unless they start with another folder. "The parent" is the plan linked above; a section
 named as §3.1 and so on is the parent's, and a section named as "§2 of this spec" is this document's. "N16" is
-[PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md); its names keep their meaning (`forgetWrittenKey`,
+[PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md); its names keep their meaning (`forgetWrittenKey`,
 `withWrittenKey`, `withWrittenKeyUntilExit`, the world, C1 to C6, I1 to I7, R1, B1 to B9, U1 to U8). This document's own names:
 the facts K1 to K12, the scenarios Q0 to Q8 with QW and QS, P1 to P9, U9 to U17, the mutations N1 to N17, the break-its Y1 to
 Y10. This document keeps no change ledger: a change of it is an entry in the parent (`plan-change-control.md`).

@@ -1,5 +1,5 @@
 'use strict';
-// Row M6 of G1 (E3.S4; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §7): every call owns
+// Row M6 of G1 (E3.S4; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S4_spec.md` §7): every call owns
 // its files, calls do not disturb each other, nothing is left. Ten legs, each cold, each its own process, world and counterpart(s), each with the
 // real resolve over a vault of its own credential: a stored key, a key that the person named by its path, a password. Before the first click the leg
 // writes `keys/<pid>/known_hosts-e1` (the file of an entry that this window does not own) and reads the SHA-256 of the person's key file.

@@ -1,11 +1,13 @@
 # PLAN — G1, epic E2: the stories (the known repairs: a pinned call trusts the pin alone, names it as one file or does not start, and says only what it saw)
 
-> Status: **Epic 2 built 2026-11-18 and 2026-11-19 (E2.S1-E2.S4) on `fix/g1-e2-measurements` (`22caab8b`), through its code gate, not merged, not released; its pull request waits for the parent's epoch 3 (the parent's §9, step 8). Stories document written 2026-11-18, the baseline of epic E2.** The stories document of epic E2 of
+> Status: **IMPLEMENTED, 2026-11-27.** Epic E2 (the stories document) of G1: merged (#388, squash `4799f9d7`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **Epic 2 built 2026-11-18 and 2026-11-19 (E2.S1-E2.S4) on `fix/g1-e2-measurements` (`22caab8b`), through its code gate, not merged, not released; its pull request waits for the parent's epoch 3 (the parent's §9, step 8). Stories document written 2026-11-18, the baseline of epic E2.** The stories document of epic E2 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its `## Epics`, E2; epoch 2, approved 2026-11-18). It is
 > the epic's baseline, written when E2 starts, not a change of the parent (`plan-change-control.md`, *What counts as a change*). It
 > keeps no change ledger: a change of it is an entry in the parent's. Four stories, one cornerstone (E2.S2). To be built on its own branch
 > from `main` after E1 (#379, `f3e9887d`). Each spec is written when its story starts,
-> `todo/PLAN_person_roads_pin_host_key_E2_S<n>_spec.md`: E2.S1,
+> `research/PLAN_person_roads_pin_host_key_E2_S<n>_spec.md`: E2.S1,
 > [PLAN_person_roads_pin_host_key_E2_S1_spec.md](PLAN_person_roads_pin_host_key_E2_S1_spec.md); E2.S2,
 > [PLAN_person_roads_pin_host_key_E2_S2_spec.md](PLAN_person_roads_pin_host_key_E2_S2_spec.md); E2.S3,
 > [PLAN_person_roads_pin_host_key_E2_S3_spec.md](PLAN_person_roads_pin_host_key_E2_S3_spec.md), [PLAN_person_roads_pin_host_key_E2_S4_spec.md](PLAN_person_roads_pin_host_key_E2_S4_spec.md) (all 2026-11-18).
@@ -283,4 +285,4 @@ When the four stories are built, the code gate runs on E2's branch: `review_code
 consult, if the gate orders one, comes before that round. Then the lead's Opus review (it reads the CHANGELOG entry against E2.S4's
 list: R5), CI green on the head sha, CodeRabbit read, and one PR, merged by squash after the head sha's checks exist and pass. A PR
 over the repository's cap needs the owner's word. **E2 is merged and not released** (the parent's §9, steps 6 and 8, as its revision for epoch 3 numbers them). E3 then writes
-`todo/PLAN_person_roads_pin_host_key_E3.md`.
+`research/PLAN_person_roads_pin_host_key_E3.md`.

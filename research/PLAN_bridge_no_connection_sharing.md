@@ -14,7 +14,7 @@
 > non-interactive `ssh` run (`src/sshExecCommand.ts`), their tests, one new real-`sshd` test script, the docs. No change of
 > the person's interactive terminal, of the shared composer `src/sshOptions.ts`, or of any file on disk. Found as G2 of
 > [PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md) (N16, §5, `:198`), by reading; measured on
-> 2026-11-17 (§2). The plan `todo/PLAN_person_roads_pin_host_key.md` (G1 of the same list; written on another branch, not
+> 2026-11-17 (§2). The plan `research/PLAN_person_roads_pin_host_key.md` (G1 of the same list; written on another branch, not
 > on this one) depends on this plan (§3, decision 3).
 
 ## Plan changes
@@ -136,7 +136,7 @@ of `buildSshExecArgv` themselves (C and D were run with the tunnel's argv; that 
    [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md), D.1, `:2167-2190`; measured there
    with `ssh -v` and `ssh -G` on OpenSSH 10.2). A hop leg can still join or create a master. The hop case is a
    follow-up (§9), not built here.
-3. **Order:** this plan first, then G1 (`todo/PLAN_person_roads_pin_host_key.md`). The reason is run C: while a call can
+3. **Order:** this plan first, then G1 (`research/PLAN_person_roads_pin_host_key.md`). The reason is run C: while a call can
    join a master, a pin on that call is not applied, so G1's pin would be a sent option with no effect.
 
 The brief this plan was written from gives one consult id, for decision 1.
@@ -292,7 +292,7 @@ Only a person whose `ssh` config shares connections sees any change.
 | the two options on the outer leg of the tunnel and of every run of `buildSshExecArgv` | this plan | [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) §4.9 (`:583`) keeps `ControlMaster no` / `ControlPath none` in the `Host *` block of its per-call `-F` file; E1.6 (PR #365, `bridgedSshConfig.ts`) writes that file for a bridged `exec`, and E2.2 is to put the tunnel and its helper runs under one (`:566`). When E2.2 does, the `-o` words of this plan stay: they bind the outer leg before any file is read |
 | the hop legs of a bridged `exec` | the scoped bridge plan, E1.6 (the file reaches the nested `ssh` through `-F`) | none here |
 | the hop legs of every other road (H1, §9) | no plan yet; the natural owner is [PLAN_askpass_answers_the_hop.md](../todo/PLAN_askpass_answers_the_hop.md), which weighs the same `-F` file for the roads off a bridge | this plan states the gap and builds nothing |
-| the pinned host key on the three roads of the person (G1) | `todo/PLAN_person_roads_pin_host_key.md` | this plan goes first (decision 3) and adds no pin |
+| the pinned host key on the three roads of the person (G1) | `research/PLAN_person_roads_pin_host_key.md` | this plan goes first (decision 3) and adds no pin |
 | the pin on all five `ssh` runs, the per-call pin file and the three sentences (G1) | G1 | none: this plan writes no pin file, no known-hosts option and no sentence about a host key |
 | the words of a pinned call in both argv builders: the pin file as both known-hosts files, its path as one file (G1's §3.9) | G1 | none; the two options of this plan are other words of the same two argvs. G1's §4 carries the same row from its side |
 | `commands/agentCommands.ts`, `test/personRoadsWorld.ts` and the two builders `sshBridge.ts` and `sshExecCommand.ts` | both plans edit them | this plan first; G1 measures its §3.6 again and repairs its line references after this plan has merged |
@@ -496,7 +496,7 @@ names that binary, or the first run of the legs is CI's.
   scope: the roads of G2 are the ones the list names, and moving them is a change of its own. A follow-up: route every
   non-interactive `ssh` through one launcher that applies the options, and make the generic `runBounded` refuse `ssh`
   (by its program name, whatever the path). No product logic is changed here.
-- **G1**, the pin on the three roads: `todo/PLAN_person_roads_pin_host_key.md`.
+- **G1**, the pin on the three roads: `research/PLAN_person_roads_pin_host_key.md`.
 - **The agent a run forwards:** [PLAN_ssh_exec_own_agent_forwarding.md](../todo/PLAN_ssh_exec_own_agent_forwarding.md).
 - Turning sharing off for the person's terminal (decision 1), and ending a master that the person or an older version of
   the extension left running.

@@ -1,5 +1,5 @@
 'use strict';
-// Row M10 of G1 (E3.S9; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §2): where the run owns the resolver, the counterpart has a NAME, and the resolver answers a SECURE
+// Row M10 of G1 (E3.S9; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §2): where the run owns the resolver, the counterpart has a NAME, and the resolver answers a SECURE
 // SSHFP record of K2 for it and records each question. The entry is pinned to K1, the counterpart is K2, the handed config says `VerifyHostKeyDNS yes`, and no `KnownHostsCommand` is named. THE CONTROL FIRST: the control
 // client with E1's words (exactly the three pairs of a file of K1's line for `[<name>]:<port>`, no `VerifyHostKeyDNS=no`, no `KnownHostsCommand=none`) is accepted by K2, and the resolver's record holds the SSHFP question: the
 // source is there and would be taken. Then the three roads, which say `VerifyHostKeyDNS=no`: each of the four runs that start ends with 255 and the verification line, the resolver's record holds 0 SSHFP questions for them (and at

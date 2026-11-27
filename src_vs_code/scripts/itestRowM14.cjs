@@ -1,5 +1,5 @@
 'use strict';
-// Row M14 of G1 (E3.S7; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §4 and the lead's answers A1 and A2): the agent's pinned `ssh:exec` gets the same words and
+// Row M14 of G1 (E3.S7; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S7_spec.md` §4 and the lead's answers A1 and A2): the agent's pinned `ssh:exec` gets the same words and
 // the same refusals as the three roads. "Its own call" is the action's own `run`, with the deps that production assembles (`sshDepsFor`), off a bridge, against the real `sshd` (`openExec` of the rig). Four legs, each its own
 // process, world and counterpart: (a) K1: one accepted login and the six pairs of M1; (b) K2 and the handed config of M2 (b), (c) K2 and the handed config of M8: exit code 255 and the verification line, K2 logs
 // nothing; (d) K1 and the storage folder of M12 (a): 0 starts of the client of any kind, the question `ssh -V` included, and the agent's answer names the place and the kind and holds no path. The expected values are

@@ -1,5 +1,5 @@
 'use strict';
-// Row M11 (c) and (d) of G1 (E3.S9; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.4, §3.4): the client that cannot say what it is. (c) answers `-V` at once with no version at the start of its stderr and the exit
+// Row M11 (c) and (d) of G1 (E3.S9; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.4, §3.4): the client that cannot say what it is. (c) answers `-V` at once with no version at the start of its stderr and the exit
 // code 0 (the product reads `unreadable`, and sentence F says `exit code 0`); (d) never answers (the asker's limit of 10 s ends it, and sentence F says it did not start or did not end in time). In both the pinned call is
 // refused before any connection: no pin file written, no connection start, 0 connections and 0 authentication attempts in the counterpart's log, no bridged row. Each leg drives ONE road (`install` or `bridge`), cold, in a
 // world of its own; the parent writes the program of the leg before the leg process starts and hands it to the rig as the leg's real client (D1), so every `ssh` of the road goes shim -> program. The program records its

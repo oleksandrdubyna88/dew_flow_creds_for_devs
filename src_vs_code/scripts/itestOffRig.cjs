@@ -1,5 +1,5 @@
 'use strict';
-// The rows of G1's E3 that run OFF the rig (E3.S9; `todo/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.1): M10, M11 and M13, and the run of test 34 with the older client first on `PATH`. They are not in section 10 of
+// The rows of G1's E3 that run OFF the rig (E3.S9; `research/PLAN_person_roads_pin_host_key_E3_S9_spec.md` §1.1): M10, M11 and M13, and the run of test 34 with the older client first on `PATH`. They are not in section 10 of
 // `ssh-agent-itest.cjs`, and CI runs none of them: each needs an instrument that CI has no way to give (a `wslc` container with a resolver of its own, an unpacked OpenSSH 8.4p1, the owner's Windows `ssh.exe`).
 //
 //   node --import ./scripts/lower-priority.mjs scripts/itestOffRig.cjs <name> [--legs <a,b,...>]

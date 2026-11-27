@@ -1,5 +1,5 @@
 'use strict';
-// Row M4 of G1 (E3.S5; `todo/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `todo/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.5, §4): a saved host key of
+// Row M4 of G1 (E3.S5; `research/PLAN_person_roads_pin_host_key.md`, `## Epics`, E3; `research/PLAN_person_roads_pin_host_key_E3_S5_spec.md` §1.5, §4): a saved host key of
 // the entry that is absent, that cannot be used, or whose file cannot be written. Fifteen legs, each its own process, world and counterpart, each with the real
 // resolve over a vault of its own credential:
 //   (a) absent (nothing, an empty text, white space only): the five runs of M1 are unpinned, `accept-new`, no question, no pin file, and K1 logs 5 logins;

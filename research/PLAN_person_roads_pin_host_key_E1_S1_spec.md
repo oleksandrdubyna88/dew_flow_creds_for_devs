@@ -1,6 +1,8 @@
 # PLAN — E1.S1 spec: the words of a pinned call come from one function (SECURITY)
 
-> Status: **built 2026-11-17/18 (91bd94a7) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its rule of the path (the bare apostrophe, `/dev/null` for a double quote) is replaced in epoch 2 by the parent's §3.11, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
+> Status: **IMPLEMENTED, 2026-11-27.** Story E1.S1 (spec) of G1: merged (#379, squash `f3e9887d`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **built 2026-11-17/18 (91bd94a7) on `fix/g1-person-roads-pin`, merged (#379, `f3e9887d`), not released. Its rule of the path (the bare apostrophe, `/dev/null` for a double quote) is replaced in epoch 2 by the parent's §3.11, and is corrected by E2's pull request. Spec written 2026-11-17, by Fable.** A security spec, written before its code (the row *Security
 > judgement* of `subagent-models.md`; not the cornerstone: E1.S2 holds it). Story E1.S1 of
 > [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its §3.9, the tests 12, 13 and 14 of its §5 and the two
 > mutation checks of item 15 that name `GlobalKnownHostsFile` and a bare path) and of its stories document

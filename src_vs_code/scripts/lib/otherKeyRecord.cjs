@@ -1,5 +1,5 @@
 'use strict';
-// The pure rules of M2, M3 and M8 of G1 (E3.S6; `todo/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §5.1): the table of the seven legs, the words of the controls and of the
+// The pure rules of M2, M3 and M8 of G1 (E3.S6; `research/PLAN_person_roads_pin_host_key_E3_S6_spec.md` §5.1): the table of the seven legs, the words of the controls and of the
 // witnesses (literal, never read from the product's `hostKeyWords`: a hand check of it must not change a control), a known-hosts line made from a `.pub`, the sessions of
 // an sshd log, the judge of the four refused runs, and the recording command of M8 with the reading of its records.
 //

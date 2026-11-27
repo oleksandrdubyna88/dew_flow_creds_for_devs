@@ -1,6 +1,8 @@
 # PLAN — E3.S4 spec: the common rig of the real-road rows; a pinned call that works (M1), and calls that own their files (M6)
 
-> Status: **spec, 2026-11-24, by Opus; revised the same day after the lead's answers to Q1 and Q2 (the rows run the REAL resolve); not
+> Status: **IMPLEMENTED, 2026-11-27.** Story E3.S4 (spec) of G1: merged (#393, squash `fe9aee47`, and #394, `b152bf06`) and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-24, by Opus; revised the same day after the lead's answers to Q1 and Q2 (the rows run the REAL resolve); not
 > built.** Story E3.S4 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its decisions 15, 16 and 18; `## Epics`,
 > E3: *The setup of every measurement* and the rows M1 and M6; candidate C20) and of its stories document
 > [PLAN_person_roads_pin_host_key_E3.md](PLAN_person_roads_pin_host_key_E3.md) (`## The rows: built story by story, measured once`,

@@ -1,4 +1,4 @@
-// The record of identities of a real run (G1, E3.S2; decision 16 of `todo/PLAN_person_roads_pin_host_key.md`, its setup *The identities*
+// The record of identities of a real run (G1, E3.S2; decision 16 of `research/PLAN_person_roads_pin_host_key.md`, its setup *The identities*
 // and *The launch instrument*): what ran, by path, version and SHA-256, and every config text the run handed out, by SHA-256, beside the
 // commit of the tree and the answer of `git status --porcelain --untracked-files=no`. A result with no identity beside it is not a result
 // of its row, and a run from a tree with a modified tracked file is no run of its commit.

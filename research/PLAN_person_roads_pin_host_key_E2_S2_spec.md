@@ -1,6 +1,8 @@
 # PLAN — E2.S2 spec: the complete words of one pinned call, and the two refusals that stand before them (SECURITY, CORNERSTONE)
 
-> Status: **spec, 2026-11-18, by Fable; built (c20be822, 581d96c0, 70676a95), unmerged; the Opus judge of the re-review for epoch 3 found nothing of its code cut; the docblock of `localLaunch` ("no `ssh` starts" for sentence F) is corrected forward in E3 with W7 of the parent.** The cornerstone spec of epic E2 of the G1 plan, and a security
+> Status: **IMPLEMENTED, 2026-11-27.** Story E2.S2 (spec) of G1: merged (#388, squash `4799f9d7`) and released in extension 1.23.0 on 2026-11-23 (release PR #383, `95e11116`, tag `extension-v1.23.0`). G1 as a whole was finished and released in extension 1.24.0 on 2026-11-27 (release PR #395, squash `a63dee35`, tag `extension-v1.24.0` at `a63dee35`, published to the Marketplace the same day). The parent [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) records the release and the run on the release commit (§10.5).
+>
+> The status as it stood before the promotion, kept as it was written: **spec, 2026-11-18, by Fable; built (c20be822, 581d96c0, 70676a95), unmerged; the Opus judge of the re-review for epoch 3 found nothing of its code cut; the docblock of `localLaunch` ("no `ssh` starts" for sentence F) is corrected forward in E3 with W7 of the parent.** The cornerstone spec of epic E2 of the G1 plan, and a security
 > spec, written before its code (the rows *Cornerstone spec* and *Security judgement* of `subagent-models.md`; the ledger line of
 > the parent's `## Epics` names E2.S2). Story E2.S2 of [PLAN_person_roads_pin_host_key.md](PLAN_person_roads_pin_host_key.md) (its
 > §3.10, §3.11, part 1 of §3.12, §3.6, the repairs R1, R2 and R3, and the tests 17, 18, the road half of 19, and 20 to 23 of its §5)
@@ -19,7 +21,7 @@
 Paths are relative to `src_vs_code/src/` unless they start with another folder. "The parent" is the plan linked above; a section
 named §3.10 and so on is the parent's, and "§2 of this spec" is this document's. "The S1 spec" is the spec of E2.S1 linked above;
 its names keep their meaning (`PinClient`, `ReadablePinClient`, `pinClientAsker`, `windowPinClient`, D1 to D8). "N16" is
-[PLAN_person_roads_forget_key.md](../research/PLAN_person_roads_forget_key.md). This document's own names: the decisions L1 to L5
+[PLAN_person_roads_forget_key.md](PLAN_person_roads_forget_key.md). This document's own names: the decisions L1 to L5
 (the lead's) and S1 to S12 (this spec's), the facts K1 to K14, the tests named in §6, the mutations N1 to N22, the break-its Y1 to
 Y10. This document keeps no change ledger: a change of it is an entry in the parent (`plan-change-control.md`).
 

@@ -13,7 +13,7 @@ import { HOST_KEY_OPTIONS, withoutGlobal, withoutSources } from './pinnedArgv';
 import { loadWithVscode } from './vscodeStub';
 
 /**
- * G1, E3.S4 (`todo/PLAN_person_roads_pin_host_key_E3_S4_spec.md`, §8): the rig of the real-road rows. RR1 to RR5 hold the pure rules of the
+ * G1, E3.S4 (`research/PLAN_person_roads_pin_host_key_E3_S4_spec.md`, §8): the rig of the real-road rows. RR1 to RR5 hold the pure rules of the
  * record (`scripts/lib/rowRecord.cjs`: what a start, a connection start, an authentication attempt and an accepted login are; the sentences of
  * §3.5; the handed client config; the words of E1), RR6 and RR7 hold the two ways a row could cheat (a counterpart or a world of its own; a
  * stand-in of the resolve or of the asker), and RR8 holds the world's REAL resolve over a disposable vault.
