@@ -15,7 +15,8 @@ import type { ErrorCode } from './brokerProtocol';
  * </ul>
  *
  * <p>Off a bridge nobody asks this: the laptop path is unchanged. Adding a reference to a line never moves it silently to another machine:
- * it refuses until the person sets "Runs on" to Windows.</p>
+ * it refuses until the person sets "Runs on" to Windows (a Terminal entry; a script entry's form has no "Runs on" yet, so its refusal names
+ * the ways out it has).</p>
  */
 export type BridgedRunSite =
   | { readonly kind: 'server' }
@@ -25,6 +26,8 @@ export type BridgedRunSite =
 /** What the decision reads of one stored entry, after `{name}` was filled: the references and the variables are counted on what would run. */
 export interface RunSiteInput {
   readonly entityName: string;
+  /** A Terminal entry's line or a script entry's body: only a Terminal entry has a "Runs on" field in its form (the slice defers the script's). */
+  readonly shape: 'command' | 'script';
   readonly terminalOs: string | undefined;
   /** At least one `creds://` reference in the command, an argument, the script body or a variable's value. */
   readonly hasReferences: boolean;
@@ -32,14 +35,24 @@ export interface RunSiteInput {
   readonly injectsVariables: boolean;
 }
 
-/** A line with a `creds://` reference whose "Runs on" is not Windows: the value would have to reach the server. */
-export function REFERENCE_ON_SERVER(entityName: string): string {
-  return `"${entityName}" holds a creds:// reference, and through a Remote Bridge it would run on the server, so the value would have to go there. Nothing ran. To run it on this computer with the value kept here, set its "Runs on" to Windows.`;
+/** Why a script's refusal names no "Runs on": the field is not in the script form yet. */
+export const SCRIPT_HAS_NO_RUNS_ON = 'A script entry has no "Runs on" field yet, so through a bridge it cannot run on this computer:';
+
+/**
+ * A line with a `creds://` reference whose "Runs on" is not Windows: the value would have to reach the server. The way out names "Runs on"
+ * only where the form has it: a script entry's form has no such field yet (the 72-hour slice defers the run-site editor), so its sentence
+ * names the ways out that exist.
+ */
+export function REFERENCE_ON_SERVER(entityName: string, shape: 'command' | 'script' = 'command'): string {
+  const head = `"${entityName}" holds a creds:// reference, and through a Remote Bridge it would run on the server, so the value would have to go there. Nothing ran.`;
+  return shape === 'script'
+    ? `${head} ${SCRIPT_HAS_NO_RUNS_ON} remove the reference to run it on the server, or run it from the tree on this computer.`
+    : `${head} To run it on this computer with the value kept here, set its "Runs on" to Windows.`;
 }
 
 /** A script that injects a variable, whose "Runs on" is not Windows: any variable may hold a secret, and nothing marks which. */
 export function VARIABLES_ON_SERVER(entityName: string): string {
-  return `"${entityName}" puts variables into its environment, and through a Remote Bridge it would run on the server, where a variable that holds a secret would go too. Nothing ran. Move a secret value to a creds:// reference and set "Runs on" to Windows, or remove the variables.`;
+  return `"${entityName}" puts variables into its environment, and through a Remote Bridge it would run on the server, where a variable that holds a secret would go too. Nothing ran. ${SCRIPT_HAS_NO_RUNS_ON} remove the variables to run it on the server, or run it from the tree on this computer.`;
 }
 
 /** A line written for macOS: the bridge's server is Linux and this computer is the person's Windows laptop. */
@@ -74,7 +87,7 @@ export function decideRunSite(input: RunSiteInput): BridgedRunSite {
 /** "Runs on" not set or Linux: the server, unless a value would have to travel there. */
 function serverRow(input: RunSiteInput): BridgedRunSite {
   if (input.hasReferences) {
-    return refused(REFERENCE_ON_SERVER(input.entityName));
+    return refused(REFERENCE_ON_SERVER(input.entityName, input.shape));
   }
   return input.injectsVariables ? refused(VARIABLES_ON_SERVER(input.entityName)) : { kind: 'server' };
 }

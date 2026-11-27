@@ -238,6 +238,16 @@ test('S4-6: a script that injects a variable is refused on the server row, and t
   assert.equal(w.ssh.length, 0);
 });
 
+test('S4-6b: a script whose body holds a creds:// reference is refused with the script\'s sentence (its form has no "Runs on" to set)', async () => {
+  const withRef: EntityMetadata = { ...PY_SCRIPT, id: 'withref', scriptLanguage: 'bash', script: `echo ${REF}` };
+  const w = world([withRef]);
+  w.trust(withRef.id, withRef.script as string);
+  assert.deepEqual(w.script.validate({}, targetOf(withRef)), { ok: false, code: 'denied', message: REFERENCE_ON_SERVER('report', 'script') });
+  const result = await w.script.run({ ...ctxOf(w.script, withRef), site: 'server' }, {});
+  assert.equal(errorOf(result).message, REFERENCE_ON_SERVER('report', 'script'));
+  assert.deepEqual([w.ssh.length, w.reads.length], [0, 0], 'nothing went to the server and no value was read');
+});
+
 test('S4-7: an entry whose "Runs on" changed while the dialog stood runs nowhere: the site the dialog said is checked again', async () => {
   const w = world([VPN_UP]);
   w.trust(VPN_UP.id, lineOf(VPN_UP));

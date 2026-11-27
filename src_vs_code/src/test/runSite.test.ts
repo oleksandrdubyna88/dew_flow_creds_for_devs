@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MACOS_ON_BRIDGE, REFERENCE_ON_SERVER, SERVER_TEXT_AS_WRITTEN, VARIABLES_ON_SERVER, decideRunSite, scopePickDetail } from '../runSite';
+import { MACOS_ON_BRIDGE, REFERENCE_ON_SERVER, SCRIPT_HAS_NO_RUNS_ON, SERVER_TEXT_AS_WRITTEN, VARIABLES_ON_SERVER, decideRunSite, scopePickDetail } from '../runSite';
 
 /**
  * §4.6's table, row by row (change 11.1, S4): where a stored command or script an agent asks for through a Remote Bridge runs. Each row is
@@ -8,8 +8,8 @@ import { MACOS_ON_BRIDGE, REFERENCE_ON_SERVER, SERVER_TEXT_AS_WRITTEN, VARIABLES
  */
 
 const NAME = 'vpn-up';
-const row = (terminalOs: string | undefined, hasReferences: boolean, injectsVariables: boolean) =>
-  decideRunSite({ entityName: NAME, terminalOs, hasReferences, injectsVariables });
+const row = (terminalOs: string | undefined, hasReferences: boolean, injectsVariables: boolean, shape: 'command' | 'script' = 'command') =>
+  decideRunSite({ entityName: NAME, shape, terminalOs, hasReferences, injectsVariables });
 
 test('RS1: no reference, "Runs on" not set or Linux: the server', () => {
   assert.deepEqual(row(undefined, false, false), { kind: 'server' });
@@ -37,7 +37,18 @@ test('RS4: a script that injects a variable with "Runs on" not set or Linux is r
   for (const terminalOs of [undefined, 'linux']) {
     assert.deepEqual(row(terminalOs, false, true), { kind: 'refused', code: 'denied', message: VARIABLES_ON_SERVER(NAME) });
   }
-  assert.match(VARIABLES_ON_SERVER(NAME), /Move a secret value to a creds:\/\/ reference and set "Runs on" to Windows, or remove the variables\.$/);
+  assert.ok(VARIABLES_ON_SERVER(NAME).endsWith(`Nothing ran. ${SCRIPT_HAS_NO_RUNS_ON} remove the variables to run it on the server, or run it from the tree on this computer.`));
+  assert.doesNotMatch(VARIABLES_ON_SERVER(NAME), /set "Runs on"/, 'only a variable-injecting SCRIPT is refused this way, and its form has no "Runs on"');
+});
+
+test('RS3b: a SCRIPT with a reference is refused with a way out its form has (no "Runs on" field yet); a Terminal line keeps the "Runs on" way out', () => {
+  for (const terminalOs of [undefined, 'linux']) {
+    assert.deepEqual(row(terminalOs, true, false, 'script'), { kind: 'refused', code: 'denied', message: REFERENCE_ON_SERVER(NAME, 'script') });
+  }
+  assert.ok(REFERENCE_ON_SERVER(NAME, 'script').endsWith(`Nothing ran. ${SCRIPT_HAS_NO_RUNS_ON} remove the reference to run it on the server, or run it from the tree on this computer.`));
+  assert.doesNotMatch(REFERENCE_ON_SERVER(NAME, 'script'), /set its "Runs on"/);
+  assert.deepEqual(row('windows', true, true, 'script'), { kind: 'laptop' }, 'a script whose stored data already says Windows still runs here');
+  assert.match(REFERENCE_ON_SERVER(NAME, 'command'), /set its "Runs on" to Windows\.$/);
 });
 
 test('RS5: "Runs on" macOS is refused on a bridge, whatever else is true', () => {

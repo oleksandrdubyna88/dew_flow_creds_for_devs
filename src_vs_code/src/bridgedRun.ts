@@ -84,7 +84,7 @@ function injectsVariables(entity: EntityMetadata, shape: StoredShape): boolean {
 /** §4.6's answer for this live entry. */
 export function runSiteOf(entity: EntityMetadata, entityName: string, shape: StoredShape): BridgedRunSite {
   const hasReferences = planRefs(searchedTexts(entity, shape)).refs.length > 0;
-  return decideRunSite({ entityName, terminalOs: entity.terminalOs, hasReferences, injectsVariables: injectsVariables(entity, shape) });
+  return decideRunSite({ entityName, shape, terminalOs: entity.terminalOs, hasReferences, injectsVariables: injectsVariables(entity, shape) });
 }
 
 /** `validate` on a bridge: a refused row is said before any dialog; a missing entry is the run's own `not_found`. */

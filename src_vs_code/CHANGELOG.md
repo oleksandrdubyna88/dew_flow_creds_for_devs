@@ -26,7 +26,9 @@ What the new flow does, when a later release turns it on:
   ODBC `sqlcmd` in that container is served. The command *Prepare Database Container* builds the image. It shows in the Command
   Palette only when the new flow is on.
 - **Stored commands and scripts.** An agent's stored script runs on the server as your login there. A stored command whose entry
-  says it runs on Windows runs on your computer, with the password in the child's environment and masked in its output.
+  says it runs on Windows runs on your computer, with the password in the child's environment and masked in its output. A
+  script's form has no *Runs on* field yet, so a script that holds a `creds://` reference or puts variables into its environment
+  is refused on a bridge, and the refusal says so.
 
 The `creds` and `creds-mcp` clients of this release look for that note when `CREDS_BROKER_SOCKET` is not set. While the flow is
 off no note is written, so they work as before, and the pasted setup block still wins over a note.
