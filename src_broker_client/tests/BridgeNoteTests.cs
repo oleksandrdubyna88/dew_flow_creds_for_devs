@@ -130,6 +130,10 @@ public sealed class BridgeNoteTests : IDisposable
         File.WriteAllText(Path.Combine(folder, "broken.json"), "{not json");
         File.SetUnixFileMode(Path.Combine(folder, "broken.json"), Note);
         WriteNote(folder, "zero", socket, 0, "2026-11-25T10:00:00.000Z");
+        // A key with a line break would make the client's header throw (the coai code gate, 2026-11-27): passed over, never used.
+        var lineBreak = Path.Combine(folder, "crlf.json");
+        File.WriteAllText(lineBreak, $$"""{"socket":"{{socket}}","port":51000,"brokerPort":4242,"key":"a\r\nX-Other: b","serverName":"box","openedAt":"2026-11-25T11:00:00.000Z"}""");
+        File.SetUnixFileMode(lineBreak, Note);
         BridgeNotes.Find(folder).Should().BeNull();
         BridgeNotes.Find(Path.Combine(root, "absent")).Should().BeNull("no folder, no bridge");
         BridgeNotes.Find(null).Should().BeNull();

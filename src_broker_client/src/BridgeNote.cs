@@ -30,6 +30,12 @@ public static class BridgeNotes
     /// <summary>The largest note read: a few hundred bytes of JSON.</summary>
     private const long MaxNoteBytes = 16 * 1024;
 
+    /// <summary>The longest key read. The listener's key is 43 characters of base64url.</summary>
+    private const int MaxKeyLength = 256;
+
+    /// <summary>How long the probe of a note's socket may wait for a connect: a socket whose queue is full never stalls a call.</summary>
+    private static readonly TimeSpan ProbeLimit = TimeSpan.FromSeconds(2);
+
     /// <summary>The note folder of this login, or <c>null</c> where there is none to look for (Windows, or no <c>HOME</c>).</summary>
     public static string? DirectoryHere() =>
         OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("HOME") is not { Length: > 0 } home
@@ -46,7 +52,8 @@ public static class BridgeNotes
     /// <para><b>Owner-only or nothing.</b> The note holds the listener's key, so a folder whose mode is not 0700, or a note whose mode is not
     /// 0600, is not read at all: another login on the server could have written it, or read it. The writer sets both.</para>
     /// <para><b>A note whose socket is gone, or is a file left behind that refuses a connect, is stale</b> (its ssh ended) and is passed over; the newest of the rest wins, by the time the
-    /// note itself says it was opened. A note that does not parse, or names a port out of range or an empty key, is passed over too.</para>
+    /// note itself says it was opened. A note that does not parse, or names a port out of range, or a key that is empty, too long or not
+    /// base64url (it goes into a header: a line break would make the client throw), is passed over too.</para>
     /// </remarks>
     public static BridgeNote? Find(string? directory)
     {
@@ -72,13 +79,17 @@ public static class BridgeNotes
                 return null;
             }
             var note = JsonSerializer.Deserialize(File.ReadAllText(file), BridgeNoteJsonContext.Default.BridgeNote);
-            return note is { Port: > 0 and < 65536, Key.Length: > 0, Socket.Length: > 0 } ? note : null;
+            return note is { Port: > 0 and < 65536, Socket.Length: > 0 } && IsHeaderSafeKey(note.Key) ? note : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
             return null;
         }
     }
+
+    /// <summary>Whether <paramref name="key"/> is 1 to <see cref="MaxKeyLength"/> characters of base64url: legal as a header value as it is.</summary>
+    private static bool IsHeaderSafeKey(string? key) =>
+        key is { Length: > 0 and <= MaxKeyLength } && key.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
     /// <summary>Whether the path's mode is exactly <paramref name="mode"/>: nothing for the group, nothing for others.</summary>
     private static bool OwnerOnly(string path, UnixFileMode mode)
@@ -100,7 +111,8 @@ public static class BridgeNotes
     /// <summary>
     /// Whether a bridge answers on the socket: a connect succeeds. A path that merely exists is not enough: sshd removes a forward's socket
     /// file only when the server sets <c>StreamLocalBindUnlink yes</c>, and the default is <c>no</c>, so a dead bridge leaves its file
-    /// behind and only a refused connect tells the two apart.
+    /// behind and only a refused connect tells the two apart. The connect waits at most <see cref="ProbeLimit"/>: a socket that does not
+    /// answer by then (its queue is full) is passed over, never waited on.
     /// </summary>
     private static bool SocketIsThere(string socket)
     {
@@ -111,10 +123,11 @@ public static class BridgeNotes
         try
         {
             using var probe = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            probe.Connect(new UnixDomainSocketEndPoint(socket));
+            using var limit = new CancellationTokenSource(ProbeLimit);
+            probe.ConnectAsync(new UnixDomainSocketEndPoint(socket), limit.Token).AsTask().GetAwaiter().GetResult();
             return true;
         }
-        catch (SocketException)
+        catch (Exception e) when (e is SocketException or OperationCanceledException)
         {
             return false;
         }

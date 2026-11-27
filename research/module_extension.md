@@ -4306,6 +4306,37 @@ ceiling that means a loop (`asking` and `silent`; a `busy` answer and the dialog
 `unanswered`, read `— bridge=<name>` from `auditGrantMark(bridge)` with the context the door handed `handle` (the one that keys the
 window the first was refused in), and `—` off a bridge; the handler-failure line's classification does not move.
 
+**The 72-hour slice of the scoped Remote Bridge (change 11.1, 2026-11-25 to 11-27; PR #392; plan `todo/PLAN_remote_bridge_scoped.md`,
+*The 72-hour slice*).** Built for one setup (one Windows laptop, one Ubuntu login, one bridge), and **off in every build that ships**:
+
+- *The switch* (`bridgeFlowSwitch.ts`, §4.5). `BRIDGE_FLOW_ENABLED = false`. `registerAgentCommands` reads `host.bridgeFlow ??
+  BRIDGE_FLOW_ENABLED`; production hands no `bridgeFlow`, the person-roads world hands `true`. Off: *Open Remote Bridge…* is
+  `legacyBridgeOpen.ts` (the released road: a token minted, `ssh -R` to the MAIN broker port, the setup block offered), *Close* is
+  `bridges.stop`, nothing is restored, and the context key `credSshManager.bridgeFlow` keeps *Prepare Database Container* out of the
+  palette. `bridgeFlowSwitch.test.ts` holds the constant `false` and `package.json` without `activationEvents` (D19); E4.1 flips both.
+  The release gate's row rigs (`itestPinnedRoads.cjs` `openLeg`) open the road that ships (`bridgeFlow: false`).
+- *S1, the open* (`scopedBridgeOpen.ts`). `connectScoped` opens a listener of the bridge's own (`agentServer.openBridgeListener`, a
+  port and a 32-byte key, behind E1's wall), forwards a fresh socket path to THAT listener, and `bridgeNoteWriter.ts` writes the note
+  (`{socket, port, brokerPort, key, serverName, openedAt}`) with a one-shot `ssh` (`buildNoteArgv`, the note on stdin, never in argv)
+  into `~/.creds-for-devs/bridge/<id>.json`: `umask 077`, a hidden temp file, then `mv`, and only when the forwarded socket is the
+  login's own with mode 600 (`noteWriteCommand`). The person picks the scope first (`pickScope`, every bridgeable entry of the account).
+- *S2, the session* (`bridgeSession.ts`, `bridgeSessions.ts`, `bridgeOptIns.ts`). One session per bridge, owned by one window
+  (`windowLock.ts`): a fresh socket and key per connection, reconnect with backoff, the note published only if the window still owns
+  the bridge and the vault is unlocked at that moment. Lock revokes, Close cancels and removes the opt-in, and a held reconnect publishes
+  nothing after either. The opt-ins come back at activation and at every unlock (`restoreScopedBridges`). A socket check that finds the
+  socket missing, or a host that refused the saved key (`HostKeyTold.refused`), closes the session.
+- *S3, database clients in a container* (`containerDb.ts`, `containerDbQuery.ts`, `commands/dbContainerCommand.ts`). On Windows a
+  bridged query runs its client with `wslc run --rm --pull never --cap-drop ALL --user 65534:65534`; the password is in a 0600 env file
+  in `storageDir/db-env`, removed in `finally` and swept at activation (`dbContainerAtActivation`). The image is
+  `creds-db-sqlcmd:<sha256(recipe)[0:16]>`, built by *Prepare Database Container* from `containers/db-sqlcmd.Containerfile`. The
+  profile table (`bridgedDbProfile.ts`) has the container as a platform; the ODBC `sqlcmd` row on it is served by CI job
+  `bridged-db-container` (the lock: `scripts/lib/dbServedJobs.cjs`, fail-closed per platform).
+- *S4, stored commands and scripts* (`runSite.ts`, `bridgedRun.ts`, `storedRun.ts`). `decideRunSite`: *Runs on* `windows` runs on this
+  computer, with the `creds://` values in the child's environment and masked output; unset or `linux` runs on the server over the
+  bridge's own SSH entry, a script's body on stdin into `~/.creds-for-devs/run/r.XXXX`, removed on exit. Refused: references or injected
+  variables that would go to the server, macOS, an entry with an SSH link. The site is checked again at the run (`SITE_CHANGED`), and
+  command trust comes before any run.
+
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
 shared-folder transport a write-capable attacker can forge the owner account or **delete unlock

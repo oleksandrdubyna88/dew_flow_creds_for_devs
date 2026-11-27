@@ -515,6 +515,21 @@ decision is four `vscode`-free modules (`remoteWindow`, `remoteRoute`, `remoteWi
 use — the tree's button and the broker's terminal action — so one window cannot take two routes.
 Record: [PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md).
 
+### The scoped Remote Bridge: extension, server clients, note (2026-11-27, change 11.1)
+
+Three modules meet here. The **extension** opens a loopback listener of the bridge's own (its own port and key, behind the scope
+wall of E1), runs `ssh -R <fresh socket on the server>:127.0.0.1:<that port>`, and writes a **note** on the server with a one-shot
+`ssh`: `~/.creds-for-devs/bridge/<id>.json`, owner-only, holding the socket, the port and the key. **`creds` and `creds-mcp`** on the
+server (`src_broker_client`, `BridgeNotes`) find that note before the local windows' announcements, and send every call into the
+socket with the listener's port in `Host` and its key in a header; the listener admits only that pair and only the entries in the
+bridge's scope. No secret crosses: the laptop performs the use and only the output returns. A set `CREDS_BROKER_SOCKET` (the released
+road, which forwards to the MAIN broker port and so reaches the whole broker, cause D5) still wins over a note.
+
+**The new flow is off in every build that ships** (`bridgeFlowSwitch.ts`, `BRIDGE_FLOW_ENABLED = false`): with it off the extension
+opens the released road and writes no note, so the clients behave as before. Details: [module_extension.md](module_extension.md)
+(*The 72-hour slice of the scoped Remote Bridge*) and [module_mcp.md](module_mcp.md) (*A Remote Bridge's note*). Plan:
+[PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md), *The 72-hour slice*.
+
 ### The MCP server inside WSL (2026-08-28)
 
 An MCP client usually runs inside the distribution and starts `creds-mcp` as its own child, which
