@@ -1,6 +1,7 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **approved, nothing implemented yet, 2026-11-27.** Scope: the extension only
+> Status: **approved 2026-11-27; built on the branch `fix/n8-n9-n2-small-truths` (S1 `d12df88a`, S2 `fe2c4ddd`, S3
+> `8515c1e9`), not merged and not released yet.** Scope: the extension only
 > (`src_vs_code/src`: `mcpEntries.ts`, `agentUseActions.ts`, the five `help*.ts` files, `mcpLogRows.ts`, `mcpLogPage.ts`,
 > their tests), two README sentences, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `research/module_tests.md`, `todo/README.md`. One epic, three stories (`## Epics`).

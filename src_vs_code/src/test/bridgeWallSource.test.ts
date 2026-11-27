@@ -37,10 +37,10 @@ test('W1: visibleConfigOf is asked of one account: a1\'s e1 is a1\'s and a2\'s i
 });
 
 test('CG3: visibleConfigOf stays in one account — a config hidden in a1 and visible in a2 is undefined for a1, and no node of a2 is read', () => {
-  const config = (id: string, name: string, mcp: object): TreeNode => ({
-    id, name, type: 'entity', parentId: null,
-    details: { id, name, kind: 'config', isConfig: true, configFormat: 'json', configFileName: `${name}.json`, mcp } as unknown as EntityMetadata,
-  });
+  const config = (id: string, name: string, mcp: EntityMetadata['mcp']): TreeNode => {
+    const details: EntityMetadata = { id, name, isSshEnabled: false, kind: 'config', isConfig: true, configFormat: 'json', configFileName: `${name}.json`, mcp };
+    return { id, name, type: 'entity', parentId: null, details };
+  };
   const nodes: Record<string, readonly TreeNode[]> = { a1: [config('c1', 'conf1', {})], a2: [config('c1', 'conf2', { view: true })] };
   const asked: string[] = [];
   const none = (): Thenable<undefined> => Promise.resolve(undefined);
