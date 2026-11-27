@@ -321,7 +321,7 @@ test('a row read into the journal carries the caller, so the view can show it', 
 });
 
 /**
- * What each count and each row of the page is made of (N2, the second part: `todo/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D4).
+ * What each count and each row of the page is made of (N2, the second part: `research/PLAN_agent_small_truths_n8_n9_n2.md` section 2.4, D4).
  *
  * <p>The three words that say a secret was replaced are written out here, as the product writes them: a word that a count reads is a contract,
  * and a list read from the code could not turn red when somebody takes one out of it.</p>

@@ -19,7 +19,7 @@ import { call, code, share, world } from './brokerWorld';
 import type { World } from './brokerWorld';
 
 /**
- * What the journal holds, and what the texts about it say (N2; `todo/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.3 and 2.3).
+ * What the journal holds, and what the texts about it say (N2; `research/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.3 and 2.3).
  *
  * <p>These rows hold what the texts say. When a row of J changes, the texts T1 to T8 and T10 to T13 of that plan (the five help articles, the journal
  * page, the two README sentences, the hints and the comments) change in the same commit. J1 to J4 run the real broker and read what it wrote; their behaviour did not
@@ -125,7 +125,7 @@ test('J4: a secret that this window was asked to make and could not leaves one l
 
 
 /*
- * The page shows the lines that it counts (N2, the second part; `todo/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.5 and 2.4).
+ * The page shows the lines that it counts (N2, the second part; `research/PLAN_agent_small_truths_n8_n9_n2.md` sections 1.5 and 2.4).
  *
  * <p>Rows J5 to J13 run the real broker and read what it wrote with the page's own reader. Each row asserts the AGENT's answer first, the whole
  * status and the whole body, and the journal after: the words of the journal change, no answer to an agent does. A failure of a row on code that

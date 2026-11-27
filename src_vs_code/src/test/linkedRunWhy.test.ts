@@ -6,7 +6,7 @@ import type { TreeNode } from '../types';
 import { ACCOUNT_1, AgentStorage, GateWorld, agentStorage, detailsOf, gateWorld, terminalNode, trashFolder, usableSsh } from './agentSshWorld';
 
 /**
- * The journal reason of a linked run (N9; `todo/PLAN_agent_small_truths_n8_n9_n2.md` section 2.2, rows W1-W3 and WG1-WG3).
+ * The journal reason of a linked run (N9; `research/PLAN_agent_small_truths_n8_n9_n2.md` section 2.2, rows W1-W3 and WG1-WG3).
  *
  * <p>In a vault that does not change during the call `sshLinkOf` refuses a folder and a trashed entry first, each with its own reason, so
  * `whyUnusable` is never asked about them. These rows give it the states anyway, in the shape of row L6 of `agentSshGate.test.ts`: the first

@@ -1,6 +1,16 @@
 # PLAN — Three small truths of the agent surface: the config lookup, the journal reason of a linked run, the texts about the journal (N8, N9, N2)
 
-> Status: **re-reviewed 2026-11-27: epoch 2 is open (`by reviewers`); S1 to S4 are on the branch, not merged (S4:
+> Status: **IMPLEMENTED, 2026-11-27.** N8, N9 and N2 (one epic, four stories S1 to S4) are built, merged and released.
+> Merged as #397 (squash `147fc0da`) and released in extension 1.24.1 (release PR #398, `3764a566`, tag
+> `extension-v1.24.1`; the `release.yml` run 45969687480 published `remsoftdev.creds-for-devs` v1.24.1 on 2026-11-27 at
+> 09:08Z; the GitHub release holds the vsix and is not a draft). Deviations: §12. Ledger at promotion: epoch 1 closed with
+> entries 1.1 and 1.2 and the stop; epoch 2 approved by reviewers, 0 changes (left as it stood, append only). The owner
+> answered Q1 on 2026-11-27: keep the N9 table. Q2 and Q7 to Q10 were not answered; the plan is built on their default
+> answers, and shipped so. Not done, and open: the two nits of the Opus review of S4 (N1, N2 of §12), the check of the
+> four translations by a native reader, and the items Q4, F6 and F10 (§13), which were not built here. Scope: unchanged
+> from the status below.
+>
+> The status as it stood before the promotion, kept as it was written: **re-reviewed 2026-11-27: epoch 2 is open (`by reviewers`); S1 to S4 are on the branch, not merged (S4:
 > `2aef3f1b`, `9d85af48`, `eeb52651`); the code round of epoch 2 passed (`proceed`, 4 of 4 reviewers); not released;
 > the pull request waits for the owner.** The plan stopped at entry 1.2 on 2026-11-27 and was revised as a whole on
 > the same day (the record is in `## Plan changes`). Built on the branch `fix/n8-n9-n2-small-truths`: S1 `d12df88a`,
@@ -25,7 +35,7 @@
 > that threw has no `via` (F10; not built, Q10).
 >
 > The owner put three items next, in this order: N8, N9, N2. They are items of §11 of
-> [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7), and that
+> [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7), and that
 > plan's §12 lists them as open. **Two commits are the base of the `file:line` here.** §1.1 to §1.4, §2.1 to §2.3,
 > §3.1, §3.2, §6.1, §6.2 and the rows and mutations of epoch 1 describe the code BEFORE the build and were read on
 > `32cc729c` (extension 1.24.0). S1 to S3 moved lines in `mcpEntries.ts`, `agentUseActions.ts`, `mcpLogRows.ts` (one
@@ -949,8 +959,8 @@ The points above are written (S3, `8515c1e9`). **S4 adds these:**
 
 | Plan | Touches | This plan's part | The row that the neighbour gets |
 |---|---|---|---|
-| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A; N8, N9 and N2 of its §11 | this plan builds those three items and nothing more of F7. N1, N4, N5, N6, N3 and N7 stay there | written in this commit: its status block, its N2, N8 and N9, and its §12 point here |
-| [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall's per-account suppliers (`visibleConfigOf`, its §4.2 *Listings are per account*) | none in behaviour: a bridge's lookup has one account (§2.1, CG3). No line of `bridgeScope.ts`, `bridgeWallSource.ts` or `mcpAccountVault.ts` changes | OWED, in its §8 *Boundaries*: that sentence. That plan is under change control (epoch 11), so its owner session writes the row |
+| [PLAN_agent_refusal_names_unlisted_entry.md](PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A; N8, N9 and N2 of its §11 | this plan builds those three items and nothing more of F7. N1, N4, N5, N6, N3 and N7 stay there | written in this commit: its status block, its N2, N8 and N9, and its §12 point here |
+| [PLAN_remote_bridge_scoped.md](../todo/PLAN_remote_bridge_scoped.md) | the wall's per-account suppliers (`visibleConfigOf`, its §4.2 *Listings are per account*) | none in behaviour: a bridge's lookup has one account (§2.1, CG3). No line of `bridgeScope.ts`, `bridgeWallSource.ts` or `mcpAccountVault.ts` changes | OWED, in its §8 *Boundaries*: that sentence. That plan is under change control (epoch 11), so its owner session writes the row |
 
 The order: this plan needs no other plan, and no other plan needs this one. Method: `grep -l` over `todo/PLAN_*.md` for
 `mcpEntries.ts`, `visibleConfig`, `config-snippet`, `whyUnusable`, `usableGate`, `linkedCall`, `agentUseActions.ts`,
@@ -1008,62 +1018,114 @@ rotation (`bridgeAllowList.ts:85-87`, `:94`). No open plan names the journal pag
 
 ## 11. Definition of Done
 
-The boxes are not ticked here: the promotion ticks them. S1 to S3 did the first five for their rows; S4 does each
-one again for its rows.
+The promotion ticked the boxes on 2026-11-27, from the record: the commits of #397, the rows and the mutations in
+`research/module_tests.md`, the pull request body, the gates, and the greps that were run again on the tree of the
+promotion. Two boxes are NOT ticked, because the record has no proof for them (§12, point 9). S1 to S3 did the first five
+for their rows; S4 did each one again for its rows.
 
-- [ ] Rows C1 to C3, W1 to W3, H1 and H2 were watched failing by their assertions on the unchanged code, then pass; the
+- [x] Rows C1 to C3, W1 to W3, H1 and H2 were watched failing by their assertions on the unchanged code, then pass; the
       summary quotes one failure message of each story and the pass. No RED proof is a compile error.
-- [ ] Rows J1 to J4 pass before and after, and mutations M9 to M11 and M14 each turned one of them red.
-- [ ] Guard rows CG1 to CG4 and WG1 to WG4 were watched passing before and after; the tests named *no edit* have no
+- [x] Rows J1 to J4 pass before and after, and mutations M9 to M11 and M14 each turned one of them red.
+- [x] Guard rows CG1 to CG4 and WG1 to WG4 were watched passing before and after; the tests named *no edit* have no
       changed line.
-- [ ] Mutations M1 to M14 each turned its rows red and were restored.
-- [ ] In W1 to W3 the agent's answer is `linkedRunRefused('deploy')` with `denied`, byte-equal to the answer for a
+- [x] Mutations M1 to M14 each turned its rows red and were restored.
+- [x] In W1 to W3 the agent's answer is `linkedRunRefused('deploy')` with `denied`, byte-equal to the answer for a
       closed SSH entry.
-- [ ] (S4) Rows J5 to J13, P1 to P5 and H3, and H1 and H2 with their new words, were watched failing on the code of
+- [x] (S4) Rows J5 to J13, P1 to P5 and H3, and H1 and H2 with their new words, were watched failing on the code of
       `aa70258c` by their assertions, then pass; the summary quotes the failure message of J5, J8, J10, J12 and P1 and
       the pass. For J5 to J10 the message names the journal, not the answer; for J11 to J13 it names the count
       `rotations`, not the answer and not the word.
-- [ ] (S4) P4 was watched red two times, as step 6 and step 7 of §5 say: on the code of `aa70258c` (the word of a
+- [x] (S4) P4 was watched red two times, as step 6 and step 7 of §5 say: on the code of `aa70258c` (the word of a
       statement that failed is `rotated`), and on the code after R1 to R3 and before L1 (the word is `statement
       failed`, and the old matcher counts it). The summary quotes the two messages.
-- [ ] (S4) Guards JG1, JG2 and JG4 were watched passing before and after; the tests of JG3 have no changed line.
-- [ ] (S4) Mutations M15 to M27, and M12 and M13 on the new words, each turned its rows red and were restored. For
+- [x] (S4) Guards JG1, JG2 and JG4 were watched passing before and after; the tests of JG3 have no changed line.
+- [x] (S4) Mutations M15 to M27, and M12 and M13 on the new words, each turned its rows red and were restored. For
       M27 the summary quotes the status that the agent read.
-- [ ] (S4) The answer to the agent is the same in J5 to J13 before and after: the status and the whole body, for
+- [x] (S4) The answer to the agent is the same in J5 to J13 before and after: the status and the whole body, for
       each status of a rotation that is not 200 (400, 404 with and with no `noGenerator`, 409, 412, 429, 500, and 502
       with a body that is no object).
-- [ ] (S4) Through `mcpRowsIn`, a create that ran, a delete that ran, a folder change that ran and a create with no
+- [x] (S4) Through `mcpRowsIn`, a create that ran, a delete that ran, a folder change that ran and a create with no
       generator each give ONE row. A rotation with no generator counts 1 under *Could not generate*, 0 under *Secrets
       replaced* and 0 under *Refused*. No row of P3 fits two matchers.
-- [ ] `grep -rn "every list\|every refusal\|every ask\|everything an agent asked"` over `README.md`,
+- [x] `grep -rn "every list\|every refusal\|every ask\|everything an agent asked"` over `README.md`,
       `src_vs_code/README.md` and `src_vs_code/src` (tests apart) finds no line about the journal.
-- [ ] (S4) `grep -rn "one line per call\|One line per agent call\|Every secret an agent rotated\|holds no line yet\|No refusal is in the journal\|No secret has reached the vault\|Nothing was asked for that"`
+- [x] (S4) `grep -rn "one line per call\|One line per agent call\|Every secret an agent rotated\|holds no line yet\|No refusal is in the journal\|No secret has reached the vault\|Nothing was asked for that"`
       over `src_vs_code/src` (tests apart) and `research/module_extension.md` finds two lines only, which are not
       about what the journal holds: `aliasThrottle.ts:506` (a rate limit) and `research/module_extension.md:6154` (the
       log of the SSH agent).
-- [ ] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
+- [x] `npm run typecheck`, `npm test`, `npm run lint` and `npm run ratchet` are green in `src_vs_code` at lowered
       priority, with a clean `tsc` read first. `npm run contract` leaves `contract/` unchanged. `src_mcp` and `src_cli`
       have no difference in their product code.
-- [ ] The documents of §7 are written, with the points of S4; the CHANGELOG entry and the pull request body carry §3.3.
+- [x] The documents of §7 are written, with the points of S4; the CHANGELOG entry and the pull request body carry §3.3.
 - [ ] The owed row of §9 is with the session that owns the bridge plan; the summary says so.
-- [ ] `coai`: a `review_plan` round passed before the first test (epoch 1). The re-review: an Opus judge checked the
+- [x] `coai`: a `review_plan` round passed before the first test (epoch 1). The re-review: an Opus judge checked the
       marks of the record; the interim document round ran on the revised plan, or the summary says that it did not
       and that epoch 2 is `by nobody`. A `review_code` round ran on the finished branch with the revised plan; each
       finding has an accept or a reject with a reason; the summary has the verdicts and the number of reviewers that
       answered.
-- [ ] `node .agents/conventions/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; a change of this plan after an
+- [x] `node .agents/conventions/tools/plan-lifecycle.mjs` and `pin-check.mjs` pass; a change of this plan after an
       approval is an entry of its ledger; the summary names the epoch, the count of its entries and what was cut; the
       plan is promoted with its deviations.
 - [ ] The summary names the models and the counts of the launches.
-- [ ] The lead and the owner have heard that a release must follow, and have the questions of §14.
+- [x] The lead and the owner have heard that a release must follow, and have the questions of §14.
 
 **The merge conditions.** Epoch 1 named none apart from this Definition of Done and the code round of §5. They stay,
 with the rows of S4 added. The family's rule for a merge holds as always: the checks of the pull request are present
 and green. Nothing left the merge conditions, and the release is as §8 says: it must follow the merge.
 
-## 12. Deviations — what shipped differently from this plan
+## 12. Deviations — what shipped differently from this plan (promoted 2026-11-27)
 
-(Empty until the plan is promoted.)
+1. **Three stories became four, and the plan stopped once.** The plan had S1 (N8), S2 (N9) and S3 (N2, the texts). Two
+   changes were counted in epoch 1: 1.1 (J4 and M14 hold the journal LINE of a secret that could not be made, not the
+   page's filter *Could not generate*; found by the coder of S3) and 1.2 (the create, delete and no-generator lines carry no
+   `via`, so the journal page shows no row of a create or a delete and the texts of S3 were false on the page; found by the
+   lead's Opus review of the built branch). The second change stopped the plan. Epoch 2 added S4, *the journal page shows
+   the lines that it counts*. N2 therefore shipped as texts AND page marks, not as texts only: epoch 1 said that no journal
+   line is added or removed; S4 changed the shape of three kinds of line (`via mcp` on four lines that end a request; a
+   rotation that cannot draw its secret is `no generator`, not `404`; a rotation whose statement failed is
+   `statement failed`, not `rotated`) and the CHANGELOG lists them. Q6 (the filter *Could not generate*, F5) was
+   answered by the re-review: built, as V2, R1 and rows J7 and J8. No answer to an agent changed by a byte (rows J5 to J13
+   compare the whole status and body).
+2. **The re-review.** One consultation (`coai`, `d7510da7`, solved); the whole plan was revised; the interim document round
+   on the revision ended `proceed` (2 of 2 reviewers; 4 findings, all 4 accepted); an Opus judge checked the table of the
+   record and confirmed *Narrowed: no*. The judge changed the marks of one commit: `8515c1e9` has three rows, one *fits* and
+   two *cut*; the cut words were corrected by a fix forward in S4, with no revert commit. Epoch 2 was approved `by
+   reviewers` with 0 changes: the ledger has no entry in epoch 2. The epoch line was written `by nobody` before the round
+   and changed to `by reviewers` after it passed. The ledger is left as it stood; the rule has no closing line for a
+   current epoch.
+3. **The gates, as run.** Plan round of epoch 1: `proceed`, 1 of 1 reviewers, 1 finding accepted (the second count of §2.3,
+   row J4, mutation M14). Question consultants on Q3, Q4 and Q5 (Q1 was split and went to the owner). Code round of epoch 1:
+   `proceed`, 4 of 4; 2 findings accepted, 3 rejected with reasons. Opus review of the built branch: *fix first*, which gave
+   change 1.2 and the stop. Opus review of S4: *ship*, with 3 nits (point 6). Code round of epoch 2: `proceed`, 4 of 4; 2
+   accepted, 2 rejected: an old failed-rotation line (`rotated`) in a file younger than 14 days still counts as a replaced
+   secret, and the empty message of the page has no clause about a handler failure (F10 is not built). CodeRabbit on #397: 2 minor findings in the documents,
+   fixed in `d773b186`.
+4. **The owner's answers, 2026-11-27.** Q1: keep the N9 table (S2 as built). The owner gave the word for the pull request,
+   the merge and the release. Q2 (a link to a folder reads *no longer in this vault*) and Q7 to Q10 (the mark of a folder
+   change, the word `statement failed`, an error status under *Refused*, the line of a handler that threw) were not
+   answered by the owner; the plan was built, merged and released on their default answers. §14 says what a *no* to each of them removes.
+5. **Proof at the merge.** Full extension suite at S4: 8602 tests, 8558 pass, 0 fail, 44 skipped. `tsc`, `eslint`,
+   `ratchet`, `contract`, `plan-lifecycle` and `public-hygiene` were clean; `contract/`, `src_mcp` and `src_cli` have no
+   difference. Mutations M1 to M27 each turned their rows red (the record is in `research/module_tests.md`).
+6. **Not done: the Opus nits.** N1: the sentence *Every call is recorded either way, in **⋯ → MCP logs**.* at
+   `README.md:209` and `src_vs_code/README.md:810` still reads as if each call leaves a line; the journal holds what the
+   texts of T1 say, and a listing leaves none. N2: the comment at `src_vs_code/src/mcpLogRows.ts:5` has no caveat that a
+   request whose handler failed can leave no row (the longer comment below it names that line). The third nit is not named
+   in the record that was read for this promotion.
+7. **Not checked by a native reader:** the four translations (de, es, ru, uk) of the sentence of Appendix A. H1 pins the
+   text; nobody measured how a native reader takes it. The texts of the plan stay as the five rows of Appendix A.
+8. **Not built here** (by the plan's own decision, §13 and §14): Q4 (a refusal for an entry that the agent may view writes no
+   journal line; a *yes* is its own plan), F6 (a row whose outcome is an error status is under *Everything* and under no
+   count), F10 (the line of a handler that threw has no mark and no row; guard JG4 holds the fact), F1, F2, F3, F8 and F9
+   (recorded only).
+9. **Boxes of §11 not ticked.** (a) *The owed row of §9 is with the session that owns the bridge plan.* Checked at the
+   promotion: `grep` over `todo/*.md` for the name of this plan finds only `todo/README.md`; the bridge plan
+   (`todo/PLAN_remote_bridge_scoped.md`) has no sentence about it. The sentence stays owed to that plan's owner session. The
+   bridge's lookup has one account, so nothing in behaviour changed there (CG3). (b) *The summary names the models and the
+   counts of the launches.* The record read for this promotion has no such summary.
+10. **Process notes.** The code was built in the plan's order, S1, S2, S3, then S4 after the stop; the `file:line` of §1.5 and
+    §2.4 were read on `aa70258c`, the head of the branch at the stop. The pull request is #397 (30 files); the release
+    1.24.1 carries this change only.
 
 ## 13. Found along the way (not built here)
 
@@ -1191,7 +1253,7 @@ its journal file is kept, with the 14 days of the sweep (finding 3).
 
 One epic, because the three items are small and share one release. Its stories are here and not in a document of their
 own: the lead asked for it for a plan of this size, and the family has done it before
-([PLAN_query_refuses_client_commands.md](PLAN_query_refuses_client_commands.md), `## Epics`). The rows and the
+([PLAN_query_refuses_client_commands.md](../todo/PLAN_query_refuses_client_commands.md), `## Epics`). The rows and the
 mutations of §6 are the scenarios of each story. Fable wrote this plan and the split, because S1 is a judgement on
 authorisation (what an agent may see). The question consultants were asked before the plan round of epoch 1 (§14).
 Sonnet codes each story from its rows; Opus reviews each one; the security reading of S1 is Fable's, at review. One

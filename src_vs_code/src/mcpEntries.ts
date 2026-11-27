@@ -241,7 +241,7 @@ export async function visibleMcpEntries(source: McpVaultSource): Promise<readonl
  * <p>The search goes on for each account that has no VISIBLE config with the id, as `findUsableEntry` and `findFolder`
  * go on past a node that they may not show. A hidden node in an earlier account therefore answers as an id that
  * the account does not hold, and so does a visible node that is not a config (D1 of
- * `todo/PLAN_agent_small_truths_n8_n9_n2.md`): the answer never depends on what an earlier account holds under the id.
+ * `research/PLAN_agent_small_truths_n8_n9_n2.md`): the answer never depends on what an earlier account holds under the id.
  * The first account with a visible config wins, in the order of `getAccounts`.</p>
  */
 export function visibleConfigDetails(
