@@ -231,3 +231,12 @@ test('KG6: ten viewable db in ten open folders: fifty tokens read the same numbe
   assert.equal(a.command, HIDDEN_REFERENCE);
   assert.equal(b.command, Array.from({ length: 50 }, () => HIDDEN_REFERENCE).join(' '));
 });
+
+test('KG7: the memory of a listing keys each token apart, also when a name holds a NUL: the order of two tokens changes nothing', async () => {
+  const kept = 'creds://me@x.test/y%000/password';
+  const other = 'creds://me@x.test%00y/0/password';
+  for (const command of [`${kept} ${other}`, `${other} ${kept}`]) {
+    const shown = commandIn(await bodyOf(one([entry('y0', 'y\u00000', null, { mcp: OPEN }), terminal(command)])));
+    assert.ok(shown?.includes(kept), `the reference to the viewable entry is kept in "${command}": ${shown}`);
+  }
+});

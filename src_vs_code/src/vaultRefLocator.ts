@@ -77,7 +77,7 @@ export function viewableLocatorForOneListing(
   };
   const candidates = (accountId: string, lastName: string): Entities => indexOf(accountId).get(segmentKey(lastName)) ?? [];
   const qualified = (address: string, lastName: string, namedFolders: number): Candidates => {
-    const key = [addressKey(address), segmentKey(lastName), namedFolders].join('\u0000');
+    const key = JSON.stringify([addressKey(address), segmentKey(lastName), namedFolders]);
     const held = qualifiedHeld.get(key) ?? candidatesOfAddress(accounts(), address, (accountId) => candidates(accountId, lastName).filter((e) => namedFolders === 0 || foldersOpen(accountId, e.id, namedFolders)));
     qualifiedHeld.set(key, held);
     return held;
