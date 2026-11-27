@@ -40,3 +40,16 @@ export function agentRefusal(
     note: `${entityName}: ${RELATION_LINE[said.second.relation]} (the agent was told only that another entry stopped the call)`,
   };
 }
+
+/**
+ * What `dependsOn` of `creds_list` holds in the place of a dependency that the agent may not view, once at the end of the list, for any
+ * number of them and for an id that no node has (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2, D1 and D2). It is true for a
+ * hidden node and for a missing one, so the two read alike (rule A). A Remote Bridge never serves it (`bridgeScope.ts`, `narrowed`).
+ */
+export const HIDDEN_DEPENDENCY = '(a dependency that is not open to agents)';
+
+/**
+ * What `command` of `creds_list` holds in the place of each `creds://` token that is not a reference to things that the agent may view
+ * (§2.4). It holds no `creds://`, so the scan of a second pass finds nothing in it.
+ */
+export const HIDDEN_REFERENCE = '(a creds reference that is not open to agents)';

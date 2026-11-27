@@ -1,3 +1,4 @@
+import { HIDDEN_DEPENDENCY } from './agentNaming';
 import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
 import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
@@ -56,7 +57,10 @@ export interface McpEntry {
    * actionable half — the agent tells the person to run Enable Code Access…; it can never
    * mint one itself. */
   codeAccessEnabled?: boolean;
-  /** The names this entry needs to be usable, so an agent can bring up a VPN first. */
+  /**
+   * The names of the entries this one needs to be usable that the agent may view, so an agent can bring up a VPN first; when it needs one
+   * that it may not view, or an id that no node has, the list ends with ONE `HIDDEN_DEPENDENCY` (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2).
+   */
   dependsOn: string[];
   /** What may be done with it, from the ladder — beyond `view`, which it evidently has. */
   can: McpCapabilities;
@@ -86,7 +90,7 @@ export interface McpEntryContext {
   hasTotp: boolean;
   /** The connection string, if any, as stored. Read (`plainText`) and stripped here rather than by the caller. */
   dbConnection?: StoredSecret;
-  /** The names this entry depends on, already resolved from ids by the caller. */
+  /** The names this entry depends on that the agent may view, then `HIDDEN_DEPENDENCY` once if it depends on one more: already resolved from ids by the caller. */
   dependsOn: readonly string[];
 }
 
@@ -516,19 +520,27 @@ function granted(access: McpAccess, needed: McpRung, node: TreeNode): boolean {
 }
 
 /**
- * Dependencies as NAMES, never ids.
+ * Dependencies as NAMES, never ids, and only the names of entries that the agent may view.
  *
  * <p>An id means nothing to an agent — it cannot look one up, because the only thing that
  * resolves ids is the vault it is not allowed to enumerate. A name is what appears in the
- * consent modal it will trigger next, so the two halves of the conversation match. A dependency
- * whose target has been deleted is dropped rather than named, since a name that resolves to
- * nothing is worse than silence.</p>
+ * consent modal it will trigger next, so the two halves of the conversation match.</p>
+ *
+ * <p><b>A dependency that the agent may not view is not named</b> (`todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`, §2.2): an entry with no
+ * switch, a PIN of its own or in the Trash, and a folder, are not `shown`. They give ONE `HIDDEN_DEPENDENCY`, at the end, for any number,
+ * so the list does not tell how many or where. <b>An id that no node has gives it too</b> (D2): if it stayed dropped, an agent could tell a
+ * hidden dependency from a deleted one, and rule A says it must not. The wall is asked in the entry's own account, through the lookup it is given.</p>
  */
 function dependencyNames(node: TreeNode, byId: (id: string) => TreeNode | undefined): readonly string[] {
-  return (node.details?.dependsOn ?? []).flatMap((id) => {
-    const target = byId(id);
-    return target === undefined ? [] : [target.name];
-  });
+  const ids = node.details?.dependsOn ?? [];
+  const named = ids.flatMap((id) => viewableName(id, byId));
+  return named.length < ids.length ? [...named, HIDDEN_DEPENDENCY] : named;
+}
+
+/** The name of the entry that this id points to when the agent may view it, as a list of one; no node, a folder and a hidden entry give none. */
+function viewableName(id: string, byId: (id: string) => TreeNode | undefined): string[] {
+  const target = byId(id);
+  return target !== undefined && shown(target, resolveMcpInTree(target, byId)) ? [target.name] : [];
 }
 
 /**

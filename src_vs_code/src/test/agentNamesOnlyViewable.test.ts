@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { after, before, test } from 'node:test';
+import { HIDDEN_DEPENDENCY } from '../agentNaming';
 import { BRIDGE_ROUTES } from '../bridgeAllowList';
 import { ErrorCode, errorBody, statusForErrorCode } from '../brokerProtocol';
 import { linkedRunRefused, terminalRunAction } from '../agentUseActions';
@@ -329,10 +330,14 @@ function rowLeaks(list: string, rows: readonly ListRow[]): string[] {
  * there today (the owner closed them in `todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md`; each story takes its own row out).
  */
 const EXCEPTIONS: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly today: unknown }[] = [
-  { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', today: [markerOf(HIDDEN.entries.none)] },
   { n: 'N4', list: 'entries', row: VISIBLE.n4, field: 'folder', today: markerOf(HIDDEN.folders.none) },
   { n: 'N5', list: 'entries', row: VISIBLE.n5, field: 'command', today: N5_COMMAND },
   { n: 'N6', list: 'folders', row: VISIBLE.n6, field: 'parent', today: HIDDEN.folders.none },
+];
+
+/** The fields that an owner's answer closed, each at the value that it holds now: the place of a hidden node is a fixed word, an empty name or null. */
+const CLOSED: readonly { readonly n: string; readonly list: 'entries' | 'folders'; readonly row: string; readonly field: string; readonly now: unknown }[] = [
+  { n: 'N1', list: 'entries', row: VISIBLE.n1, field: 'dependsOn', now: [HIDDEN_DEPENDENCY] },
 ];
 
 /** The rows of one list with the fields of the open exceptions taken out. */
@@ -346,6 +351,10 @@ test('the list check (row L1): the open exceptions hold the value of today, and 
   for (const e of EXCEPTIONS) {
     const row = bodies[e.list].find((r) => r.id === e.row) as ListRow;
     assert.deepEqual(row[e.field], e.today, `${e.n}: the value of today`);
+  }
+  for (const c of CLOSED) {
+    const row = bodies[c.list].find((r) => r.id === c.row) as ListRow;
+    assert.deepEqual(row[c.field], c.now, `${c.n}: the value that the owner's answer gives`);
   }
   const found = [...rowLeaks('entries', withoutExceptions('entries', bodies.entries)), ...rowLeaks('folders', withoutExceptions('folders', bodies.folders))];
   assert.deepEqual(found, [], 'a field of a list names a node that the agent may not view');

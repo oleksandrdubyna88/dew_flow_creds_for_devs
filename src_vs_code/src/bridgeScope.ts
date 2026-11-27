@@ -1,4 +1,5 @@
 import type { AuditDoor } from './agentAuditLog';
+import { HIDDEN_DEPENDENCY } from './agentNaming';
 import type { BridgeContext, BridgeGrant } from './bridgeContext';
 import type { ReadRouteSources } from './brokerReadRoutes';
 import { GRANT_NOT_ALLOWED, McpUseLookup, McpUseTarget, Refusal, UNKNOWN_TOKEN, aliasTarget, grantForToken, refusalFor } from './brokerRequests';
@@ -140,7 +141,10 @@ export interface BridgeEntry {
 /** The keys of `BridgeEntry`, written out: the read-shape test asserts a full row's served keys equal this list, and `BRIDGE_READ_SHAPES` names it. */
 export const BRIDGE_ENTRY_FIELDS: readonly (keyof BridgeEntry)[] = ['id', 'name', 'kind', 'folder', 'host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage', 'hasConnectionString', 'hasCommand', 'hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp', 'codeAccessEnabled', 'dependsOn', 'can'];
 
-/** A row a bridge may list, built field by field from the local row: what this door permits (`use` only), no dependency on a row not listed. */
+/**
+ * A row a bridge may list, built field by field from the local row: what this door permits (`use` only), no dependency on a row not listed.
+ * The placeholder of the local row's `dependsOn` is dropped before the names are filtered, so a bridge never serves it.
+ */
 function narrowed(row: McpEntry, kept: ReadonlySet<string>): BridgeEntry {
   return {
     id: row.id, name: row.name, kind: row.kind, folder: '',
@@ -149,7 +153,7 @@ function narrowed(row: McpEntry, kept: ReadonlySet<string>): BridgeEntry {
     hasCommand: row.command !== undefined, // `blankToUndefined` (mcpEntries.ts) has already made a blank absent
     hasPassword: row.hasPassword, hasPrivateKey: row.hasPrivateKey, hasNotes: row.hasNotes, hasTotp: row.hasTotp,
     codeAccessEnabled: row.codeAccessEnabled,
-    dependsOn: row.dependsOn.filter((name) => kept.has(name)),
+    dependsOn: row.dependsOn.filter((name) => name !== HIDDEN_DEPENDENCY && kept.has(name)),
     can: { use: row.can.use, edit: false, create: false, delete: false },
   };
 }

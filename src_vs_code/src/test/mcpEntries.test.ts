@@ -13,6 +13,7 @@ import {
   visibleConfigDetails,
   visibleMcpEntries,
 } from '../mcpEntries';
+import { HIDDEN_DEPENDENCY } from '../agentNaming';
 import { readRouteBody } from '../brokerReadRoutes';
 import type { ConfigSnippetBody } from '../mcpSnippetRoute';
 import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
@@ -237,16 +238,18 @@ test('a field added to a stored record does not reach the wire on its own', asyn
 
 test('dependencies are named, never given as ids', async () => {
   // An id means nothing to an agent: the only thing that resolves one is the vault it is not
-  // allowed to enumerate. The name is what the consent modal it triggers next will say.
+  // allowed to enumerate. The name is what the consent modal it triggers next will say. Only the
+  // name of an entry that the agent may view is given; an id that no node has reads as a
+  // dependency that is not open to agents, once, at the end (plan N1, §2.2 and D2).
   const nodes = [
     folder('f1', 'F'),
-    entity('v1', 'office vpn', { kind: 'vpn' }),
+    entity('v1', 'office vpn', { kind: 'vpn', mcp: { view: true } }),
     entity('e1', 'orders-db', { kind: 'db', mcp: { view: true }, dependsOn: ['v1', 'gone'] }),
   ];
 
-  const [entry] = await visibleMcpEntries(vault(nodes));
+  const entry = (await visibleMcpEntries(vault(nodes))).find((row) => row.id === 'e1');
 
-  assert.deepEqual(entry.dependsOn, ['office vpn']);
+  assert.deepEqual(entry?.dependsOn, ['office vpn', HIDDEN_DEPENDENCY]);
 });
 
 test('the capabilities say what may be done beyond looking', () => {
