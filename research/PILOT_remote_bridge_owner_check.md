@@ -43,7 +43,18 @@ the registration goes to the Claude Code of root. Registration with Claude Code:
 - one that runs another path: it is **not** changed, and the script prints the two commands that change it. Run them if you want
   the pilot used; undo then does not change them back.
 
-Then **restart the Claude session once**, so that it starts the new `creds-mcp`. `sh <folder>/creds-pilot.sh status` shows the state.
+Then **restart the Claude session once**, so that it starts the new `creds-mcp`. `sh <folder>/creds-pilot.sh status` shows the state
+(with the same `CREDS_PILOT_BIN` as install; without it, status looks in `~/.local/bin` and says no pilot is installed).
+
+**Another copy earlier on the PATH.** The links change only `CREDS_PILOT_BIN`. If a folder that comes earlier on the login's PATH
+holds another `creds` or `creds-mcp` (on root, `~/.local/bin` comes before `/usr/local/bin`), a shell runs that copy and not the
+pilot; an old `creds` then says "no CredsForDevs window is running here". Install and status print a WARNING that names the copy, and
+change nothing. Move it aside (`mv ~/.local/bin/creds ~/.local/bin/creds.old && hash -r`; move it back after undo), then
+`type -a creds` must show the pilot's link first. The Claude registration runs the absolute path, so it is not affected.
+
+**On the PC, after install: reload every VS Code window** (or close VS Code and open it again). Installing the VSIX does not restart a
+running extension, and a window that was not reloaded still runs the Marketplace build: *Open Remote Bridge…* then shows the old
+"Paste this on …" text with a token, and no list of entries. If that happens, close that bridge, reload, and open it again.
 
 ## 3. Open the bridge
 
@@ -53,6 +64,15 @@ use. Nothing is pasted on the server: `creds` and `creds-mcp` find the bridge's 
 ## 4. The checks (M7 for the slice)
 
 Write the result of each line (pass / fail, and what you saw). Do not write a secret value in the record.
+
+Before check 1, what an entry needs to be used through a bridge:
+
+- **In a shell, `creds` takes an alias, not the entry's name.** Give the entry one with *Enable CLI Access…* (lowercase letters,
+  digits, `-` and `_`); `creds ls` lists the aliases. Claude on the server goes through `creds-mcp` and needs no alias.
+- **An entry that forwards this computer's SSH agent is refused** before any dialog ("… is set to forward this computer's SSH
+  agent …"): the agent would answer with every key it holds, not only this entry's. Turn agent forwarding off on that entry.
+- **A bridge uses no `~/.ssh/config`, no SSH agent and no default key** (§4.9, Q8). The entry must sign in with what it holds
+  itself: a key in the vault or a key file path in the entry, or a password with the host key pinned.
 
 | # | Do | Pass when |
 |---|---|---|

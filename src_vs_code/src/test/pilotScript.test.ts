@@ -60,8 +60,8 @@ function rig(what: string): Rig {
   return r;
 }
 
-function pilot(r: Rig, args: string[], withClaude = true): { status: number | null; out: string } {
-  const env = { HOME: r.home, PATH: `${withClaude ? `${r.fakeBin}:` : ''}/usr/bin:/bin`, CREDS_PILOT_BIN: r.bin, FAKE_CLAUDE_DB: r.db };
+function pilot(r: Rig, args: string[], withClaude = true, pathHead = ''): { status: number | null; out: string } {
+  const env = { HOME: r.home, PATH: `${pathHead}${withClaude ? `${r.fakeBin}:` : ''}/usr/bin:/bin`, CREDS_PILOT_BIN: r.bin, FAKE_CLAUDE_DB: r.db };
   const result = spawnSync('/bin/sh', [SCRIPT, ...args], { env, encoding: 'utf8' });
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
 }
@@ -156,4 +156,21 @@ test('PS6: a bin folder outside the home (shared, like /usr/local/bin) gets a pi
 
   assert.equal(pilot(shared, ['undo']).status, 0);
   assert.deepEqual([fs.existsSync(sharedHome), fs.existsSync(path.join(shared.bin, 'creds'))], [false, false]);
+});
+
+test('PS7: an older copy earlier on the PATH is named by install and status, and left where it is; with the pilot first, no warning', { skip: POSIX }, () => {
+  const r = rig('ps7');
+  const early = path.join(path.dirname(r.home), 'early');
+  fs.mkdirSync(early);
+  fs.writeFileSync(path.join(early, 'creds'), '#!/bin/sh\necho old\n', { mode: 0o755 });
+  const installed = pilot(r, ['install', r.drop], true, `${early}:${r.bin}:`);
+  assert.equal(installed.status, 0, installed.out);
+  assert.ok(installed.out.includes(`WARNING: here, creds runs ${path.join(early, 'creds')}, not the pilot`), installed.out);
+  assert.ok(!installed.out.includes('creds-mcp runs'), 'creds-mcp is the pilot\'s: no warning for it');
+  assert.ok(pilot(r, ['status'], true, `${early}:${r.bin}:`).out.includes(`creds runs ${path.join(early, 'creds')}`));
+  assert.equal(fs.readFileSync(path.join(early, 'creds'), 'utf8'), '#!/bin/sh\necho old\n', 'the other copy is not touched');
+
+  assert.ok(!pilot(r, ['status'], true, `${r.bin}:${early}:`).out.includes('WARNING'), 'the pilot first on the PATH: no warning');
+  assert.ok(pilot(r, ['status'], true).out.includes(`WARNING: ${r.bin} is not on this PATH`));
+  assert.equal(pilot(r, ['undo']).status, 0);
 });

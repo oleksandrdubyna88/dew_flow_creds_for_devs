@@ -89,7 +89,21 @@ do_install() {
   say "linked $BIN_DIR/creds and $BIN_DIR/creds-mcp to the pilot"
 
   register
+  shadow_check
   say "done. Restart the Claude session once, so it starts the new creds-mcp."
+}
+
+# What a shell of this login runs when it types the name. The pilot check of 2026-11-27 found an older `creds` in ~/.local/bin, which
+# comes before /usr/local/bin on root's PATH: the links were right and the shell still ran the old client. Say so; change nothing.
+shadow_check() {
+  for tool in $TOOLS; do
+    found=$(command -v "$tool" 2>/dev/null || true)
+    if [ -z "$found" ]; then
+      say "WARNING: $BIN_DIR is not on this PATH: type $BIN_DIR/$tool, or add the folder to the PATH"
+    elif [ "$found" != "$BIN_DIR/$tool" ]; then
+      say "WARNING: here, $tool runs $found, not the pilot: an earlier folder on the PATH holds another copy. Move it aside, or type $BIN_DIR/$tool"
+    fi
+  done
 }
 
 register() {
@@ -160,6 +174,7 @@ do_status() {
   for tool in $TOOLS; do
     say "$BIN_DIR/$tool -> $(readlink "$BIN_DIR/$tool" 2>/dev/null || echo 'not a link')"
   done
+  shadow_check
 }
 
 case "${1:-}" in
