@@ -39,7 +39,7 @@ const LOGIN_FAILED = /Login failed for user/i;
 function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord = false, wrongWord = false, flags = [], home = ctx.home, extraEnv = {}, query = ctx.q.query, withoutX = false } = {}) {
   const { product, q } = ctx;
   const encoded = encodeURIComponent(user);
-  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@127.0.0.1:${q.port}/master`, query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
+  const built = product.buildDbQueryLaunch('mssql', `mssql://${encoded}:${q.loginWord}@${q.host}:${q.port}/master`, query, { bridged: true, absentFile: product.materializedKeyPath(ctx.dir, 'no-client-file'), verdict: ctx.verdict });
   if (built === undefined) {
     throw new Error('buildDbQueryLaunch refused the entry of a PS1 leg that must launch (it stores a user and a password and names only the profile, under a good verdict of the real client check)');
   }
@@ -49,7 +49,8 @@ function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord 
   if (host !== undefined) {
     args[args.indexOf('-S') + 1] = host;
   }
-  const env = { ...bridgedEnv(product, home, built.env), ...extraEnv };
+  // The container road hands the client the launch's own names alone (the env file): no PATH or HOME of this runner reaches the image.
+  const env = { ...(ctx.container === true ? built.env : bridgedEnv(product, home, built.env)), ...extraEnv };
   if (nouser) {
     delete env.SQLCMDUSER;
     delete env.SQLCMDPASSWORD;
@@ -61,11 +62,14 @@ function launchFor(ctx, { user = ctx.q.login, host, nouser = false, withoutWord 
   return { args: [...args, ...flags], env, userAsRead: built.env.SQLCMDUSER };
 }
 
+/** What runs a client: on this runner by default; the container harness hands its own (the product's container road), with the same answer. */
+const runOf = (ctx) => ctx.run ?? runClient;
+
 /** One run of `client` and what the server saw: `{ code, scheme, who, lines, integrated, said, ended }`. */
 async function observe(ctx, client, options) {
   const mark = ctx.q.mark();
   const launched = launchFor(ctx, options);
-  const run = await runClient(ctx.scope, client.exe, launched.args, launched.env, { ms: options.ms ?? 40_000 });
+  const run = await runOf(ctx)(ctx.scope, client.exe, launched.args, launched.env, { ms: options.ms ?? 40_000 });
   const lines = await ctx.q.linesSince(mark);
   const scheme = SCHEME.exec(run.stdout)?.[1];
   const row = run.stdout.split(/\r?\n/).find((line) => scheme !== undefined && line.includes(scheme));
@@ -108,8 +112,8 @@ async function control(ctx, client) {
   return { shown, text: `no user, by hand, ${where}: ${wordsOf(seen)}`, seen };
 }
 
-/** A TCP listener that only counts who connected: the "another server" of PS1-3 and PS1-4. */
-async function listener() {
+/** A TCP listener on `address` that only counts who connected: the "another server" of PS1-3 and PS1-4. */
+async function listener(address = '127.0.0.1') {
   const state = { connections: 0 };
   const open = new Set();
   const server = net.createServer((socket) => {
@@ -118,7 +122,7 @@ async function listener() {
     socket.on('error', () => undefined);
     socket.destroy();
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise((resolve) => server.listen(0, address, resolve));
   return { state, port: server.address().port, close: () => new Promise((resolve) => server.close(resolve)), open };
 }
 
@@ -441,4 +445,4 @@ async function ps1Legs(ctx, clients) {
   }
 }
 
-module.exports = { ps1Legs, sqlconfigText };
+module.exports = { ps1Legs, sqlconfigText, launchFor, observe, wordsOf, legBuilt, legEntry, legScripting, listener };

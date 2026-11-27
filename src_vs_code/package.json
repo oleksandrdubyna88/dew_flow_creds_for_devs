@@ -60,6 +60,7 @@
     "itest:ssh-agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/ssh-agent-itest.cjs",
     "itest:ssh-agent:hidden": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/itestHiddenSsh.cjs -- node --import ./scripts/lower-priority.mjs scripts/ssh-agent-itest.cjs",
     "itest:bridged-ssh": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-ssh-itest.cjs",
+    "itest:bridge-note": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridge-note-itest.cjs",
     "itest:bridged-mysql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-itest.cjs",
     "itest:bridged-psql": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-psql-itest.cjs",
     "itest:bridged-db-pa1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-db-pa1-itest.cjs",
@@ -70,6 +71,7 @@
     "itest:bridged-psql-assert": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-psql-assert-itest.cjs",
     "itest:bridged-mysql-assert": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-mysql-assert-itest.cjs",
     "itest:bridged-sqlcmd": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-sqlcmd-itest.cjs",
+    "itest:bridged-container-sqlcmd": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-container-sqlcmd-itest.cjs",
     "itest:bridged-pk1": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/bridged-pk1-itest.cjs",
     "icon": "node scripts/generate-icon.mjs",
     "icons:mcp": "npm run compile && node scripts/generate-mcp-icons.mjs",
@@ -949,6 +951,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "credSshManager.prepareDbContainer",
+        "title": "Prepare Database Container",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.checkWslMcpInstall",
         "title": "Check the WSL MCP install",
         "category": "CredsForDevs",
@@ -1273,6 +1280,10 @@
         {
           "command": "credSshManager.runFolder",
           "when": "false"
+        },
+        {
+          "command": "credSshManager.prepareDbContainer",
+          "when": "credSshManager.bridgeFlow"
         },
         {
           "command": "credSshManager.checkWslMcpInstall",

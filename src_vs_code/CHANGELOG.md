@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Not on in this release — a new Remote Bridge flow, built and kept off by a switch
+
+This release contains a new flow for *Open Remote Bridge…*, but it is **off**. A constant in the code (`BRIDGE_FLOW_ENABLED`)
+keeps it off in every build that is published. A test holds that the constant is off. With it off, *Open Remote Bridge…* works
+as in 1.23.0: it starts the bridge to the extension's broker and offers the setup block to paste on the server. Nothing in this
+entry changes what you see, with one exception: no new command shows in the Command Palette.
+
+What the new flow does, when a later release turns it on:
+
+- **Nothing to paste.** The bridge has its own listener and its own key. A small note on the server tells `creds` and
+  `creds-mcp` where the bridge is, so they find it by themselves.
+- **A scope per server.** When you open the bridge, you pick the entries that the agent on that server may use. Only those entries
+  are reachable through that bridge. The old flow gave the server the whole broker.
+- **It comes back.** After a network drop the bridge reconnects. After a restart it comes back when you unlock the vault. Lock and
+  Close stop it, and a reconnect that is in progress publishes nothing after either.
+- **Database queries in a container (Windows).** A database query through the bridge starts its client in a Linux container on
+  your computer (`wslc`). The password goes in a private file that is removed after the run, never on a command line. Only the
+  ODBC `sqlcmd` in that container is served. The command *Prepare Database Container* builds the image. It shows in the Command
+  Palette only when the new flow is on.
+- **Stored commands and scripts.** An agent's stored script runs on the server as your login there. A stored command whose entry
+  says it runs on Windows runs on your computer, with the password in the child's environment and masked in its output. A
+  script's form has no *Runs on* field yet, so a script that holds a `creds://` reference or puts variables into its environment
+  is refused on a bridge, and the refusal says so.
+
+The `creds` and `creds-mcp` clients of this release look for that note when `CREDS_BROKER_SOCKET` is not set. While the flow is
+off no note is written, so they work as before, and the pasted setup block still wins over a note.
+
 ## [1.24.1] — 2026-11-27 — Fixed — the config snippet goes on across accounts; the journal reason of a linked run; the journal page shows the lines it counts
 
 ### Fixed — the snippet of a config no longer depends on what an earlier account holds under its id; the journal reason of a linked run; the texts about the journal; the journal page shows the lines that it counts

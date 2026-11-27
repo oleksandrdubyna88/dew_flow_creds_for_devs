@@ -54,7 +54,6 @@ export const LEDGER: Readonly<Record<string, LedgerRow>> = {
   'commands/accountCommands.ts#registerAccountCommands#showWarningMessage#6': PERSON,
   'commands/accountCommands.ts#registerAccountCommands#showWarningMessage#7': PERSON,
   'commands/agentCommands.ts#registerAgentCommands#showInformationMessage#1': PERSON,
-  'commands/agentCommands.ts#registerAgentCommands#showInformationMessage#2': PERSON,
   'commands/agentCommands.ts#registerAgentCommands#showInputBox#1': PERSON,
   'commands/agentCommands.ts#registerAgentCommands#showQuickPick#1': PERSON,
   'commands/agentCommands.ts#registerAgentCommands#showQuickPick#2': PERSON,
@@ -135,6 +134,7 @@ export const LEDGER: Readonly<Record<string, LedgerRow>> = {
   'keyInstaller.ts#confirmInstall#showWarningMessage#1': PERSON,
   'keyInstaller.ts#removeInstalledKey#showWarningMessage#1': PERSON,
   'keyringWarningHost.ts#warnIfKeyringMissing#showWarningMessage#1': PERSON,
+  'legacyBridgeOpen.ts#offerSetupBlock#showInformationMessage#1': PERSON, // §4.5: the released road's setup block, while the switch of the new flow is off (it was agentCommands' second)
   'lockedVaultPrompt.ts#offerUnlock#showWarningMessage#1': PERSON,
   'lockedVaultPrompt.ts#pickAndUnlock#showQuickPick#1': PERSON,
   'lockedVaultPrompt.ts#reportLockedVaults#showWarningMessage#1': PERSON,
@@ -172,6 +172,7 @@ export const LEDGER: Readonly<Record<string, LedgerRow>> = {
   'rotationWaiting.ts#askConflict#showWarningMessage#1': { class: 'after-allow', actions: ['terminal', 'up', 'rotate'], reason: 'a waiting rotation met on use: the conflict question' },
   'rotationWaiting.ts#keepCurrent#showWarningMessage#1': { class: 'after-allow', actions: ['terminal', 'up', 'rotate'], reason: 'a waiting rotation met on use: keep the current value' },
   'saveTextAs.ts#saveTextAs#showSaveDialog#1': PERSON,
+  'scopedBridgeOpen.ts#pickScope#showQuickPick#1': PERSON, // change 11.1, S1: the scope pick of the person's own Open Remote Bridge
   'securityKeyAdd.ts#askLabel#showInputBox#1': PERSON,
   'securityKeyAdd.ts#offerKeyMigration#showInformationMessage#1': PERSON,
   'serverMetricsCommand.ts#runServerMetrics#createWebviewPanel#1': PERSON,

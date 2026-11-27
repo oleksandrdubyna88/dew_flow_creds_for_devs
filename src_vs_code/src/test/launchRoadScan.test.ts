@@ -99,10 +99,11 @@ function stale(list: AllowList, found: readonly Site[]): string[] {
 
 /**
  * Sorted, compared whole, so a new importer and a vanished one both fail. After E3 the list is commands/runCommands.ts (its LOCAL roads only,
- * E3-D13) and remoteLaunch.ts (parent §4.5 (1)). It proves who imports, not where a resolved line flows: that a linked entry reaches no
+ * E3-D13), remoteLaunch.ts (parent §4.5 (1)) and bridgedRun.ts (a bridged run of an UNLINKED entry, S4: it refuses a linked one first,
+ * `linkedNeverLocal.test.ts` LN12). It proves who imports, not where a resolved line flows: that a linked entry reaches no
  * local sink is linkedNeverLocal.test.ts (parent §4.5 (5)).
  */
-const RESOLVE_IMPORTERS = ['commands/runCommands.ts', 'remoteLaunch.ts'];
+const RESOLVE_IMPORTERS = ['bridgedRun.ts', 'commands/runCommands.ts', 'remoteLaunch.ts'];
 
 test('resolveCommand_is_imported_only_by_the_listed_files', () => {
   const importers = [...new Set(sites([RESOLVE_IMPORT]).map((s) => s.file))].sort();
@@ -309,7 +310,9 @@ test('only_ssh_exec_still_sends_dash_a_without_our_agent', () => {
   const falses = wordSites(/\bownAgentOnly\s*:\s*false\b/g);
   assert.deepEqual(falses.map((s) => s.where), ['sshUseActions.ts:sshExecAction'], `ownAgentOnly: false stands at: ${falses.map((s) => `${s.file}:${s.line}`).join(', ')}`);
   const trues = wordSites(/\bownAgentOnly\s*:\s*true\b/g);
-  assert.ok(trues.length > 0 && trues.every((s) => s.file === 'agentUseActions.ts'), `ownAgentOnly: true stands at: ${trues.map((s) => `${s.file}:${s.line}`).join(', ')}`);
+  // The agent's linked run (E3.S2) and a Remote Bridge's run on its server (S4): neither may forward any agent but the extension's own.
+  const OWN_AGENT_ONLY_FILES = ['agentUseActions.ts', 'bridgedRun.ts'];
+  assert.ok(trues.length > 0 && trues.every((s) => OWN_AGENT_ONLY_FILES.includes(s.file)), `ownAgentOnly: true stands at: ${trues.map((s) => `${s.file}:${s.line}`).join(', ')}`);
   const unnamed = execArgvCalls().filter((call) => !call.names).map((call) => call.site);
   assert.deepEqual(
     unnamed.map((site) => site.split(':')[0]),
@@ -330,15 +333,18 @@ test('the_ownAgent_scan_still_finds_its_sites', () => {
   assert.equal(withoutComments('a // ownAgent\n/* ownAgent\n */ b').includes('ownAgent'), false);
 });
 
-test('no_tty_is_sent_by_exactly_two_production_sites', () => {
+/** Where `noTty: true` stands: the agent's linked run, a Remote Bridge's run on its server (S4: a script's body on its input needs no pty), Run with Secrets over SSH. */
+const NO_TTY_SITES = ['agentUseActions.ts:overSshWithSlot', 'bridgedRun.ts:overBridgeEntry', 'remoteLaunch.ts:secretsArgv'];
+
+test('no_tty_is_sent_by_exactly_the_listed_production_sites', () => {
   const sent = wordSites(/\bnoTty\s*:\s*true\b/g);
-  assert.deepEqual(sent.map((s) => s.where).sort(), ['agentUseActions.ts:overSshWithSlot', 'remoteLaunch.ts:secretsArgv'], `noTty: true stands at: ${sent.map((s) => `${s.file}:${s.line}`).join(', ')}`);
+  assert.deepEqual(sent.map((s) => s.where).sort(), NO_TTY_SITES, `noTty: true stands at: ${sent.map((s) => `${s.file}:${s.line}`).join(', ')}`);
   const named = wordSites(/\bnoTty\b/g).filter((s) => s.file.startsWith('commands/') || s.where === 'sshUseActions.ts:sshExecAction');
   assert.deepEqual(named, [], `a click of commands/ or ssh:exec names noTty at: ${named.map((s) => `${s.file}:${s.line}`).join(', ')}: those roads keep today's argv`);
 });
 
 test('the_noTty_scan_still_finds_its_sites', () => {
-  assert.equal(wordSites(/\bnoTty\s*:\s*true\b/g).length, 2, 'the scan does not find the two sites');
+  assert.equal(wordSites(/\bnoTty\s*:\s*true\b/g).length, NO_TTY_SITES.length, 'the scan does not find the listed sites');
   assert.ok(wordSites(/\bnoTty\b/g).some((s) => s.file === 'sshExecCommand.ts'), 'the scan does not find the builder that reads it');
   assert.equal(wordSites(/\bnoTty\b/g).filter((s) => s.file === 'sshUseActions.ts').length > 0, true, 'the scan does not find execOverSsh handing noTty on');
 });

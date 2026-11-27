@@ -7,7 +7,10 @@ import type { EntityMetadata, TreeNode } from '../types';
 import { ArrowWorld, arrowWorld, vaultOf } from './arrowWorld';
 import { FakeRoad, fakeRoad, sshNode } from './sshRoadWorld';
 import { hostOs, memoryTrust, ownerChain, seedTrusted, startVpn, world } from './vpnWorld';
-import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+import { BRIDGE_NOT_SERVED } from '../bridgeAllowList';
+import { type BridgedRunDeps, runBridged } from '../bridgedRun';
+import { commandFingerprint } from '../commandTrust';
 
 /**
  * No local sink (parent `PLAN_terminal_command_over_ssh.md` §4.5 (5); E3.S1 rows LN1-LN11). The road scan reads imports, not where
@@ -227,6 +230,58 @@ test('a_chain_with_no_lookup_never_types_a_linked_step_here', async () => {
     assert.ok(w.warnings.some((text) => text.includes(sshLinkRefusal(nodes.install) as string)), w.warnings.join('\n'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- a Remote Bridge's run (S4): the one more importer of resolveCommand ----------------------------------------------------------
+
+const BRIDGE_OF_LN12 = { bridgeId: 'b1', accountId: 'acct-1', serverEntityId: 'srv', serverName: 'box', target: '', remoteOs: 'linux' };
+
+/** The deps of one LN12 case: the link's nodes, both texts trusted, a recording `overSsh`, and this computer's row run with a POSIX shell. */
+function ln12Deps(dir: string, link: Link, trusted: string[], seen: { overSsh: number; slots: number }): BridgedRunDeps {
+  return {
+    storage: { getNode: (_account: string, id: string) => LINKS[link].find((n) => n.id === id) } as never,
+    storageDir: dir,
+    signal: new AbortController().signal,
+    acquireExecSlot: () => {
+      seen.slots += 1;
+      return () => undefined;
+    },
+    note: () => undefined,
+    trustStore: { get: () => trusted, update: async () => undefined },
+    overSsh: async () => {
+      seen.overSsh += 1;
+      return { status: 200, body: {} };
+    },
+    laptop: { platform: 'win32', shell: { shellPath: '/bin/sh', family: 'posix' } },
+  };
+}
+
+/** One LN12 case: the linked entry run through `runBridged` with the site its "Runs on" gives; nothing may start. */
+async function ln12Case(dir: string, link: Link, terminalOs: string | undefined, shape: 'command' | 'script'): Promise<void> {
+  const marker = `${dir}/ran`;
+  const entry: EntityMetadata = { ...ARROW, command: `touch ${marker}`, script: `touch ${marker}`, scriptLanguage: 'bash', terminalOs };
+  assertLinkIs(entry, link);
+  const seen = { overSsh: 0, slots: 0 };
+  const deps = ln12Deps(dir, link, [commandFingerprint(entry.id, bareOf(entry)), commandFingerprint(entry.id, `touch ${marker}`)], seen);
+  const site = terminalOs === 'windows' ? 'laptop' : 'server';
+  const ctx = { accountId: 'acct-1', entityId: entry.id, entityName: entry.name, signal: new AbortController().signal, bridge: BRIDGE_OF_LN12, site } as const;
+  const result = await runBridged(deps, ctx, BRIDGE_OF_LN12, entry, shape);
+  const label = `${link} link, Runs on ${String(terminalOs)}, ${shape}`;
+  assert.deepEqual([result.status, (result.body as { error?: { message?: string } }).error?.message], [404, BRIDGE_NOT_SERVED], label);
+  assert.deepEqual([seen.overSsh, seen.slots], [0, 0], `${label}: nothing went to the server and no exec slot was taken`);
+  assert.equal(fs.existsSync(marker), false, `${label}: nothing ran here`);
+}
+
+test('LN12: a bridged run never runs a linked entry, here or on the server, whatever its "Runs on" and whatever its link', async () => {
+  // `runBridged` is reached only past the gate that refuses a linked entry on a bridge (agentUseActions' `linkedCall`); this holds the file
+  // itself: called with a linked entry, it starts nothing. The line leaves a marker if it runs on this computer; `overSsh` counts a server run.
+  const dir = ownedDir(scope, 'ln12');
+  for (const link of Object.keys(LINKS) as Link[]) {
+    for (const terminalOs of [undefined, 'windows', 'linux']) {
+      await ln12Case(dir, link, terminalOs, 'command');
+      await ln12Case(dir, link, terminalOs, 'script');
+    }
   }
 });
 

@@ -159,9 +159,9 @@ internal static class FolderTools
         {
             return UseTools.Failure(
                 "No CredsForDevs window answered.",
-                Windows.Announced() == 0
+                Windows.NoWindowHint(Windows.Announced() == 0
                     ? "Open the folder in VS Code with the CredsForDevs extension and unlock the vault."
-                    : "The folder id may be stale — call creds_folders again.");
+                    : "The folder id may be stale — call creds_folders again."));
         }
         return reply.Status == 200 ? reply.Body : UseTools.Refused(reply);
     }

@@ -12,13 +12,14 @@ import type { Refusal } from './brokerRequests';
  * the day it exists, and `bridgeAllowList.test.ts` turns red until somebody decides about it in writing.</p>
  *
  * <p>The table is a decision, not a convenience: what a server's agent may do through the person's laptop. It
- * serves the reads, and `exec` and `query` on the three prefixes (token, alias, MCP) behind the scope wall of
- * `bridgeScope.ts`. `run` stays refused: E3 decided that a stored command runs from the person's machine only; `terminal` opens a window an
+ * serves the reads, and `exec`, `query` and `run` on the three prefixes (token, alias, MCP) behind the scope wall of
+ * `bridgeScope.ts`. A stored command or script (`run`) runs where `decideRunSite` says for that entry: on the server, over the bridge's own
+ * SSH entry, or on this computer with its `creds://` values kept here, or not at all (parent §4.6; change 11.1, S4); `terminal` opens a window an
  * agent on a server cannot type into; `up` and `down` act on the laptop's VPN; `rotate`, delete, create, the folder
  * verbs and the config read are the person's alone (parent plan §4.2).</p>
  */
 
-/** A route the table NAMES and refuses (run, terminal, rotate, delete, create, the folder verbs, the config read): a person can do these in the window. */
+/** A route the table NAMES and refuses (terminal, rotate, delete, create, the folder verbs, the config read): a person can do these in the window. */
 export const BRIDGE_NOT_SERVED = 'A Remote Bridge does not serve this request. A person can do it in the VS Code window.';
 
 /** A path the table does not know at all: nothing exists for a person to do, so the sentence promises nothing (parent §4.2). */
@@ -43,9 +44,8 @@ const USE_PREFIXES = [USE_PREFIX, ALIAS_ROUTE_PREFIX, MCP_USE_PREFIX] as const;
 /** The CLI's verbs as route words, the vocabulary `emit-contract.mjs` writes under `routes`. */
 const USE_ACTIONS = ['exec', 'terminal', 'query', 'run', 'exportEnv', 'up', 'down'] as const;
 /** What a bridge serves of them (exported so a test can hold the consent text to it: every served action needs a run site, `bridgeConsentText.ts`). */
-export const SERVED_ACTIONS: ReadonlySet<string> = new Set(['exec', 'query']);
+export const SERVED_ACTIONS: ReadonlySet<string> = new Set(['exec', 'query', 'run']);
 const EXPORT_ACTION = 'exportEnv';
-const RUN_ACTION = 'run';
 const FOLDER_VERBS = ['create', 'edit', 'delete'] as const;
 
 const served = (method: 'GET' | 'POST', path: string, walled: boolean, why: string): BridgeRoute =>
@@ -54,17 +54,21 @@ const served = (method: 'GET' | 'POST', path: string, walled: boolean, why: stri
 const refused = (path: string, why: string, code: ErrorCode = 'not_supported', message: string = BRIDGE_NOT_SERVED): BridgeRoute =>
   Object.freeze({ method: 'POST' as const, path, decision: Object.freeze({ served: false as const, code, message, why }) });
 
-/** One use action under one prefix: `exec` and `query` are served and walled, `exportEnv` is refused in its own words. */
+/** Why each served action is served: `run`'s site is the entry's (`decideRunSite`), the others' is fixed. */
+const SERVED_WHY: Readonly<Record<string, string>> = {
+  exec: 'runs on this computer, against an entry the scope admits',
+  query: 'runs on this computer, against an entry the scope admits',
+  run: 'a stored command or script of an entry the scope admits, on the server or on this computer as decideRunSite says (parent §4.6, S4)',
+};
+
+/** One use action under one prefix: `exec`, `query` and `run` are served and walled, `exportEnv` is refused in its own words. */
 function useRoute(prefix: string, action: string): BridgeRoute {
   const path = `${prefix}${action}`;
   if (SERVED_ACTIONS.has(action)) {
-    return served('POST', path, true, 'runs on this computer, against an entry the scope admits');
+    return served('POST', path, true, SERVED_WHY[action]);
   }
   if (action === EXPORT_ACTION) {
     return refused(path, 'a value written to this window\'s terminals would land on the server', 'denied', EXPORT_REFUSED);
-  }
-  if (action === RUN_ACTION) {
-    return refused(path, "a stored line runs from the person's machine only; E3 decided (PLAN_terminal_command_over_ssh_E3_S2_security.md §8)");
   }
   return refused(path, 'not named by the parent plan; default deny decides');
 }

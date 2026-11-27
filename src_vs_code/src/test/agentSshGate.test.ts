@@ -141,19 +141,20 @@ test('the_broker_hands_run_the_used_entry_the_action_named_once_per_call_on_both
   }
 });
 
-test('the_bridge_allow_list_says_run_is_decided_and_the_other_refused_rows_do_not_name_run', () => {
-  // G13, the table half (spec §8): `run` gets a branch of its own in `useRoute`, so its three rows say E3 decided, and the default-deny
-  // line of `terminal`, `up` and `down` no longer talks about `run`. The first wall still stands on every prefix.
-  const refused = BRIDGE_ROUTES.filter((route) => !route.decision.served);
-  const rows = (word: string) => refused.filter((route) => route.path.endsWith(`/${word}`) && /^\/v1\/(use|alias|mcp\/use)\//.test(route.path));
-  assert.equal(rows('run').length, 3, 'run is named on all three prefixes');
-  for (const route of rows('run')) {
-    assert.ok(route.decision.why.includes('E3 decided'), `${route.path}: ${route.decision.why}`);
-    assert.deepEqual(bridgeRouteRefusal('POST', route.path), { code: 'not_supported', message: BRIDGE_NOT_SERVED });
+test('the_bridge_allow_list_serves_run_behind_the_wall_by_decideRunSite_and_the_refused_rows_do_not_name_run', () => {
+  // G13, the table half (spec §8), as S4 rewrote it (change 11.1): `run` is served and walled on all three prefixes, its row naming
+  // decideRunSite (where it runs is the entry's, parent §4.6), and the default-deny line of `terminal`, `up` and `down` does not talk about `run`.
+  const onPrefixes = (word: string, served: boolean) =>
+    BRIDGE_ROUTES.filter((route) => route.decision.served === served && route.path.endsWith(`/${word}`) && /^\/v1\/(use|alias|mcp\/use)\//.test(route.path));
+  assert.equal(onPrefixes('run', true).length, 3, 'run is served on all three prefixes');
+  for (const route of onPrefixes('run', true)) {
+    assert.equal((route.decision as { walled?: boolean }).walled, true, `${route.path} is walled`);
+    assert.ok(route.decision.why.includes('decideRunSite'), `${route.path}: ${route.decision.why}`);
+    assert.equal(bridgeRouteRefusal('POST', route.path), undefined);
   }
   for (const word of ['terminal', 'up', 'down']) {
-    assert.equal(rows(word).length, 3, `${word} is named on all three prefixes`);
-    for (const route of rows(word)) {
+    assert.equal(onPrefixes(word, false).length, 3, `${word} is named and refused on all three prefixes`);
+    for (const route of onPrefixes(word, false)) {
       assert.ok(!/\brun\b/.test(route.decision.why), `${route.path} must not talk about run: ${route.decision.why}`);
     }
   }
@@ -479,9 +480,13 @@ test('a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lis
     w.trust(sshNode('s1').details as EntityMetadata);
     w.storage.calls.length = 0;
 
-    // A bridged call never reaches the door's `summarize` or `uses` (`refusedOnBridge` answers before the body is read), so `run` gets the bare context.
+    // S4 (E3's decision for a Terminal entry with an SSH link): `run` passes the first wall now, and `validate` refuses a linked entry before any dialog;
+    // `run` refuses it again with the same words, should a call reach it.
+    const validated = terminalRunAction(w.deps).validate({}, { ...w.ctx, bridge: BRIDGE });
     const error = errorOf(await terminalRunAction(w.deps).run({ ...w.ctx, bridge: BRIDGE }, {}));
 
+    assert.deepEqual(validated, { ok: false, code: 'not_supported', message: BRIDGE_NOT_SERVED });
+    assert.equal(terminalRunAction(w.deps).bridgedSite?.({ ...w.ctx, bridge: BRIDGE }), undefined, 'a refused entry has no site for a dialog to say');
     assert.equal(error.code, 'not_supported');
     assert.equal(error.message, BRIDGE_NOT_SERVED);
     assert.equal(w.overSsh.calls.length, 0);
@@ -490,7 +495,7 @@ test('a_bridged_call_on_a_linked_entry_is_refused_fail_closed_with_the_allow_lis
   }
   assert.equal(new Set(answers).size, 1, 'usable, missing and closed give the same bytes');
   for (const path of ['/v1/use/run', '/v1/alias/run', '/v1/mcp/use/run']) {
-    assert.notEqual(bridgeRouteRefusal('POST', path), undefined, `the first wall stands on ${path}`);
+    assert.equal(bridgeRouteRefusal('POST', path), undefined, `${path} passes the first wall: the entry decides (S4)`);
   }
 });
 

@@ -52,6 +52,11 @@ export interface SshExecOptions {
    * threaded through every argv builder to say the same thing.
    */
   cwd?: string;
+  /**
+   * What the child reads on its standard input, written whole and then closed (end of file). Absent: the child's input is the null device,
+   * as it always was. Only a stored script run on a Remote Bridge's server says it (its body, never on a command line: parent §4.6).
+   */
+  input?: string;
 }
 
 export interface SshExecOutcome {
@@ -131,12 +136,13 @@ export function runBounded(
         env: options.env,
         cwd: options.cwd,
         windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
       return;
     }
+    feedInput(child.stdin, options.input);
 
     const out = new Bounded();
     const err = new Bounded();
@@ -202,6 +208,18 @@ export function runBounded(
       ),
     );
   });
+}
+
+/**
+ * The input, written and closed. A child that exits before it read all of it closes the pipe: that write error is the child's own ending,
+ * which its exit code reports, so it is swallowed here rather than thrown out of the host.
+ */
+function feedInput(stdin: NodeJS.WritableStream | null, input: string | undefined): void {
+  if (stdin === null || input === undefined) {
+    return;
+  }
+  stdin.on('error', () => undefined);
+  stdin.end(input);
 }
 
 /** Whether whatever this child was for has already ended — the window, or the request it serves. */

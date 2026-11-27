@@ -1,5 +1,5 @@
 import { AGENT_FORWARD_REFUSED, BRIDGE_USE_REFUSED, type BridgeWallSource } from './bridgeScope';
-import { type DbProfileRow, bridgedDbPair } from './bridgedDbProfile';
+import { type DbPlatform, type DbProfileRow, bridgedDbPair } from './bridgedDbProfile';
 import type { Refusal } from './brokerRequests';
 import { accountOnlyVault } from './mcpAccountVault';
 import { type McpVaultSource, visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
@@ -38,7 +38,7 @@ export function agentForwardRefusal(details: EntityMetadata | undefined): Refusa
  */
 export interface DbGate {
   readonly profiles: readonly DbProfileRow[];
-  readonly platform: NodeJS.Platform;
+  readonly platform: DbPlatform;
 }
 
 /** The database type of a database entry, or nothing for an entry of another kind and a database entry with no type. */

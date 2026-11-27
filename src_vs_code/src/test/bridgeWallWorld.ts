@@ -239,7 +239,7 @@ function refSourceOf(vault: McpVaultSource): BridgeWallSource['refSource'] {
 export interface WallOptions {
   /** What `e1` is called, in the vault and so in every dialog about it (default `prod`). */
   entryName?: string;
-  /** The actions the scripted entry serves (default `exec` and `query`): a local-door test of `terminal` needs the route to exist. */
+  /** The actions the scripted entry serves (default `exec` and `query`; the walk of `run` asks for it, S4): a local-door test of `terminal` needs the route to exist. */
   supports?: string[];
   /** The vault holds no node at all (Amendment 6 review, RS4): the product's own reads must read the same over it. */
   emptyVault?: true;

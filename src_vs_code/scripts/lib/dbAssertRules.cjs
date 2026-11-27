@@ -92,8 +92,34 @@ function sqlcmdRules(name, vendor) {
   return [...common, ...(vendor === 'go-sqlcmd' ? go : odbc)];
 }
 
+/**
+ * The `container` platform (change 11.1, S3; consult ae318292): the ODBC `sqlcmd` of the shipped image, run by the product's own container road (`spawnInContainer`: the env file, `--cap-drop ALL`,
+ * the user nobody). Its legs are not the host's: the image holds no Windows or Kerberos road of the laptop, so the control is that the RUNNER holds an identity (a ticket of the throwaway realm in its
+ * default cache, CI-0) and the assertion is that the query's container sees none of it (CI-1). PE1-7, PS1-1, a `DOMAIN\user` name signing in as a plain SQL login with no integrated attempt (PS1-8),
+ * PS1-9 and PS1-4 (with their controls), and two of the road's own promises: no argument of the tool or of the client holds a value of the env file (CI-argv), and no env file is left after a run
+ * (CI-envfile).
+ */
+function containerSqlcmdRules(name) {
+  return [
+    { id: 'CI-0', leg: `CI-0-control-${name}`, match: SHOWN },
+    { id: 'CI-1', leg: `CI-1-${name}`, match: /^ISOLATED:/, after: 'CI-0', noStop: true },
+    { id: 'PS1-1', leg: `PS1-1-${name}`, match: SHOWN, after: 'CI-0', noStop: true },
+    { id: 'PE1-7', leg: `PE1-7-${name}`, match: /logged in, auth_scheme SQL; a wrong password refused/, noStop: true },
+    { id: 'PS1-8', leg: `PS1-8-${name}`, match: /a SQL login for the name as written; no integrated attempt/, noStop: true },
+    { id: 'PS1-9-control', leg: `PS1-9-control-${name}`, match: /SUBSTITUTED/ },
+    { id: 'PS1-9', leg: `PS1-9-${name}`, match: /LITERAL/, after: 'PS1-9-control', noStop: true },
+    { id: 'PS1-4-control', leg: `PS1-4-control-${name}`, match: SHOWN },
+    { id: 'PS1-4', leg: `PS1-4-${name}`, match: SHOWN, after: 'PS1-4-control', noStop: true },
+    { id: 'CI-argv', leg: `CI-argv-${name}`, match: /^CLEAN:/, noStop: true },
+    { id: 'CI-envfile', leg: `CI-envfile-${name}`, match: /^REMOVED:/, noStop: true },
+  ];
+}
+
+/** A family with no container legs written: one expectation that never passes, so such a build can be neither served nor listed (fail-closed). */
+const NO_CONTAINER_LEGS = (family) => [{ id: 'container-legs', leg: `container-legs-${family}`, match: /$^/, pending: `no container legs are written for ${family}: only the ODBC sqlcmd runs in the image` }];
+
 /** The `UNMEASURED` lines that explain a leg that printed no record: a probe leg that could not start its rig prints one line for the whole group (`UNMEASURED PE1 psql: no server`). */
-const UNMEASURED_OF = [[/^PE1/, /^PE1/], [/^PP1/, /^PP1/], [/^PS1/, /^PS1/], [/^PK1-/, /^PK1-m/]];
+const UNMEASURED_OF = [[/^PE1/, /^PE1/], [/^PP1/, /^PP1/], [/^PS1/, /^PS1/], [/^PK1-/, /^PK1-m/], [/^CI-/, /^CI-/]];
 const withUnmeasured = (rules) => rules.map((rule) => ({ ...rule, u: UNMEASURED_OF.find(([id]) => id.test(rule.id))?.[1] }));
 
 /**
@@ -110,15 +136,18 @@ const RECORD_ONLY = [
 /** Why a pair keeps only its record legs, or `undefined` when its legs are assertions. */
 const recordOnlyWhy = (client, vendor, platform) => RECORD_ONLY.find((pair) => pair.client === client && pair.vendor === vendor && pair.platform === platform)?.why;
 
-/** The expectations of a family for one client of it (`name` is what the harness named it). */
-function rulesFor(family, vendor, name) {
+/** The expectations of a family for one client of it on a platform (`name` is what the harness named it). The `container` platform has its own legs, and none for a family not written for it. */
+function rulesFor(family, vendor, name, platform) {
+  if (platform === 'container') {
+    return withUnmeasured(family === 'sqlcmd' && vendor === 'odbc-sqlcmd' ? containerSqlcmdRules(name) : NO_CONTAINER_LEGS(family));
+  }
   if (family === 'psql') {
     return withUnmeasured(PSQL);
   }
   return withUnmeasured(family === 'mysql' ? mysqlRules(name, vendor) : sqlcmdRules(name, vendor));
 }
 
-/** The ids of the legs a build of this vendor must run (§S7.7: a job's list names them): what `rulesFor` holds, with no client's name in it. */
-const legsOf = (family, vendor) => rulesFor(family, vendor, vendor).map((rule) => rule.id);
+/** The ids of the legs a build of this vendor must run on its platform (§S7.7: a job's list names them): what `rulesFor` holds, with no client's name in it. */
+const legsOf = (family, vendor, platform) => rulesFor(family, vendor, vendor, platform).map((rule) => rule.id);
 
 module.exports = { rulesFor, legsOf, recordOnlyWhy, RECORD_ONLY };

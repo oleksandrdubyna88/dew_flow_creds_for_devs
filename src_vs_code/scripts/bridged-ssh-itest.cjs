@@ -1,5 +1,6 @@
 // Integration test of the bridged `ssh:exec` (E1.6, parent §4.9 and §7 *The SSH contract*, legs (a)-(k) and (n)-(q); the trust legs (f), (h), (i) are
-// in `itestBridgedTrust.cjs`, (o) in `itestBridgedSecurityKey.cjs`, (p) in `itestBridgedRefusals.cjs`, (q) in `itestBridgedClient.cjs`, the rig in `itestBridgedRig.cjs`):
+// in `itestBridgedTrust.cjs`, (o) in `itestBridgedSecurityKey.cjs`, (p) in `itestBridgedRefusals.cjs`, (q) in `itestBridgedClient.cjs`, (s4) a stored script on the
+// bridge's server, S4, in `itestBridgedScript.cjs`, the rig in `itestBridgedRig.cjs`):
 //
 //   npm run compile && node scripts/bridged-ssh-itest.cjs        (`npm run itest:bridged-ssh`)
 //
@@ -22,6 +23,7 @@ const { trustLegs } = require('./itestBridgedTrust.cjs');
 const { legO } = require('./itestBridgedSecurityKey.cjs');
 const { legP } = require('./itestBridgedRefusals.cjs');
 const { legQ } = require('./itestBridgedClient.cjs');
+const { legS4 } = require('./itestBridgedScript.cjs');
 const R = require('./itestBridgedRig.cjs');
 
 let failures = 0;
@@ -387,7 +389,7 @@ async function main() {
     check('the live legs ran', process.env.CI !== 'true', `${SSHD} is missing — a skipped live leg on the runner proves nothing`);
     console.log('skip  the legs that need sshd — sshd is not installed');
   } else {
-    for (const leg of [legs567, legB, legC, legD, legE, legJ, legK, legO, trustLegs]) {
+    for (const leg of [legs567, legB, legC, legD, legE, legJ, legK, legO, trustLegs, legS4]) {
       await leg(rig, check);
     }
   }

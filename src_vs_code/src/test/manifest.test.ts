@@ -35,6 +35,9 @@ const manifest: Manifest = JSON.parse(
  * how a feature ships invisible.
  */
 const PALETTE_ONLY = new Set([
+  // One-time machine setup on Windows (change 11.1, S3): it builds the Linux container a bridged database query's client runs in. There is no
+  // tree row for "this computer's container", and it is run once (again after an update that changes the recipe).
+  'credSshManager.prepareDbContainer',
   // Asked for, not offered. It acts on something that is not in the tree — a share already sent,
   // waiting in someone ELSE's inbox — so there is no row to hang it on, and it is a rare enough
   // act that a permanent menu entry would be noise on every share.

@@ -42,7 +42,19 @@ internal static class Windows
     /// stays the one place that knows how to find a window.
     /// </remarks>
     internal static Task<WindowRead> ReadAllAsync(BrokerContract contract, string route, CancellationToken ct = default) =>
-        ReadAllInAsync(contract, Endpoints.DirectoryHere(), route, ct);
+        BrokerClient.BridgedEndpoint() is { } bridged
+            ? ReadBridgedAsync(contract, bridged, route, ct)
+            : ReadAllInAsync(contract, Endpoints.DirectoryHere(), route, ct);
+
+    /// <summary>
+    /// A host that reaches its broker through a forwarded socket (a Remote Bridge's note, or <c>CREDS_BROKER_SOCKET</c>) has no announcement
+    /// folder: the bridge IS the one window (change 11.1, S1; cause D1 was the early return on an empty folder).
+    /// </summary>
+    private static async Task<WindowRead> ReadBridgedAsync(BrokerContract contract, Endpoint bridged, string route, CancellationToken ct)
+    {
+        using var client = BrokerClient.Create(contract);
+        return await ReadFromAsync(client, [bridged], route, ct);
+    }
 
     /// <summary>
     /// <see cref="ReadAllAsync"/> over an announcement folder the caller names — the seam a test points at a folder of its own.
@@ -101,6 +113,16 @@ internal static class Windows
     /// <summary>How many windows announced themselves, live or not — for a diagnostic.</summary>
     internal static int Announced() => Endpoints.Read(Endpoints.DirectoryHere()).Count;
 
+    /// <summary>The words for a host whose one window is its Remote Bridge, when that bridge did not answer (change 11.1, S1).</summary>
+    internal const string BridgeDidNotAnswer =
+        "This server reaches VS Code through a Remote Bridge, and the bridge did not accept the call: it was closed or reopened since this server learned of it. Ask the person to open the Remote Bridge to this server again in VS Code.";
+
+    /// <summary>
+    /// The hint of a "no window answered": on a bridged host, <see cref="BridgeDidNotAnswer"/>, because there "open VS Code" or "the id
+    /// may be stale" sends the agent to the wrong cause; elsewhere, <paramref name="usual"/>.
+    /// </summary>
+    internal static string NoWindowHint(string usual) => BrokerClient.BridgedEndpoint() is null ? usual : BridgeDidNotAnswer;
+
     /// <summary>
     /// Post an action to whichever window serves this entry.
     /// </summary>
@@ -118,7 +140,16 @@ internal static class Windows
     /// window after one would raise a second consent modal for a call already decided.</para>
     /// </remarks>
     internal static Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json, CancellationToken ct = default) =>
-        PostInAsync(contract, Endpoints.DirectoryHere(), route, json, ct);
+        BrokerClient.BridgedEndpoint() is { } bridged
+            ? PostBridgedAsync(contract, bridged, route, json, ct)
+            : PostInAsync(contract, Endpoints.DirectoryHere(), route, json, ct);
+
+    /// <summary>The post of a bridged host: the one window is the bridge (see <see cref="ReadBridgedAsync"/>).</summary>
+    private static async Task<BrokerReply?> PostBridgedAsync(BrokerContract contract, Endpoint bridged, string route, string json, CancellationToken ct)
+    {
+        using var client = BrokerClient.Create(contract);
+        return await PostToAsync(client, [bridged], route, json, ct);
+    }
 
     /// <summary><see cref="PostAsync"/> over a named announcement folder, through <see cref="Endpoints.ReadLive"/> like the read.</summary>
     internal static async Task<BrokerReply?> PostInAsync(BrokerContract contract, string? directory, string route, string json, CancellationToken ct)

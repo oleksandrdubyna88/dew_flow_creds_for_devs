@@ -6,7 +6,7 @@ import { BRIDGED_DB_PROFILES, type DbProfileRow, type DbServedClient } from '../
 import { assessFamily, judgeAll, ledgerOf, lockCheck, parseLine, report, shadowProblems } from '../../scripts/lib/dbAssert.cjs';
 import { RECORD_ONLY, rulesFor } from '../../scripts/lib/dbAssertRules.cjs';
 import { tableWith } from '../../scripts/lib/dbCandidates.cjs';
-import { HARNESS_OF, SERVED_JOBS, hasJobStep, lockProblems } from '../../scripts/lib/dbServedJobs.cjs';
+import { CONTAINER_HARNESS, HARNESS_OF, SERVED_JOBS, hasJobStep, lockProblems } from '../../scripts/lib/dbServedJobs.cjs';
 
 /**
  * The CI lock and the assertion legs of the E1.7 spec (§S7.7 "The lock in CI", §S7.12, rule R4): DP20 (the candidate rows), DP21 (the lock: every served build is in a job's list with its legs, every entry
@@ -19,14 +19,14 @@ const WORKFLOW = fs.readFileSync(path.join(__dirname, '..', '..', '..', '.github
 const PSQL_BUILD = { version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)', record: 'run 44543740467 at 0123abc' };
 const SERVED_PSQL: readonly DbProfileRow[] = [{ client: 'psql', platform: 'linux', served: true, clients: [{ vendor: 'postgresql', builds: [PSQL_BUILD] }] }];
 const ENTRY = { client: 'psql', platform: 'linux', vendor: 'postgresql', version: '18.7', tag: '(Ubuntu 18.7-1.pgdg26.04+2)' };
-const legsOf = (client: string, vendor: string): string[] => rulesFor(client, vendor, vendor).map((rule: { id: string }) => rule.id);
+const legsOf = (client: string, vendor: string, platform?: string): string[] => rulesFor(client, vendor, vendor, platform).map((rule: { id: string }) => rule.id);
 const STEP = (job: string, harness: string): string => `\n      - name: Assert the legs\n        env:\n          BRIDGED_DB_JOB: ${job}\n        run: node scripts/${harness}\n`;
 
 test('DP21: the production table, the jobs\' list and the workflow agree: every served build stands in a job of the workflow with every leg of its vendor, and every entry of the list is a served build', () => {
-  assert.deepEqual(BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => `${row.client}/${row.platform}`), ['sqlcmd/linux'], 'the turned rows');
+  assert.deepEqual(BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => `${row.client}/${row.platform}`), ['sqlcmd/linux', 'sqlcmd/container'], 'the turned rows');
   assert.deepEqual(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: WORKFLOW, legsOf }), []);
-  assert.deepEqual(Object.keys(SERVED_JOBS).sort(), ['bridged-ps1-linux-ubuntu-22.04', 'bridged-ps1-linux-ubuntu-24.04', 'bridged-ps1-linux-ubuntu-latest'], 'each Linux PS1 image\'s job finds its build');
-  for (const harness of Object.values(HARNESS_OF) as string[]) {
+  assert.deepEqual(Object.keys(SERVED_JOBS).sort(), ['bridged-db-container', 'bridged-ps1-linux-ubuntu-22.04', 'bridged-ps1-linux-ubuntu-24.04', 'bridged-ps1-linux-ubuntu-latest'], 'each Linux PS1 image\'s job finds its build, and the container job the image\'s');
+  for (const harness of [...Object.values(HARNESS_OF), CONTAINER_HARNESS] as string[]) {
     assert.equal(fs.existsSync(path.join(__dirname, '..', '..', 'scripts', harness)), true, `${harness} is a file of scripts/`);
   }
 });
@@ -259,4 +259,62 @@ test('T88 (DP21): the lock reads the driver of the ODBC client: the served versi
   assert.equal(hasJobStep(without2204, 'bridged-ps1-linux-ubuntu-22.04', HARNESS_OF.sqlcmd), false, 'an image dropped from the matrix is no job');
   assert.match(lockProblems({ rows: BRIDGED_DB_PROFILES, jobs: SERVED_JOBS, workflow: without2204, legsOf }).join('\n'), /job bridged-ps1-linux-ubuntu-22\.04 is no step of the workflow/);
   assert.equal(hasJobStep(WORKFLOW, 'bridged-ps1-linux-windows-latest', HARNESS_OF.sqlcmd), false, 'an image of another job\'s matrix is no name of this one');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The `container` platform (change 11.1, S3 part 2; consult ae318292): its own legs, its own harness, fail-closed
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const CONTAINER_BUILD = { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 1 at 0123abc' };
+const SERVED_CONTAINER: readonly DbProfileRow[] = [{ client: 'sqlcmd', platform: 'container', served: true, clients: [{ vendor: 'odbc-sqlcmd', builds: [CONTAINER_BUILD] }] }];
+const CONTAINER_ENTRY = { client: 'sqlcmd', platform: 'container', vendor: 'odbc-sqlcmd', version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1' };
+const CONTAINER_NAME = 'container-odbc-sqlcmd';
+
+test('T89: the container row has legs of its own (the runner\'s identity unseen, the road\'s argv and env file), never the host\'s; a family with no container legs can never pass there', () => {
+  const legs = legsOf('sqlcmd', 'odbc-sqlcmd', 'container');
+  assert.deepEqual(legs, ['CI-0', 'CI-1', 'PS1-1', 'PE1-7', 'PS1-8', 'PS1-9-control', 'PS1-9', 'PS1-4-control', 'PS1-4', 'CI-argv', 'CI-envfile']);
+  assert.notDeepEqual(legs, legsOf('sqlcmd', 'odbc-sqlcmd', 'linux'), 'not the Linux legs');
+  assert.deepEqual(legsOf('sqlcmd', 'odbc-sqlcmd'), legsOf('sqlcmd', 'odbc-sqlcmd', 'linux'), 'a host platform keeps the legs it had');
+  for (const [family, vendor] of [['psql', 'postgresql'], ['mysql', 'oracle'], ['sqlcmd', 'go-sqlcmd']]) {
+    const [rule] = judgeAll(rulesFor(family, vendor, vendor, 'container'), []);
+    assert.equal(rule.status, 'not shown', `${family} ${vendor} in a container is never shown`);
+  }
+});
+
+test('T90 (DP21): a served container build must be listed with the container legs, by a job whose step runs the container harness; the host legs or the host sqlcmd harness are not enough', () => {
+  const legs = legsOf('sqlcmd', 'odbc-sqlcmd', 'container');
+  const listed = { ...CONTAINER_ENTRY, legs };
+  const workflow = `${WORKFLOW}${STEP('db-container', CONTAINER_HARNESS)}`;
+  const problems = (over: { jobs?: Record<string, unknown[]>; workflow?: string }): string[] =>
+    lockProblems({ rows: SERVED_CONTAINER, jobs: over.jobs ?? { 'db-container': [listed] }, workflow: over.workflow ?? workflow, legsOf });
+  assert.deepEqual(problems({}), [], 'control: all of it agrees');
+  assert.match(problems({ jobs: { 'db-container': [{ ...listed, legs: legsOf('sqlcmd', 'odbc-sqlcmd', 'linux') }] } }).join('\n'), /the list lacks the leg CI-1/, 'the host legs');
+  assert.match(problems({ workflow: `${WORKFLOW}${STEP('db-container', HARNESS_OF.sqlcmd)}` }).join('\n'), /runs scripts\/bridged-container-sqlcmd-itest\.cjs/, 'the host sqlcmd harness');
+  assert.match(problems({ jobs: {} }).join('\n'), /stands in no job's list/, 'no job at all');
+});
+
+/** The lines of a container run whose legs all held, under `mode`. */
+const containerLines = (mode: string, over: Record<string, string> = {}): string[] => [
+  `${mode} sqlcmd odbc-sqlcmd 18.7.0001.1 "Linux" container driver 18.7.1.1  (${CONTAINER_NAME}: creds-db-sqlcmd:0123)`,
+  ...Object.entries({
+    'CI-0-control': 'positive control: a ticket', 'CI-1': 'ISOLATED: uid 65534', 'PS1-1': 'the launch as built', 'PE1-7': "logged in, auth_scheme SQL; a wrong password refused: the entry's user",
+    'PS1-8': 'a SQL login for the name as written; no integrated attempt: user', 'PS1-9-control': 'without -x, by hand: SUBSTITUTED', 'PS1-9': 'as launched (-x): LITERAL',
+    'PS1-4-control': 'positive control, -D', 'PS1-4': 'the launch as built', 'CI-argv': 'CLEAN: no argument', 'CI-envfile': 'REMOVED: while the tool ran', ...over,
+  }).map(([leg, text]) => `record (${leg}-${CONTAINER_NAME}): ${text}`),
+];
+
+test('T91: the container ledger is judged by the container legs on the container platform: all held passes; a container that saw the runner FAILS; the lock of a job reads the container row, not process.platform', () => {
+  const held = assessFamily('sqlcmd', ledgerOf(containerLines('PRODUCTION')));
+  assert.equal(held.clients[0].platform, 'container');
+  assert.deepEqual(held.clients[0].failed, [], 'every container leg passed');
+  const seen = assessFamily('sqlcmd', ledgerOf([...containerLines('PRODUCTION', { 'CI-1': 'NOT ISOLATED: names ["GITHUB_TOKEN"]' }), `STOP (CI-1-${CONTAINER_NAME}): the query's container saw a name`]));
+  assert.deepEqual(seen.clients[0].failed.map((one: { id: string }) => one.id), ['CI-1']);
+  const lockOf = (platform: string, lines: string[]): string[] => {
+    const ledger = ledgerOf(lines);
+    return lockCheck({ family: 'sqlcmd', platform, job: 'db-container', ci: true, rows: SERVED_CONTAINER, jobs: { 'db-container': [{ ...CONTAINER_ENTRY, legs: legsOf('sqlcmd', 'odbc-sqlcmd', 'container') }] }, assessed: assessFamily('sqlcmd', ledger), ledger });
+  };
+  assert.deepEqual(lockOf('container', containerLines('PRODUCTION')), [], 'the container run satisfies the container lock');
+  assert.match(lockOf('container', containerLines('PRODUCTION', { 'CI-envfile': 'NOT REMOVED' })).join('\n'), /MISSING .*the leg CI-envfile FAIL/, 'a leg that failed');
+  assert.match(lockOf('container', containerLines('CANDIDATE')).join('\n'), /MISSING .*under the production table/, 'a candidate run is not the served build');
+  assert.deepEqual(lockOf('linux', containerLines('PRODUCTION')), [], 'the Linux lock expects no container build');
 });

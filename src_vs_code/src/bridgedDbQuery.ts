@@ -9,6 +9,7 @@ import { materializedKeyPath } from './materializedKeys';
 import { fieldReadingOf } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
 import { runBounded } from './sshExecRunner';
+import { type ContainerDeps, containerCheck, spawnInContainer } from './containerDbQuery';
 import type { AgentUseDeps } from './agentUseActions';
 import type { DbType, EntityMetadata } from './types';
 import { UseActionContext, UseActionResult, launchGuards } from './useActions';
@@ -28,6 +29,8 @@ export type BridgedDbQueryDeps = Pick<AgentUseDeps, 'storage' | 'storageDir' | '
   readonly onPath: (exe: string) => boolean;
   readonly profiles?: readonly DbProfileRow[];
   readonly dbClient?: DbClientCheck;
+  /** The window's container (S3): present on Windows, where a bridged client runs in a Linux container and never on the host. */
+  readonly container?: ContainerDeps;
 };
 
 const fail = (code: ErrorCode, message: string): UseActionResult => ({ status: statusForErrorCode(code), body: errorBody(code, message) });
@@ -54,8 +57,8 @@ export async function storedConnectionOf(deps: Pick<AgentUseDeps, 'storage'>, ct
 }
 
 /** Step 2 (§S6.15 Z1, Q18): the pair of this entry's client and this system must be served. Asked before the stored connection is read, so a refused pair touches nothing of the entry. */
-function gateRefusal(deps: Pick<AgentUseDeps, 'note'> & { profiles?: readonly DbProfileRow[] }, ctx: UseActionContext, dbType: DbType): UseActionResult | undefined {
-  const pair = bridgedDbPair(deps.profiles ?? BRIDGED_DB_PROFILES, dbType, process.platform);
+function gateRefusal(deps: Pick<AgentUseDeps, 'note'> & { profiles?: readonly DbProfileRow[]; container?: ContainerDeps }, ctx: UseActionContext, dbType: DbType): UseActionResult | undefined {
+  const pair = bridgedDbPair(deps.profiles ?? BRIDGED_DB_PROFILES, dbType, deps.container === undefined ? process.platform : 'container');
   return pair.served ? undefined : refused(deps, ctx, pair.sentence);
 }
 
@@ -114,9 +117,28 @@ async function launched(deps: BridgedDbQueryDeps, ctx: UseActionContext, dbType:
   return launch === undefined ? refused(deps, ctx, DR9, 'internal') : spawned(deps, ctx, launch);
 }
 
-/** Steps 6 to 8: the client is on `PATH`, then the check and the build. */
+/** Steps 6 to 8: the client is on `PATH`, then the check and the build; with a container (S3), the image is checked and the client runs there. */
 async function afterInput(deps: BridgedDbQueryDeps, ctx: UseActionContext, dbType: DbType, stored: string, query: string): Promise<UseActionResult> {
+  if (deps.container !== undefined) {
+    return inContainer({ ...deps, container: deps.container }, ctx, dbType, stored, query);
+  }
   return notOnPath(deps, dbType) ?? (await launched(deps, ctx, dbType, stored, query));
+}
+
+/** The container road (S3): the image's client is asked, the launch is built for its path in the image, and the run goes through the env file. */
+async function inContainer(deps: BridgedDbQueryDeps & { container: ContainerDeps }, ctx: UseActionContext, dbType: DbType, stored: string, query: string): Promise<UseActionResult> {
+  const verdict = await imageVerdict(deps, ctx, dbType);
+  if (verdict?.ok === false) {
+    return refused(deps, ctx, verdict.sentence);
+  }
+  const launch = buildDbQueryLaunch(dbType, stored, query, { bridged: true, absentFile: materializedKeyPath(deps.storageDir, 'no-client-file'), verdict: goodVerdict(verdict) });
+  return launch === undefined ? refused(deps, ctx, DR9, 'internal') : spawnInContainer(deps, ctx, launch);
+}
+
+/** The image's verdict on this type's client, or `undefined` for a type with no profile client (the builder then answers no launch: DR9). */
+async function imageVerdict(deps: BridgedDbQueryDeps & { container: ContainerDeps }, ctx: UseActionContext, dbType: DbType): Promise<DbClientVerdict | undefined> {
+  const client = profileClientOf(dbType);
+  return client === undefined ? undefined : containerCheck(deps, ctx, client);
 }
 
 /** The bridged call, from the gate on (the entry and its type are the caller's). */

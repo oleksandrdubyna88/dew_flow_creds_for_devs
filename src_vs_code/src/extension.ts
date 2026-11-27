@@ -81,14 +81,11 @@ import { describeScan, scanForSecrets } from './secretScan';
 import { bridgeSpawner, describeBridgeError } from './bridgeSpawner';
 import * as fs from 'node:fs';
 import { applyEnvBindings } from './envApply';
-import { entityFieldReading } from './entityFieldReading';
 import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
-import { RefSource } from './secretRef';
 export { maskingBanner } from './outputMask';
 import { wireSshAgent } from './sshAgentWiring';
 import { autoLockMinutesSetting } from './autoLockSetting';
-import { folderPath } from './quickOpen';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
 import {
@@ -109,6 +106,10 @@ import { onPath } from './installFlow';
 import { setEnvCollection } from './envCollectionRef';
 import { DoorsFor } from './entityEditCommands';
 import { envCollection } from './envCollectionRef';
+import { bridgeScopesOf, bridgeSessionsOf, bridgeWallOf, dbContainerAtActivation } from './bridgeWiring';
+import { registerDbContainerCommand } from './commands/dbContainerCommand';
+import { BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED } from './bridgeFlowSwitch';
+import { vaultRefSource } from './vaultRefSource';
 
 /** Set in activate(); the module-level slot keeps editNode's signature unchanged. */
 
@@ -195,12 +196,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       provider.refresh();
     },
   );
-  // Answered per row, never cached: the map is the truth and it changes underneath the tree.
-  provider.isBridged = (accountId, nodeId) => bridges.isOpen(entityKey(accountId, nodeId));
+  // S2: a session keeps each bridge (reconnect, Lock, Close); `vaultKeys` is read only when a session asks, long after it exists.
+  const bridgeSessions = bridgeSessionsOf(storageDir, () => !vaultKeys.isLocked(), (key, state) => {
+    log.info('bridge', `${key} ${state}`);
+    provider.refresh();
+  });
+  // Answered per row, never cached: a bridge that is reconnecting or waiting for the unlock is still this window's.
+  // A session's bridge (the new flow) or the old road's (the switch of §4.5 off): either is this window's.
+  provider.isBridged = (accountId, nodeId) => bridgeSessions.has(entityKey(accountId, nodeId)) || bridges.isOpen(entityKey(accountId, nodeId));
   // T24b: the doors the MCP switches do not show, read here where the sources live.
   const doorSources: DoorSources = {
     aliasesFor: cliAliasesFor,
-    bridgeOpen: (accountId, id) => bridges.isOpen(entityKey(accountId, id)),
+    bridgeOpen: (accountId, id) => bridgeSessions.has(entityKey(accountId, id)) || bridges.isOpen(entityKey(accountId, id)),
     wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
     isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
   };
@@ -209,7 +216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
   provider.hasCliAlias = (accountId, nodeId) =>
     aliasFor(aliasMap(), accountId, nodeId) !== undefined;
-  context.subscriptions.push({ dispose: () => bridges.dispose() });
+  context.subscriptions.push({ dispose: () => bridges.dispose() }, { dispose: () => bridgeSessions.dispose() });
 
   // Never let decrypted SSH key material outlive a session: clear any that a
   // crash left behind, and clear again on shutdown (see deactivate()).
@@ -267,6 +274,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Unlock coordinator (PIN / security keys / cached master keys).
   const vaultKeys = new VaultKeys(context.secrets);
   context.subscriptions.push(vaultKeys); // disposes the lock event with the extension
+  context.subscriptions.push(vaultKeys.onDidLock(() => bridgeSessions.lockAll()), vaultKeys.onDidUnlock(() => bridgeSessions.unlockAll()));
 
   // Transport per account (NAS folder or vault server) + sharing on top.
   const transports = new TransportFactory(storage, googleAuth);
@@ -500,6 +508,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // a credential (run a command, open the terminal) without ever receiving it.
   // Constructed cheaply here; it opens no socket until the first share.
   const useActions = new UseActionRegistry();
+  // What the reference resolver reads, and a Remote Bridge's wall over this machine's scope store (change 11.1, S1).
+  const refSource = vaultRefSource(storage);
+  const bridgeWall = bridgeWallOf(storage, bridgeScopesOf(storageDir), refSource);
   // Named rather than positional, and every one of them answered on the vault's side of the wall:
   // this class holds grants, not stored records, so it should no more read `burnPolicy` than it
   // reads a password. `brokerHooks.ts` carries the record of what the positional list cost.
@@ -549,6 +560,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The config read route. A key rather than a grant, no consent modal, and every attempt
     // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRoute: configRouteSources(storage),
+    bridgeWall,
   });
   // The SSH agent (`sshAgentWiring.ts`). Its address is published in the endpoint file so a relay inside WSL
   // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
@@ -626,13 +638,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     applyEnv: (details: EntityMetadata, accountId: string) =>
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
+    bridgeRefs: { refSource, wall: bridgeWall }, // a bridged run on this computer reads its creds:// values through the bridge's scope (S4)
     // The human Start button's own function, plus the request's start gate (E4.S3).
     open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState, log, mutated),
   };
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
   useActions.register(credentialExportEnvAction({ ...agentDeps, remoteName: vscode.env.remoteName }));
-  useActions.register(dbQueryAction(agentDeps));
+  // S3: on Windows a bridged database client runs in a Linux container; the env files a killed run left go first.
+  const dbContainer = dbContainerAtActivation(process.platform, process.env, context.extensionPath, storageDir);
+  useActions.register(dbQueryAction({ ...agentDeps, container: dbContainer }));
   useActions.register(vpnAction(agentDeps, 'up'));
   useActions.register(vpnAction(agentDeps, 'down'));
 
@@ -650,7 +665,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store: (ctx, slot, value, was) => storeRotated(storage, ctx, slot, value, was),
     onRotated: () => mutated(),
   };
-  useActions.register(rotateAction(dbQueryAction(agentDeps), 'query', rotateDeps));
+  useActions.register(rotateAction(dbQueryAction({ ...agentDeps, container: dbContainer }), 'query', rotateDeps));
   useActions.register(rotateAction(sshExecAction(sshDeps), 'command', rotateDeps));
   context.subscriptions.push(agentServer);
 
@@ -811,25 +826,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await openRevisionViewer(element.accountId, element.node, element.revision, storage);
   });
 
-  /**
-   * Everything the reference resolver needs, built over this window's storage. Entities carry
-   * their folder path so an ambiguous name can be disambiguated by writing `Folder/Name`.
-   */
-  const refSource: RefSource = {
-    accounts: () => storage.getAccounts().map((a) => ({ accountId: a.accountId, email: a.email })),
-    entities: (accountId) => {
-      const nodes = storage.getNodes(accountId);
-      const byId = new Map(nodes.map((n) => [n.id, n]));
-      // `folderPath` is the quick-open walk, reused: two implementations of "where does this
-      // node sit" would disagree the first time a malformed parent chain arrived by sync.
-      return nodes
-        .filter((n) => n.type === 'entity')
-        .map((n) => ({ id: n.id, name: n.name, path: [...folderPath(n, byId), n.name] }));
-    },
-    // Three answers rather than two — a withheld field carries the reason it was withheld, so a
-    // reference to a woven password reports THAT instead of inventing an absence.
-    fieldReading: (accountId, entityId, field) => entityFieldReading(storage, accountId, entityId, field),
-  };
 
   registerRunCommands({ context, log, onMutated: mutated, refSource, register, storage, storageDir, vaultKeys, sshRoad: sshRoadOf(sshDeps) });
 
@@ -901,7 +897,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
-  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
+  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridgeScopes: bridgeWall.scopes, listBridgeable: (accountId) => bridgeWall.listEntriesOf(accountId), bridges, bridgeSessions, log, mutated, offerInstall, onDidUnlock: (listener) => void context.subscriptions.push(vaultKeys.onDidUnlock(listener)), provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
+  registerDbContainerCommand(register, dbContainer, context.extensionPath, (message) => log.info('db-container', message));
+  // §4.5: the database container serves bridged queries only, so its Prepare command shows in the palette only where the new flow is on.
+  void vscode.commands.executeCommand('setContext', BRIDGE_FLOW_CONTEXT, BRIDGE_FLOW_ENABLED);
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

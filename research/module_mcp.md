@@ -119,6 +119,13 @@ flowchart TB
   [module_service_defaults.md](module_service_defaults.md): start, client name, method names at Debug, why it
   stopped, the exit line once. Never argv values, environment values, the caller record, bodies or tool data.
 - **stdout is the protocol.** Nothing but the transport writes to it while serving; the console sink is stderr.
+- **A Remote Bridge's note (change 11.1, S1; `src_broker_client/src/BridgeNote.cs`).** On a server, `creds-mcp` (and `creds`) use,
+  in this order: the socket that `CREDS_BROKER_SOCKET` names (the released road's pasted setup block), then the newest usable note in
+  `~/.creds-for-devs/bridge/`, then the local windows' announcements. A note is used only when its folder is 0700 and the note 0600,
+  its port is in range, its key is 1 to 256 base64url characters, and a connect to its socket succeeds within 2 s; any other note is
+  passed over. Every call through a note says the listener's port in `Host` and its key in `X-Creds-Bridge`. A running `creds-mcp`
+  reads the note again on its next call, so a reconnect's new socket is found with no restart. While the extension's new bridge flow is
+  off (`bridgeFlowSwitch.ts`), no note is written and nothing here changes.
 
 ## External dependencies
 

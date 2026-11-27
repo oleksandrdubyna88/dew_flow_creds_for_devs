@@ -277,8 +277,9 @@ test('RF4: replaceHost gives the next read a NEW snapshot whose host cannot form
   assert.equal(w.runs.length, 0, 'the stand-in runner saw no run: nothing was sent');
 });
 
-test('RF5: every thing said has a time that does not go back, and a bridge click mints its token before the refusal is shown', async () => {
-  const { w } = pinnedWorld('rf5', { hostKey: 'not a host key' });
+/** RF5's click on a pinned entry whose saved key is no key: what was said, in order, and where the refusal stands in it. */
+async function refusedClick(what: string, bridgeFlow: boolean): Promise<{ w: World; said: { kind: string; text: string; at: number }[]; refusal: number }> {
+  const { w } = pinnedWorld(what, { hostKey: 'not a host key', bridgeFlow });
   await click(w, 'openRemoteBridge');
   await settled();
   const said = (w as unknown as { said: { kind: string; text: string; at: number }[] }).said;
@@ -287,10 +288,27 @@ test('RF5: every thing said has a time that does not go back, and a bridge click
   assert.ok(said.every((one, at) => at === 0 || one.at >= said[at - 1].at), 'the times do not go back');
   const refusal = said.findIndex((one) => one.kind === 'error' && one.text.startsWith('Cannot bridge to "box": '));
   assert.ok(refusal >= 0, `the refusal was shown: ${JSON.stringify(said)}`);
+  return { w, said, refusal };
+}
+
+test('RF5: every thing said has a time that does not go back, and the road that ships (the switch of §4.5 off) mints its token before the refusal is shown', async () => {
+  const { w, said, refusal } = await refusedClick('rf5', false);
   const { shares } = added(w);
   assert.equal(shares.length, 1, 'one token was minted');
   assert.ok(shares[0].saidBefore <= refusal, 'it was minted before the refusal was shown');
   assert.ok(shares[0].at <= said[refusal].at);
+  assert.equal(w.listeners.length, 0, 'no listener of its own');
+});
+
+test('RF5b: with the new flow on, the click opens its own listener before the refusal is shown, and the refusal closes it', async () => {
+  const { w, said, refusal } = await refusedClick('rf5b', true);
+  // Change 11.1, S1: the click mints no shared token; it opens a listener of its own (a port and a key of its own), and a refusal closes it.
+  assert.equal(added(w).shares.length, 0, 'no shared token was minted');
+  const { listeners } = w;
+  assert.equal(listeners.length, 1, 'one listener was opened');
+  assert.ok(listeners[0].saidBefore <= refusal, 'it was opened before the refusal was shown');
+  assert.ok(listeners[0].at <= said[refusal].at);
+  assert.equal(listeners[0].closed, true, 'the refusal closed it');
 });
 
 /** The scan of the entry's host, as `ssh-keyscan -p 2222 127.0.0.1` prints it. */

@@ -241,6 +241,65 @@ export function buildBridgeArgv(
   ];
 }
 
+/** Where a bridge's note lives on the server, under the login's home (parent plan §4.3): the folder is 0700, the note 0600. */
+export const REMOTE_NOTE_DIR = '$HOME/.creds-for-devs/bridge';
+
+/** A bridge id is a UUID: the only value the note command puts into a remote command line, so it is checked before it is used. */
+const SAFE_BRIDGE_ID = /^[0-9a-f-]{8,64}$/;
+
+/** A socket path that may stand in a remote command between single quotes: rooted, and only letters, digits and `._/-`. */
+const SAFE_SOCKET_PATH = /^\/[A-Za-z0-9._/-]{1,200}$/;
+
+/** What the note command prints when the forwarded socket is not this login's own; `writeBridgeNote` passes it on as the reason. */
+export const SOCKET_NOT_OWN = 'creds: the forwarded socket is not owner-only (owner or mode), so no note was written';
+
+/**
+ * The remote command that writes a bridge's note (change 11.1, S1 and S2): the note arrives on STDIN, never on a command line, because a
+ * remote process list shows command lines to every login there. First the forwarded socket is checked (S2, on every connection, a
+ * reconnect and a restore too): it must be a socket owned by this login with mode 600, or nothing is written and the command fails (a
+ * note that named a socket other logins can open would hand them the bridge). Then the note is written to a hidden temporary file and
+ * renamed into place, so a reader sees the old note or the new one, never half of one; the folder and the file are owner-only
+ * (`umask 077`, `chmod 700`). Every other note in the folder is removed first: the pilot has one bridge per server, and a stale note would
+ * point a client at a socket that is gone. Only a bridge id and a checked path enter the command.
+ */
+export function noteWriteCommand(id: string, socket: string): string | undefined {
+  if (!SAFE_BRIDGE_ID.test(id) || !SAFE_SOCKET_PATH.test(socket)) {
+    return undefined;
+  }
+  return [
+    'umask 077',
+    `s='${socket}'`,
+    `{ { [ -S "$s" ] && [ "$(stat -c '%u %a' "$s")" = "$(id -u) 600" ]; } || { echo '${SOCKET_NOT_OWN}' >&2; exit 3; }; }`,
+    `d="${REMOTE_NOTE_DIR}"`,
+    'mkdir -p "$d"',
+    'chmod 700 "$HOME/.creds-for-devs" "$d"',
+    `find "$d" -maxdepth 1 -type f -name '*.json' ! -name '${id}.json' -delete`,
+    `cat > "$d/.${id}.tmp"`,
+    `mv -f "$d/.${id}.tmp" "$d/${id}.json"`,
+  ].join(' && ');
+}
+
+/**
+ * The one-shot `ssh` that writes the note: the bridge's own authentication and host-key words, no forward, and the note command after `--`
+ * and the target. `undefined` for an entity the bridge itself would refuse, or an id that is not a bridge id.
+ */
+export function buildNoteArgv(entity: EntityMetadata, options: BridgeOptions, isSafeTarget: (entity: EntityMetadata) => boolean, id: string): string[] | undefined {
+  const command = noteWriteCommand(id, options.remote.path);
+  if (command === undefined || !isReachable(entity, options, isSafeTarget)) {
+    return undefined;
+  }
+  return [
+    ...authArgv(options.auth ?? 'key'),
+    ...FIXED_OPTIONS,
+    ...hostKeyWords(options.knownHostsFile),
+    ...keyArgv(options.keyPath),
+    ...portArgv(entity.port),
+    '--',
+    targetOf(entity),
+    command,
+  ];
+}
+
 /**
  * What to tell the person to run on the remote side.
  *

@@ -278,9 +278,9 @@ internal static class UseTools
         {
             return Failure(
                 "No CredsForDevs window answered for that entry.",
-                Windows.Announced() == 0
+                Windows.NoWindowHint(Windows.Announced() == 0
                     ? "Open the folder in VS Code with the CredsForDevs extension and unlock the vault."
-                    : "The entry id may be stale — call creds_list again. Ids do not survive the entry being deleted and re-created.");
+                    : "The entry id may be stale — call creds_list again. Ids do not survive the entry being deleted and re-created."));
         }
         return reply.Status == 200 ? reply.Body : Refused(reply);
     }
@@ -337,7 +337,7 @@ internal static class UseTools
         {
             return Failure(
                 "No CredsForDevs window answered.",
-                "Open the folder in VS Code with the CredsForDevs extension and unlock the vault.");
+                Windows.NoWindowHint("Open the folder in VS Code with the CredsForDevs extension and unlock the vault."));
         }
         return reply.Status == 200 ? reply.Body : Refused(reply);
     }

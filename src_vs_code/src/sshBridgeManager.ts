@@ -104,6 +104,17 @@ export class SshBridgeManager {
     return true;
   }
 
+  /**
+   * Stop THIS bridge (change 11.1, S2): a session's reconnect starts a new one under the same key, and ending an older connection must
+   * not end the newer. The process is killed either way; the map forgets it only if it is still the one held.
+   */
+  stopBridge(bridge: OpenBridge): void {
+    if (this.open.get(bridge.key) === bridge) {
+      this.open.delete(bridge.key);
+    }
+    bridge.process.kill();
+  }
+
   /** Every bridge goes with the window. */
   dispose(): void {
     this.disposed = true;

@@ -24,13 +24,13 @@ const LOG_LINE = /login failed|login succeeded|connection made using|sspi|ntlm|k
  * checks the certificate's IP address, but the ODBC driver compares the host WORD with the subject and the DNS names, so the subject is `127.0.0.1` and `127.0.0.1` is also a DNS name of the
  * certificate (the first run: "certificate verify failed: subject name does not match host name" before any sign-in). This is the rig's certificate for the rig's address and no option of a client.
  */
-function makeCertificates(folder) {
+function makeCertificates(folder, extra) {
   fs.mkdirSync(folder, { recursive: true });
   const run = (...args) => rigRun('openssl', args);
   const file = (name) => path.join(folder, name);
   run('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', '/CN=bridge-test-ca', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign', '-keyout', file('ca.key'), '-out', file('ca.crt'));
   run('req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=127.0.0.1', '-keyout', file('server.key'), '-out', file('server.csr'));
-  fs.writeFileSync(file('server.ext'), 'subjectAltName=IP:127.0.0.1,DNS:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n');
+  fs.writeFileSync(file('server.ext'), `subjectAltName=IP:127.0.0.1,DNS:127.0.0.1,DNS:localhost${extra === undefined ? '' : `,IP:${extra},DNS:${extra}`}\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n`);
   run('x509', '-req', '-in', file('server.csr'), '-CA', file('ca.crt'), '-CAkey', file('ca.key'), '-CAcreateserial', '-days', '2', '-out', file('server.crt'), '-extfile', file('server.ext'));
   for (const name of ['server.key', 'server.crt', 'ca.crt']) {
     fs.chmodSync(file(name), 0o644); // NOSONAR: a throwaway certificate, read by the container's own user
@@ -63,7 +63,7 @@ function admin(handle, sql) {
 const linesOf = (text) => text.split(/\r?\n/).filter((line) => LOG_LINE.test(line)).map((line) => line.replace(/^\S+\s+\S+\s+(?:spid\S+\s+)?/i, '').trim().slice(0, 170));
 
 /** Linux: the container, its certificates, the administrator's client (go-sqlcmd with the SA word in its environment). */
-async function startLinux(scope, dir, goSqlcmd) {
+async function startLinux(scope, dir, goSqlcmd, also) {
   const image = process.env.BRIDGED_MSSQL_IMAGE;
   check('rig Q: BRIDGED_MSSQL_IMAGE names the SQL Server image (the workflow pins it by tag and digest)', image !== undefined && image !== '', 'the workflow step sets BRIDGED_MSSQL_IMAGE');
   if (image === undefined || image === '') {
@@ -71,7 +71,7 @@ async function startLinux(scope, dir, goSqlcmd) {
   }
   fs.mkdirSync(dir, { recursive: true }); // the rig folder q is this function's to make, as rig K's is (pkKrbRig.cjs)
   fs.chmodSync(dir, 0o755); // NOSONAR: the container's own user reads the certificate and the configuration through the folder
-  const certs = makeCertificates(path.join(dir, 'certs'));
+  const certs = makeCertificates(path.join(dir, 'certs'), also);
   fs.chmodSync(path.join(dir, 'certs'), 0o755); // NOSONAR: the container's own user reads through the folder
   trustCa(scope, certs.ca);
   const conf = path.join(dir, 'mssql.conf');
@@ -82,10 +82,10 @@ async function startLinux(scope, dir, goSqlcmd) {
   const saWord = `Aa1!${throwawayWord()}`;
   const ownerLabel = `testsToDelete.owner=${owned.formatOwner(owned.thisOwner())}`;
   scope.after(() => spawnSync('docker', ['rm', '-f', '-v', name], { stdio: 'pipe', timeout: 60_000 })); // NOSONAR: the CI runner's own docker; by exact name, on every path
-  rigRun('docker', ['run', '--rm', '-d', '--name', name, '--label', ownerLabel, '-e', 'ACCEPT_EULA=Y', '-e', `MSSQL_SA_PASSWORD=${saWord}`, '-p', `127.0.0.1:${port}:1433`,
+  rigRun('docker', ['run', '--rm', '-d', '--name', name, '--label', ownerLabel, '-e', 'ACCEPT_EULA=Y', '-e', `MSSQL_SA_PASSWORD=${saWord}`, '-p', `127.0.0.1:${port}:1433`, ...(also === undefined ? [] : ['-p', `${also}:${port}:1433`]),
     '-v', `${path.join(dir, 'certs')}:/certs:ro`, '-v', `${conf}:/var/opt/mssql/mssql.conf`, image]);
   const handle = {
-    ok: true, host: '127.0.0.1', port, kind: 'container', name, adminClient: goSqlcmd, adminEnv: { PATH: process.env.PATH, HOME: dir, SQLCMDUSER: 'sa', SQLCMDPASSWORD: saWord },
+    ok: true, host: also ?? '127.0.0.1', port, kind: 'container', name, ca: certs.ca, adminClient: goSqlcmd, adminEnv: { PATH: process.env.PATH, HOME: dir, SQLCMDUSER: 'sa', SQLCMDPASSWORD: saWord },
     adminArgs: (sql) => ['-S', `127.0.0.1,${port}`, '-Q', sql, '-b'],
     log: () => {
       const answer = spawnSync('docker', ['logs', name], { encoding: 'utf8', timeout: 30_000 }); // NOSONAR: the CI runner's own docker
@@ -120,10 +120,11 @@ function startWindows(adminClient) {
 }
 
 /**
- * Starts the receiver and makes the one SQL login the legs use. `adminClient` is the client the rig asks its own questions with. `{ ok: true, ... }` with the handle below, or `{ ok: false, why }`.
+ * Starts the receiver and makes the one SQL login the legs use. `adminClient` is the client the rig asks its own questions with. `also` (Linux) is a second address the server is published on and
+ * named by in its certificate, and the one the legs' launches go to (the container harness: the docker bridge's gateway, which a container on the default network reaches). `{ ok: true, ... }` with the handle below, or `{ ok: false, why }`.
  */
-async function startSqlServer(scope, dir, adminClient) {
-  const handle = process.platform === 'win32' ? startWindows(adminClient) : await startLinux(scope, dir, adminClient);
+async function startSqlServer(scope, dir, adminClient, { also } = {}) {
+  const handle = process.platform === 'win32' ? startWindows(adminClient) : await startLinux(scope, dir, adminClient, also);
   if (!handle.ok) {
     return handle;
   }

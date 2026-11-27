@@ -351,6 +351,8 @@ function namesFile(line: string, file: string): boolean {
 export interface HostKeyTold {
   readonly install: string;
   readonly bridge: string;
+  /** Sentence C: the pin file of THIS run was named, so this host refused the saved key; D (`false`) says only that the check could not tell. */
+  readonly refused: boolean;
 }
 
 /**
@@ -407,9 +409,9 @@ function toldByText(file: string, lines: readonly string[], name: string): HostK
     return undefined;
   }
   if (lines.some((line) => namesFile(line, file))) {
-    return { install: refusedHostKeySentence(name), bridge: `The bridge to "${name}" is not open: ${refusedHostKeySentence(name)}` };
+    return { install: refusedHostKeySentence(name), bridge: `The bridge to "${name}" is not open: ${refusedHostKeySentence(name)}`, refused: true };
   }
-  return { install: unnamedHostKeySentence(name), bridge: `The bridge to "${name}" could not be checked: ${unnamedHostKeySentence(name)}` };
+  return { install: unnamedHostKeySentence(name), bridge: `The bridge to "${name}" could not be checked: ${unnamedHostKeySentence(name)}`, refused: false };
 }
 
 /**

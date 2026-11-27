@@ -220,9 +220,9 @@ internal static class Tools
         var announced = Windows.Announced();
         var failure = new ToolFailure(
             "No CredsForDevs window answered.",
-            announced == 0
+            Windows.NoWindowHint(announced == 0
                 ? "Open the folder in VS Code with the CredsForDevs extension installed and unlock the vault. Nothing is readable until a window is running."
-                : $"{announced} window(s) announced themselves but none is listening now — they were probably closed. Open one and try again.");
+                : $"{announced} window(s) announced themselves but none is listening now — they were probably closed. Open one and try again."));
         return JsonSerializer.Serialize(failure, McpJsonContext.Default.ToolFailure);
     }
 

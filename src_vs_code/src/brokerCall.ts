@@ -1,4 +1,5 @@
 import { AuditDoor } from './agentAuditLog';
+import type { RunSite } from './bridgeConsentText';
 import type { CallerLabel } from './brokerCaller';
 import { ErrorCode, INTERNAL_FAILURE } from './brokerProtocol';
 import { runAndDeliver } from './brokerResponse';
@@ -68,6 +69,8 @@ export interface CallSubject {
   readonly summary: string;
   /** What `UseAction.uses` answered for this call: the entry it also uses (the SSH entry of a linked run), or `undefined`. The key is REQUIRED, as `caller` is. */
   readonly uses: UsedEntry | undefined;
+  /** What `UseAction.bridgedSite` answered before consent: where the dialog said the call runs (a bridged stored command or script, S4). */
+  readonly site?: RunSite;
   readonly table: MaskTable;
   /** The request's life: fires when its client hung up (`requestLife.ts`). Handed to the action it starts. */
   readonly signal: AbortSignal;
@@ -261,7 +264,7 @@ function spentToken(deps: CallDeps, call: CallSubject, now: number, limits: Gran
 function startNow(deps: CallDeps, call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
   return new Promise<UseActionResult>((resolve) => {
-    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing, summary: call.summary, uses: call.uses }, body));
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal, bridge: grant.bridge?.context, lateAnswer: lateAnswerOf(deps, call), standingPrompt: deps.standing, summary: call.summary, uses: call.uses, site: call.site }, body));
   });
 }
 

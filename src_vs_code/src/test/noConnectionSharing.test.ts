@@ -147,7 +147,8 @@ test('G2: an ssh is started from an argv only at the listed places', () => {
     ['bridgedSshClient.ts#bridgedSshClientCheck', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'pinClient.ts#pinClientAsker', 'sshUseActions.ts#runCall', 'sshUseActions.ts#runOptions'],
     HOW_TO_FIX,
   );
-  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['commands/agentCommands.ts'], HOW_TO_FIX);
+  // Change 11.1, S1: the bridge is started by the scoped open, which left the command module; the released road, behind the switch of §4.5, by its own.
+  assert.deepEqual(matchesOf(/\bbridges\s*\.\s*start\s*\(/g), ['legacyBridgeOpen.ts', 'scopedBridgeOpen.ts'], HOW_TO_FIX);
   assert.deepEqual(usesOf('secretsLaunch', 'remoteLaunch'), ['commands/runCommands.ts#launchesOf'], HOW_TO_FIX);
 });
 
@@ -158,7 +159,9 @@ test('G2: and each of them takes its argv from one of the two builders', () => {
     ['bridgedSshCall.ts#bridgedSpawn', 'commands/agentCommands.ts#runRemote', 'commands/agentCommands.ts#sweepDeadSockets', 'commands/agentCommands.ts#verifyBridgeSocket', 'remoteLaunch.ts#secretsArgv', 'sshUseActions.ts#execArgv'],
     HOW_TO_FIX,
   );
-  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['commands/agentCommands.ts#registerAgentCommands'], HOW_TO_FIX);
+  assert.deepEqual(usesOf('buildBridgeArgv', 'sshBridge'), ['legacyBridgeOpen.ts#startLegacy', 'scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
+  // Change 11.1, S1: the one-shot ssh that writes the bridge's note on the server; its argv carries FIXED_OPTIONS, so NO_CONNECTION_SHARING too.
+  assert.deepEqual(usesOf('buildNoteArgv', 'sshBridge'), ['scopedBridgeOpen.ts#startReady'], HOW_TO_FIX);
 });
 
 test('G2: the two options are spelled in one file', () => {
@@ -174,7 +177,9 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     usesOf('runBounded', 'sshExecRunner'),
     // E1.7: the database client check (boundedRun) and the bridged query (spawned) start a database client from the path the check asked: neither is `ssh`.
-    ['agentUseActions.ts#run', 'agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'bridgedDbClient.ts#boundedRun', 'bridgedDbQuery.ts#spawned', 'configWrite.ts#boundedGit', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'transportFactory.ts#build'],
+    // S3 (change 11.1): the container's runner starts the container tool (wslc) for the probe and the query, and the Prepare command starts it to build the image: neither is `ssh`.
+    // S4 (change 11.1): a stored script's file run moved to storedRun.ts (its interpreter, as before), and a bridged run on this computer starts the line's pinned shell (bridgedRun.ts#spawnLine): neither is `ssh`.
+    ['agentUseActions.ts#run', 'agentUseActions.ts#spawnLocal', 'bridgedDbClient.ts#boundedRun', 'bridgedDbQuery.ts#spawned', 'bridgedRun.ts#spawnLine', 'commands/dbContainerCommand.ts#registerDbContainerCommand', 'configWrite.ts#boundedGit', 'containerDbQuery.ts#runner', 'gitTracked.ts#isTrackedHere', 'hostKeyTrust.ts#scanHostKey', 'storedRun.ts#runScriptFile', 'transportFactory.ts#build'],
     HOW_TO_FIX,
   );
   // The two ways to name the program of a spawned ssh. `openSshBinary` is called by `sshSpawnLaunch` only (and `openSshProgram` is a string for a terminal).
@@ -187,14 +192,15 @@ test('G2: no other door to a spawned ssh: the generic runner, the spawn launches
   assert.deepEqual(
     [...new Set(matchesOf(/['"]\.{1,2}\/(?:[\w-]+\/)*sshExecRunner['"]/g))],
     // E1.6: bridgedSshClient.ts names the runner for the client check, whose one argv is `-V` (no connection).
-    // G1, E2.S1: pinClient.ts names it for the same question of a pinned call off a bridge, with the same one argv. E1.7: bridgedDbClient.ts and bridgedDbQuery.ts for the db client check.
-    ['agentUseActions.ts', 'bridgedDbClient.ts', 'bridgedDbQuery.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'configWrite.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'pinClient.ts', 'sshUseActions.ts', 'transportFactory.ts'],
+    // G1, E2.S1: pinClient.ts names it for the same question of a pinned call off a bridge, with the same one argv. E1.7: bridgedDbClient.ts and bridgedDbQuery.ts for the db client check. S3 (change 11.1): containerDbQuery.ts and commands/dbContainerCommand.ts for the container tool (wslc), never ssh. S4: bridgedRun.ts and storedRun.ts for a stored line's shell and a script's interpreter on this computer, never ssh (a bridged run on the server goes through execOverSsh).
+    ['agentUseActions.ts', 'bridgedDbClient.ts', 'bridgedDbQuery.ts', 'bridgedRun.ts', 'bridgedSshClient.ts', 'commands/agentCommands.ts', 'commands/dbContainerCommand.ts', 'configWrite.ts', 'containerDbQuery.ts', 'gitTracked.ts', 'hostKeyTrust.ts', 'pinClient.ts', 'sshUseActions.ts', 'storedRun.ts', 'transportFactory.ts'],
     HOW_TO_FIX,
   );
   // A raw `spawn` of `ssh` has to live in a file that imports `child_process`: they are listed whole.
   assert.deepEqual(
     [...new Set(matchesOf(/^\s*(?:import\b[^\n]*\bfrom|(?:const|let|var)\b[^\n]*=\s*require\()\s*['"](?:node:)?child_process['"]/gm))],
-    ['binaryInstaller.ts', 'bridgeSpawner.ts', 'childKill.ts', 'helpLookup.ts', 'installFlow.ts', 'maskedTerminal.ts', 'materializedKeys.ts', 'sshExecRunner.ts', 'wslProcess.ts', 'wslRelayManager.ts'],
+    // Change 11.1, S1: bridgeNoteWriter.ts spawns the note's one-shot ssh, its argv from buildNoteArgv and the note on stdin.
+    ['binaryInstaller.ts', 'bridgeNoteWriter.ts', 'bridgeSpawner.ts', 'childKill.ts', 'helpLookup.ts', 'installFlow.ts', 'maskedTerminal.ts', 'materializedKeys.ts', 'sshExecRunner.ts', 'wslProcess.ts', 'wslRelayManager.ts'],
     HOW_TO_FIX,
   );
 });

@@ -377,7 +377,7 @@ function bridgedParts(deps: SshUseDeps, ctx: UseActionContext): { writer: Bridge
 
 /** What the runner is given: the launch, the bound, the guards; and a `cwd` only for a bridged call (off a bridge the runner is given none, as it always was). */
 function runOptions(deps: SshUseDeps, ctx: UseActionContext, call: OverSshCall, launch: Launch): Parameters<typeof runSshExec>[1] {
-  const options = { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, ...launchGuards(deps.signal, ctx) };
+  const options = { program: launch.program, env: launch.env, timeoutMs: call.timeoutMs, input: call.stdin, ...launchGuards(deps.signal, ctx) };
   return launch.cwd === undefined ? options : { ...options, cwd: launch.cwd };
 }
 

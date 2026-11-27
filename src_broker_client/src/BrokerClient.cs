@@ -26,6 +26,9 @@ public sealed class BrokerClient : IDisposable
     private readonly BrokerContract contract;
     private readonly HttpClient http;
 
+    /// <summary>A bridged client's listener port: every request names it in <c>Host</c>, whatever port the caller passed (change 11.1, S1).</summary>
+    private int? bridgePort;
+
     /// <summary>
     /// Private: <see cref="Create(BrokerContract, string?)"/> owns the handler, and with it how every probe connects.
     /// </summary>
@@ -57,7 +60,35 @@ public sealed class BrokerClient : IDisposable
     public static string? SocketPath() =>
         Environment.GetEnvironmentVariable(SocketVariable) is { Length: > 0 } p ? p : null;
 
-    public static BrokerClient Create(BrokerContract contract) => Create(contract, SocketPath());
+    /// <summary>
+    /// The client for here: the socket <see cref="SocketVariable"/> names when it is set (the old road), else this login's Remote Bridge
+    /// note when there is one (<see cref="ForBridge"/>), else the loopback port.
+    /// </summary>
+    public static BrokerClient Create(BrokerContract contract) =>
+        SocketPath() is { } socket ? Create(contract, socket)
+        : BridgeNotes.Here() is { } note ? ForBridge(contract, note)
+        : Create(contract, (string?)null);
+
+    /// <summary>
+    /// A client of a Remote Bridge (change 11.1, S1): the note's forwarded socket, the listener's key on every request, and the
+    /// listener's port in every <c>Host</c>, so the bridge door admits it (cause D2: a client that said port 1 was refused).
+    /// </summary>
+    public static BrokerClient ForBridge(BrokerContract contract, BridgeNote note)
+    {
+        var client = Create(contract, note.Socket);
+        client.http.DefaultRequestHeaders.Add(BridgeNotes.KeyHeader, note.Key);
+        client.bridgePort = note.Port;
+        return client;
+    }
+
+    /// <summary>
+    /// The one endpoint of a host that reaches its broker through a forwarded socket, or <c>null</c> where windows announce themselves:
+    /// the socket <see cref="SocketVariable"/> names (port 1, the old road), or this login's bridge note (its listener's port).
+    /// </summary>
+    public static Endpoint? BridgedEndpoint() =>
+        SocketPath() is { } socket ? new Endpoint(0, 1, socket, string.Empty)
+        : BridgeNotes.Here() is { } note ? new Endpoint(0, note.Port, note.Socket, string.Empty)
+        : null;
 
     public static BrokerClient Create(BrokerContract contract, string? socketPath)
     {
@@ -190,7 +221,7 @@ public sealed class BrokerClient : IDisposable
         return cts;
     }
 
-    private static string Url(int port, string path) => $"http://127.0.0.1:{port}{path}";
+    private string Url(int port, string path) => $"http://127.0.0.1:{bridgePort ?? port}{path}";
 
     public void Dispose() => http.Dispose();
 }

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, BRIDGE_UNKNOWN_PATH, bridgeRouteRefusal, refusedOnBridge, routeNameOf } from '../bridgeAllowList';
-import { AgentUseDeps, dbQueryAction } from '../agentUseActions';
+import { AgentUseDeps, dbQueryAction, scriptRunAction, terminalRunAction } from '../agentUseActions';
 import { BridgeContext } from '../bridgeContext';
 import { EXPORT_REFUSED, ErrorCode } from '../brokerProtocol';
 import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
@@ -51,10 +51,13 @@ const SERVED: readonly string[] = [
   'GET /v1/mcp/folders',
   'POST /v1/mcp/use/exec',
   'POST /v1/mcp/use/query',
+  'POST /v1/mcp/use/run',
   'POST /v1/alias/exec',
   'POST /v1/alias/query',
+  'POST /v1/alias/run',
   'POST /v1/use/exec',
   'POST /v1/use/query',
+  'POST /v1/use/run',
 ];
 
 /** The served routes that touch the vault, and so go through the wall. */
@@ -67,8 +70,8 @@ test('the two sentences: a route the table refuses keeps the person sentence; a 
   assert.doesNotMatch(BRIDGE_UNKNOWN_PATH, /person|VS Code|window/i, 'nothing exists for a person to do about a path nobody named');
   assert.match(BRIDGE_NOT_SERVED, /A person can do it in the VS Code window\./, 'the rows that exist keep it');
   // The fact each sentence stands beside: the table knows the first kind (a named, refused row) and not the second.
-  assert.deepEqual(bridgeRouteRefusal('POST', '/v1/use/run'), { code: 'not_supported', message: BRIDGE_NOT_SERVED });
-  assert.equal(BRIDGE_ROUTES.some((route) => route.method === 'POST' && route.path === '/v1/use/run'), true, 'run is a named, refused row');
+  assert.deepEqual(bridgeRouteRefusal('POST', '/v1/use/terminal'), { code: 'not_supported', message: BRIDGE_NOT_SERVED });
+  assert.equal(BRIDGE_ROUTES.some((route) => route.method === 'POST' && route.path === '/v1/use/terminal'), true, 'terminal is a named, refused row');
   assert.deepEqual(bridgeRouteRefusal('POST', '/v1/use/future'), { code: 'not_supported', message: BRIDGE_UNKNOWN_PATH });
   assert.equal(BRIDGE_ROUTES.some((route) => route.path === '/v1/use/future'), false, 'future is no row at all');
 });
@@ -141,10 +144,13 @@ test('S6: exportEnv is refused with the export sentence on all three prefixes, a
   assert.deepEqual(exportRows.map((route) => route.path).sort(), ['/v1/alias/exportEnv', '/v1/mcp/use/exportEnv', '/v1/use/exportEnv']);
 });
 
-test('row 11 and 12: run, terminal, up, down, rotate, delete, create, the folder verbs and the config read are not served', () => {
+test('row 11 and 12: terminal, up, down, rotate, delete, create, the folder verbs and the config read are not served (run is, since S4: the entry decides where)', () => {
+  for (const route of ['/v1/use/run', '/v1/alias/run', '/v1/mcp/use/run']) {
+    assert.equal(bridgeRouteRefusal('POST', route), undefined, `${route} is served: decideRunSite refuses per entry, before any dialog`);
+  }
   const refused = [
-    '/v1/use/run', '/v1/use/terminal', '/v1/use/up', '/v1/use/down', '/v1/alias/run', '/v1/alias/terminal', '/v1/alias/up', '/v1/alias/down',
-    '/v1/mcp/use/run', '/v1/mcp/use/terminal', '/v1/mcp/use/up', '/v1/mcp/use/down', '/v1/mcp/use/rotate',
+    '/v1/use/terminal', '/v1/use/up', '/v1/use/down', '/v1/alias/terminal', '/v1/alias/up', '/v1/alias/down',
+    '/v1/mcp/use/terminal', '/v1/mcp/use/up', '/v1/mcp/use/down', '/v1/mcp/use/rotate',
     '/v1/config/read', '/v1/mcp/create', '/v1/mcp/delete', '/v1/mcp/folder/create', '/v1/mcp/folder/edit', '/v1/mcp/folder/delete',
   ];
   for (const route of refused) {
@@ -193,7 +199,7 @@ test('D14: on a bridge, a served route passes and anything else is refused with 
   assert.deepEqual([served.headers, served.answers], [[], []]);
 
   const refused = spies();
-  assert.equal(refusedOnBridge(CONTEXT, 'POST', '/v1/use/run', refused.res, refused.respond), true);
+  assert.equal(refusedOnBridge(CONTEXT, 'POST', '/v1/use/terminal', refused.res, refused.respond), true);
   assert.deepEqual(refused.headers, [['Connection', 'close']]);
   assert.deepEqual(refused.answers, [['not_supported', BRIDGE_NOT_SERVED]]);
 });
@@ -240,7 +246,8 @@ async function realServedActions(): Promise<ServedWorld> {
     onPath: () => false,
   };
   const { sshExecAction } = loadWithVscode<{ sshExecAction: typeof SshExecAction }>('../sshUseActions', stub);
-  return { actions: [sshExecAction(sshDeps), dbQueryAction(agentDeps)], setSocket: (next) => void (socket = next) };
+  const runDeps = { ...agentDeps, agentSocket: () => socket, overSsh: () => Promise.reject(new Error('never run here')) };
+  return { actions: [sshExecAction(sshDeps), dbQueryAction(agentDeps), terminalRunAction(runDeps), scriptRunAction(runDeps)], setSocket: (next) => void (socket = next) };
 }
 
 /** The flag evaluated for a target a bridge can reach, with the agent socket down and up. */
@@ -258,7 +265,7 @@ function assertAsksNothingAfter(action: UseAction, setSocket: (socket: string | 
 test('S1 (Amendment 6, D.10; change 6.1): no action a bridge serves asks after its Allow — the flag is EVALUATED for every target a bridge can reach, the agent socket up or down', async () => {
   // The served words are DERIVED from the table, so this cannot drift from the allow-list; the actions are the real factories.
   const served = new Set(BRIDGE_ROUTES.filter((route) => route.method === 'POST' && route.decision.served).map((route) => route.path.split('/').at(-1) ?? ''));
-  assert.deepEqual([...served].sort(), ['exec', 'query'], 'the served words are the ones this test knows how to find a real action for');
+  assert.deepEqual([...served].sort(), ['exec', 'query', 'run'], 'the served words are the ones this test knows how to find a real action for');
   const { actions, setSocket } = await realServedActions();
   for (const word of served) {
     const carrying = actions.filter((action) => action.action === word);

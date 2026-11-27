@@ -14,8 +14,10 @@ export interface ServedJobBuild {
 
 export const SERVED_JOBS: Record<string, ServedJobBuild[]>;
 export const HARNESS_OF: Record<string, string>;
+export const CONTAINER_HARNESS: string;
+export function harnessOf(build: Pick<ServedJobBuild, 'client' | 'platform'>): string;
 export function servedBuilds(rows: readonly DbProfileRow[]): Omit<ServedJobBuild, 'legs'>[];
 export function keyOf(build: Omit<ServedJobBuild, 'legs'>): string;
 export function wordsOf(build: Omit<ServedJobBuild, 'legs'>): string;
 export function hasJobStep(workflow: string, job: string, harness: string): boolean;
-export function lockProblems(parts: { rows: readonly DbProfileRow[]; jobs: Record<string, unknown[]>; workflow: string; legsOf: (client: string, vendor: string) => string[] }): string[];
+export function lockProblems(parts: { rows: readonly DbProfileRow[]; jobs: Record<string, unknown[]>; workflow: string; legsOf: (client: string, vendor: string, platform: string) => string[] }): string[];

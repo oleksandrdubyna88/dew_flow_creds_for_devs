@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { BridgeSessions } from '../bridgeSessions';
 import { formatToken } from '../grantToken';
 import { materializedKeysDir } from '../materializedKeys';
 import { BridgeProcess, BridgeSpawner, SshBridgeManager } from '../sshBridgeManager';
@@ -129,6 +130,8 @@ export interface Parts {
   vault?: Vault;
   /** More stand-ins, by request string. */
   mocks?: Record<string, unknown>;
+  /** The switch of the new flow (§4.5), as the host hands it. Default: on, as CI runs the new flow; `false` is the released road. */
+  bridgeFlow?: boolean;
 }
 
 /** The disposable vault of the host (E3.S4): the three credentials the real resolve tells apart. At most one is given. */
@@ -166,6 +169,10 @@ export interface World {
   warnings: string[];
   errors: string[];
   logs: string[];
+  /** Every note the scoped bridge wrote (change 11.1, S1): the note and the argv of its one-shot ssh; no ssh starts for it. */
+  notes: { note: Record<string, unknown>; argv: readonly string[] }[];
+  /** Every listener the scoped bridge opened (its own port and key: the click mints no shared token), when, how many things had been said before it, and whether it was closed. */
+  listeners: { bridgeId: string; closed: boolean; at: number; saidBefore: number }[];
   /** Every message, quick pick and log line, in the order they were shown. */
   said: Said[];
   /** From the next read on the storage answers a NEW snapshot of the entry with this `hostKey` (the field is left out for `undefined`); the old snapshot is not changed. */
@@ -224,7 +231,7 @@ function emptyWorld(parts: Parts): World {
   };
   const bridges = new SshBridgeManager(parts.spawn ?? held, (key) => void ended.push(key));
   return {
-    handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], shares: [], updates: [],
+    handlers: new Map(), bridges, children, bridgeArgvs, forgotten: [], runs: [], clientAsks: [], asked: [], ended, infos: [], warnings: [], errors: [], logs: [], said: [], shares: [], updates: [], notes: [], listeners: [],
     replaceHostKey: () => undefined, replaceHost: () => undefined, snapshot: () => ({}), connectOptions: () => Promise.resolve(undefined),
   };
 }
@@ -248,7 +255,9 @@ function vscodeStub(w: World, parts: Parts): Record<string, unknown> {
       showInformationMessage: dialog(w, parts, w.infos, 'info'),
       showWarningMessage: dialog(w, parts, w.warnings, 'warning'),
       showErrorMessage: dialog(w, parts, w.errors, 'error'),
-      showQuickPick: (items: readonly string[], options: { title: string }): Promise<string | undefined> => dialog(w, parts, w.infos, 'pick')(options.title, ...items),
+      // The scope pick of the scoped bridge (items are objects, many may be picked) takes every entry offered; a question of words is asked as a dialog.
+      showQuickPick: (items: readonly unknown[], options: { title: string; canPickMany?: boolean }): Promise<unknown> =>
+        options.canPickMany === true ? Promise.resolve(items) : dialog(w, parts, w.infos, 'pick')(options.title, ...(items as string[])),
       withProgress: (_options: unknown, task: () => Promise<unknown>): Promise<unknown> => task(),
     },
     ProgressLocation: { Notification: 15 },
@@ -310,6 +319,10 @@ function mocksOf(w: World, parts: Parts): Record<string, unknown> {
   return {
     ...unless(parts.realResolve, { '../sshExecAuth': resolverOf(parts) }),
     '../sshExecRunner': runnerOf(w, parts),
+    '../bridgeNoteWriter': { writeBridgeNote: (note: Record<string, unknown>, argv: readonly string[]): Promise<{ ok: true }> => {
+      w.notes.push({ note, argv });
+      return Promise.resolve({ ok: true });
+    } },
     ...unless(parts.realForget, recorder),
     ...unless(parts.realClient, { './pinClient': clientOf(w, parts) }),
     ...(parts.noExecArgv === true ? noArgv : {}),
@@ -376,6 +389,13 @@ function agentServerOf(w: World): Record<string, unknown> {
       return Promise.resolve(formatToken(4242, 'c2VjcmV0'));
     },
     signal: undefined,
+    listeningPort: 4242,
+    // The scoped bridge's own listener (change 11.1, S1): a port and a key of its own, recorded and closed when its ssh ends.
+    openBridgeListener: (context: { bridgeId: string }): Promise<unknown> => {
+      const record = { bridgeId: context.bridgeId, closed: false, at: performance.now(), saidBefore: w.said.length };
+      w.listeners.push(record);
+      return Promise.resolve({ port: 51_000 + w.listeners.length, key: 'listener-key', close: (): Promise<void> => { record.closed = true; return Promise.resolve(); } });
+    },
   };
 }
 
@@ -400,8 +420,13 @@ export function world(parts: Parts = {}): World {
   mod.registerAgentCommands({
     MACHINES: [],
     agentServer: agentServerOf(w),
+    bridgeScopes: { read: () => ({ entries: new Set<string>(), quiet: false, revision: 'absent', admits: (): boolean => false }), set: (): Promise<string> => Promise.resolve('r1') },
+    listBridgeable: (): Promise<unknown[]> => Promise.resolve([{ id: 'db-1', name: 'db', kind: 'db', folder: '' }]),
     aliasMap: () => ({}),
     bridges: w.bridges,
+    bridgeFlow: parts.bridgeFlow ?? true,
+    // S2: a session keeps each bridge; this window always owns it here and the vault is unlocked.
+    bridgeSessions: new BridgeSessions({ takeOwnership: () => Promise.resolve({ owns: () => true, release: () => Promise.resolve() }), unlocked: () => true, onState: () => undefined }),
     log: { info: say, warn: say },
     mutated: (): void => undefined,
     offerInstall: (): Promise<void> => Promise.resolve(),

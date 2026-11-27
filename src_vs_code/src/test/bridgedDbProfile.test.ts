@@ -10,12 +10,12 @@ import { DR5, ENTRY, REFUSED, SENTINEL, dr2, dr4, dr6, dr6q, stored } from './br
  */
 
 const CLIENT_OF = { postgres: 'psql', mysql: 'mysql', mssql: 'sqlcmd' } as const;
-const SYSTEMS = ['linux', 'win32', 'darwin'] as const;
+const SYSTEMS = ['linux', 'win32', 'darwin', 'container'] as const;
 
 /** The rows E1.7 has turned (§S7.7), as `client/platform`: each in the commit that recorded its candidate run. */
-const SERVED_PAIRS = ['sqlcmd/linux'];
+const SERVED_PAIRS = ['sqlcmd/linux', 'sqlcmd/container'];
 
-test('DP1: the table has a row for each client on linux, win32 and darwin, and exactly the turned rows are served, each with the builds its legs ran on', () => {
+test('DP1: the table has a row for each client on linux, win32, darwin and the container (S3), and exactly the turned rows are served, each with the builds its legs ran on', () => {
   for (const client of Object.values(CLIENT_OF)) {
     for (const platform of SYSTEMS) {
       const rows = BRIDGED_DB_PROFILES.filter((row) => row.client === client && row.platform === platform);
@@ -23,7 +23,7 @@ test('DP1: the table has a row for each client on linux, win32 and darwin, and e
       assert.equal(rows[0].served, SERVED_PAIRS.includes(`${client}/${platform}`), `${client} on ${platform}`);
     }
   }
-  assert.equal(BRIDGED_DB_PROFILES.length, 9, 'no row for anything else');
+  assert.equal(BRIDGED_DB_PROFILES.length, 12, 'no row for anything else');
   const sqlcmd = BRIDGED_DB_PROFILES.filter((row) => row.served).map((row) => ({ ...row, clients: row.clients }));
   assert.deepEqual(sqlcmd, [{
     client: 'sqlcmd', platform: 'linux', served: true,
@@ -31,7 +31,10 @@ test('DP1: the table has a row for each client on linux, win32 and darwin, and e
       { version: '17.11.0001.1', tag: 'Linux', driver: '17.11.1.1', record: 'run 45390171118 at 35d59423' },
       { version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45390171118 at 35d59423' },
     ] }],
-  }], 'the ODBC sqlcmd on Linux, the two builds of the candidate run, each with its driver; go-sqlcmd is not served');
+  }, {
+    client: 'sqlcmd', platform: 'container', served: true,
+    clients: [{ vendor: 'odbc-sqlcmd', builds: [{ version: '18.7.0001.1', tag: 'Linux', driver: '18.7.1.1', record: 'run 45893005996 at a9311e09' }] }],
+  }], 'the ODBC sqlcmd on Linux, the two builds of the candidate run, each with its driver; the image\'s build in the container (S3); go-sqlcmd is not served');
 });
 
 /** The production table with exactly one row served. */
@@ -39,7 +42,7 @@ const withServed = (client: string, platform: string): typeof BRIDGED_DB_PROFILE
 
 /** The DR1 sentence of a pair that is not served, written out. */
 const DR1_OF = (client: string, platform: (typeof SYSTEMS)[number]): string =>
-  `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${{ linux: 'Linux', win32: 'Windows', darwin: 'macOS' }[platform]} is not among them.`;
+  `A Remote Bridge runs a database query only with a client and system whose behaviour was measured. ${client} on ${{ linux: 'Linux', win32: 'Windows', darwin: 'macOS', container: 'a Linux container on this machine' }[platform]} is not among them.`;
 
 interface Pair {
   readonly dbType: DbType;
@@ -72,7 +75,7 @@ test('DP2: a platform with no row, and a type with no client, are not served, an
 });
 
 test('DP2b: the three system words, and a table that serves a row serves exactly that pair', () => {
-  const words = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' } as const;
+  const words = { linux: 'Linux', win32: 'Windows', darwin: 'macOS', container: 'a Linux container on this machine' } as const;
   for (const platform of SYSTEMS) {
     const answer = bridgedDbPair([], 'mysql', platform);
     assert.equal(answer.served === false && answer.sentence.endsWith(`mysql on ${words[platform]} is not among them.`), true, platform);

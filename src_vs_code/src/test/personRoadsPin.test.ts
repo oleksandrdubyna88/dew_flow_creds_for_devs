@@ -354,9 +354,10 @@ test('Q8b: a bridge and its socket check hold two pin files; the check deletes o
 });
 
 test('QS: on the three roads the answer of the resolve has no name: each resolveExecAuth( of agentCommands.ts is the first argument of a guard that is given personPinWriter', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'agentCommands.ts'), 'utf8');
-  const resolves = source.match(/\bresolveExecAuth\s*\(/g) ?? [];
-  const guarded = source.match(/\bwithWrittenKey(?:UntilExit)?\(await resolveExecAuth\([^\n]*?\), personPinWriter\(storageDir, (?:entity|details)\), /g) ?? [];
+  // The scoped bridge's open (change 11.1, S1) is in `scopedBridgeOpen.ts`, where the command module's resolver arrives as `host.resolve`.
+  const source = ['commands/agentCommands.ts', 'scopedBridgeOpen.ts'].map((file) => fs.readFileSync(path.join(__dirname, '..', '..', 'src', file), 'utf8')).join('\n');
+  const resolves = source.match(/\b(?:resolveExecAuth|host\.resolve)\s*\(/g) ?? [];
+  const guarded = source.match(/\bwithWrittenKey(?:UntilExit)?\(\s*await (?:resolveExecAuth|host\.resolve)\([^\n]*?\),\s*personPinWriter\((?:host\.)?storageDir, (?:entity|details)\),/g) ?? [];
 
   assert.equal(resolves.length, 3, `the scan does not find the three resolves of the three roads: ${resolves.length}`);
   assert.equal(guarded.length, 3, 'QS: a road keeps the answer of the resolve under a name, or hands its guard another pin writer');

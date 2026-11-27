@@ -137,12 +137,16 @@ async function liveness(check, label, leg, k1) {
   return { code: result.code, acceptedBefore: before, acceptedAfter: after };
 }
 
-/** What the bridge's command minted (C9), from the world's `shares`, and whether the first token came before the refusal message. */
+/**
+ * What the bridge's command minted (C9): the shared tokens of the world's `shares`, and (change 11.1, S1) the listeners of its own that it
+ * opened, each with a key of its own; whether the first listener came before the refusal message, and whether every one was closed.
+ */
 function mintedRecord(info, label, roads, sentence) {
-  const { shares } = roads.w;
-  const first = shares.length > 0 && sentence !== undefined && shares[0].at < sentence.at;
-  info(`${label}: C9: the bridge's command minted ${shares.length} token(s); the first before the refusal message: ${first ? 'yes' : 'no'}`);
-  return { count: shares.length, firstBeforeSentence: first };
+  const { shares, listeners } = roads.w;
+  const first = listeners.length > 0 && sentence !== undefined && listeners[0].at < sentence.at;
+  const closed = listeners.every((one) => one.closed);
+  info(`${label}: C9: the bridge's command minted ${shares.length} shared token(s) and opened ${listeners.length} listener(s) of its own; the first before the refusal message: ${first ? 'yes' : 'no'}; all closed: ${closed ? 'yes' : 'no'}`);
+  return { count: shares.length, listeners: listeners.length, firstBeforeSentence: first, closed };
 }
 
 /** R.1 to R.5 (the judge of the lib) and the checks that need the world: the click ended, and no bridge is open. */
