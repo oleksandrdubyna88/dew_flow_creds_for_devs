@@ -8,7 +8,14 @@ import {
   summarizeRotation,
 } from './secretRotation';
 import { EntityMetadata } from './types';
-import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
+import {
+  DrawOptions,
+  GenerationOutcome,
+  NO_GENERATOR_OUTCOME,
+  ROTATED_NOT_STORED_OUTCOME,
+  ROTATED_OUTCOME,
+  ROTATED_QUARANTINED_OUTCOME,
+} from './secretKinds';
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
@@ -112,18 +119,36 @@ export function rotateAction(
 }
 
 /**
- * What the audit line says happened.
+ * What the audit line says happened — the broker asks for it for EVERY status of a rotation.
  *
  * <p>`no generator` is its own word rather than a status number, because the journal greps for
- * it: it is the count of what an agent asked us to make and we could not.</p>
+ * it: it is the count of what an agent asked us to make and we could not. A 200 answer with
+ * `rotated: true` is a rotation (`rotated`, or one of the two words of `JOURNAL_WORDS`). A 200
+ * answer with no `rotated` is the statement's own answer, handed back as it came because it ran and
+ * did not succeed — nothing was stored, so the word says `statement failed`; it does not say that the
+ * far side did not change (`ranAndStored` says why that is not known). Each other status is its number.</p>
+ *
+ * <p>A field is read from a body only when the body is an object that is not `null`: a statement
+ * action that answers a text or `null` with a status that is not 200 gets its number, and the agent
+ * still reads that answer as it came. The broker asks for this word outside its `try`, so a throw
+ * here would turn that answer into a 500.</p>
  */
 function describeRotation(result: UseActionResult): string {
-  if (result.status === 200) {
-    return JOURNAL_WORDS.get((result.body as { stored?: unknown }).stored) ?? 'rotated';
-  }
-  return (result.body as { noGenerator?: unknown }).noGenerator === true
-    ? NO_GENERATOR_OUTCOME
-    : String(result.status);
+  const fields = fieldsOf(result.body);
+  return result.status === 200 ? wordOfAnswer(fields) : wordOfRefusal(result.status, fields);
+}
+
+/** The fields that the journal reads from an answer's body; none for a body that is no object. */
+function fieldsOf(body: unknown): { rotated?: unknown; stored?: unknown; noGenerator?: unknown } {
+  return typeof body === 'object' && body !== null ? body : {};
+}
+
+function wordOfAnswer(fields: { rotated?: unknown; stored?: unknown }): string {
+  return fields.rotated === true ? (JOURNAL_WORDS.get(fields.stored) ?? ROTATED_OUTCOME) : 'statement failed';
+}
+
+function wordOfRefusal(status: number, fields: { noGenerator?: unknown }): string {
+  return fields.noGenerator === true ? NO_GENERATOR_OUTCOME : String(status);
 }
 
 function statementOf(body: unknown): string {
@@ -464,8 +489,8 @@ const AGENT_WORDS: Readonly<Record<StoreOutcome | 'handed', { readonly stored?: 
 
 /** The journal's words for it — grep-able beside `rotated`. */
 const JOURNAL_WORDS = new Map<unknown, string>([
-  [false, 'rotated, not stored'],
-  ['quarantined', 'rotated, quarantined'],
+  [false, ROTATED_NOT_STORED_OUTCOME],
+  ['quarantined', ROTATED_QUARANTINED_OUTCOME],
 ]);
 
 /**

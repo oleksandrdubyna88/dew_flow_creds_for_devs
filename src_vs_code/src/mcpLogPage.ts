@@ -60,9 +60,10 @@ export function renderMcpLog(all: readonly McpLogRow[]): string {
 </head>
 <body>
   <h2>MCP logs</h2>
-  <p class="lede">Every call an AI agent made to this window, from the same record the broker
+  <p class="lede">What AI agents did through this window, from the same record the broker
     writes to disk. Nothing here is a second copy: it is the audit file, filtered to the calls
-    that arrived through MCP.</p>
+    that arrived through MCP. A create, a delete or a folder change that ran under an older version of the
+    extension is absent while its journal file is kept; the files are swept after 14 days.</p>
   <div class="filters">${MCP_LOG_FILTERS.map(
     (f) =>
       `<button type="button" data-filter="${f.id}" data-hint="${escapeHtml(f.hint)}" aria-pressed="${f.id === 'all' ? 'true' : 'false'}">${escapeHtml(f.label)} <span class="count" data-for="${f.id}">${applyFilter(rows, f.id).length}</span></button>`,

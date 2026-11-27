@@ -237,6 +237,12 @@ export async function visibleMcpEntries(source: McpVaultSource): Promise<readonl
  * `resolveMcpInTree` + `shown` pair decides, and an entry the listing would not show cannot be
  * named here either. Not-found, not-visible and not-a-config are one `undefined`,
  * deliberately.</p>
+ *
+ * <p>The search goes on for each account that has no VISIBLE config with the id, as `findUsableEntry` and `findFolder`
+ * go on past a node that they may not show. A hidden node in an earlier account therefore answers as an id that
+ * the account does not hold, and so does a visible node that is not a config (D1 of
+ * `research/PLAN_agent_small_truths_n8_n9_n2.md`): the answer never depends on what an earlier account holds under the id.
+ * The first account with a visible config wins, in the order of `getAccounts`.</p>
  */
 export function visibleConfigDetails(
   source: McpVaultSource,
@@ -244,8 +250,9 @@ export function visibleConfigDetails(
 ): EntityMetadata | undefined {
   for (const { accountId } of source.getAccounts()) {
     const node = source.getNode(accountId, entityId);
-    if (node !== undefined) {
-      return visibleConfigOf(node, (id) => source.getNode(accountId, id));
+    const details = node === undefined ? undefined : visibleConfigOf(node, (id) => source.getNode(accountId, id));
+    if (details !== undefined) {
+      return details;
     }
   }
   return undefined;

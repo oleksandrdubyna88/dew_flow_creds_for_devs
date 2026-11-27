@@ -5,7 +5,7 @@ import { McpLogRow, mcpRowsIn } from './mcpLogRows';
 import { renderMcpLog } from './mcpLogPage';
 
 /**
- * The **MCP logs** view: everything an agent asked this window for, and what it was told.
+ * The **MCP logs** view: what AI agents did through this window and how each action ended — not a record of every request (a listing leaves no line, and a request refused before anybody is asked can leave none).
  *
  * <p>It reads the broker's own audit files — a file per run, in a folder per day, swept after a
  * fortnight — and shows the lines that came in through MCP. There is no second store and no
