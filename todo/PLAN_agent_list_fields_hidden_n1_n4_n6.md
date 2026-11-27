@@ -1,6 +1,7 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
-> Status: **approved, nothing implemented yet, 2026-11-27.** Scope:
+> Status: **stopped for re-review, 2026-11-27 (entry 1.2).** S1 to S5 are built on the branch
+> `fix/agent-list-fields-hidden` (PR #401, not merged). Scope:
 > the extension (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `secretRef.ts`, `agentNaming.ts`, `extension.ts`,
 > one filter of `bridgeScope.ts`, one new pure module, the five `help*.ts` files, their tests), the tool descriptions of `creds-mcp` (`src_mcp/src`: `Tools.cs`,
 > `FolderTools.cs`, `UseTools.cs`, their tests), the generated `contract/mcp-tools-v1.json`, one harness
@@ -26,13 +27,19 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-27 · by reviewers · state: open
+> Epoch 1 · approved 2026-11-27 · by reviewers · state: stopped
 
 - 1.1 · 2026-11-27 · reviewer · approach, dod — the list locates a `creds://` token among the entries that the agent may
   view, so a hidden entry with the same name as a visible one does not make the token ambiguous; R5 "mixed" flips and
   an E-pair holds it; the texts say that the placeholder also covers a broken or ambiguous reference
   (Found by the lead's Opus review of the built branch: `agentCommandText.ts:30` located over ALL entries (D5), so a hidden
   twin turned a kept reference into the placeholder, an oracle for a hidden name. The coai code round asked for the text.)
+- 1.2 · 2026-11-27 · reviewer · approach, dod — a viewable entry under a folder that the agent may not view still counts
+  as a match of a token, so two viewable `db` entries under `Open/Team` and `Closed/Team` make `…/Team/db/password`
+  the placeholder, and the token is kept when the closed `Team` is not there: the placeholder tells the name of a
+  folder that the agent may not view
+  (Found by CodeRabbit on #401, `listFieldsHidden.test.ts:360`; D4 and D5 count each viewable entry and check the
+  folders only after one match is found. This second change stopped the plan.)
 
 ## 1. The defect
 
