@@ -1150,6 +1150,41 @@ except the items marked **gap filled**, which a reader should look at first.
   `<released>-pilot.<sha>`. `scripts/pilot/creds-pilot.sh` installs, shows and undoes them on the server; a bin folder outside the
   home (a folder every login runs, such as `/usr/local/bin`) gets the pilot beside it in `<parent>/lib/creds-pilot`, readable by every
   login. The owner's check is `research/PILOT_remote_bridge_owner_check.md`. **Gap filled:** §4.7's *Reopen* is not built, so its
-  check 9 (Fast Startup with the vault locked) records what happens instead of passing or failing. M7 for the slice: not yet run.
+  check 9 (Fast Startup with the vault locked) records what happens instead of passing or failing. M7 for the slice: in progress,
+  *M7 record* below.
 - **Gates.** The coai plan gate: `proceed` (3 findings, all accepted). The coai code gate: `proceed` (3 accepted; 2 rejected with
   reasons). CI is green except the two `bridged PS1 · linux` jobs, which fail on `main` too.
+
+#### M7 record (the owner's check, 2026-11-27, pilot 0462c92; checks 8-10 not run yet)
+
+Run by the owner on the Windows PC and the Ubuntu server, by `research/PILOT_remote_bridge_owner_check.md`. The PC's CredsForDevs log
+and the server's sockets were read alongside. Times are UTC.
+
+| # | Result | What was seen |
+|---|---|---|
+| 1 | **pass** | From a shell, after three setup steps the doc did not name (fixed in 232e17e8): an older `creds` earlier on root's PATH was moved aside; the entry got a CLI alias; agent forwarding was turned off on the entry (refused before with `AGENT_FORWARD_REFUSED`, as designed). From Claude: works. The bridged modal puts **Deny** first with the focus, names the bridge and the server, shows the command and the caller, and says "Allowing covers this call only" |
+| 2 | **pass** | An entry with agent access on but not in the scope is not listed to the server's agent, and a use of it reads as an entry that does not exist; no dialog, nothing ran |
+| 3 | not run | No SQL Server at hand |
+| 4 | **pass** | A Terminal entry with *Runs on: Windows* and a `creds://` reference ran on the PC and the server got `<CREDS_MASKED:CREDS_REF_1>`. It needed the first run by a person from the tree (the trust record; by design, not in the doc before). A 3-character value came back unmasked: values under `MIN_MASKABLE_LENGTH` (8) are never masked, on every road |
+| 5 | **pass** | A bash script entry ran on the server as the login, and its exit status 3 came back |
+| 6 | **pass** | Wi-Fi off about one minute: the PC retried, the bridge was open again at 18:19:01 under a new socket, about a minute after the network came back, with no click; a `creds-mcp` call from the same Claude session worked. The old `ssh` ended on the server at 18:20:57, about 4 minutes after the drop; both sockets listened in between |
+| 7 | **refusal: pass; "back after unlock": fail as built** | After *Lock Vaults* a call is refused. The unlock is impossible on this PC: no account has a sync location, so every account answers "No vault stored … yet", while the lock itself needs no vault file. A new window starts unlocked but answers "the bridge … is kept by another window", because the locked window keeps renewing its hold. Only closing every window brought the bridge back (restored at activation in 3 s, no click) |
+
+**Findings that the flip must answer** (none is a fault of checks 1-6):
+
+- **F-M7-1 · The holding window keeps a closed bridge.** A window whose vault is locked (by a person or by the idle auto-lock) keeps
+  the hold of `bridge-owners/<hash>/holder.json` and its bridge stays down; another, unlocked window logs "kept by another window" and
+  its *Open Remote Bridge…* does nothing visible. Seen three times this day. A locked holder should release the hold, or an unlocked
+  window should be able to take it.
+- **F-M7-2 · Lock is one-way with no sync location.** *Lock Vaults* sets an in-memory mark; *Unlock* needs the vault file from the
+  account's sync location, so on a PC with none, nothing unlocks but a new window. The unlock list also offers accounts with no vault.
+  Older than the slice, but the slice makes the lock close a bridge, so it now stops an agent's work.
+- **F-M7-3 · A CLI alias lives in one window.** An alias enabled in a window that does not hold the bridge is not served through it:
+  `creds ls` on the server answered "no entry is enabled for the CLI yet".
+- **F-M7-4 · The VSIX install needs a reload of every window.** A window not reloaded runs the Marketplace build, and *Open Remote
+  Bridge…* there takes the old road (a token, no scope); the owner hit it first. In the doc since 232e17e8.
+- Older than the slice, recorded as todos: *Run with Secrets* closes its terminal as the command ends, so a person cannot read the
+  output; a bash script run from the tree on Windows passes a Windows path to WSL's `bash`, which cannot find it.
+
+The owner also asked for, and got in PR #400 (separate from this slice): the idle auto-lock is 12 hours by default, and an account
+icon is green while the vault is unlocked.

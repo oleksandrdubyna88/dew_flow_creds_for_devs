@@ -73,6 +73,13 @@ Before check 1, what an entry needs to be used through a bridge:
   agent …"): the agent would answer with every key it holds, not only this entry's. Turn agent forwarding off on that entry.
 - **A bridge uses no `~/.ssh/config`, no SSH agent and no default key** (§4.9, Q8). The entry must sign in with what it holds
   itself: a key in the vault or a key file path in the entry, or a password with the host key pinned.
+- **A stored command or script must be run once from the tree by a person** before an agent may run it ("has not been run on this
+  machine yet"): the run shows the line, and that is what the agent's run is checked against. For check 4 use *Run with Secrets*.
+- **Masking needs a value of 8 characters or more** (`MIN_MASKABLE_LENGTH`): use a test value such as `pilot-123-abc` in check 4; a
+  shorter one comes back unmasked, on every road.
+- **One VS Code window holds the bridge.** Another window says "kept by another window" in its log and cannot open it. A lock in the
+  holding window closes the bridge, and (as built, 2026-11-27) only closing that window brings it back when the PC has no sync
+  location to unlock from: close every window and open VS Code again.
 
 | # | Do | Pass when |
 |---|---|---|
