@@ -1,6 +1,6 @@
 # PLAN — The list answers name no node that the agent may not view: the dependencies, the folder, the command and the parent (N1, N4, N5, N6)
 
-> Status: **plan only, nothing implemented yet, 2026-11-27. The plan round passed; the ledger is not open yet.** Scope:
+> Status: **approved, nothing implemented yet, 2026-11-27.** Scope:
 > the extension (`src_vs_code/src`: `mcpEntries.ts`, `mcpFolders.ts`, `secretRef.ts`, `agentNaming.ts`, `extension.ts`,
 > one filter of `bridgeScope.ts`, one new pure module, the five `help*.ts` files, their tests), the tool descriptions of `creds-mcp` (`src_mcp/src`: `Tools.cs`,
 > `FolderTools.cs`, `UseTools.cs`, their tests), the generated `contract/mcp-tools-v1.json`, one harness
@@ -16,13 +16,17 @@
 > (§6.8). Five facts are not what F7 wrote (§1.5), and §14 has the questions for the owner. Fable wrote this plan and
 > the split.
 >
-> **The plan round.** The `coai` plan round ran on `634f9aa7` on 2026-11-27. The lead reported it: `proceed`, 1 of 1
+> **The plan round.** The `coai` plan round ran on `634f9aa7` on 2026-11-27 (session `7edf23d2`): `proceed`, 1 of 1
 > reviewers, 3 findings, and the lead accepted the 3. They are in this text: a Remote Bridge drops the placeholder of
 > `dependsOn` before it filters by name (§2.7, site X1, row BG3, mutation M16); the class row L1 is watched failing
 > before S1 and run again after S4 (§5, §11); the description of `creds_list` says which folder `folder` names (Appendix
 > B, row T4). The question consultants were asked on Q4 only (consultation `e3ac9aef`); their answer is in §2.4 and in
-> §14. These are part of the approval round and are no entry of a ledger. No ledger yet: the lead opens
-> `## Plan changes` under this block (`.agents/conventions/common/plan-change-control.md`).
+> §14. These are part of the approval round and are no entry of a ledger (`a6265576`). The ledger opens
+> with this approval (`.agents/conventions/common/plan-change-control.md`).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-27 · by reviewers · state: open
 
 ## 1. The defect
 
@@ -670,7 +674,7 @@ gets the new required member of C4. It is a change of the type, not of an assert
 
 | Plan | Touches | This plan's part | The row that the neighbour gets |
 |---|---|---|---|
-| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | OWED: its status block, its §2.6, its §11 and its §12 get a pointer to this plan. They are not written yet: the commits of this plan so far hold this file and `todo/README.md` only. The lead writes them with the commit that opens the ledger |
+| [PLAN_agent_refusal_names_unlisted_entry.md](../research/PLAN_agent_refusal_names_unlisted_entry.md) (F7, implemented) | rule A and rule B; N1, N4, N5 and N6 of its §2.6 and §11 | this plan builds the owner's four answers and nothing more of F7. N3 and N7 stay there | WRITTEN with the commit that opens the ledger: its status block, its §2.6, its §11 and its §12 point to this plan |
 | [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) | the wall's rows (`narrowed`, its §4.2); its §8 says that the LOCAL list's `connectionString` and `command` go to *a new todo, E4 writes it* | this plan takes the `command` half of that row: a reference to a thing that the agent may not view. It edits ONE expression of `bridgeScope.ts`, the filter of `dependsOn` in `narrowed` (`:152`, X1), and adds one import there. It adds row BG3 to `bridgeReadShape.test.ts`, and changes one control and the accounts of the world in two test files of that plan (`bridgeReadShape.test.ts`, `bridgeWallWorld.ts`, §6.8) | OWED, in its §8 *Boundaries* (the table that its line 998 and line 1004 are rows of), as one new row: (1) the `command` half of the row *The local MCP door's listing serves `connectionString` … and `command`* is this plan's, and `connectionString` stays there; (2) the local row can hold two fixed placeholders, and `narrowed` drops the placeholder of `dependsOn` before it filters by name, so the sentence of its §4.2, *`dependsOn` (names in the scope only)*, stays true; (3) this is a new fact for the row *reviewed and rejected by the re-review for epoch 6* (`dependsOn` filtered by name): the filter by name stays, and one fixed value is never a name for it. That plan is under change control (epoch 11) and belongs to another session, so its owner session writes the row; this plan does not edit that file |
 | [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) | `src_mcp/src/Tools.cs:36` (another description), `Program.cs`, `creds-mcp-itest.cjs`; a `mcp-v` release of its own | none in behaviour. The two plans edit other constants of `Tools.cs`, and each one regenerates `contract/mcp-tools-v1.json` | under its story B2: the second one to merge regenerates the contract file again and reads the first one's descriptions |
 | [PLAN_consent_coverage_per_door.md](PLAN_consent_coverage_per_door.md) | the consent stamps in `mcpEntries.ts` (`worthRemembering`, `:584-586` today) | none. Disjoint lines of the same file | no row: no shared function |
@@ -729,7 +733,7 @@ branch that merges second reads line 132 again.
 - [ ] The solution builds with 0 warnings; the test executable of `creds-mcp` is green; `npm run itest:mcp` is
       green with H1. `src_cli` and `McpJsonContext.cs` have no difference.
 - [ ] `bridgeScope.ts` differs in the filter of `narrowed`, one import and one comment, and in nothing more (X1).
-- [ ] The pointers of F7 (§9) are written.
+- [x] The pointers of F7 (§9) are written.
 - [ ] The documents of §7 are written; the CHANGELOG entry and the pull request body carry §3.3 and §3.4.
 - [ ] The owed row of §9 is with the session that owns the bridge plan, and that session has heard of X1 before the
       merge; the summary says so.

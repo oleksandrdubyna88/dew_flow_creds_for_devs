@@ -2,8 +2,9 @@
 
 > Status: **IMPLEMENTED, 2026-11-11.** Epic 1 (rule A) was merged as #347 (`cb017473`) and released in extension 1.21.1
 > (the heading of the CHANGELOG is #349). Epic 2 (rule B) was merged as #353 (`b95282f1`) and released in extension 1.21.3
-> (release PR #355). Deviations: §12. Ledger at promotion: epoch 1, one entry (1.1), no stop. Still open, for the owner: the
-> questions N1, N4, N5 and N6 (§2.6, §11), and the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
+> (release PR #355). Deviations: §12. Ledger at promotion: epoch 1, one entry (1.1), no stop. The owner answered the
+> questions N1, N4, N5 and N6 (§2.6, §11) on 2026-11-27; they are built by
+> [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md). Still open: the two boundary rows of the bridge plan that stay owed (§7a, entry 1.1).
 > N10 (§11) moved to its own plan, [PLAN_agent_refusal_key_file_path.md](PLAN_agent_refusal_key_file_path.md). N8, N9 and N2 moved on
 > 2026-11-27 to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md) (the owner put them next) and shipped in extension 1.24.1 (#397; release PR #398). The owner said yes on 2026-11-09
 > to fix this as its own item. Scope: the extension only (`src_vs_code/src`: the entry lookup, the folder lookup, the
@@ -203,7 +204,8 @@ not remove it. It is recorded as a residue in §8.
 
 Each row is a field of a SUCCESSFUL answer, not a refusal and not a lookup. Each one is documented behaviour of an
 MCP tool today. To change one changes a documented MCP answer, so **each one is a question for the owner**, and this
-plan changes none. The class test pins each one (§5.1): its fixture has the case, the test asserts the value that is
+plan changes none. (The owner answered the four on 2026-11-27; they are built by
+[PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md).) The class test pins each one (§5.1): its fixture has the case, the test asserts the value that is
 there today, and the list check allows these four fields and nothing more.
 
 | # | Field | What it can hold | Why it is there today | Code |
@@ -682,6 +684,8 @@ Both:
 ## 11. Found along the way (not built here)
 
 - **N1, N4, N5, N6: the four fields of the list answers.** They are in §2.6, each one a question for the owner.
+  **Answered on 2026-11-27:** the owner said hide or mask each one for a node that the agent may not view; the work is
+  [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md).
 - **N2. The help says that the journal holds every refusal** (`helpEn.ts:137`, and the four other languages). A
   lookup refusal writes no line (`credsAgentServer.ts:734-747`). This is true before and after this plan.
   **Moved on 2026-11-27** to [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md): a list
@@ -783,7 +787,8 @@ append-only and was left as it was at promotion.
   SSH node in the Trash and for a link to a folder; the journal only) were known and not built here; they shipped on
   2026-11-27 in extension 1.24.1 (#397), with N2, by [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md).
 
-**Owner questions still open.** N1, N4, N5, N6 (the four list fields of §2.6, each a change of a documented MCP answer), N2 (the
+**Owner questions still open.** N1, N4, N5, N6 (the four list fields of §2.6, each a change of a documented MCP answer; answered on
+2026-11-27, built by [PLAN_agent_list_fields_hidden_n1_n4_n6.md](../todo/PLAN_agent_list_fields_hidden_n1_n4_n6.md)), N2 (the
 help says that the journal holds every refusal; a lookup refusal writes no line), N8 and N9. N10 is not a question any more.
 N2, N8 and N9 are not questions any more either: on 2026-11-27 they moved to
 [PLAN_agent_small_truths_n8_n9_n2.md](PLAN_agent_small_truths_n8_n9_n2.md), and shipped in extension 1.24.1 (#397; release PR #398).
