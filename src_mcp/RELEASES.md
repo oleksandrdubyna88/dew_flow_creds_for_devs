@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.11.0...mcp-v0.11.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **extension:** the list answers name no node the agent may not view — dependsOn, folder, command references, parent (N1, N4, N5, N6) ([#401](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/401)) ([57fa628](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/57fa6288fa99ec65896c5b3c091261ea13f8c56e))
+
 ## [0.11.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.3...mcp-v0.11.0) (2026-11-09)
 
 
